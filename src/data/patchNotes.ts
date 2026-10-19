@@ -16,9 +16,40 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T20:00Z',
     entries: [
       {
+        title: 'Captain accounts and cloud saves',
+        notes: [
+          'You can now sign in with Google or an email and password. Tap the captain badge at the top of the harbour screen.',
+          'Once you sign in, your gold, Treasure Vault finds, equipped skins and effects, ship livery, saved designs, records and favourite ship are kept in the cloud. They follow you to any phone, tablet or computer you sign in on.',
+          'Your first sign-in brings everything you earned as a guest along with it. Progress from several devices adds up: gold earned on your phone and gold spent on your laptop both count.',
+          'The game still saves on your device first, so it plays the same offline. Anything you earn while offline is saved to the cloud once you reconnect.',
+          'You can still play as a guest without signing in. Your progress then stays on that device, as before.',
+        ],
+      },
+      {
+        title: 'Little clouds over the islands',
+        notes: [
+          'Zoom all the way out and you now rise above a layer of small, soft cumulus clouds drifting low over the sea. They are lit by the real sun and sky, so they are brilliant white at noon, gold and rose at sunset, silver under the moon and a heavy grey in a storm.',
+          'They come and go. Some stretches of sea stay clear while others fill with a field of puffs, clear days bring only a few, cloudy ones bring plenty, and the islands breed their own little clouds over their slopes. Each cloud forms from the middle out and frays away at the edges as it drifts downwind.',
+          'Every cloud casts a soft shadow that slides across the water, the beaches and your ship, so even zoomed in you can watch the shadows of the clouds above sweep past.',
+          'A cloud passing over your own ship turns see-through around it, so you never lose sight of her in a fight.',
+        ],
+      },
+      {
+        title: 'Clean tracer trails',
+        notes: [
+          'The Golden Comet, Ghostlight, Rainbow Ribbon and Starfall tracers, and fire shot, no longer leave a string of glowing smoke blobs behind the ball. Every tracer now draws one smooth, unbroken trace, with only fine sparks shedding off it, and the Vault and Shipwright previews show it the same way.',
+        ],
+      },
+      {
         title: 'Roomier ship card',
         notes: [
           'The ship card in the top left is wider, so longer ship names fit without being cut off. Gold, hold, crew and isles now sit together on one row beneath it.',
+        ],
+      },
+      {
+        title: 'Smooth seas when the wind comes round',
+        notes: [
+          'When the wind veered or backed, the ripples on the sea and the bright sheen rolling over island meadows could suddenly race sideways, faster the longer you had been sailing. Now they keep drifting gently downwind and simply ease onto the new heading as the wind swings, and the long wind streaks on the water turn about your ship instead of sliding across the whole sea.',
         ],
       },
     ],

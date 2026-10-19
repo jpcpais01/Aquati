@@ -41,6 +41,7 @@
       </header>
       <nav class="menu-tools">
         <span class="build-tag" id="build-tag" aria-label="Game version"></span>
+        <button class="tool acct-chip hidden" id="btn-account" data-label="Sign in" aria-label="Sign in"></button>
         <button class="tool" id="btn-notes" data-label="Patch notes" aria-label="Patch notes"><span class="ti" data-icon="scroll"></span><i class="new-dot" id="notes-dot"></i></button>
         <button class="tool" id="btn-controls" data-label="Controls" aria-label="Controls"><span class="ti" data-icon="keys"></span></button>
         <button class="tool" id="btn-settings" data-label="Settings" aria-label="Settings"><span class="ti" data-icon="sliders"></span></button>
@@ -294,6 +295,16 @@
           </section>
           <div class="ctl-tip"><span class="ti" data-icon="wheel"></span>Sail across the wind for the best speed. Heading straight into it is slow going.</div>
         </div>
+      </div>
+    </div>
+
+    <div id="account" class="screen dim hidden">
+      <div class="sheet acct-card" role="dialog" aria-labelledby="account-title">
+        <header class="sheet-head">
+          <div><div class="kicker" id="account-kicker">Save your progress</div><h2 class="screen-title" id="account-title">Sign in</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body acct-body" id="account-body"></div>
       </div>
     </div>
 

@@ -174,7 +174,7 @@ const FRAG_ALBEDO = /* glsl */ `
   #ifndef AQ_TERRAIN_LITE
   // wind rolling over the meadows: bright waves of bent blades sweep downwind,
   // brightest where a gust is passing
-  vec2 wv = xz * 0.045 - uWind.xy * uTime * 0.22;
+  vec2 wv = xz * 0.045 - uWindDrift * 0.22;
   float sheen = texture(uNoiseTex, wv).r * 0.6 + texture(uNoiseTex, wv * 2.3 + 0.37).g * 0.4;
   sheen = smoothstep(0.45, 0.8, sheen) * (0.35 + gustAt(xz) * 0.8);
   g *= 1.0 + sheen * 0.14 * (1.0 - under) * (1.0 - jungle * 0.7);
