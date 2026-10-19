@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'Health bars ride above the sails',
+        notes: [
+          'Enemy health bars and their fire, torn sail and crew icons now float just above the tallest mast instead of over the middle of the ship, so you can always see the hull you are aiming at.',
+        ],
+      },
+      {
         title: 'Calmer seas: fewer pirates',
         notes: [
           'About 60% fewer pirates now roam around you: two to start, rising to at most four as you sink more, and new sails take noticeably longer to appear on the horizon.',
