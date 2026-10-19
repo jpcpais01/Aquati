@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T16:00Z',
     entries: [
       {
+        title: 'Hull hits that splinter and boom',
+        notes: [
+          'A cannonball striking a ship now sounds like heavy oak giving way, not a dull thump: a sharp crack, the crackling rip of planking tearing through, a hollow boom from inside the hull and a shower of splinters.',
+          'Bigger hits sometimes leave the frames groaning under the strain, and broken chunks clatter onto the deck with hollow wooden knocks.',
+        ],
+      },
+      {
         title: 'Choose your weather',
         notes: [
           'Tap the little weather badge by the clock to cycle the skies: Auto, Clear, Fair, Cloudy, Mist, Rain and Storm.',

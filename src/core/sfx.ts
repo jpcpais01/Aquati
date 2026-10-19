@@ -403,53 +403,150 @@ export function waterImpact(sr: number, seed: number): Float32Array {
   return peakNorm(out, 0.92);
 }
 
+/** Feedback comb with a damped loop: turns a noise burst into a hollow, boxy wooden resonance. */
+function comb(x: Float32Array, sr: number, freq: number, fb: number, damp: number) {
+  const d = Math.max(1, Math.round(sr / freq));
+  const y = new Float32Array(x.length);
+  let z = 0;
+  for (let i = 0; i < x.length; i++) {
+    z = (i >= d ? y[i - d] : 0) * (1 - damp) + z * damp;
+    y[i] = x[i] + fb * z;
+  }
+  return y;
+}
+
+/** One brittle fracture: a needle-sharp pulse and a bright, very short burst of noise. */
+function snap(dst: Float32Array, sr: number, r: Rand, t0: number, amp: number, fLo: number, fHi: number, dec: number) {
+  const start = Math.floor(t0 * sr);
+  const f = new SVF(sr, fLo * Math.pow(fHi / fLo, r()), 0.7);
+  const td = 0.0003 + r() * 0.0004;
+  const len = Math.floor(dec * 6 * sr);
+  for (let i = 0; i < len && start + i < dst.length; i++) {
+    const t = i / sr;
+    f.run(r() * 2 - 1);
+    const pulse = t < td * 4 ? (1 - t / td) * Math.exp((-2.4 * t) / td) : 0;
+    dst[start + i] += (pulse * 0.8 + f.bp * 2.2 * Math.exp(-t / dec)) * amp;
+  }
+}
+
 /**
- * Round shot smashing into a hull: the crack of planking giving way, a heavy
- * dull "thunk" of oak taking the blow (noise through wide, heavily damped
- * resonances, so it reads as wood, not as a struck bell), a burst of
- * splinters snapping, then loose debris clattering onto the deck.
+ * Round shot smashing through a hull: oak planking failing all at once. A
+ * needle-sharp CRACK, the rapid crackling rip of fibres tearing through the
+ * strake, a hollow boom from the hull's timber cavity (combs, so it rings
+ * boxy and wooden rather than a soft, fleshy thud), a shower of splinters,
+ * sometimes a groan of stressed frames, then chunks clattering on deck.
  */
 export function woodImpact(sr: number, seed: number): Float32Array {
   const r = rng(seed);
-  const n = Math.floor(sr * 1.0);
-  const out = new Float32Array(n);
-  const crackHp = new SVF(sr, 1100, 0.6);
-  const crackBp = new SVF(sr, 1700 + r() * 800, 0.9);
-  const body = new SVF(sr, 230, 0.6);
-  const res = [150, 270, 470, 820].map((f) => new SVF(sr, f * (0.85 + r() * 0.3), 3.2));
-  const resAmp = [1, 0.8, 0.55, 0.35];
-  for (let i = 0; i < Math.floor(0.4 * sr); i++) {
+  const n = Math.floor(sr * 1.15);
+
+  // ---- the crack
+  const crack = new Float32Array(Math.floor(sr * 0.06));
+  const hp = new SVF(sr, 1500, 0.6);
+  const bp = new SVF(sr, 2400 + r() * 1200, 0.8);
+  for (let i = 0; i < crack.length; i++) {
     const t = i / sr;
     const w = r() * 2 - 1;
-    const att = 1 - Math.exp(-t / 0.0002);
-    crackHp.run(w);
-    crackBp.run(w);
-    body.run(w);
-    // timbers: a short noise blow through damped resonances
-    const hitEnv = att * Math.exp(-t / 0.018);
-    let wood = 0;
-    for (let m = 0; m < res.length; m++) {
-      res[m].run(w * hitEnv);
-      wood += res[m].bp * resAmp[m];
-    }
-    out[i] +=
-      crackHp.hp * att * Math.exp(-t / 0.005) * 1.4 +
-      crackBp.bp * att * Math.exp(-t / 0.016) * 1.6 +
-      wood * 3.2 +
-      body.lp * (1 - Math.exp(-t / 0.002)) * Math.exp(-t / 0.05) * 3.5;
+    hp.run(w);
+    bp.run(w);
+    const td = 0.0008;
+    const pulse = (1 - t / td) * Math.exp((-2.4 * t) / td);
+    crack[i] = pulse * 0.9 + hp.hp * Math.exp(-t / 0.003) * 1.2 + bp.bp * Math.exp(-t / 0.01) * 2.5;
   }
-  // splinters: a dense, irregular crackle of fibres snapping
-  noiseGrains(out, sr, r, { count: 140, t0: 0.004, spread: 0.32, skew: 2.2, fLo: 1100, fHi: 7000, q: 1.3, durLo: 0.0007, durHi: 0.005, amp: 2.4, env: (t) => Math.exp(-t / 0.13) });
-  // a few bigger boards cracking
-  noiseGrains(out, sr, r, { count: 7, t0: 0.02, spread: 0.22, skew: 1.6, fLo: 500, fHi: 1800, q: 1.2, durLo: 0.006, durHi: 0.018, amp: 1.8 });
-  // chunks clattering down on deck
+  peakNorm(crack);
+
+  // ---- the tear: a fast, irregular cluster of fractures, then the plank giving way
+  const tear = new Float32Array(n);
+  let t = 0.003;
+  const cracks = 9 + Math.floor(r() * 6);
+  for (let k = 0; k < cracks; k++) {
+    t += 0.003 + r() * 0.012 * (1 + k / 5);
+    snap(tear, sr, r, t, (0.35 + 0.65 * r()) * Math.exp(-k / 8), 1200, 5500, 0.0015 + r() * 0.0035);
+  }
+  const gives = 2 + Math.floor(r() * 3);
+  for (let k = 0; k < gives; k++) snap(tear, sr, r, 0.07 + r() * 0.26, 0.45 + r() * 0.4, 700, 3500, 0.003 + r() * 0.006);
+  peakNorm(tear);
+
+  // ---- splinters
+  const splinters = new Float32Array(n);
+  noiseGrains(splinters, sr, r, { count: 280, t0: 0.004, spread: 0.55, skew: 1.9, fLo: 1500, fHi: 8500, q: 1.0, durLo: 0.0005, durHi: 0.004, amp: 1, env: (tt) => Math.exp(-tt / 0.17) });
+  peakNorm(splinters);
+
+  // ---- hollow hull boom
+  const kick = new Float32Array(Math.floor(sr * 0.5));
+  const lp = new SVF(sr, 700, 0.7);
+  const sub = new SVF(sr, 110, 0.7);
+  const subL = new Float32Array(kick.length);
+  for (let i = 0; i < kick.length; i++) {
+    const tt = i / sr;
+    const w = r() * 2 - 1;
+    lp.run(w);
+    sub.run(w);
+    kick[i] = lp.lp * (1 - Math.exp(-tt / 0.0006)) * Math.exp(-tt / 0.006);
+    subL[i] = sub.lp * (1 - Math.exp(-tt / 0.003)) * Math.exp(-tt / 0.11);
+  }
+  const boxA = comb(kick, sr, 88 + r() * 24, 0.62, 0.4);
+  const boxB = comb(kick, sr, 147 + r() * 30, 0.55, 0.5);
+  const boom = new Float32Array(kick.length);
+  mix(boom, peakNorm(boxA), 1);
+  mix(boom, peakNorm(boxB), 0.7);
+  mix(boom, peakNorm(subL), 0.6);
+  peakNorm(boom);
+
+  // ---- stressed frames groaning (not every time)
+  const groan = new Float32Array(n);
+  if (r() < 0.7) {
+    const res = [260, 470, 760, 1150].map((f) => new SVF(sr, f * (0.9 + r() * 0.2), 5));
+    const resAmp = [1, 0.7, 0.45, 0.25];
+    const g0 = Math.floor(0.1 * sr);
+    let ph = 0;
+    for (let i = 0; i < Math.floor(0.5 * sr) && g0 + i < n; i++) {
+      const tt = i / sr;
+      ph += (70 - 70 * Math.min(1, tt / 0.45) * 0.55) / sr;
+      let x = (r() * 2 - 1) * 0.04;
+      if (ph >= 1) {
+        ph -= 1;
+        x += 0.6 + r() * 0.6;
+      }
+      const u = (tt - 0.15) / 0.11;
+      const env = Math.exp(-u * u);
+      let y = 0;
+      for (let m = 0; m < res.length; m++) {
+        res[m].run(x * env);
+        y += res[m].bp * resAmp[m];
+      }
+      groan[g0 + i] = y;
+    }
+    peakNorm(groan);
+  }
+
+  // ---- chunks clattering onto the deck: short hollow wooden knocks
+  const debris = new Float32Array(n);
   const knocks = 3 + Math.floor(r() * 3);
   for (let k = 0; k < knocks; k++) {
-    const t0 = 0.16 + ((k + r()) / knocks) * 0.6;
-    const a = (0.7 + r() * 0.8) * Math.exp(-(t0 - 0.16) / 0.45);
-    noiseGrains(out, sr, r, { count: 1, t0, spread: 0, skew: 1, fLo: 380, fHi: 1300, q: 2.2, durLo: 0.008, durHi: 0.02, amp: a * 1.6 });
-    noiseGrains(out, sr, r, { count: 3, t0, spread: 0.03, skew: 1, fLo: 1500, fHi: 5000, q: 1.2, durLo: 0.0008, durHi: 0.003, amp: a });
+    const t0 = 0.18 + ((k + r()) / knocks) * 0.65;
+    const a = (0.5 + r() * 0.5) * Math.exp(-(t0 - 0.18) / 0.45);
+    const burst = new Float32Array(Math.floor(sr * 0.06));
+    const f = new SVF(sr, 2500, 0.7);
+    for (let i = 0; i < burst.length; i++) {
+      f.run(r() * 2 - 1);
+      burst[i] = f.lp * Math.exp(-i / sr / 0.0015);
+    }
+    const tok = peakNorm(comb(burst, sr, 380 + r() * 520, 0.6, 0.3));
+    mix(debris, tok, a, Math.floor(t0 * sr));
+    noiseGrains(debris, sr, r, { count: 4, t0, spread: 0.04, skew: 1, fLo: 1800, fHi: 6000, q: 1.1, durLo: 0.0006, durHi: 0.0025, amp: a * 0.6 });
   }
+  peakNorm(debris);
+
+  const out = new Float32Array(n);
+  mix(out, crack, 1);
+  mix(out, tear, 0.8);
+  mix(out, splinters, 0.42);
+  mix(out, boom, 0.62);
+  mix(out, groan, 0.13);
+  mix(out, debris, 0.22);
+  peakNorm(out);
+  saturate(out, 1.5);
   fadeTail(out, sr);
   return peakNorm(out, 0.92);
 }
