@@ -1,11 +1,13 @@
-// Synthesized soundscape: no audio files, all WebAudio.
-// Surf + wind beds, plus a bank of combat sounds rendered at startup by
+// Soundscape: surf + wind beds, plus a bank of combat sounds rendered at startup by
 // ./sfx (cannon blasts per caliber, recoil, impacts, explosions) played
 // through distance delay, air absorption and an island-echo reverb.
+// The harbour theme is the one recorded file: streamed, never decoded whole.
 
 import { BankKind, bankJobs, CALIBERS } from './sfx';
 
 const SPEED_OF_SOUND = 343;
+const MUSIC_URL = '/music/sunset-archipelago.mp3';
+const MUSIC_VOL = 0.55;
 
 const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
 const pick = <T>(a: T[]): T | undefined => a[(Math.random() * a.length) | 0];
@@ -30,7 +32,15 @@ export class Audio {
     whoosh: [],
     blast: [],
   };
+  private music: HTMLAudioElement | null = null;
+  private musicGain: GainNode | null = null;
+  private musicWanted = false;
+  private musicStop = 0;
   muted = false;
+
+  constructor() {
+    document.addEventListener('visibilitychange', () => this.syncMusic());
+  }
 
   start() {
     if (this.ctx) {
@@ -116,6 +126,64 @@ export class Audio {
   setMuted(m: boolean) {
     this.muted = m;
     if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
+    this.syncMusic(0.25);
+  }
+
+  /**
+   * Harbour theme on or off. It only sounds once start() has run inside a user
+   * gesture; until then the wish is remembered. Off fades out like a ship
+   * leaving the quay, then the stream pauses so it costs nothing at sea.
+   */
+  setMusic(on: boolean, restart = false) {
+    if (restart && on && !this.musicWanted && this.music) this.music.currentTime = 0;
+    if (on === this.musicWanted && (!on || (this.music && !this.music.paused))) return;
+    this.musicWanted = on;
+    this.syncMusic(on ? 1.6 : 2.4);
+  }
+
+  private syncMusic(fade = 0.6) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const audible = this.musicWanted && !this.muted && !document.hidden;
+    if (!this.music) {
+      if (!audible) return;
+      const el = new window.Audio();
+      el.src = MUSIC_URL;
+      el.loop = true;
+      el.preload = 'auto';
+      this.music = el;
+      try {
+        // route through WebAudio so fades work on iOS, where element.volume is read-only
+        this.musicGain = ctx.createGain();
+        this.musicGain.gain.value = 0;
+        ctx.createMediaElementSource(el).connect(this.musicGain).connect(ctx.destination);
+      } catch {
+        this.musicGain = null;
+        el.volume = 0;
+      }
+    }
+    const el = this.music;
+    const target = audible ? MUSIC_VOL : 0;
+    clearTimeout(this.musicStop);
+    if (audible && el.paused) void el.play().catch(() => {});
+    if (this.musicGain) {
+      const g = this.musicGain.gain;
+      const t = ctx.currentTime;
+      g.cancelScheduledValues(t);
+      g.setValueAtTime(g.value, t);
+      g.linearRampToValueAtTime(target, t + fade);
+    } else {
+      // fallback: step element.volume where it is writable
+      const from = el.volume;
+      const t0 = performance.now();
+      const step = () => {
+        const k = Math.min(1, (performance.now() - t0) / (fade * 1000));
+        el.volume = from + (target - from) * k;
+        if (k < 1) requestAnimationFrame(step);
+      };
+      step();
+    }
+    if (!audible) this.musicStop = window.setTimeout(() => el.pause(), fade * 1000 + 100);
   }
 
   /** Gusts rolling over the listener swell the wind bed. */

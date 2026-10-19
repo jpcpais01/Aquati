@@ -7,6 +7,7 @@ import { createEnvironment, FOG_COLOR, globalUniforms, SUN_COLOR, SUN_DIR } from
 import { Pipeline } from '../render/pipeline';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
+import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
@@ -51,6 +52,8 @@ export class Game {
   private world!: World;
   private projectiles = new Projectiles();
   private loot = new Loot();
+  private debris = new Debris();
+  private pushers: Pusher[] = [];
   private ships: Ship[] = [];
   private ais = new Map<Ship, PirateAI>();
   private player: Ship | null = null;
@@ -99,9 +102,17 @@ export class Game {
     sc.far = 900;
     this.opaque.add(this.sun, this.sun.target);
     this.opaque.fog = new THREE.Fog(FOG_COLOR.clone(), 380, 1500);
-    this.opaque.add(this.projectiles.mesh, this.loot.group);
+    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group);
 
     this.wireUI();
+    // browsers only let sound start from a gesture (and on phones a touch only
+    // counts once it lifts), so any tap or key in the harbour wakes the theme
+    const wake = () => {
+      if (this.state !== 'menu' && this.state !== 'loading') return;
+      this.audio.start();
+      this.audio.setMusic(true);
+    };
+    for (const ev of ['pointerup', 'touchend', 'keydown'] as const) addEventListener(ev, wake, true);
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state === 'playing') {
@@ -144,6 +155,7 @@ export class Game {
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
+    this.world.debris = this.debris;
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
@@ -266,6 +278,7 @@ export class Game {
     });
     s.model.sailMaterial.dispose();
     s.model.sailEmblemMaterial.dispose();
+    s.dispose();
   }
 
   private setPreview(id: ShipClassId) {
@@ -314,6 +327,7 @@ export class Game {
     this.input.enabled = false;
     this.ui.showHud(false);
     this.ui.showMenu(true);
+    this.audio.setMusic(true, true);
     this.rig.mode = 'orbit';
     this.setPreview(this.ui.selected);
     this.rig.snapTo(this.spawnPoint);
@@ -328,6 +342,7 @@ export class Game {
   private startVoyage() {
     if (!this.preview) return;
     this.audio.start();
+    this.audio.setMusic(false);
     const p = this.preview;
     this.preview = null;
     p.anchored = false;
@@ -350,6 +365,7 @@ export class Game {
     for (const s of this.ships.slice()) this.removeShip(s);
     this.projectiles.clear();
     this.loot.clear();
+    this.debris.clear();
     this.crew.clear();
     this.player = null;
     this.preview = null;
@@ -543,6 +559,9 @@ export class Game {
     this.resolveShipCollisions();
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
     this.projectiles.update(dt, w, this.ships);
+    this.pushers.length = 0;
+    for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
+    this.debris.update(dt, w, this.pushers);
 
     // player-centric systems
     const p = this.player;
@@ -655,6 +674,8 @@ export class Game {
         const a = ships[i];
         const b = ships[j];
         if (a.removed || b.removed) continue;
+        // wrecks settle below the keels of passing ships
+        if ((!a.alive && a.sinkT > 3) || (!b.alive && b.sinkT > 3)) continue;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
         const d = Math.hypot(dx, dz);
