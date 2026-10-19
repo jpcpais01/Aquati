@@ -491,7 +491,7 @@ export class Game {
     const p = this.player;
     if (p && this.state === 'playing') {
       if (p.alive && w.time - p.lastHit > 9) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.01 * dt);
-      const got = this.loot.update(dt, w, p.alive ? p.pos : null, p.cls.beam * 0.5 + 5);
+      const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2);
       for (const it of got) {
         p.gold += it.value;
         p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);

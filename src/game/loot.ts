@@ -104,10 +104,20 @@ export class Loot {
       // drift with the wind
       it.x += world.wind.dirX * 0.25 * dt;
       it.z += world.wind.dirZ * 0.25 * dt;
-      if (collector && Math.hypot(it.x - collector.x, it.z - collector.z) < radius) {
-        got.push(it);
-        this.items.splice(i, 1);
-        continue;
+      if (collector) {
+        const dx = collector.x - it.x, dz = collector.z - it.z;
+        const d = Math.hypot(dx, dz);
+        if (d < radius * 0.5) {
+          got.push(it);
+          this.items.splice(i, 1);
+          continue;
+        }
+        if (d < radius) {
+          // magnet: pull harder the closer it gets
+          const pull = Math.min(d, (6 + 26 * (1 - d / radius)) * dt);
+          it.x += (dx / d) * pull;
+          it.z += (dz / d) * pull;
+        }
       }
       if (it.age > 240) {
         this.items.splice(i, 1);
