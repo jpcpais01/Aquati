@@ -226,6 +226,51 @@ const REFL_FRAG = /* glsl */ `
     gl_FragColor = vec4(hit.rgb * hit.a, hit.a);
   }`;
 
+// The surface from below. Looking up, light from the sky bends in through a
+// bright circle overhead (Snell's window); past the critical angle the surface
+// reflects the deep like a rippling mirror. Crests glint where the foam rides.
+const UNDER_FRAG = /* glsl */ `
+  ${GLSL_ATMOS}
+  uniform sampler2D uNormalTex;
+  uniform vec4 uUnder;
+  uniform vec3 uUnderColor;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+  varying float vCrest;
+  varying float vTerrain;
+  varying float vViewDist;
+  void main() {
+    float t = uTime;
+    vec2 p = vWorld.xz;
+    vec2 wd = uWind.xy;
+    vec2 r1 = texture(uNormalTex, p * 0.043 + wd * t * 0.03).xy * 2.0 - 1.0;
+    vec2 r2 = texture(uNormalTex, p * 0.11 - wd * t * 0.021 + 0.37).xy * 2.0 - 1.0;
+    vec3 N = normalize(normalize(vNormal) + vec3(r1.x + r2.x * 0.6, 0.0, r1.y + r2.y * 0.6) * 0.2);
+    vec3 V = normalize(vWorld - cameraPosition);
+    float d = length(vWorld - cameraPosition);
+    vec3 deep = uUnderColor;
+    vec3 T = refract(V, -N, 1.333);
+    vec3 col;
+    if (dot(T, T) < 1e-4) {
+      // total internal reflection: the deep, mirrored, rippling
+      col = deep * (0.7 + 0.5 * abs(r1.x * r2.y));
+    } else {
+      T = normalize(T);
+      float ct = clamp(dot(T, N), 0.0, 1.0);
+      // transmission fades toward the rim of the window, where it flares
+      float through = smoothstep(0.0, 0.45, ct);
+      vec3 sky = skyColor(T) * 1.15 + uSunColor * pow(max(dot(T, uSunDir), 0.0), 160.0) * 2.5;
+      col = mix(deep * 1.4 + sky * 0.35, sky, through);
+      col += sky * 0.5 * (1.0 - smoothstep(0.0, 0.12, ct));
+    }
+    // foam on the crests, seen from beneath as soft bright patches
+    col += vec3(0.75, 0.85, 0.88) * uLight * smoothstep(0.3, 0.85, vCrest) * 0.35;
+    // the light comes down through the water to the eye
+    col *= exp(-d * vec3(0.16, 0.05, 0.035) * 0.55);
+    col = mix(col, deep, 1.0 - exp(-d / (uUnder.z * 1.6)));
+    gl_FragColor = vec4(col, 1.0);
+  }`;
+
 export interface OceanOptions {
   segments: number;
   half: number;
@@ -239,6 +284,14 @@ export class Ocean {
   readonly material: THREE.ShaderMaterial;
   /** Far sea out to the horizon; only worth drawing when the horizon is in view. */
   readonly apron: THREE.Mesh;
+  /**
+   * The sea seen from beneath (the farewell follows your ship under): the same
+   * swell, back faces only, as a bright rippling Snell's window onto the sky
+   * that turns to a mirror of the deep beyond the critical angle. It lives in
+   * the opaque scene, so everything above the waves hides behind it.
+   */
+  readonly underside: THREE.Mesh;
+  private under = false;
   /** The same surface again, tracing reflections into a half-resolution buffer. */
   readonly reflScene = new THREE.Scene();
   private readonly reflMaterial: THREE.ShaderMaterial;
@@ -619,6 +672,28 @@ export class Ocean {
     this.reflApron.visible = false;
     this.reflMesh.add(this.reflApron);
     this.reflScene.add(this.reflMesh);
+
+    this.underside = new THREE.Mesh(
+      this.mesh.geometry,
+      new THREE.ShaderMaterial({
+        uniforms: { ...uniforms },
+        defines: { HQ: this.material.defines.HQ },
+        side: THREE.BackSide,
+        vertexShader: OCEAN_VERT,
+        fragmentShader: UNDER_FRAG,
+      }),
+    );
+    this.underside.frustumCulled = false;
+    this.underside.visible = false;
+  }
+
+  /** Swap the sea for its underside while the camera is below the waves. */
+  setUnder(on: boolean) {
+    if (on === this.under) return;
+    this.under = on;
+    this.mesh.visible = !on;
+    this.reflMesh.visible = !on;
+    this.underside.visible = on;
   }
 
   /** Pushes changed wave amplitudes / steepness (sea state) to the GPU. */
@@ -635,6 +710,8 @@ export class Ocean {
     const s = this.snap * 4;
     this.mesh.position.set(Math.round(x / s) * s, 0, Math.round(z / s) * s);
     this.mesh.updateMatrixWorld();
+    this.underside.position.copy(this.mesh.position);
+    this.underside.updateMatrixWorld();
     this.reflMesh.position.copy(this.mesh.position);
     this.reflMesh.updateMatrixWorld();
   }
@@ -664,7 +741,7 @@ export class Ocean {
 
   /** Whether the half-resolution reflection pass has anything to do. */
   get reflecting() {
-    return (this.material.defines.SSR_STEPS as number) > 0;
+    return !this.under && (this.material.defines.SSR_STEPS as number) > 0;
   }
 
   /** Binds this frame's reflection buffer (and keeps the far sea in step with it). */

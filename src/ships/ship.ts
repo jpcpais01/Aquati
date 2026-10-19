@@ -450,13 +450,16 @@ export class Ship {
     targetRoll += this.rollKick;
     let sinkY = 0;
     let pitchTarget = targetPitch;
+    let swell = 1;
     if (!this.alive) {
       // the wreck settles into its final pose and lingers before slipping under
       this.sinkT += dt;
       const wr = this.dmg.wreckPose(this.sinkT, dt, world);
       sinkY = wr.y;
-      pitchTarget = targetPitch * 0.3 + wr.pitch;
-      targetRoll = targetRoll * 0.3 + wr.roll;
+      // once she's under, the swell no longer lifts her
+      swell = wr.afloat;
+      pitchTarget = targetPitch * 0.3 * swell + wr.pitch;
+      targetRoll = targetRoll * 0.3 * swell + wr.roll;
       if (wr.done) this.removed = true;
     } else {
       // flooding: she rides lower and lists toward her holes
@@ -464,7 +467,7 @@ export class Ship {
       sinkY = -this.dmg.lowered;
       targetRoll += this.dmg.list;
     }
-    this.heave += (targetHeave - this.heave) * resp;
+    this.heave += (targetHeave * swell - this.heave) * resp;
     this.pitch += (pitchTarget - this.pitch) * resp;
     this.roll += (targetRoll - this.roll) * resp;
 
@@ -603,7 +606,7 @@ export class Ship {
     }
     // fires when badly damaged or sinking
     const hpFrac = this.hp / this.maxHp;
-    this.burning = this.alive ? (hpFrac < 0.4 ? (0.4 - hpFrac) / 0.4 : 0) : this.sinkT < 22 ? 1 - this.sinkT / 26 : 0;
+    this.burning = this.alive ? (hpFrac < 0.4 ? (0.4 - hpFrac) / 0.4 : 0) : this.sinkT < 22 ? (1 - this.sinkT / 26) * swell : 0;
     // set alight by fire shot: the flames run along her whole deck
     if (this.afire > 0 && this.alive) this.burning = Math.max(this.burning, 0.55 + 0.45 * Math.min(1, this.afire / 8));
     if (this.burning > 0) {
