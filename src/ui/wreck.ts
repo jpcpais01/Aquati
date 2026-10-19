@@ -2,6 +2,7 @@ import './wreck.css';
 import { RARITY } from '../game/loot';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { crest, icon, ICONS } from './art';
+import { progressSaved } from '../core/progress';
 
 // "Lost to the Depths": the farewell when your ship goes down. A letterboxed
 // caption while the camera follows her under, then the voyage laid out over the
@@ -39,7 +40,7 @@ export interface WreckReport {
   events: VoyageEvent[];
 }
 
-interface Records {
+export interface Records {
   voyages: number;
   renown: number;
   gold: number;
@@ -48,7 +49,7 @@ interface Records {
   time: number;
 }
 
-const RECORDS_KEY = 'aquati.records';
+export const RECORDS_KEY = 'aquati.records';
 
 const RANKS: [number, string, string][] = [
   [0, 'Bilge Rat', 'Swabbed more decks than foes.'],
@@ -83,7 +84,7 @@ function rankOf(score: number) {
   return i;
 }
 
-function loadRecords(): Records {
+export function loadRecords(): Records {
   try {
     const r = JSON.parse(localStorage.getItem(RECORDS_KEY) || 'null');
     if (r && typeof r === 'object') return { voyages: 0, renown: 0, gold: 0, kills: 0, isles: 0, time: 0, ...r };
@@ -221,6 +222,7 @@ export class WreckScreen {
           time: Math.max(recs.time, r.time),
         }),
       );
+      progressSaved();
     } catch {
       /* private mode: no records kept */
     }

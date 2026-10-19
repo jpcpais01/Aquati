@@ -31,16 +31,18 @@ import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { ShipModel } from '../ships/shipModel';
 import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
-import { hullKey, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
+import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
-import type { VoyageEvent, WreckReport } from '../ui/wreck';
+import { loadRecords, type VoyageEvent, type WreckReport } from '../ui/wreck';
 import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
 import { PhotoMode } from '../ui/photo';
-import { FxItem, fxItem, Item as Cosmetic, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { FxItem, fxItem, Item as Cosmetic, POOL, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { Cloud, Part } from '../cloud/cloud';
+import { AccountPanel } from '../ui/account';
 import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, findTradeSites, portClearings } from '../port/site';
@@ -179,6 +181,10 @@ export class Game {
   private shipwright = new Customizer();
   // the treasure vault: purse, collection and the chest itself
   private vaultStore = new VaultStore();
+  // cloud saves: sign in from the harbour's top bar and progress follows you
+  private cloudSave = new Cloud();
+  /** Synced parts still to take up (the livery and ship wait for the harbour). */
+  private cloudParts = new Set<Part>();
   private vault = new Vault(this.vaultStore);
   // the chest out on the water, and what the vault is showing
   private vstage!: VaultStage;
@@ -469,6 +475,30 @@ export class Game {
     ui.hideLoading();
     this.last = performance.now();
     this.renderer.setAnimationLoop(() => this.frame());
+    // sign-in loads once the harbour is up, off the critical path
+    setTimeout(() => this.cloudSave.start(), 900);
+  }
+
+  /** The cloud rewrote some saves (another device's progress, or a sign-out). */
+  private applyCloud(parts: Set<Part>) {
+    if (parts.has('vault')) {
+      this.vaultStore.reload();
+      this.applyCosmetics();
+    }
+    if (!parts.has('look') && !parts.has('ship')) return;
+    parts.forEach((p) => this.cloudParts.add(p));
+    // the moored ship only changes in the harbour, between scenes
+    if (this.state === 'menu' && !this.vault.isOpen && !this.swBusy && this.adoptCloud()) this.setPreview(this.ui.selected);
+  }
+
+  /** Takes up a synced livery and favourite ship; true if the preview needs rebuilding. */
+  private adoptCloud() {
+    const p = this.cloudParts;
+    if (!p.size) return false;
+    if (p.has('look')) this.look = loadLook();
+    this.ui.adoptSavedShip();
+    p.clear();
+    return true;
   }
 
   private wireUI() {
@@ -565,6 +595,23 @@ export class Game {
     this.vaultStore.subscribe(syncDot);
     syncDot();
     this.wireVault();
+    const account = new AccountPanel(
+      this.cloudSave,
+      () => ({
+        gold: this.vaultStore.purse,
+        treasures: this.vaultStore.collected(),
+        total: POOL.length,
+        designs: loadDesigns().length,
+        voyages: loadRecords().voyages,
+      }),
+      () => this.ui.openOverlay('account'),
+      () => {
+        this.audio.start();
+        this.audio.click();
+      },
+    );
+    this.cloudSave.onWelcome = (w) => account.welcome(w);
+    this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     sw.setVault(this.vaultStore);
     sw.onEquip = () => this.applyCosmetics();
     sw.onVault = () => this.openVault();
@@ -1304,6 +1351,8 @@ export class Game {
 
   private enterMenu() {
     this.state = 'menu';
+    this.adoptCloud();
+    this.cloudSave.flush();
     this.player = null;
     this.input.enabled = false;
     this.ui.showHud(false);

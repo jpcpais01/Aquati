@@ -1,0 +1,22 @@
+rules_version = '2';
+
+// Shores of Fortune cloud saves. Each captain can read and write only their
+// own save (captains/{uid}) and their own hand-painted flags under it.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /captains/{uid} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.save is string
+        && request.resource.data.save.size() < 600000
+        && request.resource.data.rev is int;
+
+      match /paints/{hash} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow create, update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.d is string
+          && request.resource.data.d.size() < 900000;
+      }
+    }
+  }
+}
