@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T16:00Z',
     entries: [
       {
+        title: 'Five kinds of shot',
+        notes: [
+          'Your guns can now load five kinds of shot. Round shot is the reliable all-rounder and never runs out. Explosive shells burst on impact and hurt everything close by, even on a near miss. Fire shot sets a ship ablaze so she burns on, though rain beats the flames down. Chain shot scythes through the rigging, shredding sails and slowing her to a crawl. Grape shot sprays the deck at close range and cuts down gun crews so they reload slowly.',
+          'Each has its own look and sound in flight and on impact: fizzing fuses, red-hot iron trailing flame, two half-balls cartwheeling on their chain, a hail of musket balls.',
+          'On PC the Port and Starboard pills are gone. In their place is a rack of shot: press 1 to 5 (or R to cycle, or click) to load. The loaded shot sits in a ring whose left half fills as your port guns reload and right half as the starboard ones do. Q and E still fire each side.',
+          'On phones, tap the new shot button above Fire and pick from the fan.',
+          'Special shot is carried in short supply. Salvage, chests and every newly charted isle restock the magazine, and pirates load some nasty shot of their own now and then. Burning, shredded or short-handed ships show it on their health bar.',
+        ],
+      },
+      {
         title: 'Hull hits with real weight',
         notes: [
           'Cannonballs now strike a ship like a blow against a great oak structure. The whole hull booms like a vast wooden drum, the crack is heavier and splits deeper, and the planking rips apart in a longer, thicker tear.',

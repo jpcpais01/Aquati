@@ -42,6 +42,7 @@ import { Captain } from './captain';
 import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
 import { Loot, RARITY } from './loot';
+import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
 import { World } from './world';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
@@ -112,6 +113,8 @@ export class Game {
   private last = performance.now();
   private gunnery!: Gunnery;
   private gunTipShown = false;
+  /** Special shot aboard this voyage, in broadsides' worth (round shot never runs out). */
+  private ammoStock: AmmoStock = freshStock();
   private smokeT = 0;
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
@@ -270,6 +273,8 @@ export class Game {
     this.world.debris = this.debris;
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
+    this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
+    this.world.onStatus = (ship, st, by) => this.onStatus(ship as Ship, st, by as Ship | null);
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
     this.windField = new WindField(this.world.wind.dirX, this.world.wind.dirZ, q.tier === 0 ? 6 : 8);
     this.world.gustAt = (x, z) => this.windField.at(x, z);
@@ -331,6 +336,7 @@ export class Game {
     };
     ui.onSelect = (id) => this.setPreview(id);
     ui.onSail = () => this.startVoyage();
+    ui.onAmmo = (id) => this.selectAmmo(id);
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
     ui.onMap = (on) => this.setChart(on);
@@ -839,6 +845,9 @@ export class Game {
     this.voyageTime = 0;
     this.log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] };
     this.discovered.clear();
+    this.ammoStock = freshStock();
+    p.ammo = 'round';
+    this.ui.setFan(false);
     this.input.enabled = true;
     this.ui.showMenu(false);
     this.ui.showHud(true);
@@ -950,6 +959,29 @@ export class Game {
     }
     if (!ship.alive && ship !== this.player) this.onSunk(ship, attacker);
     if (!ship.alive && ship === this.player) this.onPlayerSunk('shot');
+  }
+
+  /** A ship burning (fire shot): the damage ticks up off her deck, in embers rather than a blow. */
+  private onBurn(ship: Ship, attacker: Ship | null, dmg: number) {
+    if (dmg <= 0) return;
+    const at = new THREE.Vector3(ship.pos.x, ship.root.position.y + ship.cls.freeboard + 2, ship.pos.z);
+    const [x, y, ok] = this.screenOf(at);
+    const p = this.player;
+    if (attacker === p && ship !== p && this.state === 'playing') this.log.dealt += dmg;
+    if (ok && (attacker === p || ship === p)) this.ui.floater(ship === p ? `-${Math.round(dmg)}` : `${Math.round(dmg)}`, x, y, 'burn');
+    if (!ship.alive && ship !== p && attacker) this.onSunk(ship, attacker);
+    if (!ship.alive && ship === p) this.onPlayerSunk('shot');
+  }
+
+  /** A special shot left its mark: say so over the ship, once per fresh effect. */
+  private onStatus(ship: Ship, st: 'ablaze' | 'shredded' | 'crew', attacker: Ship | null) {
+    const p = this.player;
+    if (!p || (attacker !== p && ship !== p)) return;
+    const at = new THREE.Vector3(ship.pos.x, ship.root.position.y + ship.cls.masts[0].height * 0.45 + 3, ship.pos.z);
+    const [x, y, ok] = this.screenOf(at);
+    const mine = ship === p;
+    const text = { ablaze: mine ? 'We\'re ablaze!' : 'Ablaze!', shredded: mine ? 'Sails shredded!' : 'Sails shredded', crew: mine ? 'Gun crews cut down!' : 'Crews cut down' }[st];
+    if (ok) this.ui.floater(text, x, y - 18, st);
   }
 
   private onSunk(ship: Ship, attacker: Ship) {
@@ -1115,11 +1147,72 @@ export class Game {
 
   private tryFire(side: Side) {
     const p = this.player!;
+    // a special the magazine has run out of: load round shot rather than leave the guns cold
+    if (this.ammoStock[p.ammo] <= 0) this.selectAmmo('round', true);
     const a = this.gunnery.aim(p, side);
+    const shot = p.ammo;
     if (p.fire(side, this.world, a.target, a.point)) {
       const sd = side === 'port' ? 1 : -1;
       this.log.shots += p.model.muzzles.filter((m) => m.side === sd).length;
+      if (shot !== 'round') {
+        this.ammoStock[shot] = Math.max(0, this.ammoStock[shot] - 1);
+        if (this.ammoStock[shot] <= 0) {
+          this.ui.toast(`Last of the ${AMMO[shot].name.toLowerCase()}`, 'Round shot loaded', 2.6);
+          this.selectAmmo('round', true);
+        }
+      }
     } else this.ui.flashBroadside(side);
+  }
+
+  /** Load a kind of shot for the next broadsides. Specials need some aboard. */
+  private selectAmmo(id: AmmoId, quiet = false) {
+    const p = this.player;
+    if (!p || !p.alive || (this.state !== 'playing' && this.state !== 'paused')) return;
+    if (this.ammoStock[id] <= 0) {
+      this.ui.ammoDenied(id);
+      if (!quiet) this.ui.toast(`No ${AMMO[id].name.toLowerCase()} left`, 'Salvage, chests and new isles restock the magazine', 2.8);
+      return;
+    }
+    if (p.ammo === id) {
+      if (!quiet) this.ui.showTag(id);
+      return;
+    }
+    p.ammo = id;
+    if (!quiet) {
+      this.audio.ammoSwap(AMMO_ORDER.indexOf(id));
+      this.ui.showTag(id);
+    }
+  }
+
+  /** R: the next kind of shot that's aboard. */
+  private cycleAmmo() {
+    const p = this.player;
+    if (!p) return;
+    const i = AMMO_ORDER.indexOf(p.ammo);
+    for (let k = 1; k <= AMMO_ORDER.length; k++) {
+      const id = AMMO_ORDER[(i + k) % AMMO_ORDER.length];
+      if (this.ammoStock[id] > 0) return this.selectAmmo(id);
+    }
+  }
+
+  /** Shot found in salvage or given by islanders. */
+  private stockAmmo(add: Partial<AmmoStock>, at: THREE.Vector3 | null) {
+    let line = '';
+    for (const id of SPECIALS) {
+      const n = add[id] ?? 0;
+      if (n <= 0) continue;
+      const before = this.ammoStock[id];
+      this.ammoStock[id] = Math.min(AMMO[id].max, before + n);
+      const got = this.ammoStock[id] - before;
+      if (got <= 0) continue;
+      this.ui.ammoGain(id, got);
+      line += `${line ? ' · ' : ''}+${got} ${AMMO[id].short}`;
+    }
+    if (line && at) {
+      const [x, y, ok] = this.screenOf(at);
+      if (ok) this.ui.floater(line, x, y - 22, 'ammo');
+    }
+    return line;
   }
 
   /** One-button fire: the loaded side with a foe in its arc, else the side facing the nearest foe. */
@@ -1150,6 +1243,11 @@ export class Game {
     }
     const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
     this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and warm light gathers around her, ${how}`, 5.5);
+    // and a little later, the shot rack
+    const pick = this.input.isTouch ? 'Tap the shot button above Fire' : 'Press 1 to 5, or click the rack';
+    setTimeout(() => {
+      if (this.state === 'playing') this.ui.toast('Choose your shot', `${pick}: shells burst, fire burns, chain shreds sails, grape cuts down crews`, 6);
+    }, 7000);
   }
 
   private controlPlayer() {
@@ -1167,6 +1265,8 @@ export class Game {
       p.rudder = clamp(angleDelta(p.heading, st.steerHeading) * 2.4, -1, 1);
       p.sailTarget = st.steerThrottle < 0.2 ? p.sailTarget : Math.ceil(st.steerThrottle * 3 - 0.05) / 3;
     } else p.rudder = st.rudder;
+    if (st.ammoPick >= 0) this.selectAmmo(AMMO_ORDER[st.ammoPick]);
+    if (st.ammoNext) this.cycleAmmo();
     if (st.firePort) this.tryFire('port');
     if (st.fireStarboard) this.tryFire('starboard');
     if (st.fireAuto) {
@@ -1264,6 +1364,7 @@ export class Game {
         p.gold += it.value;
         this.vaultStore.earn(it.value);
         p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
+        this.stockAmmo(ammoLoot(it.tier), new THREE.Vector3(it.x, 2, it.z));
         const [x, y] = this.screenOf(new THREE.Vector3(it.x, 2, it.z));
         if (it.tier === 0) {
           this.ui.floater(`+${it.value} gold`, x, y, 'loot');
@@ -1347,6 +1448,7 @@ export class Game {
     if (p && (this.state === 'playing' || this.state === 'paused')) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
+      this.ui.updateAmmo(p.ammo, this.ammoStock);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
       this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered);
     }
@@ -1480,7 +1582,9 @@ export class Game {
         this.note('isle', `Charted ${isl.name}`, `+${reward} gold`);
         p.gold += reward;
         this.vaultStore.earn(reward);
-        this.ui.toast(`Island discovered · +${reward} gold`, isl.name, 3.6);
+        // the islanders top up the magazine
+        const shot = this.stockAmmo({ shell: 1, fire: 1, chain: 1, grape: 1 }, null);
+        this.ui.toast(`Island discovered · +${reward} gold${shot ? ' · fresh shot' : ''}`, isl.name, 3.6);
         this.audio.chime();
       }
     }

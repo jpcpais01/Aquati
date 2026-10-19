@@ -48,6 +48,12 @@ export class Audio {
     whoosh: [],
     blast: [],
     crunch: [],
+    shell: [],
+    ignite: [],
+    steam: [],
+    grape: [],
+    chain: [],
+    flames: [],
   };
   private music: HTMLAudioElement | null = null;
   private musicGain: GainNode | null = null;
@@ -476,9 +482,72 @@ export class Audio {
     if (at >= 0) this.duck(at, dist < 40 ? 0.7 : 0.35);
   }
 
-  /** An enemy ball tearing past the listener, sweeping from one side to the other. */
-  whoosh(vol: number, pan: number, panTo: number) {
-    this.emit(pick(this.bank.whoosh), { vol: vol * 0.42, pan, panTo, dist: 0, rate: 0.85 + Math.random() * 0.3, wet: 0.1 });
+  /** An enemy ball tearing past the listener, sweeping from one side to the other. `pitch` < 1 for heavier, slower shot. */
+  whoosh(vol: number, pan: number, panTo: number, pitch = 1) {
+    this.emit(pick(this.bank.whoosh), { vol: vol * 0.42, pan, panTo, dist: 0, rate: (0.85 + Math.random() * 0.3) * pitch, wet: 0.1 });
+  }
+
+  /** An explosive shell bursting. */
+  shell(vol: number, pan: number, dist = 0) {
+    const at = this.emit(pick(this.bank.shell), { vol: vol * 0.85, pan, dist, rate: 0.94 + Math.random() * 0.12, wet: 0.65 });
+    if (at >= 0) this.duck(at, dist < 40 ? 0.45 : 0.2);
+  }
+
+  /** Fire shot catching on a hull. */
+  ignite(vol: number, pan: number, dist = 0) {
+    this.emit(pick(this.bank.ignite), { vol: vol * 0.7, pan, dist, rate: 0.9 + Math.random() * 0.2, wet: 0.35 });
+  }
+
+  /** Hot iron hissing into the sea. */
+  sizzle(vol: number, pan: number, dist = 0) {
+    this.emit(pick(this.bank.steam), { vol: vol * 0.38, pan, dist, rate: 0.85 + Math.random() * 0.3, wet: 0.25 });
+  }
+
+  /** Grape shot raking a deck. */
+  grape(vol: number, pan: number, dist = 0) {
+    this.emit(pick(this.bank.grape), { vol: vol * 0.75, pan, dist, rate: 0.9 + Math.random() * 0.2, wet: 0.35 });
+  }
+
+  /** Chain shot tearing through rigging. */
+  chain(vol: number, pan: number, dist = 0) {
+    this.emit(pick(this.bank.chain), { vol: vol * 0.7, pan, dist, rate: 0.9 + Math.random() * 0.2, wet: 0.35 });
+  }
+
+  /** A ship burning: the roar and crackle of flames on her deck. */
+  flames(vol: number, pan: number, dist = 0) {
+    this.emit(pick(this.bank.flames), { vol: vol * 0.32, pan, dist, rate: 0.85 + Math.random() * 0.3, wet: 0.3 });
+  }
+
+  /** Changing the shot: a ball of the new kind rolling into the gunner's hands and a click of the rack. */
+  ammoSwap(kind: number) {
+    const v = this.voice(0.22, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    // the iron ball's knock, lower for heavier loads
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    const f = [118, 96, 132, 150, 210][kind] ?? 118;
+    o.frequency.setValueAtTime(f * 1.5, t);
+    o.frequency.exponentialRampToValueAtTime(f, t + 0.06);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.18);
+    // a short metallic click from the rack
+    const c = ctx.createOscillator();
+    c.type = 'square';
+    c.frequency.value = 2400 + kind * 260;
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(0.0001, t + 0.05);
+    cg.gain.exponentialRampToValueAtTime(0.12, t + 0.052);
+    cg.gain.exponentialRampToValueAtTime(0.0005, t + 0.085);
+    c.connect(cg).connect(out);
+    c.start(t + 0.05);
+    c.stop(t + 0.1);
   }
 
   splash(vol: number, pan: number, dist = 0) {

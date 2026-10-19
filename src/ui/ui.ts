@@ -8,6 +8,8 @@ import { SeaChart, ChartScene } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
 import { WreckReport, WreckScreen } from './wreck';
+import { AMMO, AMMO_ORDER, AmmoId, AmmoStock } from '../game/ammo';
+import { ammoIcon } from './ammoArt';
 export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
@@ -17,6 +19,7 @@ const TIPS = [
   'Your guns fire to the sides: warm light around a foe means fire',
   'Salvage floats to you: sail close to collect it',
   'Every isle you chart pays a bounty',
+  'Chain shot shreds sails, grape cuts down gun crews, fire burns on',
   'Gusts darken the water: chase them for a burst of speed',
 ];
 
@@ -75,6 +78,15 @@ export class UI {
 
   private tipTimer = 0;
   private hudCache = new Map<string, string>();
+  /** The shot rack: a slot per kind of shot on the HUD, a chip per kind in the touch fan. */
+  onAmmo: (id: AmmoId) => void = () => {};
+  private rack = $('ammo-rack');
+  private fan = $('ammo-fan');
+  private ammoBtn = $('t-ammo');
+  private ammoSlots = new Map<AmmoId, HTMLElement>();
+  private fanChips = new Map<AmmoId, HTMLElement>();
+  private tagT = 0;
+  private fanT = 0;
   private menuKeys = (e: KeyboardEvent) => this.onMenuKey(e);
 
   constructor() {
@@ -85,6 +97,7 @@ export class UI {
     $('map-bezel').innerHTML = compassBezel();
     this.startTips();
     this.buildShipPicker();
+    this.buildRack();
     this.syncSound();
     this.markNotes();
     $('btn-sail').addEventListener('click', () => {
@@ -667,13 +680,13 @@ export class UI {
     $('t-spy').classList.toggle('on', q > 0.5);
   }
 
-  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' = '') {
+  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' | 'burn' | 'ablaze' | 'shredded' | 'crew' | 'ammo' = '') {
     const f = this.floaterPool.find((p) => p.t >= p.life) ?? this.floaterPool[0];
     f.el.textContent = text;
     f.el.className = 'floater' + (kind ? ' ' + kind : '');
     f.el.style.display = 'block';
     f.t = 0;
-    f.life = kind === 'legendary' ? 2.4 : kind === 'epic' ? 1.9 : kind === 'rare' ? 1.6 : 1.3;
+    f.life = kind === 'legendary' ? 2.4 : kind === 'epic' ? 1.9 : kind === 'rare' || kind === 'ablaze' || kind === 'shredded' || kind === 'crew' || kind === 'ammo' ? 1.6 : 1.3;
     f.x = x + (Math.random() - 0.5) * 24;
     f.y = y;
     f.vy = -48;
@@ -748,21 +761,148 @@ export class UI {
       const pips = $('hud-sails').children;
       for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lvl);
     }
-    const ring = (id: string, touchId: string, reload: number) => {
-      const k = Math.min(1, Math.max(0, 1 - reload / p.cls.reload));
+    // reload: the loaded shot's ring fills, its left half for port and right half for starboard
+    const ring = (side: 'port' | 'starboard', touchId: string) => {
+      const reload = p.reload[side];
+      const k = Math.min(1, Math.max(0, 1 - reload / p.reloadFull[side]));
       const ks = k.toFixed(2);
       const ready = reload <= 0;
-      if (this.hudCache.get(id) === ks + ready) return;
-      this.hudCache.set(id, ks + ready);
-      const el = $(id);
-      (el.querySelector('circle.p') as SVGCircleElement).style.strokeDashoffset = `${(106.8 * (1 - k)).toFixed(1)}`;
-      el.classList.toggle('ready', ready);
+      const key = side === 'port' ? 'rl-p' : 'rl-s';
+      if (this.hudCache.get(key) === ks + ready) return;
+      this.hudCache.set(key, ks + ready);
+      this.rack.style.setProperty(side === 'port' ? '--rp' : '--rs', ks);
+      this.rack.classList.toggle(side === 'port' ? 'p-ready' : 's-ready', ready);
       const t = $(touchId);
       t.style.setProperty('--rl', ks);
       t.classList.toggle('ready', ready);
     };
-    ring('bs-port', 't-port', p.reload.port);
-    ring('bs-star', 't-star', p.reload.starboard);
+    ring('port', 't-port');
+    ring('starboard', 't-star');
+  }
+
+  // ------------------------------------------------------------- the shot rack
+
+  private buildRack() {
+    const pick = (id: AmmoId) => (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.onAmmo(id);
+    };
+    AMMO_ORDER.forEach((id, i) => {
+      const a = AMMO[id];
+      const slot = document.createElement('button');
+      slot.className = 'slot';
+      slot.dataset.ammo = id;
+      slot.setAttribute('role', 'radio');
+      slot.setAttribute('aria-label', a.name);
+      slot.title = `${a.name} (${i + 1}): ${a.blurb}`;
+      slot.style.setProperty('--ac', a.css);
+      slot.innerHTML = `<span class="ball">${ammoIcon(id)}</span><kbd class="kd">${i + 1}</kbd><b class="n"></b><em class="gain"></em>`;
+      slot.addEventListener('pointerdown', pick(id));
+      slot.addEventListener('mouseenter', () => this.showTag(id, false));
+      slot.addEventListener('mouseleave', () => this.hideTag());
+      this.rack.appendChild(slot);
+      this.ammoSlots.set(id, slot);
+
+      const chip = document.createElement('button');
+      chip.className = 'chip-a';
+      chip.dataset.ammo = id;
+      chip.style.setProperty('--i', `${i}`);
+      chip.style.setProperty('--ac', a.css);
+      chip.setAttribute('aria-label', a.name);
+      chip.innerHTML = `${ammoIcon(id)}<b class="n"></b><small>${a.short}</small>`;
+      chip.addEventListener('pointerdown', (e) => {
+        pick(id)(e);
+        this.setFan(false);
+      });
+      this.fan.appendChild(chip);
+      this.fanChips.set(id, chip);
+    });
+    this.ammoBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this.setFan(!this.fan.classList.contains('open'));
+      navigator.vibrate?.(8);
+    });
+    this.ammoBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  /** Touch: the fan of shot chips around the shot button. Closes itself after a few idle seconds. */
+  setFan(open: boolean) {
+    this.fan.classList.toggle('open', open);
+    this.ammoBtn.classList.toggle('open', open);
+    clearTimeout(this.fanT);
+    if (open) this.fanT = window.setTimeout(() => this.setFan(false), 4000);
+  }
+
+  /** The loaded shot and what's left of each. */
+  updateAmmo(sel: AmmoId, stock: AmmoStock) {
+    const key = sel + AMMO_ORDER.map((id) => stock[id]).join(',');
+    if (this.hudCache.get('ammo') === key) return;
+    const prevSel = this.hudCache.get('ammo-sel');
+    this.hudCache.set('ammo', key);
+    this.hudCache.set('ammo-sel', sel);
+    for (const id of AMMO_ORDER) {
+      const n = stock[id];
+      const txt = Number.isFinite(n) ? `${n}` : '∞';
+      for (const el of [this.ammoSlots.get(id)!, this.fanChips.get(id)!]) {
+        el.classList.toggle('on', id === sel);
+        el.classList.toggle('empty', n <= 0);
+        el.setAttribute('aria-checked', `${id === sel}`);
+        (el.querySelector('.n') as HTMLElement).textContent = txt;
+      }
+    }
+    this.rack.style.setProperty('--ac', AMMO[sel].css);
+    const b = this.ammoBtn;
+    b.style.setProperty('--ac', AMMO[sel].css);
+    if (prevSel !== sel) (b.querySelector('.ab') as HTMLElement).innerHTML = ammoIcon(sel);
+    const n = stock[sel];
+    (b.querySelector('.ac') as HTMLElement).textContent = Number.isFinite(n) ? `${n}` : '';
+    b.classList.toggle('special', sel !== 'round');
+  }
+
+  /** Just loaded a new kind: its name and what it does float over the rack for a moment. */
+  showTag(id: AmmoId, flash = true) {
+    const a = AMMO[id];
+    const tag = $('ammo-tag');
+    (tag.firstElementChild as HTMLElement).textContent = a.name;
+    (tag.lastElementChild as HTMLElement).textContent = a.blurb.split('. ')[0].replace(/\.$/, '');
+    tag.style.setProperty('--ac', a.css);
+    tag.classList.add('show');
+    clearTimeout(this.tagT);
+    if (flash) {
+      this.tagT = window.setTimeout(() => this.hideTag(), 2400);
+      for (const el of [this.ammoSlots.get(id)!, this.ammoBtn]) {
+        el.classList.remove('load');
+        void el.offsetWidth;
+        el.classList.add('load');
+      }
+    }
+  }
+
+  private hideTag() {
+    clearTimeout(this.tagT);
+    $('ammo-tag').classList.remove('show');
+  }
+
+  /** None of that shot left. */
+  ammoDenied(id: AmmoId) {
+    for (const el of [this.ammoSlots.get(id)!, this.fanChips.get(id)!]) {
+      el.classList.remove('deny');
+      void el.offsetWidth;
+      el.classList.add('deny');
+    }
+  }
+
+  /** Shot found in salvage: the slot bounces and a little "+n" rises off it. */
+  ammoGain(id: AmmoId, n: number) {
+    for (const el of [this.ammoSlots.get(id)!, this.ammoBtn]) {
+      const g = el.querySelector('.gain') as HTMLElement | null;
+      if (g) g.textContent = `+${n}`;
+      el.classList.remove('gain-on');
+      void el.offsetWidth;
+      el.classList.add('gain-on');
+    }
   }
 
   /** A side's badge warms while a foe sits in its loaded arc. */
@@ -773,8 +913,8 @@ export class UI {
     const key = `${+hotP}${+hotS}${+hotA}${auto ?? '-'}`;
     if (this.hudCache.get('guns') === key) return;
     this.hudCache.set('guns', key);
-    $('bs-port').classList.toggle('hot', hotP);
-    $('bs-star').classList.toggle('hot', hotS);
+    this.rack.classList.toggle('p-hot', hotP);
+    this.rack.classList.toggle('s-hot', hotS);
     $('t-port').classList.toggle('hot', hotP);
     $('t-star').classList.toggle('hot', hotS);
     // the big Fire button looses whichever side is outlined
@@ -785,21 +925,21 @@ export class UI {
 
   /** A broadside just finished reloading mid-fight. */
   gunsReady(side: 'port' | 'starboard') {
-    for (const id of side === 'port' ? ['bs-port', 't-port'] : ['bs-star', 't-star']) {
-      const el = $(id);
-      el.classList.remove('ping');
+    const els: [HTMLElement, string][] = [[$(side === 'port' ? 't-port' : 't-star'), 'ping'], [this.rack, side === 'port' ? 'ping-p' : 'ping-s']];
+    for (const [el, cls] of els) {
+      el.classList.remove(cls);
       void el.offsetWidth;
-      el.classList.add('ping');
-      setTimeout(() => el.classList.remove('ping'), 650);
+      el.classList.add(cls);
+      setTimeout(() => el.classList.remove(cls), 650);
     }
   }
 
   flashBroadside(side: 'port' | 'starboard') {
-    for (const id of side === 'port' ? ['bs-port', 't-port'] : ['bs-star', 't-star']) {
-      const el = $(id);
-      el.classList.remove('flash');
+    const els: [HTMLElement, string][] = [[$(side === 'port' ? 't-port' : 't-star'), 'flash'], [this.rack, side === 'port' ? 'flash-p' : 'flash-s']];
+    for (const [el, cls] of els) {
+      el.classList.remove(cls);
       void el.offsetWidth;
-      el.classList.add('flash');
+      el.classList.add(cls);
     }
   }
 
@@ -857,7 +997,7 @@ export class UI {
       if (!el) {
         el = document.createElement('div');
         el.className = 'ebar';
-        el.innerHTML = `<i></i><span>${s.cls.name}</span>`;
+        el.innerHTML = `<i></i><span>${s.cls.name}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
         this.bars.appendChild(el);
         this.barEls.set(s.id, el);
       }
@@ -865,6 +1005,14 @@ export class UI {
       const y = (-v.y * 0.5 + 0.5) * h;
       el.style.transform = `translate(${x}px, ${y}px)`;
       (el.firstElementChild as HTMLElement).style.transform = `scaleX(${s.hp / s.maxHp})`;
+      // what special shot has done to her: ablaze, sails shredded, crews thinned
+      const st = `${+(s.afire > 0)}${+(s.torn > 0)}${+(s.crewHit > 0)}`;
+      if (el.dataset.st !== st) {
+        el.dataset.st = st;
+        el.classList.toggle('afire', s.afire > 0);
+        el.classList.toggle('torn', s.torn > 0);
+        el.classList.toggle('crew', s.crewHit > 0);
+      }
     }
     this.barEls.forEach((el, id) => {
       if (!seen.has(id)) {

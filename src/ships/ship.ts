@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { angleDelta, clamp, damp, lerp } from '../core/noise';
 import { World } from '../game/world';
+import { AMMO, AmmoId, EFFECT } from '../game/ammo';
+import { globalUniforms } from '../render/environment';
 import { ShipModel } from './shipModel';
 import { ShipDamage, WRECK_LIFE } from './shipDamage';
 import { Livery, ShipClass } from './shipTypes';
@@ -12,6 +14,7 @@ interface PendingShot {
   muzzle: number;
   target: Ship | null;
   point: THREE.Vector3 | null;
+  ammo: AmmoId;
 }
 
 /** How far a player's guns can train fore and aft of square, radians. The firing arcs on the water show exactly this. */
@@ -88,6 +91,19 @@ export class Ship {
   wreckLife = WRECK_LIFE;
   removed = false;
   reload = { port: 0, starboard: 0 };
+  /** The full reload each side started from (it depends on the shot loaded). */
+  readonly reloadFull: { port: number; starboard: number };
+  /** The shot the guns load for the next broadside. */
+  ammo: AmmoId = 'round';
+  /** Seconds left burning (fire shot), and who lit her. */
+  afire = 0;
+  afireBy: Ship | null = null;
+  /** Seconds the canvas stays shredded (chain shot). */
+  torn = 0;
+  /** Seconds the gun crews stay thinned (grape shot). */
+  crewHit = 0;
+  private burnAcc = 0;
+  private burnT = 0;
   lastHit = -100;
   lastAttacker: Ship | null = null;
   burning = 0;
@@ -127,6 +143,37 @@ export class Ship {
     this.hp = cls.hp;
     this.name = cls.title;
     this.gunFiredAt = this.model.muzzles.map(() => -100);
+    this.reloadFull = { port: cls.reload, starboard: cls.reload };
+  }
+
+  /** Muzzle velocity with the loaded shot (lighter and lumpier shot flies slower and falls shorter). */
+  get muzzleSpeed() {
+    return this.cls.muzzleSpeed * AMMO[this.ammo].speed;
+  }
+
+  /** Fire shot struck home: she burns for longer with each ball. Returns true if she just caught. */
+  ignite(by: Ship | null): boolean {
+    if (!this.alive) return false;
+    const fresh = this.afire <= 0;
+    this.afire = Math.min(EFFECT.burnMax, Math.max(0, this.afire) + EFFECT.burnPerHit);
+    if (by) this.afireBy = by;
+    return fresh;
+  }
+
+  /** Chain shot tore through the canvas. Returns true if her sails were whole a moment ago. */
+  shred(): boolean {
+    if (!this.alive) return false;
+    const fresh = this.torn <= 0;
+    this.torn = EFFECT.tornTime;
+    return fresh;
+  }
+
+  /** Grape shot swept the deck. Returns true if her crews were at full strength. */
+  rake(): boolean {
+    if (!this.alive) return false;
+    const fresh = this.crewHit <= 0;
+    this.crewHit = EFFECT.crewTime;
+    return fresh;
   }
 
   /** Heel the hull over by `amount` radians (positive lifts the port rail); it springs back on its own. */
@@ -177,8 +224,9 @@ export class Ship {
     // fire from the middle outward for a rolling thunder
     ms.sort((a, b) => Math.abs(a.m.pos.z) - Math.abs(b.m.pos.z));
     const pt = point ? point.clone() : null;
-    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt }));
-    this.reload[side] = this.cls.reload;
+    const ammo = this.ammo;
+    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt, ammo }));
+    this.reload[side] = this.reloadFull[side] = this.cls.reload * AMMO[ammo].reload;
     this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass;
     return true;
   }
@@ -189,7 +237,8 @@ export class Ship {
     this.root.updateMatrixWorld();
     const pos = m.pos.clone().applyMatrix4(this.model.root.matrixWorld);
     const dir = m.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
-    const v = this.cls.muzzleSpeed * (0.97 + Math.random() * 0.06);
+    const am = AMMO[p.ammo];
+    const v = this.cls.muzzleSpeed * am.speed * (0.97 + Math.random() * 0.06);
     const g = GRAVITY;
     const mine = this.team === 'player';
     let dist = 60;
@@ -219,11 +268,20 @@ export class Ship {
     const sloppy = mine ? 1 : 2.4;
     const yaw = (Math.random() - 0.5) * 0.035 * sloppy;
     const pitch = elev + (Math.random() - 0.5) * 0.02 * sloppy;
-    const fa = Math.atan2(dir.x, dir.z) + yaw;
-    const vel = new THREE.Vector3(Math.sin(fa) * Math.cos(pitch), Math.sin(pitch), Math.cos(fa) * Math.cos(pitch)).multiplyScalar(v);
-    vel.add(this.vel);
-    world.onShot({ pos, vel, owner: this, damage: this.cls.damage, trail: this.cannonFx.trail });
+    const fa0 = Math.atan2(dir.x, dir.z) + yaw;
+    // grape: a bag of balls bursting out in a cone; everything else, one ball
+    for (let b = 0; b < am.balls; b++) {
+      const sy = b ? (Math.random() - 0.5) * 2 * am.spread : 0;
+      const sp = b ? (Math.random() - 0.5) * am.spread : 0;
+      const fa = fa0 + sy;
+      const pa = pitch + sp;
+      const vk = b ? 0.94 + Math.random() * 0.1 : 1;
+      const vel = new THREE.Vector3(Math.sin(fa) * Math.cos(pa), Math.sin(pa), Math.cos(fa) * Math.cos(pa)).multiplyScalar(v * vk);
+      vel.add(this.vel);
+      world.onShot({ pos: b ? pos.clone() : pos, vel, owner: this, damage: this.cls.damage * am.damage, trail: am.trail ?? this.cannonFx.trail, ammo: p.ammo });
+    }
     world.particles.muzzle(pos, dir, this.vel, this.cannonFx.blast);
+    if (p.ammo !== 'round') world.particles.ammoMuzzle(pos, dir, this.vel, p.ammo);
     if (this.cannonFx.blast === 'thunder') {
       // the thunderclap's shockwave rings out across the water
       const wx = pos.x + dir.x * 2.5;
@@ -270,8 +328,34 @@ export class Ship {
         }
       }
     }
-    this.reload.port = Math.max(0, this.reload.port - dt);
-    this.reload.starboard = Math.max(0, this.reload.starboard - dt);
+    // grape shot thinned the gun crews: the survivors reload slower
+    const rl = dt * (this.crewHit > 0 ? EFFECT.crewReload : 1);
+    this.reload.port = Math.max(0, this.reload.port - rl);
+    this.reload.starboard = Math.max(0, this.reload.starboard - rl);
+    this.crewHit = Math.max(0, this.crewHit - dt);
+    this.torn = Math.max(0, this.torn - dt);
+    if (this.afire > 0) {
+      // rain beats the flames down sooner
+      this.afire -= dt * (1 + globalUniforms.uRain.value * 1.6);
+      if (this.alive) {
+        this.burnAcc += this.maxHp * EFFECT.burnRate * dt;
+        this.burnT += dt;
+        if (this.burnT >= 0.8 || this.afire <= 0) {
+          const d = this.damage(this.burnAcc, this.afireBy, world, null, false);
+          world.onDot(this, this.afireBy, d);
+          if (Math.random() < 0.5) {
+            const [vol, pan, dd] = world.soundAt(this.pos);
+            world.audio.flames(vol, pan, dd);
+          }
+          this.burnAcc = 0;
+          this.burnT = 0;
+        }
+      }
+      if (this.afire <= 0) {
+        this.afire = 0;
+        this.afireBy = null;
+      }
+    }
 
     // ------------------------------------------------ sailing
     const fwd = this.forward;
@@ -283,7 +367,9 @@ export class Ship {
     const gust = world.gustAt(this.pos.x, this.pos.z);
     if (this.alive) {
       this.sailLevel += clamp(this.sailTarget - this.sailLevel, -dt * 0.6, dt * 0.6);
-      const hpF = (0.72 + 0.28 * (this.hp / this.maxHp)) * this.dmg.speedFactor;
+      // shredded canvas (chain shot) draws far less wind, mending over the last few seconds
+      const tornK = 1 - EFFECT.tornSlow * Math.min(1, this.torn / 3);
+      const hpF = (0.72 + 0.28 * (this.hp / this.maxHp)) * this.dmg.speedFactor * tornK;
       const target = c.maxSpeed * this.sailLevel * windFactor(relDeg) * (0.75 + 0.25 * w.strength) * hpF * (1 + gust * 0.08);
       const rate = target > this.speed ? c.accel : c.accel * 1.4;
       this.speed += (target - this.speed) * damp(rate, dt);
@@ -518,6 +604,8 @@ export class Ship {
     // fires when badly damaged or sinking
     const hpFrac = this.hp / this.maxHp;
     this.burning = this.alive ? (hpFrac < 0.4 ? (0.4 - hpFrac) / 0.4 : 0) : this.sinkT < 22 ? 1 - this.sinkT / 26 : 0;
+    // set alight by fire shot: the flames run along her whole deck
+    if (this.afire > 0 && this.alive) this.burning = Math.max(this.burning, 0.55 + 0.45 * Math.min(1, this.afire / 8));
     if (this.burning > 0) {
       this.fireT += dt * (2 + this.burning * 10);
       while (this.fireT > 1) {
