@@ -110,8 +110,9 @@ export class Ship {
   private galleyT = Math.random();
   name: string;
 
-  constructor(readonly cls: ShipClass, readonly livery: Livery, readonly team: Team, quality = 1) {
-    this.model = new ShipModel(cls, livery, quality);
+  /** `model` may be one built ahead of time (see ShipModel's deferred build). */
+  constructor(readonly cls: ShipClass, readonly livery: Livery, readonly team: Team, quality = 1, model?: ShipModel) {
+    this.model = model ?? new ShipModel(cls, livery, quality);
     this.root.add(this.model.root);
     this.root.rotation.order = 'YXZ';
     this.dmg = new ShipDamage(this);

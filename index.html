@@ -34,6 +34,7 @@
       <nav class="menu-tools">
         <button class="tool" id="btn-notes" title="Patch notes"><span class="ti" data-icon="scroll"></span><span class="tl">Patch notes</span><i class="new-dot" id="notes-dot"></i></button>
         <button class="tool" id="btn-controls" title="Controls"><span class="ti" data-icon="keys"></span><span class="tl">Controls</span></button>
+        <button class="tool" id="btn-graphics" title="Graphics"><span class="ti"></span><span class="tl">Graphics</span></button>
         <button class="tool icon-only" id="btn-refresh" title="Refresh: fetch the latest version and reload"><span class="ti" data-icon="refresh"></span></button>
         <button class="tool sound-toggle icon-only" id="btn-sound" title="Sound"><span class="ti"></span></button>
       </nav>
@@ -104,6 +105,7 @@
         <div class="btn-row">
           <button class="btn" id="btn-notes2"><span class="ti" data-icon="scroll"></span>Notes</button>
           <button class="btn" id="btn-controls2"><span class="ti" data-icon="keys"></span>Controls</button>
+          <button class="btn" id="btn-graphics2" title="Graphics"><span class="ti"></span><span class="tl">Graphics</span></button>
           <button class="btn sound-toggle" id="btn-sound2"><span class="ti"></span></button>
         </div>
         <button class="btn ghost" id="btn-quit"><span class="ti" data-icon="harbour"></span>Return to harbour</button>
@@ -197,6 +199,16 @@
           </section>
           <div class="ctl-tip"><span class="ti" data-icon="wheel"></span>Sail across the wind for the best speed. Heading straight into it is slow going.</div>
         </div>
+      </div>
+    </div>
+
+    <div id="graphics" class="screen dim hidden">
+      <div class="card-modal ornate gfx-card">
+        <button class="round-btn modal-x" data-close title="Close (Esc)"><span class="ti" data-icon="close"></span></button>
+        <h2>Graphics</h2>
+        <p class="sub">Tune the light and the sea, live</p>
+        <div class="rule"></div>
+        <div class="gfx-body" id="gfx-body"></div>
       </div>
     </div>
 

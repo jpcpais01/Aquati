@@ -26,6 +26,12 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 const cloneBase = new WeakMap<THREE.Material, THREE.Material>();
 
+// Snapping a spar off slices whole merged meshes, the heaviest thing a hit can
+// do. Breaks are queued and the fleet shares one per frame, so a broadside that
+// dismasts a ship (or a magazine that drops every mast at once) spreads its
+// work over a few frames instead of landing in one.
+let heavyAt = -1;
+
 /** Per-hull damage clones of a ship's patched materials, all sharing one uniform set. */
 class DamageSkin {
   readonly uniforms: {
@@ -170,6 +176,7 @@ export class ShipDamage {
   private canvas = 0;
   private smokeT = 0;
   private hinges: Hinge[] = [];
+  private breakQueue: (() => void)[] = [];
   private originals = new Map<THREE.Mesh | THREE.LineSegments, THREE.BufferGeometry>();
   private hidden: THREE.Object3D[] = [];
   private caps: THREE.Mesh[] = [];
@@ -611,7 +618,8 @@ export class ShipDamage {
     dir.z = clamp(dir.z, -0.35, 0.35);
     dir.normalize();
     const axis = new THREE.Vector3().crossVectors(UP, dir).normalize();
-    this.breakOff(cut, new THREE.Vector3(0, yCut, m.z), axis, UP, H - (yCut - m.y0), delay, rand(1.15, 1.35), world);
+    const max = rand(1.15, 1.35);
+    this.breakQueue.push(() => this.breakOff(cut, new THREE.Vector3(0, yCut, m.z), axis, UP, H - (yCut - m.y0), delay, max, world));
   }
 
   private breakBowsprit(world: World, delay: number) {
@@ -626,7 +634,14 @@ export class ShipDamage {
       lateral: (p) => p.y > yMin && Math.abs(p.x) < 1.6,
     };
     const long = new THREE.Vector3(0, Math.sin(0.32), Math.cos(0.32));
-    this.breakOff(cut, new THREE.Vector3(0, s.top(0.985) - 0.25, zc), new THREE.Vector3(1, 0, 0), long, c.bowsprit, delay, 0.95, world);
+    this.breakQueue.push(() => this.breakOff(cut, new THREE.Vector3(0, s.top(0.985) - 0.25, zc), new THREE.Vector3(1, 0, 0), long, c.bowsprit, delay, 0.95, world));
+  }
+
+  /** Runs at most one queued break per frame, fleet-wide. */
+  private drainBreaks(world: World) {
+    if (!this.breakQueue.length || heavyAt === world.time) return;
+    heavyAt = world.time;
+    this.breakQueue.shift()!();
   }
 
   private releaseHinge(h: Hinge, world: World) {
@@ -668,6 +683,7 @@ export class ShipDamage {
    * shower of sawdust before the rigging is made fast.
    */
   private repairRig(world: World) {
+    while (this.breakQueue.length) this.breakQueue.shift()!();
     for (const h of this.hinges) this.releaseHinge(h, world);
     this.hinges.length = 0;
     if (!this.spars.length) {
@@ -844,6 +860,7 @@ export class ShipDamage {
       }
     }
 
+    this.drainBreaks(world);
     this.updateHinges(dt, world);
   }
 
@@ -906,7 +923,8 @@ export class ShipDamage {
         if (!m.broken) this.breakMast(i, new THREE.Vector3(fallSide * rand(0.6, 1), 0, rand(-0.3, 0.3)), world, rand(0.15, 2.4));
       });
       this.breakBowsprit(world, rand(0.3, 1.6));
-      this.splitHull(world);
+      // the hull snaps once every spar has come away (queued behind them)
+      this.breakQueue.push(() => this.splitHull(world));
       k.sternA = rand(0.32, 0.55);
       k.bowA = rand(0.22, 0.48);
       k.sternR = rand(-0.25, 0.25);
@@ -1023,6 +1041,7 @@ export class ShipDamage {
         });
       }
     }
+    this.drainBreaks(world);
     this.updateHinges(dt, world);
     this.state.y = this.ship.burning;
     for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40);
@@ -1037,5 +1056,6 @@ export class ShipDamage {
     for (const c of this.caps) c.geometry.dispose();
     if (this.bowRoot) this.bowRoot.removeFromParent();
     this.hinges.length = 0;
+    this.breakQueue.length = 0;
   }
 }

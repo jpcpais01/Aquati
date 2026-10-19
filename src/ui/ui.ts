@@ -8,6 +8,8 @@ import { SeaChart, ChartScene } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
+/** Cards that sit over the menus and close on Esc or a tap outside. */
+const OVERLAYS = ['notes', 'controls', 'graphics'];
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
@@ -99,7 +101,7 @@ export class UI {
       }),
     );
     // tap the dimmed sea around a notes / controls card to close it
-    for (const id of ['notes', 'controls']) {
+    for (const id of OVERLAYS) {
       $(id).addEventListener('click', (e) => {
         if (e.target === e.currentTarget) this.closeOverlay(id);
       });
@@ -144,7 +146,7 @@ export class UI {
       'keydown',
       (e) => {
         if (e.key !== 'Escape') return;
-        const open = ['notes', 'controls'].find((id) => !$(id).classList.contains('hidden'));
+        const open = OVERLAYS.find((id) => !$(id).classList.contains('hidden'));
         if (!open) return;
         e.stopImmediatePropagation();
         e.preventDefault();
@@ -171,7 +173,7 @@ export class UI {
   }
 
   private overlayOpen() {
-    return ['notes', 'controls'].some((id) => !$(id).classList.contains('hidden'));
+    return OVERLAYS.some((id) => !$(id).classList.contains('hidden'));
   }
 
   /** Menu shortcuts: arrows / A D / 1 2 3 pick a ship, Enter sets sail. */
@@ -365,7 +367,7 @@ export class UI {
   showPause(on: boolean, info?: VoyageInfo) {
     $('pause').classList.toggle('hidden', !on);
     if (on && info) $('pause-summary').innerHTML = this.summary(info);
-    if (!on) ['notes', 'controls'].forEach((id) => this.closeOverlay(id));
+    if (!on) OVERLAYS.forEach((id) => this.closeOverlay(id));
   }
 
   private summary(info: VoyageInfo) {

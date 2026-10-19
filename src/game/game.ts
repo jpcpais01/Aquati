@@ -3,8 +3,11 @@ import { angleDelta, clamp } from '../core/noise';
 import { Input } from '../core/input';
 import { Audio } from '../core/audio';
 import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality';
+import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { Pipeline } from '../render/pipeline';
+import { warmDraw } from '../render/warmup';
+import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
 import { Debris, Pusher } from '../fx/debris';
@@ -20,10 +23,12 @@ import { Atmosphere, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
+import { ShipModel } from '../ships/shipModel';
 import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
+import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, portClearings } from '../port/site';
@@ -68,6 +73,12 @@ export class Game {
   private collisions = new ShipCollisions(() => this.player);
   private pushers: Pusher[] = [];
   private ships: Ship[] = [];
+  /**
+   * Pirate hulls built ahead of time, a slice per frame, so a ship (or a whole
+   * flotilla) can sail in without the frame it appears in having to build it.
+   */
+  private shipyard: ShipModel[] = [];
+  private keel: ShipModel | null = null;
   private ais = new Map<Ship, PirateAI>();
   private lastFoe: Ship | null = null;
   private player: Ship | null = null;
@@ -96,6 +107,9 @@ export class Game {
   private cloudOff = new THREE.Vector2();
   private sprayT = 0;
   private crew!: CrewSystem;
+  private settings: Settings;
+  private softShadows = false;
+  private fps = 60;
   // the shipwright's harbour
   private look: ShipLook = loadLook();
   private port!: Port;
@@ -112,6 +126,7 @@ export class Game {
   private sky = createSkyDome();
 
   constructor(private canvas: HTMLCanvasElement) {
+    installSoftShadows();
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the final pass encodes sRGB itself
     this.renderer.toneMapping = THREE.NoToneMapping;
@@ -119,6 +134,7 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
     this.quality = detectQuality(this.renderer);
+    this.settings = new Settings(this.quality.tier);
     this.pipeline = new Pipeline(this.renderer, { msaa: this.quality.msaa, bloomLevels: this.quality.bloomLevels, tiltShift: this.quality.tiltShift });
     this.rig = new CameraRig(innerWidth / innerHeight);
     this.input = new Input(canvas);
@@ -140,6 +156,16 @@ export class Game {
     sc.near = 1;
     sc.far = 900;
     this.opaque.add(this.sun, this.sun.target);
+    this.pipeline.sun = this.sun;
+    // shared with every shader, so a moving sun moves the traced shadows too
+    this.pipeline.sunDir = globalUniforms.uSunDir.value;
+    this.settings.onChange((s) => this.applySettings(s));
+    new GraphicsPanel(this.settings, () => this.ui.onClick(), () => ({
+      fps: this.fps,
+      scale: this.scaler.scale,
+      maxShadow: Math.min(4096, this.renderer.capabilities.maxTextureSize),
+    }));
+    this.applySettings(this.settings.value);
     this.opaque.fog = new THREE.Fog(new THREE.Color(), 380, 1500);
     this.skyEnv = new SkyEnvironment(this.renderer);
     this.applyAtmosphere();
@@ -172,6 +198,11 @@ export class Game {
   async init() {
     const ui = this.ui;
     const q = this.quality;
+    // webfonts load on first use: fetch every weight now so a toast or banner
+    // never stalls on a font mid-voyage
+    const fonts = Promise.all(
+      ['500 1em Cinzel', '700 1em Cinzel', '400 1em Inter', '600 1em Inter', '800 1em Inter'].map((f) => document.fonts?.load(f).catch(() => [])),
+    );
     ui.progress(0.05);
     await nextFrame();
     this.terrain = new Terrain(20251019);
@@ -231,12 +262,30 @@ export class Game {
     ui.progress(0.88);
     await nextFrame();
 
+    this.applySettings(this.settings.value);
     this.resize();
     this.enterMenu();
-    // warm up every shader before the first visible frame
+    // warm up before the first visible frame: compile every shader, upload every
+    // ship texture, then draw the whole world once for real (see render/warmup)
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
-    this.renderer.compile(this.opaque, this.rig.camera);
-    this.renderer.compile(this.water, this.rig.camera);
+    for (const id of Object.keys(SHIP_CLASSES) as ShipClassId[]) {
+      // pirate paint only: the player's own ship is in the scene and gets the warm-up draw below
+      for (const liv of PIRATE_LIVERIES) {
+        for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
+      }
+    }
+    ui.progress(0.92);
+    await this.renderer.compileAsync(this.opaque, this.rig.camera);
+    await this.renderer.compileAsync(this.water, this.rig.camera);
+    ui.progress(0.96);
+    await nextFrame();
+    this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
+    // twice: the first pass makes the shadow map, which the water then switches on
+    warmDraw([this.opaque, this.water], () => {
+      this.render(0);
+      this.render(0);
+    });
+    await fonts;
     ui.progress(1);
     await nextFrame();
     ui.hideLoading();
@@ -266,6 +315,31 @@ export class Game {
       this.enterMenu();
     };
     ui.onSound = (on) => this.audio.setMuted(!on);
+  }
+
+  /** Pushes graphics settings into the renderer; safe to call any time. */
+  private applySettings(s: GraphicsSettings) {
+    const b = this.settings.budget;
+    const maxSamples = this.renderer.capabilities.maxSamples || 0;
+    this.pipeline.configure(
+      { msaa: s.antialias ? Math.min(4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift },
+      { ao: s.rtAO, gi: s.rtGI, shadows: s.rtShadows, aoSamples: b.aoSamples, shadowSteps: b.shadowSteps },
+    );
+    this.ocean?.setReflections(s.rtReflections ? b.ssrSteps : 0);
+    const size = Math.min(s.shadowRes, this.renderer.capabilities.maxTextureSize);
+    const sh = this.sun.shadow;
+    if (sh.mapSize.x !== size) {
+      sh.mapSize.set(size, size);
+      // three rebuilds the map at the new size on the next shadow pass
+      sh.map?.dispose();
+      sh.map = null;
+    }
+    this.softShadows = s.softShadows;
+    this.scaler.fixed = s.resolution;
+    if (s.resolution && this.scaler.scale !== s.resolution) {
+      this.scaler.scale = s.resolution;
+      this.resize();
+    }
   }
 
   // ------------------------------------------------------------------ shipwright
@@ -474,9 +548,12 @@ export class Game {
 
   // ------------------------------------------------------------------ ships
 
-  private makeShip(id: ShipClassId, team: 'player' | 'pirate'): Ship {
-    const livery = team === 'player' ? lookToLivery(this.look) : PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
-    const s = new Ship(SHIP_CLASSES[id], livery, team, this.quality.physicalHull ? 1 : 0);
+  private pirateLivery() {
+    return PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
+  }
+
+  private makeShip(id: ShipClassId, team: 'player' | 'pirate', livery = team === 'player' ? lookToLivery(this.look) : this.pirateLivery(), model?: ShipModel): Ship {
+    const s = new Ship(SHIP_CLASSES[id], livery, team, this.quality.physicalHull ? 1 : 0, model);
     if (team === 'player') s.name = this.look.name.trim() || s.cls.title;
     else {
       s.name = PIRATE_NAMES[this.nameIdx++ % PIRATE_NAMES.length];
@@ -546,9 +623,31 @@ export class Game {
     return this.launchPirate(id, p.x, p.z, Math.random() * Math.PI * 2);
   }
 
+  /** How many ready hulls of each class the shipyard keeps on the slipway. */
+  private static readonly STOCK: Record<ShipClassId, number> = { sloop: 3, brig: 3, galleon: 1 };
+
+  private runShipyard() {
+    if (!this.keel) {
+      const ids = Object.keys(Game.STOCK) as ShipClassId[];
+      const id = ids.find((k) => this.shipyard.filter((m) => m.cls.id === k).length < Game.STOCK[k]);
+      if (!id) return;
+      this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(), this.quality.physicalHull ? 1 : 0, true);
+    }
+    const t0 = performance.now();
+    while (performance.now() - t0 < 2.5) {
+      if (this.keel.step()) {
+        this.shipyard.push(this.keel);
+        this.keel = null;
+        return;
+      }
+    }
+  }
+
   private launchPirate(id: ShipClassId, x: number, z: number, heading: number) {
     const kills = this.player?.kills ?? 0;
-    const s = this.makeShip(id, 'pirate');
+    const i = this.shipyard.findIndex((m) => m.cls.id === id);
+    const model = i >= 0 ? this.shipyard.splice(i, 1)[0] : undefined;
+    const s = this.makeShip(id, 'pirate', model?.livery, model);
     s.place(x, z, heading);
     s.sailTarget = 0.5;
     s.sailLevel = 0.5;
@@ -728,6 +827,8 @@ export class Game {
   }
 
   private onSunk(ship: Ship, attacker: Ship) {
+    // the replacement waits until the wreck has settled
+    this.spawnTimer = Math.max(this.spawnTimer, 5);
     const bounty = { sloop: 60, brig: 110, galleon: 220 }[ship.cls.id];
     const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
@@ -845,12 +946,18 @@ export class Game {
     this.last = now;
     this.fpsFrames++;
     if (now - this.fpsT >= 500) {
-      this.fpsEl.textContent = `${Math.round((this.fpsFrames * 1000) / (now - this.fpsT))} FPS`;
+      this.fps = (this.fpsFrames * 1000) / (now - this.fpsT);
+      this.fpsEl.textContent = `${Math.round(this.fps)} FPS`;
       this.fpsFrames = 0;
       this.fpsT = now;
     }
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
+    // Auto's last resort: still slow at the lowest resolution, so shed effects
+    if (this.scaler.pressure >= 2) {
+      this.scaler.pressure = 0;
+      this.settings.stepDown();
+    }
     const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt;
     this.update(simDt, dt);
     this.render(simDt);
@@ -884,6 +991,7 @@ export class Game {
     this.pushers.length = 0;
     for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
     this.debris.update(dt, w, this.pushers);
+    if (dt > 0) this.runShipyard();
     if (inPort) {
       this.port.update(dt, w);
       this.shipwright.tick(realDt);
@@ -1157,6 +1265,7 @@ export class Game {
     const kk = Math.sqrt(1 - ky * ky) / kh;
     this.sun.position.set(cx + kd.x * kk * 400, ky * 400, cz + kd.z * kk * 400);
     this.sun.target.updateMatrixWorld();
+    updateSoftShadows(this.sun, this.softShadows);
     // the sky's light changes slowly: refresh the image-based lighting a few times a second
     this.envT -= dt > 0 ? dt : 0;
     if (this.envT <= 0) {
