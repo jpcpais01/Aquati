@@ -1364,7 +1364,7 @@ export class Game {
     P.end();
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
-    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260);
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
     P.end();
 
     // gusts roll across whatever the camera is looking at

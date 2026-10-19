@@ -16,6 +16,17 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T16:20Z',
     entries: [
       {
+        title: 'A whole new crew',
+        notes: [
+          'Every sailor has been rebuilt from scratch: smooth sculpted bodies with real shoulders, waists and calves, hands with fingers and thumbs, and proper faces with noses, ears, lidded eyes in a dozen colours, eyebrows and mouths.',
+          'Faces come alive: crewmates blink, glance about, smile, frown in battle, bellow orders, chatter with their mates, grin through a jig, cheer with mouths wide open and look plain terrified when the ship goes down. Hands clench round rammers, ropes and tankards, and fall open in a panic.',
+          'Far more variety in dress: striped, rolled or short sleeves, bare legs, stockings or long trousers, bare feet, boots, garters, vests, belts, kerchiefs, earrings, beards, moustaches, ponytails, long hair and bald pates, under tricorns, spotted bandanas, knit caps and straw hats. Captains wear lapelled coats with epaulettes, cuffs and a lace jabot, with a parrot on the shoulder.',
+          'Cheering sailors now throw their arms up in a V, and a captain going down with the ship gives a proper salute.',
+          'The pirates of Puerto Marea in the Shipwright harbour got the same makeover, from the accordion player to the lookout with a spyglass.',
+          'Crewmates far from the camera use a lighter version of the model, so the extra detail costs little.',
+        ],
+      },
+      {
         title: 'Version number on the menu',
         notes: [
           'The game version and build now sit right next to the patch notes button, so you can tell at a glance which update you are playing.',

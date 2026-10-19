@@ -10,6 +10,7 @@ import { PRESETS, ShipLook } from '../ships/look';
 import type { Ship } from '../ships/ship';
 import type { World } from '../game/world';
 import { Crowd, Figure, HIP, PirateStyle, PropGeo } from './pirates';
+import { FLAG, P, PROP } from '../ships/crewModel';
 import { PortSite, PORT_HALF_WIDTH } from './site';
 
 // Puerto: a stilt-town harbour on a sunny beach. A plank quay on pilings, a
@@ -244,7 +245,7 @@ const CAST: PirateStyle[] = [
   // 9 swabbie
   { shirt: 0xc8d6d2, pants: 0x8a5a32, skin: 0xa86e48, hat: 'bandana', hatColor: 0x9c2a2a, beard: null, patch: false, boots: 0x3a2618 },
   // 10 captain
-  { shirt: 0x7a1f2b, pants: 0x1f1b1a, skin: 0xf0c7a4, hat: 'tricorn', hatColor: 0x141212, beard: 0x141212, patch: false, boots: 0x141212, girth: 1.08 },
+  { shirt: 0x7a1f2b, pants: 0x1f1b1a, skin: 0xf0c7a4, hat: 'tricorn', hatColor: 0x141212, beard: 0x141212, patch: false, boots: 0x141212, girth: 1.08, flags: FLAG.coat | FLAG.parrot | FLAG.plume },
   // 11 sleeper
   { shirt: 0xe9a23b, pants: 0x3a3634, skin: 0xd8a07a, hat: 'none', hatColor: 0, beard: 0x6b4a2b, patch: false, boots: 0x3a2618, girth: 1.22 },
 ];
@@ -920,7 +921,7 @@ export class Port {
     this.rollBarrel.add(this.rollSpin);
     this.group.add(this.rollBarrel);
     // crate overhead
-    this.prop(PropGeo.crate(0.62).translate(0, 1.62, 0.05), f[1].hips);
+    this.prop(PropGeo.crate(0.62).translate(0, 1.43, 0.05), f[1].hips);
     // fisherman's rod & line
     this.prop(PropGeo.rod(), this.rod);
     this.rod.position.set(0, 0.36, 0.38);
@@ -945,23 +946,19 @@ export class Port {
     // accordion
     this.accordion = this.prop(PropGeo.accordion(), f[3].hips);
     this.accordion.position.set(0, 0.36, 0.42);
-    // mugs
-    for (const i of [5, 6]) this.prop(PropGeo.mug(), f[i].handR).position.set(0, -0.05, 0.06);
+    // tankards
+    for (const i of [5, 6]) f[i].prop = PROP.mug;
     // painter's brush: the tip takes your topsides colour
     const brush = new THREE.Group();
     this.prop(PropGeo.brush(1.7), brush);
     this.prop(PropGeo.brushTip(1.7), brush, this.paintMat);
     f[7].handR.add(brush);
     // lookout's spyglass
-    this.prop(PropGeo.spyglass(), f[8].head).position.set(-0.085, 0.04, 0.2);
+    f[8].prop = PROP.spyglass;
     // swabbie's mop
     const mop = this.prop(PropGeo.mop(), f[9].hips);
     mop.position.set(0, 0.32, 0.36);
     mop.rotation.x = 0.55;
-    // captain's parrot
-    const parrot = this.prop(PropGeo.parrot(), f[10].hips);
-    parrot.position.set(0.33, 0.66, -0.04);
-    parrot.name = 'parrot';
     // rowboat for the painter, with a paint bucket
     this.buildRowboat();
     this.rowboat.add(f[7].root);
@@ -1131,6 +1128,10 @@ export class Port {
       fig.hips.rotation.x = 0.22;
       fig.armL.rotation.set(-1.25 + Math.sin(t * 5) * 0.05, 0, -0.15);
       fig.armR.rotation.set(-1.25 - Math.sin(t * 5) * 0.05, 0, 0.15);
+      fig.pose[P.handL] = 0.15;
+      fig.pose[P.handR] = 0.15;
+      fig.pose[P.brow] = 0.3;
+      fig.pose[P.jaw] = 0.2;
       const ub = (u + 0.95 / L.len) % 1;
       const bp = L.curve.getPointAt(ub);
       const bt = L.curve.getTangentAt(ub);
@@ -1152,6 +1153,9 @@ export class Port {
       fig.armL.rotation.set(-2.85, 0, 0.32);
       fig.armR.rotation.set(-2.85, 0, -0.32);
       fig.head.rotation.x = 0.1;
+      fig.pose[P.handL] = 0.2;
+      fig.pose[P.handR] = 0.2;
+      fig.pose[P.brow] = 0.4;
     }
     // -- 2: fishing off the quay edge
     {
@@ -1162,6 +1166,10 @@ export class Port {
       fig.hips.rotation.x = -0.12;
       fig.legL.rotation.x = -0.25 + Math.sin(t * 1.6) * 0.28;
       fig.legR.rotation.x = -0.25 + Math.sin(t * 1.6 + 2.2) * 0.28;
+      fig.pose[P.kneeL] = 0.25 + Math.max(0, Math.sin(t * 1.6)) * 0.3;
+      fig.pose[P.kneeR] = 0.25 + Math.max(0, Math.sin(t * 1.6 + 2.2)) * 0.3;
+      fig.pose[P.handL] = 1;
+      fig.pose[P.handR] = 1;
       const cycle = t % 9;
       const bite = cycle > 7.2 ? Math.sin(((cycle - 7.2) / 1.8) * Math.PI) : 0;
       fig.armL.rotation.set(-1.0 - bite * 0.5, 0, -0.35);
@@ -1191,6 +1199,10 @@ export class Port {
       fig.head.rotation.z = Math.sin(t * 4) * 0.13;
       fig.head.rotation.x = -0.12;
       this.accordion.scale.x = 1 + sq * 0.28;
+      fig.pose[P.handL] = 0.6;
+      fig.pose[P.handR] = 0.6;
+      fig.pose[P.smile] = 0.9;
+      fig.pose[P.jaw] = 0.25 + 0.25 * Math.max(0, Math.sin(t * 4.8)); // singing along
       this.notes.forEach((s, i) => {
         const ph = (t * 0.42 + i / 3) % 1;
         s.position.set(13.2 + Math.sin(ph * 6 + i * 2) * 0.35 + ph * 0.5, DECK + 2.2 + ph * 1.8, -6.2 + ph * 0.4);
@@ -1210,6 +1222,10 @@ export class Port {
       fig.armL.rotation.set(0, 0, 2.5 + Math.sin(t * 5.2) * 0.35);
       fig.armR.rotation.set(-0.3, 0, -0.7 - Math.cos(t * 5.2) * 0.4);
       fig.head.rotation.z = Math.sin(t * 5.2) * 0.15;
+      fig.pose[P.smile] = 1;
+      fig.pose[P.brow] = 0.6;
+      fig.pose[P.jaw] = 0.35 * Math.max(0, Math.sin(t * 2.6));
+      fig.pose[P.handL] = 0;
     }
     // -- 5 & 6: a round at the tavern table
     for (const [i, x, ry, off] of [[5, 19.8, Math.PI / 2, 0], [6, 22.2, -Math.PI / 2, 1.9]] as [number, number, number, number][]) {
@@ -1227,6 +1243,12 @@ export class Port {
       fig.head.rotation.x = -raise * 0.42;
       fig.hips.rotation.x = -raise * 0.08 + clink * 0.1;
       fig.hips.rotation.z = Math.sin(t * 1.3 + off) * 0.04;
+      fig.pose[P.handL] = 0.5;
+      if (clink > 0) {
+        fig.pose[P.jaw] = 0.7 * clink;
+        fig.pose[P.smile] = 1;
+        fig.pose[P.brow] = 0.7 * clink;
+      } else fig.pose[P.jaw] = 0.3 * Math.max(0, Math.sin(t * 9 + off)) * (Math.sin(t * 0.8 + off) > 0 ? 1 : 0);
     }
     // -- 7: touching up your topsides from a rowboat
     {
@@ -1242,14 +1264,22 @@ export class Port {
       fig.armL.rotation.set(-1.75 + stroke * 0.3, 0, -0.18);
       fig.hips.rotation.x = -0.1 + stroke * 0.05;
       fig.head.rotation.x = -0.25;
+      fig.pose[P.handR] = 1;
+      fig.pose[P.handL] = 0.5;
+      fig.pose[P.gazeY] = 0.3;
     }
     // -- 8: lookout scanning the horizon
     {
       const fig = f[8];
-      fig.root.position.set(28.6, DECK + 9.15, -3.2);
-      fig.root.rotation.y = 0.6 + Math.sin(t * 0.22) * 1.1;
-      fig.armR.rotation.set(-1.62, 0, -0.32);
-      fig.armL.rotation.set(-1.25, 0, 0.62);
+      // at the rail on whichever side they're scanning, clear of the lamp in the middle
+      const yaw = 0.6 + Math.sin(t * 0.22) * 1.1;
+      fig.root.position.set(28.6 + Math.sin(yaw) * 0.95, DECK + 9.15, -3.2 + Math.cos(yaw) * 0.95);
+      fig.root.rotation.y = yaw;
+      // glass to the eye, the off hand steadying the draw tube
+      fig.reach(false, 1.62, 0.32, 1.52);
+      fig.reach(true, 1.25, 0.3, 1.55);
+      fig.pose[P.handL] = 0.85;
+      fig.pose[P.brow] = -0.35;
       fig.head.rotation.x = -0.05;
     }
     // -- 9: swabbing the deck
@@ -1270,6 +1300,8 @@ export class Port {
       fig.hips.rotation.x = 0.25;
       fig.armL.rotation.set(-0.75, 0, -0.25);
       fig.armR.rotation.set(-0.85, 0, 0.25);
+      fig.pose[P.handL] = 0.95;
+      fig.pose[P.handR] = 0.95;
     }
     // -- 10: the harbourmaster, parrot and all
     {
@@ -1282,12 +1314,6 @@ export class Port {
       fig.armR.rotation.set(0.35 * (1 - point) - point * 1.55, -point * 0.3, -0.75 * (1 - point) - point * 0.1);
       fig.head.rotation.y = -0.3 + Math.sin(t * 0.5) * 0.35 - point * 0.25;
       fig.hips.rotation.x = -0.05;
-      const parrot = fig.hips.getObjectByName('parrot');
-      if (parrot) {
-        parrot.rotation.x = Math.sin(t * 3.1) * 0.08;
-        parrot.rotation.y = Math.sin(t * 0.7) * 0.6;
-        parrot.scale.x = cyc > 3 && cyc < 3.4 ? 1.6 : 1;
-      }
     }
     // -- 11: napping in the hammock
     {
