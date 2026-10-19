@@ -6,6 +6,7 @@
 import { BankKind, bankJobs, CALIBERS } from './sfx';
 
 const SPEED_OF_SOUND = 343;
+const AMBIENCE_LEVEL = 0.35;
 const MUSIC_URL = '/music/sunset-archipelago.mp3';
 const MUSIC_VOL = 0.55;
 
@@ -68,7 +69,10 @@ export class Audio {
     wet.gain.value = 0.75;
     this.reverbIn.connect(this.reverb).connect(wet).connect(this.master);
     this.duckGain = ctx.createGain();
-    this.duckGain.connect(this.master);
+    // sea + wind sit well under the guns and music: a bed, not a wall
+    const bed = ctx.createGain();
+    bed.gain.value = AMBIENCE_LEVEL;
+    this.duckGain.connect(bed).connect(this.master);
 
     const len = ctx.sampleRate * 3;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
