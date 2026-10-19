@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'Surf that really breaks on the beach',
+        notes: [
+          'Waves now roll in to every island, line up along the coast, swing into the bays and stand up as the water gets shallow, glowing turquoise through their thin faces before they spill over into whitewater.',
+          'Each breaker runs on up the sand as a thin, glassy sheet with a foaming front, stops, and drains back, leaving dark, glistening wet sand that dries out before the next one arrives. Some waves reach further than others, and bigger sets come through now and then.',
+          'Foam looks like real sea foam: a web of bubbles around dark holes that slowly opens up, thins to threads and pops away, instead of white sheets and polka dots. Ship wakes, whitecaps and the foam around hulls use it too.',
+          'Storms throw much bigger surf with several lines of breakers, sheltered atoll lagoons only see small ripples lapping in, and at night the breaking surf glows with bioluminescence.',
+        ],
+      },
+      {
         title: 'Calmer seas: fewer pirates',
         notes: [
           'About 60% fewer pirates now roam around you: two to start, rising to at most four as you sink more, and new sails take noticeably longer to appear on the horizon.',
