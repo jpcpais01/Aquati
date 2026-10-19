@@ -25,6 +25,17 @@ export const PATCH_NOTES: PatchGroup[] = [
           'The collection works the same way, so you can preview pieces you have not found yet.',
         ],
       },
+    ],
+  },
+  {
+    hour: '2026-10-19T18:00Z',
+    entries: [
+      {
+        title: 'Scenic loading screen',
+        notes: [
+          'While the archipelago loads you now look out over a real moment from the game, slowly drifting behind the wordmark, instead of a plain blue backdrop. More scenes will join the rotation soon.',
+        ],
+      },
       {
         title: 'Plunder and trading ports',
         notes: [

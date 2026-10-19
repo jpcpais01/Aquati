@@ -13,12 +13,16 @@
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+    <link rel="preload" as="image" type="image/webp" imagesrcset="/scenes/archipelago-1280.webp 1280w, /scenes/archipelago-2560.webp 2560w" imagesizes="100vw" fetchpriority="high" />
     <title>Shores of Fortune</title>
   </head>
   <body>
     <canvas id="game"></canvas>
 
     <div id="loading" class="screen">
+      <div class="load-scenes" id="load-scenes" style="background-image:url(data:image/webp;base64,UklGRgYBAABXRUJQVlA4IPoAAACwBQCdASogABIAPtFapU0oJSOiMBgIAQAaCWwAnTKDGANJApTqUsS5Bpv2LbrYS4Db+xAmDMAA/XhlvAJ8rk74DAGdcpQLbw4fNUF9xjb5EzU+BWb1JoHV5a4Ujg5uY3tSlbY/ERaD6Q7p8xE2LuVBP9laYqOEp+VP44K0fV0WEPprmIORDz12CysqBjR1uKJ37VTtdloQTJ3BIcWxCBj7L4NpW6uoYBeXUqvzSzhp96U2scy3WBnJkOGN1MyjbKYbocmAKL72iqn6zvFwY3uNc9KQYPA9+qqtL1RF93J6JKCFRNm8dU2kNRfFEVznHKw1BTEHiWJBcAAA)" aria-hidden="true">
+        <img class="scene on" src="/scenes/archipelago-1280.webp" srcset="/scenes/archipelago-1280.webp 1280w, /scenes/archipelago-2560.webp 2560w" sizes="100vw" alt="" fetchpriority="high" decoding="async" />
+      </div>
       <div class="brand">
         <div class="crest-slot spin"></div>
         <div class="logo" aria-label="Shores of Fortune"><span class="logo-pre" aria-hidden="true">Shores <em>of</em></span><span class="logo-main" aria-hidden="true">Fortune</span></div>

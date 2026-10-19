@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PATCH_NOTES } from '../data/patchNotes';
+import { startLoadScenes } from './loadScenes';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
@@ -99,6 +100,7 @@ export class UI {
     document.querySelectorAll('.crest-slot').forEach((el) => (el.innerHTML = crest()));
     $('map-bezel').innerHTML = compassBezel();
     this.startTips();
+    this.stopScenes = startLoadScenes();
     this.buildShipPicker();
     this.buildRack();
     this.syncSound();
@@ -441,6 +443,8 @@ export class UI {
     tag.title = `Version ${__APP_VERSION__}${__APP_COMMIT__ ? ` (build ${__APP_COMMIT__})` : ''}`;
   }
 
+  private stopScenes = () => {};
+
   private startTips() {
     let i = 0;
     this.tipTimer = window.setInterval(() => {
@@ -463,6 +467,7 @@ export class UI {
 
   hideLoading() {
     clearInterval(this.tipTimer);
+    this.stopScenes();
     this.loading.classList.add('out');
     setTimeout(() => this.loading.classList.add('hidden'), 1000);
   }
