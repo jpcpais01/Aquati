@@ -89,6 +89,7 @@ export class Game {
   private ais = new Map<Ship, PirateAI>();
   private lastFoe: Ship | null = null;
   private player: Ship | null = null;
+  private veg?: Vegetation;
   private preview: Ship | null = null;
   private state: State = 'loading';
   private discovered = new Set<string>();
@@ -231,7 +232,7 @@ export class Game {
     ui.progress(0.5);
     await nextFrame();
     const site = findPortSite(this.terrain, this.spawnPoint);
-    const veg = new Vegetation(this.terrain, q.vegetation, portClearings(site));
+    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, portClearings(site), q.tier === 0));
     ui.progress(0.62);
     await nextFrame();
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
@@ -338,6 +339,7 @@ export class Game {
     ui.onSound = (on) => this.audio.setMuted(!on);
     ui.onSettings = (st) => {
       this.audio.setMusicEnabled(st.music);
+      this.audio.setVolumes({ master: st.volMaster, music: st.volMusic, effects: st.volEffects, ambience: st.volAmbience });
       this.rig.shakeScale = SHAKE_SCALE[st.shake];
     };
     this.audio.setMuted(!ui.settings.sound);
@@ -1526,6 +1528,7 @@ export class Game {
       this.skyEnv.update();
     }
 
+    this.veg?.update(cam.position);
     this.wake.update(this.renderer, target.x, target.z, dt);
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);

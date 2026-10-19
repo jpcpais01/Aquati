@@ -17,6 +17,11 @@ const pick = <T>(a: T[]): T | undefined => a[(Math.random() * a.length) | 0];
 export class Audio {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  private sfxBus!: GainNode;
+  private ambBus!: GainNode;
+  private musicBus: GainNode | null = null;
+  /** Player volume sliders, 0..1. */
+  private vol = { master: 1, music: 1, effects: 1, ambience: 1 };
   private noise!: AudioBuffer;
   private surfGain!: GainNode;
   private windGain!: GainNode;
@@ -64,7 +69,13 @@ export class Audio {
     this.ctx = new AC();
     const ctx = this.ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.8;
+    this.master.gain.value = this.muted ? 0 : 0.8 * this.vol.master;
+    this.sfxBus = ctx.createGain();
+    this.sfxBus.gain.value = this.vol.effects;
+    this.sfxBus.connect(this.master);
+    this.ambBus = ctx.createGain();
+    this.ambBus.gain.value = this.vol.ambience;
+    this.ambBus.connect(this.master);
     // bus glue: fast enough to catch a broadside, slow enough to keep the crack
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
@@ -82,12 +93,12 @@ export class Audio {
     this.reverb = ctx.createConvolver();
     const wet = ctx.createGain();
     wet.gain.value = 0.75;
-    this.reverbIn.connect(this.reverb).connect(wet).connect(this.master);
+    this.reverbIn.connect(this.reverb).connect(wet).connect(this.sfxBus);
     this.duckGain = ctx.createGain();
     // sea + wind sit well under the guns and music: a bed, not a wall
     const bed = ctx.createGain();
     bed.gain.value = AMBIENCE_LEVEL;
-    this.duckGain.connect(bed).connect(this.master);
+    this.duckGain.connect(bed).connect(this.ambBus);
 
     const len = ctx.sampleRate * 3;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -176,9 +187,25 @@ export class Audio {
     this.syncMusic(0.6);
   }
 
+  /** Volume sliders (0..1 each). Music skips the effects compressor, so it takes master directly. */
+  setVolumes(v: { master: number; music: number; effects: number; ambience: number }) {
+    // squared: sliders feel even to the ear instead of all happening at the top
+    const sq = (x: number) => Math.max(0, Math.min(1, x)) ** 2;
+    v = { master: sq(v.master), music: sq(v.music), effects: sq(v.effects), ambience: sq(v.ambience) };
+    this.vol = v;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.8 * v.master, t, 0.04);
+    this.sfxBus.gain.setTargetAtTime(v.effects, t, 0.04);
+    this.ambBus.gain.setTargetAtTime(v.ambience, t, 0.04);
+    this.musicBus?.gain.setTargetAtTime(v.music * v.master, t, 0.04);
+    if (this.music && !this.musicGain) this.syncMusic(0.1);
+  }
+
   setMuted(m: boolean) {
     this.muted = m;
-    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8 * this.vol.master, this.ctx.currentTime, 0.05);
     this.syncMusic(0.25);
   }
 
@@ -209,14 +236,16 @@ export class Audio {
         // route through WebAudio so fades work on iOS, where element.volume is read-only
         this.musicGain = ctx.createGain();
         this.musicGain.gain.value = 0;
-        ctx.createMediaElementSource(el).connect(this.musicGain).connect(ctx.destination);
+        this.musicBus = ctx.createGain();
+        this.musicBus.gain.value = this.vol.music * this.vol.master;
+        ctx.createMediaElementSource(el).connect(this.musicGain).connect(this.musicBus).connect(ctx.destination);
       } catch {
         this.musicGain = null;
         el.volume = 0;
       }
     }
     const el = this.music;
-    const target = audible ? MUSIC_VOL : 0;
+    const target = audible ? MUSIC_VOL * (this.musicGain ? 1 : this.vol.music * this.vol.master) : 0;
     clearTimeout(this.musicStop);
     if (audible && el.paused) void el.play().catch(() => {});
     if (this.musicGain) {
@@ -304,8 +333,8 @@ export class Audio {
     if (ctx.createStereoPanner) {
       p = ctx.createStereoPanner();
       p.pan.value = clamp1(pan);
-      g.connect(p).connect(this.master);
-    } else g.connect(this.master);
+      g.connect(p).connect(this.sfxBus);
+    } else g.connect(this.sfxBus);
     const send = ctx.createGain();
     send.gain.value = 0.5;
     air.connect(send).connect(this.reverbIn);
@@ -327,8 +356,8 @@ export class Audio {
     if (this.ctx.createStereoPanner) {
       const p = this.ctx.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, pan));
-      g.connect(p).connect(this.master);
-    } else g.connect(this.master);
+      g.connect(p).connect(this.sfxBus);
+    } else g.connect(this.sfxBus);
     return [this.ctx, g];
   }
 
@@ -395,8 +424,8 @@ export class Audio {
       pan = ctx.createStereoPanner();
       pan.pan.setValueAtTime(clamp1(o.pan), at);
       if (o.panTo !== undefined) pan.pan.linearRampToValueAtTime(clamp1(o.panTo), at + buf.duration / src.playbackRate.value);
-      dry.connect(pan).connect(this.master);
-    } else dry.connect(this.master);
+      dry.connect(pan).connect(this.sfxBus);
+    } else dry.connect(this.sfxBus);
     let send: GainNode | null = null;
     const wet = (o.wet ?? 0.4) * Math.pow(o.vol, 0.4);
     if (wet > 0.005) {
