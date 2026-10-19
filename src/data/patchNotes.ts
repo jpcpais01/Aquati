@@ -25,6 +25,12 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Stronger loot magnet',
+        notes: [
+          'Floating crates and barrels now get pulled toward your ship from twice as far away, gliding in faster the closer they get.',
+        ],
+      },
+      {
         title: 'Sails that swing, not snap',
         notes: [
           'When you tack or gybe, the yards and booms now swing across with real weight, overshooting a touch before settling, instead of flipping sides instantly.',
