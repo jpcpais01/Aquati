@@ -25,6 +25,12 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Clean tracer trails',
+        notes: [
+          'The Golden Comet, Ghostlight, Rainbow Ribbon and Starfall tracers, and fire shot, no longer leave a string of glowing smoke blobs behind the ball. Every tracer now draws one smooth, unbroken trace, with only fine sparks shedding off it, and the Vault and Shipwright previews show it the same way.',
+        ],
+      },
+      {
         title: 'Roomier ship card',
         notes: [
           'The ship card in the top left is wider, so longer ship names fit without being cut off. Gold, hold, crew and isles now sit together on one row beneath it.',
