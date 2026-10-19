@@ -2040,6 +2040,34 @@ export class CrewSystem {
 
   private alloc = () => this.free.pop() ?? -1;
 
+  // sailors whose body and shadow are both out of view are not drawn at all
+  private readonly frustum = new THREE.Frustum();
+  private readonly _vp = new THREE.Matrix4();
+  private readonly _sph = new THREE.Sphere();
+  private readonly shadowDir = new THREE.Vector3(0, -1, 0);
+  private culling = false;
+
+  /** The camera (and the way to the sun) to cull sailors against this frame; null draws everyone. */
+  setView(camera: THREE.Camera | null, toSun?: THREE.Vector3) {
+    this.culling = !!camera;
+    if (!camera) return;
+    camera.updateMatrixWorld();
+    this.frustum.setFromProjectionMatrix(this._vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    // a sailor's shadow falls this way, about two metres per metre of height at the lowest sun
+    if (toSun) this.shadowDir.copy(toSun).multiplyScalar(-1 / Math.max(toSun.y, 0.22));
+  }
+
+  private inView(x: number, y: number, z: number) {
+    const s = this._sph;
+    s.radius = 1.6;
+    const d = this.shadowDir;
+    for (let t = 0; t <= 2; t += 0.5) {
+      s.center.set(x + d.x * t, y + 0.9 + d.y * t, z + d.z * t);
+      if (this.frustum.intersectsSphere(s)) return true;
+    }
+    return false;
+  }
+
   private writeLook = (row: number, look: Look) => this.view.setRow(row, look.slots);
 
   private release(sl: Sailor) {
@@ -2096,6 +2124,7 @@ export class CrewSystem {
     const near2 = 26 * 26;
     const emit = (sl: Sailor, m: THREE.Matrix4) => {
       const e = m.elements;
+      if (this.culling && !this.inView(e[12], e[13], e[14])) return;
       const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
       view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, near);
     };

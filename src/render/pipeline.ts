@@ -45,6 +45,8 @@ export class Pipeline {
   rtRefl!: THREE.WebGLRenderTarget;
   /** The ocean's reflection pass this frame, or null when reflections are off. */
   refl: THREE.Scene | null = null;
+  /** Called before the reflection pass with the ray-tracing pass's half-res depth, or null when it didn't run. */
+  onRefl: ((halfDepth: THREE.Texture | null) => void) | null = null;
   private rtHalf!: THREE.WebGLRenderTarget;
   private bloomRTs: THREE.WebGLRenderTarget[] = [];
   private quad: THREE.Mesh;
@@ -392,6 +394,7 @@ export class Pipeline {
 
     if (this.refl) {
       P?.begin('Water reflections (half res)', 'ocean', true);
+      this.onRefl?.(this.ssOn && this.sun ? this.ss.textures![1] : null);
       r.setRenderTarget(this.rtRefl);
       r.setClearColor(0x000000, 0);
       r.clear(true, true, false);

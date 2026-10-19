@@ -1891,10 +1891,55 @@ float crewEdge(float d) { float w = fwidth(d) * 0.75 + 1e-4; return smoothstep(-
 
 // --------------------------------------------------------------------- renderer
 
+/** CPU twin of the shader's crewShown(): does group `g` show on this sailor? */
+function groupShown(g: number, hat: number, prop: number, fl: number): boolean {
+  if (g === 0) return true;
+  if (g < 10) return g === hat;
+  if (g >= 3000) {
+    const a = Math.floor((g - 3000) / 32);
+    const b = g - 3000 - a * 32;
+    return (fl & (1 << a)) !== 0 && (fl & (1 << b)) === 0;
+  }
+  if (g >= 1000) {
+    const a = Math.floor((g - 1000) / 32);
+    const b = g - 1000 - a * 32;
+    return (fl & ((1 << a) | (1 << b))) === 0;
+  }
+  if (g >= 50) return g === prop;
+  if (g < 30) return (fl & (1 << (g - 10))) !== 0;
+  return (fl & (1 << (g - 30))) === 0;
+}
+
+/** Extras only some sailors have, big enough to be worth a mesh of their own. */
+const OWN_MESH = new Set<number>([BIT.beard, BIT.coat, BIT.vest, BIT.peg, BIT.parrot, BIT.boots, BIT.bald, BIT.longhair, BIT.barefoot]);
+
+/**
+ * Which part of the sculpt a group is drawn with. Hats, held props and the
+ * bigger extras only some sailors wear (coats, parrots, beards...) get a mesh of
+ * their own, so a sailor costs the triangles of what they actually wear rather
+ * than of the whole wardrobe. Everything most sailors show anyway, and the
+ * small trinkets, stay in the body mesh, where the shader still hides what one
+ * sailor doesn't wear.
+ */
+function bucketOf(g: number): number {
+  if (g === 0) return 0;
+  if (g < 10 || (g >= 50 && g < 1000)) return g;
+  const bit = g >= 3000 ? Math.floor((g - 3000) / 32) : g < 30 ? g - 10 : -1;
+  return OWN_MESH.has(bit) ? SHOWN(bit) : 0;
+}
+
 interface Batch {
   mesh: THREE.InstancedMesh;
   poses: THREE.InstancedBufferAttribute[];
   style: THREE.InstancedBufferAttribute;
+  /** the groups this mesh draws (none: the body, drawn for everyone) */
+  groups: number[];
+  n: number;
+}
+
+interface Level {
+  batches: Batch[];
+  /** sailors queued this frame (the body mesh's count) */
   n: number;
   max: number;
 }
@@ -1902,13 +1947,15 @@ interface Batch {
 /**
  * Draws a crowd of sailors in two detail levels sharing one palette and one
  * shader: the full sculpt (fingers, lashes, laces...) for the few close to the
- * camera, a lighter one for everyone further off.
+ * camera, a lighter one for everyone further off. Each level is split into a
+ * body mesh plus one per hat, prop and bigger extra (see bucketOf), all sharing
+ * one vertex buffer; a sailor is queued only into the meshes they wear.
  */
 export class CrewRenderer {
   readonly group = new THREE.Group();
   readonly palette: THREE.DataTexture;
   private readonly data: Float32Array;
-  private readonly batches: Batch[];
+  private readonly levels: Level[];
 
   constructor(readonly rows: number, nearRes: number, farRes: number, nearMax: number) {
     this.data = new Float32Array(TINT_SLOTS * rows * 4);
@@ -1920,26 +1967,53 @@ export class CrewRenderer {
     const { material, depth } = createCrewMaterial(this.palette);
     // a crowd that always fits in the near batch never needs the far sculpt
     const levels = nearMax >= rows ? [[nearRes, rows]] : [[nearRes, nearMax], [farRes, rows]];
-    this.batches = levels.map(([res, max]) => {
-      const geo = buildSailorGeometry(res);
-      const poses = [0, 1, 2, 3, 4, 5].map((k) => {
-        const a = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
-        a.setUsage(THREE.DynamicDrawUsage);
-        geo.setAttribute(`aPose${k}`, a);
-        return a;
+    this.levels = levels.map(([res, max]) => {
+      const full = buildSailorGeometry(res);
+      const idx = full.index!.array;
+      const grp = full.getAttribute('aRig');
+      const triGroup = new Float32Array(idx.length / 3);
+      const groups = new Set<number>();
+      for (let t = 0; t < triGroup.length; t++) {
+        const g = grp.getZ(idx[t * 3]);
+        triGroup[t] = g;
+        groups.add(g);
+      }
+      const members = new Map<number, number[]>();
+      for (const g of groups) {
+        const b = bucketOf(g);
+        if (!members.has(b)) members.set(b, []);
+        members.get(b)!.push(g);
+      }
+      const keys = [...members.keys()].sort((a, b) => a - b);
+      const batches = keys.map((key) => {
+        const want = new Set(members.get(key)!);
+        const sub: number[] = [];
+        for (let t = 0; t < triGroup.length; t++) if (want.has(triGroup[t])) sub.push(idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]);
+        const geo = new THREE.BufferGeometry();
+        // the vertex data is shared by every mesh of the level and uploaded once
+        for (const [name, a] of Object.entries(full.attributes)) geo.setAttribute(name, a);
+        geo.setIndex(sub);
+        const poses = [0, 1, 2, 3, 4, 5].map((k) => {
+          const a = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
+          a.setUsage(THREE.DynamicDrawUsage);
+          geo.setAttribute(`aPose${k}`, a);
+          return a;
+        });
+        const style = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
+        style.setUsage(THREE.DynamicDrawUsage);
+        geo.setAttribute('aStyle', style);
+        const mesh = new THREE.InstancedMesh(geo, material, max);
+        mesh.customDepthMaterial = depth;
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.count = 0;
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        this.group.add(mesh);
+        return { mesh, poses, style, groups: key === 0 ? [] : members.get(key)!, n: 0 };
       });
-      const style = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
-      style.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute('aStyle', style);
-      const mesh = new THREE.InstancedMesh(geo, material, max);
-      mesh.customDepthMaterial = depth;
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.count = 0;
-      mesh.frustumCulled = false;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      this.group.add(mesh);
-      return { mesh, poses, style, n: 0, max };
+      return { batches, n: 0, max };
     });
   }
 
@@ -1958,42 +2032,52 @@ export class CrewRenderer {
   }
 
   begin() {
-    for (const b of this.batches) b.n = 0;
+    for (const l of this.levels) {
+      l.n = 0;
+      for (const b of l.batches) b.n = 0;
+    }
   }
 
   /** Queues one posed sailor; `near` asks for the detailed sculpt (if there's room). */
   push(m: THREE.Matrix4, pose: ArrayLike<number>, row: number, hat: number, prop: number, flags: number, near: boolean) {
-    let b = this.batches[near ? 0 : this.batches.length - 1];
-    if (b.n >= b.max) b = this.batches[1];
-    if (!b || b.n >= b.max) return;
-    const n = b.n++;
-    m.toArray(b.mesh.instanceMatrix.array as Float32Array, n * 16);
-    const o = n * 4;
-    for (let k = 0; k < 6; k++) {
-      const arr = b.poses[k].array as Float32Array;
-      arr[o] = pose[k * 4];
-      arr[o + 1] = pose[k * 4 + 1];
-      arr[o + 2] = pose[k * 4 + 2];
-      arr[o + 3] = pose[k * 4 + 3];
+    let l = this.levels[near ? 0 : this.levels.length - 1];
+    if (l.n >= l.max) l = this.levels[1];
+    if (!l || l.n >= l.max) return;
+    l.n++;
+    for (const b of l.batches) {
+      if (b.groups.length && !b.groups.some((g) => groupShown(g, hat, prop, flags))) continue;
+      const n = b.n++;
+      m.toArray(b.mesh.instanceMatrix.array as Float32Array, n * 16);
+      const o = n * 4;
+      for (let k = 0; k < 6; k++) {
+        const arr = b.poses[k].array as Float32Array;
+        arr[o] = pose[k * 4];
+        arr[o + 1] = pose[k * 4 + 1];
+        arr[o + 2] = pose[k * 4 + 2];
+        arr[o + 3] = pose[k * 4 + 3];
+      }
+      const st = b.style.array as Float32Array;
+      st[o] = row;
+      st[o + 1] = hat;
+      st[o + 2] = prop;
+      st[o + 3] = flags;
     }
-    const st = b.style.array as Float32Array;
-    st[o] = row;
-    st[o + 1] = hat;
-    st[o + 2] = prop;
-    st[o + 3] = flags;
   }
 
   end() {
-    for (const b of this.batches) {
-      b.mesh.count = b.n;
-      if (b.n === 0) continue;
-      b.mesh.instanceMatrix.clearUpdateRanges();
-      b.mesh.instanceMatrix.addUpdateRange(0, b.n * 16);
-      b.mesh.instanceMatrix.needsUpdate = true;
-      for (const a of [...b.poses, b.style]) {
-        a.clearUpdateRanges();
-        a.addUpdateRange(0, b.n * 4);
-        a.needsUpdate = true;
+    for (const l of this.levels) {
+      for (const b of l.batches) {
+        b.mesh.count = b.n;
+        b.mesh.visible = b.n > 0;
+        if (b.n === 0) continue;
+        b.mesh.instanceMatrix.clearUpdateRanges();
+        b.mesh.instanceMatrix.addUpdateRange(0, b.n * 16);
+        b.mesh.instanceMatrix.needsUpdate = true;
+        for (const a of [...b.poses, b.style]) {
+          a.clearUpdateRanges();
+          a.addUpdateRange(0, b.n * 4);
+          a.needsUpdate = true;
+        }
       }
     }
   }
