@@ -47,20 +47,27 @@ export class ResolutionScaler {
   /** Windows spent at the lowest scale and still too slow. */
   pressure = 0;
   private acc = 0;
-  private frames = 0;
+  private samples: number[] = [];
   private cooldown = 2;
   private avg = 16;
+  private calm = 0;
 
-  /** Returns true when the render scale changed. */
+  /**
+   * Returns true when the render scale changed. A change rebuilds every render
+   * target, itself a hitch, so it reacts to the typical (median) frame of each
+   * window, never to one-off spikes like a ship breaking up, and only creeps
+   * back up after a run of calm windows.
+   */
   sample(dt: number): boolean {
     this.avg += (dt * 1000 - this.avg) * 0.05;
     this.acc += dt;
-    this.frames++;
+    this.samples.push(dt * 1000);
     this.cooldown -= dt;
     if (this.cooldown > 0 || this.acc < 1.5) return false;
-    const ms = (this.acc / this.frames) * 1000;
+    const sorted = this.samples.sort((x, y) => x - y);
+    const ms = sorted[sorted.length >> 1];
     this.acc = 0;
-    this.frames = 0;
+    this.samples = [];
     if (this.fixed) {
       const changed = this.scale !== this.fixed;
       this.scale = this.fixed;
@@ -68,10 +75,15 @@ export class ResolutionScaler {
     }
     this.pressure = ms > 22 && this.scale <= 0.56 ? this.pressure + 1 : 0;
     let next = this.scale;
-    if (ms > 21) next = Math.max(0.55, this.scale - 0.1);
-    else if (ms < 14.5 && this.scale < 1) next = Math.min(1, this.scale + 0.05);
+    if (ms > 21) {
+      next = Math.max(0.55, this.scale - 0.1);
+      this.calm = 0;
+    } else if (ms < 14.5 && this.scale < 1) {
+      if (++this.calm >= 3) next = Math.min(1, this.scale + 0.05);
+    } else this.calm = 0;
     if (next !== this.scale) {
       this.scale = next;
+      this.calm = 0;
       this.cooldown = 2.5;
       return true;
     }

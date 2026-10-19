@@ -333,7 +333,10 @@ export class ShipModel {
   /** Custom liveries own their materials (no cache) and must be disposed. */
   private readonly owned: boolean;
 
-  constructor(readonly cls: ShipClass, readonly livery: Livery, quality = 1) {
+  private readonly steps: Generator<void, void>;
+
+  /** `deferred` leaves the geometry unbuilt: call step() (a little per frame) until it returns true. */
+  constructor(readonly cls: ShipClass, readonly livery: Livery, quality = 1, deferred = false) {
     this.owned = livery.id.startsWith('custom');
     this.detail = quality > 0;
     this.shape = new HullShape(cls);
@@ -341,17 +344,46 @@ export class ShipModel {
     this.mats = this.materials(quality);
     this.sailMaterial = this.makeSailMaterial(this.mats.sailPlain);
     this.sailEmblemMaterial = this.makeSailMaterial(this.mats.sailEmblem);
+    this.steps = this.build();
+    if (!deferred) while (!this.step());
+  }
+
+  private *build(): Generator<void, void> {
     this.buildHull();
+    yield;
     this.buildMouldings();
     this.buildDeck();
+    yield;
     this.buildCastleWalls();
     this.buildStairs();
     this.buildStern();
+    yield;
     this.buildCannons();
+    yield;
     this.buildRig();
+    yield;
     this.buildBow();
+    yield;
     this.buildDetails();
+    yield;
     this.finish();
+  }
+
+  /** Runs the next slice of a deferred build. True once the model is complete. */
+  step(): boolean {
+    return !!this.steps.next().done;
+  }
+
+  /**
+   * Every texture a class wears in a livery, painted (once, cached) without
+   * building any geometry, so the game can upload them all while it loads.
+   */
+  static textures(cls: ShipClass, livery: Livery, quality = 1): THREE.Texture[] {
+    const m = new ShipModel(cls, livery, quality, true);
+    m.sailMaterial.dispose();
+    m.sailEmblemMaterial.dispose();
+    const s = m.mats;
+    return [s.hull.map, s.stern.map, s.stern.emissiveMap, s.deck.map, s.flag.map, s.sailPlain, s.sailEmblem].filter((t): t is THREE.Texture => !!t);
   }
 
   // ---------------------------------------------------------------- materials
