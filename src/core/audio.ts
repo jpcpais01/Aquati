@@ -7,6 +7,8 @@ import { BankKind, bankJobs, CALIBERS } from './sfx';
 import { renderThunder } from './thunder';
 
 const SPEED_OF_SOUND = 343;
+/** Most bank samples sounding at once; past this a big battle only piles crackle onto the audio thread. */
+const MAX_VOICES = 64;
 const AMBIENCE_LEVEL = 0.35;
 const MUSIC_URL = '/music/sunset-archipelago.mp3';
 const MUSIC_VOL = 0.55;
@@ -413,7 +415,8 @@ export class Audio {
   private emit(buf: AudioBuffer | undefined, o: { vol: number; pan: number; dist: number; rate?: number; wet?: number; delay?: number; panTo?: number }) {
     const ctx = this.ctx;
     if (!ctx || this.muted || !buf || o.vol < 0.01) return -1;
-    if (this.voices > 48 && o.vol < 0.4) return -1;
+    // a crowded mix drops the faint and far first, and never grows past what a weak device can mix
+    if (this.voices >= MAX_VOICES || (this.voices > 40 && o.vol < 0.4)) return -1;
     const at = ctx.currentTime + Math.min(o.dist / SPEED_OF_SOUND, 1.1) + (o.delay ?? 0);
     const src = ctx.createBufferSource();
     src.buffer = buf;

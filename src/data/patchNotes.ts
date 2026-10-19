@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'No more slowdown in long battles',
+        notes: [
+          'Long sessions used to get slower and slower until the game stuttered, sound included. The cause was every ship you sank: each wreck stayed afloat for over three minutes, still a whole ship to draw and simulate, so a good fight left a growing graveyard around you.',
+          'Now only the three most recent wrecks linger near you. Older ones, and any you sail far away from, founder and slip under by the stern instead. Memory use and frame times stay level however long you play.',
+          'Sound is capped at a sensible number of effects at once, so the biggest broadsides no longer crackle on slower devices.',
+        ],
+      },
+      {
         title: 'A whole new Treasure Vault',
         notes: [
           'The vault now happens out on the water. A gilded sea chest bursts up beside your ship and bobs on the swell, ready to open.',

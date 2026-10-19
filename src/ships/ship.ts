@@ -89,6 +89,11 @@ export class Ship {
    * farewell can follow her down.
    */
   wreckLife = WRECK_LIFE;
+  /**
+   * Founders go down by the stern and come to rest on the seabed (your own
+   * ship, for the farewell); every other wreck slips under and is gone.
+   */
+  founders = false;
   removed = false;
   reload = { port: 0, starboard: 0 };
   /** The full reload each side started from (it depends on the shot loaded). */
