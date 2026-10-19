@@ -1128,6 +1128,10 @@ export class Port {
       fig.hips.rotation.x = 0.22;
       fig.armL.rotation.set(-1.25 + Math.sin(t * 5) * 0.05, 0, -0.15);
       fig.armR.rotation.set(-1.25 - Math.sin(t * 5) * 0.05, 0, 0.15);
+      fig.pose[P.handL] = 0.15;
+      fig.pose[P.handR] = 0.15;
+      fig.pose[P.brow] = 0.3;
+      fig.pose[P.jaw] = 0.2;
       const ub = (u + 0.95 / L.len) % 1;
       const bp = L.curve.getPointAt(ub);
       const bt = L.curve.getTangentAt(ub);
@@ -1149,6 +1153,9 @@ export class Port {
       fig.armL.rotation.set(-2.85, 0, 0.32);
       fig.armR.rotation.set(-2.85, 0, -0.32);
       fig.head.rotation.x = 0.1;
+      fig.pose[P.handL] = 0.2;
+      fig.pose[P.handR] = 0.2;
+      fig.pose[P.brow] = 0.4;
     }
     // -- 2: fishing off the quay edge
     {
@@ -1159,6 +1166,10 @@ export class Port {
       fig.hips.rotation.x = -0.12;
       fig.legL.rotation.x = -0.25 + Math.sin(t * 1.6) * 0.28;
       fig.legR.rotation.x = -0.25 + Math.sin(t * 1.6 + 2.2) * 0.28;
+      fig.pose[P.kneeL] = 0.25 + Math.max(0, Math.sin(t * 1.6)) * 0.3;
+      fig.pose[P.kneeR] = 0.25 + Math.max(0, Math.sin(t * 1.6 + 2.2)) * 0.3;
+      fig.pose[P.handL] = 1;
+      fig.pose[P.handR] = 1;
       const cycle = t % 9;
       const bite = cycle > 7.2 ? Math.sin(((cycle - 7.2) / 1.8) * Math.PI) : 0;
       fig.armL.rotation.set(-1.0 - bite * 0.5, 0, -0.35);
@@ -1188,6 +1199,10 @@ export class Port {
       fig.head.rotation.z = Math.sin(t * 4) * 0.13;
       fig.head.rotation.x = -0.12;
       this.accordion.scale.x = 1 + sq * 0.28;
+      fig.pose[P.handL] = 0.6;
+      fig.pose[P.handR] = 0.6;
+      fig.pose[P.smile] = 0.9;
+      fig.pose[P.jaw] = 0.25 + 0.25 * Math.max(0, Math.sin(t * 4.8)); // singing along
       this.notes.forEach((s, i) => {
         const ph = (t * 0.42 + i / 3) % 1;
         s.position.set(13.2 + Math.sin(ph * 6 + i * 2) * 0.35 + ph * 0.5, DECK + 2.2 + ph * 1.8, -6.2 + ph * 0.4);
@@ -1207,6 +1222,10 @@ export class Port {
       fig.armL.rotation.set(0, 0, 2.5 + Math.sin(t * 5.2) * 0.35);
       fig.armR.rotation.set(-0.3, 0, -0.7 - Math.cos(t * 5.2) * 0.4);
       fig.head.rotation.z = Math.sin(t * 5.2) * 0.15;
+      fig.pose[P.smile] = 1;
+      fig.pose[P.brow] = 0.6;
+      fig.pose[P.jaw] = 0.35 * Math.max(0, Math.sin(t * 2.6));
+      fig.pose[P.handL] = 0;
     }
     // -- 5 & 6: a round at the tavern table
     for (const [i, x, ry, off] of [[5, 19.8, Math.PI / 2, 0], [6, 22.2, -Math.PI / 2, 1.9]] as [number, number, number, number][]) {
@@ -1224,6 +1243,12 @@ export class Port {
       fig.head.rotation.x = -raise * 0.42;
       fig.hips.rotation.x = -raise * 0.08 + clink * 0.1;
       fig.hips.rotation.z = Math.sin(t * 1.3 + off) * 0.04;
+      fig.pose[P.handL] = 0.5;
+      if (clink > 0) {
+        fig.pose[P.jaw] = 0.7 * clink;
+        fig.pose[P.smile] = 1;
+        fig.pose[P.brow] = 0.7 * clink;
+      } else fig.pose[P.jaw] = 0.3 * Math.max(0, Math.sin(t * 9 + off)) * (Math.sin(t * 0.8 + off) > 0 ? 1 : 0);
     }
     // -- 7: touching up your topsides from a rowboat
     {
@@ -1239,12 +1264,17 @@ export class Port {
       fig.armL.rotation.set(-1.75 + stroke * 0.3, 0, -0.18);
       fig.hips.rotation.x = -0.1 + stroke * 0.05;
       fig.head.rotation.x = -0.25;
+      fig.pose[P.handR] = 1;
+      fig.pose[P.handL] = 0.5;
+      fig.pose[P.gazeY] = 0.3;
     }
     // -- 8: lookout scanning the horizon
     {
       const fig = f[8];
-      fig.root.position.set(28.6, DECK + 9.15, -3.2);
-      fig.root.rotation.y = 0.6 + Math.sin(t * 0.22) * 1.1;
+      // at the rail on whichever side they're scanning, clear of the lamp in the middle
+      const yaw = 0.6 + Math.sin(t * 0.22) * 1.1;
+      fig.root.position.set(28.6 + Math.sin(yaw) * 0.95, DECK + 9.15, -3.2 + Math.cos(yaw) * 0.95);
+      fig.root.rotation.y = yaw;
       // glass to the eye, the off hand steadying the draw tube
       fig.reach(false, 1.62, 0.32, 1.52);
       fig.reach(true, 1.25, 0.3, 1.55);
@@ -1270,6 +1300,8 @@ export class Port {
       fig.hips.rotation.x = 0.25;
       fig.armL.rotation.set(-0.75, 0, -0.25);
       fig.armR.rotation.set(-0.85, 0, 0.25);
+      fig.pose[P.handL] = 0.95;
+      fig.pose[P.handR] = 0.95;
     }
     // -- 10: the harbourmaster, parrot and all
     {
