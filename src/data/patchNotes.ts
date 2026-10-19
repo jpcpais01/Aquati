@@ -23,6 +23,13 @@ export const PATCH_NOTES: PatchGroup[] = [
           'The volcano in the north now goes by Monte Fortuna.',
         ],
       },
+      {
+        title: 'Steady shadows from up high',
+        notes: [
+          'Zoomed far out, islands, decks and sails no longer shimmer or flicker. Sun shadows now hold perfectly still as you sail, zoom and fight, and only creep along gently as the sun crosses the sky.',
+          'Distant shorelines, hulls and rigging stay crisp and solid at any zoom, with no more flickering where two surfaces meet.',
+        ],
+      },
     ],
   },
   {
