@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T16:00Z',
     entries: [
       {
+        title: 'Hull hits with real weight',
+        notes: [
+          'Cannonballs now strike a ship like a blow against a great oak structure. The whole hull booms like a vast wooden drum, the crack is heavier and splits deeper, and the planking rips apart in a longer, thicker tear.',
+          'After every hit the frames and timbers give a slow, deep creak as the hull flexes under the impact, and heavy chunks thud onto the deck.',
+        ],
+      },
+      {
         title: 'Hull hits that splinter and boom',
         notes: [
           'A cannonball striking a ship now sounds like heavy oak giving way, not a dull thump: a sharp crack, the crackling rip of planking tearing through, a hollow boom from inside the hull and a shower of splinters.',
