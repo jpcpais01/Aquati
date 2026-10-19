@@ -140,9 +140,10 @@ export function installSoftShadows() {
 
 /**
  * Per-frame update: the shadow frustum follows the camera zoom, so penumbra
- * sizes in shadow-map uv change with it.
+ * sizes in shadow-map uv change with it. `slant` is metres along the sun's ray
+ * per unit of shadow depth (1 / sun height when depth is measured vertically).
  */
-export function updateSoftShadows(light: THREE.DirectionalLight, enabled: boolean) {
+export function updateSoftShadows(light: THREE.DirectionalLight, enabled: boolean, slant = 1) {
   const sh = light.shadow;
   const u = shadowUniforms.uAqPcss.value;
   const tex = sh.map?.texture ?? null;
@@ -155,5 +156,5 @@ export function updateSoftShadows(light: THREE.DirectionalLight, enabled: boolea
   const width = cam.right - cam.left;
   const depthRange = cam.far - cam.near;
   const maxUv = Math.min(MAX_PENUMBRA / width, MAX_TEXELS / sh.mapSize.x);
-  u.set(1, maxUv, (depthRange * SUN_SPREAD) / width, 1.2 / sh.mapSize.x);
+  u.set(1, maxUv, (depthRange * SUN_SPREAD * slant) / width, 1.2 / sh.mapSize.x);
 }
