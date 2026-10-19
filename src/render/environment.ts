@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getSharedTextures } from './textures';
+import { shadowUniforms } from './softShadows';
 import {
   GLSL_DAMAGE_EMISSIVE,
   GLSL_DAMAGE_FRAGMENT,
@@ -167,8 +168,8 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
   patchInfo.set(mat, { opts, extra: extraUniforms });
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, globalUniforms, extraUniforms);
-    const defs: string[] = [];
+    Object.assign(shader.uniforms, globalUniforms, shadowUniforms, extraUniforms);
+    const defs: string[] = ['#define AQ_PCSS'];
     if (opts.caustics) defs.push('#define AQ_CAUSTICS');
     if (opts.clouds) defs.push('#define AQ_CLOUDS');
     if (opts.wetSand) defs.push('#define AQ_WET');

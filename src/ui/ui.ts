@@ -8,10 +8,12 @@ import { SeaChart, ChartScene } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
+/** Cards that sit over the menus and close on Esc or a tap outside. */
+const OVERLAYS = ['notes', 'controls', 'graphics'];
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
-  'Rake a foe from the side your guns face',
+  'Your guns fire to the sides: bring a foe into a gold arc',
   'Salvage floats to you: sail close to collect it',
   'Every isle you chart pays a bounty',
   'Gusts darken the water: chase them for a burst of speed',
@@ -99,7 +101,7 @@ export class UI {
       }),
     );
     // tap the dimmed sea around a notes / controls card to close it
-    for (const id of ['notes', 'controls']) {
+    for (const id of OVERLAYS) {
       $(id).addEventListener('click', (e) => {
         if (e.target === e.currentTarget) this.closeOverlay(id);
       });
@@ -144,7 +146,7 @@ export class UI {
       'keydown',
       (e) => {
         if (e.key !== 'Escape') return;
-        const open = ['notes', 'controls'].find((id) => !$(id).classList.contains('hidden'));
+        const open = OVERLAYS.find((id) => !$(id).classList.contains('hidden'));
         if (!open) return;
         e.stopImmediatePropagation();
         e.preventDefault();
@@ -171,7 +173,7 @@ export class UI {
   }
 
   private overlayOpen() {
-    return ['notes', 'controls'].some((id) => !$(id).classList.contains('hidden'));
+    return OVERLAYS.some((id) => !$(id).classList.contains('hidden'));
   }
 
   /** Menu shortcuts: arrows / A D / 1 2 3 pick a ship, Enter sets sail. */
@@ -365,7 +367,7 @@ export class UI {
   showPause(on: boolean, info?: VoyageInfo) {
     $('pause').classList.toggle('hidden', !on);
     if (on && info) $('pause-summary').innerHTML = this.summary(info);
-    if (!on) ['notes', 'controls'].forEach((id) => this.closeOverlay(id));
+    if (!on) OVERLAYS.forEach((id) => this.closeOverlay(id));
   }
 
   private summary(info: VoyageInfo) {
@@ -565,6 +567,35 @@ export class UI {
     };
     ring('bs-port', 't-port', p.reload.port);
     ring('bs-star', 't-star', p.reload.starboard);
+  }
+
+  /** The HUD twin of the arcs on the water: a side burns gold while a foe sits in its loaded arc. */
+  updateGunnery(sides: Record<'port' | 'starboard', { ready: boolean; target: unknown }>, auto: 'port' | 'starboard' | null) {
+    const hotP = sides.port.ready && !!sides.port.target;
+    const hotS = sides.starboard.ready && !!sides.starboard.target;
+    const hotA = !!auto && sides[auto].ready && !!sides[auto].target;
+    const key = `${+hotP}${+hotS}${+hotA}${auto ?? '-'}`;
+    if (this.hudCache.get('guns') === key) return;
+    this.hudCache.set('guns', key);
+    $('bs-port').classList.toggle('hot', hotP);
+    $('bs-star').classList.toggle('hot', hotS);
+    $('t-port').classList.toggle('hot', hotP);
+    $('t-star').classList.toggle('hot', hotS);
+    // the big Fire button looses whichever side is outlined
+    $('t-port').classList.toggle('aim', auto === 'port');
+    $('t-star').classList.toggle('aim', auto === 'starboard');
+    $('t-fire').classList.toggle('hot', hotA);
+  }
+
+  /** A broadside just finished reloading mid-fight. */
+  gunsReady(side: 'port' | 'starboard') {
+    for (const id of side === 'port' ? ['bs-port', 't-port'] : ['bs-star', 't-star']) {
+      const el = $(id);
+      el.classList.remove('ping');
+      void el.offsetWidth;
+      el.classList.add('ping');
+      setTimeout(() => el.classList.remove('ping'), 650);
+    }
   }
 
   flashBroadside(side: 'port' | 'starboard') {
