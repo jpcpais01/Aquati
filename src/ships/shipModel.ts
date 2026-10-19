@@ -551,22 +551,24 @@ export class ShipModel {
     this.buildMouldings();
     this.buildDeck();
     yield;
-    this.buildCastleWalls();
-    this.buildStairs();
+    yield* this.buildCastleWalls();
+    yield;
+    yield* this.buildStairs();
     this.buildStern();
+    yield;
     this.buildAft();
     yield;
-    this.buildCannons();
+    yield* this.buildCannons();
     yield;
-    this.buildRig();
+    yield* this.buildRig();
     yield;
     this.buildBow();
     yield;
-    this.buildDetails();
+    yield* this.buildDetails();
     yield;
     this.buildDeckLife();
     yield;
-    this.finish();
+    yield* this.finish();
   }
 
   /** Runs the next slice of a deferred build. True once the model is complete. */
@@ -928,7 +930,7 @@ export class ShipModel {
   }
 
   /** Steep companion stairs up to the castle decks: treads on notched stringers with a rail each side. */
-  private buildStairs() {
+  private *buildStairs(): Generator<void, void> {
     const wood = hexL(0x6a4a2e);
     const dark = hexL(0x3e2a1a);
     for (const st of this.stairs) {
@@ -936,10 +938,12 @@ export class ShipModel {
       const run = st.z1 - st.z0;
       const n = Math.max(3, Math.round(h / 0.22));
       const d = Math.abs(run) / n;
+      // every tread of a flight is the same board: round its edges once
+      const tread = rbox(st.w - 0.06, 0.07, d + 0.05, 0.025);
       for (let k = 1; k <= n; k++) {
         const y = st.y0 + (k / n) * h;
         const z = st.z0 + ((k - 0.5) / n) * run;
-        this.woodParts.push(colorize(rbox(st.w - 0.06, 0.07, d + 0.05, 0.025).translate(st.x, y - 0.035, z), wood));
+        this.woodParts.push(colorize(tread.clone().translate(st.x, y - 0.035, z), wood));
       }
       for (const sx of [-1, 1]) {
         const x = st.x + sx * (st.w / 2 - 0.02);
@@ -960,10 +964,11 @@ export class ShipModel {
         }
         this.smallTrim.push(ball(0.06, r0.clone().add(new THREE.Vector3(0, 0.02, 0)), 6, 4));
       }
+      yield;
     }
   }
 
-  private buildCastleWalls() {
+  private *buildCastleWalls(): Generator<void, void> {
     const s = this.shape;
     const c = this.cls;
     const strake = hexL(this.livery.strake);
@@ -997,6 +1002,7 @@ export class ShipModel {
       addWall(t, low, high, 1);
       this.balustrade(t, high, 1);
     }
+    yield;
     if (c.foreCastle) {
       const t = c.foreCastle.t;
       const low = s.mainDeckY(t);
@@ -1160,7 +1166,7 @@ export class ShipModel {
 
   // ---------------------------------------------------------------- guns
 
-  private buildCannons() {
+  private *buildCannons(): Generator<void, void> {
     const s = this.shape;
     const k = 0.75 + this.cls.length * 0.011;
     // a chunky turned barrel: cascabel knob, reinforce rings, muzzle swell (+y = muzzle)
@@ -1290,8 +1296,10 @@ export class ShipModel {
             this.fineIron.push(ball(0.02, a, 4, 3));
           }
         }
+        yield;
       }
     }
+    yield;
     // shot garlands between the guns: round shot racked along the waterway
     const ts = this.cannonTs();
     const k2 = 0.75 + this.cls.length * 0.011;
@@ -1326,6 +1334,7 @@ export class ShipModel {
         for (let b = -2; b <= 2; b++) this.smallIron.push(ball(0.085 * k2, new THREE.Vector3(x, deck + 0.13 + 0.06 * k2, z + b * 0.19), 6, 5));
       }
     }
+    yield;
     // stern chasers through the transom
     for (let i = 0; i < this.cls.chasers; i++) {
       const x = (i - (this.cls.chasers - 1) / 2) * 1.3;
@@ -1349,7 +1358,7 @@ export class ShipModel {
     return blocked(s.z(mt) - 0.78) ? 1 : -1;
   }
 
-  private buildRig() {
+  private *buildRig(): Generator<void, void> {
     const s = this.shape;
     const c = this.cls;
     const woodCol = hexL(0x6a4a2e);
@@ -1359,7 +1368,7 @@ export class ShipModel {
     let maxMastTop = new THREE.Vector3();
     const mastTops: THREE.Vector3[] = [];
 
-    c.masts.forEach((m, mi) => {
+    for (const [mi, m] of c.masts.entries()) {
       const z = s.z(m.t);
       const y0 = s.deckY(m.t);
       const H = m.height;
@@ -1716,7 +1725,8 @@ export class ShipModel {
         pivot.add(sail);
         this.sails.push({ mesh: sail, tier: 0 });
       }
-    });
+      yield;
+    }
 
     // bowsprit + jib
     const bowT = 0.985;
@@ -1979,7 +1989,7 @@ export class ShipModel {
 
   // ---------------------------------------------------------------- details
 
-  private buildDetails() {
+  private *buildDetails(): Generator<void, void> {
     const s = this.shape;
     const c = this.cls;
     const barrelCol = hexL(0x8b5a33);
@@ -2069,6 +2079,7 @@ export class ShipModel {
     });
     crateAt(B * 0.2, s.z(0.86), 0.5, 0.7);
 
+    yield;
     // ship's wheel near the stern
     const wt = c.sternCastle ? c.sternCastle.t * 0.55 : 0.16;
     const wy = s.deckY(wt) + 1.05;
@@ -2132,6 +2143,7 @@ export class ShipModel {
     for (const sx of [-1, 1]) this.smallIron.push(ball(0.09, new THREE.Vector3(sx * 0.34, by + 0.75, bz), 7, 5));
     this.deckProps.push({ x: 0, z: bz, r: 0.34 });
 
+    yield;
     // skylight over the great cabin, where the quarterdeck has room for it
     if (c.sternCastle) {
       const front = s.z(c.sternCastle.t) - 0.75;
@@ -2516,7 +2528,7 @@ export class ShipModel {
 
   // ---------------------------------------------------------------- merge
 
-  private finish() {
+  private *finish(): Generator<void, void> {
     const mk = (parts: THREE.BufferGeometry[], mat: THREE.Material, keepColor: boolean, shadow = true) => {
       const merged = mergeParts(parts, keepColor);
       if (!merged) return;
@@ -2526,12 +2538,19 @@ export class ShipModel {
       this.root.add(mesh);
     };
     mk(this.woodParts, this.mats.wood, true);
+    yield;
     mk(this.ironParts, this.mats.iron, false);
+    yield;
     mk(this.trimParts, this.mats.trim, false);
+    yield;
     mk(this.glowParts, this.mats.glow, false, false);
+    yield;
     mk(this.smallWood, this.mats.wood, true, false);
+    yield;
     mk(this.smallIron, this.mats.iron, false, false);
+    yield;
     mk(this.smallTrim, this.mats.trim, false, false);
+    yield;
     // close-range detail rides the same materials (no new shaders), but stays out of the shadow pass
     const fine = (parts: THREE.BufferGeometry[], mat: THREE.Material, keepColor: boolean) => {
       const merged = mergeParts(parts, keepColor);
@@ -2544,8 +2563,11 @@ export class ShipModel {
       this.fineMeshes.push(mesh);
     };
     fine(this.fineWood, this.mats.wood, true);
+    yield;
     fine(this.fineIron, this.mats.iron, false);
+    yield;
     fine(this.fineTrim, this.mats.trim, false);
+    yield;
     this.addRopeMesh(this.root, this.ropeTubes);
     if (this.ropes.length) {
       const g = new THREE.BufferGeometry();

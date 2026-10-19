@@ -20,6 +20,7 @@ export const PATCH_NOTES: PatchGroup[] = [
         notes: [
           'Sinking a ship no longer makes the game hitch. When a mast or bowsprit snapped off a wreck, the game used to rebuild and resend the entire ship to your graphics card, several megabytes each time and several times per sinking. Now only the broken spar is cut free and the rest of the hull stays exactly where it is, so the break takes a fraction of the time and creates almost no garbage for the browser to clean up later.',
           'Fresh pirate ships now load onto your graphics card a little at a time while they wait in the shipyard, so a new sail on the horizon no longer causes a stutter when she first comes into view.',
+          'Pirate ships are also built in smaller pieces behind the scenes, so the shipyard never takes a noticeable bite out of a frame.',
         ],
       },
       {

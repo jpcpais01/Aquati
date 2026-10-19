@@ -1282,8 +1282,9 @@ export class Game {
       if (!id) return;
       this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(), this.quality.physicalHull ? 1 : 0, true);
     }
+    // a little each frame: every slice is small, and a frame stops starting new ones after 1.5 ms
     const t0 = performance.now();
-    while (performance.now() - t0 < 2.5) {
+    while (performance.now() - t0 < 1.5) {
       if (this.keel.step()) {
         this.shipyard.push(this.keel);
         this.preload.add(this.keel.root);

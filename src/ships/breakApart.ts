@@ -255,8 +255,9 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
     const da = dv[a], db = dv[b], dc = dv[c];
     if (da <= 0 && db <= 0 && dc <= 0) continue;
     if (da >= 0 && db >= 0 && dc >= 0) {
-      _cen.fromBufferAttribute(position, a).add(_a.fromBufferAttribute(position, b)).add(_b.fromBufferAttribute(position, c));
-      if (cut.lateral(_cen.divideScalar(3).applyMatrix4(toRoot))) {
+      if (plain) _cen.set((P[a * 3] + P[b * 3] + P[c * 3]) / 3, (P[a * 3 + 1] + P[b * 3 + 1] + P[c * 3 + 1]) / 3, (P[a * 3 + 2] + P[b * 3 + 2] + P[c * 3 + 2]) / 3);
+      else _cen.fromBufferAttribute(position, a).add(_a.fromBufferAttribute(position, b)).add(_b.fromBufferAttribute(position, c)).divideScalar(3);
+      if (cut.lateral(_cen.applyMatrix4(toRoot))) {
         cls[t] = 1;
         pieceTris++;
       }
@@ -334,12 +335,22 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
       let q = 0;
       for (let k = 0; k < attrs.length; k++) for (let c = 0; c < sizes[k]; c++) out[k][off[k]++] = v[q++];
     };
-    for (let t = 0; t < triCount; t++) {
-      if (cls[t] !== whole) continue;
-      for (let j = 0; j < 3; j++) {
-        const i = idx[t * 3 + j];
-        for (let k = 0; k < attrs.length; k++) for (let c = 0; c < sizes[k]; c++) out[k][off[k]++] = attrs[k].getComponent(i, c);
+    for (let k = 0; k < attrs.length; k++) {
+      const a = attrs[k];
+      const n = sizes[k];
+      const o = out[k];
+      // plain float buffers copy straight across; anything packed goes through three
+      const src = a.array instanceof Float32Array && !a.normalized ? a.array : null;
+      let w = 0;
+      for (let t = 0; t < triCount; t++) {
+        if (cls[t] !== whole) continue;
+        for (let j = 0; j < 3; j++) {
+          const i = idx[t * 3 + j];
+          if (src) for (let c = 0; c < n; c++) o[w++] = src[i * n + c];
+          else for (let c = 0; c < n; c++) o[w++] = a.getComponent(i, c);
+        }
       }
+      off[k] = w;
     }
     for (const poly of polys) for (let i = 1; i + 1 < poly.length; i++) for (const v of [poly[0], poly[i], poly[i + 1]]) put(v);
     const g = new THREE.BufferGeometry();
