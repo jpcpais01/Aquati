@@ -181,6 +181,11 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
     }
     const g = new THREE.BufferGeometry();
     names.forEach((n, k) => g.setAttribute(n, new THREE.BufferAttribute(out[k], sizes[k])));
+    // both halves lie on the source's triangles, so its bounds still hold: saves
+    // the renderer a pass over every vertex when it first culls them
+    g.boundingBox = geo.boundingBox!.clone();
+    if (!geo.boundingSphere) geo.computeBoundingSphere();
+    g.boundingSphere = geo.boundingSphere!.clone();
     return g;
   };
   return { keep: build(0, keepExtra), piece: build(1, pieceExtra), rim };
