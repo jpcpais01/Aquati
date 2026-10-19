@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T21:00Z',
     entries: [
       {
+        title: 'Smooth sinkings, no more stutter',
+        notes: [
+          'Sinking a ship no longer makes the game hitch. When a mast or bowsprit snapped off a wreck, the game used to rebuild and resend the entire ship to your graphics card, several megabytes each time and several times per sinking. Now only the broken spar is cut free and the rest of the hull stays exactly where it is, so the break takes a fraction of the time and creates almost no garbage for the browser to clean up later.',
+          'Fresh pirate ships now load onto your graphics card a little at a time while they wait in the shipyard, so a new sail on the horizon no longer causes a stutter when she first comes into view.',
+          'Pirate ships are also built in smaller pieces behind the scenes, so the shipyard never takes a noticeable bite out of a frame.',
+        ],
+      },
+      {
         title: 'Finer ships and livelier crews',
         notes: [
           'Zoom in close and the rigging is now real laid rope with a little sag, tarred black for the standing rigging and pale hemp for the running lines. Shrouds are set up with deadeyes and lanyards, masts are bound with rope wooldings, and new clewlines, halyards and futtock shrouds lead down to the rails.',
