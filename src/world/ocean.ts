@@ -10,7 +10,9 @@ import { WakeField } from './wakeField';
 // reflection, sun glitter, crest sub-surface glow, and three kinds of foam
 // (shoreline surf bands, hull contact, and ship wakes). Ship wakes come from
 // a live wave simulation (see WakeField): its height lifts the surface and
-// bends the normals, and its foam breaks up into lace as it ages.
+// bends the normals, and its foam breaks up into lace as it ages. Open water
+// layers anti-tiled ripples, wind slicks and gust cat's paws over the swell,
+// with slow macro noise drifting its colour so it never reads as a pattern.
 
 function buildGrid(segments: number, half: number): THREE.BufferGeometry {
   const n = segments + 1;
@@ -107,7 +109,7 @@ export class Ocean {
           vTerrain = th;
           float damp = clamp(-th / 8.0, 0.12, 1.0);
           vec3 n; float crest;
-          vec3 off = gerstner(wp.xz, uTime, damp, n, crest);
+          vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
           wp.xyz += off;
           // wake waves ride on top of the swell
           vec2 wuv = (wp.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
@@ -169,32 +171,62 @@ export class Ocean {
           vec3 V = normalize(cameraPosition - vWorld);
           vec3 L = uSunDir;
 
-          // ---- normals: analytic swell + two scrolling ripple layers
-          vec3 N = normalize(vNormal);
+          // ---- macro fields: very slow, very large noise that drifts the look of
+          // the sea from place to place so no two stretches read alike.
           vec2 wdir = uWind.xy;
-          vec2 uv1 = vWorld.xz * 0.043 + wdir * t * 0.028;
-          vec2 uv2 = vWorld.xz * 0.097 + vec2(-wdir.y, wdir.x) * t * 0.021 + 0.37;
-          vec2 r1 = texture(uNormalTex, uv1).xy * 2.0 - 1.0;
-          vec2 r2 = texture(uNormalTex, uv2).xy * 2.0 - 1.0;
+          vec2 wperp = vec2(-wdir.y, wdir.x);
+          vec4 mac = texture(uNoiseTex, vWorld.xz * 0.0021 + vec2(0.13, 0.71) + wdir * t * 0.0004);
+          vec4 mac2 = texture(uNoiseTex, vWorld.xz * 0.0053 + vec2(0.52, 0.27) - wperp * t * 0.0007);
           float detailFade = 1.0 - smoothstep(140.0, 520.0, vViewDist);
-          vec2 rip = (r1 * 0.9 + r2 * 0.6) * (0.55 + 0.45 * detailFade);
+
+          // ---- ripples: four layers at unrelated scales and rotations, each
+          // fading in and out under the macro noise. Their tiles never line up,
+          // so the classic "repeating normal map" grid disappears.
+          vec2 p = vWorld.xz;
+          vec2 p1 = mat2(0.825, -0.565, 0.565, 0.825) * p;
+          vec2 p2 = mat2(-0.416, -0.909, 0.909, -0.416) * p;
+          vec2 p3 = mat2(0.276, 0.961, -0.961, 0.276) * p;
+          vec2 r1 = texture(uNormalTex, p1 * 0.031 + wdir * t * 0.021).xy * 2.0 - 1.0;
+          vec2 r2 = texture(uNormalTex, p2 * 0.067 + wperp * t * 0.017 + 0.37).xy * 2.0 - 1.0;
+          vec2 r3 = texture(uNormalTex, p3 * 0.149 - wdir * t * 0.038 + 0.61).xy * 2.0 - 1.0;
+          // rotate each sample back into world space so the slopes stay coherent
+          r1 = r1 * mat2(0.825, -0.565, 0.565, 0.825);
+          r2 = r2 * mat2(-0.416, -0.909, 0.909, -0.416);
+          r3 = r3 * mat2(0.276, 0.961, -0.961, 0.276);
+          vec2 rip = r1 * (0.45 + 0.75 * mac.r) + r2 * (0.4 + 0.6 * mac2.g) + r3 * (0.25 + 0.4 * (1.0 - mac.g)) * detailFade;
           #if HQ
-            vec2 uv3 = vWorld.xz * 0.23 - wdir * t * 0.05;
-            rip += (texture(uNormalTex, uv3).xy * 2.0 - 1.0) * 0.35 * detailFade;
+            vec2 r4 = texture(uNormalTex, p * 0.331 + wperp * t * 0.061 + 0.19).xy * 2.0 - 1.0;
+            rip += r4 * 0.22 * detailFade;
           #endif
-          // ---- cat's paws: gust puffs roughen the surface into dark, shimmering
-          // patches that race downwind. Noise breaks the puff into ragged fingers.
-          float gust = gustAt(vWorld.xz);
+          rip *= 0.6 + 0.4 * detailFade;
+
+          // ---- wind slicks: long glassy streaks lying along the wind, where the
+          // surface film calms the ripples. Read mostly in the sun glitter.
+          vec2 sl = vec2(dot(p, wdir) * 0.0042, dot(p, wperp) * 0.034) + vec2(t * 0.0021, 0.0);
+          float slickN = texture(uNoiseTex, sl).g * 0.75 + mac2.a * 0.35;
+          float slick = smoothstep(0.6, 0.78, slickN) * 0.7;
+          float calm = 1.0 - slick;
+
+          // ---- cat's paws: gust puffs ruffle the surface into darker, matte,
+          // finely sparkling patches. Two noise scales fray the puff into soft,
+          // irregular fingers so it never reads as a stamped shape.
+          float gust = gustAt(p);
+          vec2 gustRip = vec2(0.0);
           if (gust > 0.002) {
-            vec4 gn = texture(uNoiseTex, vWorld.xz * 0.021 - wdir * t * 0.26);
-            float rag = smoothstep(0.3, 0.75, gn.g * 0.7 + gn.a * 0.5 + gust * 0.25 - 0.05);
+            vec4 gn = texture(uNoiseTex, p * 0.017 - wdir * t * 0.21);
+            vec4 gn2 = texture(uNoiseTex, p * 0.053 - wdir * t * 0.33 + 0.41);
+            float rag = smoothstep(0.32, 0.78, gn.g * 0.65 + gn2.a * 0.35 + gust * 0.3 - 0.08);
             gust *= rag;
-            vec2 uvg = vWorld.xz * 0.29 - wdir * t * 0.11;
-            vec2 rg = texture(uNoiseTex, uvg).xy - 0.5;
-            vec2 rg2 = texture(uNormalTex, vWorld.xz * 0.17 - wdir * t * 0.07 + 0.61).xy * 2.0 - 1.0;
-            rip = rip * (1.0 + gust * 0.7) + (rg * 1.3 + rg2 * 0.7) * gust * detailFade;
+            vec2 rg = texture(uNormalTex, p2 * 0.21 - wdir * t * 0.09 + 0.23).xy * 2.0 - 1.0;
+            vec2 rg2 = texture(uNoiseTex, p * 0.41 - wdir * t * 0.17).xy - 0.5;
+            gustRip = (rg * 0.8 + rg2 * 1.4) * gust * detailFade;
+            calm = mix(calm, 1.0, gust);
           }
-          N = normalize(N + vec3(rip.x, 0.0, rip.y) * 0.4);
+
+          vec3 Ns = normalize(vNormal);
+          // shading normal: swell + ripples. Glint normal adds the gust chop so
+          // gusts sparkle without tilting the reflection toward the pale horizon.
+          vec3 N = normalize(Ns + vec3(rip.x, 0.0, rip.y) * 0.36 * calm);
 
           // ---- ship wakes: height-field normals so every V-arm and ring catches the light
           vec2 wuv = (vWorld.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
@@ -209,6 +241,7 @@ export class Ocean {
           wGrad *= wIn;
           float wakeH = wk.g * wIn;
           N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 2.3);
+          vec3 Ng = normalize(N + vec3(gustRip.x, 0.0, gustRip.y) * 0.5);
 
           // ---- depth through the water column
           float sceneZ = linearDepth(texture(uSceneDepth, suv).r);
@@ -225,45 +258,63 @@ export class Ocean {
           float thickR = max(sceneZr - waterZ, 0.0);
           vec3 refr = texture(uSceneColor, ruv).rgb;
 
-          float cloud = cloudShadow(vWorld.xz);
+          float cloud = cloudShadow(p);
           #ifdef WATER_SHADOW
             cloud *= mix(0.42, 1.0, waterShadow(vWorld));
           #endif
           float ndl = max(dot(N, L), 0.0);
+          float NdV = max(dot(N, V), 0.0);
 
           // Beer–Lambert absorption + in-scattering (the "volume")
-          float path = thickR * 1.0;
-          vec3 absorb = vec3(0.40, 0.095, 0.068);
+          float path = thickR;
+          vec3 absorb = vec3(0.42, 0.098, 0.066);
           vec3 T = exp(-absorb * path);
-          vec3 scatterDeep = vec3(0.006, 0.085, 0.17);
-          vec3 scatterShallow = vec3(0.04, 0.32, 0.36);
-          vec3 scatter = mix(scatterShallow, scatterDeep, smoothstep(0.0, 14.0, path));
+          // open water drifts between deep sapphire and a slightly brighter cobalt
+          vec3 scatterDeep = mix(vec3(0.004, 0.058, 0.16), vec3(0.007, 0.086, 0.19), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
+          vec3 scatterShallow = vec3(0.035, 0.34, 0.37);
+          vec3 scatter = mix(scatterShallow, scatterDeep, smoothstep(0.0, 13.0, path));
+          // light travels further through the upper layer at oblique angles
+          scatter *= 1.0 + (1.0 - NdV) * 0.4;
           float light = (0.55 + 0.45 * cloud) * (0.6 + 0.4 * L.y);
           vec3 body = refr * T + scatter * light * (1.0 - T) * 1.35;
 
-          // sub-surface glow on crests facing away from the sun
+          // wave relief: troughs sink a touch darker, crests catch a faint
+          // aquamarine glow where the sun shines through the thin water.
+          // Broken up by the macro noise so it never traces the interference.
+          float hgt = clamp(vWorld.y * 0.6 + 0.5, 0.0, 1.0);
+          body *= 0.88 + 0.2 * hgt;
+          // swell faces turned toward the sun read a shade brighter, sculpting
+          // the long rollers without painting a pattern on them
+          body *= 1.0 + clamp(dot(Ns.xz, normalize(L.xz)) * 1.1, -0.18, 0.18);
           float sssView = pow(max(dot(V, -L + vec3(0.0, 0.6, 0.0)), 0.0), 2.0);
-          float sss = clamp(vCrest * 0.9 + (vWorld.y - 0.1) * 0.55, 0.0, 1.0) * (0.4 + sssView);
-          body += vec3(0.05, 0.42, 0.36) * sss * 0.32 * light;
+          float sss = hgt * hgt * (0.3 + sssView) * (0.35 + 0.65 * mac2.r);
+          body += vec3(0.02, 0.19, 0.22) * sss * 0.11 * light * (1.0 - T);
           // wake crests glow translucent turquoise, troughs sink a touch deeper
           body += vec3(0.04, 0.36, 0.34) * clamp(wakeH * 1.6, -0.25, 1.0) * (0.45 + sssView) * light * 0.5;
+          // ruffled water under a gust scatters less light back up: darker, matte
+          body *= 1.0 - gust * 0.18;
 
           // ---- reflection
           vec3 R = reflect(-V, N);
           R.y = abs(R.y);
-          vec3 refl = skyColor(R);
-          float NdV = max(dot(N, V), 0.0);
+          vec3 refl = skyColor(R) * (1.0 - gust * 0.22);
           float F = 0.02 + 0.98 * pow(1.0 - NdV, 5.0);
           F = min(F * 1.1, 1.0);
 
-          // sun glitter: sharp sparkles + soft sheen
+          // sun glitter: twinkling pinpoints, a tight sheen, and a broad soft
+          // path of light that widens where the water is rougher.
           vec3 H = normalize(L + V);
-          float nh = max(dot(N, H), 0.0);
-          float spec = pow(nh, 2200.0) * 5.0 + pow(nh, 320.0) * 0.28;
+          float nh = max(dot(Ng, H), 0.0);
+          float twinkle = 1.0;
+          #if HQ
+            twinkle = 0.45 + 1.4 * smoothstep(0.45, 0.85, texture(uNoiseTex, p * 0.73 + vec2(t * 0.09, -t * 0.07)).a);
+          #endif
+          float sharpExp = mix(2600.0, 1400.0, gust);
+          float spec = pow(nh, sharpExp) * 4.6 * twinkle * (1.0 + slick * 0.8) + pow(nh, 340.0) * 0.2;
+          spec += pow(max(dot(Ns, H), 0.0), mix(60.0, 26.0, gust)) * 0.045;
           spec *= cloud;
 
           vec3 col = mix(body, refl, F) + uSunColor * spec * 0.55;
-          col = mix(col, col * vec3(0.78, 0.88, 0.94), gust * 0.6);
 
           // ---- foam
           vec4 nz = texture(uNoiseTex, vWorld.xz * 0.06 + vec2(t * 0.01, -t * 0.013));
@@ -284,7 +335,9 @@ export class Ocean {
           float wakeFoam = smoothstep(thr - 0.09, thr + 0.07, pat) * smoothstep(0.015, 0.1, wf);
           wakeFoam = max(wakeFoam, smoothstep(0.9, 1.7, wf));
           wakeFoam *= 0.55 + 0.45 * smoothstep(0.0, 0.7, wf);
-          float crestFoam = smoothstep(0.55, 1.05, vCrest + nz2.g * 0.35) * 0.55;
+          // whitecaps break only here and there, and more often where a gust blows
+          float breaking = smoothstep(0.54, 0.8, texture(uNoiseTex, p * 0.0093 - wdir * t * 0.017).g + gust * 0.35);
+          float crestFoam = smoothstep(0.5, 0.95, vCrest + nz2.g * 0.35) * breaking * 0.6;
           float foam = clamp(shore + contact * 0.85, 0.0, 1.0) * bubbles + edge * (0.55 + 0.45 * bubbles);
           foam += wakeFoam * (0.8 + 0.2 * bubbles);
           foam += crestFoam * bubbles;

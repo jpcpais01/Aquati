@@ -14,15 +14,21 @@ export interface Wave {
 const G = 9.81;
 
 export function buildWaves(windAngle: number, scale = 1): Wave[] {
+  // Eight trains with mutually irrational wavelengths and a wide fan of
+  // directions: their interference never settles into a visible lattice, so
+  // the swell reads as open sea instead of a repeating tile.
   const defs: [number, number, number, number][] = [
     // wavelength, amplitude, direction offset, phase
-    [62, 0.5, 0.12, 0.0],
-    [37, 0.32, -0.55, 1.7],
-    [23, 0.2, 0.75, 4.1],
-    [14, 0.12, -1.15, 2.3],
-    [8.5, 0.06, 1.55, 5.2],
+    [71.3, 0.42, 0.08, 0.0],
+    [47.9, 0.29, -0.63, 1.7],
+    [33.4, 0.2, 0.86, 4.1],
+    [23.9, 0.135, -1.29, 2.3],
+    [17.3, 0.09, 0.41, 5.2],
+    [12.7, 0.06, 1.73, 0.9],
+    [9.7, 0.04, -0.27, 3.6],
+    [7.6, 0.028, -2.07, 1.2],
   ];
-  const steep = 0.62;
+  const steep = 0.66;
   return defs.map(([len, a, off, phase]) => {
     const k = (Math.PI * 2) / len;
     const ang = windAngle + off;
@@ -50,21 +56,24 @@ export function packWaves(waves: Wave[]): { a: Float32Array; b: Float32Array } {
   return { a, b };
 }
 
-export const WAVE_COUNT = 5;
+export const WAVE_COUNT = 8;
 
 export const GLSL_WAVES = /* glsl */ `
 uniform vec4 uWaveA[${WAVE_COUNT}];
 uniform vec4 uWaveB[${WAVE_COUNT}];
 
-// Returns displaced offset; accumulates analytic normal terms.
-vec3 gerstner(vec2 p, float t, float damp, inout vec3 nrm, inout float crest) {
+// Returns displaced offset; accumulates analytic normal terms. Short trains
+// fade out with distance (lodDist, metres from the camera) before the grid gets
+// too coarse to carry them, which keeps the far sea from shimmering. Gameplay
+// sits well inside the fade, so CPU buoyancy still matches what you see.
+vec3 gerstner(vec2 p, float t, float damp, float lodDist, inout vec3 nrm, inout float crest) {
   vec3 o = vec3(0.0);
   vec3 n = vec3(0.0, 1.0, 0.0);
   float c = 0.0;
   for (int i = 0; i < ${WAVE_COUNT}; i++) {
     vec4 a = uWaveA[i];
     vec4 b = uWaveB[i];
-    float A = a.w * damp;
+    float A = a.w * damp * (1.0 - smoothstep(14.0, 28.0, lodDist * a.z * 0.15915));
     float th = a.z * dot(a.xy, p) - b.x * t + b.z;
     float s = sin(th);
     float co = cos(th);
