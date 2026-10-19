@@ -3340,19 +3340,12 @@ body[data-hud='large'] #hud {
 /* gunnery: a foe sits in this side's loaded arc on the water */
 .broadside.hot {
   color: var(--ink);
-  background: rgba(244, 199, 101, 0.22);
-  box-shadow: 0 0 0 1px rgba(244, 199, 101, 0.5), 0 0 22px rgba(244, 199, 101, 0.28);
+  background: rgba(244, 199, 101, 0.16);
+  box-shadow: 0 0 0 1px rgba(244, 199, 101, 0.35);
 }
 
-.broadside.hot .ring {
-  animation: gun-hot 0.9s ease-in-out infinite;
-}
-
-@keyframes gun-hot {
-  50% {
-    transform: scale(1.1);
-    filter: brightness(1.25);
-  }
+.broadside.hot .ring .ti {
+  color: var(--gold);
 }
 
 .fbtn.side.aim {
@@ -3361,18 +3354,12 @@ body[data-hud='large'] #hud {
 }
 
 .fbtn.side.hot {
-  box-shadow: 0 0 18px rgba(244, 199, 101, 0.6);
+  box-shadow: 0 0 12px rgba(244, 199, 101, 0.4);
 }
 
 .fbtn.main.hot {
-  animation: fire-hot 0.9s ease-in-out infinite;
-}
-
-@keyframes fire-hot {
-  50% {
-    box-shadow: 0 12px 36px rgba(244, 180, 70, 0.75), inset 0 -3px 0 rgba(140, 90, 20, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 0 0 calc(4px * var(--kt)) rgba(6, 20, 30, 0.42),
-      0 0 0 calc(10px * var(--kt)) rgba(244, 199, 101, 0.35);
-  }
+  box-shadow: 0 12px 32px rgba(244, 180, 70, 0.5), inset 0 -3px 0 rgba(140, 90, 20, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 0 0 calc(4px * var(--kt)) rgba(6, 20, 30, 0.42),
+    0 0 0 calc(7px * var(--kt)) rgba(244, 199, 101, 0.3);
 }
 
 /* the guns have just been run out again */

@@ -871,7 +871,7 @@ export class Game {
   private tryFire(side: Side) {
     const p = this.player!;
     const a = this.gunnery.aim(p, side);
-    if (p.fire(side, this.world, a.target, a.point)) this.gunnery.fired(side, this.world.time);
+    if (p.fire(side, this.world, a.target, a.point)) this.gunnery.fired(this.world.time);
     else this.ui.flashBroadside(side);
   }
 
@@ -891,7 +891,7 @@ export class Game {
     this.ui.gunsReady(side);
   }
 
-  /** The first fight of a voyage on this device: explain the arcs once. */
+  /** The first fight of a voyage on this device: explain the guns once. */
   private gunTip() {
     if (this.gunTipShown || !this.gunnery.combat) return;
     this.gunTipShown = true;
@@ -902,7 +902,7 @@ export class Game {
       /* private mode: show it anyway */
     }
     const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
-    this.ui.toast('Guns fire to the sides', `Turn until a foe sits in a gold arc, ${how}`, 5.5);
+    this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and glints gold, ${how}`, 5.5);
   }
 
   private controlPlayer() {

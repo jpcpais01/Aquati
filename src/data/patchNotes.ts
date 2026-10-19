@@ -26,6 +26,14 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Quieter gunnery marks',
+        notes: [
+          'The big painted arcs, the spinning reticle and the range lines are gone. Aiming works exactly the same, but it now stays out of the way of the sea and the fight.',
+          'In a fight, a few short ticks on the water by your hull mark the edges of each broadside. They fill outward while the crews reload and warm to gold once the guns are run out.',
+          'When a foe sits off a loaded beam, a soft gold glint circles her waterline: that is your moment to fire. Your gun buttons warm too, without the pulsing.',
+        ],
+      },
+      {
         title: 'Finer ships and a livelier crew',
         notes: [
           'Hulls now have real planking you can see in the light: raised strakes, seams, butt joints and treenails, with weathering streaks down the sides. The decks show knots and sun-bleached patches, and the sails have double-stitched seams, reef points, corner patches and the odd sewn-on repair.',
