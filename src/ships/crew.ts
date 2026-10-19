@@ -27,6 +27,27 @@ interface Spot {
 }
 interface Obstacle extends Spot {
   r: number;
+  stair?: boolean; // keeps the crew off the companion stairs; the captain climbs them
+}
+
+/** The player's captain, walked by hand in the captain's view (ship-local). */
+export interface Pilot {
+  active: boolean;
+  x: number;
+  z: number;
+  floor: number; // deck height under the feet (stairs included)
+  yaw: number;
+  speed: number;
+  phase: number;
+  atHelm: boolean;
+  hidden: boolean; // the camera is behind the captain's eyes
+}
+
+export interface DeckView {
+  obstacles: readonly Obstacle[];
+  helm: Spot;
+  /** Everyone else standing on the deck, for bumping into. */
+  others(out: Spot[]): Spot[];
 }
 interface Zone {
   t0: number;
@@ -284,6 +305,7 @@ class ShipCrew {
   readonly hatch: Spot;
   readonly tops: { x: number; z: number; y: number }[] = [];
   battle = false;
+  pilot: Pilot | null = null;
   enemy: Ship | null = null;
   enemyDist = 1e9;
   gunSide = 1;
@@ -342,6 +364,7 @@ class ShipCrew {
     const capZ = z(capT) + (c.masts.some((mm) => Math.abs(mm.t - capT) < 0.05) ? 1.6 : 0);
     this.obstacles.push({ x: 0, z: capZ, r: 0.9 });
     if (c.id === 'galleon') for (let k = -2; k <= 2; k++) this.obstacles.push({ x: 0, z: z(0.62) + k * 0.85, r: 0.95 });
+    for (const st of ship.model.stairs) for (const f of [0.2, 0.55, 0.9]) this.obstacles.push({ x: st.x, z: lerp(st.z0, st.z1, f), r: st.w * 0.62, stair: true });
     const hatchT = [0.46, 0.6].find((t) => !c.masts.some((mm) => Math.abs(mm.t - t) < 0.05)) ?? 0.46;
     this.hatch = { x: B * 0.05, z: z(hatchT) + 0.5 };
 
@@ -529,7 +552,7 @@ class ShipCrew {
     const n = this.sailors.length;
     for (let i = 0; i < n; i++) {
       const a = this.sailors[i];
-      if (a.mode !== 'aboard' || a.act === 'helm' || a.act === 'lookout' || a.seat) continue;
+      if (a.mode !== 'aboard' || a.act === 'helm' || a.act === 'lookout' || a.seat || (a.role === 'captain' && this.pilot?.active)) continue;
       for (let j = 0; j < n; j++) {
         const b = this.sailors[j];
         if (i === j || b.mode !== 'aboard' || b.act === 'lookout' || b.seat) continue;
@@ -637,7 +660,11 @@ class ShipCrew {
     }
 
     // what this sailor should be doing right now
-    if (sl.role === 'helm') sl.act = 'helm';
+    if (sl.role === 'captain' && this.pilot?.active) {
+      this.piloted(sl, dt, tt);
+      return;
+    }
+    if (sl.role === 'helm') this.helmPlan(sl);
     else if (sl.role === 'lookout') sl.act = 'lookout';
     else if (sl.role === 'captain') this.captainPlan(sl, time);
     else this.handPlan(sl);
@@ -1015,6 +1042,60 @@ class ShipCrew {
   }
 
   // ---------------------------------------------------------------- roles
+
+  /** The helmsman hands over the wheel when the captain takes it, and waits at their elbow. */
+  private helmPlan(sl: Sailor) {
+    const yielded = !!this.pilot?.active && this.pilot.atHelm;
+    const t = this.tOf(this.helm.z);
+    const want = yielded ? { x: Math.min(0.95, this.halfWidth(sl.zone, t) - 0.45), z: this.helm.z + 0.3 } : this.helm;
+    if (Math.hypot(sl.x - want.x, sl.z - want.z) > 0.08) {
+      if (!sl.goal || Math.abs(sl.goal.x - want.x) + Math.abs(sl.goal.z - want.z) > 0.01) this.walkTo(sl, want.x, want.z, false, yielded ? -Math.PI / 2 : 0);
+      sl.act = 'stand';
+    } else sl.act = yielded ? 'stand' : 'helm';
+  }
+
+  /** The player walks the captain: copy their feet over and animate the stride. */
+  private piloted(sl: Sailor, dt: number, tt: number) {
+    const p = this.pilot!;
+    const T = sl.target;
+    sl.goal = null;
+    sl.x = p.x;
+    sl.z = p.z;
+    sl.zone = this.zoneAt(this.tOf(p.z)) ?? sl.zone;
+    sl.y = p.floor - this.deckY(sl.zone, p.x, p.z);
+    sl.yaw = sl.wantYaw = p.yaw;
+    sl.act = p.atHelm ? 'helm' : 'stand';
+    sl.prop = PROP.none;
+    if (p.atHelm) {
+      const r = this.ship.rudder;
+      T[P.armLX] = 1.05 - 0.35 * r;
+      T[P.armRX] = 1.05 + 0.35 * r;
+      T[P.elbowL] = 0.55 + 0.2 * r;
+      T[P.elbowR] = 0.55 - 0.2 * r;
+      T[P.spineY] = r * 0.18;
+    } else if (p.speed > 0.15) walk(T, p.phase, p.speed > 3 ? 1 : 0);
+    else T[P.spineX] = 0.02 + 0.015 * Math.sin(tt * 1.7);
+    const k = damp(16, dt);
+    for (let i = 0; i < POSE_SIZE; i++) sl.pose[i] += (T[i] - sl.pose[i]) * k;
+  }
+
+  deckView(): DeckView {
+    return {
+      obstacles: this.obstacles,
+      helm: this.helm,
+      others: (out) => {
+        out.length = 0;
+        for (const o of this.sailors) if (o.mode === 'aboard' && o.role !== 'captain' && o.act !== 'lookout' && o.y < 0.5) out.push({ x: o.x, z: o.z });
+        return out;
+      },
+    };
+  }
+
+  /** Where the captain stands right now (ship-local), to step into their shoes. */
+  captainAt(): { x: number; z: number; yaw: number } | null {
+    const c = this.sailors.find((o) => o.role === 'captain');
+    return c && c.mode === 'aboard' ? { x: c.x, z: c.z, yaw: c.yaw } : null;
+  }
 
   private captainPlan(sl: Sailor, time: number) {
     const e = this.enemy;
@@ -1598,6 +1679,20 @@ export class CrewSystem {
     this.free.push(sl.row);
   }
 
+  /** Hands the player's captain to (or back from) manual control. */
+  setPilot(ship: Ship, pilot: Pilot | null) {
+    const c = this.crews.get(ship);
+    if (c) c.pilot = pilot;
+  }
+
+  deckView(ship: Ship): DeckView | null {
+    return this.crews.get(ship)?.deckView() ?? null;
+  }
+
+  captainAt(ship: Ship) {
+    return this.crews.get(ship)?.captainAt() ?? null;
+  }
+
   clear() {
     for (const c of this.crews.values()) for (const sl of c.sailors) this.release(sl);
     for (const sl of this.orphans) this.release(sl);
@@ -1657,6 +1752,7 @@ export class CrewSystem {
       if (dt > 0) c.update(dt, world, ships, splash);
       for (const sl of c.sailors) {
         if (sl.mode === 'gone') continue;
+        if (c.pilot?.hidden && sl.role === 'captain' && sl.mode === 'aboard') continue;
         if (sl.mode === 'aboard') c.matrixOf(sl, m);
         else looseMatrix(sl, m);
         emit(sl, m);

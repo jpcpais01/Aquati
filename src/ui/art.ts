@@ -148,6 +148,9 @@ export const ICONS = {
   wheel: STAT_ICONS.agility,
   harbour: '<path d="M3 20h18M5 20V10l7-5 7 5v10M9.5 20v-5h5v5"/>',
   hourglass: '<path d="M7 3h10M7 21h10M8 3c0 5 8 5 8 9s-8 4-8 9M16 3c0 5-8 5-8 9s8 4 8 9"/>',
+  eye: '<path d="M2.5 12s3.6-6.5 9.5-6.5S21.5 12 21.5 12s-3.6 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.1"/>',
+  bird: '<path d="M3 13.5c3-1 5.5-4 9-4s6 3 9 4M8.5 10.8 12 15l3.5-4.2"/>',
+  spyglass: '<path d="m3.5 15.5 13-7.2 1.9 3.4-13 7.2zM16.5 8.3l1.6-.9 1.9 3.4-1.6.9M6.6 13.8l1.9 3.4"/>',
 };
 
 let crestN = 0;

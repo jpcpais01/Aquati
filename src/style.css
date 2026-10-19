@@ -2358,6 +2358,181 @@ kbd {
   animation: pulse 0.35s ease;
 }
 
+/* ------------------------------------------------------------------ captain's view */
+
+.view-btn {
+  top: calc(252px + var(--safe-t));
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.view-btn.on {
+  color: #2a1a06;
+  border-color: transparent;
+  background: linear-gradient(180deg, #ffe7a6 0%, #efc463 50%, #d39b37 100%);
+}
+
+.spyglass,
+.reticle,
+.fpv-prompt,
+.fpv-hint,
+.fbtn.glass {
+  display: none;
+}
+
+#hud.fpv .spyglass,
+#hud.fpv .reticle,
+#hud.fpv .fpv-prompt.on,
+#hud.fpv .fpv-hint.on {
+  display: flex;
+}
+
+.is-touch #hud.fpv .fbtn.glass {
+  display: flex;
+}
+
+.is-touch #hud.fpv .reticle,
+.is-touch #hud.fpv .fpv-hint {
+  display: none;
+}
+
+/* brass-rimmed lens with the world beyond it */
+.spyglass {
+  position: absolute;
+  inset: -20vmax;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(circle at 50% 50%, transparent 0, transparent 36vmin, rgba(12, 9, 4, 0.5) 38vmin, rgba(5, 4, 2, 0.94) 40.5vmin, #040302 46vmin);
+  will-change: opacity, transform;
+}
+
+.spyglass::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 80vmin;
+  height: 80vmin;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 2px solid rgba(239, 196, 99, 0.42);
+  box-shadow: inset 0 0 60px 6px rgba(0, 0, 0, 0.55), 0 0 0 7px rgba(80, 52, 18, 0.55);
+}
+
+.reticle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transform: translate(-50%, -4px);
+  pointer-events: none;
+}
+
+.reticle i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 250, 238, 0.75);
+  box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s, background 0.2s;
+}
+
+.reticle span {
+  font-family: var(--serif);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(247, 241, 227, 0.7);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.reticle.side span {
+  opacity: 1;
+}
+
+.reticle.ready i {
+  transform: scale(1.5);
+  background: var(--gold);
+}
+
+.reticle.ready span {
+  color: var(--gold);
+}
+
+.fpv-prompt {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 44px);
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 10px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--glass-strong);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  pointer-events: auto;
+  touch-action: manipulation;
+  animation: prompt-in 0.25s ease-out;
+}
+
+.fpv-prompt.held {
+  border-color: rgba(239, 196, 99, 0.5);
+}
+
+.is-touch .fpv-prompt {
+  padding: 14px 22px;
+}
+
+.is-touch .fpv-prompt kbd {
+  display: none;
+}
+
+@keyframes prompt-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+}
+
+.fpv-hint {
+  position: absolute;
+  left: 50%;
+  top: calc(28% + var(--safe-t));
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(5, 18, 26, 0.5);
+  font-size: 13px;
+  color: var(--ink-dim);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.fbtn.glass {
+  position: absolute;
+  right: 18px;
+  bottom: 104px;
+  width: 52px;
+  height: 52px;
+}
+
+.fbtn.glass.on {
+  color: #2a1a06;
+  border-color: transparent;
+  background: linear-gradient(180deg, #ffe7a6 0%, #efc463 50%, #d39b37 100%);
+}
+
 /* ------------------------------------------------------------------ responsive */
 
 @media (max-width: 760px) {
@@ -2405,6 +2580,10 @@ kbd {
 
   .icon-btn {
     top: calc(156px + var(--safe-t));
+  }
+
+  .view-btn {
+    top: calc(196px + var(--safe-t));
   }
 
   .bottom {

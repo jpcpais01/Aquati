@@ -13,6 +13,22 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    // the 13:00 group below is full (five entries), so this hour continues here
+    hour: '2026-10-19T13:00Z',
+    entries: [
+      {
+        title: "Captain's view: walk your own deck",
+        notes: [
+          "Press V (or tap the new eye button) and the camera swoops down out of the sky into your captain's eyes. Press it again to soar back up.",
+          'Walk the deck with WASD or the left stick, hold Shift to run, and look around with the mouse or by dragging the right side of the screen. You ride every roll and pitch of the hull, your boots knock on the planks, and the crew, guns, masts and barrels all get in your way.',
+          'Climb the new companion stairs up to the quarterdeck and forecastle. Walk up to the wheel and press F (or tap Take the helm): your helmsman steps aside, and the ship answers to you. Arrow keys sail and steer from anywhere on deck, and when you let go of the wheel she holds her course.',
+          'Turn to face a beam and click (or tap Fire) to loose that broadside. Raise the spyglass with Z, a right click or the touch button to pick out an enemy crew at the far side of a battle.',
+          'From the deck you finally see the horizon: an open sky with drifting clouds that cast the very shadows you see sliding over the sea, a blazing sun, stars and the moon at night, and water that runs all the way out to a hazy horizon. Step back into your view later and you pick up exactly where your captain is standing.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T13:00Z',
     entries: [
       {
