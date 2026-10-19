@@ -618,6 +618,50 @@ kbd {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2 L18 20 L12 16 L6 20 Z' fill='%23bfeee6'/%3E%3C/svg%3E");
 }
 
+.sky {
+  position: absolute;
+  right: -8px;
+  bottom: -2px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--glass-strong);
+  border: 1px solid var(--line);
+  transition: background 2s;
+}
+
+.sky.night {
+  background: rgba(10, 18, 40, 0.72);
+}
+
+.sky b {
+  position: absolute;
+  bottom: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font: 600 9px var(--sans);
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sky i {
+  position: absolute;
+  inset: 8px;
+  background: no-repeat center/contain;
+  transition: opacity 0.6s;
+}
+
+.sky.sun i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg stroke='%23ffd27a' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M12 1.8v2.6M12 19.6v2.6M1.8 12h2.6M19.6 12h2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8'/%3E%3C/g%3E%3Ccircle cx='12' cy='12' r='4.6' fill='%23ffd27a'/%3E%3C/svg%3E"); }
+.sky.moon i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M15.5 3.2a8.8 8.8 0 1 0 5.3 13.6A7.4 7.4 0 0 1 15.5 3.2z' fill='%23dfe8ff'/%3E%3Ccircle cx='5' cy='5' r='0.8' fill='%23dfe8ff'/%3E%3Ccircle cx='8.6' cy='2.6' r='0.55' fill='%23dfe8ff'/%3E%3C/svg%3E"); }
+.sky.partly-sun i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg stroke='%23ffd27a' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M8 1.5v2M2 7.5h2M3.8 3.3l1.4 1.4M12.2 3.3l-1.4 1.4'/%3E%3C/g%3E%3Ccircle cx='8' cy='8' r='3.6' fill='%23ffd27a'/%3E%3Cpath transform='translate(0 1)' d='M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z' fill='%23e9f1f5'/%3E%3C/svg%3E"); }
+.sky.partly-moon i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 1.8a6 6 0 1 0 3.6 9.3A5 5 0 0 1 10 1.8z' fill='%23dfe8ff'/%3E%3Cpath transform='translate(0 1)' d='M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z' fill='%23c3cfdc'/%3E%3C/svg%3E"); }
+.sky.cloud i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath transform='translate(0 -1)' d='M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z' fill='%23d8e6ee'/%3E%3C/svg%3E"); }
+.sky.rain i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath transform='translate(0 -4)' d='M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z' fill='%23c2d0da'/%3E%3Cg stroke='%239fd0ff' stroke-width='1.6' stroke-linecap='round'%3E%3Cpath d='M8 17.5l-1.2 3M12 17.5l-1.2 3M16 17.5l-1.2 3'/%3E%3C/g%3E%3C/svg%3E"); }
+.sky.storm i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath transform='translate(0 -4)' d='M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z' fill='%238d9aa8'/%3E%3Cpath d='M12.8 14.5h-3l-1.6 5h2.4l-1.2 4.2 5-6.2h-2.6z' fill='%23ffe07a'/%3E%3C/svg%3E"); }
+.sky.mist i { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cg stroke='%23d8e6ee' stroke-width='1.8' stroke-linecap='round'%3E%3Cpath d='M4 8h12M7 12h13M3 16h11M8 20h9'/%3E%3C/g%3E%3C/svg%3E"); }
+
 .bottom {
   position: absolute;
   left: 50%;

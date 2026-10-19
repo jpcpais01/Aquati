@@ -4,6 +4,7 @@
 // through distance delay, air absorption and an island-echo reverb.
 
 import { BankKind, bankJobs, CALIBERS } from './sfx';
+import { renderThunder } from './thunder';
 
 const SPEED_OF_SOUND = 343;
 
@@ -16,6 +17,12 @@ export class Audio {
   private noise!: AudioBuffer;
   private surfGain!: GainNode;
   private windGain!: GainNode;
+  private rainGain!: GainNode;
+  private roarGain!: GainNode;
+  private wx = { rain: 0, storm: 0, wind: 0.8 };
+  private thunderNear: AudioBuffer[] = [];
+  private thunderFar: AudioBuffer[] = [];
+  private thunderQueued = false;
   private gust = 0;
   private duckGain!: GainNode;
   private reverb!: ConvolverNode;
@@ -110,6 +117,32 @@ export class Audio {
     wind.start(0, 1.3);
     lfo2.start();
 
+    // rain: hiss of drops on the sea and the deck, plus a low roar in a downpour
+    const rain = ctx.createBufferSource();
+    rain.buffer = this.noise;
+    rain.loop = true;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1400;
+    const rlp = ctx.createBiquadFilter();
+    rlp.type = 'lowpass';
+    rlp.frequency.value = 9000;
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = 0;
+    rain.connect(hp).connect(rlp).connect(this.rainGain).connect(this.duckGain);
+    rain.start(0, 0.7);
+    const roar = ctx.createBufferSource();
+    roar.buffer = this.noise;
+    roar.loop = true;
+    roar.playbackRate.value = 0.55;
+    const roarLp = ctx.createBiquadFilter();
+    roarLp.type = 'lowpass';
+    roarLp.frequency.value = 380;
+    this.roarGain = ctx.createGain();
+    this.roarGain.gain.value = 0;
+    roar.connect(roarLp).connect(this.roarGain).connect(this.duckGain);
+    roar.start(0, 2.1);
+
     this.buildBank();
   }
 
@@ -127,8 +160,76 @@ export class Audio {
   setSailing(speed01: number) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.windGain.gain.setTargetAtTime(0.04 + speed01 * 0.08 + this.gust * 0.06, t, 0.5);
-    this.surfGain.gain.setTargetAtTime(0.2 + speed01 * 0.12, t, 0.5);
+    const w = this.wx;
+    const blow = Math.max(0, w.wind - 0.8);
+    this.windGain.gain.setTargetAtTime(0.04 + speed01 * 0.08 + this.gust * 0.06 + blow * 0.2 + w.storm * 0.07, t, 0.5);
+    this.surfGain.gain.setTargetAtTime(0.2 + speed01 * 0.12 + w.storm * 0.14, t, 0.5);
+  }
+
+  /** Weather beds: rain hiss & roar, a howling wind and heavier surf in a storm. */
+  setWeather(rain: number, storm: number, wind: number) {
+    this.wx.rain = rain;
+    this.wx.storm = storm;
+    this.wx.wind = wind;
+    if (this.ctx) {
+      const t = this.ctx.currentTime;
+      this.rainGain.gain.setTargetAtTime(rain * 0.13, t, 0.6);
+      this.roarGain.gain.setTargetAtTime(rain * rain * 0.12 + storm * 0.1, t, 0.8);
+    }
+    if (storm > 0.1 && !this.thunderQueued && this.ctx) {
+      // render the thunder bank a piece per tick, well before the first strike
+      this.thunderQueued = true;
+      const ctx = this.ctx;
+      const jobs: [boolean, number][] = [[true, 1], [false, 2], [true, 3], [false, 4]];
+      const next = () => {
+        const j = jobs.shift();
+        if (!j) return;
+        const data = renderThunder(ctx.sampleRate, j[0], j[1]);
+        const b = ctx.createBuffer(2, data[0].length, ctx.sampleRate);
+        b.getChannelData(0).set(data[0]);
+        b.getChannelData(1).set(data[1]);
+        (j[0] ? this.thunderNear : this.thunderFar).push(b);
+        setTimeout(next, 30);
+      };
+      setTimeout(next, 0);
+    }
+  }
+
+  /** Thunder from a strike `dist` metres away: it arrives late, and far peals are dull and long. */
+  thunder(vol: number, pan: number, dist: number) {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const near = dist < 700;
+    const buf = pick(near ? this.thunderNear : this.thunderFar) ?? pick(this.thunderNear) ?? pick(this.thunderFar);
+    if (!buf) return;
+    const at = ctx.currentTime + dist / SPEED_OF_SOUND;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = (near ? 0.9 : 0.75) + Math.random() * 0.15;
+    const air = ctx.createBiquadFilter();
+    air.type = 'lowpass';
+    air.frequency.value = Math.max(260, 9000 * Math.exp(-dist / 260));
+    const g = ctx.createGain();
+    g.gain.value = vol;
+    src.connect(air).connect(g);
+    let p: StereoPannerNode | null = null;
+    if (ctx.createStereoPanner) {
+      p = ctx.createStereoPanner();
+      p.pan.value = clamp1(pan);
+      g.connect(p).connect(this.master);
+    } else g.connect(this.master);
+    const send = ctx.createGain();
+    send.gain.value = 0.5;
+    air.connect(send).connect(this.reverbIn);
+    src.start(at);
+    if (near && vol > 0.5) this.duck(at, 0.3);
+    src.onended = () => {
+      src.disconnect();
+      air.disconnect();
+      g.disconnect();
+      p?.disconnect();
+      send.disconnect();
+    };
   }
 
   private voice(vol: number, pan: number): [AudioContext, GainNode] | null {

@@ -113,7 +113,7 @@ export class Pipeline {
       /* glsl */ `
       uniform sampler2D uOpaque; uniform sampler2D uWater; uniform sampler2D uHalf; uniform sampler2D uBloom;
       uniform vec2 uHalfTexel; uniform float uExposure; uniform float uBloomStrength; uniform float uTilt;
-      uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor;
+      uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor; uniform float uLightning;
       varying vec2 vUv;
 
       vec3 aces(vec3 x) {
@@ -145,6 +145,8 @@ export class Pipeline {
         vec3 bloom = texture2D(uBloom, vUv).rgb;
         col += bloom * uBloomStrength;
         col += uFlashColor * uFlash;
+        // lightning: the whole world blinks cold and bright
+        col = col * (1.0 + uLightning * 1.6) + vec3(0.55, 0.62, 0.85) * uLightning * 0.06;
         col *= uExposure;
 
         // gentle split-tone grade: teal shadows, warm highlights
@@ -177,6 +179,7 @@ export class Pipeline {
         uVignette: { value: 0.55 },
         uFlash: { value: 0 },
         uFlashColor: { value: new THREE.Color(1, 0.6, 0.3) },
+        uLightning: { value: 0 },
       },
     );
   }
@@ -273,6 +276,10 @@ export class Pipeline {
   }
 
   tilt = 1;
+  /** Lightning brightness this frame (0 none). */
+  set lightning(v: number) {
+    this.finalMat.uniforms.uLightning.value = v;
+  }
   flash(strength: number) {
     this.finalMat.uniforms.uFlash.value = Math.max(this.finalMat.uniforms.uFlash.value, strength);
   }

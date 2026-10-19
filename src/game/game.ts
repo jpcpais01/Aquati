@@ -3,16 +3,19 @@ import { angleDelta, clamp } from '../core/noise';
 import { Input } from '../core/input';
 import { Audio } from '../core/audio';
 import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality';
-import { createEnvironment, FOG_COLOR, globalUniforms, SUN_COLOR, SUN_DIR } from '../render/environment';
+import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { Pipeline } from '../render/pipeline';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
 import { WindField, WindWisps } from '../fx/wind';
+import { Rain } from '../fx/rain';
+import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
 import { Ocean } from '../world/ocean';
 import { WakeField } from '../world/wakeField';
-import { buildWaves } from '../world/waves';
+import { buildWaves, setSeaState, Wave } from '../world/waves';
+import { Atmosphere, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { PirateAI } from '../ships/ai';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
@@ -69,6 +72,14 @@ export class Game {
   private birds!: Birds;
   private windField!: WindField;
   private wisps!: WindWisps;
+  private atmos = new Atmosphere();
+  private skyEnv: SkyEnvironment;
+  private envT = 0;
+  private rain!: Rain;
+  private lightning!: Lightning;
+  private baseWaves: Wave[] = [];
+  private cloudOff = new THREE.Vector2();
+  private sprayT = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -86,7 +97,8 @@ export class Game {
     this.input.bindFireButtons(document.getElementById('t-port')!, document.getElementById('t-fire')!, document.getElementById('t-star')!);
     this.input.onTouchDetected = () => this.ui.setTouch(true);
 
-    this.sun = new THREE.DirectionalLight(new THREE.Color(SUN_COLOR).multiplyScalar(1 / 3.1), 3.1);
+    // the key light: the sun by day, the moon by night (see world/atmosphere.ts)
+    this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.quality.shadowSize, this.quality.shadowSize);
     this.sun.shadow.bias = -0.0005;
@@ -96,7 +108,12 @@ export class Game {
     sc.near = 1;
     sc.far = 900;
     this.opaque.add(this.sun, this.sun.target);
-    this.opaque.fog = new THREE.Fog(FOG_COLOR.clone(), 380, 1500);
+    this.opaque.fog = new THREE.Fog(new THREE.Color(), 380, 1500);
+    this.skyEnv = new SkyEnvironment(this.renderer);
+    this.applyAtmosphere();
+    this.atmos.onChange = (_k, title, line) => {
+      if (this.state === 'playing') this.ui.toast(title, line, 3.4);
+    };
     this.opaque.add(this.projectiles.mesh, this.loot.group);
 
     this.wireUI();
@@ -134,6 +151,7 @@ export class Game {
 
     const windAngle = 1.25;
     const waves = buildWaves(windAngle, 1);
+    this.baseWaves = waves.map((w) => ({ ...w }));
     this.wake = new WakeField(q.wakeRes, 300);
     const seaFloor = this.terrain.createHeightTexture(512);
     this.wake.setTerrain(seaFloor);
@@ -149,9 +167,12 @@ export class Game {
     this.world.gustAt = (x, z) => this.windField.at(x, z);
     this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
+    this.rain = new Rain([2400, 4800, 7200][q.tier]);
+    this.lightning = new Lightning();
+    this.water.add(this.rain.mesh, this.lightning.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
-    this.opaque.environment = createEnvironment(this.renderer);
+    this.opaque.environment = this.skyEnv.update();
     this.opaque.environmentIntensity = 0.8;
     this.ui.buildMap(this.terrain);
     this.ui.setWind(windAngle);
@@ -513,7 +534,7 @@ export class Game {
     const w = this.world;
     w.time += dt;
     globalUniforms.uTime.value = w.time;
-    globalUniforms.uCloudOffset.value.set(w.time * 0.0035 * w.wind.dirX, w.time * 0.0035 * w.wind.dirZ);
+    this.updateWeather(dt);
 
     this.input.poll();
     if (this.state === 'playing') {
@@ -591,6 +612,7 @@ export class Game {
     this.audio.setGust(gustHere);
     this.ui.setGust(gustHere);
 
+    this.updateSkyFx(dt);
     this.particles.update(dt);
     this.birds.update(dt, w.time);
     this.pipeline.decayFlash(realDt);
@@ -609,6 +631,95 @@ export class Game {
       });
     }
     this.ui.tickFloaters(realDt);
+  }
+
+  // ------------------------------------------------------------------ sky & weather
+
+  /** Day cycle, weather and sea state: everything the world simulation reads. */
+  private updateWeather(dt: number) {
+    const a = this.atmos;
+    a.update(dt);
+    const w = this.world;
+    if (!w) return;
+    // the weather sets the breeze: ships, plants, gusts and cloud drift all follow
+    w.wind.strength = a.wind;
+    globalUniforms.uWind.value.z = a.wind;
+    this.windField.intensity = 0.55 + a.wind * 0.6;
+    this.cloudOff.x += dt * w.wind.dirX * (0.002 + a.wind * 0.002 + a.storm * 0.004);
+    this.cloudOff.y += dt * w.wind.dirZ * (0.002 + a.wind * 0.002 + a.storm * 0.004);
+    globalUniforms.uCloudOffset.value.copy(this.cloudOff);
+    // bigger seas: CPU buoyancy and the GPU swell share the very same waves
+    setSeaState(w.waves, this.baseWaves, a.sea);
+    this.ocean.setWaves(w.waves);
+    this.applyAtmosphere();
+  }
+
+  /** Pushes the atmosphere into lights, fog and the grade. */
+  private applyAtmosphere() {
+    const a = this.atmos;
+    this.sun.color.setRGB(a.keyColor.x, a.keyColor.y, a.keyColor.z);
+    this.sun.intensity = 1;
+    const fog = this.opaque.fog as THREE.Fog;
+    fog.color.setRGB(a.fogColor.x, a.fogColor.y, a.fogColor.z);
+    fog.near = a.fogRange.x;
+    fog.far = a.fogRange.y;
+    this.pipeline.exposure = a.exposure;
+  }
+
+  /** Rain, lightning, thunder, spindrift and the clock badge. */
+  private updateSkyFx(dt: number) {
+    const a = this.atmos;
+    const w = this.world;
+    const tgt = this.rig.target;
+    const cam = this.rig.camera;
+    this.rain.update(a.rain, tgt.x, tgt.z, this.rig.distance, w.wind.dirX, w.wind.dirZ, a.wind);
+    const strike = this.lightning.update(dt, a.storm, tgt.x, tgt.z, cam);
+    if (strike) {
+      const p = new THREE.Vector3(strike.x, 0, strike.z);
+      const [vol, pan, dist] = w.soundAt(p);
+      this.audio.thunder(Math.min(1, (strike.bolt ? 0.95 : 0.55) * strike.power * Math.max(vol, 0.35)), pan * 0.6, dist);
+      if (strike.bolt) {
+        // the strike point boils with light and steam
+        p.y = w.waterHeight(p.x, p.z) + 1;
+        w.particles.emit({ x: p.x, y: p.y + 2, z: p.z, life: 0.5, size: 40, sizeEnd: 70, color: [6, 7, 10], colorEnd: [0.5, 0.6, 1], fadeIn: 0.001 }, true);
+        for (let i = 0; i < 6; i++) {
+          w.particles.emit({
+            x: p.x + (Math.random() - 0.5) * 8, y: p.y, z: p.z + (Math.random() - 0.5) * 8, vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 3, vz: (Math.random() - 0.5) * 3,
+            life: 3 + Math.random() * 2, size: 6, sizeEnd: 22, color: [0.9, 0.92, 0.95], alpha: 0.35, drag: 0.6, kind: 1, fadeIn: 0.2,
+          });
+        }
+      }
+    }
+    const flash = this.lightning.flash;
+    globalUniforms.uFlash.value = flash;
+    this.pipeline.lightning = Math.min(flash, 1.5) * 0.55;
+    this.opaque.environmentIntensity = 0.8 * (1 + flash * 5);
+
+    // spindrift: gusts tear spray off the crests in a blow
+    if (a.storm > 0.35 && dt > 0) {
+      this.sprayT += dt * a.storm * 14;
+      const reach = this.rig.distance * 0.7;
+      while (this.sprayT > 1) {
+        this.sprayT -= 1;
+        const x = tgt.x + (Math.random() - 0.5) * reach * 2;
+        const z = tgt.z + (Math.random() - 0.5) * reach * 1.4;
+        if (this.terrain.heightAt(x, z) > -2) continue;
+        const sp = 7 + a.wind * 6;
+        w.particles.emit({
+          x, y: w.waterHeight(x, z) + 0.4, z,
+          vx: w.wind.dirX * sp, vy: 1 + Math.random() * 1.5, vz: w.wind.dirZ * sp,
+          life: 1.4 + Math.random() * 1.2, size: 1.2, sizeEnd: 5 + Math.random() * 3, color: [1.2, 1.26, 1.3], alpha: 0.32, drag: 0.9, grav: 1.2, kind: 1, fadeIn: 0.15,
+        });
+      }
+    }
+
+    this.audio.setWeather(a.rain, a.storm, a.wind);
+    this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
+    const k = a.kind;
+    const dark = a.night > 0.5;
+    const icon = k === 'storm' ? 'storm' : k === 'rain' ? 'rain' : k === 'mist' ? 'mist' : k === 'cloudy' ? 'cloud'
+      : k === 'fair' ? (dark ? 'partly-moon' : 'partly-sun') : dark ? 'moon' : 'sun';
+    this.ui.setSky(a.hour, icon, WEATHER[k].name);
   }
 
   private updateTargetRing() {
@@ -703,8 +814,19 @@ export class Game {
     const cx = Math.round(target.x / texel) * texel;
     const cz = Math.round(target.z / texel) * texel;
     this.sun.target.position.set(cx, 0, cz);
-    this.sun.position.set(cx + SUN_DIR.x * 400, SUN_DIR.y * 400, cz + SUN_DIR.z * 400);
+    // low sun / moon: keep the shadow caster a little higher so shadows stay crisp, not smeared
+    const kd = this.atmos.keyDir;
+    const ky = Math.max(kd.y, 0.22);
+    const kh = Math.hypot(kd.x, kd.z) || 1;
+    const kk = Math.sqrt(1 - ky * ky) / kh;
+    this.sun.position.set(cx + kd.x * kk * 400, ky * 400, cz + kd.z * kk * 400);
     this.sun.target.updateMatrixWorld();
+    // the sky's light changes slowly: refresh the image-based lighting a few times a second
+    this.envT -= dt > 0 ? dt : 0;
+    if (this.envT <= 0) {
+      this.envT = 0.35;
+      this.skyEnv.update();
+    }
 
     this.wake.update(this.renderer, target.x, target.z, dt);
     this.ocean.follow(target.x, target.z);

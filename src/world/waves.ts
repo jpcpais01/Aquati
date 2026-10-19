@@ -45,6 +45,22 @@ export function buildWaves(windAngle: number, scale = 1): Wave[] {
   });
 }
 
+/**
+ * Sea state: rescales a wave set in place from its calm-weather base. Long
+ * swells grow the most in a storm, short chop the least, and the trains get a
+ * little steeper so the crests pinch and break.
+ */
+export function setSeaState(waves: Wave[], base: Wave[], sea: number) {
+  const n = waves.length;
+  const steep = 0.66 + Math.max(0, Math.min(sea, 1.2)) * 0.15;
+  for (let i = 0; i < n; i++) {
+    const grow = 1 + sea * (1.05 - (i / (n - 1)) * 0.6);
+    const w = waves[i];
+    w.amp = base[i].amp * Math.max(0.6, grow);
+    w.q = steep / (w.k * w.amp * n);
+  }
+}
+
 /** Packs waves for GLSL uniforms: vec4(dir.xy, k, amp), vec4(omega, q, phase, 0). */
 export function packWaves(waves: Wave[]): { a: Float32Array; b: Float32Array } {
   const a = new Float32Array(waves.length * 4);

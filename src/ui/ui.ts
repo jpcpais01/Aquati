@@ -266,6 +266,20 @@ export class UI {
     ($('hud-wind').firstElementChild as HTMLElement).style.transform = `rotate(${this.windDeg}deg) scale(${s.toFixed(3)})`;
   }
 
+  private skyKey = '';
+  /** Clock & weather badge beside the minimap. */
+  setSky(hour: number, icon: string, label: string) {
+    const m = Math.floor(((hour % 24) * 60) / 5) * 5;
+    const text = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    const key = text + icon + label;
+    if (key === this.skyKey) return;
+    this.skyKey = key;
+    const el = $('hud-sky');
+    el.className = `sky ${icon}${hour < 5.5 || hour > 19.5 ? ' night' : ''}`;
+    el.title = `${label} · ${text}`;
+    $('hud-clock').textContent = text;
+  }
+
   /** Floating health bars over enemies. */
   updateBars(ships: Ship[], player: Ship | null, camera: THREE.Camera, w: number, h: number) {
     const seen = new Set<number>();
