@@ -16,28 +16,34 @@
 
     <div id="loading" class="screen">
       <div class="brand">
+        <div class="crest-slot spin"></div>
         <div class="logo">AQUATI</div>
-        <div class="tag">Charting the archipelago…</div>
+        <div class="tag" id="load-tip">Charting the archipelago…</div>
         <div class="bar"><i id="load-bar"></i></div>
       </div>
     </div>
 
     <div id="menu" class="screen hidden">
       <header class="menu-head">
-        <div class="logo">AQUATI</div>
-        <div class="tag">Sail the turquoise archipelago</div>
-      </header>
-      <section class="ships" id="ship-cards"></section>
-      <footer class="menu-foot">
-        <button class="btn gold big" id="btn-sail">Set Sail</button>
-        <div class="menu-links">
-          <button class="link" id="btn-notes">Patch notes</button>
-          <span class="dot">·</span>
-          <button class="link" id="btn-controls">Controls</button>
-          <span class="dot">·</span>
-          <button class="link" id="btn-sound">Sound: on</button>
+        <div class="crest-slot"></div>
+        <div class="title-block">
+          <div class="logo">AQUATI</div>
+          <div class="tag">Sail the turquoise archipelago</div>
         </div>
-      </footer>
+      </header>
+      <nav class="menu-tools">
+        <button class="tool" id="btn-notes" title="Patch notes"><span class="ti" data-icon="scroll"></span><span class="tl">Patch notes</span><i class="new-dot" id="notes-dot"></i></button>
+        <button class="tool" id="btn-controls" title="Controls"><span class="ti" data-icon="keys"></span><span class="tl">Controls</span></button>
+        <button class="tool icon-only" id="btn-refresh" title="Refresh: fetch the latest version and reload"><span class="ti" data-icon="refresh"></span></button>
+        <button class="tool sound-toggle icon-only" id="btn-sound" title="Sound"><span class="ti"></span></button>
+      </nav>
+      <section class="dock" id="dock">
+        <div class="dock-label"><span>Choose your ship</span></div>
+        <div class="ship-tabs" id="ship-tabs" role="tablist"></div>
+        <div class="ship-detail" id="ship-detail"></div>
+        <button class="btn gold big sail-btn" id="btn-sail"><span class="ti" data-icon="anchor"></span><span>Set Sail</span></button>
+        <div class="dock-hint kd"><kbd>←</kbd><kbd>→</kbd> choose ship · <kbd>Enter</kbd> set sail</div>
+      </section>
     </div>
 
     <div id="hud" class="hidden">
@@ -65,7 +71,7 @@
         </div>
         <div class="broadside" id="bs-star"><span>Starboard</span><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg></div><kbd class="kd">E</kbd></div>
       </div>
-      <button class="icon-btn" id="btn-pause" title="Pause">❚❚</button>
+      <button class="icon-btn" id="btn-pause" title="Pause (Esc)"><span class="ti" data-icon="pause"></span></button>
       <div id="toasts"></div>
       <div id="floaters"></div>
       <div id="bars"></div>
@@ -80,12 +86,18 @@
     </div>
 
     <div id="pause" class="screen dim hidden">
-      <div class="card-modal">
+      <div class="card-modal ornate">
+        <div class="modal-crest"><span class="ti" data-icon="anchor"></span></div>
         <h2>Anchored</h2>
-        <button class="btn gold" id="btn-resume">Resume voyage</button>
-        <button class="btn" id="btn-notes2">Patch notes</button>
-        <button class="btn" id="btn-controls2">Controls</button>
-        <button class="btn ghost" id="btn-quit">Return to harbour</button>
+        <div class="rule"></div>
+        <div class="summary" id="pause-summary"></div>
+        <button class="btn gold" id="btn-resume"><span class="ti" data-icon="play"></span>Resume voyage</button>
+        <div class="btn-row">
+          <button class="btn" id="btn-notes2"><span class="ti" data-icon="scroll"></span>Notes</button>
+          <button class="btn" id="btn-controls2"><span class="ti" data-icon="keys"></span>Controls</button>
+          <button class="btn sound-toggle" id="btn-sound2"><span class="ti"></span></button>
+        </div>
+        <button class="btn ghost" id="btn-quit"><span class="ti" data-icon="harbour"></span>Return to harbour</button>
       </div>
     </div>
 
@@ -104,45 +116,67 @@
         </div>
         <div class="chart-btns">
           <button class="chart-btn" id="chart-center" title="Centre on ship">&#9678;</button>
-          <button class="chart-btn" id="chart-close" title="Close (M)">&#10005;</button>
+          <button class="chart-btn" id="chart-close" title="Close (M)"><span class="ti" data-icon="close"></span></button>
         </div>
       </div>
     </div>
 
     <div id="dead" class="screen dim hidden">
-      <div class="card-modal">
-        <h2>Lost to the depths</h2>
+      <div class="card-modal ornate wreck">
+        <div class="wreck-scene" id="wreck-scene"><div class="wreck-ship" id="wreck-ship"></div><div class="wreck-sea"></div><i class="bub"></i><i class="bub"></i><i class="bub"></i><i class="bub"></i></div>
+        <h2>Lost to the Depths</h2>
         <p class="sub" id="dead-sub"></p>
+        <div class="rule"></div>
         <div class="summary" id="dead-summary"></div>
-        <button class="btn gold" id="btn-again">Choose a new ship</button>
+        <button class="btn gold" id="btn-again"><span class="ti" data-icon="anchor"></span>Choose a new ship</button>
       </div>
     </div>
 
     <div id="notes" class="screen dim hidden">
-      <div class="card-modal wide">
-        <h2>Patch notes</h2>
+      <div class="card-modal ornate wide">
+        <button class="round-btn modal-x" data-close title="Close (Esc)"><span class="ti" data-icon="close"></span></button>
+        <h2>Patch Notes</h2>
+        <p class="sub">The latest from the shipwrights</p>
+        <div class="rule"></div>
         <div class="notes" id="notes-body"></div>
-        <button class="btn" data-close>Close</button>
       </div>
     </div>
 
     <div id="controls" class="screen dim hidden">
-      <div class="card-modal wide">
+      <div class="card-modal ornate wide">
+        <button class="round-btn modal-x" data-close title="Close (Esc)"><span class="ti" data-icon="close"></span></button>
         <h2>Controls</h2>
-        <div class="controls-grid">
-          <div><kbd>W</kbd><kbd>S</kbd> Raise / lower sail</div>
-          <div><kbd>A</kbd><kbd>D</kbd> Steer to port / starboard</div>
-          <div><kbd>Q</kbd> Fire port broadside</div>
-          <div><kbd>E</kbd> Fire starboard broadside</div>
-          <div><kbd>Click</kbd> Fire the side you point at</div>
-          <div><kbd>Space</kbd> Fire at the nearest foe</div>
-          <div><kbd>Wheel</kbd> Zoom</div>
-          <div><kbd>M</kbd> Sea chart (or tap the minimap)</div>
-          <div><kbd>Esc</kbd> Pause</div>
-          <div class="span">On touch: drag the left side to steer &amp; trim, tap Fire. Pinch to zoom.</div>
-          <div class="span">Sail across the wind for the best speed. Sailing straight into the wind is slow going.</div>
+        <p class="sub">Trim your sails, mind the wind, give 'em a broadside</p>
+        <div class="rule"></div>
+        <div class="controls-body">
+          <section class="ctl-group touch-only">
+            <h4>On touch</h4>
+            <div class="ctl"><span class="gesture">Drag left side</span><span>Steer &amp; trim, like a tiller</span></div>
+            <div class="ctl"><span class="gesture">Fire</span><span>Broadside at the nearest foe</span></div>
+            <div class="ctl"><span class="gesture">◀ Port · Stbd ▶</span><span>Fire one side</span></div>
+            <div class="ctl"><span class="gesture">Pinch</span><span>Zoom</span></div>
+            <div class="ctl"><span class="gesture">Tap minimap</span><span>Open the sea chart</span></div>
+          </section>
+          <section class="ctl-group">
+            <h4>Sailing</h4>
+            <div class="ctl"><span><kbd>W</kbd><kbd>S</kbd></span><span>Raise / lower sail</span></div>
+            <div class="ctl"><span><kbd>A</kbd><kbd>D</kbd></span><span>Steer to port / starboard</span></div>
+          </section>
+          <section class="ctl-group tall">
+            <h4>Gunnery</h4>
+            <div class="ctl"><span><kbd>Q</kbd></span><span>Port broadside</span></div>
+            <div class="ctl"><span><kbd>E</kbd></span><span>Starboard broadside</span></div>
+            <div class="ctl"><span><kbd>Click</kbd></span><span>Fire the side you point at</span></div>
+            <div class="ctl"><span><kbd>Space</kbd></span><span>Fire at the nearest foe</span></div>
+          </section>
+          <section class="ctl-group">
+            <h4>Navigation</h4>
+            <div class="ctl"><span><kbd>Wheel</kbd></span><span>Zoom</span></div>
+            <div class="ctl"><span><kbd>M</kbd></span><span>Sea chart</span></div>
+            <div class="ctl"><span><kbd>Esc</kbd></span><span>Pause</span></div>
+          </section>
+          <div class="ctl-tip"><span class="ti" data-icon="wheel"></span>Sail across the wind for the best speed. Heading straight into it is slow going.</div>
         </div>
-        <button class="btn" data-close>Close</button>
       </div>
     </div>
 

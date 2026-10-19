@@ -18,6 +18,7 @@ import { buildWaves, setSeaState, Wave } from '../world/waves';
 import { Atmosphere, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { PirateAI } from '../ships/ai';
+import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
@@ -80,6 +81,7 @@ export class Game {
   private baseWaves: Wave[] = [];
   private cloudOff = new THREE.Vector2();
   private sprayT = 0;
+  private crew!: CrewSystem;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -117,6 +119,14 @@ export class Game {
     this.opaque.add(this.projectiles.mesh, this.loot.group);
 
     this.wireUI();
+    // browsers only let sound start from a gesture (and on phones a touch only
+    // counts once it lifts), so any tap or key in the harbour wakes the theme
+    const wake = () => {
+      if (this.state !== 'menu' && this.state !== 'loading') return;
+      this.audio.start();
+      this.audio.setMusic(true);
+    };
+    for (const ev of ['pointerup', 'touchend', 'keydown'] as const) addEventListener(ev, wake, true);
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state === 'playing') {
@@ -170,6 +180,8 @@ export class Game {
     this.rain = new Rain([2400, 4800, 7200][q.tier]);
     this.lightning = new Lightning();
     this.water.add(this.rain.mesh, this.lightning.mesh);
+    this.crew = new CrewSystem(q.tier);
+    this.opaque.add(this.crew.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = this.skyEnv.update();
@@ -252,6 +264,11 @@ export class Game {
     this.rig.camera.updateProjectionMatrix();
     // tighter framing on portrait phones
     this.rig.zoom = clamp(this.rig.zoom, 0, 1);
+    this.frameMenu();
+  }
+
+  private frameMenu() {
+    this.rig.menuShift = this.state === 'menu' || this.state === 'loading' ? this.ui.menuFraming() : { x: 0, y: 0 };
   }
 
   // ------------------------------------------------------------------ ships
@@ -326,9 +343,11 @@ export class Game {
     this.input.enabled = false;
     this.ui.showHud(false);
     this.ui.showMenu(true);
+    this.audio.setMusic(true, true);
     this.rig.mode = 'orbit';
     this.setPreview(this.ui.selected);
     this.rig.snapTo(this.spawnPoint);
+    this.frameMenu();
     // a couple of pirates on the horizon for life
     if (!this.ships.some((s) => s.team === 'pirate')) {
       this.spawnPirate(this.spawnPoint, 160, 260);
@@ -339,6 +358,7 @@ export class Game {
   private startVoyage() {
     if (!this.preview) return;
     this.audio.start();
+    this.audio.setMusic(false);
     const p = this.preview;
     this.preview = null;
     p.anchored = false;
@@ -351,6 +371,7 @@ export class Game {
     this.ui.showMenu(false);
     this.ui.showHud(true);
     this.rig.mode = 'follow';
+    this.rig.menuShift = { x: 0, y: 0 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 6;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
@@ -360,6 +381,7 @@ export class Game {
     for (const s of this.ships.slice()) this.removeShip(s);
     this.projectiles.clear();
     this.loot.clear();
+    this.crew.clear();
     this.player = null;
     this.preview = null;
   }
@@ -367,7 +389,8 @@ export class Game {
   private setPaused(on: boolean) {
     if (on && this.state === 'playing') {
       this.state = 'paused';
-      this.ui.showPause(true);
+      const p = this.player;
+      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime } : undefined);
     } else if (!on && this.state === 'paused') {
       this.state = 'playing';
       this.ui.showPause(false);
@@ -429,6 +452,7 @@ export class Game {
         isles: this.discovered.size,
         time: this.voyageTime,
         ship: this.player.name,
+        cls: this.player.cls.id,
       });
     }, 3800);
   }
@@ -602,6 +626,7 @@ export class Game {
     this.rig.update(realDt, fpos, fvel, w.time);
     w.listener.copy(this.rig.target);
     w.listenerZoom = this.rig.distance;
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5);
 
     // gusts roll across whatever the camera is looking at
     const reach = clamp(this.rig.distance * 0.9, 70, 260);

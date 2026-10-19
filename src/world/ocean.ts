@@ -267,8 +267,13 @@ export class Ocean {
             rainSplash = rr.z * rf * uRain;
           }
 
-          // ---- ship wakes: height-field normals so every V-arm and ring catches the light
-          vec2 wuv = (vWorld.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
+          // ---- ship wakes: height-field normals so every V-arm and ring catches the light.
+          // The lookup is domain-warped by two drifting noise scales so the arms wander,
+          // kink and fray instead of reading as ruled lines.
+          vec4 wn = texture(uNoiseTex, p * 0.031 + vec2(t * 0.013, -t * 0.009));
+          vec4 wn2 = texture(uNoiseTex, p * 0.11 - vec2(t * 0.021, t * 0.017) + 0.37);
+          vec2 wWarp = (wn.ga - 0.5) * 3.2 + (wn2.ga - 0.5) * 1.1;
+          vec2 wuv = (vWorld.xz + wWarp - uWakeRect.xy) * uWakeRect.w + 0.5;
           vec4 wk = texture(uWakeTex, wuv);
           float wtx = uWakeTexel;
           vec2 wGrad = vec2(
@@ -277,9 +282,13 @@ export class Ocean {
           ) / (2.0 * wtx * uWakeRect.z);
           vec2 wb = min(wuv, 1.0 - wuv);
           float wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
-          wGrad *= wIn;
+          // strength comes and goes in patches along the arms
+          wGrad *= wIn * (0.45 + 0.9 * smoothstep(0.25, 0.75, wn.r * 0.7 + wn2.g * 0.45));
           float wakeH = wk.g * wIn;
-          N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 2.3);
+          // disturbed water is choppy, not glassy: roughen the ripples where the wake is busy
+          float wChop = clamp(length(wGrad) * 5.0 + wk.r * wIn * 0.6, 0.0, 1.4);
+          vec2 wRip = (texture(uNormalTex, p * 0.29 - vec2(t * 0.07, -t * 0.05) + 0.61).xy * 2.0 - 1.0) + (wn2.rb - 0.5) * 1.2;
+          N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 1.9 + vec3(wRip.x, 0.0, wRip.y) * 0.22 * wChop);
           vec3 Ng = normalize(N + vec3(gustRip.x, 0.0, gustRip.y) * 0.5);
 
           // ---- depth through the water column
@@ -373,8 +382,8 @@ export class Ocean {
           contact = max(contact, (1.0 - smoothstep(0.0, 0.6, thick)) * 0.8);
           // wake foam: a dense churned core that breaks up into lacy cells as it thins out
           float wf = clamp(wk.r * wIn, 0.0, 2.5);
-          float pat = lace * 0.55 + lace2 * 0.45 + (nz2.r - 0.5) * 0.3;
-          float thr = 0.9 - wf * 0.62;
+          float pat = lace * 0.55 + lace2 * 0.45 + (nz2.r - 0.5) * 0.3 + (wn.b - 0.5) * 0.35;
+          float thr = 0.9 - wf * (0.48 + 0.3 * wn2.r);
           float wakeFoam = smoothstep(thr - 0.09, thr + 0.07, pat) * smoothstep(0.015, 0.1, wf);
           wakeFoam = max(wakeFoam, smoothstep(0.9, 1.7, wf));
           wakeFoam *= 0.55 + 0.45 * smoothstep(0.0, 0.7, wf);
