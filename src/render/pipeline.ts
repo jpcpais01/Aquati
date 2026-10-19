@@ -6,11 +6,13 @@ import { GLSL_SS_APPLY, ScreenSpaceLighting, TraceConfig } from './screenSpace';
 //   1. opaque scene  -> rtOpaque (HDR colour + depth texture, MSAA)
 //   2. screen-space ray tracing over rtOpaque -> AO, bounce light, contact
 //      shadows (half res, see screenSpace.ts), lit into the opaque colour below
-//   3. water + fx    -> rtWater  (premultiplied HDR over transparent, own depth)
-//      (the ocean reads rtOpaque colour/depth for refraction, thickness and
-//      ray-traced reflections)
-//   4. combine at half res -> dual-filter bloom chain
-//   5. final: combine + traced light + adaptive sharpen + bloom + edge tilt-shift + grade + ACES -> screen
+//   3. ocean reflections -> rtRefl (half res: each water pixel marches its
+//      reflected ray through rtOpaque's depth, see ocean.ts)
+//   4. water + fx    -> rtWater  (premultiplied HDR over transparent, own depth)
+//      (the ocean reads rtOpaque colour/depth for refraction and thickness,
+//      and rtRefl for the traced reflections)
+//   5. combine at half res -> dual-filter bloom chain
+//   6. final: combine + traced light + adaptive sharpen + bloom + edge tilt-shift + grade + ACES -> screen
 
 const FS_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -39,6 +41,10 @@ const SS_UNIFORMS = () => ({
 export class Pipeline {
   rtOpaque!: THREE.WebGLRenderTarget;
   rtWater!: THREE.WebGLRenderTarget;
+  /** Half-resolution traced ocean reflections (premultiplied). */
+  rtRefl!: THREE.WebGLRenderTarget;
+  /** The ocean's reflection pass this frame, or null when reflections are off. */
+  refl: THREE.Scene | null = null;
   private rtHalf!: THREE.WebGLRenderTarget;
   private bloomRTs: THREE.WebGLRenderTarget[] = [];
   private quad: THREE.Mesh;
@@ -324,6 +330,7 @@ export class Pipeline {
     this.height = h;
     this.rtOpaque?.dispose();
     this.rtWater?.dispose();
+    this.rtRefl?.dispose();
     this.rtHalf?.dispose();
     this.bloomRTs.forEach((r) => r.dispose());
     const depthTex = new THREE.DepthTexture(w, h, THREE.UnsignedIntType);
@@ -339,6 +346,8 @@ export class Pipeline {
     let bw = Math.max(1, w >> 1);
     let bh = Math.max(1, h >> 1);
     this.rtHalf = new THREE.WebGLRenderTarget(bw, bh, lin);
+    // its own depth: steep crests fold over, and the nearer face must win
+    this.rtRefl = new THREE.WebGLRenderTarget(bw, bh, { ...lin, depthBuffer: true });
     this.bloomRTs = [];
     for (let i = 0; i < this.settings.bloomLevels; i++) {
       bw = Math.max(1, bw >> 1);
@@ -381,7 +390,16 @@ export class Pipeline {
       P?.end(true);
     }
 
-    P?.begin('Water, reflections & FX', 'ocean', true);
+    if (this.refl) {
+      P?.begin('Water reflections (half res)', 'ocean', true);
+      r.setRenderTarget(this.rtRefl);
+      r.setClearColor(0x000000, 0);
+      r.clear(true, true, false);
+      r.render(this.refl, camera);
+      P?.end(true);
+    }
+
+    P?.begin('Water & FX', 'ocean', true);
     r.setRenderTarget(this.rtWater);
     r.setClearColor(0x000000, 0);
     r.clear(true, true, false);

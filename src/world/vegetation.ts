@@ -15,10 +15,13 @@ export { palmGeometry } from './flora';
 // wildflower drifts, hibiscus and croton with the odd scarlet flame tree or
 // lilac blossom tree standing alone, and island pines up on the heights.
 //
-// One InstancedMesh per species variant per island keeps culling cheap. Each
+// One InstancedMesh per species variant per island keeps draw calls few. Each
 // island also has a far LOD (same instances, lighter meshes, no ground cover)
 // that it swaps to when the camera is well away from it, and the tiny ground
 // cover shrinks away with distance in the vertex shader instead of popping.
+// Within a batch every plant is culled on its own: only those in view, or
+// whose shadow can reach the view, are packed to the front of the instance
+// buffer and drawn, in the main pass and the shadow pass alike.
 
 const TAU = Math.PI * 2;
 
@@ -44,21 +47,54 @@ const T_TALL = 2;
 const T_FLAME = 3;
 const T_BLOSSOM = 4;
 
+/** One instanced batch whose plants are culled one by one. */
+interface Batch {
+  mesh: THREE.InstancedMesh;
+  /** Every plant's matrix and colour; the mesh's own buffers hold the drawn subset. */
+  mat: Float32Array;
+  col: Float32Array;
+  /** Bounding sphere per plant: x, y, z, r. */
+  sph: Float32Array;
+  /** Plant indices drawn last time, so an unchanged set is never re-uploaded. */
+  shown: Uint32Array;
+  n: number;
+  shadows: boolean;
+}
+
 interface IslandFlora {
   near: THREE.Group;
   far: THREE.Group;
   always: THREE.Group;
+  nearB: Batch[];
+  farB: Batch[];
+  alwaysB: Batch[];
   cx: number;
   cy: number;
   cz: number;
   ext: number;
+  peak: number;
   isNear: boolean;
 }
+
+const _frustum = new THREE.Frustum();
+const _pv = new THREE.Matrix4();
+const _dir = new THREE.Vector3();
+const _sphere = new THREE.Sphere();
+const _m4 = new THREE.Matrix4();
+/** Frustum margin (m): small camera moves never uncover an unculled plant. */
+const MARGIN = 14;
 
 export class Vegetation {
   readonly group = new THREE.Group();
   private lists: Lists[] = [];
   private flora: IslandFlora[] = [];
+  /** While set (the loading screen's warm-up draw), nothing is culled or swapped. */
+  hold = false;
+  // the view the batches were last culled for
+  private cullPos = new THREE.Vector3(Infinity, 0, 0);
+  private cullDir = new THREE.Vector3();
+  private cullLight = new THREE.Vector3();
+  private cullProj = new Float32Array(2);
 
   constructor(
     private terrain: Terrain,
@@ -384,14 +420,33 @@ export class Vegetation {
     this.terrain.islands.forEach((isl, i) => {
       const L = this.lists[i];
       const f: IslandFlora = {
-        near: new THREE.Group(), far: new THREE.Group(), always: new THREE.Group(),
-        cx: isl.x, cy: isl.peak * 0.4, cz: isl.z, ext: isl.r * Math.max(isl.stretch, 1 / isl.stretch) * 1.15, isNear: true,
+        near: new THREE.Group(), far: new THREE.Group(), always: new THREE.Group(), nearB: [], farB: [], alwaysB: [],
+        cx: isl.x, cy: isl.peak * 0.4, cz: isl.z, ext: isl.r * Math.max(isl.stretch, 1 / isl.stretch) * 1.15, peak: isl.peak, isNear: true,
       };
       f.near.name = `flora-near-${i}`;
       f.far.name = `flora-far-${i}`;
       f.far.visible = false;
       this.group.add(f.near, f.far, f.always);
       this.flora.push(f);
+
+      const batch = (mesh: THREE.InstancedMesh, geo: THREE.BufferGeometry, mats: Float32Array, shadows: boolean): Batch => {
+        const n = mesh.count;
+        if (!geo.boundingSphere) geo.computeBoundingSphere();
+        const sph = new Float32Array(n * 4);
+        for (let k = 0; k < n; k++) {
+          _m4.fromArray(mats, k * 16);
+          _sphere.copy(geo.boundingSphere!).applyMatrix4(_m4);
+          sph[k * 4] = _sphere.center.x;
+          sph[k * 4 + 1] = _sphere.center.y;
+          sph[k * 4 + 2] = _sphere.center.z;
+          sph[k * 4 + 3] = _sphere.radius;
+        }
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
+        const shown = new Uint32Array(n);
+        for (let k = 0; k < n; k++) shown[k] = k;
+        return { mesh, mat: mats, col: (mesh.instanceColor!.array as Float32Array).slice(), sph, shown, n, shadows };
+      };
 
       const add = (list: Placement[], geos: THREE.BufferGeometry[], mat: THREE.Material, tint: Tint, o: Opts = {}) => {
         for (let v = 0; v < geos.length; v++) {
@@ -411,16 +466,19 @@ export class Vegetation {
           inst.castShadow = o.shadows ?? true;
           inst.receiveShadow = true;
           inst.computeBoundingSphere();
+          const mats = (inst.instanceMatrix.array as Float32Array).slice();
           (o.always ? f.always : f.near).add(inst);
+          (o.always ? f.alwaysB : f.nearB).push(batch(inst, geos[v], mats, inst.castShadow));
           if (o.lo) {
-            // the far LOD reuses the very same instance buffers
+            // the far LOD plants the very same instances, culled on their own
             const far = new THREE.InstancedMesh(o.lo[v], mat, sub.length);
-            far.instanceMatrix = inst.instanceMatrix;
-            far.instanceColor = inst.instanceColor;
+            (far.instanceMatrix.array as Float32Array).set(mats);
+            far.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
             far.castShadow = inst.castShadow;
             far.receiveShadow = true;
             far.computeBoundingSphere();
             f.far.add(far);
+            f.farB.push(batch(far, o.lo[v], mats, far.castShadow));
           }
         }
       };
@@ -450,12 +508,21 @@ export class Vegetation {
   }
 
   /**
-   * Swaps each island between its detailed and far planting. The reach grows
-   * with the camera's height so a zoomed-out view keeps the island under it
-   * detailed; a little hysteresis stops it flickering at the boundary.
+   * Swaps each island between its detailed and far planting, then culls the
+   * plants of every island in play one by one. The reach grows with the
+   * camera's height so a zoomed-out view keeps the island under it detailed;
+   * a little hysteresis stops it flickering at the boundary.
+   *
+   * `toSun` is the shadow-casting light's direction: a plant out of view still
+   * stays when its shadow can fall into it. Culling runs against a frustum
+   * widened by MARGIN and is only redone once the camera has moved or turned
+   * enough to use that margin up, so a steady view uploads nothing.
    */
-  update(cam: THREE.Vector3) {
+  update(camera: THREE.Camera, toSun: THREE.Vector3) {
+    if (this.hold) return;
+    const cam = camera.position;
     const reach = (this.lite ? 150 : 210) + Math.max(cam.y, 0) * 0.9;
+    let swapped = false;
     for (const f of this.flora) {
       const d = Math.hypot(cam.x - f.cx, cam.y - f.cy, cam.z - f.cz) - f.ext;
       const near = d < reach + (f.isNear ? 30 : 0);
@@ -463,6 +530,93 @@ export class Vegetation {
       f.isNear = near;
       f.near.visible = near;
       f.far.visible = !near;
+      swapped = true;
+    }
+
+    camera.updateMatrixWorld();
+    camera.getWorldDirection(_dir);
+    const pe = camera.projectionMatrix.elements;
+    if (
+      !swapped &&
+      cam.distanceToSquared(this.cullPos) < 16 &&
+      _dir.dot(this.cullDir) > 0.99985 &&
+      toSun.dot(this.cullLight) > 0.9998 &&
+      pe[0] === this.cullProj[0] &&
+      pe[5] === this.cullProj[1]
+    )
+      return;
+    this.cullPos.copy(cam);
+    this.cullDir.copy(_dir);
+    this.cullLight.copy(toSun);
+    this.cullProj[0] = pe[0];
+    this.cullProj[1] = pe[5];
+
+    _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    _frustum.setFromProjectionMatrix(_pv);
+    // shadows fall away from the sun: a plant's shadow sweeps from its centre
+    // down this way, one unit per metre of drop
+    const ly = Math.max(toSun.y, 0.22);
+    const sx = -toSun.x / ly;
+    const sy = -toSun.y / ly;
+    const sz = -toSun.z / ly;
+    for (const f of this.flora) {
+      // the whole island first: plants and shadows wholly out of view drop out at once
+      const L = f.peak + 24;
+      const island = this.inView(f.cx, f.cy, f.cz, f.ext * 1.42 + f.peak, sx * L, sy * L, sz * L);
+      this.cullBatches(f.alwaysB, island, sx, sy, sz);
+      this.cullBatches(f.isNear ? f.nearB : f.farB, island, sx, sy, sz);
+    }
+  }
+
+  /** Is a sphere, or the capsule it sweeps along (dx, dy, dz), inside the widened frustum? */
+  private inView(x: number, y: number, z: number, r: number, dx: number, dy: number, dz: number) {
+    for (const pl of _frustum.planes) {
+      const n = pl.normal;
+      const d0 = n.x * x + n.y * y + n.z * z + pl.constant;
+      const d1 = d0 + n.x * dx + n.y * dy + n.z * dz;
+      if (Math.max(d0, d1) < -r - MARGIN) return false;
+    }
+    return true;
+  }
+
+  private cullBatches(list: Batch[], island: boolean, sx: number, sy: number, sz: number) {
+    for (const b of list) {
+      const { sph, shown, mat, col } = b;
+      const dst = b.mesh.instanceMatrix.array as Float32Array;
+      const dcol = b.mesh.instanceColor!.array as Float32Array;
+      let k = 0;
+      // the first slot whose plant differs from last time; everything after it is rewritten
+      let first = -1;
+      if (island) {
+        for (let i = 0; i < b.n; i++) {
+          const r = sph[i * 4 + 3];
+          // the shadow can run on down the slope as far as the sea
+          const L = b.shadows ? Math.max(2 * r, sph[i * 4 + 1] + r) + 1 : 0;
+          if (!this.inView(sph[i * 4], sph[i * 4 + 1], sph[i * 4 + 2], r, sx * L, sy * L, sz * L)) continue;
+          if (first < 0 && (shown[k] !== i || k >= b.mesh.count)) first = k;
+          if (first >= 0) {
+            shown[k] = i;
+            const s16 = i * 16;
+            const d16 = k * 16;
+            for (let j = 0; j < 16; j++) dst[d16 + j] = mat[s16 + j];
+            dcol[k * 3] = col[i * 3];
+            dcol[k * 3 + 1] = col[i * 3 + 1];
+            dcol[k * 3 + 2] = col[i * 3 + 2];
+          }
+          k++;
+        }
+      }
+      b.mesh.count = k;
+      b.mesh.visible = k > 0;
+      if (first < 0) continue;
+      const im = b.mesh.instanceMatrix;
+      im.clearUpdateRanges();
+      im.addUpdateRange(first * 16, (k - first) * 16);
+      im.needsUpdate = true;
+      const ic = b.mesh.instanceColor!;
+      ic.clearUpdateRanges();
+      ic.addUpdateRange(first * 3, (k - first) * 3);
+      ic.needsUpdate = true;
     }
   }
 

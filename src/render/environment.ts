@@ -572,6 +572,9 @@ ${GLSL_DAMAGE_EMISSIVE}`,
  * reuses the same targets every time: the texture object never changes, so no
  * material ever recompiles.
  */
+/** Prefilter samples per texel for the sky's image-based light. */
+const GGX_SAMPLES = 64;
+
 export class SkyEnvironment {
   private scene = new THREE.Scene();
   private cubeRT = new THREE.WebGLCubeRenderTarget(64, { type: THREE.HalfFloatType });
@@ -614,6 +617,15 @@ export class SkyEnvironment {
     const prev = r.getRenderTarget();
     this.cubeCam.update(r, this.scene);
     this.rt = this.pmrem.fromCubemap(this.cubeRT.texture, this.rt);
+    // three's prefilter takes 256 GGX samples per texel per mip, sized for
+    // sharp HDR photos. A smooth sky needs a fraction of that, and this runs
+    // a few times a second: the first refresh (behind the loading screen)
+    // drops it, so the second, also at load, compiles the light version.
+    const ggx = (this.pmrem as unknown as { _ggxMaterial?: THREE.ShaderMaterial | null })._ggxMaterial;
+    if (ggx && ggx.defines.GGX_SAMPLES !== GGX_SAMPLES) {
+      ggx.defines.GGX_SAMPLES = GGX_SAMPLES;
+      ggx.needsUpdate = true;
+    }
     r.setRenderTarget(prev);
     return this.rt.texture;
   }

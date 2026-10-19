@@ -6,10 +6,14 @@ import '@fontsource/inter/600.css';
 import '@fontsource/inter/700.css';
 import '@fontsource/inter/800.css';
 import './style.css';
-import { registerSW } from 'virtual:pwa-register';
 import { Game } from './game/game';
 
-registerSW({ immediate: true });
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  // updateViaCache 'none': always fetch sw.js itself fresh, so new builds are found on the next visit.
+  navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch(() => {
+    /* no offline support this visit; the game still runs */
+  });
+}
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 
