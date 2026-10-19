@@ -16,6 +16,19 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T16:00Z',
     entries: [
       {
+        title: 'Aquati is now Shores of Fortune',
+        notes: [
+          'The game has a new name: Shores of Fortune. Same sea, same ships, same saves, just a name worthy of the treasure out there.',
+          'The home screen and loading screen carry a new gilded wordmark that catches a slow glint of sunlight, and the app shows as "Fortune" under its home-screen icon.',
+          'The volcano in the north now goes by Monte Fortuna.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T16:00Z',
+    entries: [
+      {
         title: 'A frame profiler behind the FPS counter',
         notes: [
           'Tap the FPS counter at the top of the screen (or press F3) to open a live profiler. It shows how many milliseconds each part of the game takes on the CPU, from pirate AI and ship physics to particles, wind and the HUD, sorted busiest first.',
