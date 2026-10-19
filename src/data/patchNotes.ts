@@ -16,6 +16,10 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T19:00Z',
     entries: [
       {
+        title: 'A gift of 10,000 gold',
+        notes: ['Every captain gets a one-time gift of 10,000 gold. It lands in your purse the next time you set sail. Spend it in the Treasure Vault or wherever you please.'],
+      },
+      {
         title: 'Life on the reefs',
         notes: [
           'The shallows around every island now teem with fish. Shoals of blue tangs, yellow tangs, clownfish, striped sergeant majors and pink-striped wrasse wander the turquoise flats, and each island has a great glittering bait ball of silversides.',

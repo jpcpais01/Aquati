@@ -1339,6 +1339,7 @@ export class Game {
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 4;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
+    if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
 
   private resetWorld() {
