@@ -15,6 +15,8 @@ export interface QualityProfile {
   particles: number;
   tiltShift: boolean;
   physicalHull: boolean;
+  /** The tier this device would get on auto. */
+  detected?: 0 | 1 | 2;
 }
 
 export function detectQuality(renderer: { capabilities: { maxSamples: number } }): QualityProfile {
@@ -22,8 +24,15 @@ export function detectQuality(renderer: { capabilities: { maxSamples: number } }
   const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
   const cores = navigator.hardwareConcurrency || 4;
   const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 8;
-  const url = new URLSearchParams(location.search).get('q');
-  let tier: 0 | 1 | 2 = mobile ? (cores >= 6 && mem >= 4 ? 1 : 0) : cores >= 4 ? 2 : 1;
+  let url = new URLSearchParams(location.search).get('q');
+  // the player's own pick from Settings, unless the URL overrides it
+  try {
+    url ??= localStorage.getItem('aquati.quality');
+  } catch {
+    /* storage blocked: auto */
+  }
+  const detected: 0 | 1 | 2 = mobile ? (cores >= 6 && mem >= 4 ? 1 : 0) : cores >= 4 ? 2 : 1;
+  let tier: 0 | 1 | 2 = detected;
   if (url === 'low') tier = 0;
   if (url === 'med') tier = 1;
   if (url === 'high') tier = 2;
@@ -33,7 +42,7 @@ export function detectQuality(renderer: { capabilities: { maxSamples: number } }
     { tier: 1, maxDpr: 1.75, msaa: Math.min(4, maxSamples), shadowSize: 2048, oceanSegments: 210, bloomLevels: 5, wakeRes: 384, vegetation: 0.8, terrainLod: 1, particles: 0.8, tiltShift: true, physicalHull: true },
     { tier: 2, maxDpr: 2, msaa: Math.min(4, maxSamples), shadowSize: 2048, oceanSegments: 280, bloomLevels: 6, wakeRes: 512, vegetation: 1, terrainLod: 1, particles: 1, tiltShift: true, physicalHull: true },
   ];
-  return P[tier];
+  return { ...P[tier], detected };
 }
 
 export class ResolutionScaler {

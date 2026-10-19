@@ -151,6 +151,11 @@ export const ICONS = {
   eye: '<path d="M2.5 12s3.6-6.5 9.5-6.5S21.5 12 21.5 12s-3.6 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3.1"/>',
   bird: '<path d="M3 13.5c3-1 5.5-4 9-4s6 3 9 4M8.5 10.8 12 15l3.5-4.2"/>',
   spyglass: '<path d="m3.5 15.5 13-7.2 1.9 3.4-13 7.2zM16.5 8.3l1.6-.9 1.9 3.4-1.6.9M6.6 13.8l1.9 3.4"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.6"/>',
+  map: '<path d="M3 6.5 8.5 4l7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20z"/><path d="M8.5 4v13.5M15.5 6.5V20"/>',
+  target: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/>',
+  flag: '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
+  wind: '<path d="M3 8.5h11a3 3 0 1 0-3-3M3 12.5h16a3 3 0 1 1-3 3M3 16.5h7"/>',
 };
 
 let crestN = 0;
@@ -170,25 +175,24 @@ export const crest = () => {
 </svg>`.replace(/crest-g/g, id);
 };
 
-/** Brass compass bezel for the round minimap: ticks every 15°, cardinal letters. */
+/** Compass bezel for the round minimap: a fine ring, ticks every 15°, cardinal letters and a gold north pip. */
 export function compassBezel(): string {
   let ticks = '';
   for (let i = 0; i < 24; i++) {
+    if (i % 6 === 0) continue;
     const a = (i / 24) * Math.PI * 2;
-    const major = i % 6 === 0;
-    if (major) continue;
-    const r0 = i % 3 === 0 ? 89 : 92;
+    const r0 = i % 3 === 0 ? 90 : 93;
     const x0 = 100 + Math.sin(a) * r0;
     const y0 = 100 - Math.cos(a) * r0;
-    const x1 = 100 + Math.sin(a) * 96;
-    const y1 = 100 - Math.cos(a) * 96;
+    const x1 = 100 + Math.sin(a) * 96.5;
+    const y1 = 100 - Math.cos(a) * 96.5;
     ticks += `<line x1="${f(x0)}" y1="${f(y0)}" x2="${f(x1)}" y2="${f(y1)}"/>`;
   }
   const letter = (t: string, x: number, y: number) => `<text x="${x}" y="${y}">${t}</text>`;
-  return `<defs><linearGradient id="bz-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset=".5" stop-color="#efc463"/><stop offset="1" stop-color="#a87422"/></linearGradient></defs>
-    <circle cx="100" cy="100" r="97" fill="none" stroke="url(#bz-g)" stroke-width="3"/>
-    <circle cx="100" cy="100" r="86.5" fill="none" stroke="rgba(255,240,210,.35)" stroke-width="1"/>
+  return `<defs><linearGradient id="bz-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff4cc"/><stop offset="1" stop-color="#e9b24a"/></linearGradient></defs>
+    <circle class="bz-ring" cx="100" cy="100" r="98.5"/>
+    <circle class="bz-inner" cx="100" cy="100" r="88"/>
     <g class="bz-ticks">${ticks}</g>
-    <g class="bz-letters">${letter('E', 192, 104)}${letter('S', 100, 196)}${letter('W', 8, 104)}</g>
-    <path class="bz-north" d="M100 -2 L108 13 L100 10 L92 13 Z"/>`;
+    <g class="bz-letters">${letter('E', 186, 104.5)}${letter('S', 100, 190.5)}${letter('W', 14, 104.5)}</g>
+    <path class="bz-north" d="M100 3 L108.5 17 L100 13.5 L91.5 17 Z"/>`;
 }

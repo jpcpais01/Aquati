@@ -24,6 +24,7 @@ import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
+import { SHAKE_SCALE } from '../ui/settings';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, portClearings } from '../port/site';
@@ -287,6 +288,13 @@ export class Game {
       this.enterMenu();
     };
     ui.onSound = (on) => this.audio.setMuted(!on);
+    ui.onSettings = (st) => {
+      this.audio.setMusicEnabled(st.music);
+      this.rig.shakeScale = SHAKE_SCALE[st.shake];
+    };
+    ui.setQualityInfo(this.quality.detected ?? this.quality.tier, this.quality.tier);
+    this.audio.setMuted(!ui.settings.sound);
+    ui.onSettings(ui.settings);
   }
 
   // ------------------------------------------------------------------ shipwright
@@ -687,7 +695,7 @@ export class Game {
       this.input.releaseLook();
       this.state = 'paused';
       const p = this.player;
-      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime } : undefined);
+      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime, ship: p.name, cls: p.cls.id } : undefined);
     } else if (!on && this.state === 'paused') {
       this.state = 'playing';
       this.ui.showPause(false);

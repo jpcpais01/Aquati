@@ -161,6 +161,14 @@ export class Audio {
     this.buildBank();
   }
 
+  /** Settings switch for the harbour theme, separate from the master mute. */
+  musicEnabled = true;
+
+  setMusicEnabled(on: boolean) {
+    this.musicEnabled = on;
+    this.syncMusic(0.6);
+  }
+
   setMuted(m: boolean) {
     this.muted = m;
     if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
@@ -182,7 +190,7 @@ export class Audio {
   private syncMusic(fade = 0.6) {
     const ctx = this.ctx;
     if (!ctx) return;
-    const audible = this.musicWanted && !this.muted && !document.hidden;
+    const audible = this.musicWanted && this.musicEnabled && !this.muted && !document.hidden;
     if (!this.music) {
       if (!audible) return;
       const el = new window.Audio();
