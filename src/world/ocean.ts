@@ -310,7 +310,7 @@ export class Ocean {
             twinkle = 0.45 + 1.4 * smoothstep(0.45, 0.85, texture(uNoiseTex, p * 0.73 + vec2(t * 0.09, -t * 0.07)).a);
           #endif
           float sharpExp = mix(2600.0, 1400.0, gust);
-          float spec = pow(nh, sharpExp) * 5.5 * twinkle * (1.0 + slick * 0.8) + pow(nh, 340.0) * 0.3;
+          float spec = pow(nh, sharpExp) * 4.6 * twinkle * (1.0 + slick * 0.8) + pow(nh, 340.0) * 0.2;
           spec += pow(max(dot(Ns, H), 0.0), mix(60.0, 26.0, gust)) * 0.045;
           spec *= cloud;
 
