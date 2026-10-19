@@ -516,7 +516,59 @@ export function seaReverb(sr: number, seed: number): [Float32Array, Float32Array
   return [chans[0], chans[1]];
 }
 
-export type BankKind = 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast';
+/**
+ * Two hulls grinding together: a deep hollow boom as the timbers meet, the
+ * long groan of planking dragging past planking (stick-slip pulses driving
+ * the hull's wide resonances, sagging in pitch as the ships part), and a
+ * spray of strakes and rail splintering along the seam.
+ */
+export function hullCrunch(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.7);
+  const out = new Float32Array(n);
+  const boom = new SVF(sr, 95, 0.7);
+  const knock = new SVF(sr, 320, 0.8);
+  for (let i = 0; i < Math.floor(0.6 * sr); i++) {
+    const t = i / sr;
+    const w = r() * 2 - 1;
+    boom.run(w);
+    knock.run(w);
+    const att = 1 - Math.exp(-t / 0.0015);
+    out[i] += boom.lp * att * Math.exp(-t / 0.16) * 11 + knock.bp * att * Math.exp(-t / 0.035) * 5;
+  }
+  // the groan: friction catching and releasing, ringing the hull like a cello body
+  const res = [210, 380, 610, 980].map((f) => new SVF(sr, f * (0.9 + r() * 0.2), 4.5));
+  const resAmp = [1, 0.75, 0.5, 0.3];
+  const len = Math.floor(1.45 * sr);
+  const start = Math.floor(0.03 * sr);
+  let ph = 0;
+  for (let i = 0; i < len && start + i < n; i++) {
+    const t = i / sr;
+    const rate = 46 - 30 * Math.min(1, t / 1.1) + Math.sin(t * 9 + seed) * 4;
+    ph += rate / sr;
+    let x = 0;
+    if (ph >= 1) {
+      ph -= 1;
+      x = (r() * 0.6 + 0.7) * (r() < 0.15 ? 2.2 : 1);
+    }
+    x += (r() * 2 - 1) * 0.05;
+    const env = Math.min(1, t / 0.06) * Math.exp(-t / 0.5);
+    let y = 0;
+    for (let m = 0; m < res.length; m++) {
+      res[m].run(x * env);
+      y += res[m].bp * resAmp[m];
+    }
+    out[start + i] += y * 2.6;
+  }
+  // splinters and cracking strakes along the seam
+  noiseGrains(out, sr, r, { count: 180, t0: 0.01, spread: 0.9, skew: 1.8, fLo: 1000, fHi: 6500, q: 1.3, durLo: 0.0007, durHi: 0.005, amp: 1.8, env: (t) => Math.exp(-t / 0.35) });
+  noiseGrains(out, sr, r, { count: 9, t0: 0.03, spread: 0.6, skew: 1.4, fLo: 420, fHi: 1600, q: 1.2, durLo: 0.008, durHi: 0.024, amp: 2.2 });
+  saturate(out, 1.6);
+  fadeTail(out, sr, 0.2);
+  return peakNorm(out, 0.92);
+}
+
+export type BankKind = 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast' | 'crunch';
 export const CALIBERS = 3;
 
 /** Everything the game plays, cheapest/most needed first. Cannon index = caliber * 2 + variant. */
@@ -530,6 +582,7 @@ export function bankJobs(sr: number): { kind: BankKind; index: number; render: (
   for (let v = 0; v < 3; v++) jobs.push({ kind: 'water', index: v, render: () => [waterImpact(sr, 501 + v)] });
   jobs.push({ kind: 'earth', index: 0, render: () => [earthImpact(sr, 601)] });
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'whoosh', index: v, render: () => [shotWhoosh(sr, 701 + v)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'crunch', index: v, render: () => [hullCrunch(sr, 901 + v)] });
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'blast', index: v, render: () => [magazineBlast(sr, 801 + v)] });
   return jobs;
 }

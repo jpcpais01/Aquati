@@ -39,6 +39,7 @@ export class Audio {
     earth: [],
     whoosh: [],
     blast: [],
+    crunch: [],
   };
   private music: HTMLAudioElement | null = null;
   private musicGain: GainNode | null = null;
@@ -444,6 +445,13 @@ export class Audio {
     this.emit(pick(this.bank.wood), { vol: vol * 0.7, pan, dist, rate: 0.88 + Math.random() * 0.24, wet: 0.35 });
   }
 
+  /** Hulls colliding or a keel grinding onto rock. `force` 0 = a nudge .. 1 = a full-speed ram. */
+  crunch(vol: number, pan: number, dist = 0, force = 1) {
+    const f = Math.max(0, Math.min(1, force));
+    const at = this.emit(pick(this.bank.crunch), { vol: vol * (0.35 + 0.55 * f), pan, dist, rate: 1.12 - f * 0.22 + Math.random() * 0.08, wet: 0.45 });
+    if (at >= 0 && dist < 40 && f > 0.4) this.duck(at, 0.3 * f);
+  }
+
   /** Shot ploughing into a beach or hillside. */
   thud(vol: number, pan: number, dist = 0) {
     this.emit(pick(this.bank.earth), { vol: vol * 0.45, pan, dist, rate: 0.85 + Math.random() * 0.3, wet: 0.3 });
@@ -527,6 +535,55 @@ export class Audio {
           o.stop(t + 2.3);
         }
       });
+    }
+  }
+
+  /** A boot on deck planking: a soft woody knock, now and then a creak of the boards. */
+  footstep(k: number) {
+    const v = this.voice(0.11 + k * 0.08, (Math.random() - 0.5) * 0.15);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 260 + Math.random() * 140 + k * 120;
+    bp.Q.value = 1.6;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.11 + k * 0.04);
+    src.connect(bp).connect(g).connect(out);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 0.2);
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(120 + Math.random() * 30, t);
+    o.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.5, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.12);
+    if (Math.random() < 0.12) {
+      // the planking answers with a short creak
+      const c = ctx.createOscillator();
+      c.type = 'sawtooth';
+      const f = 180 + Math.random() * 120;
+      c.frequency.setValueAtTime(f, t + 0.05);
+      c.frequency.linearRampToValueAtTime(f * (0.8 + Math.random() * 0.5), t + 0.32);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'bandpass';
+      lp.frequency.value = 900;
+      lp.Q.value = 6;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(0, t + 0.05);
+      cg.gain.linearRampToValueAtTime(0.06, t + 0.12);
+      cg.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+      c.connect(lp).connect(cg).connect(out);
+      c.start(t + 0.05);
+      c.stop(t + 0.36);
     }
   }
 

@@ -149,6 +149,33 @@ export interface Muzzle {
   side: number; // +1 port, -1 starboard
 }
 
+/** A companion stair from the waist up to a castle deck, in ship-local space. */
+export interface Stair {
+  x: number; // centre line of the flight
+  w: number; // width
+  z0: number; // foot, on the main deck
+  z1: number; // head, flush with the castle deck at its bulkhead
+  y0: number;
+  y1: number;
+}
+
+/** Two flights flanking each castle door. Shared by the model, the crew and the captain's walk. */
+export function castleStairs(c: ShipClass, s: HullShape): Stair[] {
+  const out: Stair[] = [];
+  const w = 0.55 + c.beam * 0.02;
+  const add = (t: number, h: number, facing: number) => {
+    const zw = s.z(t) + facing * 0.1;
+    const run = h * 0.95;
+    const y1 = s.sheer(t) + h - c.bulwark;
+    const z0 = zw + facing * run;
+    const y0 = s.mainDeckY(t + (facing * run) / c.length);
+    for (const side of [1, -1]) out.push({ x: side * (0.5 + w / 2), w, z0, z1: zw, y0, y1 });
+  };
+  if (c.sternCastle) add(c.sternCastle.t, c.sternCastle.h, 1);
+  if (c.foreCastle) add(c.foreCastle.t, c.foreCastle.h, -1);
+  return out;
+}
+
 export interface SailRef {
   mesh: THREE.Mesh;
   tier: number;
@@ -294,6 +321,7 @@ export class ShipModel {
   readonly sailEmblemMaterial: THREE.MeshStandardMaterial;
   readonly sailUniforms = { uSailFill: { value: 1 }, uSailPhase: { value: Math.random() * 10 }, uSailDepth: { value: 1 } };
   readonly deckPoints: THREE.Vector3[] = [];
+  readonly stairs: Stair[];
   private woodParts: THREE.BufferGeometry[] = [];
   private ironParts: THREE.BufferGeometry[] = [];
   private trimParts: THREE.BufferGeometry[] = [];
@@ -309,6 +337,7 @@ export class ShipModel {
     this.owned = livery.id.startsWith('custom');
     this.detail = quality > 0;
     this.shape = new HullShape(cls);
+    this.stairs = castleStairs(cls, this.shape);
     this.mats = this.materials(quality);
     this.sailMaterial = this.makeSailMaterial(this.mats.sailPlain);
     this.sailEmblemMaterial = this.makeSailMaterial(this.mats.sailEmblem);
@@ -316,6 +345,7 @@ export class ShipModel {
     this.buildMouldings();
     this.buildDeck();
     this.buildCastleWalls();
+    this.buildStairs();
     this.buildStern();
     this.buildCannons();
     this.buildRig();
@@ -617,13 +647,61 @@ export class ShipModel {
       ],
       6,
     );
+    // open where a stair comes up through the rail
+    const gaps = this.stairs.filter((st) => Math.abs(st.z1 - s.z(t)) < 0.3).map((st) => [st.x - st.w / 2 - 0.04, st.x + st.w / 2 + 0.04]);
+    const open = (x: number) => gaps.some(([a, b]) => x > a - 0.05 && x < b + 0.05);
     for (let i = 0; i <= n; i++) {
       const x = -w + (i / n) * w * 2;
-      this.trimParts.push(baluster.clone().translate(x, yDeck, z));
+      if (!open(x)) this.trimParts.push(baluster.clone().translate(x, yDeck, z));
     }
     const y = yDeck + 0.63;
-    this.trimParts.push(tube([new THREE.Vector3(-w - 0.06, y, z), new THREE.Vector3(0, y + 0.03, z), new THREE.Vector3(w + 0.06, y, z)], 0.07, false, 6, 3));
-    for (const sx of [-1, 1]) this.trimParts.push(ball(0.12, new THREE.Vector3(sx * (w + 0.06), y + 0.06, z)));
+    const cuts = [-w - 0.06, ...gaps.sort((a, b) => a[0] - b[0]).flat(), w + 0.06];
+    for (let i = 0; i < cuts.length; i += 2) {
+      const [a, b] = [cuts[i], cuts[i + 1]];
+      if (b - a < 0.1) continue;
+      this.trimParts.push(tube([new THREE.Vector3(a, y, z), new THREE.Vector3((a + b) / 2, y + 0.03, z), new THREE.Vector3(b, y, z)], 0.07, false, 6, 3));
+      for (const x of [a, b]) {
+        this.trimParts.push(ball(0.12, new THREE.Vector3(x, y + 0.06, z)));
+        // newel posts frame each stair opening
+        if (gaps.some(([g0, g1]) => Math.abs(x - g0) < 1e-3 || Math.abs(x - g1) < 1e-3)) this.trimParts.push(rbox(0.13, 0.66, 0.13, 0.04).translate(x, yDeck + 0.31, z));
+      }
+    }
+  }
+
+  /** Steep companion stairs up to the castle decks: treads on notched stringers with a rail each side. */
+  private buildStairs() {
+    const wood = hexL(0x6a4a2e);
+    const dark = hexL(0x3e2a1a);
+    for (const st of this.stairs) {
+      const h = st.y1 - st.y0;
+      const run = st.z1 - st.z0;
+      const n = Math.max(3, Math.round(h / 0.22));
+      const d = Math.abs(run) / n;
+      for (let k = 1; k <= n; k++) {
+        const y = st.y0 + (k / n) * h;
+        const z = st.z0 + ((k - 0.5) / n) * run;
+        this.woodParts.push(colorize(rbox(st.w - 0.06, 0.07, d + 0.05, 0.025).translate(st.x, y - 0.035, z), wood));
+      }
+      for (const sx of [-1, 1]) {
+        const x = st.x + sx * (st.w / 2 - 0.02);
+        const foot = new THREE.Vector3(x, st.y0, st.z0 - Math.sign(run) * 0.05);
+        const head = new THREE.Vector3(x, st.y1 - 0.02, st.z1);
+        const len = foot.distanceTo(head);
+        const str = rbox(0.06, 0.22, len, 0.025);
+        str.rotateX(Math.atan2(h, Math.abs(run)) * -Math.sign(run));
+        str.translate((foot.x + head.x) / 2, (foot.y + head.y) / 2 - 0.06, (foot.z + head.z) / 2);
+        this.woodParts.push(colorize(str, dark));
+        // hand rope rail on turned posts
+        const r0 = foot.clone().add(new THREE.Vector3(0, 0.9, 0));
+        const r1 = head.clone().add(new THREE.Vector3(0, 0.82, -Math.sign(run) * 0.02));
+        this.woodParts.push(colorize(spar(r0, r1, 0.035, 0.035, 5), dark));
+        for (const p of [0.08, 0.92]) {
+          const b = foot.clone().lerp(head, p);
+          this.woodParts.push(colorize(spar(b, b.clone().lerp(r0.clone().lerp(r1, p), 1), 0.03, 0.03, 5), dark));
+        }
+        this.trimParts.push(ball(0.06, r0.clone().add(new THREE.Vector3(0, 0.02, 0)), 6, 4));
+      }
+    }
   }
 
   private buildCastleWalls() {
