@@ -13,6 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    // the next 12:00 group is full (five entries), so this hour continues in a second group
     hour: '2026-10-19T12:00Z',
     entries: [
       {
@@ -22,6 +23,39 @@ export const PATCH_NOTES: PatchGroup[] = [
           'The wake is a living simulation. Waves slow down in the shallows, bend around islands and die on the beach, and crossing another ship\'s wake looks just as it should.',
           'Richer foam: a churning white wash off the stern, foam sheets peeling off both bows and along the hull, and a fan of spray when you put the helm hard over. Old foam breaks up into delicate lace as it fades.',
           'Bow spray flies off the bows at speed, with bigger bursts when she buries her nose in a swell. Cannonball splashes now send rings of ripples across the water.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
+        title: 'Airier wind wisps',
+        notes: [
+          'The white wind wisps are now long, fine threads of air that streak past twice as fast, with lazier, sweeping curves and wider loops. There are more of them inside a gust.',
+        ],
+      },
+      {
+        title: 'Unroll the sea chart',
+        notes: [
+          'Tap or click the minimap, or press M, to open a full chart of the whole archipelago. Drag to pan, scroll or pinch to zoom, and tap the ring button to centre on your ship.',
+          'Discovered isles are named on the chart, uncharted ones are marked with a "?", and salvage, nearby pirates and the wind are all plotted. The world holds still while you plan your course.',
+        ],
+      },
+      {
+        title: 'Wind you can see: real gusts',
+        notes: [
+          'Gusts now roll across the sea as dark, shimmering patches of ruffled water racing downwind, just like real cat\'s paws on a breezy day.',
+          'Palms and trees lean with the breeze and get shoved over as a gust sweeps across the island, leaves shivering, then spring back once it passes.',
+          'Little white wisps of air ride inside the strongest gusts, curling and sometimes looping before they fade away.',
+          'Catch a gust and your sails puff out harder for a small burst of speed. The wind sound and the compass arrow swell as it blows through.',
+        ],
+      },
+      {
+        title: 'Stronger loot magnet',
+        notes: [
+          'Floating crates and barrels now get pulled toward your ship from twice as far away, gliding in faster the closer they get.',
         ],
       },
       {

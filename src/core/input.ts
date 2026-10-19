@@ -11,6 +11,7 @@ export interface Controls {
   steerThrottle: number; // 0..1 from joystick magnitude
   pointer: { x: number; y: number; active: boolean };
   pause: boolean;
+  map: boolean;
 }
 
 export class Input {
@@ -25,6 +26,7 @@ export class Input {
     steerThrottle: 0,
     pointer: { x: 0, y: 0, active: false },
     pause: false,
+    map: false,
   };
   private keys = new Set<string>();
   readonly isTouch: boolean;
@@ -49,6 +51,7 @@ export class Input {
       if (k === 'e') this.state.fireStarboard = true;
       if (k === ' ') this.state.fireAuto = true;
       if (k === 'escape' || k === 'p') this.state.pause = true;
+      if (k === 'm') this.state.map = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
@@ -177,5 +180,6 @@ export class Input {
     this.state.fireAuto = false;
     this.state.zoom = 0;
     this.state.pause = false;
+    this.state.map = false;
   }
 }

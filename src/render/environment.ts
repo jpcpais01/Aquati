@@ -11,6 +11,9 @@ export const SKY_ZENITH = new THREE.Color(0.11, 0.33, 0.78);
 export const SKY_HORIZON = new THREE.Color(0.63, 0.8, 0.94);
 export const FOG_COLOR = new THREE.Color(0.55, 0.73, 0.86);
 export const WATER_LEVEL = 0;
+export const MAX_GUSTS = 8;
+/** Gust puffs are stretched along the wind by this much. Mirrored on the CPU. */
+export const GUST_STRETCH = 1.8;
 
 const tex = getSharedTextures();
 
@@ -26,7 +29,29 @@ export const globalUniforms = {
   uCausticTex: { value: tex.caustics as THREE.Texture },
   uCloudOffset: { value: new THREE.Vector2() },
   uWind: { value: new THREE.Vector3(0, 1, 1) }, // dir.xz, strength
+  // travelling gust puffs (see fx/wind.ts): xz centre, radius, amplitude
+  uGusts: { value: Array.from({ length: MAX_GUSTS }, () => new THREE.Vector4(0, 0, 1, 0)) },
 };
+
+export const GLSL_GUST = /* glsl */ `
+uniform vec3 uWind;
+uniform vec4 uGusts[${MAX_GUSTS}];
+
+// Sum of soft, wind-stretched puffs. Same maths as WindField.at() on the CPU.
+float gustAt(vec2 p) {
+  vec2 wd = uWind.xy;
+  float g = 0.0;
+  for (int i = 0; i < ${MAX_GUSTS}; i++) {
+    vec4 q = uGusts[i];
+    vec2 d = p - q.xy;
+    float a = dot(d, wd) * ${(1 / GUST_STRETCH).toFixed(4)};
+    float b = dot(d, vec2(-wd.y, wd.x));
+    float r = max(1.0 - (a * a + b * b) / (q.z * q.z), 0.0);
+    g += q.w * r * r;
+  }
+  return min(g, 1.4);
+}
+`;
 
 export const GLSL_ATMOS = /* glsl */ `
 uniform float uTime;
@@ -37,7 +62,7 @@ uniform vec3 uSkyHorizon;
 uniform sampler2D uNoiseTex;
 uniform sampler2D uCausticTex;
 uniform vec2 uCloudOffset;
-
+${GLSL_GUST}
 vec3 skyColor(vec3 d) {
   float h = clamp(d.y, -1.0, 1.0);
   vec3 col = mix(uSkyHorizon, uSkyZenith, pow(max(h, 0.0), 0.55));
@@ -100,6 +125,9 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
         `${head}#include <common>
 uniform float uTime;
 varying vec3 vAqWorld;
+#ifdef AQ_SWAY
+${GLSL_GUST}
+#endif
 #ifdef AQ_SAIL
 uniform float uSailFill;
 uniform float uSailPhase;
@@ -124,15 +152,28 @@ attribute float aBillow;
         `#include <begin_vertex>
 #ifdef AQ_SWAY
   {
+    // Plants lean with the prevailing wind and get shoved over as gust puffs
+    // roll across the island, then spring back once they've passed.
     vec3 ip = vec3(0.0);
+    mat3 im = mat3(1.0);
     #ifdef USE_INSTANCING
       ip = instanceMatrix[3].xyz;
+      im = mat3(instanceMatrix);
     #endif
+    vec3 base = (modelMatrix * vec4(ip, 1.0)).xyz;
     float ph = ip.x * 0.13 + ip.z * 0.17;
     float hgt = max(position.y, 0.0);
     float w = hgt * hgt * AQ_SWAY;
-    transformed.x += (sin(uTime * 1.3 + ph) * 0.7 + sin(uTime * 2.9 + ph * 2.1) * 0.3) * w;
-    transformed.z += (cos(uTime * 1.1 + ph * 1.3) * 0.6) * w;
+    float g = gustAt(base.xz);
+    // wind direction in the instance's own frame (instances only yaw + scale)
+    vec2 ld = normalize((transpose(im) * vec3(uWind.x, 0.0, uWind.y)).xz + 1e-5);
+    vec2 side = vec2(-ld.y, ld.x);
+    float lean = uWind.z * (0.35 + 0.12 * sin(uTime * 0.45 + ph)) + g * 2.4;
+    // leaves shiver hardest inside a gust
+    float shiver = sin(uTime * 9.0 + ph * 5.0 + position.x * 1.7 + position.z * 1.3) * (0.05 + g * 0.45);
+    float sway = sin(uTime * 2.3 + ph * 3.0) * g * 0.35;
+    transformed.xz += (ld * lean + side * (shiver * 0.6 + sway)) * w;
+    transformed.y -= lean * lean * w * w * 0.5 / max(hgt, 1.0);
   }
 #endif
 #ifdef AQ_SAIL

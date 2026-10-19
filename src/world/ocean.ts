@@ -133,7 +133,6 @@ export class Ocean {
         uniform vec4 uWorldRect;
         uniform vec2 uResolution;
         uniform vec2 uCamNearFar;
-        uniform vec3 uWind;
         uniform vec3 uFogColor;
         uniform vec2 uFogRange;
         varying vec3 vWorld;
@@ -183,6 +182,18 @@ export class Ocean {
             vec2 uv3 = vWorld.xz * 0.23 - wdir * t * 0.05;
             rip += (texture(uNormalTex, uv3).xy * 2.0 - 1.0) * 0.35 * detailFade;
           #endif
+          // ---- cat's paws: gust puffs roughen the surface into dark, shimmering
+          // patches that race downwind. Noise breaks the puff into ragged fingers.
+          float gust = gustAt(vWorld.xz);
+          if (gust > 0.002) {
+            vec4 gn = texture(uNoiseTex, vWorld.xz * 0.021 - wdir * t * 0.26);
+            float rag = smoothstep(0.3, 0.75, gn.g * 0.7 + gn.a * 0.5 + gust * 0.25 - 0.05);
+            gust *= rag;
+            vec2 uvg = vWorld.xz * 0.29 - wdir * t * 0.11;
+            vec2 rg = texture(uNoiseTex, uvg).xy - 0.5;
+            vec2 rg2 = texture(uNormalTex, vWorld.xz * 0.17 - wdir * t * 0.07 + 0.61).xy * 2.0 - 1.0;
+            rip = rip * (1.0 + gust * 0.7) + (rg * 1.3 + rg2 * 0.7) * gust * detailFade;
+          }
           N = normalize(N + vec3(rip.x, 0.0, rip.y) * 0.4);
 
           // ---- ship wakes: height-field normals so every V-arm and ring catches the light
@@ -252,6 +263,7 @@ export class Ocean {
           spec *= cloud;
 
           vec3 col = mix(body, refl, F) + uSunColor * spec * 0.55;
+          col = mix(col, col * vec3(0.78, 0.88, 0.94), gust * 0.6);
 
           // ---- foam
           vec4 nz = texture(uNoiseTex, vWorld.xz * 0.06 + vec2(t * 0.01, -t * 0.013));
