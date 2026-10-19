@@ -441,6 +441,7 @@ export class UI {
     tag.textContent = `v${__APP_VERSION__}`;
     if (__APP_COMMIT__) tag.insertAdjacentHTML('beforeend', `<em>${__APP_COMMIT__}</em>`);
     tag.title = `Version ${__APP_VERSION__}${__APP_COMMIT__ ? ` (build ${__APP_COMMIT__})` : ''}`;
+    $('notes-ver').textContent = `v${__APP_VERSION__}${__APP_COMMIT__ ? ` · ${__APP_COMMIT__}` : ''}`;
   }
 
   private stopScenes = () => {};
@@ -536,9 +537,19 @@ export class UI {
   menuFraming(): { x: number; y: number; w: number; h: number } {
     const W = innerWidth;
     const H = innerHeight;
+    const rect = (q: string) => document.querySelector(q)!.getBoundingClientRect();
+    const head = rect('.menu-head');
+    if (getComputedStyle($('dock')).display === 'contents') {
+      // slim bands (landscape phones): the ship gets the stage right of its
+      // card, from the top edge (masts may rise past the title row) down to
+      // the bottom row
+      const left = rect('#ship-detail').right + 8;
+      const top = rect('.menu-tools').top;
+      const bottom = Math.min(rect('#ship-tabs').top, rect('#dock-actions').top) - 4;
+      return { x: (left + W) / 2 / W - 0.5, y: (top + bottom) / 2 / H - 0.5, w: (W - left) / W, h: (bottom - top) / H };
+    }
     const dock = $('dock').getBoundingClientRect();
     if (!dock.width) return { x: 0, y: 0, w: 1, h: 1 };
-    const head = document.querySelector('.menu-head')!.getBoundingClientRect();
     if (dock.right < W * 0.6) {
       // side dock: the ship gets the space to its right, below the tool buttons
       const left = dock.right + 16;
@@ -547,7 +558,8 @@ export class UI {
     }
     // bottom dock: the ship gets the gap between the title and the dock
     const top = (head.top + head.bottom) / 2;
-    return { x: 0, y: (top + dock.top) / 2 / H - 0.5, w: 1, h: (dock.top - top) / H };
+    const bottom = dock.top - 12;
+    return { x: 0, y: (top + bottom) / 2 / H - 0.5, w: 1, h: (bottom - top) / H };
   }
 
 
