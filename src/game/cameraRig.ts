@@ -37,13 +37,19 @@ export class CameraRig {
   readonly eyePos = new THREE.Vector3();
   readonly eyeQuat = new THREE.Quaternion();
   eyeFov = 70;
+  /** Battle framing: 0 = following the player alone, 1 = centred between the player and her foe. */
+  private battle = 0;
+  private foe = new THREE.Vector3();
+  private fitDist = 0;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(34, aspect, 2, 2600);
   }
 
   private get followDistance() {
-    return lerp(70, 300, this.zoomSmooth * this.zoomSmooth * 0.6 + this.zoomSmooth * 0.4);
+    const d = lerp(70, 300, this.zoomSmooth * this.zoomSmooth * 0.6 + this.zoomSmooth * 0.4);
+    // in battle, pull back just enough that both ships stay comfortably in frame
+    return Math.max(d, lerp(d, this.fitDist, this.battle));
   }
 
   /** Effective viewing distance (drives shadow reach, sound and fx radii). */
@@ -72,11 +78,34 @@ export class CameraRig {
     this.target.copy(p);
   }
 
-  update(dt: number, follow: THREE.Vector3, vel: THREE.Vector3, time: number) {
+  /** `foe` is the enemy ship the player is fighting, or null out of battle. */
+  update(dt: number, follow: THREE.Vector3, vel: THREE.Vector3, time: number, foe: THREE.Vector3 | null = null) {
     this.zoomSmooth += (this.zoom - this.zoomSmooth) * damp(5, dt);
     this.blend += ((this.mode === 'follow' ? 1 : 0) - this.blend) * damp(this.mode === 'follow' ? 1.4 : 3, dt);
-    const look = new THREE.Vector3(vel.x, 0, vel.z).multiplyScalar(lerp(1.4, 3, this.zoomSmooth));
-    this.focus.lerp(follow.clone().add(look), damp(2.2, dt));
+    const inBattle = !!foe && this.mode === 'follow';
+    // ease into the battle frame briskly, and out of it slowly once the guns fall silent
+    this.battle += ((inBattle ? 1 : 0) - this.battle) * damp(inBattle ? 1.1 : 0.6, dt);
+    if (foe) {
+      // the foe point glides rather than jumps when the fight switches to another ship
+      if (this.battle < 0.02) this.foe.copy(foe);
+      else this.foe.lerp(foe, damp(1.6, dt));
+    }
+    const bw = this.battle * this.battle * (3 - 2 * this.battle);
+    // look-ahead fades in battle so the frame holds still around the duel
+    const look = new THREE.Vector3(vel.x, 0, vel.z).multiplyScalar(lerp(1.4, 3, this.zoomSmooth) * (1 - bw * 0.75));
+    const aimAt = follow.clone().add(look);
+    if (bw > 0) {
+      const mid = new THREE.Vector3((follow.x + this.foe.x) * 0.5, follow.y, (follow.z + this.foe.z) * 0.5);
+      aimAt.lerp(mid, bw);
+      // distance that fits both hulls (plus room for masts and a margin) on screen
+      const pitch0 = lerp(0.91, 1.1, this.zoomSmooth);
+      const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5));
+      const hx = Math.abs(this.foe.x - follow.x) * 0.5 + 38;
+      const hz = Math.abs(this.foe.z - follow.z) * 0.5 * Math.sin(pitch0) + 34;
+      const fit = Math.min(430, Math.max(hz / (tanV * 0.8), hx / (tanV * this.camera.aspect * 0.8)));
+      this.fitDist = this.fitDist ? this.fitDist + (fit - this.fitDist) * damp(1.8, dt) : fit;
+    }
+    this.focus.lerp(aimAt, damp(2.2, dt));
     this.target.copy(this.focus);
 
     // follow pose: camera due south of the focus looking north & down
