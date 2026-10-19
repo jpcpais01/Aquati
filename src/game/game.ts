@@ -332,14 +332,18 @@ export class Game {
     ui.progress(0.92);
     await this.renderer.compileAsync(this.opaque, this.rig.camera);
     await this.renderer.compileAsync(this.water, this.rig.camera);
+    await this.renderer.compileAsync(this.ocean.reflScene, this.rig.camera);
     ui.progress(0.96);
     await nextFrame();
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
-    // twice: the first pass makes the shadow map, which the water then switches on
-    warmDraw([this.opaque, this.water], () => {
+    // twice: the first pass makes the shadow map, which the water then switches on.
+    // Plants stay unculled so every one of their batches is drawn too.
+    veg.hold = true;
+    warmDraw([this.opaque, this.water, this.ocean.reflScene], () => {
       this.render(0);
       this.render(0);
     });
+    veg.hold = false;
     await fonts;
     ui.progress(1);
     await nextFrame();
@@ -1719,7 +1723,7 @@ export class Game {
     }
 
     P.begin('Vegetation culling', 'sim');
-    this.veg?.update(cam.position);
+    this.veg?.update(cam, this.shadowDir);
     P.end();
     P.begin('Wake simulation', 'ocean', true);
     this.wake.update(this.renderer, target.x, target.z, dt);
@@ -1739,6 +1743,9 @@ export class Game {
     this.sky.visible = eb > 0.001 || port || cine > 0;
     this.sky.position.copy(cam.position);
     this.ocean.apron.visible = eb > 0.001 || port || cine > 0;
+    const rr = this.pipeline.rtRefl;
+    this.ocean.setReflectionTarget(rr.texture, rr.width, rr.height);
+    this.pipeline.refl = this.ocean.reflecting ? this.ocean.reflScene : null;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     P.end();
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
