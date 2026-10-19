@@ -1014,7 +1014,9 @@ export class UI {
     const v = new THREE.Vector3();
     for (const s of ships) {
       if (s === player || !s.alive) continue;
-      v.set(s.pos.x, s.root.position.y + s.cls.masts[0].height * 0.55 + 4, s.pos.z).project(camera);
+      // anchor just above her tallest truck so the bar never sits on the hull
+      const top = s.cls.masts.reduce((m, k) => Math.max(m, k.height), 0);
+      v.set(s.pos.x, s.root.position.y + top + 4.5, s.pos.z).project(camera);
       if (v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) continue;
       seen.add(s.id);
       let el = this.barEls.get(s.id);
@@ -1026,7 +1028,7 @@ export class UI {
         this.barEls.set(s.id, el);
       }
       const x = (v.x * 0.5 + 0.5) * w;
-      const y = (-v.y * 0.5 + 0.5) * h;
+      const y = (-v.y * 0.5 + 0.5) * h - 18;
       el.style.transform = `translate(${x}px, ${y}px)`;
       (el.firstElementChild as HTMLElement).style.transform = `scaleX(${s.hp / s.maxHp})`;
       // what special shot has done to her: ablaze, sails shredded, crews thinned
