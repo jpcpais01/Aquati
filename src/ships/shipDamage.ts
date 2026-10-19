@@ -1030,7 +1030,7 @@ export class ShipDamage {
     // run aground on the shallows instead of sinking through the reef
     const bed = world.terrain.heightAt(s.pos.x, s.pos.z);
     const life = s.wreckLife;
-    const founder = life < WRECK_LIFE;
+    const founder = s.founders;
     let plunge = 0;
     let heel = 0;
     let afloat = 1;

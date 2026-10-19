@@ -72,6 +72,9 @@ const PIRATE_NAMES = [
 
 /** Seconds into the farewell when the camera follows her under. */
 const DIVE = 8.6;
+/** Lasting wrecks kept afloat at once, and how far from you one may linger. */
+const MAX_WRECKS = 3;
+const WRECK_REACH = 520;
 
 const _cineV = new THREE.Vector3();
 
@@ -99,6 +102,7 @@ export class Game {
   private debris = new Debris();
   private collisions = new ShipCollisions(() => this.player);
   private pushers: Pusher[] = [];
+  private wrecks: Ship[] = [];
   private ships: Ship[] = [];
   /**
    * Pirate hulls built ahead of time, a slice per frame, so a ship (or a whole
@@ -1225,6 +1229,27 @@ export class Game {
     return ai;
   }
 
+  /**
+   * A lasting wreck is still a whole ship to draw, shadow and simulate, and a
+   * long fight used to leave a graveyard of them lingering for minutes until
+   * the game ground to a stutter. Only the freshest few stay afloat near you;
+   * older or distant ones slip under now, just as a wreck that had lingered would.
+   */
+  private retireWrecks() {
+    const w = this.wrecks;
+    w.length = 0;
+    for (const s of this.ships) if (!s.alive && s !== this.player && s.sinkT < s.wreckLife) w.push(s);
+    if (!w.length) return;
+    const focus = this.player?.pos ?? this.spawnPoint;
+    w.sort((a, b) => a.sinkT - b.sinkT);
+    for (let i = 0; i < w.length; i++) {
+      const s = w[i];
+      const far = Math.hypot(s.pos.x - focus.x, s.pos.z - focus.z) > WRECK_REACH;
+      // never before she has settled, so the pose carries on without a jump
+      if (i >= MAX_WRECKS || far) s.wreckLife = Math.max(s.sinkT, 9);
+    }
+  }
+
   /** A flotilla: a flagship with two or three escorts in a loose vee. */
   private spawnFlotilla(near: THREE.Vector3, rMin: number, rMax: number, size: number) {
     const kills = this.player?.kills ?? 0;
@@ -1656,6 +1681,7 @@ export class Game {
     this.state = 'dead';
     // your own ship founders in moments rather than lingering as a hulk
     p.wreckLife = 3;
+    p.founders = true;
     const w = this.world;
     // who did it: a broadside, a ram, or the reef
     const foe = p.lastAttacker && p.lastAttacker !== p && w.time - p.lastHit < 20 ? p.lastAttacker : null;
@@ -2118,6 +2144,7 @@ export class Game {
     P.begin('Collisions', 'ships');
     this.collisions.resolve(this.ships, w);
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
+    this.retireWrecks();
     P.end();
     P.begin('Cannonballs', 'ships');
     this.projectiles.update(dt, w, this.ships);
