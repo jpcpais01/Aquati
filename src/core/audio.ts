@@ -486,7 +486,7 @@ export class Audio {
   }
 
   hit(vol: number, pan: number, dist = 0) {
-    this.emit(pick(this.bank.wood), { vol: vol * 0.8, pan, dist, rate: 0.82 + Math.random() * 0.2, wet: 0.4 });
+    this.emit(pick(this.bank.wood), { vol: vol * 0.8, pan, dist, rate: 0.8 + Math.random() * 0.14, wet: 0.45 });
   }
 
   /** Hulls colliding or a keel grinding onto rock. `force` 0 = a nudge .. 1 = a full-speed ram. */
