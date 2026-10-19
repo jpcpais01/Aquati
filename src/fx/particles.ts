@@ -801,20 +801,18 @@ export class Particles {
         if (Math.random() < 0.7) this.emit({ x: pos.x + j() * 3, y: pos.y + j() * 3, z: pos.z + j() * 3, vx: rand(-0.4, 0.4), vy: rand(-0.6, 0.2), vz: rand(-0.4, 0.4), life: rand(0.6, 1.1), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [3, 5, 7], colorEnd: [1, 2.4, 4], kind: 2, fadeIn: 0.05 }, true);
         break;
       case 'comet':
-        this.emit({ x: pos.x, y: pos.y, z: pos.z, life: rand(0.4, 0.6), size: 0.6, sizeEnd: 0.12, color: [6, 4, 1.2], colorEnd: [2, 0.8, 0.1], kind: 0, fadeIn: 0.001 }, true);
         if (Math.random() < 0.6) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.6, 0.6), vy: rand(-0.4, 0.6), vz: rand(-0.6, 0.6), life: rand(0.7, 1.2), size: rand(0.14, 0.24), sizeEnd: 0.03, color: [7, 5, 1.6], colorEnd: [3, 1.4, 0.2], grav: 1.5, kind: 2, fadeIn: 0.01 }, true);
         break;
       case 'ghost': {
+        // will-o'-wisp motes drifting off the green ribbon (no puffs: the ribbon is the trace)
         const ph = performance.now() * 0.006;
-        this.emit({ x: pos.x + Math.sin(ph) * 0.2, y: pos.y + Math.cos(ph * 1.3) * 0.2, z: pos.z, vx: rand(-0.4, 0.4), vy: rand(0.4, 1.2), vz: rand(-0.4, 0.4), life: rand(0.6, 1.0), size: 0.45, sizeEnd: 1.3, color: [1.5, 5, 3], colorEnd: [0.15, 1.1, 0.6], spin: rand(-1, 1), kind: 0, fadeIn: 0.05 }, true);
+        if (Math.random() < 0.6) this.emit({ x: pos.x + Math.sin(ph) * 0.25, y: pos.y + Math.cos(ph * 1.3) * 0.25, z: pos.z + j() * 2, vx: rand(-0.4, 0.4), vy: rand(0.3, 1.0), vz: rand(-0.4, 0.4), life: rand(0.6, 1.1), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [1.5, 5, 3], colorEnd: [0.15, 1.1, 0.6], kind: 2, fadeIn: 0.02 }, true);
         break;
       }
       case 'rainbow': {
         const h = (performance.now() * 0.0007) % 1;
-        const [r, g, b] = hue(h + rand(-0.04, 0.04));
-        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), life: rand(0.5, 0.8), size: 0.42, sizeEnd: 0.1, color: [r * 4, g * 4, b * 4], colorEnd: [r * 1.2, g * 1.2, b * 1.2], kind: 0, fadeIn: 0.001 }, true);
         if (Math.random() < 0.7) {
-          const [r2, g2, b2] = hue(Math.random());
+          const [r2, g2, b2] = hue(h + rand(-0.25, 0.25));
           this.emit({ x: pos.x + j() * 3, y: pos.y + j() * 3, z: pos.z + j() * 3, vx: rand(-0.8, 0.8), vy: rand(-0.3, 0.9), vz: rand(-0.8, 0.8), life: rand(0.7, 1.3), size: rand(0.14, 0.24), sizeEnd: 0.03, color: [r2 * 5, g2 * 5, b2 * 5], colorEnd: [r2, g2, b2], grav: 1, kind: 2, fadeIn: 0.01 }, true);
         }
         break;
@@ -824,13 +822,11 @@ export class Particles {
         this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vx: rand(-1.5, 1.5), vy: rand(-0.5, 2), vz: rand(-1.5, 1.5), life: rand(0.18, 0.4), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [8, 5, 1.6], colorEnd: [3, 1, 0.1], grav: 6, drag: 1, kind: 2, fadeIn: 0.001 }, true);
         break;
       case 'fire':
-        // red-hot iron: a flame streaming off the ball, embers and a ribbon of dark smoke
-        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: rand(0.5, 1.5), life: rand(0.3, 0.5), size: rand(0.55, 0.75), sizeEnd: 0.15, color: [9, 3.8, 0.9], colorEnd: [2.6, 0.45, 0.05], spin: rand(-3, 3), kind: 0, fadeIn: 0.001 }, true);
-        if (Math.random() < 0.55) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.8, 0.8), vy: rand(0, 1.6), vz: rand(-0.8, 0.8), life: rand(0.5, 1.0), size: rand(0.14, 0.24), sizeEnd: 0.04, color: [8, 3.4, 0.7], colorEnd: [2, 0.3, 0.02], grav: 4, drag: 0.6, kind: 2, fadeIn: 0.01 }, true);
+        // red-hot iron: the flame streak and dark smoke ribbon carry it, embers shed off the ball
+        if (Math.random() < 0.7) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.8, 0.8), vy: rand(0, 1.6), vz: rand(-0.8, 0.8), life: rand(0.5, 1.0), size: rand(0.14, 0.24), sizeEnd: 0.04, color: [8, 3.4, 0.7], colorEnd: [2, 0.3, 0.02], grav: 4, drag: 0.6, kind: 2, fadeIn: 0.01 }, true);
         break;
       case 'starfall':
         this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.3, 0.3) - (vel?.x ?? 0) * 0.02, vy: rand(-0.4, 0.2), vz: rand(-0.3, 0.3) - (vel?.z ?? 0) * 0.02, life: rand(1.3, 2.2), size: rand(0.2, 0.34), sizeEnd: 0.06, color: Math.random() < 0.5 ? [6, 6, 7.5] : [4.5, 3.2, 8], colorEnd: [1.6, 1.2, 3], grav: 0.5, drag: 1, kind: 2, fadeIn: 0.02 }, true);
-        if (Math.random() < 0.5) this.emit({ x: pos.x, y: pos.y, z: pos.z, life: rand(0.3, 0.5), size: 0.5, sizeEnd: 0.1, color: [3, 2.6, 5.5], colorEnd: [0.8, 0.5, 2], kind: 0, fadeIn: 0.001 }, true);
         break;
       default:
         // plain powder: the smoke ribbon is the whole trail
