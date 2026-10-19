@@ -32,7 +32,7 @@ const merge = (parts: THREE.BufferGeometry[]) => mergeGeometries(parts)!;
 
 // ------------------------------------------------------------------ figures
 
-export type Hat = 'tricorn' | 'bandana' | 'none';
+export type Hat = 'tricorn' | 'bandana' | 'straw' | 'knit' | 'none';
 
 export interface PirateStyle {
   shirt: number;
@@ -207,7 +207,7 @@ const hex = (h: number, a = 0): number[] => {
 };
 
 /** The crew-model palette and flags for one harbour pirate. */
-function lookOf(st: PirateStyle, seed: number) {
+export function lookOf(st: PirateStyle, seed: number) {
   let r = seed * 7.31 + 1;
   const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
   const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length) % a.length];
@@ -254,7 +254,7 @@ function lookOf(st: PirateStyle, seed: number) {
   if (rnd() < 0.4) flags |= FLAG.belt;
   if (rnd() < 0.3) flags |= FLAG.kerchief;
   if (st.hat === 'none' && rnd() < 0.3) flags |= FLAG.ponytail;
-  const hat = st.hat === 'tricorn' ? HAT.tricorn : st.hat === 'bandana' ? HAT.bandana : HAT.none;
+  const hat = HAT[st.hat];
   return { slots, flags, hat };
 }
 
@@ -268,9 +268,9 @@ export class Crowd {
   private readonly m = new THREE.Matrix4();
   private readonly off = new THREE.Matrix4();
 
-  constructor(styles: PirateStyle[]) {
+  constructor(styles: PirateStyle[], nearRes = 0.8, farRes = 0.45, nearMax = styles.length) {
     const n = styles.length;
-    this.view = new CrewRenderer(n, 0.8, 0.45, n);
+    this.view = new CrewRenderer(n, nearRes, farRes, nearMax);
     this.group = this.view.group;
     this.group.name = 'pirates';
     this.looks = styles.map((st, i) => lookOf(st, i + 1));
@@ -282,18 +282,23 @@ export class Crowd {
     });
   }
 
-  /** Copies every posed skeleton into the instance buffers (world space). */
-  sync() {
+  /**
+   * Copies every posed skeleton into the instance buffers (world space).
+   * `lod` picks each figure's sculpt: 1 detailed, 2 the far one, 0 not drawn.
+   */
+  sync(lod?: (f: Figure, i: number) => number) {
     const v = this.view;
     v.begin();
     this.figures.forEach((f, i) => {
+      const level = lod ? lod(f, i) : 1;
+      if (!level) return;
       const g = f.style.girth ?? 1;
       // the sculpt's hip joint sits on the skeleton's hips
       this.off.makeScale(g, 1, g).setPosition(0, -HIP, 0);
       this.m.multiplyMatrices(f.hips.matrixWorld, this.off);
       f.write(this.pose);
       const l = this.looks[i];
-      v.push(this.m, this.pose, i, l.hat, f.prop, l.flags, true);
+      v.push(this.m, this.pose, i, l.hat, f.prop, l.flags, level === 1);
     });
     v.end();
   }

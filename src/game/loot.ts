@@ -2,13 +2,15 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { patchMaterial } from '../render/environment';
 import { World } from './world';
+import { LootId, RARITIES, Rarity, rollContents } from './treasure';
 
 // Floating salvage: barrels and treasure chests that bob on the swell and
-// glint in the sun. Sail through them to collect gold and patch your hull.
-// Chests come in four rarities, each with its own craft, a glowing beacon
-// of light you can spot from afar, and a bigger payoff when you scoop it up.
+// glint in the sun. Sail through them to haul their goods into the hold and
+// patch your hull. Chests come in four rarities above the humble barrel, each
+// with its own craft, a glowing beacon of light you can spot from afar, and
+// finer plunder inside (see treasure.ts).
 
-/** 0 barrel, 1 common, 2 rare, 3 epic, 4 legendary chest. */
+/** 0 barrel (common), 1 uncommon, 2 rare, 3 epic, 4 legendary chest: the rarity of its best good. */
 export type Tier = 0 | 1 | 2 | 3 | 4;
 
 export interface RarityInfo {
@@ -22,18 +24,19 @@ export interface RarityInfo {
 }
 
 export const RARITY: RarityInfo[] = [
-  { name: 'Salvage', css: '#e8d3a0', glow: [0, 0, 0], beam: 0, halo: 0, sparkle: 0.6, scale: 1 },
-  { name: 'Common', css: '#ffe08a', glow: [1.6, 1.25, 0.6], beam: 0, halo: 1.7, sparkle: 0.24, scale: 1 },
-  { name: 'Rare', css: '#6cc8ff', glow: [0.35, 1.2, 2.6], beam: 7, halo: 2.3, sparkle: 0.14, scale: 1.08 },
-  { name: 'Epic', css: '#c48bff', glow: [1.7, 0.45, 2.8], beam: 11, halo: 2.9, sparkle: 0.09, scale: 1.16 },
-  { name: 'Legendary', css: '#ffb52e', glow: [3.4, 2.0, 0.45], beam: 18, halo: 3.8, sparkle: 0.045, scale: 1.3 },
+  { name: RARITIES[0].name, css: '#e8d3a0', glow: [0, 0, 0], beam: 0, halo: 0, sparkle: 0.6, scale: 1 },
+  { name: RARITIES[1].name, css: RARITIES[1].css, glow: [0.55, 1.7, 0.65], beam: 0, halo: 1.7, sparkle: 0.24, scale: 1 },
+  { name: RARITIES[2].name, css: RARITIES[2].css, glow: [0.35, 1.2, 2.6], beam: 7, halo: 2.3, sparkle: 0.14, scale: 1.08 },
+  { name: RARITIES[3].name, css: RARITIES[3].css, glow: [1.7, 0.45, 2.8], beam: 11, halo: 2.9, sparkle: 0.09, scale: 1.16 },
+  { name: RARITIES[4].name, css: RARITIES[4].css, glow: [3.4, 2.0, 0.45], beam: 18, halo: 3.8, sparkle: 0.045, scale: 1.3 },
 ];
 
 export interface Item {
   x: number;
   z: number;
   tier: Tier;
-  value: number;
+  /** What's inside, best first. */
+  goods: LootId[];
   heal: number;
   spin: number;
   phase: number;
@@ -196,7 +199,6 @@ export function rollTier(luck: number, min: Tier = 1): Tier {
   return Math.max(t, min) as Tier;
 }
 
-const VALUE: [number, number][] = [[20, 25], [90, 50], [180, 80], [340, 120], [700, 250]];
 const HEAL = [0.1, 0.06, 0.1, 0.16, 0.3];
 const MAX = 64;
 
@@ -332,12 +334,11 @@ export class Loot {
       const r = 3 + Math.random() * 8;
       const isChest = (jackpot && i === 0) || Math.random() < 0.16 + luck * 0.1;
       const tier: Tier = isChest ? rollTier(luck, jackpot && i === 0 ? 2 : 1) : 0;
-      const [base, spread] = VALUE[tier];
       this.items.push({
         x: x + Math.cos(a) * r,
         z: z + Math.sin(a) * r,
         tier,
-        value: base + Math.floor(Math.random() * spread),
+        goods: rollContents(tier as Rarity),
         heal: HEAL[tier],
         spin: (Math.random() - 0.5) * 0.4,
         phase: Math.random() * 10,
@@ -347,8 +348,14 @@ export class Loot {
     }
   }
 
+  /** Puts goods the hold had no room for back on the water, bobbing in a barrel or chest of their rarity. */
+  float(x: number, z: number, goods: LootId[], tier: Tier) {
+    if (!goods.length) return;
+    this.items.push({ x, z, tier, goods, heal: 0, spin: (Math.random() - 0.5) * 0.4, phase: Math.random() * 10, age: 0, sparkle: 0 });
+  }
+
   /** Returns collected items for the given collector position. */
-  update(dt: number, world: World, collector: THREE.Vector3 | null, radius: number): Item[] {
+  update(dt: number, world: World, collector: THREE.Vector3 | null, radius: number, refuse?: (it: Item) => boolean): Item[] {
     const got: Item[] = [];
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];
@@ -359,12 +366,13 @@ export class Loot {
       if (collector) {
         const dx = collector.x - it.x, dz = collector.z - it.z;
         const d = Math.hypot(dx, dz);
-        if (d < radius * 0.5) {
+        if (d < radius && refuse?.(it)) {
+          // nothing aboard has room for it: it drifts on untouched
+        } else if (d < radius * 0.5) {
           got.push(it);
           this.items.splice(i, 1);
           continue;
-        }
-        if (d < radius) {
+        } else if (d < radius) {
           // magnet: pull harder the closer it gets
           const pull = Math.min(d, (6 + 26 * (1 - d / radius)) * dt);
           it.x += (dx / d) * pull;
