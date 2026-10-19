@@ -4,7 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { clamp, lerp, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import { Livery, ShipClass } from './shipTypes';
-import { deckTexture, flagTexture, hullTexture, sailTexture, sternTexture } from './shipTextures';
+import { deckTexture, FLAG_ASPECT, flagTexture, hullTexture, sailTexture, sternTexture } from './shipTextures';
 
 // Fully procedural ships: a lofted hull with real sheer, tumblehome, bilge
 // and stem; castles that sweep up out of the sheer; a rounded wale, keel and
@@ -315,6 +315,8 @@ export class ShipModel {
   readonly yardPivots: THREE.Object3D[] = [];
   readonly foreAftPivots: THREE.Object3D[] = [];
   readonly flagPivot = new THREE.Group();
+  /** Ensign on a staff over the taffrail; it flies the same flag. */
+  readonly ensignPivot = new THREE.Group();
   readonly sailMaterial: THREE.MeshStandardMaterial;
   readonly sailEmblemMaterial: THREE.MeshStandardMaterial;
   readonly sailUniforms = { uSailFill: { value: 1 }, uSailPhase: { value: Math.random() * 10 }, uSailDepth: { value: 1 } };
@@ -328,11 +330,14 @@ export class ShipModel {
   private ropes: number[] = [];
   private ratlines: number[] = [];
   private readonly detail: boolean;
+  /** Custom liveries own their materials (no cache) and must be disposed. */
+  private readonly owned: boolean;
 
   private readonly steps: Generator<void, void>;
 
   /** `deferred` leaves the geometry unbuilt: call step() (a little per frame) until it returns true. */
   constructor(readonly cls: ShipClass, readonly livery: Livery, quality = 1, deferred = false) {
+    this.owned = livery.id.startsWith('custom');
     this.detail = quality > 0;
     this.shape = new HullShape(cls);
     this.stairs = castleStairs(cls, this.shape);
@@ -395,7 +400,7 @@ export class ShipModel {
 
   private materials(quality: number): MaterialSet {
     const key = `${this.cls.id}|${this.livery.id}|${quality}`;
-    const cached = materialCache.get(key);
+    const cached = this.owned ? undefined : materialCache.get(key);
     if (cached) return cached;
     const s = this.shape;
     const L = this.cls.length;
@@ -423,7 +428,7 @@ export class ShipModel {
     const iron = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true });
     const trim = patchMaterial(new THREE.MeshStandardMaterial({ color: hexL(this.livery.trim), roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true });
     const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(5.0, 3.2, 1.4) });
-    const flag = patchMaterial(new THREE.MeshStandardMaterial({ map: flagTexture(this.livery), side: THREE.DoubleSide, roughness: 0.8 }), { flag: true });
+    const flag = patchMaterial(new THREE.MeshStandardMaterial({ map: flagTexture(this.livery), side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.5 }), { flag: true });
     const rope = new THREE.LineBasicMaterial({ color: 0x2a1f16, transparent: true, opacity: 0.75 });
     const ratline = new THREE.LineBasicMaterial({ color: 0x2a1f16, transparent: true, opacity: 0.38 });
     const set: MaterialSet = {
@@ -440,7 +445,7 @@ export class ShipModel {
       sailPlain: sailTexture(this.livery, false),
       sailEmblem: sailTexture(this.livery, true),
     };
-    materialCache.set(key, set);
+    if (!this.owned) materialCache.set(key, set);
     return set;
   }
 
@@ -1222,21 +1227,35 @@ export class ShipModel {
     for (let i = 0; i < mastTops.length - 1; i++) this.rope(mastTops[i], mastTops[i + 1].clone().add(new THREE.Vector3(0, -c.masts[i + 1].height * 0.35, 0)));
     this.rope(mastTops[0], new THREE.Vector3(0, s.top(0.02) + 0.1, s.z(0.02)));
 
-    // pennant on the tallest mast
+    // the ship's flag on the tallest mast
     this.flagPivot.position.copy(maxMastTop).add(new THREE.Vector3(0, 0.35, 0));
-    const flagG = new THREE.PlaneGeometry(1, 1, 16, 1);
-    // taper: shrink the fly end
-    const fp = flagG.getAttribute('position');
-    for (let i = 0; i < fp.count; i++) {
-      const x = fp.getX(i) + 0.5;
-      const y = fp.getY(i);
-      fp.setXYZ(i, x * (2.4 + c.length * 0.06), y * (1 - x * 0.75) * 0.75, 0);
-    }
-    flagG.computeVertexNormals();
-    const flag = new THREE.Mesh(flagG, this.mats.flag);
-    flag.rotation.y = 0; // pennant extends along local +x, waving in z
+    const flagW = 2.2 + c.length * 0.07;
+    const flag = new THREE.Mesh(this.flagGeometry(flagW), this.mats.flag);
+    flag.castShadow = true;
     this.flagPivot.add(flag);
     this.root.add(this.flagPivot);
+
+    // and again as an ensign on a raked staff over the taffrail
+    const et = 0.03;
+    const ex = (c.sternCastle ? 0.3 : 0.5) * s.halfBeam(et); // clear of the stern lanterns
+    const eBase = new THREE.Vector3(ex, s.top(et) - 0.1, s.z(et));
+    const staffLen = 1.6 + c.length * 0.05;
+    const eTop = eBase.clone().add(new THREE.Vector3(0, Math.cos(0.4), -Math.sin(0.4)).multiplyScalar(staffLen));
+    this.woodParts.push(colorize(spar(eBase, eTop, 0.06, 0.04, 6), hexL(0x3e2a1a)));
+    this.trimParts.push(ball(0.08, eTop.clone().add(new THREE.Vector3(0, 0.06, 0)), 6, 4));
+    this.ensignPivot.position.copy(eTop);
+    const ensign = new THREE.Mesh(this.flagGeometry(1.3 + c.length * 0.045), this.mats.flag);
+    ensign.castShadow = true;
+    this.ensignPivot.add(ensign);
+    this.root.add(this.ensignPivot);
+  }
+
+  /** A flag plane hanging from its hoist at the origin, flying along +x. */
+  private flagGeometry(w: number) {
+    const h = w * FLAG_ASPECT;
+    const g = new THREE.PlaneGeometry(w, h, 16, 4);
+    g.translate(w / 2, -h / 2 + 0.05, 0);
+    return g;
   }
 
   private rope(a: THREE.Vector3, b: THREE.Vector3) {
@@ -1561,6 +1580,35 @@ export class ShipModel {
       for (const ch of p.children) if ((ch as THREE.Mesh).geometry?.getAttribute('aBillow')) ch.scale.z = bz;
     }
     this.flagPivot.rotation.y = windRelAngle;
+    this.ensignPivot.rotation.y = windRelAngle;
     this.sailUniforms.uSailFill.value = fill * sailLevel;
+  }
+
+  /** Repaints flag and sails in place for a new livery with the same hull. */
+  restyle(livery: Livery) {
+    if (!this.owned) return;
+    flagTexture(livery, this.mats.flag.map as THREE.CanvasTexture);
+    sailTexture(livery, false, 5, this.mats.sailPlain as THREE.CanvasTexture);
+    sailTexture(livery, true, 5, this.mats.sailEmblem as THREE.CanvasTexture);
+  }
+
+  /** Repaints just the flag (cheap; used while painting). */
+  restyleFlag(livery: Livery) {
+    if (this.owned) flagTexture(livery, this.mats.flag.map as THREE.CanvasTexture);
+  }
+
+  dispose() {
+    this.sailMaterial.dispose();
+    this.sailEmblemMaterial.dispose();
+    if (!this.owned) return;
+    const m = this.mats;
+    for (const mat of [m.hull, m.stern, m.wood, m.iron, m.trim, m.glow, m.flag, m.rope, m.ratline]) {
+      const ms = mat as THREE.MeshStandardMaterial;
+      if (ms.map && ms.map !== sharedDeck) ms.map.dispose();
+      if (ms.emissiveMap) ms.emissiveMap.dispose();
+      mat.dispose();
+    }
+    m.sailPlain.dispose();
+    m.sailEmblem.dispose();
   }
 }
