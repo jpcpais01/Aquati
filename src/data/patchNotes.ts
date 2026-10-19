@@ -13,6 +13,15 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
+        title: 'Frame rate counter',
+        notes: ['A tiny FPS counter now sits at the top of the screen, refreshed twice a second.'],
+      },
+    ],
+  },
+  {
     // the next 12:00 group is full (five entries), so this hour continues in a second group
     hour: '2026-10-19T12:00Z',
     entries: [
@@ -20,6 +29,15 @@ export const PATCH_NOTES: PatchGroup[] = [
         title: 'The sea chart no longer stops the world',
         notes: [
           'Opening the big chart no longer pauses the game. Your ship keeps sailing, pirates keep hunting and everything moves live on the chart, so you can plot a course on the fly. On a keyboard you can keep steering and firing while it is open.',
+        ],
+      },
+      {
+        title: 'Treasure rarities: common, rare, epic, legendary',
+        notes: [
+          'Chests now come in four rarities. Common chests are weathered wood and iron, Rare ones sea-blue lacquer and silver, Epic ones royal violet with gold and an amethyst, and Legendary chests are gilded, lid thrown open on a glowing hoard of coins and jewels.',
+          'Finer chests shine a beam of coloured light into the sky and cast a glowing ring on the water, so you can spot a prize from across the bay. They are also plotted in their colours on the minimap and sea chart.',
+          'Scooping one up sets off a burst of coins and coloured sparks with a rising chime, bigger for every rarity. Epic and Legendary finds get a banner, a heavier haul of gold and a bigger hull patch.',
+          'Tougher prey drops better treasure: brigs beat sloops, and every sunk galleon is guaranteed at least a Rare chest.',
         ],
       },
       {
