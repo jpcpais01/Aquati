@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'Scenic loading screen',
+        notes: [
+          'While the archipelago loads you now look out over a real moment from the game, slowly drifting behind the wordmark, instead of a plain blue backdrop. More scenes will join the rotation soon.',
+        ],
+      },
+      {
         title: 'Plunder and trading ports',
         notes: [
           'Chests and barrels no longer spill plain gold. They hold real plunder: 30 kinds of goods across five rarities, from casks of rum, coffee and cheese up through silk, pearls, emeralds, old paintings and a sultan\'s ruby, to legendary finds like the Crown of the Drowned King and the Kraken\'s Pearl.',
