@@ -13,6 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    // the 13:00 group below is full (five entries), so this hour continues here
     hour: '2026-10-19T13:00Z',
     entries: [
       {
@@ -22,6 +23,54 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Bring a foe into a gold arc and the guns lock on: chevrons stream toward her, a reticle snaps square around her hull, a gold line marks the range and a pip shows where the shot will land. If she is just outside, the edge you need to turn across glows.',
           'Your gunners now allow for your own ship\'s speed as well as the enemy\'s, so broadsides in a running fight no longer sail past the bow, and they can train a little further fore and aft.',
           'With a mouse, point into either side to see that arc, and click to fire it: at the foe in it, or wherever you point. On touch, the side the Fire button will shoot is outlined, and Fire glows when a foe is locked and loaded.',
+        ],
+      },
+      {
+        title: 'The Shipwright: make your ship your own',
+        notes: [
+          'Press Shipwright on the home screen and row over to Puerto Marea, a little pirate harbour where your ship ties up at the quay while you restyle her.',
+          'Design your own flag: pick a shape (square, swallowtail, tattered or burgee), a field colour, one of ten patterns and one of sixteen emblems, from skulls and krakens to parrots and crowns, with crossed bones, swords or a laurel behind it. You can even paint on the flag with your own brush.',
+          'Colour your sails and give them stripes, a band, a border or a cross, with your emblem on the mainsail if you like. Repaint the hull too: topsides, planking, waterline, bottom, wale and the gold trim.',
+          'Every change shows up on the ship as you make it, and the camera swings to the flag, the sails or the hull as you switch tabs. Drag to look around and scroll or pinch to zoom.',
+          'Short on ideas? Try one of eight famous colour schemes, roll the dice for a surprise, and name your ship. Your design is saved and flies at sea on every voyage.',
+          'The harbour is busy: pirates roll barrels and haul crates, a fisherman waits for a bite, a musician squeezes an accordion while a sailor dances, two old salts clink mugs, a painter touches up your hull from a rowboat, and someone is snoring in a hammock.',
+        ],
+      },
+      {
+        title: 'Rolling gun smoke and shot streaks',
+        notes: [
+          'Gun smoke is now a soft, rolling cloud that is lit by the sun: bright on top, shadowed underneath, and glowing at its thin edges when you look toward the light. It turns gold at sunset, cool and dim under the moon, and sinks into the haze in mist and rain.',
+          'Every broadside throws three layers of smoke: a fast jet out of the gunport, a slow bank that hangs by the hull, and dark powder wisps flung from the flash. All of it drifts away on the wind and slowly frays apart, and rain knocks it down sooner.',
+          'Cannonballs now leave a short bright streak behind them, so you can follow every shot across the water. It glows a little hotter at night, and the shot trails a thin wake of powder smoke that curls off on the breeze.',
+        ],
+      },
+      {
+        title: "Captain's view: walk your own deck",
+        notes: [
+          "Press V (or tap the new eye button) and the camera swoops down out of the sky into your captain's eyes. Press it again to soar back up.",
+          'Walk the deck with WASD or the left stick, hold Shift to run, and look around with the mouse or by dragging the right side of the screen. You ride every roll and pitch of the hull, your boots knock on the planks, and the crew, guns, masts and barrels all get in your way.',
+          'Climb the new companion stairs up to the quarterdeck and forecastle. Walk up to the wheel and press F (or tap Take the helm): your helmsman steps aside, and the ship answers to you. Arrow keys sail and steer from anywhere on deck, and when you let go of the wheel she holds her course.',
+          'Turn to face a beam and click (or tap Fire) to loose that broadside. Raise the spyglass with Z, a right click or the touch button to pick out an enemy crew at the far side of a battle.',
+          'From the deck you finally see the horizon: an open sky with drifting clouds that cast the very shadows you see sliding over the sea, a blazing sun, stars and the moon at night, and water that runs all the way out to a hazy horizon. Step back into your view later and you pick up exactly where your captain is standing.',
+        ],
+      },
+      {
+        title: 'A quieter wheel',
+        notes: [
+          'Once you take the helm in the captain\'s view, the "Leave the helm" prompt shrinks to a small tag just above the helm console, so it no longer sits in the middle of your view.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T13:00Z',
+    entries: [
+      {
+        title: 'Hulls collide: ramming and running aground',
+        notes: [
+          'Ships now properly bump into each other, shaped like their hulls: a glancing blow slides along her side and swings both bows, while a bow driven square into a beam stops dead. Heavy ships hold their ground and light ones get shoved aside and spun.',
+          'Ramming hurts. A hit lands with a deep timber crunch, splinters, a burst of spray and a jolt of the camera, and staves in planking based on how fast you closed. Your bow takes the blow far better than the side you hit, so a galleon at full sail can break a sloop in half. Two ships grinding slowly past each other creak and squeeze up foam instead.',
+          'Running aground now sounds like it too, with the keel grinding on rock and water thrown up along the shore.',
         ],
       },
       {

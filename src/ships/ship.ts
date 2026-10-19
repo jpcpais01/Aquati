@@ -88,6 +88,8 @@ export class Ship {
   gold = 0;
   kills = 0;
   anchored = false;
+  /** Sideways drift (x, z m/s) from being shoved by another hull; bleeds off against the water. */
+  readonly drift = new THREE.Vector2();
   /** World time each gun last fired, by muzzle index (crews time their drill to it). */
   readonly gunFiredAt: number[];
   private pending: PendingShot[] = [];
@@ -115,6 +117,11 @@ export class Ship {
     this.hp = cls.hp;
     this.name = cls.title;
     this.gunFiredAt = this.model.muzzles.map(() => -100);
+  }
+
+  /** Heel the hull over by `amount` radians (positive lifts the port rail); it springs back on its own. */
+  kickRoll(amount: number) {
+    this.rollKick = clamp(this.rollKick + amount, -0.3, 0.3);
   }
 
   get maxHp() {
@@ -282,7 +289,9 @@ export class Ship {
     const port = this.portDir(_v2);
     const cross = w.dirX * port.x + w.dirZ * port.z;
     const slip = cross * 0.35 * this.sailLevel * w.strength;
-    this.vel.set(fx * this.speed + port.x * slip, 0, fz * this.speed + port.z * slip);
+    // a shove from another hull: the keel resists sideways motion far more than fore-and-aft
+    this.drift.multiplyScalar(1 - damp(1.5, dt));
+    this.vel.set(fx * this.speed + port.x * slip + this.drift.x, 0, fz * this.speed + port.z * slip + this.drift.y);
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
 
@@ -305,6 +314,10 @@ export class Ship {
           this.damage(this.speed * 1.8, null, world, _fp.set(px, 0.2, pz));
           this.groundCooldown = 1.2;
           world.particles.sandHit(new THREE.Vector3(px, 0.5, pz));
+          world.particles.splash(new THREE.Vector3(px, world.waterHeight(px, pz), pz), 0.5 + Math.min(0.6, this.speed / 25));
+          const [vol, pan, d] = world.soundAt(this.pos);
+          world.audio.crunch(vol, pan, d, Math.min(1, this.speed / 12));
+          world.audio.thud(vol, pan, d);
           world.onShake(this.team === 'player' ? 0.5 : 0, this.pos);
         }
         this.speed *= pf > 0.3 ? 0.86 : 0.95;

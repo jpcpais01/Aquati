@@ -417,6 +417,63 @@ export class UI {
     setTimeout(() => el.remove(), (life + 0.7) * 1000);
   }
 
+  /** Captain's view chrome: the toggle, walk hints, reticle and the touch spyglass. */
+  setFpv(on: boolean) {
+    this.hud.classList.toggle('fpv', on);
+    const b = $('btn-view');
+    b.classList.toggle('on', on);
+    b.title = on ? "Bird's-eye view (V)" : "Captain's view (V)";
+    b.innerHTML = icon(ICONS[on ? 'bird' : 'eye']);
+    this.setHelmPrompt('none');
+    this.setLook(false, 0, false);
+    this.setSpy(0);
+    this.fpvHint = '';
+  }
+
+  private helmState = '';
+  private fpvHint = '';
+  private reticleSide = 9;
+  private spyLevel = -1;
+
+  /** 'take' when the wheel is in reach, 'leave' while holding it. */
+  setHelmPrompt(state: 'none' | 'take' | 'leave') {
+    if (state === this.helmState) return;
+    this.helmState = state;
+    const el = $('btn-helm');
+    el.classList.toggle('on', state !== 'none');
+    el.classList.toggle('held', state === 'leave');
+    if (state !== 'none') $('helm-text').textContent = state === 'take' ? 'Take the helm' : 'Leave the helm';
+    const hint = this.hud.querySelector('.helm .hint');
+    if (hint) hint.textContent = this.hud.classList.contains('fpv') && state !== 'leave' ? 'WASD walk · arrows sail & helm' : 'W / S sails · A / D helm';
+  }
+
+  /** Reticle and the "click to look" nudge while walking the deck. */
+  setLook(locked: boolean, side: number, ready: boolean) {
+    const hint = locked ? 'locked' : 'free';
+    if (hint !== this.fpvHint) {
+      this.fpvHint = hint;
+      $('fpv-hint').classList.toggle('on', !locked);
+    }
+    const key = side * 2 + (ready ? 1 : 0);
+    if (key !== this.reticleSide) {
+      this.reticleSide = key;
+      const r = $('reticle');
+      r.classList.toggle('side', side !== 0);
+      r.classList.toggle('ready', side !== 0 && ready);
+      $('reticle-side').textContent = side > 0 ? 'Port battery' : side < 0 ? 'Starboard battery' : '';
+    }
+  }
+
+  setSpy(k: number) {
+    const q = Math.round(k * 50) / 50;
+    if (q === this.spyLevel) return;
+    this.spyLevel = q;
+    const el = $('spyglass');
+    el.style.opacity = `${q}`;
+    el.style.transform = `scale(${1.35 - q * 0.35})`;
+    $('t-spy').classList.toggle('on', q > 0.5);
+  }
+
   floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' = '') {
     const f = this.floaterPool.find((p) => p.t >= p.life) ?? this.floaterPool[0];
     f.el.textContent = text;

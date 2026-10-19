@@ -32,7 +32,7 @@ function stripUV(geo: THREE.BufferGeometry): THREE.BufferGeometry {
   return geo;
 }
 
-function palmGeometry(height: number, lean: number, seed: number): THREE.BufferGeometry {
+export function palmGeometry(height: number, lean: number, seed: number): THREE.BufferGeometry {
   const rnd = mulberry32(seed);
   const parts: THREE.BufferGeometry[] = [];
   // ---- trunk: curved, tapered, ringed
@@ -360,7 +360,7 @@ export class Vegetation {
   private stars: Placement[][] = [];
   private drift: Placement[][] = [];
 
-  constructor(private terrain: Terrain, private density = 1) {
+  constructor(private terrain: Terrain, private density = 1, private clearings: { x: number; z: number; r: number }[] = []) {
     this.group.name = 'vegetation';
     terrain.islands.forEach((isl, i) => this.placeOnIsland(isl, i));
   }
@@ -411,6 +411,7 @@ export class Vegetation {
       const z = isl.z + (rnd() * 2 - 1) * ext;
       const h = t.heightAt(x, z);
       if (h < -0.8) continue;
+      if (this.clearings.some((c) => (x - c.x) ** 2 + (z - c.z) ** 2 < c.r * c.r)) continue;
       t.gradientAt(x, z, grad);
       const slope = grad.length();
       const clump = s.noise(x * 0.025, z * 0.025);

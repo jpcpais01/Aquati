@@ -75,6 +75,11 @@
         <div class="broadside" id="bs-star"><span>Starboard</span><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg><span class="ti" data-icon="cannon"></span></div><kbd class="kd">E</kbd></div>
       </div>
       <button class="icon-btn" id="btn-pause" title="Pause (Esc)"><span class="ti" data-icon="pause"></span></button>
+      <button class="icon-btn view-btn" id="btn-view" title="Captain's view (V)"><span class="ti" data-icon="eye"></span></button>
+      <div class="spyglass" id="spyglass"></div>
+      <div class="reticle" id="reticle"><i></i><span id="reticle-side"></span></div>
+      <button class="fpv-prompt" id="btn-helm"><kbd class="kd">F</kbd><span id="helm-text">Take the helm</span></button>
+      <div class="fpv-hint" id="fpv-hint">Click to look around · <kbd>WASD</kbd> walk · <kbd>V</kbd> leave</div>
       <div id="toasts"></div>
       <div id="floaters"></div>
       <div id="bars"></div>
@@ -84,6 +89,7 @@
           <button class="fbtn side" id="t-port"><i class="rl"></i><span class="ti" data-icon="chevL"></span><small>Port</small></button>
           <button class="fbtn main" id="t-fire"><span class="ti" data-icon="cannon"></span><small>Fire</small></button>
           <button class="fbtn side" id="t-star"><i class="rl"></i><span class="ti" data-icon="chev"></span><small>Stbd</small></button>
+          <button class="fbtn glass" id="t-spy"><span class="ti" data-icon="spyglass"></span></button>
         </div>
       </div>
     </div>
@@ -159,6 +165,7 @@
             <div class="ctl"><span class="gesture">◀ Port · Stbd ▶</span><span>Fire one side</span></div>
             <div class="ctl"><span class="gesture">Pinch</span><span>Zoom</span></div>
             <div class="ctl"><span class="gesture">Tap minimap</span><span>Open the sea chart</span></div>
+            <div class="ctl"><span class="gesture">Eye button</span><span>Captain's view: stick walks, drag the right side to look</span></div>
           </section>
           <section class="ctl-group">
             <h4>Sailing</h4>
@@ -179,6 +186,15 @@
             <div class="ctl"><span><kbd>Esc</kbd></span><span>Pause</span></div>
           </section>
           <div class="ctl-tip"><span class="ti" data-icon="cannon"></span>Your guns fire to the sides. Steer until a foe sits in one of the arcs on the water: gold means loaded and locked on, so fire.</div>
+          <section class="ctl-group">
+            <h4>Captain's view</h4>
+            <div class="ctl"><span><kbd>V</kbd></span><span>Step into the captain's boots</span></div>
+            <div class="ctl"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Walk the deck (<kbd>Shift</kbd> to run)</span></div>
+            <div class="ctl"><span><kbd>Mouse</kbd></span><span>Look around, click fires the side you face</span></div>
+            <div class="ctl"><span><kbd>F</kbd></span><span>Take or leave the helm</span></div>
+            <div class="ctl"><span><kbd>Z</kbd></span><span>Spyglass (or hold right click)</span></div>
+            <div class="ctl"><span><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></span><span>Steer &amp; trim from anywhere</span></div>
+          </section>
           <div class="ctl-tip"><span class="ti" data-icon="wheel"></span>Sail across the wind for the best speed. Heading straight into it is slow going.</div>
         </div>
       </div>
