@@ -410,6 +410,10 @@ export class UI {
       /* ignore */
     }
     $('notes-dot').classList.toggle('hidden', !PATCH_NOTES.length || seen === PATCH_NOTES[0].hour);
+    const tag = $('build-tag');
+    tag.textContent = `v${__APP_VERSION__}`;
+    if (__APP_COMMIT__) tag.insertAdjacentHTML('beforeend', `<em>${__APP_COMMIT__}</em>`);
+    tag.title = `Version ${__APP_VERSION__}${__APP_COMMIT__ ? ` (build ${__APP_COMMIT__})` : ''}`;
   }
 
   private startTips() {

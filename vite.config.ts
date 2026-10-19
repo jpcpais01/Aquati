@@ -1,7 +1,24 @@
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { execSync } from 'node:child_process';
+import pkg from './package.json';
+
+function commit(): string {
+  const env = process.env.VERCEL_GIT_COMMIT_SHA;
+  if (env) return env.slice(0, 7);
+  try {
+    return execSync('git rev-parse --short=7 HEAD').toString().trim();
+  } catch {
+    return '';
+  }
+}
+
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_COMMIT__: JSON.stringify(commit()),
+  },
   build: {
     target: 'es2022',
     chunkSizeWarningLimit: 1200,
