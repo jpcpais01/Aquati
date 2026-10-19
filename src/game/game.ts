@@ -289,7 +289,7 @@ export class Game {
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
-    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36);
+    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.birds.mesh);
     ui.progress(0.75);
     await nextFrame();
@@ -1508,7 +1508,7 @@ export class Game {
     this.particles.update(dt);
     P.end();
     P.begin('Birds', 'fx');
-    this.birds.update(dt, w.time);
+    this.birds.update(dt, w, this.ships);
     P.end();
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');
