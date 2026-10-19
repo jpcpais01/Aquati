@@ -5,6 +5,7 @@ import { Audio } from '../core/audio';
 import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { Pipeline } from '../render/pipeline';
+import { warmDraw } from '../render/warmup';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
 import { Debris, Pusher } from '../fx/debris';
@@ -20,7 +21,8 @@ import { Atmosphere, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
-import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { ShipModel } from '../ships/shipModel';
+import { Livery, PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
 import { Projectiles } from './projectiles';
@@ -58,6 +60,8 @@ export class Game {
   private debris = new Debris();
   private pushers: Pusher[] = [];
   private ships: Ship[] = [];
+  /** Pirates being built a slice per frame before they sail over the horizon. */
+  private shipyard: { id: ShipClassId; livery: Livery; model: ShipModel; near: THREE.Vector3; rMin: number; rMax: number }[] = [];
   private ais = new Map<Ship, PirateAI>();
   private player: Ship | null = null;
   private preview: Ship | null = null;
@@ -144,6 +148,11 @@ export class Game {
   async init() {
     const ui = this.ui;
     const q = this.quality;
+    // webfonts load on first use: fetch every weight now so a toast or banner
+    // never stalls on a font mid-voyage
+    const fonts = Promise.all(
+      ['500 1em Cinzel', '700 1em Cinzel', '400 1em Inter', '600 1em Inter', '800 1em Inter'].map((f) => document.fonts?.load(f).catch(() => [])),
+    );
     ui.progress(0.05);
     await nextFrame();
     this.terrain = new Terrain(20251019);
@@ -198,10 +207,26 @@ export class Game {
 
     this.resize();
     this.enterMenu();
-    // warm up every shader before the first visible frame
+    // warm up before the first visible frame: compile every shader, upload every
+    // ship texture, then draw the whole world once for real (see render/warmup)
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
-    this.renderer.compile(this.opaque, this.rig.camera);
-    this.renderer.compile(this.water, this.rig.camera);
+    for (const id of Object.keys(SHIP_CLASSES) as ShipClassId[]) {
+      for (const liv of [PLAYER_LIVERY, ...PIRATE_LIVERIES]) {
+        for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
+      }
+    }
+    ui.progress(0.92);
+    await this.renderer.compileAsync(this.opaque, this.rig.camera);
+    await this.renderer.compileAsync(this.water, this.rig.camera);
+    ui.progress(0.96);
+    await nextFrame();
+    this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
+    // twice: the first pass makes the shadow map, which the water then switches on
+    warmDraw([this.opaque, this.water], () => {
+      this.render(0);
+      this.render(0);
+    });
+    await fonts;
     ui.progress(1);
     await nextFrame();
     ui.hideLoading();
@@ -277,9 +302,12 @@ export class Game {
 
   // ------------------------------------------------------------------ ships
 
-  private makeShip(id: ShipClassId, team: 'player' | 'pirate'): Ship {
-    const livery = team === 'player' ? PLAYER_LIVERY : PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
-    const s = new Ship(SHIP_CLASSES[id], livery, team, this.quality.physicalHull ? 1 : 0);
+  private pirateLivery() {
+    return PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
+  }
+
+  private makeShip(id: ShipClassId, team: 'player' | 'pirate', livery = team === 'player' ? PLAYER_LIVERY : this.pirateLivery(), model?: ShipModel): Ship {
+    const s = new Ship(SHIP_CLASSES[id], livery, team, this.quality.physicalHull ? 1 : 0, model);
     if (team === 'pirate') {
       s.name = PIRATE_NAMES[this.nameIdx++ % PIRATE_NAMES.length];
       s.gold = 0;
@@ -340,12 +368,34 @@ export class Game {
     return new THREE.Vector3(cx + rMax, 0, cz);
   }
 
-  private spawnPirate(near: THREE.Vector3, rMin: number, rMax: number) {
-    const kills = this.player?.kills ?? 0;
+  private pirateClass(): ShipClassId {
     const roll = Math.random();
-    let id: ShipClassId = roll < 0.48 ? 'sloop' : roll < 0.82 ? 'brig' : 'galleon';
-    if (kills < 2 && id === 'galleon') id = 'brig';
-    const s = this.makeShip(id, 'pirate');
+    const id: ShipClassId = roll < 0.48 ? 'sloop' : roll < 0.82 ? 'brig' : 'galleon';
+    return (this.player?.kills ?? 0) < 2 && id === 'galleon' ? 'brig' : id;
+  }
+
+  /** Lays a pirate down in the shipyard: built a slice per frame, launched when done. */
+  private orderPirate(near: THREE.Vector3, rMin: number, rMax: number) {
+    const id = this.pirateClass();
+    const livery = this.pirateLivery();
+    const model = new ShipModel(SHIP_CLASSES[id], livery, this.quality.physicalHull ? 1 : 0, true);
+    this.shipyard.push({ id, livery, model, near: near.clone(), rMin, rMax });
+  }
+
+  private runShipyard() {
+    const job = this.shipyard[0];
+    if (!job) return;
+    const t0 = performance.now();
+    let done = false;
+    while (!done && performance.now() - t0 < 3) done = job.model.step();
+    if (!done) return;
+    this.shipyard.shift();
+    this.spawnPirate(this.player?.pos ?? job.near, job.rMin, job.rMax, job.id, job.livery, job.model);
+  }
+
+  private spawnPirate(near: THREE.Vector3, rMin: number, rMax: number, id = this.pirateClass(), livery = this.pirateLivery(), model?: ShipModel) {
+    const kills = this.player?.kills ?? 0;
+    const s = this.makeShip(id, 'pirate', livery, model);
     const p = this.findOpenWater(near.x, near.z, rMin, rMax);
     s.place(p.x, p.z, Math.random() * Math.PI * 2);
     s.sailTarget = 0.5;
@@ -396,6 +446,7 @@ export class Game {
 
   private resetWorld() {
     for (const s of this.ships.slice()) this.removeShip(s);
+    this.shipyard.length = 0;
     this.projectiles.clear();
     this.loot.clear();
     this.debris.clear();
@@ -447,6 +498,8 @@ export class Game {
   }
 
   private onSunk(ship: Ship, attacker: Ship) {
+    // the replacement waits until the wreck has settled
+    this.spawnTimer = Math.max(this.spawnTimer, 5);
     const bounty = { sloop: 60, brig: 110, galleon: 220 }[ship.cls.id];
     const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
@@ -595,6 +648,7 @@ export class Game {
     this.pushers.length = 0;
     for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
     this.debris.update(dt, w, this.pushers);
+    if (dt > 0) this.runShipyard();
 
     // player-centric systems
     const p = this.player;
@@ -835,11 +889,11 @@ export class Game {
 
   private directSpawns(dt: number) {
     const p = this.player!;
-    const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive).length;
+    const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive).length + this.shipyard.length;
     const want = Math.min(6, 3 + Math.floor(p.kills / 3));
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
-      this.spawnPirate(p.pos, 300, 460);
+      this.orderPirate(p.pos, 300, 460);
       this.spawnTimer = 9 + Math.random() * 6;
     }
   }

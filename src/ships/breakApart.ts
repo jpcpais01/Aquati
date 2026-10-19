@@ -22,8 +22,8 @@ export interface SplitResult {
 
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
-const _c = new THREE.Vector3();
 const _cen = new THREE.Vector3();
+const _box = new THREE.Box3();
 
 type Vert = Float32Array;
 
@@ -58,100 +58,132 @@ function clipTri(vs: Vert[], ds: number[]): [Vert[], Vert[]] {
 export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): SplitResult | null {
   const geo = src.index ? src.toNonIndexed() : src;
   const names = Object.keys(geo.attributes).filter((n) => !(geo.attributes[n] as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute);
+  const pi = names.indexOf('position');
+  if (pi < 0) return null;
+  // keep position first so a vertex's root-space point can be read straight off it
+  if (pi !== 0) names.unshift(names.splice(pi, 1)[0]);
   const attrs = names.map((n) => geo.attributes[n] as THREE.BufferAttribute);
   const sizes = attrs.map((a) => a.itemSize);
   const stride = sizes.reduce((s, x) => s + x, 0);
-  const position = geo.getAttribute('position') as THREE.BufferAttribute;
+  const position = attrs[0];
   const triCount = Math.floor(position.count / 3);
-  const keep: number[][] = names.map(() => []);
-  const piece: number[][] = names.map(() => []);
-  const rim: THREE.Vector3[] = [];
-  let pieceTris = 0;
+  if (!triCount) return null;
   const plane = cut.plane;
+  const pn = plane.normal;
+  // the whole mesh on the kept side of the plane: nothing to slice (and nothing allocated)
+  if (!geo.boundingBox) geo.computeBoundingBox();
+  _box.copy(geo.boundingBox!).applyMatrix4(toRoot);
+  if (plane.distanceToPoint(_box.max.set(pn.x >= 0 ? _box.max.x : _box.min.x, pn.y >= 0 ? _box.max.y : _box.min.y, pn.z >= 0 ? _box.max.z : _box.min.z)) <= 0) return null;
 
+  // plain float attributes are copied a whole run of triangles at a time
+  const fast = attrs.every((a) => a.array instanceof Float32Array && !a.normalized);
+  const arrays = attrs.map((a) => (fast ? (a.array as Float32Array) : Float32Array.from({ length: a.count * a.itemSize }, (_, i) => a.getComponent(Math.floor(i / a.itemSize), i % a.itemSize))));
+  const P = arrays[0];
+  const e = toRoot.elements;
+  const nx = pn.x, ny = pn.y, nz = pn.z, pc = plane.constant;
+
+  // pass 1: classify every triangle (0 keep, 1 piece, 2 straddles: clip it), all in place
+  const cls = new Uint8Array(triCount);
+  const ds = new Float32Array(triCount * 3);
+  let pieceTris = 0;
+  for (let t = 0; t < triCount; t++) {
+    let cx = 0, cy = 0, cz = 0, pos = 0, neg = 0;
+    for (let k = 0; k < 3; k++) {
+      const o = (t * 3 + k) * 3;
+      const x = P[o], y = P[o + 1], z = P[o + 2];
+      const rx = e[0] * x + e[4] * y + e[8] * z + e[12];
+      const ry = e[1] * x + e[5] * y + e[9] * z + e[13];
+      const rz = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const d = nx * rx + ny * ry + nz * rz + pc;
+      ds[t * 3 + k] = d;
+      if (d > 0) pos++;
+      else if (d < 0) neg++;
+      cx += rx;
+      cy += ry;
+      cz += rz;
+    }
+    if (!pos) continue;
+    if (!neg) {
+      if (cut.lateral(_cen.set(cx / 3, cy / 3, cz / 3))) {
+        cls[t] = 1;
+        pieceTris++;
+      }
+      continue;
+    }
+    cls[t] = 2;
+  }
+
+  // pass 2: clip the straddling triangles, deciding by the broken-off half
+  const keepExtra: Vert[][] = [];
+  const pieceExtra: Vert[][] = [];
+  const rim: THREE.Vector3[] = [];
   const read = (i: number): Vert => {
     const v = new Float32Array(stride);
     let o = 0;
-    for (let k = 0; k < attrs.length; k++) {
-      const a = attrs[k];
-      for (let c = 0; c < sizes[k]; c++) v[o++] = a.getComponent(i, c);
+    for (let k = 0; k < arrays.length; k++) {
+      const s = sizes[k];
+      const a = arrays[k];
+      for (let c = 0; c < s; c++) v[o++] = a[i * s + c];
     }
     return v;
   };
-  const write = (dst: number[][], poly: Vert[]) => {
-    for (let t = 1; t + 1 < poly.length; t++) {
-      for (const v of [poly[0], poly[t], poly[t + 1]]) {
-        let o = 0;
-        for (let k = 0; k < attrs.length; k++) for (let c = 0; c < sizes[k]; c++) dst[k].push(v[o++]);
-      }
-    }
-  };
-  const fast = attrs.every((a) => a.array instanceof Float32Array && !a.normalized);
-  const copyTri = (dst: number[][], t: number) => {
-    if (!fast) {
-      write(dst, [read(t * 3), read(t * 3 + 1), read(t * 3 + 2)]);
-      return;
-    }
-    for (let k = 0; k < attrs.length; k++) {
-      const arr = attrs[k].array;
-      const n = sizes[k] * 3;
-      const start = t * n;
-      const d = dst[k];
-      for (let j = 0; j < n; j++) d.push(arr[start + j]);
-    }
-  };
-  const rootPos = (v: Vert, out: THREE.Vector3) => out.set(v[0], v[1], v[2]).applyMatrix4(toRoot);
-
-  const pi = names.indexOf('position');
-  if (pi !== 0) {
-    // keep position first so rootPos() can read it straight off the vertex
-    names.unshift(names.splice(pi, 1)[0]);
-    attrs.unshift(attrs.splice(pi, 1)[0]);
-    sizes.unshift(sizes.splice(pi, 1)[0]);
-  }
-
   for (let t = 0; t < triCount; t++) {
-    _a.fromBufferAttribute(position, t * 3).applyMatrix4(toRoot);
-    _b.fromBufferAttribute(position, t * 3 + 1).applyMatrix4(toRoot);
-    _c.fromBufferAttribute(position, t * 3 + 2).applyMatrix4(toRoot);
-    const ds = [plane.distanceToPoint(_a), plane.distanceToPoint(_b), plane.distanceToPoint(_c)];
-    if (ds[0] <= 0 && ds[1] <= 0 && ds[2] <= 0) {
-      copyTri(keep, t);
-      continue;
-    }
-    if (ds[0] >= 0 && ds[1] >= 0 && ds[2] >= 0) {
-      _cen.copy(_a).add(_b).add(_c).divideScalar(3);
-      if (cut.lateral(_cen)) {
-        copyTri(piece, t);
-        pieceTris++;
-      } else copyTri(keep, t);
-      continue;
-    }
-    // straddles the plane: clip, and decide by the broken-off half
+    if (cls[t] !== 2) continue;
     const vs = [read(t * 3), read(t * 3 + 1), read(t * 3 + 2)];
-    const [pos, neg] = clipTri(vs, ds);
+    const [pos, neg] = clipTri(vs, [ds[t * 3], ds[t * 3 + 1], ds[t * 3 + 2]]);
     _cen.set(0, 0, 0);
-    for (const v of pos) _cen.add(rootPos(v, _a));
+    for (const v of pos) _cen.add(_a.set(v[0], v[1], v[2]).applyMatrix4(toRoot));
     _cen.divideScalar(pos.length);
     if (!cut.lateral(_cen)) {
-      copyTri(keep, t);
+      cls[t] = 0;
       continue;
     }
-    write(piece, pos);
-    write(keep, neg);
+    pieceExtra.push(pos);
+    keepExtra.push(neg);
     pieceTris++;
     for (const v of pos) {
-      const p = rootPos(v, new THREE.Vector3());
+      const p = new THREE.Vector3(v[0], v[1], v[2]).applyMatrix4(toRoot);
       if (Math.abs(plane.distanceToPoint(p)) < 1e-3) rim.push(p);
     }
   }
   if (!pieceTris) return null;
-  const build = (data: number[][]) => {
+
+  const polyTris = (polys: Vert[][]) => polys.reduce((n, p) => n + Math.max(0, p.length - 2), 0);
+  const build = (want: number, extra: Vert[][]) => {
+    let tris = polyTris(extra);
+    for (let t = 0; t < triCount; t++) if (cls[t] === want) tris++;
+    const out = sizes.map((s) => new Float32Array(tris * 3 * s));
+    const off = sizes.map(() => 0);
+    // whole triangles: one copy per run of consecutive ones
+    for (let t = 0; t < triCount; ) {
+      if (cls[t] !== want) {
+        t++;
+        continue;
+      }
+      let end = t + 1;
+      while (end < triCount && cls[end] === want) end++;
+      for (let k = 0; k < arrays.length; k++) {
+        const n = sizes[k] * 3;
+        out[k].set(arrays[k].subarray(t * n, end * n), off[k]);
+        off[k] += (end - t) * n;
+      }
+      t = end;
+    }
+    for (const poly of extra) {
+      for (let i = 1; i + 1 < poly.length; i++) {
+        for (const v of [poly[0], poly[i], poly[i + 1]]) {
+          let o = 0;
+          for (let k = 0; k < arrays.length; k++) {
+            for (let c = 0; c < sizes[k]; c++) out[k][off[k]++] = v[o++];
+          }
+        }
+      }
+    }
     const g = new THREE.BufferGeometry();
-    names.forEach((n, k) => g.setAttribute(n, new THREE.Float32BufferAttribute(data[k], sizes[k])));
+    names.forEach((n, k) => g.setAttribute(n, new THREE.BufferAttribute(out[k], sizes[k])));
     return g;
   };
-  return { keep: build(keep), piece: build(piece), rim };
+  return { keep: build(0, keepExtra), piece: build(1, pieceExtra), rim };
 }
 
 /** Drops rope segments that touch the broken-off region. */
