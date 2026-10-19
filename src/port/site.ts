@@ -20,66 +20,83 @@ export interface PortSite {
 
 export const PORT_HALF_WIDTH = 32;
 
-export function findPortSite(terrain: Terrain, near: { x: number; z: number }): PortSite {
+interface Candidate {
+  site: PortSite;
+  /** Angle between the quay's seaward normal and the sun (radians). */
+  ang: number;
+  land: number;
+  shallow: number;
+  shelf: number;
+}
+
+/** Every stretch of an island's coast that can take a quay. */
+function* candidates(terrain: Terrain, isl: Island, strict: boolean): Generator<Candidate> {
   const sl = Math.hypot(SUN_DIR.x, SUN_DIR.z);
   const sx = SUN_DIR.x / sl;
   const sz = SUN_DIR.z / sl;
+  for (let k = 0; k < 64; k++) {
+    const a = (k / 64) * Math.PI * 2;
+    const nx = Math.cos(a);
+    const nz = Math.sin(a);
+    let shore = -1;
+    let deep = -1;
+    for (let d = 0; d < isl.r * 3; d += 1) {
+      const h = terrain.heightAt(isl.x + nx * d, isl.z + nz * d);
+      if (shore < 0) {
+        if (h < 0) shore = d;
+      } else if (h > 0.4) shore = -1; // a reef or islet further out: keep marching
+      else if (h < -5.5) {
+        deep = d;
+        break;
+      }
+    }
+    if (shore < 0 || deep < 0) continue;
+    const shelf = deep - shore;
+    if (shelf < 5 || shelf > (strict ? 26 : 40)) continue;
+    const ox = isl.x + nx * deep;
+    const oz = isl.z + nz * deep;
+    const tx = nz;
+    const tz = -nx;
+    const depth = clamp(shelf + 6, 16, 30);
+    const H = (u: number, v: number) => terrain.heightAt(ox + tx * u + nx * v, oz + tz * u + nz * v);
+    let ok = true;
+    // the berth must be deep enough for a galleon
+    for (let u = -18; u <= 18 && ok; u += 3) for (let v = 2.5; v <= 12 && ok; v += 2.4) if (H(u, v) > -4) ok = false;
+    // the quay deck must clear the ground everywhere
+    const lim = strict ? 1.2 : 1.6;
+    for (let u = -PORT_HALF_WIDTH; u <= PORT_HALF_WIDTH && ok; u += 3.5) for (let v = -depth; v <= 0 && ok; v += 3) if (H(u, v) > lim) ok = false;
+    // open water for the camera, and the tower corner
+    for (const [u, v] of [[0, 30], [0, 52], [-26, 36], [26, 36], [-42, 26], [42, 26]]) if (ok && H(u, v) > (strict ? -2 : 0)) ok = false;
+    if (!ok) continue;
+    // a beach right behind the quay along its whole length, and shallows under its back half
+    let land = 0;
+    let shallow = 0;
+    let n = 0;
+    for (let u = -30; u <= 30; u += 5) {
+      n++;
+      if (H(u, -depth - 3) > 0.25) land++;
+      if (H(u, -depth * 0.6) > -3.2) shallow++;
+    }
+    land /= n;
+    shallow /= n;
+    if (strict && (land < 0.6 || shallow < 0.6)) continue;
+    const ang = Math.acos(clamp(nx * sx + nz * sz, -1, 1));
+    yield { site: { island: isl, x: ox, z: oz, nx, nz, depth }, ang, land, shallow, shelf };
+  }
+}
+
+export function findPortSite(terrain: Terrain, near: { x: number; z: number }): PortSite {
   for (const strict of [true, false]) {
     let best: PortSite | null = null;
     let bestScore = -Infinity;
     for (const isl of terrain.islands) {
       if (isl.kind === 'atoll') continue;
-      for (let k = 0; k < 64; k++) {
-        const a = (k / 64) * Math.PI * 2;
-        const nx = Math.cos(a);
-        const nz = Math.sin(a);
-        let shore = -1;
-        let deep = -1;
-        for (let d = 0; d < isl.r * 3; d += 1) {
-          const h = terrain.heightAt(isl.x + nx * d, isl.z + nz * d);
-          if (shore < 0) {
-            if (h < 0) shore = d;
-          } else if (h > 0.4) shore = -1; // a reef or islet further out: keep marching
-          else if (h < -5.5) {
-            deep = d;
-            break;
-          }
-        }
-        if (shore < 0 || deep < 0) continue;
-        const shelf = deep - shore;
-        if (shelf < 5 || shelf > (strict ? 26 : 40)) continue;
-        const ox = isl.x + nx * deep;
-        const oz = isl.z + nz * deep;
-        const tx = nz;
-        const tz = -nx;
-        const depth = clamp(shelf + 6, 16, 30);
-        const H = (u: number, v: number) => terrain.heightAt(ox + tx * u + nx * v, oz + tz * u + nz * v);
-        let ok = true;
-        // the berth must be deep enough for a galleon
-        for (let u = -18; u <= 18 && ok; u += 3) for (let v = 2.5; v <= 12 && ok; v += 2.4) if (H(u, v) > -4) ok = false;
-        // the quay deck must clear the ground everywhere
-        const lim = strict ? 1.2 : 1.6;
-        for (let u = -PORT_HALF_WIDTH; u <= PORT_HALF_WIDTH && ok; u += 3.5) for (let v = -depth; v <= 0 && ok; v += 3) if (H(u, v) > lim) ok = false;
-        // open water for the camera, and the tower corner
-        for (const [u, v] of [[0, 30], [0, 52], [-26, 36], [26, 36], [-42, 26], [42, 26]]) if (ok && H(u, v) > (strict ? -2 : 0)) ok = false;
-        if (!ok) continue;
-        // a beach right behind the quay along its whole length, and shallows under its back half
-        let land = 0;
-        let shallow = 0;
-        let n = 0;
-        for (let u = -30; u <= 30; u += 5) {
-          n++;
-          if (H(u, -depth - 3) > 0.25) land++;
-          if (H(u, -depth * 0.6) > -3.2) shallow++;
-        }
-        land /= n;
-        shallow /= n;
-        if (strict && (land < 0.6 || shallow < 0.6)) continue;
-        const ang = Math.acos(clamp(nx * sx + nz * sz, -1, 1));
-        const score = 2 - Math.abs(ang - 0.55) * 1.6 + land * 1.2 + shallow * 0.8 - Math.abs(shelf - 14) * 0.03 - Math.hypot(ox - near.x, oz - near.z) / 1800;
+      for (const c of candidates(terrain, isl, strict)) {
+        const s = c.site;
+        const score = 2 - Math.abs(c.ang - 0.55) * 1.6 + c.land * 1.2 + c.shallow * 0.8 - Math.abs(c.shelf - 14) * 0.03 - Math.hypot(s.x - near.x, s.z - near.z) / 1800;
         if (score > bestScore) {
           bestScore = score;
-          best = { island: isl, x: ox, z: oz, nx, nz, depth };
+          best = s;
         }
       }
     }
@@ -87,6 +104,53 @@ export function findPortSite(terrain: Terrain, near: { x: number; z: number }): 
   }
   // an open-water stilt harbour if the coast refuses
   return { island: terrain.islands[0], x: near.x, z: near.z, nx: 0, nz: 1, depth: 18 };
+}
+
+/**
+ * Coasts for the trading ports: the best quay on each island the Shipwright
+ * doesn't already use, then the `count` of them spread widest across the
+ * archipelago, so there is always a market within a fair sail.
+ */
+export function findTradeSites(terrain: Terrain, count: number, taken: PortSite[]): PortSite[] {
+  const per: PortSite[] = [];
+  for (const isl of terrain.islands) {
+    if (taken.some((t) => t.island === isl)) continue;
+    for (const strict of [true, false]) {
+      let best: PortSite | null = null;
+      let bestScore = -Infinity;
+      for (const c of candidates(terrain, isl, strict)) {
+        // the quay should look out over open sea, towards the middle of the archipelago
+        const s = c.site;
+        const toMid = Math.hypot(s.x, s.z) || 1;
+        const facing = -(s.nx * s.x + s.nz * s.z) / toMid;
+        const score = c.land * 1.2 + c.shallow * 0.8 - Math.abs(c.shelf - 14) * 0.03 + facing * 0.4 - Math.abs(c.ang - 0.9) * 0.3;
+        if (score > bestScore) {
+          bestScore = score;
+          best = s;
+        }
+      }
+      if (best) {
+        per.push(best);
+        break;
+      }
+    }
+  }
+  // farthest-point picking, seeded with the coast farthest from the Shipwright's harbour
+  const out: PortSite[] = [];
+  const far = (s: PortSite) => Math.min(...[...taken, ...out].map((o) => Math.hypot(o.x - s.x, o.z - s.z)), Infinity);
+  while (out.length < count && per.length) {
+    let bi = 0;
+    let bd = -1;
+    per.forEach((s, i) => {
+      const d = far(s);
+      if (d > bd) {
+        bd = d;
+        bi = i;
+      }
+    });
+    out.push(per.splice(bi, 1)[0]);
+  }
+  return out;
 }
 
 /** Circles covering the harbour, kept free of island vegetation. */
