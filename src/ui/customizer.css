@@ -13,6 +13,18 @@
   pointer-events: auto;
 }
 
+/* a soft shade behind the title so it reads over bright sky */
+.sw::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: min(560px, 70vw);
+  height: 200px;
+  background: radial-gradient(ellipse 100% 100% at 0% 0%, rgba(2, 14, 22, 0.55), transparent 70%);
+  pointer-events: none;
+}
+
 .sw-head {
   position: absolute;
   top: calc(18px + var(--safe-t));
@@ -24,20 +36,26 @@
 }
 
 .sw-back {
-  width: 44px;
-  height: 44px;
+  width: 46px;
+  height: 46px;
+  flex: none;
   border-radius: 50%;
-  border: 1px solid var(--line);
-  background: var(--glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--stroke);
+  background: var(--glass-2);
+  box-shadow: var(--hi), 0 8px 24px rgba(0, 0, 0, 0.2);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   display: grid;
   place-items: center;
-  transition: transform 0.15s ease, background 0.2s ease;
+  transition: transform 0.2s var(--ease), background 0.2s ease;
 }
 
 .sw-back:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.sw-back:focus-visible {
+  box-shadow: var(--focus);
 }
 
 .sw-back:active {
@@ -56,26 +74,20 @@
 }
 
 .sw-titles h1 {
-  margin: 0;
-  font-family: var(--serif);
-  font-weight: 700;
-  font-size: clamp(26px, 3.4vw, 40px);
-  letter-spacing: 0.12em;
-  line-height: 1.05;
-  background: linear-gradient(180deg, #fff7e2 0%, #f3d58e 60%, #d9a441 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 3px 12px rgba(0, 0, 0, 0.4));
+  margin: 2px 0 0;
+  font: 800 clamp(26px, 3.2vw, 40px) / 1 var(--sans);
+  letter-spacing: -0.025em;
+  color: var(--ink);
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
 }
 
 .sw-kicker {
   display: block;
-  font-family: var(--serif);
-  font-size: 11px;
-  letter-spacing: 0.32em;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+  font: 700 11px var(--sans);
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--ink-dim);
+  color: var(--aqua);
 }
 
 .sw-panel {
@@ -86,12 +98,12 @@
   width: var(--sw-w);
   display: flex;
   flex-direction: column;
-  border-radius: 24px;
-  background: linear-gradient(180deg, rgba(10, 34, 46, 0.78), rgba(6, 24, 34, 0.84));
-  border: 1px solid var(--line);
-  backdrop-filter: blur(18px) saturate(1.25);
-  -webkit-backdrop-filter: blur(18px) saturate(1.25);
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(14, 38, 52, 0.74), rgba(6, 20, 30, 0.86));
+  border: 1px solid var(--stroke);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: 0 40px 100px rgba(0, 6, 12, 0.42), var(--hi);
   overflow: hidden;
   animation: sw-slide 0.55s cubic-bezier(0.2, 0.9, 0.25, 1.05);
 }
@@ -107,25 +119,31 @@
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 4px;
-  padding: 8px;
-  border-bottom: 1px solid var(--line);
+  margin: 10px 10px 0;
+  padding: 4px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.24);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
 .sw-tab {
   border: 0;
   background: transparent;
-  border-radius: 14px;
+  border-radius: 16px;
   padding: 8px 4px 7px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  color: var(--ink-dim);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
+  color: var(--ink-2);
+  font: 700 10.5px var(--sans);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  transition: background 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s;
+}
+
+.sw-tab:focus-visible {
+  box-shadow: var(--focus);
 }
 
 .sw-tab:hover {
@@ -134,9 +152,9 @@
 }
 
 .sw-tab.sel {
-  color: #2a1a06;
-  background: linear-gradient(180deg, #ffe7a6 0%, #efc463 50%, #d9a441 100%);
-  box-shadow: 0 6px 20px rgba(239, 180, 80, 0.3);
+  color: #0a1c26;
+  background: #f4f8f9;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
 }
 
 .sw-body {
@@ -154,11 +172,10 @@
 
 .sw-sec h3 {
   margin: 0 0 8px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.2em;
+  font: 700 11px var(--sans);
+  letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--aqua);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -175,11 +192,11 @@
   position: relative;
   margin: 10px -6px 0;
   height: clamp(150px, 24vh, 220px);
-  border-radius: 18px;
+  border-radius: 20px;
   background:
     radial-gradient(ellipse at 30% 30%, rgba(143, 211, 232, 0.35), transparent 60%),
     linear-gradient(180deg, rgba(120, 180, 220, 0.28), rgba(30, 110, 130, 0.22));
-  border: 1px solid var(--line);
+  border: 1px solid var(--stroke);
   overflow: hidden;
 }
 
@@ -236,8 +253,8 @@
 }
 
 .sw-tool.sel {
-  border-color: var(--gold);
-  background: rgba(239, 196, 99, 0.25);
+  border-color: #fff;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .sw-chip {
@@ -262,9 +279,9 @@
 }
 
 .sw-stage.painting .sw-paint-toggle {
-  color: #2a1a06;
+  color: var(--gold-ink);
   border: 0;
-  background: linear-gradient(180deg, #ffe7a6 0%, #efc463 50%, #d9a441 100%);
+  background: var(--gold-grad);
 }
 
 /* swatches */
@@ -292,7 +309,7 @@
 }
 
 .sw-swatch.sel {
-  box-shadow: 0 0 0 2px #0a2230, 0 0 0 4px var(--gold), inset 0 -6px 10px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 0 0 2px #0a2230, 0 0 0 4px #fff, 0 0 16px rgba(160, 240, 255, 0.45), inset 0 -6px 10px rgba(0, 0, 0, 0.18);
   transform: scale(1.08);
 }
 
@@ -377,10 +394,10 @@
 }
 
 .sw-tile.sel {
-  border-color: var(--gold);
-  background: rgba(239, 196, 99, 0.16);
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.13);
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px rgba(239, 196, 99, 0.4);
+  box-shadow: inset 0 0 0 2px #fff, 0 8px 22px rgba(60, 220, 210, 0.18);
 }
 
 .sw-range {
@@ -408,8 +425,8 @@
 }
 
 .sw-seg button.sel {
-  color: #2a1a06;
-  background: linear-gradient(180deg, #ffe7a6 0%, #efc463 50%, #d9a441 100%);
+  color: #0a1c26;
+  background: #f4f8f9;
 }
 
 /* hull parts */
@@ -444,8 +461,9 @@
 }
 
 .sw-part.sel {
-  border-color: var(--gold);
-  background: rgba(239, 196, 99, 0.16);
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 0 0 2px #fff;
 }
 
 /* presets */
@@ -472,7 +490,8 @@
 }
 
 .sw-name input:focus {
-  border-color: var(--gold);
+  border-color: #fff;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.12);
 }
 
 .sw-name .sw-chip {
@@ -505,7 +524,8 @@
 }
 
 .sw-preset.sel {
-  border-color: var(--gold);
+  border-color: transparent;
+  box-shadow: inset 0 0 0 2px #fff;
 }
 
 .sw-preset {
@@ -593,9 +613,7 @@
 
 .sw-preset b {
   display: block;
-  font-family: var(--serif);
-  font-size: 13px;
-  letter-spacing: 0.05em;
+  font: 700 13px var(--sans);
 }
 
 .sw-dots {
@@ -614,8 +632,8 @@
 .sw-foot {
   display: flex;
   gap: 10px;
-  padding: 12px 14px calc(12px);
-  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .sw-foot .btn {
@@ -690,7 +708,88 @@
   stroke-linejoin: round;
 }
 
-@media (max-width: 760px) {
+/* landscape phones: wider panel, a slimmer flag stage and footer so the options get the room */
+@media (max-height: 560px) and (min-width: 561px) {
+  .sw {
+    --sw-w: min(400px, 46vw);
+  }
+
+  .sw-panel {
+    top: calc(8px + var(--safe-t));
+    right: calc(8px + var(--safe-r));
+    bottom: calc(8px + var(--safe-b));
+    border-radius: 22px;
+  }
+
+  .sw-tabs {
+    margin: 6px 6px 0;
+    padding: 3px;
+    border-radius: 16px;
+  }
+
+  .sw-tab {
+    flex-direction: row;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 4px;
+    border-radius: 13px;
+  }
+
+  .sw-tab svg {
+    width: 17px;
+    height: 17px;
+  }
+
+  .sw-body {
+    padding: 0 12px 12px;
+  }
+
+  .sw-sec {
+    margin-top: 10px;
+  }
+
+  .sw-stage {
+    height: 104px;
+    margin-top: 8px;
+  }
+
+  .sw-foot {
+    padding: 7px 8px;
+    gap: 7px;
+  }
+
+  .sw-foot .btn {
+    min-height: 38px;
+    font-size: 13px;
+  }
+
+  .sw-head {
+    top: calc(10px + var(--safe-t));
+    left: calc(12px + var(--safe-l));
+    gap: 10px;
+  }
+
+  .sw-back {
+    width: 40px;
+    height: 40px;
+  }
+
+  .sw-titles h1 {
+    font-size: 24px;
+  }
+
+  .sw-hint {
+    display: none;
+  }
+}
+
+@media (max-height: 420px) and (min-width: 561px) {
+  .sw-tab span {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) and (min-height: 561px), (max-width: 560px) {
   .sw {
     --sw-h: min(54vh, 520px);
   }

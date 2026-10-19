@@ -77,8 +77,11 @@ export class CameraRig {
     this.fp = 0;
   }
 
+  /** Player setting: 1 full, 0 off. */
+  shakeScale = 1;
+
   shake(a: number) {
-    this.trauma = Math.min(1.2, this.trauma + a);
+    this.trauma = Math.min(1.2, this.trauma + a * this.shakeScale);
   }
 
   snapTo(p: THREE.Vector3) {

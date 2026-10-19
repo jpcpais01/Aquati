@@ -28,6 +28,7 @@ import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
+import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Port, PortFocus } from '../port/port';
@@ -315,6 +316,12 @@ export class Game {
       this.enterMenu();
     };
     ui.onSound = (on) => this.audio.setMuted(!on);
+    ui.onSettings = (st) => {
+      this.audio.setMusicEnabled(st.music);
+      this.rig.shakeScale = SHAKE_SCALE[st.shake];
+    };
+    this.audio.setMuted(!ui.settings.sound);
+    ui.onSettings(ui.settings);
   }
 
   /** Pushes graphics settings into the renderer; safe to call any time. */
@@ -765,7 +772,7 @@ export class Game {
       this.input.releaseLook();
       this.state = 'paused';
       const p = this.player;
-      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime } : undefined);
+      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime, ship: p.name, cls: p.cls.id } : undefined);
     } else if (!on && this.state === 'paused') {
       this.state = 'playing';
       this.ui.showPause(false);
@@ -864,7 +871,7 @@ export class Game {
   private tryFire(side: Side) {
     const p = this.player!;
     const a = this.gunnery.aim(p, side);
-    if (p.fire(side, this.world, a.target, a.point)) this.gunnery.fired(side, this.world.time);
+    if (p.fire(side, this.world, a.target, a.point)) this.gunnery.fired(this.world.time);
     else this.ui.flashBroadside(side);
   }
 
@@ -884,7 +891,7 @@ export class Game {
     this.ui.gunsReady(side);
   }
 
-  /** The first fight of a voyage on this device: explain the arcs once. */
+  /** The first fight of a voyage on this device: explain the guns once. */
   private gunTip() {
     if (this.gunTipShown || !this.gunnery.combat) return;
     this.gunTipShown = true;
@@ -895,7 +902,7 @@ export class Game {
       /* private mode: show it anyway */
     }
     const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
-    this.ui.toast('Guns fire to the sides', `Turn until a foe sits in a gold arc, ${how}`, 5.5);
+    this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and glints gold, ${how}`, 5.5);
   }
 
   private controlPlayer() {

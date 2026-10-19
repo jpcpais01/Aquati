@@ -32,39 +32,57 @@
         </div>
       </header>
       <nav class="menu-tools">
-        <button class="tool" id="btn-notes" title="Patch notes"><span class="ti" data-icon="scroll"></span><span class="tl">Patch notes</span><i class="new-dot" id="notes-dot"></i></button>
-        <button class="tool" id="btn-controls" title="Controls"><span class="ti" data-icon="keys"></span><span class="tl">Controls</span></button>
-        <button class="tool" id="btn-graphics" title="Graphics"><span class="ti"></span><span class="tl">Graphics</span></button>
-        <button class="tool icon-only" id="btn-refresh" title="Refresh: fetch the latest version and reload"><span class="ti" data-icon="refresh"></span></button>
-        <button class="tool sound-toggle icon-only" id="btn-sound" title="Sound"><span class="ti"></span></button>
+        <button class="tool" id="btn-notes" data-label="Patch notes" aria-label="Patch notes"><span class="ti" data-icon="scroll"></span><i class="new-dot" id="notes-dot"></i></button>
+        <button class="tool" id="btn-controls" data-label="Controls" aria-label="Controls"><span class="ti" data-icon="keys"></span></button>
+        <button class="tool" id="btn-settings" data-label="Settings" aria-label="Settings"><span class="ti" data-icon="sliders"></span></button>
+        <button class="tool" id="btn-graphics" data-label="Graphics" aria-label="Graphics"><span class="ti"></span></button>
+        <button class="tool" id="btn-refresh" data-label="Update &amp; reload" aria-label="Fetch the latest version and reload"><span class="ti" data-icon="refresh"></span></button>
+        <button class="tool sound-toggle" id="btn-sound" data-label="Sound" aria-label="Sound"><span class="ti"></span></button>
       </nav>
       <section class="dock" id="dock">
-        <div class="dock-label"><span>Choose your ship</span></div>
+        <div class="dock-label"><span>Choose your ship</span><span class="dock-count" id="dock-count"></span></div>
         <div class="ship-tabs" id="ship-tabs" role="tablist"></div>
         <div class="ship-detail" id="ship-detail"></div>
-        <button class="btn gold big sail-btn" id="btn-sail"><span class="ti" data-icon="anchor"></span><span>Set Sail</span></button>
+        <div class="dock-actions" id="dock-actions">
+          <button class="btn primary big sail-btn" id="btn-sail"><span class="ti" data-icon="anchor"></span><span>Set Sail</span><kbd class="kd">Enter</kbd></button>
+        </div>
         <div class="dock-hint kd"><kbd>←</kbd><kbd>→</kbd> choose ship · <kbd>Enter</kbd> set sail</div>
       </section>
     </div>
 
     <div id="hud" class="hidden">
-      <div class="panel ship-panel">
-        <div class="ship-id">
-          <div class="hud-ship" id="hud-art"></div>
-          <div class="ship-name"><span id="hud-title">Kestrel</span><small id="hud-class">Sloop</small></div>
+      <div class="status">
+        <div class="panel ship-panel">
+          <div class="ship-id">
+            <div class="hud-ship" id="hud-art"></div>
+            <div class="ship-name"><small id="hud-class">Sloop</small><span id="hud-title">Kestrel</span></div>
+          </div>
+          <div class="hull-row">
+            <div class="hull"><div class="hull-ghost" id="hud-hull-ghost"></div><div class="hull-fill" id="hud-hull"></div></div>
+            <div class="hull-num" id="hud-hull-text">260</div>
+          </div>
         </div>
-        <div class="hull"><div class="hull-ghost" id="hud-hull-ghost"></div><div class="hull-fill" id="hud-hull"></div><span id="hud-hull-text">260</span></div>
         <div class="stats-row">
           <div class="chip" title="Gold"><span class="coin"></span><b id="hud-gold">0</b></div>
           <div class="chip" title="Ships sunk"><span class="skull"></span><b id="hud-kills">0</b></div>
           <div class="chip" title="Islands charted"><span class="isle"></span><b id="hud-isles">0</b></div>
         </div>
       </div>
-      <div class="map-wrap">
-        <canvas id="minimap" width="360" height="360" title="Open sea chart (M)"></canvas>
-        <svg class="bezel" viewBox="0 0 200 200" aria-hidden="true" id="map-bezel"></svg>
-        <div class="wind" id="hud-wind" title="Wind"><i></i></div>
-        <div class="sky sun" id="hud-sky" title="Time of day and weather"><i></i><b id="hud-clock">09:00</b></div>
+      <div class="nav">
+        <div class="nav-btns">
+          <button class="icon-btn" id="btn-pause" title="Pause (Esc)" aria-label="Pause"><span class="ti" data-icon="pause"></span></button>
+          <button class="icon-btn view-btn" id="btn-view" title="Captain's view (V)" aria-label="Captain's view"><span class="ti" data-icon="eye"></span></button>
+        </div>
+        <div class="map-col">
+          <div class="map-wrap">
+            <canvas id="minimap" width="360" height="360" title="Open sea chart (M)"></canvas>
+            <svg class="bezel" viewBox="0 0 200 200" aria-hidden="true" id="map-bezel"></svg>
+          </div>
+          <div class="nav-strip">
+            <div class="wind" id="hud-wind" title="Wind"><i></i></div>
+            <div class="sky sun" id="hud-sky" title="Time of day and weather"><i></i><b id="hud-clock">09:00</b></div>
+          </div>
+        </div>
       </div>
       <div class="bottom">
         <div class="broadside" id="bs-port"><kbd class="kd">Q</kbd><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg><span class="ti" data-icon="cannon"></span></div><span>Port</span></div>
@@ -75,8 +93,6 @@
         </div>
         <div class="broadside" id="bs-star"><span>Starboard</span><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg><span class="ti" data-icon="cannon"></span></div><kbd class="kd">E</kbd></div>
       </div>
-      <button class="icon-btn" id="btn-pause" title="Pause (Esc)"><span class="ti" data-icon="pause"></span></button>
-      <button class="icon-btn view-btn" id="btn-view" title="Captain's view (V)"><span class="ti" data-icon="eye"></span></button>
       <div class="spyglass" id="spyglass"></div>
       <div class="reticle" id="reticle"><i></i><span id="reticle-side"></span></div>
       <button class="fpv-prompt" id="btn-helm"><kbd class="kd">F</kbd><span id="helm-text">Take the helm</span></button>
@@ -95,20 +111,27 @@
       </div>
     </div>
 
-    <div id="pause" class="screen dim hidden">
-      <div class="card-modal ornate">
-        <div class="modal-crest"><span class="ti" data-icon="anchor"></span></div>
-        <h2>Anchored</h2>
-        <div class="rule"></div>
-        <div class="summary" id="pause-summary"></div>
-        <button class="btn gold" id="btn-resume"><span class="ti" data-icon="play"></span>Resume voyage</button>
-        <div class="btn-row">
-          <button class="btn" id="btn-notes2"><span class="ti" data-icon="scroll"></span>Notes</button>
-          <button class="btn" id="btn-controls2"><span class="ti" data-icon="keys"></span>Controls</button>
-          <button class="btn" id="btn-graphics2" title="Graphics"><span class="ti"></span><span class="tl">Graphics</span></button>
-          <button class="btn sound-toggle" id="btn-sound2"><span class="ti"></span></button>
+    <div id="pause" class="screen dim side hidden">
+      <div class="pause-wrap">
+        <div class="pause-main">
+          <div class="kicker">Voyage paused</div>
+          <h2 class="screen-title">Anchored</h2>
+          <div class="pause-ship" id="pause-ship"></div>
+          <nav class="menu-list" id="pause-list">
+            <button class="mi" id="btn-resume"><span class="ti" data-icon="play"></span><span class="mi-l">Resume voyage</span><kbd class="kd">Esc</kbd></button>
+            <button class="mi" id="btn-chart"><span class="ti" data-icon="map"></span><span class="mi-l">Sea chart</span><kbd class="kd">M</kbd></button>
+            <button class="mi" id="btn-settings2"><span class="ti" data-icon="sliders"></span><span class="mi-l">Settings</span></button>
+            <button class="mi" id="btn-graphics2"><span class="ti"></span><span class="mi-l">Graphics</span></button>
+            <button class="mi" id="btn-controls2"><span class="ti" data-icon="keys"></span><span class="mi-l">Controls</span></button>
+            <button class="mi" id="btn-notes2"><span class="ti" data-icon="scroll"></span><span class="mi-l">Patch notes</span></button>
+            <button class="mi warn" id="btn-quit"><span class="ti" data-icon="harbour"></span><span class="mi-l" id="quit-label">Return to harbour</span></button>
+          </nav>
         </div>
-        <button class="btn ghost" id="btn-quit"><span class="ti" data-icon="harbour"></span>Return to harbour</button>
+        <aside class="pause-side">
+          <div class="kicker">This voyage</div>
+          <div class="summary" id="pause-summary"></div>
+          <p class="pause-tip" id="pause-tip"></p>
+        </aside>
       </div>
     </div>
 
@@ -126,44 +149,54 @@
           <span><i class="lg-wind"></i>Wind</span>
         </div>
         <div class="chart-btns">
-          <button class="chart-btn" id="chart-center" title="Centre on ship">&#9678;</button>
-          <button class="chart-btn" id="chart-close" title="Close (M)"><span class="ti" data-icon="close"></span></button>
+          <button class="round-btn" id="chart-center" title="Centre on ship" aria-label="Centre on ship"><span class="ti" data-icon="target"></span></button>
+          <button class="round-btn" id="chart-close" title="Close (M)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
         </div>
       </div>
     </div>
 
     <div id="dead" class="screen dim hidden">
-      <div class="card-modal ornate wreck">
+      <div class="card-modal wreck">
         <div class="wreck-scene" id="wreck-scene"><div class="wreck-ship" id="wreck-ship"></div><div class="wreck-sea"></div><i class="bub"></i><i class="bub"></i><i class="bub"></i><i class="bub"></i></div>
-        <h2>Lost to the Depths</h2>
+        <div class="kicker">Shipwrecked</div>
+        <h2 class="screen-title">Lost to the Depths</h2>
         <p class="sub" id="dead-sub"></p>
-        <div class="rule"></div>
         <div class="summary" id="dead-summary"></div>
-        <button class="btn gold" id="btn-again"><span class="ti" data-icon="anchor"></span>Choose a new ship</button>
+        <button class="btn primary" id="btn-again"><span class="ti" data-icon="anchor"></span>Choose a new ship</button>
+      </div>
+    </div>
+
+    <div id="settings" class="screen dim hidden">
+      <div class="sheet">
+        <header class="sheet-head">
+          <div><div class="kicker">Options</div><h2 class="screen-title">Settings</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body settings-body" id="settings-body"></div>
       </div>
     </div>
 
     <div id="notes" class="screen dim hidden">
-      <div class="card-modal ornate wide">
-        <button class="round-btn modal-x" data-close title="Close (Esc)"><span class="ti" data-icon="close"></span></button>
-        <h2>Patch Notes</h2>
-        <p class="sub">The latest from the shipwrights</p>
-        <div class="rule"></div>
-        <div class="notes" id="notes-body"></div>
+      <div class="sheet">
+        <header class="sheet-head">
+          <div><div class="kicker">The latest from the shipwrights</div><h2 class="screen-title">Patch Notes</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body notes" id="notes-body"></div>
       </div>
     </div>
 
     <div id="controls" class="screen dim hidden">
-      <div class="card-modal ornate wide">
-        <button class="round-btn modal-x" data-close title="Close (Esc)"><span class="ti" data-icon="close"></span></button>
-        <h2>Controls</h2>
-        <p class="sub">Trim your sails, mind the wind, give 'em a broadside</p>
-        <div class="rule"></div>
-        <div class="controls-body">
+      <div class="sheet">
+        <header class="sheet-head">
+          <div><div class="kicker">Trim your sails, mind the wind, give 'em a broadside</div><h2 class="screen-title">Controls</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body controls-body">
           <section class="ctl-group touch-only">
             <h4>On touch</h4>
             <div class="ctl"><span class="gesture">Drag left side</span><span>Steer &amp; trim, like a tiller</span></div>
-            <div class="ctl"><span class="gesture">Fire</span><span>Fire the outlined side, at the foe in its arc</span></div>
+            <div class="ctl"><span class="gesture">Fire</span><span>Fire the outlined side, at the foe off that beam</span></div>
             <div class="ctl"><span class="gesture">◀ Port · Stbd ▶</span><span>Fire one side</span></div>
             <div class="ctl"><span class="gesture">Pinch</span><span>Zoom</span></div>
             <div class="ctl"><span class="gesture">Tap minimap</span><span>Open the sea chart</span></div>
@@ -179,7 +212,7 @@
             <div class="ctl"><span><kbd>Q</kbd></span><span>Port broadside</span></div>
             <div class="ctl"><span><kbd>E</kbd></span><span>Starboard broadside</span></div>
             <div class="ctl"><span><kbd>Click</kbd></span><span>Fire the side you point into, where you point</span></div>
-            <div class="ctl"><span><kbd>Space</kbd></span><span>Fire at the foe in your arcs</span></div>
+            <div class="ctl"><span><kbd>Space</kbd></span><span>Fire at the foe off your beam</span></div>
           </section>
           <section class="ctl-group">
             <h4>Navigation</h4>
@@ -187,7 +220,7 @@
             <div class="ctl"><span><kbd>M</kbd></span><span>Sea chart</span></div>
             <div class="ctl"><span><kbd>Esc</kbd></span><span>Pause</span></div>
           </section>
-          <div class="ctl-tip"><span class="ti" data-icon="cannon"></span>Your guns fire to the sides. Steer until a foe sits in one of the arcs on the water: gold means loaded and locked on, so fire.</div>
+          <div class="ctl-tip"><span class="ti" data-icon="cannon"></span>Your guns fire to the sides. Steer until a foe is off your beam, between the little ticks on the water: a gold glint at her waterline means loaded and locked on, so fire.</div>
           <section class="ctl-group">
             <h4>Captain's view</h4>
             <div class="ctl"><span><kbd>V</kbd></span><span>Step into the captain's boots</span></div>
@@ -203,12 +236,12 @@
     </div>
 
     <div id="graphics" class="screen dim hidden">
-      <div class="card-modal ornate gfx-card">
-        <button class="round-btn modal-x" data-close title="Close (Esc)"><span class="ti" data-icon="close"></span></button>
-        <h2>Graphics</h2>
-        <p class="sub">Tune the light and the sea, live</p>
-        <div class="rule"></div>
-        <div class="gfx-body" id="gfx-body"></div>
+      <div class="sheet gfx-card">
+        <header class="sheet-head">
+          <div><div class="kicker">Tune the light and the sea, live</div><h2 class="screen-title">Graphics</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body gfx-body" id="gfx-body"></div>
       </div>
     </div>
 
