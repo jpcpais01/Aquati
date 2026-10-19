@@ -17,6 +17,11 @@ const pick = <T>(a: T[]): T | undefined => a[(Math.random() * a.length) | 0];
 export class Audio {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  private sfxBus!: GainNode;
+  private ambBus!: GainNode;
+  private musicBus: GainNode | null = null;
+  /** Player volume sliders, 0..1. */
+  private vol = { master: 1, music: 1, effects: 1, ambience: 1 };
   private noise!: AudioBuffer;
   private surfGain!: GainNode;
   private windGain!: GainNode;
@@ -30,6 +35,9 @@ export class Audio {
   private duckGain!: GainNode;
   private reverb!: ConvolverNode;
   private reverbIn!: GainNode;
+  /** Muffles the whole mix when the camera follows a wreck under. */
+  private muffle!: BiquadFilterNode;
+  private deep: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
   private voices = 0;
   private bank: Record<Exclude<BankKind, 'reverb'>, AudioBuffer[]> = {
     cannon: [],
@@ -61,7 +69,13 @@ export class Audio {
     this.ctx = new AC();
     const ctx = this.ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.8;
+    this.master.gain.value = this.muted ? 0 : 0.8 * this.vol.master;
+    this.sfxBus = ctx.createGain();
+    this.sfxBus.gain.value = this.vol.effects;
+    this.sfxBus.connect(this.master);
+    this.ambBus = ctx.createGain();
+    this.ambBus.gain.value = this.vol.ambience;
+    this.ambBus.connect(this.master);
     // bus glue: fast enough to catch a broadside, slow enough to keep the crack
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -16;
@@ -69,18 +83,22 @@ export class Audio {
     comp.ratio.value = 5;
     comp.attack.value = 0.004;
     comp.release.value = 0.25;
-    this.master.connect(comp).connect(ctx.destination);
+    this.muffle = ctx.createBiquadFilter();
+    this.muffle.type = 'lowpass';
+    this.muffle.frequency.value = 22000;
+    this.muffle.Q.value = 0.5;
+    this.master.connect(this.muffle).connect(comp).connect(ctx.destination);
 
     this.reverbIn = ctx.createGain();
     this.reverb = ctx.createConvolver();
     const wet = ctx.createGain();
     wet.gain.value = 0.75;
-    this.reverbIn.connect(this.reverb).connect(wet).connect(this.master);
+    this.reverbIn.connect(this.reverb).connect(wet).connect(this.sfxBus);
     this.duckGain = ctx.createGain();
     // sea + wind sit well under the guns and music: a bed, not a wall
     const bed = ctx.createGain();
     bed.gain.value = AMBIENCE_LEVEL;
-    this.duckGain.connect(bed).connect(this.master);
+    this.duckGain.connect(bed).connect(this.ambBus);
 
     const len = ctx.sampleRate * 3;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -169,9 +187,25 @@ export class Audio {
     this.syncMusic(0.6);
   }
 
+  /** Volume sliders (0..1 each). Music skips the effects compressor, so it takes master directly. */
+  setVolumes(v: { master: number; music: number; effects: number; ambience: number }) {
+    // squared: sliders feel even to the ear instead of all happening at the top
+    const sq = (x: number) => Math.max(0, Math.min(1, x)) ** 2;
+    v = { master: sq(v.master), music: sq(v.music), effects: sq(v.effects), ambience: sq(v.ambience) };
+    this.vol = v;
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.master.gain.setTargetAtTime(this.muted ? 0 : 0.8 * v.master, t, 0.04);
+    this.sfxBus.gain.setTargetAtTime(v.effects, t, 0.04);
+    this.ambBus.gain.setTargetAtTime(v.ambience, t, 0.04);
+    this.musicBus?.gain.setTargetAtTime(v.music * v.master, t, 0.04);
+    if (this.music && !this.musicGain) this.syncMusic(0.1);
+  }
+
   setMuted(m: boolean) {
     this.muted = m;
-    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8 * this.vol.master, this.ctx.currentTime, 0.05);
     this.syncMusic(0.25);
   }
 
@@ -202,14 +236,16 @@ export class Audio {
         // route through WebAudio so fades work on iOS, where element.volume is read-only
         this.musicGain = ctx.createGain();
         this.musicGain.gain.value = 0;
-        ctx.createMediaElementSource(el).connect(this.musicGain).connect(ctx.destination);
+        this.musicBus = ctx.createGain();
+        this.musicBus.gain.value = this.vol.music * this.vol.master;
+        ctx.createMediaElementSource(el).connect(this.musicGain).connect(this.musicBus).connect(ctx.destination);
       } catch {
         this.musicGain = null;
         el.volume = 0;
       }
     }
     const el = this.music;
-    const target = audible ? MUSIC_VOL : 0;
+    const target = audible ? MUSIC_VOL * (this.musicGain ? 1 : this.vol.music * this.vol.master) : 0;
     clearTimeout(this.musicStop);
     if (audible && el.paused) void el.play().catch(() => {});
     if (this.musicGain) {
@@ -297,8 +333,8 @@ export class Audio {
     if (ctx.createStereoPanner) {
       p = ctx.createStereoPanner();
       p.pan.value = clamp1(pan);
-      g.connect(p).connect(this.master);
-    } else g.connect(this.master);
+      g.connect(p).connect(this.sfxBus);
+    } else g.connect(this.sfxBus);
     const send = ctx.createGain();
     send.gain.value = 0.5;
     air.connect(send).connect(this.reverbIn);
@@ -320,8 +356,8 @@ export class Audio {
     if (this.ctx.createStereoPanner) {
       const p = this.ctx.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, pan));
-      g.connect(p).connect(this.master);
-    } else g.connect(this.master);
+      g.connect(p).connect(this.sfxBus);
+    } else g.connect(this.sfxBus);
     return [this.ctx, g];
   }
 
@@ -388,8 +424,8 @@ export class Audio {
       pan = ctx.createStereoPanner();
       pan.pan.setValueAtTime(clamp1(o.pan), at);
       if (o.panTo !== undefined) pan.pan.linearRampToValueAtTime(clamp1(o.panTo), at + buf.duration / src.playbackRate.value);
-      dry.connect(pan).connect(this.master);
-    } else dry.connect(this.master);
+      dry.connect(pan).connect(this.sfxBus);
+    } else dry.connect(this.sfxBus);
     let send: GainNode | null = null;
     const wet = (o.wet ?? 0.4) * Math.pow(o.vol, 0.4);
     if (wet > 0.005) {
@@ -625,6 +661,173 @@ export class Audio {
       c.start(t + 0.05);
       c.stop(t + 0.36);
     }
+  }
+
+  /**
+   * Your ship is lost: a deep blow through the keel, then a slow, low minor
+   * chord that swells and hangs in the reverb like a tolling bell.
+   */
+  founder() {
+    const v = this.voice(0.9, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    out.connect(this.reverbIn);
+    // the blow: a falling sub thump under a dark rumble of noise
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(62, t);
+    o.frequency.exponentialRampToValueAtTime(26, t + 1.8);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.9, t + 0.02);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 2.2);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 2.3);
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const nl = ctx.createBiquadFilter();
+    nl.type = 'lowpass';
+    nl.frequency.setValueAtTime(700, t);
+    nl.frequency.exponentialRampToValueAtTime(90, t + 2.5);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.5, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 2.8);
+    n.connect(nl).connect(ng).connect(out);
+    n.start(t);
+    n.stop(t + 3);
+    // the lament: A minor, voiced low, each note blooming a beat after the last
+    const chord = [110, 130.81, 164.81, 220, 261.63];
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(380, t + 0.4);
+    lp.frequency.linearRampToValueAtTime(1300, t + 3.5);
+    lp.frequency.linearRampToValueAtTime(500, t + 9);
+    lp.connect(out);
+    chord.forEach((f, i) => {
+      const at = t + 0.35 + i * 0.32;
+      for (const det of [-4, 4]) {
+        const so = ctx.createOscillator();
+        so.type = i < 2 ? 'sawtooth' : 'triangle';
+        so.frequency.value = f;
+        so.detune.value = det;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.linearRampToValueAtTime(0.055 - i * 0.006, at + 1.6);
+        g.gain.setTargetAtTime(0.0001, at + 3.6, 1.8);
+        so.connect(g).connect(lp);
+        so.start(at);
+        so.stop(at + 12);
+      }
+    });
+  }
+
+  /** The final plunge: timbers groaning under the strain as she goes by the stern. */
+  groan() {
+    const v = this.voice(0.5, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    out.connect(this.reverbIn);
+    for (let i = 0; i < 3; i++) {
+      const at = t + i * 0.7 + Math.random() * 0.3;
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      const f = 70 + Math.random() * 40;
+      o.frequency.setValueAtTime(f, at);
+      o.frequency.linearRampToValueAtTime(f * (0.55 + Math.random() * 0.2), at + 1.6);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 380 + Math.random() * 220;
+      bp.Q.value = 5;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(0.32, at + 0.35);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 1.8);
+      o.connect(bp).connect(g).connect(out);
+      o.start(at);
+      o.stop(at + 1.9);
+    }
+  }
+
+  /**
+   * Beneath the waves: the mix closes in to a muffled murmur over a deep,
+   * slowly breathing drone, with the odd bubble rising past.
+   */
+  submerge(on: boolean) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.muffle.frequency.cancelScheduledValues(t);
+    this.muffle.frequency.setTargetAtTime(on ? 360 : 22000, t, on ? 0.45 : 0.15);
+    if (on && !this.deep) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 160;
+      lp.Q.value = 3;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 0.09;
+      const lg = ctx.createGain();
+      lg.gain.value = 60;
+      lfo.connect(lg).connect(lp.frequency);
+      lfo.start(t);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.5, t + 2.5);
+      // after the muffle, so the drone keeps its weight
+      src.connect(lp).connect(gain).connect(this.muffle);
+      src.start(t);
+      src.onended = () => lfo.stop();
+      this.deep = { src, gain };
+      for (let i = 0; i < 9; i++) this.bubble(t + 0.2 + i * 0.22 + Math.random() * 0.3);
+    } else if (!on && this.deep) {
+      const d = this.deep;
+      d.gain.gain.setTargetAtTime(0, t, 0.12);
+      d.src.stop(t + 0.6);
+      this.deep = null;
+    }
+  }
+
+  private bubble(at: number) {
+    const v = this.voice(0.16, (Math.random() - 0.5) * 0.8);
+    if (!v) return;
+    const [ctx, out] = v;
+    const o = ctx.createOscillator();
+    const f = 280 + Math.random() * 380;
+    o.frequency.setValueAtTime(f, at);
+    o.frequency.exponentialRampToValueAtTime(f * 2.4, at + 0.07);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(0.5, at + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, at + 0.09);
+    o.connect(g).connect(out);
+    o.start(at);
+    o.stop(at + 0.1);
+  }
+
+  /** A tally tile landing on the farewell screen; brighter for a new record. */
+  tally(i: number, best = false) {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    // straight out, around the underwater muffle: this is the interface talking
+    const out = ctx.createGain();
+    out.gain.value = best ? 0.13 : 0.08;
+    out.connect(ctx.destination);
+    const t = ctx.currentTime;
+    const notes = [392, 440, 523.25, 587.33, 659.25, 783.99];
+    const o = ctx.createOscillator();
+    o.type = best ? 'triangle' : 'sine';
+    o.frequency.value = notes[i % notes.length] * (best ? 2 : 1);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (best ? 0.9 : 0.35));
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 1);
   }
 
   click() {

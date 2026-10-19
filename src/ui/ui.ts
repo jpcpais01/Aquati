@@ -6,13 +6,15 @@ import { RARITY } from '../game/loot';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import { SeaChart, ChartScene } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
-import { loadSettings, saveSettings, Settings } from './settings';
+import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
+import { WreckReport, WreckScreen } from './wreck';
+export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
-  'Your guns fire to the sides: a gold glint means fire',
+  'Your guns fire to the sides: warm light around a foe means fire',
   'Salvage floats to you: sail close to collect it',
   'Every isle you chart pays a bounty',
   'Gusts darken the water: chase them for a burst of speed',
@@ -55,6 +57,11 @@ export class UI {
   onResume: () => void = () => {};
   onQuit: () => void = () => {};
   onAgain: () => void = () => {};
+  /** Farewell screen: sail the same ship again, or skip the sinking cinematic. */
+  onRetry: () => void = () => {};
+  onSkip: () => void = () => {};
+  onTally: (i: number, best: boolean) => void = () => {};
+  private wreck = new WreckScreen();
   onSound: (on: boolean) => void = () => {};
   onPause: () => void = () => {};
   onMap: (open: boolean) => void = () => {};
@@ -157,10 +164,16 @@ export class UI {
       this.disarmQuit();
       this.onQuit();
     });
-    $('btn-again').addEventListener('click', () => {
+    this.wreck.onRetry = () => {
+      this.onClick();
+      this.onRetry();
+    };
+    this.wreck.onAgain = () => {
       this.onClick();
       this.onAgain();
-    });
+    };
+    this.wreck.onSkip = () => this.onSkip();
+    this.wreck.onTally = (i, best) => this.onTally(i, best);
     $('btn-pause').addEventListener('click', (e) => {
       // drop focus so Space (fire) can't press it again
       (e.currentTarget as HTMLElement).blur();
@@ -277,9 +290,17 @@ export class UI {
       `<div class="set-row has-seg"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><span class="seg" role="radiogroup">${opts
         .map(([v, t]) => `<button data-key="${k}" data-v="${v}" role="radio" aria-checked="${s[k] === v}" class="${s[k] === v ? 'sel' : ''}">${t}</button>`)
         .join('')}</span></div>`;
+    const slider = (k: VolumeKey, label: string, desc: string) => {
+      const pct = Math.round(s[k] * 100);
+      return `<label class="set-row has-vol"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><span class="vol"><input type="range" min="0" max="100" step="1" value="${pct}" data-vol="${k}" aria-label="${label}" style="--p:${pct}%"><output>${pct}</output></span></label>`;
+    };
     body.innerHTML = `
       <section class="set-group"><h4>Sound</h4>
         ${toggle('sound', 'Sound', 'Every sound in the game')}
+        ${slider('volMaster', 'Master volume', 'Everything at once')}
+        ${slider('volMusic', 'Music', 'The harbour theme')}
+        ${slider('volEffects', 'Effects', 'Cannons, splinters, thunder and the crew')}
+        ${slider('volAmbience', 'Ambience', 'Surf, wind and rain')}
         ${toggle('music', 'Harbour music', 'The theme that plays on the home screen')}
       </section>
       <section class="set-group"><h4>Graphics</h4>
@@ -306,6 +327,21 @@ export class UI {
         else this.setSetting(k, !this.settings[k] as never);
       }),
     );
+    body.querySelectorAll<HTMLInputElement>('input[data-vol]').forEach((r) => {
+      const k = r.dataset.vol as VolumeKey;
+      // live while dragging, no re-render (that would drop the thumb); saved on release
+      r.addEventListener('input', () => {
+        const v = Number(r.value) / 100;
+        this.settings[k] = v;
+        r.style.setProperty('--p', `${r.value}%`);
+        r.nextElementSibling!.textContent = r.value;
+        this.onSettings(this.settings);
+      });
+      r.addEventListener('change', () => {
+        saveSettings(this.settings);
+        this.onClick();
+      });
+    });
     $('set-gfx').addEventListener('click', () => {
       // the graphics card clears the stage to show the sea, so it replaces this sheet
       this.closeOverlay('settings');
@@ -501,6 +537,7 @@ export class UI {
 
   showHud(on: boolean) {
     this.hud.classList.toggle('hidden', !on);
+    if (on) this.hud.classList.remove('sunk');
     if (on) this.hudCache.clear();
     if (!on) {
       this.barEls.forEach((el) => el.remove());
@@ -548,20 +585,19 @@ export class UI {
     this.chart.draw(sc);
   }
 
-  showDead(on: boolean, info?: VoyageInfo & { ship: string; cls: ShipClassId }) {
-    $('dead').classList.toggle('hidden', !on);
-    if (on && info) {
-      const m = Math.floor(info.time / 60);
-      const s = Math.floor(info.time % 60);
-      $('dead-sub').textContent = `The ${info.ship} slipped beneath the waves after ${m}m ${s.toString().padStart(2, '0')}s at sea.`;
-      $('dead-summary').innerHTML = this.summary(info);
-      $('wreck-ship').innerHTML = shipSilhouette(SHIP_CLASSES[info.cls]);
-      // restart the sinking animation
-      const scene = $('wreck-scene');
-      scene.classList.remove('go');
-      void scene.offsetWidth;
-      scene.classList.add('go');
-    }
+  /** She's lost: fade the HUD and letterbox the view while the camera follows her down. */
+  beginWreck(r: WreckReport) {
+    this.hud.classList.add('sunk');
+    this.wreck.begin(r);
+  }
+
+  showDead(on: boolean, r?: WreckReport) {
+    if (on && r) this.wreck.show(r);
+    else if (!on) $('dead').classList.add('hidden');
+  }
+
+  endWreck() {
+    this.wreck.end();
   }
 
   toast(kicker: string, title: string, life = 3.4) {

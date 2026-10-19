@@ -244,6 +244,8 @@ export interface PatchOptions {
   wetSand?: boolean;
   detail?: boolean;
   sway?: number; // vegetation sway amplitude (instanced)
+  foliage?: boolean; // thin leaves: sunlight bleeds through to the shaded side
+  fade?: number; // small instanced props shrink away beyond this distance (m, grows with camera height)
   sail?: boolean; // billowing sails
   flag?: boolean; // waving flags (uv.x along length)
   damage?: boolean; // battle damage (holes, scorch, torn canvas, wreck split)
@@ -267,6 +269,8 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
     if (opts.wetSand) defs.push('#define AQ_WET');
     if (opts.detail) defs.push('#define AQ_DETAIL');
     if (opts.sway) defs.push(`#define AQ_SWAY ${opts.sway.toFixed(3)}`);
+    if (opts.foliage) defs.push('#define AQ_FOLIAGE');
+    if (opts.fade) defs.push(`#define AQ_FADE ${opts.fade.toFixed(1)}`);
     if (opts.sail) defs.push('#define AQ_SAIL');
     if (opts.flag) defs.push('#define AQ_FLAG');
     if (opts.damage) defs.push('#define AQ_DAMAGE');
@@ -329,6 +333,19 @@ ${GLSL_DAMAGE_VERTEX_PARS}`,
     float sway = sin(uTime * 2.3 + ph * 3.0) * g * 0.35;
     transformed.xz += (ld * lean + side * (shiver * 0.6 + sway)) * w;
     transformed.y -= lean * lean * w * w * 0.5 / max(hgt, 1.0);
+  }
+#endif
+#ifdef AQ_FADE
+  {
+    // ground cover too small to read far off shrinks smoothly away (no pop),
+    // further out the higher the camera flies
+    vec3 fp = vec3(0.0);
+    #ifdef USE_INSTANCING
+      fp = instanceMatrix[3].xyz;
+    #endif
+    fp = (modelMatrix * vec4(fp, 1.0)).xyz;
+    float aqFar = AQ_FADE + max(cameraPosition.y, 0.0) * 0.8;
+    transformed *= 1.0 - smoothstep(aqFar * 0.72, aqFar, distance(fp, cameraPosition));
   }
 #endif
 #ifdef AQ_SAIL
@@ -410,6 +427,15 @@ ${GLSL_DAMAGE_FRAGMENT}
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
+#ifdef AQ_FOLIAGE
+  {
+    // leaves are thin: the sun glows through to their shaded side, warm and
+    // yellow-green, so canopies read as soft lit volumes, never black blobs
+    vec3 aqL = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
+    float aqBack = clamp(0.25 - dot(normal, aqL), 0.0, 1.0);
+    reflectedLight.directDiffuse += diffuseColor.rgb * uSunColor * aqBack * vec3(0.05, 0.058, 0.026);
+  }
+#endif
 #ifdef AQ_CLOUDS
   {
     float cs = cloudShadow(vAqWorld.xz);

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { angleDelta, clamp } from '../core/noise';
+import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
 import { Audio } from '../core/audio';
 import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality';
@@ -28,6 +28,7 @@ import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
+import type { VoyageEvent, WreckReport } from '../ui/wreck';
 import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
@@ -51,6 +52,9 @@ const PIRATE_NAMES = [
   'Black Gull', 'Salt Widow', 'Crimson Tide', 'Grim Mariner', 'Sea Wraith', 'Rusty Anchor', 'Dread Marlin', 'Bone Siren',
   'Gilded Shark', 'Howling Jenny', 'Midnight Eel', 'Scarlet Kraken',
 ];
+
+/** Seconds into the farewell when the camera follows her under. */
+const DIVE = 8.6;
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
@@ -86,11 +90,21 @@ export class Game {
   private ais = new Map<Ship, PirateAI>();
   private lastFoe: Ship | null = null;
   private player: Ship | null = null;
+  private veg?: Vegetation;
   private preview: Ship | null = null;
   private state: State = 'loading';
   private discovered = new Set<string>();
   private chartOpen = false;
   private voyageTime = 0;
+  /** The voyage's tally for the farewell screen. */
+  private log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] as VoyageEvent[] };
+  /** The farewell: real seconds since she was lost (-1 afloat), and its beats. */
+  private wreck = { t: -1, hud: true, plunged: false, dived: false, shown: false, az: 0, elev: 0, dist: 0 };
+  private report: WreckReport | null = null;
+  /** Sim-time scale: the killing blow plays out in slow motion. */
+  private timeScale = 1;
+  private cinePos = new THREE.Vector3();
+  private cineLook = new THREE.Vector3();
   private spawnTimer = 0;
   private nameIdx = Math.floor(Math.random() * PIRATE_NAMES.length);
   private last = performance.now();
@@ -216,7 +230,7 @@ export class Game {
     ui.progress(0.5);
     await nextFrame();
     const site = findPortSite(this.terrain, this.spawnPoint);
-    const veg = new Vegetation(this.terrain, q.vegetation, portClearings(site));
+    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, portClearings(site), q.tier === 0));
     ui.progress(0.62);
     await nextFrame();
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
@@ -260,7 +274,7 @@ export class Game {
     this.opaque.environmentIntensity = SKY_LIGHT;
     this.ui.buildMap(this.terrain);
     this.ui.setWind(windAngle);
-    this.gunnery = new Gunnery(this.ocean.material.uniforms);
+    this.gunnery = new Gunnery();
     this.gunnery.onReady = (side) => this.onGunsReady(side);
     this.water.add(this.gunnery.group);
     ui.progress(0.88);
@@ -313,14 +327,17 @@ export class Game {
       this.resetWorld();
       this.enterMenu();
     };
-    ui.onAgain = () => {
-      this.ui.showDead(false);
-      this.resetWorld();
-      this.enterMenu();
+    ui.onAgain = () => this.leaveWreck(false);
+    ui.onRetry = () => this.leaveWreck(true);
+    ui.onTally = (i, best) => this.audio.tally(i, best);
+    ui.onSkip = () => {
+      // straight to the plunge
+      if (this.wreck.t >= 0 && this.wreck.t < DIVE - 0.4) this.wreck.t = DIVE - 0.4;
     };
     ui.onSound = (on) => this.audio.setMuted(!on);
     ui.onSettings = (st) => {
       this.audio.setMusicEnabled(st.music);
+      this.audio.setVolumes({ master: st.volMaster, music: st.volMusic, effects: st.volEffects, ambience: st.volAmbience });
       this.rig.shakeScale = SHAKE_SCALE[st.shake];
     };
     this.audio.setMuted(!ui.settings.sound);
@@ -726,6 +743,7 @@ export class Game {
     this.player = p;
     this.state = 'playing';
     this.voyageTime = 0;
+    this.log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] };
     this.discovered.clear();
     this.input.enabled = true;
     this.ui.showMenu(false);
@@ -826,6 +844,10 @@ export class Game {
 
   private onHit(ship: Ship, attacker: Ship, dmg: number, pos: THREE.Vector3) {
     const [x, y, ok] = this.screenOf(pos);
+    if (attacker === this.player && ship !== this.player && this.state === 'playing') {
+      this.log.hits++;
+      this.log.dealt += dmg;
+    }
     if (attacker === this.player && ok) this.ui.floater(`${Math.round(dmg)}`, x, y);
     if (ship === this.player) {
       if (ok) this.ui.floater(`-${Math.round(dmg)}`, x, y, 'bad');
@@ -833,7 +855,7 @@ export class Game {
       this.pipeline.flash(0.06);
     }
     if (!ship.alive && ship !== this.player) this.onSunk(ship, attacker);
-    if (!ship.alive && ship === this.player) this.onPlayerSunk();
+    if (!ship.alive && ship === this.player) this.onPlayerSunk('shot');
   }
 
   private onSunk(ship: Ship, attacker: Ship) {
@@ -843,30 +865,155 @@ export class Game {
     const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
     if (attacker === this.player) {
+      this.note('kill', `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
       this.player.gold += bounty;
       this.ui.toast(`+${bounty} gold bounty`, `${ship.name} sunk`, 3.2);
       this.audio.coin();
     }
   }
 
-  private onPlayerSunk() {
+  /** A line in the ship's log, for the farewell. */
+  private note(kind: VoyageEvent['kind'], text: string, detail = '') {
+    if (this.state !== 'playing') return;
+    const ev = this.log.events;
+    ev.push({ t: this.voyageTime, kind, text, detail });
+    if (ev.length > 40) ev.splice(0, 1);
+  }
+
+  /** She's going down: slow the blow, rise out of the captain's eyes and start the farewell. */
+  private onPlayerSunk(how: 'shot' | 'hull') {
+    const p = this.player;
+    if (!p || this.wreck.t >= 0 || (this.state !== 'playing' && this.state !== 'paused')) return;
     this.input.enabled = false;
-    // rise out of the captain's eyes to watch her go down
+    this.input.releaseLook();
+    this.setChart(false);
     this.setView(false);
-    setTimeout(() => {
-      if (!this.player) return;
-      this.setChart(false);
-      this.state = 'dead';
+    this.state = 'dead';
+    // your own ship founders in moments rather than lingering as a hulk
+    p.wreckLife = 3;
+    const w = this.world;
+    // who did it: a broadside, a ram, or the reef
+    const foe = p.lastAttacker && p.lastAttacker !== p && w.time - p.lastHit < 20 ? p.lastAttacker : null;
+    const aground = this.terrain.heightAt(p.pos.x, p.pos.z) > -p.cls.draft * 1.6;
+    const cause: WreckReport['cause'] = how === 'shot' ? (foe ? 'shot' : 'aground') : aground || !foe ? 'aground' : 'rammed';
+    let near: { name: string; d: number } | null = null;
+    for (const isl of this.terrain.islands) {
+      const d = Math.hypot(isl.x - p.pos.x, isl.z - p.pos.z) - isl.r;
+      if (d < 520 && (!near || d < near.d)) near = { name: isl.name, d };
+    }
+    this.report = {
+      ship: p.name,
+      cls: p.cls.id,
+      time: this.voyageTime,
+      gold: p.gold,
+      kills: p.kills,
+      isles: this.discovered.size,
+      islesTotal: this.terrain.islands.length,
+      shots: this.log.shots,
+      hits: this.log.hits,
+      dealt: Math.round(this.log.dealt),
+      chests: this.log.chests,
+      best: this.log.best,
+      miles: this.log.metres / 1852,
+      cause,
+      killer: cause === 'aground' ? undefined : foe?.name,
+      killerCls: cause === 'aground' ? undefined : foe?.cls.id,
+      where: near ? (near.d < 60 ? `on the shoals of ${near.name}` : `off ${near.name}`) : null,
+      events: this.log.events.slice(),
+    };
+    // remember where the camera was, so the farewell can glide out of it
+    const cam = this.rig.camera.position;
+    const dx = cam.x - p.pos.x;
+    const dz = cam.z - p.pos.z;
+    const dist = Math.hypot(dx, cam.y, dz);
+    this.wreck = {
+      t: 0, hud: true, plunged: false, dived: false, shown: false,
+      az: Math.atan2(dx, dz), elev: Math.asin(clamp(cam.y / Math.max(dist, 1), 0.1, 0.99)), dist: clamp(dist, 40, 320),
+    };
+    this.timeScale = 0.22;
+    this.rig.shake(0.95);
+    this.pipeline.flash(0.5);
+    this.audio.founder();
+    this.ui.beginWreck(this.report);
+  }
+
+  /** Runs the farewell: slow motion, the camera's long look, the plunge and the dive under. */
+  private updateWreck(realDt: number) {
+    const k = this.wreck;
+    const p = this.player;
+    if (k.t < 0 || !p) return;
+    k.t += realDt;
+    const T = k.t;
+    this.timeScale = lerp(0.22, 1, smoothstep(0.4, 2.8, T));
+    if (k.hud && T > 0.9) {
+      k.hud = false;
       this.ui.showHud(false);
-      this.ui.showDead(true, {
-        gold: this.player.gold,
-        kills: this.player.kills,
-        isles: this.discovered.size,
-        time: this.voyageTime,
-        ship: this.player.name,
-        cls: this.player.cls.id,
-      });
-    }, 3800);
+    }
+    const w = this.world;
+    // the final plunge: her timbers groan and she goes by the stern
+    if (!k.plunged && p.sinkT > p.wreckLife) {
+      k.plunged = true;
+      this.audio.groan();
+      this.rig.shake(0.3);
+    }
+    if (!k.dived && T > DIVE) {
+      // her last breath of air bursts up as she slips under
+      k.dived = true;
+      const y = w.waterHeight(p.pos.x, p.pos.z);
+      for (let i = 0; i < 3; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.random() * p.cls.beam;
+        w.particles.splash(new THREE.Vector3(p.pos.x + Math.cos(a) * r, y, p.pos.z + Math.sin(a) * r), 1.1 + Math.random() * 0.6);
+      }
+      w.wake.stamp(p.pos.x, p.pos.z, p.cls.length * 0.5, 1, true);
+      w.wake.push(p.pos.x, p.pos.z, p.cls.length * 0.4, -1);
+      this.audio.submerge(true);
+    }
+    const depth = smoothstep(DIVE + 0.4, DIVE + 2.1, T);
+    this.pipeline.depth = depth;
+    this.pipeline.desat = 0.55 * smoothstep(0, 0.6, T) * (1 - depth);
+    if (!k.shown && T > DIVE + 2.0) {
+      k.shown = true;
+      this.ui.showDead(true, this.report!);
+    }
+
+    // the camera: a slow, lowering orbit around the wreck, then a dive to the water where she went down
+    const L = p.cls.length;
+    const settle = smoothstep(0, 7.5, T);
+    const dive = smoothstep(DIVE - 0.4, DIVE + 2.2, T);
+    let dist = lerp(k.dist, L * 1.25 + 30, settle);
+    dist = lerp(dist, L * 0.7 + 14, dive);
+    let elev = lerp(k.elev, 0.3, settle);
+    elev = lerp(elev, 0.07, dive);
+    const az = k.az + T * 0.07 * smoothstep(0, 2.5, T);
+    const c = p.pos;
+    const cp = this.cinePos.set(c.x + Math.sin(az) * Math.cos(elev) * dist, Math.sin(elev) * dist + 1.5, c.z + Math.cos(az) * Math.cos(elev) * dist);
+    cp.y = Math.max(cp.y, w.waterHeight(cp.x, cp.z) + 1.6);
+    this.cineLook.set(c.x, lerp(lerp(4, L * 0.3, settle), -6, dive), c.z);
+    this.rig.cine = { pos: cp, look: this.cineLook, fov: lerp(lerp(34, 29, settle), 44, dive), w: smoothstep(0, 2.6, T) };
+  }
+
+  /** Back to the surface: sail the same ship again, or pick another in the harbour. */
+  private leaveWreck(again: boolean) {
+    if (this.wreck.t < 0 || this.swBusy) return;
+    const cls = this.player?.cls.id ?? this.ui.selected;
+    this.veil.innerHTML = '<span>Back to the surface…</span>';
+    void this.fade(() => {
+      this.wreck.t = -1;
+      this.timeScale = 1;
+      this.rig.cine = null;
+      this.pipeline.depth = 0;
+      this.pipeline.desat = 0;
+      this.audio.submerge(false);
+      this.ui.showDead(false);
+      this.ui.endWreck();
+      this.resetWorld();
+      this.enterMenu();
+      if (again && this.preview) {
+        if (this.preview.cls.id !== cls) this.setPreview(cls);
+        this.startVoyage();
+      }
+    });
   }
 
   // ------------------------------------------------------------------ player
@@ -874,8 +1021,10 @@ export class Game {
   private tryFire(side: Side) {
     const p = this.player!;
     const a = this.gunnery.aim(p, side);
-    if (p.fire(side, this.world, a.target, a.point)) this.gunnery.fired(this.world.time);
-    else this.ui.flashBroadside(side);
+    if (p.fire(side, this.world, a.target, a.point)) {
+      const sd = side === 'port' ? 1 : -1;
+      this.log.shots += p.model.muzzles.filter((m) => m.side === sd).length;
+    } else this.ui.flashBroadside(side);
   }
 
   /** One-button fire: the loaded side with a foe in its arc, else the side facing the nearest foe. */
@@ -905,7 +1054,7 @@ export class Game {
       /* private mode: show it anyway */
     }
     const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
-    this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and glints gold, ${how}`, 5.5);
+    this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and warm light gathers around her, ${how}`, 5.5);
   }
 
   private controlPlayer() {
@@ -968,7 +1117,8 @@ export class Game {
       this.scaler.pressure = 0;
       this.settings.stepDown();
     }
-    const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt;
+    this.updateWreck(dt);
+    const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt * this.timeScale;
     this.update(simDt, dt);
     this.render(simDt);
     this.input.consume();
@@ -984,6 +1134,8 @@ export class Game {
     if (this.state === 'playing') {
       this.controlPlayer();
       this.voyageTime += dt;
+      const pl = this.player;
+      if (pl) this.log.metres += Math.abs(pl.speed) * dt;
     } else if (this.state === 'paused') {
       if (this.input.state.pause) this.setPaused(false);
     }
@@ -1023,6 +1175,9 @@ export class Game {
           continue;
         }
         const R = RARITY[it.tier];
+        this.log.chests++;
+        this.log.best = Math.max(this.log.best, it.tier);
+        if (it.tier >= 2) this.note('chest', `${R.name} chest`, `+${it.value} gold`);
         this.ui.floater(`${R.name} chest +${it.value}`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[it.tier]);
         w.particles.treasure(new THREE.Vector3(it.x, w.waterHeight(it.x, it.z), it.z), R.glow, it.tier);
         this.audio.treasure(it.tier);
@@ -1033,6 +1188,8 @@ export class Game {
       }
       this.checkDiscoveries(p);
       this.directSpawns(dt);
+      // rammed or holed on a reef: no cannonball to report it
+      if (!p.alive) this.onPlayerSunk('hull');
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));
     } else {
       this.loot.update(dt, w, null, 0);
@@ -1224,6 +1381,7 @@ export class Game {
       if (Math.hypot(isl.x - p.pos.x, isl.z - p.pos.z) < isl.r + 70) {
         this.discovered.add(isl.name);
         const reward = 40 + Math.round(isl.r * 0.4);
+        this.note('isle', `Charted ${isl.name}`, `+${reward} gold`);
         p.gold += reward;
         this.ui.toast(`Island discovered · +${reward} gold`, isl.name, 3.6);
         this.audio.chime();
@@ -1283,6 +1441,7 @@ export class Game {
       this.skyEnv.update();
     }
 
+    this.veg?.update(cam.position);
     this.wake.update(this.renderer, target.x, target.z, dt);
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
@@ -1293,9 +1452,11 @@ export class Game {
     const port = this.rig.mode === 'port';
     this.pipeline.tilt = port ? 0.25 : (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
     // the horizon only exists from the deck (and in the shipwright's harbour)
-    this.sky.visible = eb > 0.001 || port;
+    const cine = this.rig.cine ? this.rig.cine.w : 0;
+    if (cine > 0) this.pipeline.tilt *= 1 - cine * 0.7;
+    this.sky.visible = eb > 0.001 || port || cine > 0;
     this.sky.position.copy(cam.position);
-    this.ocean.apron.visible = eb > 0.001 || port;
+    this.ocean.apron.visible = eb > 0.001 || port || cine > 0;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);

@@ -40,6 +40,8 @@ const DEEP_SAND = new THREE.Color(0xa99a76).convertSRGBToLinear();
 export class Terrain {
   readonly heights = new Float32Array(GRID_N * GRID_N);
   readonly ao = new Float32Array(GRID_N * GRID_N).fill(1);
+  /** How much tree canopy shades each cell (0..1): forest floor under the trees. */
+  readonly canopy = new Float32Array(GRID_N * GRID_N);
   readonly islands: Island[] = [];
   /** Island index owning each cell (-1 = open sea); used for colouring. */
   private owner = new Int8Array(GRID_N * GRID_N).fill(-1);
@@ -351,6 +353,23 @@ export class Terrain {
     }
   }
 
+  /** Mark the ground under a tree crown as forest floor. */
+  stampCanopy(x: number, z: number, radius: number, strength: number) {
+    const i0 = Math.max(0, Math.floor((x - radius + HALF) / CELL));
+    const i1 = Math.min(GRID_N - 1, Math.ceil((x + radius + HALF) / CELL));
+    const j0 = Math.max(0, Math.floor((z - radius + HALF) / CELL));
+    const j1 = Math.min(GRID_N - 1, Math.ceil((z + radius + HALF) / CELL));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const d = Math.hypot(-HALF + i * CELL - x, -HALF + j * CELL - z) / radius;
+        if (d < 1) {
+          const k = j * GRID_N + i;
+          this.canopy[k] = Math.min(1, this.canopy[k] + strength * (1 - d * d));
+        }
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- meshing
 
   /** Per-vertex inputs for the ground shader: island kind, tint, summit and crater masks. */
@@ -396,6 +415,7 @@ export class Terrain {
         const kindA = new Float32Array(vn * vn * 3);
         const infoA = new Float32Array(vn * vn * 3);
         const aoA = new Float32Array(vn * vn);
+        const canA = new Float32Array(vn * vn);
         for (let vj = 0; vj < vn; vj++) {
           for (let vi = 0; vi < vn; vi++) {
             const i = ci * chunkCells + vi * lod;
@@ -416,6 +436,7 @@ export class Terrain {
             nrm[k * 3 + 2] = nz * inv;
             this.surfaceInfo(j * GRID_N + i, h, kindA, infoA, k * 3);
             aoA[k] = this.ao[j * GRID_N + i];
+            canA[k] = this.canopy[j * GRID_N + i];
           }
         }
         const idx: number[] = [];
@@ -438,6 +459,7 @@ export class Terrain {
         geo.setAttribute('aqKind', new THREE.BufferAttribute(kindA, 3));
         geo.setAttribute('aqInfo', new THREE.BufferAttribute(infoA, 3));
         geo.setAttribute('aqAO', new THREE.BufferAttribute(aoA, 1));
+        geo.setAttribute('aqCanopy', new THREE.BufferAttribute(canA, 1));
         geo.setIndex(idx);
         geo.computeBoundingSphere();
         const mesh = new THREE.Mesh(geo, mat);
