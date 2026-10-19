@@ -11,6 +11,8 @@ export class UI {
   readonly hud = $('hud');
   private loading = $('loading');
   private loadBar = $('load-bar');
+  private windDeg = 0;
+  private windScale = -1;
   private toasts = $('toasts');
   private floaters = $('floaters');
   private bars = $('bars');
@@ -226,7 +228,16 @@ export class UI {
   setWind(angle: number) {
     // screen: up = north (-z). Arrow svg points up by default.
     const deg = 180 - (angle * 180) / Math.PI;
-    ($('hud-wind').firstElementChild as HTMLElement).style.transform = `rotate(${deg}deg)`;
+    this.windDeg = deg;
+    this.setGust(0);
+  }
+
+  /** The compass arrow puffs up a little while a gust is blowing through. */
+  setGust(g: number) {
+    const s = 1 + Math.min(g, 1.2) * 0.22;
+    if (Math.abs(s - this.windScale) < 0.01) return;
+    this.windScale = s;
+    ($('hud-wind').firstElementChild as HTMLElement).style.transform = `rotate(${this.windDeg}deg) scale(${s.toFixed(3)})`;
   }
 
   /** Floating health bars over enemies. */

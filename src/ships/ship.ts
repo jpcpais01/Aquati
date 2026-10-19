@@ -198,10 +198,11 @@ export class Ship {
     const w = world.wind;
     const rel = angleDelta(Math.atan2(w.dirX, w.dirZ), this.heading); // 0 = downwind
     const relDeg = (rel * 180) / Math.PI;
+    const gust = world.gustAt(this.pos.x, this.pos.z);
     if (this.alive) {
       this.sailLevel += clamp(this.sailTarget - this.sailLevel, -dt * 0.6, dt * 0.6);
       const hpF = 0.72 + 0.28 * (this.hp / this.maxHp);
-      const target = c.maxSpeed * this.sailLevel * windFactor(relDeg) * (0.75 + 0.25 * w.strength) * hpF;
+      const target = c.maxSpeed * this.sailLevel * windFactor(relDeg) * (0.75 + 0.25 * w.strength) * hpF * (1 + gust * 0.08);
       const rate = target > this.speed ? c.accel : c.accel * 1.4;
       this.speed += (target - this.speed) * damp(rate, dt);
       const steer = clamp(0.28 + 0.9 * (this.speed / c.maxSpeed), 0.28, 1.1);
@@ -297,7 +298,7 @@ export class Ship {
     const lx = w.dirX * port.x + w.dirZ * port.z;
     const lz = w.dirX * fx + w.dirZ * fz;
     const flagAng = Math.atan2(-lz, lx);
-    const fill = clamp(windFactor(relDeg) * w.strength * 1.1, 0.25, 1);
+    const fill = clamp(windFactor(relDeg) * w.strength * (1.1 + gust * 0.45), 0.25, 1.25);
     this.model.updateRig(this.sailLevel, -brace, leeSide, flagAng, fill);
 
     // ------------------------------------------------ wake & fx
