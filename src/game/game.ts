@@ -7,6 +7,7 @@ import { createEnvironment, FOG_COLOR, globalUniforms, SUN_COLOR, SUN_DIR } from
 import { Pipeline } from '../render/pipeline';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
+import { WindField, WindWisps } from '../fx/wind';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
 import { Ocean } from '../world/ocean';
@@ -65,6 +66,8 @@ export class Game {
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
   private birds!: Birds;
+  private windField!: WindField;
+  private wisps!: WindWisps;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -136,6 +139,10 @@ export class Game {
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
+    this.windField = new WindField(this.world.wind.dirX, this.world.wind.dirZ, q.tier === 0 ? 6 : 8);
+    this.world.gustAt = (x, z) => this.windField.at(x, z);
+    this.wisps = new WindWisps(this.windField, q.tier === 0 ? 8 : 16, (x, z) => this.terrain.heightAt(x, z));
+    this.water.add(this.wisps.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = createEnvironment(this.renderer);
@@ -509,7 +516,7 @@ export class Game {
     const p = this.player;
     if (p && this.state === 'playing') {
       if (p.alive && w.time - p.lastHit > 9) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.01 * dt);
-      const got = this.loot.update(dt, w, p.alive ? p.pos : null, p.cls.beam * 0.5 + 5);
+      const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2);
       for (const it of got) {
         p.gold += it.value;
         p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
@@ -545,6 +552,15 @@ export class Game {
     this.rig.update(realDt, fpos, fvel, w.time);
     w.listener.copy(this.rig.target);
     w.listenerZoom = this.rig.distance;
+
+    // gusts roll across whatever the camera is looking at
+    const reach = clamp(this.rig.distance * 0.9, 70, 260);
+    const tgt = this.rig.target;
+    this.windField.update(dt, tgt.x, tgt.z, reach);
+    this.wisps.update(dt, tgt.x, tgt.z, reach, this.rig.camera, w.wind.dirX, w.wind.dirZ);
+    const gustHere = this.windField.at(fpos.x, fpos.z);
+    this.audio.setGust(gustHere);
+    this.ui.setGust(gustHere);
 
     this.particles.update(dt);
     this.birds.update(dt, w.time);
@@ -664,6 +680,7 @@ export class Game {
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.6 : 0.8;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);

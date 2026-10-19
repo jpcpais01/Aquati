@@ -8,6 +8,7 @@ export class Audio {
   private noise!: AudioBuffer;
   private surfGain!: GainNode;
   private windGain!: GainNode;
+  private gust = 0;
   muted = false;
 
   start() {
@@ -82,11 +83,16 @@ export class Audio {
     if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.8, this.ctx.currentTime, 0.05);
   }
 
+  /** Gusts rolling over the listener swell the wind bed. */
+  setGust(g: number) {
+    this.gust = g;
+  }
+
   /** Speed-driven bed intensity. */
   setSailing(speed01: number) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.windGain.gain.setTargetAtTime(0.04 + speed01 * 0.08, t, 0.5);
+    this.windGain.gain.setTargetAtTime(0.04 + speed01 * 0.08 + this.gust * 0.06, t, 0.5);
     this.surfGain.gain.setTargetAtTime(0.2 + speed01 * 0.12, t, 0.5);
   }
 

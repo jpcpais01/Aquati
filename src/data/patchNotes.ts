@@ -23,6 +23,21 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Wind you can see: real gusts',
+        notes: [
+          'Gusts now roll across the sea as dark, shimmering patches of ruffled water racing downwind, just like real cat\'s paws on a breezy day.',
+          'Palms and trees lean with the breeze and get shoved over as a gust sweeps across the island, leaves shivering, then spring back once it passes.',
+          'Little white wisps of air ride inside the strongest gusts, curling and sometimes looping before they fade away.',
+          'Catch a gust and your sails puff out harder for a small burst of speed. The wind sound and the compass arrow swell as it blows through.',
+        ],
+      },
+      {
+        title: 'Stronger loot magnet',
+        notes: [
+          'Floating crates and barrels now get pulled toward your ship from twice as far away, gliding in faster the closer they get.',
+        ],
+      },
+      {
         title: 'Sails that swing, not snap',
         notes: [
           'When you tack or gybe, the yards and booms now swing across with real weight, overshooting a touch before settling, instead of flipping sides instantly.',
