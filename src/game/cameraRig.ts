@@ -16,9 +16,11 @@ export class CameraRig {
   private orbitAngle = 0.6;
   private blend = 0; // 0 orbit .. 1 follow
   orbitCenter = new THREE.Vector3();
-  orbitRadius = 34;
-  /** Menu framing: where the orbited ship sits, as a fraction of the screen from centre. */
-  menuShift = { x: 0, y: 0 };
+  /** Bounding sphere of the menu ship (centre height above the waterline, radius), fitted fully in view. */
+  orbitSphere = { y: 8, r: 18 };
+  private orbitDist = 0;
+  /** Menu framing: where the orbited ship sits (fraction of the screen from centre) and how much of the screen is free for it. */
+  menuShift = { x: 0, y: 0, w: 1, h: 1 };
   private shift = { x: 0, y: 0 };
 
   constructor(aspect: number) {
@@ -52,18 +54,20 @@ export class CameraRig {
 
     // orbit pose: low, slow, cinematic
     this.orbitAngle += dt * 0.06;
-    // pull back on narrow portrait screens so the whole ship fits across
-    const fit = this.camera.aspect < 1 ? Math.min(2.2, this.camera.aspect ** -0.75) : 1;
-    const r = this.orbitRadius * fit;
-    const op = new THREE.Vector3(
-      this.orbitCenter.x + Math.sin(this.orbitAngle) * r * 1.6,
-      this.orbitCenter.y + r * 0.62 + Math.sin(time * 0.2) * 1.5,
-      this.orbitCenter.z + Math.cos(this.orbitAngle) * r * 1.6,
-    );
+    // back off until the ship's bounding sphere, masts and bowsprit included,
+    // fits inside the part of the screen the menu leaves free
+    const halfV = THREE.MathUtils.degToRad(30) / 2;
+    const fitV = Math.atan(Math.tan(halfV) * Math.max(0.15, this.menuShift.h));
+    const fitH = Math.atan(Math.tan(halfV) * this.camera.aspect * Math.max(0.15, this.menuShift.w));
+    const want = (this.orbitSphere.r * 1.06) / Math.sin(Math.min(fitV, fitH));
+    this.orbitDist = this.orbitDist ? this.orbitDist + (want - this.orbitDist) * damp(2.5, dt) : want;
+    const aim = this.orbitCenter.clone().add(new THREE.Vector3(0, this.orbitSphere.y, 0));
+    const dir = new THREE.Vector3(Math.sin(this.orbitAngle) * 1.6, 0.62, Math.cos(this.orbitAngle) * 1.6).normalize();
+    const op = aim.clone().addScaledVector(dir, this.orbitDist);
+    op.y += Math.sin(time * 0.2) * 1.2;
     const b = this.blend * this.blend * (3 - 2 * this.blend);
     this.camera.position.lerpVectors(op, followPos, b);
-    // aim a little below the ship so it sits between the title and the cards
-    const lookAt = new THREE.Vector3().lerpVectors(this.orbitCenter.clone().add(new THREE.Vector3(0, -this.orbitRadius * 0.07, 0)), this.focus, b);
+    const lookAt = new THREE.Vector3().lerpVectors(aim, this.focus, b);
 
     // trauma shake (squared for a punchy falloff)
     this.trauma = Math.max(0, this.trauma - dt * 1.6);

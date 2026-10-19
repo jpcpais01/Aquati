@@ -48,27 +48,30 @@
 
     <div id="hud" class="hidden">
       <div class="panel ship-panel">
-        <div class="ship-name"><span id="hud-title">Kestrel</span><small id="hud-class">Sloop</small></div>
-        <div class="hull"><div class="hull-fill" id="hud-hull"></div><span id="hud-hull-text">260</span></div>
+        <div class="ship-id">
+          <div class="hud-ship" id="hud-art"></div>
+          <div class="ship-name"><span id="hud-title">Kestrel</span><small id="hud-class">Sloop</small></div>
+        </div>
+        <div class="hull"><div class="hull-ghost" id="hud-hull-ghost"></div><div class="hull-fill" id="hud-hull"></div><span id="hud-hull-text">260</span></div>
         <div class="stats-row">
-          <span class="coin" title="Gold"></span><b id="hud-gold">0</b>
-          <span class="skull" title="Ships sunk"></span><b id="hud-kills">0</b>
-          <span class="isle" title="Islands discovered"></span><b id="hud-isles">0</b>
+          <div class="chip" title="Gold"><span class="coin"></span><b id="hud-gold">0</b></div>
+          <div class="chip" title="Ships sunk"><span class="skull"></span><b id="hud-kills">0</b></div>
+          <div class="chip" title="Islands charted"><span class="isle"></span><b id="hud-isles">0</b></div>
         </div>
       </div>
       <div class="map-wrap">
         <canvas id="minimap" width="360" height="360" title="Open sea chart (M)"></canvas>
-        <div class="compass">N</div>
-        <div class="wind" id="hud-wind"><i></i></div>
+        <svg class="bezel" viewBox="0 0 200 200" aria-hidden="true" id="map-bezel"></svg>
+        <div class="wind" id="hud-wind" title="Wind"><i></i></div>
       </div>
       <div class="bottom">
-        <div class="broadside" id="bs-port"><kbd class="kd">Q</kbd><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg></div><span>Port</span></div>
+        <div class="broadside" id="bs-port"><kbd class="kd">Q</kbd><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg><span class="ti" data-icon="cannon"></span></div><span>Port</span></div>
         <div class="helm">
           <div class="sails" id="hud-sails"><i></i><i></i><i></i></div>
           <div class="speed"><b id="hud-speed">0</b><small>knots</small></div>
           <div class="hint kd">W / S sails · A / D helm</div>
         </div>
-        <div class="broadside" id="bs-star"><span>Starboard</span><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg></div><kbd class="kd">E</kbd></div>
+        <div class="broadside" id="bs-star"><span>Starboard</span><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg><span class="ti" data-icon="cannon"></span></div><kbd class="kd">E</kbd></div>
       </div>
       <button class="icon-btn" id="btn-pause" title="Pause (Esc)"><span class="ti" data-icon="pause"></span></button>
       <div id="toasts"></div>
@@ -77,9 +80,9 @@
       <div class="touch" id="touch">
         <div class="joy" id="joy"><div class="knob" id="joy-knob"></div></div>
         <div class="fire-pad">
-          <button class="fbtn side" id="t-port">◀ Port</button>
-          <button class="fbtn main" id="t-fire">Fire</button>
-          <button class="fbtn side" id="t-star">Stbd ▶</button>
+          <button class="fbtn side" id="t-port"><i class="rl"></i><span class="ti" data-icon="chevL"></span><small>Port</small></button>
+          <button class="fbtn main" id="t-fire"><span class="ti" data-icon="cannon"></span><small>Fire</small></button>
+          <button class="fbtn side" id="t-star"><i class="rl"></i><span class="ti" data-icon="chev"></span><small>Stbd</small></button>
         </div>
       </div>
     </div>
