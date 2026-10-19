@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { angleDelta, clamp, damp, lerp } from '../core/noise';
 import { World } from '../game/world';
 import { Ship } from './ship';
-import { HullShape } from './shipModel';
+import { HullShape, Stair } from './shipModel';
 import { CrewRenderer, FLAG, HAT, P, POSE_SIZE, PROP, TINT, TINT_SLOTS } from './crewModel';
 
 // Living crews. Every ship carries a captain, a helmsman, gun crews and deck
@@ -53,6 +53,13 @@ interface Zone {
   t0: number;
   t1: number;
   y: (t: number) => number;
+}
+/** A companion stair as the crew use it: from a spot on the castle deck down to one on the main deck. */
+interface Flight {
+  st: Stair;
+  castle: Zone;
+  head: Spot;
+  foot: Spot;
 }
 interface GunPost {
   muzzle: number;
@@ -296,6 +303,10 @@ class Sailor {
   moving = 0;
   stuck = 0;
   ignore: Obstacle | null = null;
+  // on a companion stair: +1 going down, -1 climbing
+  flight: Flight | null = null;
+  flightDir = 1;
+  flightK = 0;
   // flavour
   readonly seed = Math.random() * 100;
   readonly tempo = rand(0.88, 1.12);
@@ -350,6 +361,7 @@ class ShipCrew {
   readonly posts: GunPost[] = [];
   readonly helm: Spot;
   readonly hauls: { x: number; z: number; side: number; zone: Zone }[] = [];
+  readonly flights: Flight[] = [];
   readonly hatch: Spot;
   readonly tops: { x: number; z: number; y: number }[] = [];
   battle = false;
@@ -414,6 +426,17 @@ class ShipCrew {
     this.obstacles.push({ x: 0, z: capZ, r: 0.9 });
     if (c.id === 'galleon') for (let k = -2; k <= 2; k++) this.obstacles.push({ x: 0, z: z(0.62) + k * 0.85, r: 0.95 });
     for (const st of ship.model.stairs) for (const f of [0.2, 0.55, 0.9]) this.obstacles.push({ x: st.x, z: lerp(st.z0, st.z1, f), r: st.w * 0.62, stair: true });
+    for (const st of ship.model.stairs) {
+      const down = Math.sign(st.z0 - st.z1); // stern castle stairs run down toward the bow
+      const castle = down > 0 ? this.quarter : this.fore;
+      if (!castle) continue;
+      const on = (zone: Zone, z: number): Spot => {
+        const t = clamp(this.tOf(z), zone.t0, zone.t1);
+        const hw = this.halfWidth(zone, t) - 0.28;
+        return { x: clamp(st.x, -hw, hw), z: this.shape.z(t) };
+      };
+      this.flights.push({ st, castle, head: on(castle, st.z1 - down), foot: on(this.main, st.z0 + down * 0.45) });
+    }
     const hatchT = [0.46, 0.6].find((t) => !c.masts.some((mm) => Math.abs(mm.t - t) < 0.05)) ?? 0.46;
     this.hatch = { x: B * 0.05, z: z(hatchT) + 0.5 };
 
@@ -686,6 +709,43 @@ class ShipCrew {
     return false;
   }
 
+  /** Starts down (dir 1) or up (dir -1) a companion stair; the walk ends on the other deck. */
+  private takeFlight(sl: Sailor, f: Flight, dir: number) {
+    sl.flight = f;
+    sl.flightDir = dir;
+    sl.flightK = 0;
+    sl.goal = null;
+    sl.zone = dir > 0 ? this.main : f.castle;
+    sl.actDur = 0; // straight to a chore at the bottom
+  }
+
+  /** One step along the stair, treads underfoot. Returns true while still on it. */
+  private stepFlight(sl: Sailor, dt: number): boolean {
+    const f = sl.flight!;
+    const a = sl.flightDir > 0 ? f.head : f.foot;
+    const b = sl.flightDir > 0 ? f.foot : f.head;
+    const len = Math.max(0.1, Math.hypot(b.x - a.x, b.z - a.z));
+    sl.flightK = Math.min(1, sl.flightK + (1.05 * sl.tempo * dt) / len);
+    const px = sl.x;
+    const pz = sl.z;
+    sl.x = lerp(a.x, b.x, sl.flightK);
+    sl.z = lerp(a.z, b.z, sl.flightK);
+    const moved = Math.hypot(sl.x - px, sl.z - pz);
+    sl.moving = moved / Math.max(dt, 1e-4);
+    sl.phase += (moved / 1.1) * Math.PI * 2;
+    sl.wantYaw = Math.atan2(b.x - a.x, b.z - a.z);
+    // the treads: castle deck, the slope of the flight, then the main deck
+    const st = f.st;
+    const u = (sl.z - st.z1) / (st.z0 - st.z1);
+    const t = this.tOf(sl.z);
+    const floor = u <= 0 ? f.castle.y(t) : u >= 1 ? this.main.y(t) : lerp(st.y1, st.y0, u);
+    sl.y = floor - this.deckY(sl.zone, sl.x, sl.z);
+    if (sl.flightK < 1) return true;
+    sl.flight = null;
+    sl.moving = 0;
+    return false;
+  }
+
   private confine(sl: Sailor) {
     const zn = sl.zone;
     const t = clamp(this.tOf(sl.z), zn.t0, zn.t1);
@@ -718,7 +778,7 @@ class ShipCrew {
     else if (sl.role === 'captain') this.captainPlan(sl, time);
     else this.handPlan(sl);
 
-    const walking = sl.goal !== null && !this.stepWalk(sl, dt);
+    const walking = sl.flight ? this.stepFlight(sl, dt) : sl.goal !== null && !this.stepWalk(sl, dt);
     const run = sl.run ? 1 : 0;
     // chores are timed from arrival, not from setting off
     if (walking && sl.act !== 'gun') sl.actT = 0;
@@ -1155,7 +1215,7 @@ class ShipCrew {
 
     // lift for the barrel seat / fighting top
     const lift = sl.act === 'lookout' && sl.spot ? sl.topY - this.deckY(sl.zone, sl.x, sl.z) : sl.seat && !walking && sl.act === 'sit' ? 0.74 : 0;
-    sl.y += (lift - sl.y) * damp(sl.act === 'lookout' ? 50 : 9, dt);
+    if (!sl.flight) sl.y += (lift - sl.y) * damp(sl.act === 'lookout' ? 50 : 9, dt);
     this.ease(sl, dt, walking ? 16 : 9);
   }
 
@@ -1202,15 +1262,48 @@ class ShipCrew {
 
   // ---------------------------------------------------------------- roles
 
-  /** The helmsman hands over the wheel when the captain takes it, and waits at their elbow. */
+  /**
+   * The helmsman hands over the wheel when the captain takes it: he goes down
+   * the companion stair to the main deck and turns to like any other hand,
+   * out of the captain's view, then climbs back to the wheel once it's free.
+   */
   private helmPlan(sl: Sailor) {
-    const yielded = !!this.pilot?.active && this.pilot.atHelm;
-    const t = this.tOf(this.helm.z);
-    const want = yielded ? { x: Math.min(0.95, this.halfWidth(sl.zone, t) - 0.45), z: this.helm.z + 0.3 } : this.helm;
-    if (Math.hypot(sl.x - want.x, sl.z - want.z) > 0.08) {
-      if (!sl.goal || Math.abs(sl.goal.x - want.x) + Math.abs(sl.goal.z - want.z) > 0.01) this.walkTo(sl, want.x, want.z, false, yielded ? -Math.PI / 2 : 0);
+    if (sl.flight) {
       sl.act = 'stand';
-    } else sl.act = yielded ? 'stand' : 'helm';
+      return;
+    }
+    const yielded = !!this.pilot?.active && this.pilot.atHelm;
+    const up = this.helmZone;
+    const flights = this.flights.filter((f) => f.castle === up);
+    const near = (k: 'head' | 'foot') => flights.reduce((a, b) => (Math.hypot(b[k].x - sl.x, b[k].z - sl.z) < Math.hypot(a[k].x - sl.x, a[k].z - sl.z) ? b : a));
+    if (yielded) {
+      if (sl.zone === this.main) return this.handPlan(sl);
+      if (!flights.length) return this.idleAt(sl, { x: Math.min(0.95, this.halfWidth(sl.zone, this.tOf(this.helm.z)) - 0.45), z: this.helm.z + 0.3 }, -Math.PI / 2, 'stand');
+      const f = near('head');
+      if (Math.hypot(sl.x - f.head.x, sl.z - f.head.z) > 0.1) this.idleAt(sl, f.head, null, 'stand');
+      else this.takeFlight(sl, f, 1);
+      return;
+    }
+    if (sl.act !== 'helm' && sl.act !== 'stand') {
+      this.setTask(sl, 'stand', 0);
+      sl.spot = null;
+    }
+    if (sl.zone !== up && flights.length) {
+      // back up to the wheel
+      const f = near('foot');
+      if (Math.hypot(sl.x - f.foot.x, sl.z - f.foot.z) > 0.1) this.idleAt(sl, f.foot, null, 'stand');
+      else this.takeFlight(sl, f, -1);
+      return;
+    }
+    this.idleAt(sl, this.helm, 0, 'helm');
+  }
+
+  /** Walks to a spot and, once there, takes up `act`. */
+  private idleAt(sl: Sailor, want: Spot, yaw: number | null, act: Act) {
+    if (Math.hypot(sl.x - want.x, sl.z - want.z) > 0.08) {
+      if (!sl.goal || Math.abs(sl.goal.x - want.x) + Math.abs(sl.goal.z - want.z) > 0.01) this.walkTo(sl, want.x, want.z, false, yaw);
+      sl.act = 'stand';
+    } else sl.act = act;
   }
 
   /** The player walks the captain: copy their feet over and animate the stride. */
