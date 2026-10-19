@@ -2465,7 +2465,7 @@ kbd {
 .fpv-prompt {
   position: absolute;
   left: 50%;
-  bottom: calc(150px + var(--safe-b));
+  top: calc(50% + 44px);
   transform: translateX(-50%);
   align-items: center;
   gap: 10px;
@@ -2506,7 +2506,7 @@ kbd {
 .fpv-hint {
   position: absolute;
   left: 50%;
-  top: 58%;
+  top: calc(28% + var(--safe-t));
   transform: translateX(-50%);
   align-items: center;
   gap: 6px;
