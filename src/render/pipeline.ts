@@ -56,7 +56,10 @@ export class Pipeline {
         // 4-tap box at half res (each tap bilinear over 2x2)
         vec2 o = uTexel * 0.5;
         vec3 c = comb(vUv + vec2(-o.x, -o.y)) + comb(vUv + vec2(o.x, -o.y)) + comb(vUv + vec2(-o.x, o.y)) + comb(vUv + vec2(o.x, o.y));
-        gl_FragColor = vec4(c * 0.25, 1.0);
+        c *= 0.25;
+        // scrub NaN/Inf so one bad pixel can't get smeared into a black block by the bloom chain
+        c = (c.r + c.g + c.b) < 1e4 ? max(c, 0.0) : vec3(0.0);
+        gl_FragColor = vec4(c, 1.0);
       }`,
       { uOpaque: { value: null }, uWater: { value: null }, uTexel: { value: new THREE.Vector2() } },
     );

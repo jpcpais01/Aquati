@@ -17,6 +17,9 @@ export class CameraRig {
   private blend = 0; // 0 orbit .. 1 follow
   orbitCenter = new THREE.Vector3();
   orbitRadius = 34;
+  /** Menu framing: where the orbited ship sits, as a fraction of the screen from centre. */
+  menuShift = { x: 0, y: 0 };
+  private shift = { x: 0, y: 0 };
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(34, aspect, 2, 2600);
@@ -43,16 +46,19 @@ export class CameraRig {
     this.target.copy(this.focus);
 
     // follow pose: camera due south of the focus looking north & down
-    const pitch = lerp(1.06, 1.25, this.zoomSmooth); // radians above the horizon
+    const pitch = lerp(0.91, 1.1, this.zoomSmooth); // radians above the horizon
     const dist = this.distance;
     const followPos = new THREE.Vector3(this.focus.x, this.focus.y + Math.sin(pitch) * dist, this.focus.z + Math.cos(pitch) * dist);
 
     // orbit pose: low, slow, cinematic
     this.orbitAngle += dt * 0.06;
+    // pull back on narrow portrait screens so the whole ship fits across
+    const fit = this.camera.aspect < 1 ? Math.min(2.2, this.camera.aspect ** -0.75) : 1;
+    const r = this.orbitRadius * fit;
     const op = new THREE.Vector3(
-      this.orbitCenter.x + Math.sin(this.orbitAngle) * this.orbitRadius * 1.6,
-      this.orbitCenter.y + this.orbitRadius * 0.62 + Math.sin(time * 0.2) * 1.5,
-      this.orbitCenter.z + Math.cos(this.orbitAngle) * this.orbitRadius * 1.6,
+      this.orbitCenter.x + Math.sin(this.orbitAngle) * r * 1.6,
+      this.orbitCenter.y + r * 0.62 + Math.sin(time * 0.2) * 1.5,
+      this.orbitCenter.z + Math.cos(this.orbitAngle) * r * 1.6,
     );
     const b = this.blend * this.blend * (3 - 2 * this.blend);
     this.camera.position.lerpVectors(op, followPos, b);
@@ -70,6 +76,17 @@ export class CameraRig {
     }
     this.camera.lookAt(lookAt);
     this.camera.fov = lerp(30, 34, b);
+    // slide the frame so the ship sits in the space the menu leaves free;
+    // fades out as the camera swings into follow
+    const k = damp(2.5, dt);
+    this.shift.x += (this.menuShift.x * (1 - b) - this.shift.x) * k;
+    this.shift.y += (this.menuShift.y * (1 - b) - this.shift.y) * k;
+    if (Math.abs(this.shift.x) + Math.abs(this.shift.y) > 1e-4) {
+      const a = this.camera.aspect;
+      this.camera.setViewOffset(a, 1, -this.shift.x * a, -this.shift.y, a, 1);
+    } else if (this.camera.view) {
+      this.camera.clearViewOffset();
+    }
     this.camera.updateProjectionMatrix();
   }
 

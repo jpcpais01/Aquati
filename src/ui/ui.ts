@@ -2,8 +2,27 @@ import * as THREE from 'three';
 import { PATCH_NOTES } from '../data/patchNotes';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Ship } from '../ships/ship';
+import { RARITY } from '../game/loot';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import { SeaChart, ChartScene } from './chart';
+import { crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
+
+const NOTES_SEEN_KEY = 'aquati.notesSeen';
+const TIPS = [
+  'Charting the archipelago…',
+  'Sail across the wind for the best speed',
+  'Rake a foe from the side your guns face',
+  'Salvage floats to you: sail close to collect it',
+  'Every isle you chart pays a bounty',
+  'Gusts darken the water: chase them for a burst of speed',
+];
+
+export interface VoyageInfo {
+  gold: number;
+  kills: number;
+  isles: number;
+  time: number;
+}
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -36,8 +55,18 @@ export class UI {
   onClick: () => void = () => {};
   private soundOn = true;
 
+  private tipTimer = 0;
+  private menuKeys = (e: KeyboardEvent) => this.onMenuKey(e);
+
   constructor() {
-    this.buildCards();
+    document.querySelectorAll<HTMLElement>('[data-icon]').forEach((el) => {
+      el.innerHTML = icon(ICONS[el.dataset.icon as keyof typeof ICONS]);
+    });
+    document.querySelectorAll('.crest-slot').forEach((el) => (el.innerHTML = crest()));
+    this.startTips();
+    this.buildShipPicker();
+    this.syncSound();
+    this.markNotes();
     $('btn-sail').addEventListener('click', () => {
       this.onClick();
       this.onSail();
@@ -45,11 +74,17 @@ export class UI {
     const openNotes = () => {
       this.onClick();
       this.renderNotes();
-      $('notes').classList.remove('hidden');
+      this.openOverlay('notes');
+      try {
+        localStorage.setItem(NOTES_SEEN_KEY, PATCH_NOTES[0]?.hour ?? '');
+      } catch {
+        /* private mode: the dot just stays */
+      }
+      this.markNotes();
     };
     const openControls = () => {
       this.onClick();
-      $('controls').classList.remove('hidden');
+      this.openOverlay('controls');
     };
     $('btn-notes').addEventListener('click', openNotes);
     $('btn-notes2').addEventListener('click', openNotes);
@@ -58,18 +93,39 @@ export class UI {
     document.querySelectorAll('[data-close]').forEach((b) =>
       b.addEventListener('click', () => {
         this.onClick();
-        (b.closest('.screen') as HTMLElement).classList.add('hidden');
+        this.closeOverlay((b.closest('.screen') as HTMLElement).id);
       }),
     );
-    $('btn-sound').addEventListener('click', () => {
+    // tap the dimmed sea around a notes / controls card to close it
+    for (const id of ['notes', 'controls']) {
+      $(id).addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) this.closeOverlay(id);
+      });
+    }
+    const toggleSound = () => {
       this.soundOn = !this.soundOn;
-      $('btn-sound').textContent = `Sound: ${this.soundOn ? 'on' : 'off'}`;
+      this.syncSound();
       this.onSound(this.soundOn);
       this.onClick();
+    };
+    $('btn-sound').addEventListener('click', toggleSound);
+    $('btn-refresh').addEventListener('click', () => {
+      this.onClick();
+      this.refreshGame();
     });
-    $('btn-resume').addEventListener('click', () => this.onResume());
-    $('btn-quit').addEventListener('click', () => this.onQuit());
-    $('btn-again').addEventListener('click', () => this.onAgain());
+    $('btn-sound2').addEventListener('click', toggleSound);
+    $('btn-resume').addEventListener('click', () => {
+      this.onClick();
+      this.onResume();
+    });
+    $('btn-quit').addEventListener('click', () => {
+      this.onClick();
+      this.onQuit();
+    });
+    $('btn-again').addEventListener('click', () => {
+      this.onClick();
+      this.onAgain();
+    });
     $('btn-pause').addEventListener('click', () => this.onPause());
     this.mapCanvas.addEventListener('click', () => this.onMap(true));
     $('chart-close').addEventListener('click', () => this.onMap(false));
@@ -81,6 +137,20 @@ export class UI {
     addEventListener('resize', () => {
       if (!$('chart').classList.contains('hidden')) this.chart.resize();
     });
+    // capture phase, so Esc closes an open card before the game sees it as "pause"
+    addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== 'Escape') return;
+        const open = ['notes', 'controls'].find((id) => !$(id).classList.contains('hidden'));
+        if (!open) return;
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        this.closeOverlay(open);
+      },
+      true,
+    );
+    addEventListener('keydown', this.menuKeys);
     for (let i = 0; i < 24; i++) {
       const el = document.createElement('div');
       el.className = 'floater';
@@ -88,6 +158,88 @@ export class UI {
       this.floaters.appendChild(el);
       this.floaterPool.push({ el, t: 0, life: 0, x: 0, y: 0, vy: 0 });
     }
+  }
+
+  private openOverlay(id: string) {
+    $(id).classList.remove('hidden');
+  }
+
+  private closeOverlay(id: string) {
+    $(id).classList.add('hidden');
+  }
+
+  private overlayOpen() {
+    return ['notes', 'controls'].some((id) => !$(id).classList.contains('hidden'));
+  }
+
+  /** Menu shortcuts: arrows / A D / 1 2 3 pick a ship, Enter sets sail. */
+  private onMenuKey(e: KeyboardEvent) {
+    if (this.menu.classList.contains('hidden') || this.overlayOpen() || e.repeat) return;
+    const ids = Object.keys(SHIP_CLASSES) as ShipClassId[];
+    const i = ids.indexOf(this.selected);
+    const k = e.key.toLowerCase();
+    if (k === 'arrowleft' || k === 'a') this.select(ids[(i + ids.length - 1) % ids.length]);
+    else if (k === 'arrowright' || k === 'd') this.select(ids[(i + 1) % ids.length]);
+    else if (k >= '1' && k <= String(ids.length)) this.select(ids[+k - 1]);
+    else if (k === 'enter') {
+      e.preventDefault();
+      $('btn-sail').click();
+    }
+  }
+
+  /** Pull the newest build: check the service worker for an update, let it take over, then reload. */
+  private async refreshGame() {
+    const btn = $('btn-refresh');
+    if (btn.classList.contains('busy')) return;
+    btn.classList.add('busy');
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      if (reg) {
+        await reg.update();
+        const sw = reg.installing ?? reg.waiting;
+        if (sw) {
+          await new Promise<void>((done) => {
+            sw.addEventListener('statechange', () => sw.state === 'activated' && done());
+            setTimeout(done, 8000);
+          });
+        }
+      }
+    } catch {
+      /* offline or no service worker: a plain reload still helps */
+    }
+    location.reload();
+  }
+
+  private syncSound() {
+    const html = icon(this.soundOn ? ICONS.soundOn : ICONS.soundOff);
+    document.querySelectorAll<HTMLElement>('.sound-toggle').forEach((b) => {
+      b.querySelector('.ti')!.innerHTML = html;
+      b.classList.toggle('off', !this.soundOn);
+      b.title = this.soundOn ? 'Sound on' : 'Sound off';
+      b.setAttribute('aria-pressed', String(this.soundOn));
+    });
+  }
+
+  private markNotes() {
+    let seen = '';
+    try {
+      seen = localStorage.getItem(NOTES_SEEN_KEY) ?? '';
+    } catch {
+      /* ignore */
+    }
+    $('notes-dot').classList.toggle('hidden', !PATCH_NOTES.length || seen === PATCH_NOTES[0].hour);
+  }
+
+  private startTips() {
+    let i = 0;
+    this.tipTimer = window.setInterval(() => {
+      const el = $('load-tip');
+      i = (i + 1) % TIPS.length;
+      el.classList.remove('tip-in');
+      void el.offsetWidth;
+      el.textContent = TIPS[i];
+      el.classList.add('tip-in');
+    }, 2400);
   }
 
   setTouch(on: boolean) {
@@ -99,50 +251,96 @@ export class UI {
   }
 
   hideLoading() {
+    clearInterval(this.tipTimer);
     this.loading.classList.add('out');
     setTimeout(() => this.loading.classList.add('hidden'), 1000);
   }
 
-  private buildCards() {
-    const host = $('ship-cards');
+  private buildShipPicker() {
+    const host = $('ship-tabs');
     host.innerHTML = '';
-    (Object.keys(SHIP_CLASSES) as ShipClassId[]).forEach((id) => {
+    (Object.keys(SHIP_CLASSES) as ShipClassId[]).forEach((id, i) => {
       const c = SHIP_CLASSES[id];
-      const card = document.createElement('button');
-      card.className = 'ship-card' + (id === this.selected ? ' sel' : '');
-      card.dataset.id = id;
-      const stat = (label: string, v: number) => `<div class="stat"><span>${label}</span><div class="track"><i style="width:${Math.round(v * 100)}%"></i></div></div>`;
-      card.innerHTML = `
-        <h3>${c.name}<small>${c.title}</small></h3>
-        <p>${c.blurb}</p>
-        ${stat('Speed', c.stats.speed)}
-        ${stat('Agility', c.stats.agility)}
-        ${stat('Armour', c.stats.armour)}
-        ${stat('Hull', c.stats.hull)}
-        ${stat('Firepower', c.stats.firepower)}
-        <div class="guns"><span><b>${c.cannonsPerSide * 2}</b> guns</span><span><b>${c.masts.length}</b> mast${c.masts.length > 1 ? 's' : ''}</span><span><b>${c.reload.toFixed(1)}s</b> reload</span></div>`;
-      card.addEventListener('click', () => {
-        if (this.selected === id) return;
-        this.selected = id;
-        host.querySelectorAll('.ship-card').forEach((el) => el.classList.toggle('sel', (el as HTMLElement).dataset.id === id));
-        this.onClick();
-        this.onSelect(id);
-      });
-      host.appendChild(card);
+      const tab = document.createElement('button');
+      tab.className = 'ship-tab';
+      tab.dataset.id = id;
+      tab.setAttribute('role', 'tab');
+      tab.style.setProperty('--art', `${[0.7, 0.86, 1][i] ?? 1}`);
+      tab.innerHTML = `<span class="art">${shipSilhouette(c)}</span><span class="tab-name">${c.name}</span><kbd class="kd">${i + 1}</kbd>`;
+      tab.addEventListener('click', () => this.select(id));
+      host.appendChild(tab);
     });
+    this.renderDetail(false);
+  }
+
+  private select(id: ShipClassId) {
+    if (this.selected === id) return;
+    this.selected = id;
+    this.onClick();
+    this.onSelect(id);
+    this.renderDetail(true);
+  }
+
+  private renderDetail(animate: boolean) {
+    const c = SHIP_CLASSES[this.selected];
+    $('ship-tabs')
+      .querySelectorAll<HTMLElement>('.ship-tab')
+      .forEach((el) => {
+        const on = el.dataset.id === this.selected;
+        el.classList.toggle('sel', on);
+        el.setAttribute('aria-selected', String(on));
+      });
+    const pips = (v: number) => {
+      const n = Math.max(1, Math.round(v * 10));
+      return Array.from({ length: 10 }, (_, k) => `<i class="${k < n ? 'on' : ''}" style="--k:${k}"></i>`).join('');
+    };
+    const detail = $('ship-detail');
+    detail.innerHTML = `
+      <div class="detail-head">
+        <div><small>The ${c.title}</small><h3>${c.name}</h3></div>
+        <div class="facts"><span><b>${c.cannonsPerSide * 2}</b>guns</span><span><b>${c.hp}</b>hull</span><span><b>${c.reload.toFixed(1)}s</b>reload</span></div>
+      </div>
+      <p class="blurb">${c.blurb}</p>
+      <div class="stats">${STAT_LABELS.map(
+        ([k, label]) => `<div class="stat" title="${label}">${icon(STAT_ICONS[k])}<span>${label}</span><div class="pips">${pips(c.stats[k as keyof typeof c.stats])}</div></div>`,
+      ).join('')}</div>`;
+    if (animate) {
+      detail.classList.remove('swap');
+      void detail.offsetWidth;
+      detail.classList.add('swap');
+    }
+  }
+
+  /**
+   * Where the 3D preview ship should sit: the middle of whatever screen area
+   * the menu leaves free, as a fraction of the viewport from its centre.
+   */
+  menuFraming(): { x: number; y: number } {
+    const W = innerWidth;
+    const H = innerHeight;
+    const dock = $('dock').getBoundingClientRect();
+    if (!dock.width) return { x: 0, y: 0 };
+    if (dock.right < W * 0.6) {
+      // side dock: centre the ship in the space to its right
+      return { x: (dock.right + W) / 2 / W - 0.5, y: 0.04 };
+    }
+    // bottom dock: lift the ship into the gap between the title and the dock
+    const head = document.querySelector('.menu-head')!.getBoundingClientRect();
+    return { x: 0, y: (head.bottom + dock.top) / 2 / H - 0.5 };
   }
 
   private renderNotes() {
     const body = $('notes-body');
-    body.innerHTML = PATCH_NOTES.map((g) => {
+    body.innerHTML = PATCH_NOTES.map((g, i) => {
       const d = new Date(g.hour);
       const label = isNaN(d.getTime())
         ? g.hour
         : d.toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      return `<div class="group"><h4>${label}</h4>${g.entries
+      return `<div class="group"><h4><span>${label}</span>${i === 0 ? '<em>Latest</em>' : ''}</h4>${g.entries
         .map((e) => `<div class="entry"><b>${e.title}</b><ul>${e.notes.map((n) => `<li>${n}</li>`).join('')}</ul></div>`)
         .join('')}</div>`;
     }).join('');
+    body.scrollTop = 0;
   }
 
   showMenu(on: boolean) {
@@ -157,8 +355,22 @@ export class UI {
     }
   }
 
-  showPause(on: boolean) {
+  showPause(on: boolean, info?: VoyageInfo) {
     $('pause').classList.toggle('hidden', !on);
+    if (on && info) $('pause-summary').innerHTML = this.summary(info);
+    if (!on) ['notes', 'controls'].forEach((id) => this.closeOverlay(id));
+  }
+
+  private summary(info: VoyageInfo) {
+    const m = Math.floor(info.time / 60);
+    const s = Math.floor(info.time % 60);
+    const tile = (cls: string, v: string, label: string) => `<div><span class="${cls}"></span><b>${v}</b>${label}</div>`;
+    return (
+      tile('clock', `${m}:${s.toString().padStart(2, '0')}`, 'At sea') +
+      tile('coin', `${info.gold}`, 'Gold') +
+      tile('skull', `${info.kills}`, 'Sunk') +
+      tile('isle', `${info.isles}`, 'Isles')
+    );
   }
 
   showChart(on: boolean, player?: Ship) {
@@ -172,13 +384,19 @@ export class UI {
     this.chart.draw(sc);
   }
 
-  showDead(on: boolean, info?: { gold: number; kills: number; isles: number; time: number; ship: string }) {
+  showDead(on: boolean, info?: VoyageInfo & { ship: string; cls: ShipClassId }) {
     $('dead').classList.toggle('hidden', !on);
     if (on && info) {
       const m = Math.floor(info.time / 60);
       const s = Math.floor(info.time % 60);
       $('dead-sub').textContent = `The ${info.ship} slipped beneath the waves after ${m}m ${s.toString().padStart(2, '0')}s at sea.`;
-      $('dead-summary').innerHTML = `<div><b>${info.gold}</b>Gold</div><div><b>${info.kills}</b>Sunk</div><div><b>${info.isles}</b>Islands</div>`;
+      $('dead-summary').innerHTML = this.summary(info);
+      $('wreck-ship').innerHTML = shipSilhouette(SHIP_CLASSES[info.cls]);
+      // restart the sinking animation
+      const scene = $('wreck-scene');
+      scene.classList.remove('go');
+      void scene.offsetWidth;
+      scene.classList.add('go');
     }
   }
 
@@ -192,13 +410,13 @@ export class UI {
     setTimeout(() => el.remove(), (life + 0.7) * 1000);
   }
 
-  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' = '') {
+  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' = '') {
     const f = this.floaterPool.find((p) => p.t >= p.life) ?? this.floaterPool[0];
     f.el.textContent = text;
     f.el.className = 'floater' + (kind ? ' ' + kind : '');
     f.el.style.display = 'block';
     f.t = 0;
-    f.life = 1.3;
+    f.life = kind === 'legendary' ? 2.4 : kind === 'epic' ? 1.9 : kind === 'rare' ? 1.6 : 1.3;
     f.x = x + (Math.random() - 0.5) * 24;
     f.y = y;
     f.vy = -48;
@@ -210,7 +428,7 @@ export class UI {
       f.t += dt;
       f.y += f.vy * dt;
       f.vy *= 0.97;
-      const a = f.t < 0.15 ? f.t / 0.15 : 1 - Math.max(0, (f.t - 0.7) / 0.6);
+      const a = f.t < 0.15 ? f.t / 0.15 : 1 - Math.max(0, (f.t - (f.life - 0.6)) / 0.6);
       const sc = f.t < 0.12 ? 0.6 + f.t * 4 : 1.08 - Math.min(0.08, f.t * 0.2);
       f.el.style.transform = `translate(${f.x}px, ${f.y}px) translate(-50%, -50%) scale(${sc})`;
       f.el.style.opacity = `${Math.max(0, a)}`;
@@ -336,7 +554,7 @@ export class UI {
     this.chart.setTerrain(terrain);
   }
 
-  drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number }[], islands: Island[], discovered: Set<string>) {
+  drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number; tier?: number }[], islands: Island[], discovered: Set<string>) {
     const g = this.map;
     const S = this.mapCanvas.width;
     const R = 420; // world metres from centre to edge
@@ -363,11 +581,12 @@ export class UI {
         g.fillText('?', x, y + 6);
       }
     }
-    g.fillStyle = '#ffe08a';
     for (const l of loot) {
       const [x, y] = toMap(l.x, l.z);
+      const t = l.tier ?? 0;
+      g.fillStyle = RARITY[t].css;
       g.beginPath();
-      g.arc(x, y, 3.5, 0, Math.PI * 2);
+      g.arc(x, y, t >= 3 ? 4.5 : t ? 3.5 : 2.6, 0, Math.PI * 2);
       g.fill();
     }
     const tri = (s: Ship, color: string, size: number) => {
