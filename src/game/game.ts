@@ -20,6 +20,8 @@ import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
+import { Captain } from './captain';
+import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
 import { Loot, RARITY } from './loot';
 import { World } from './world';
@@ -74,6 +76,9 @@ export class Game {
   private windField!: WindField;
   private wisps!: WindWisps;
   private crew!: CrewSystem;
+  private captain = new Captain();
+  private fpv = false;
+  private sky = createSkyDome();
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -89,6 +94,8 @@ export class Game {
     this.ui.setTouch(this.input.isTouch);
     this.input.bindJoystick(document.getElementById('joy')!, document.getElementById('joy-knob')!);
     this.input.bindFireButtons(document.getElementById('t-port')!, document.getElementById('t-fire')!, document.getElementById('t-star')!);
+    this.input.bindViewButtons(document.getElementById('btn-view')!, document.getElementById('btn-helm')!, document.getElementById('t-spy')!);
+    this.captain.onStep = (k) => this.audio.footstep(k);
     this.input.onTouchDetected = () => this.ui.setTouch(true);
 
     this.sun = new THREE.DirectionalLight(new THREE.Color(SUN_COLOR).multiplyScalar(1 / 3.1), 3.1);
@@ -102,7 +109,7 @@ export class Game {
     sc.far = 900;
     this.opaque.add(this.sun, this.sun.target);
     this.opaque.fog = new THREE.Fog(FOG_COLOR.clone(), 380, 1500);
-    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group);
+    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group, this.sky);
 
     this.wireUI();
     // browsers only let sound start from a gesture (and on phones a touch only
@@ -362,6 +369,8 @@ export class Game {
   }
 
   private resetWorld() {
+    this.setView(false);
+    this.rig.resetEye();
     for (const s of this.ships.slice()) this.removeShip(s);
     this.projectiles.clear();
     this.loot.clear();
@@ -371,8 +380,28 @@ export class Game {
     this.preview = null;
   }
 
+  /** Bird's-eye or the captain's own eyes on deck. */
+  private setView(on: boolean) {
+    const p = this.player;
+    if (on && (!p || !p.alive || this.state !== 'playing')) return;
+    if (on === this.fpv) return;
+    this.fpv = on;
+    this.rig.firstPerson = on;
+    this.input.fpv = on;
+    this.input.helmMode = false;
+    if (on && p) {
+      this.captain.board(p, this.crew.deckView(p), this.crew.captainAt(p));
+      this.crew.setPilot(p, this.captain.pilot);
+    } else {
+      this.captain.leave();
+      this.input.releaseLook();
+    }
+    this.ui.setFpv(on);
+  }
+
   private setPaused(on: boolean) {
     if (on && this.state === 'playing') {
+      this.input.releaseLook();
       this.state = 'paused';
       const p = this.player;
       this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime } : undefined);
@@ -386,6 +415,7 @@ export class Game {
   /** The sea chart overlays live play: the world keeps sailing underneath. */
   private setChart(on: boolean) {
     if (on && !this.chartOpen && this.state === 'playing' && this.player) {
+      this.input.releaseLook();
       this.chartOpen = true;
       this.ui.showChart(true, this.player);
     } else if (!on && this.chartOpen) {
@@ -426,6 +456,8 @@ export class Game {
 
   private onPlayerSunk() {
     this.input.enabled = false;
+    // rise out of the captain's eyes to watch her go down
+    this.setView(false);
     setTimeout(() => {
       if (!this.player) return;
       this.setChart(false);
@@ -492,15 +524,23 @@ export class Game {
     const p = this.player;
     const st = this.input.state;
     if (!p || !p.alive) return;
+    if (st.view) this.setView(!this.fpv);
+    if (this.fpv) {
+      if (st.helm) this.captain.toggleHelm();
+      this.input.helmMode = this.captain.atHelm;
+      this.captain.spyWanted = st.spy;
+    }
     if (st.sailDelta) p.sailTarget = clamp(Math.round(p.sailTarget * 3 + st.sailDelta) / 3, 0, 1);
-    if (st.steerHeading !== null) {
+    if (st.steerHeading !== null && !this.fpv) {
       p.rudder = clamp(angleDelta(p.heading, st.steerHeading) * 2.4, -1, 1);
       p.sailTarget = st.steerThrottle < 0.2 ? p.sailTarget : Math.ceil(st.steerThrottle * 3 - 0.05) / 3;
     } else p.rudder = st.rudder;
     if (st.firePort) this.tryFire('port');
     if (st.fireStarboard) this.tryFire('starboard');
     if (st.fireAuto) {
-      const ps = this.input.isTouch ? null : this.pointerSide();
+      // from the deck you fire the beam you're facing
+      const ls = this.fpv ? this.captain.lookSide() : 0;
+      const ps = this.fpv ? (ls > 0 ? 'port' : ls < 0 ? 'starboard' : null) : this.input.isTouch ? null : this.pointerSide();
       if (ps) this.tryFire(ps);
       else {
         const t = this.bestTarget(null);
@@ -508,7 +548,7 @@ export class Game {
         else this.tryFire(p.canFire('port') ? 'port' : 'starboard');
       }
     }
-    if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.zoom && !this.fpv) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) {
       if (this.chartOpen) this.setChart(false);
       else this.setPaused(true);
@@ -611,10 +651,22 @@ export class Game {
     const fpos = focusShip ? focusShip.pos : this.spawnPoint;
     const fvel = focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
+    this.updateCaptain(dt);
     this.rig.update(realDt, fpos, fvel, w.time);
-    w.listener.copy(this.rig.target);
+    const eb = this.rig.eyeBlend;
+    if (eb > 0) {
+      // hear the sea from where you stand, panned to where you face
+      w.listener.lerpVectors(this.rig.target, this.rig.camera.position, eb);
+      const e = this.rig.camera.matrixWorld.elements;
+      const rl = Math.hypot(e[0], e[2]) || 1;
+      w.listenerRight.set(1 + (e[0] / rl - 1) * eb, (e[2] / rl) * eb).normalize();
+    } else {
+      w.listener.copy(this.rig.target);
+      w.listenerRight.set(1, 0);
+    }
     w.listenerZoom = this.rig.distance;
-    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5);
+    // the spyglass can pick out a crew at the far side of a battle
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260);
 
     // gusts roll across whatever the camera is looking at
     const reach = clamp(this.rig.distance * 0.9, 70, 260);
@@ -643,6 +695,29 @@ export class Game {
       });
     }
     this.ui.tickFloaters(realDt);
+  }
+
+  /** Walks the captain, aims their eyes, and keeps the deck chrome in step. */
+  private updateCaptain(dt: number) {
+    const cap = this.captain;
+    const p = this.player;
+    if (this.fpv && p && cap.ship === p) {
+      const st = this.input.state;
+      cap.update(dt, { x: st.walkX, y: st.walkY, run: st.run, lookX: st.lookX, lookY: st.lookY });
+      const near = cap.atHelm ? 'leave' : cap.canTakeHelm ? 'take' : 'none';
+      this.ui.setHelmPrompt(near);
+      const side = cap.lookSide();
+      this.ui.setLook(this.input.mouseLocked || this.input.isTouch, side, side !== 0 && p.canFire(side > 0 ? 'port' : 'starboard'));
+      this.ui.setSpy(cap.spy);
+    }
+    cap.pilot.hidden = cap.ship === p && this.rig.eyeBlend > 0.5;
+    if (cap.ship && this.rig.eyeBlend > 0 && !cap.ship.removed) {
+      cap.eye(this.rig.eyePos, this.rig.eyeQuat, this.world.time);
+      // a broad, natural field of view, narrowing to a sliver through the glass
+      const a = this.rig.camera.aspect;
+      const base = clamp((2 * Math.atan(Math.tan((42 * Math.PI) / 180) / a) * 180) / Math.PI, 55, 84);
+      this.rig.eyeFov = base / (1 + cap.spy * 4.5);
+    }
   }
 
   private updateTargetRing() {
@@ -747,7 +822,12 @@ export class Game {
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
-    this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.55 : 0.35;
+    const eb = this.rig.eyeBlend;
+    this.pipeline.tilt = (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
+    // the horizon only exists from the deck
+    this.sky.visible = eb > 0.001;
+    this.sky.position.copy(cam.position);
+    this.ocean.apron.visible = eb > 0.001;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);

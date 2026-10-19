@@ -26,6 +26,8 @@ export class World {
   readonly wind: Wind;
   listener = new THREE.Vector3();
   listenerZoom = 140;
+  /** Screen-right on the water, for panning (due east from the bird's-eye view). */
+  readonly listenerRight = new THREE.Vector2(1, 0);
   /** Gust intensity at a point (0 calm .. ~1.4), fed by the wind field. */
   gustAt: (x: number, z: number) => number = () => 0;
   onShot: (s: Shot) => void = () => {};
@@ -59,6 +61,6 @@ export class World {
     const d = Math.hypot(dx, dz);
     const ref = this.listenerZoom * 0.9;
     const vol = Math.min(1, ref / (ref + d * 1.4));
-    return [vol, dx / (ref * 0.8), d];
+    return [vol, (dx * this.listenerRight.x + dz * this.listenerRight.y) / (ref * 0.8), d];
   }
 }
