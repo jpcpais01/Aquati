@@ -40,6 +40,7 @@ export const globalUniforms = {
   uStorm: { value: 0 },
   uWet: { value: 0 }, // surface wetness, lags the rain
   uFlash: { value: 0 }, // lightning
+  uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
 };
 
 export const GLSL_GUST = /* glsl */ `
@@ -80,6 +81,12 @@ uniform float uRain;
 uniform float uStorm;
 uniform float uWet;
 uniform float uFlash;
+uniform float uMist;
+
+// how much low mist lies between the eye and a point d metres away
+float mistAt(float d) {
+  return (1.0 - exp(-d * 0.0045)) * uMist * 0.7;
+}
 
 vec3 aqHash32(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
@@ -247,7 +254,13 @@ attribute float aBillow;
         '#include <common>',
         `${head}#include <common>
 varying vec3 vAqWorld;
+uniform vec3 uFogColor;
 ${GLSL_ATMOS}`,
+      )
+      .replace(
+        '#include <fog_fragment>',
+        `#include <fog_fragment>
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, uFogColor, mistAt(length(vAqWorld - cameraPosition)));`,
       )
       .replace(
         '#include <color_fragment>',

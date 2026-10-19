@@ -79,11 +79,11 @@ interface Key {
   fog: [number, number, number];
 }
 const PALETTE: Key[] = [
-  { s: -0.4, zen: [0.0035, 0.0065, 0.018], hor: [0.011, 0.018, 0.036], fog: [0.01, 0.017, 0.032] },
-  { s: -0.16, zen: [0.006, 0.014, 0.042], hor: [0.035, 0.045, 0.09], fog: [0.03, 0.04, 0.075] },
-  { s: -0.05, zen: [0.022, 0.055, 0.16], hor: [0.34, 0.2, 0.2], fog: [0.2, 0.15, 0.17] },
-  { s: 0.03, zen: [0.06, 0.15, 0.38], hor: [0.95, 0.52, 0.3], fog: [0.72, 0.48, 0.38] },
-  { s: 0.16, zen: [0.1, 0.27, 0.64], hor: [0.78, 0.72, 0.66], fog: [0.64, 0.64, 0.68] },
+  { s: -0.4, zen: [0.006, 0.011, 0.03], hor: [0.017, 0.028, 0.056], fog: [0.015, 0.025, 0.048] },
+  { s: -0.16, zen: [0.008, 0.018, 0.05], hor: [0.04, 0.05, 0.1], fog: [0.034, 0.045, 0.085] },
+  { s: -0.05, zen: [0.06, 0.05, 0.15], hor: [0.34, 0.2, 0.2], fog: [0.2, 0.15, 0.17] },
+  { s: 0.03, zen: [0.2, 0.15, 0.32], hor: [0.95, 0.52, 0.3], fog: [0.72, 0.48, 0.38] },
+  { s: 0.16, zen: [0.15, 0.26, 0.56], hor: [0.78, 0.72, 0.66], fog: [0.64, 0.64, 0.68] },
   { s: 0.42, zen: [0.11, 0.33, 0.78], hor: [0.63, 0.8, 0.94], fog: [0.55, 0.73, 0.86] },
 ];
 
@@ -99,7 +99,7 @@ function samplePalette(s: number, zen: THREE.Vector3, hor: THREE.Vector3, fog: T
   fog.set(a.fog[0] + (b.fog[0] - a.fog[0]) * t, a.fog[1] + (b.fog[1] - a.fog[1]) * t, a.fog[2] + (b.fog[2] - a.fog[2]) * t);
 }
 
-const PEAK = (62 * Math.PI) / 180; // sun's highest elevation
+const PEAK = (40 * Math.PI) / 180; // sun's highest elevation
 const YAW = 0.5; // swings noon toward the north-west, the way the islands were lit before
 
 function celestial(phi: number, out: THREE.Vector3): THREE.Vector3 {
@@ -111,6 +111,24 @@ function celestial(phi: number, out: THREE.Vector3): THREE.Vector3 {
   const z = -Math.cos(PEAK) * s;
   return out.set(x * Math.cos(YAW) + z * Math.sin(YAW), y, -x * Math.sin(YAW) + z * Math.cos(YAW)).normalize();
 }
+
+/**
+ * How fast the clock runs at a given time of day: the golden hours and the
+ * twilight linger, the deep night passes a little quicker.
+ */
+function pace(day: number): number {
+  const sy = Math.sin(PEAK) * Math.sin((day - 0.25) * Math.PI * 2);
+  const twilight = 1 - smooth(0.04, 0.24, Math.abs(sy + 0.05));
+  const night = smooth(-0.05, -0.3, sy);
+  return 1 - 0.55 * twilight + 0.4 * night;
+}
+// normalise so a whole day still takes DAY_LENGTH
+const PACE_NORM = (() => {
+  let t = 0;
+  const n = 2000;
+  for (let i = 0; i < n; i++) t += 1 / pace(i / n) / n;
+  return t;
+})();
 
 const pick = <T>(opts: [T, number][]): T => {
   const sum = opts.reduce((a, o) => a + o[1], 0);
@@ -209,9 +227,7 @@ export class Atmosphere {
 
   update(dt: number) {
     // ---------------------------------------------------------- clock
-    // nights pass a little quicker than days; the whole cycle still takes DAY_LENGTH
-    const nightPace = smooth(0.0, -0.2, this.sunDir.y || 0.3);
-    this.day = (this.day + (dt / DAY_LENGTH) * (0.9 + 0.42 * nightPace) * 0.955) % 1;
+    this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
 
     // ---------------------------------------------------------- weather
     this.stateT += dt;
@@ -286,10 +302,10 @@ export class Atmosphere {
     // mist glows with whatever light there is
     if (this.fog > 0.01) this.fogColor.lerp(this.tmp.copy(this.horizon).multiplyScalar(1.02), this.fog * 0.5);
     const fogAmt = this.fog;
-    this.fogRange.set(380 * (1 - 0.62 * fogAmt), 1500 * (1 - 0.56 * fogAmt));
+    this.fogRange.set(380 * (1 - 0.95 * fogAmt), 1500 * (1 - 0.75 * fogAmt));
 
     // ---------------------------------------------------------- exposure & ambient
-    this.exposure = (1 + 1.15 * this.night) * (1 + 0.16 * this.cover) * (1 + 0.12 * this.storm);
+    this.exposure = (1 + 1.3 * this.night) * (1 + 0.16 * this.cover) * (1 + 0.12 * this.storm);
     const key = Math.max(this.keyDir.y, 0) * 0.22;
     const ref = this.dayRef;
     const tintR = (this.horizon.x * 0.55 + this.zenith.x * 0.45 + this.keyColor.x * key) / ref;
@@ -310,6 +326,7 @@ export class Atmosphere {
     u.uRain.value = this.rain;
     u.uStorm.value = this.storm;
     u.uWet.value = this.wet;
+    u.uMist.value = this.fog;
     const hazeK = 1 - 0.85 * this.cover;
     if (sy > -0.03) {
       const g = smooth(0.0, 0.3, sy);

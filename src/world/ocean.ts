@@ -345,6 +345,8 @@ export class Ocean {
           body += vec3(0.04, 0.36, 0.34) * clamp(wakeH * 1.6, -0.25, 1.0) * (0.45 + sssView) * light * 0.5;
           // ruffled water under a gust scatters less light back up: darker, matte
           body *= 1.0 - gust * 0.18;
+          // under a grey sky the sea loses its blue and turns pewter
+          body = mix(body, vec3(dot(body, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), uCloudCover * uCloudCover * 0.4);
 
           // ---- reflection
           vec3 R = reflect(-V, N);
@@ -365,6 +367,8 @@ export class Ocean {
           float spec = pow(nh, sharpExp) * 4.6 * twinkle * (1.0 + slick * 0.8) + pow(nh, 340.0) * 0.2;
           spec += pow(max(dot(Ns, H), 0.0), mix(60.0, 26.0, gust)) * 0.045;
           spec *= cloud * (1.0 - uRain * 0.55);
+          // moonlight lays a softer, silvery path than the sun's dazzle
+          spec *= 1.0 - uNight * 0.5;
 
           vec3 col = mix(body, refl, F) + uSunColor * spec * 0.55;
 
@@ -399,7 +403,9 @@ export class Ocean {
           }
           float foam = clamp(shore + contact * 0.85, 0.0, 1.0) * bubbles + edge * (0.55 + 0.45 * bubbles);
           foam += wakeFoam * (0.8 + 0.2 * bubbles);
-          foam += crestFoam * bubbles;
+          // whitecaps break up softly; the cellular lace alone reads as polka dots on a big cap
+          float capBreak = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
+          foam += crestFoam * mix(capBreak, bubbles, 0.3);
           foam += spume * (0.5 + 0.5 * bubbles) + rainSplash * 0.7;
           foam = clamp(foam, 0.0, 1.0);
           vec3 foamCol = vec3(0.96, 0.98, 1.0) * (uSunColor * (0.25 + 0.75 * ndl) * cloud * 0.42 + uSkyZenith * 0.55);
@@ -407,13 +413,14 @@ export class Ocean {
 
           // ---- bioluminescence: on dark nights churned water glows blue-green
           if (uNight > 0.05) {
-            float churn = wakeFoam * 0.9 + clamp(shore + contact * 0.85, 0.0, 1.0) * 0.45 + crestFoam * 0.35 + spume * 0.3;
+            float churn = (wakeFoam * 0.9 + clamp(shore + contact * 0.85, 0.0, 1.0) * 0.45) * bubbles
+              + (crestFoam * 0.18 * capBreak + spume * 0.08) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
-            col += vec3(0.02, 0.42, 0.62) * churn * bubbles * spark * uNight * 0.55;
+            col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;
           }
 
           // ---- atmospheric haze
-          float fog = smoothstep(uFogRange.x, uFogRange.y, vViewDist);
+          float fog = max(smoothstep(uFogRange.x, uFogRange.y, vViewDist), mistAt(vViewDist));
           col = mix(col, uFogColor, fog * 0.85);
 
           gl_FragColor = vec4(col, 1.0);

@@ -741,7 +741,7 @@ export class Game {
     this.audio.setWeather(a.rain, a.storm, a.wind);
     this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
     const k = a.kind;
-    const dark = a.night > 0.5;
+    const dark = a.sunDir.y < -0.03;
     const icon = k === 'storm' ? 'storm' : k === 'rain' ? 'rain' : k === 'mist' ? 'mist' : k === 'cloudy' ? 'cloud'
       : k === 'fair' ? (dark ? 'partly-moon' : 'partly-sun') : dark ? 'moon' : 'sun';
     this.ui.setSky(a.hour, icon, WEATHER[k].name);
