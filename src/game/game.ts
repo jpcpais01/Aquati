@@ -251,7 +251,7 @@ export class Game {
   }
 
   private frameMenu() {
-    this.rig.menuShift = this.state === 'menu' || this.state === 'loading' ? this.ui.menuFraming() : { x: 0, y: 0 };
+    this.rig.menuShift = this.state === 'menu' || this.state === 'loading' ? this.ui.menuFraming() : { x: 0, y: 0, w: 1, h: 1 };
   }
 
   // ------------------------------------------------------------------ ships
@@ -291,7 +291,11 @@ export class Game {
     if (old) this.removeShip(old);
     this.preview = s;
     this.rig.orbitCenter.set(s.pos.x, 0, s.pos.z);
-    this.rig.orbitRadius = s.cls.length * 1.25 + 10;
+    // bounding sphere of hull + rig: bowsprit to transom, keel to the tallest truck
+    const c = s.cls;
+    const top = Math.max(...c.masts.map((m) => m.height)) + c.freeboard + 1;
+    const half = (c.length + c.bowsprit) / 2;
+    this.rig.orbitSphere = { y: top * 0.45, r: Math.hypot(half, top * 0.55) };
   }
 
   private findOpenWater(cx: number, cz: number, rMin: number, rMax: number): THREE.Vector3 {
@@ -355,7 +359,7 @@ export class Game {
     this.ui.showMenu(false);
     this.ui.showHud(true);
     this.rig.mode = 'follow';
-    this.rig.menuShift = { x: 0, y: 0 };
+    this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 6;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);

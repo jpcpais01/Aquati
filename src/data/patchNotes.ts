@@ -16,6 +16,22 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T13:00Z',
     entries: [
       {
+        title: 'Your whole ship on the home screen',
+        notes: [
+          'The home screen camera now frames your entire ship, from keel to the top of the tallest mast and out to the tip of the bowsprit, on any screen size. It sits in the open water beside the menu, and smoothly pulls back for the towering galleon.',
+        ],
+      },
+      {
+        title: 'A captain\'s HUD',
+        notes: [
+          'The in-game HUD now matches the new menus. Your ship panel shows a little silhouette of your vessel, a planked hull bar that leaves a pale trail when you take a hit (and shakes the panel), and gold, sunk and isles counters that pop when they go up.',
+          'The minimap wears a brass compass bezel with a gold north pointer, and the wind gauge is a matching brass dial.',
+          'Port guns, sails and speed, and starboard guns now sit together in one helm console. Each broadside has a cannon dial that fills while reloading and glows gold when it is ready to fire. Your sail setting shows as three little sails.',
+          'On phones the fire controls are rebuilt: a big gold Fire button with port and starboard buttons either side, each ringed with its own reload meter. The steering stick has a brass helm ring and a gold knob.',
+          'Pirate health bars and island toasts have been restyled to match.',
+        ],
+      },
+      {
         title: 'Natural cannonball impacts, calmer seas',
         notes: [
           'Balls striking a hull now land with a heavy oak thunk, the crack of planks giving way and a burst of snapping splinters, then chunks clattering onto the deck. The odd ringing, xylophone-like tones are gone.',
