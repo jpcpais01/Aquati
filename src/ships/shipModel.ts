@@ -4,6 +4,7 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { clamp, lerp, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import { Livery, ShipClass } from './shipTypes';
+import type { SkinItem } from './cosmetics';
 import { deckTextures, FLAG_ASPECT, flagTexture, hullTextures, sailNormalTexture, sailTexture, sternTexture } from './shipTextures';
 
 // Fully procedural ships: a lofted hull with real sheer, tumblehome, bilge
@@ -200,6 +201,30 @@ interface MaterialSet {
 }
 
 const materialCache = new Map<string, MaterialSet>();
+
+/** The vault skin a ship wears, fed to its hull, woodwork and sail shaders. */
+export type SkinUniforms = ReturnType<typeof makeSkinUniforms>;
+
+function makeSkinUniforms() {
+  return {
+    uSkin: { value: 0 },
+    uSkinA: { value: new THREE.Color() },
+    uSkinB: { value: new THREE.Color() },
+    uSkinC: { value: new THREE.Color() },
+    uSkinP: { value: new THREE.Vector4(1, 1, 0, 0) },
+    uSkinCloth: { value: new THREE.Color(1, 1, 1) },
+  };
+}
+
+/** Shared by every ship that can never wear a skin (the pirates' cached paint). */
+const NO_SKIN = makeSkinUniforms();
+
+/** Marks a painted woodwork part as one the skin covers (see AQ_SKIN 2). */
+function skinned(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const c = g.getAttribute('color') as THREE.BufferAttribute;
+  for (let i = 0; i < c.count; i++) c.setZ(i, c.getZ(i) + 4);
+  return g;
+}
 let sharedDeck: { map: THREE.Texture; normal: THREE.Texture } | null = null;
 
 function hexL(c: string | number) {
@@ -401,12 +426,16 @@ export class ShipModel {
   private readonly detail: boolean;
   /** Custom liveries own their materials (no cache) and must be disposed. */
   private readonly owned: boolean;
+  /** This ship's skin (owned liveries only; everyone else shares NO_SKIN). */
+  readonly skinUniforms: SkinUniforms;
 
   private readonly steps: Generator<void, void>;
 
   /** `deferred` leaves the geometry unbuilt: call step() (a little per frame) until it returns true. */
   constructor(readonly cls: ShipClass, readonly livery: Livery, quality = 1, deferred = false) {
     this.owned = livery.id.startsWith('custom');
+    this.skinUniforms = this.owned ? makeSkinUniforms() : NO_SKIN;
+    this.skinUniforms.uSkinCloth.value.set(livery.sail);
     this.detail = quality > 0;
     this.shape = new HullShape(cls);
     this.stairs = castleStairs(cls, this.shape);
@@ -486,7 +515,7 @@ export class ShipModel {
       quality > 0
         ? new THREE.MeshPhysicalMaterial({ ...hullParams, clearcoat: 0.55, clearcoatRoughness: 0.28 })
         : new THREE.MeshStandardMaterial(hullParams);
-    patchMaterial(hull, { clouds: true, caustics: true });
+    patchMaterial(hull, { clouds: true, caustics: true, skin: 1 }, this.skinUniforms);
     const sternRows = this.cls.sternCastle ? (this.cls.id === 'galleon' ? 3 : 2) : 1;
     const st = sternTexture(this.livery, sternRows);
     const stern = patchMaterial(
@@ -495,7 +524,7 @@ export class ShipModel {
     );
     if (!sharedDeck) sharedDeck = deckTextures();
     const deck = patchMaterial(new THREE.MeshStandardMaterial({ map: sharedDeck.map, normalMap: sharedDeck.normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78 }), { clouds: true });
-    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true });
+    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2 }, this.skinUniforms);
     const iron = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true });
     const trim = patchMaterial(new THREE.MeshStandardMaterial({ color: hexL(this.livery.trim), roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true });
     const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(5.0, 3.2, 1.4) });
@@ -522,7 +551,7 @@ export class ShipModel {
 
   private makeSailMaterial(map: THREE.Texture) {
     const m = new THREE.MeshStandardMaterial({ map, normalMap: sailNormalTexture(), normalScale: new THREE.Vector2(0.45, 0.45), side: THREE.DoubleSide, roughness: 0.92, envMapIntensity: 0.9 });
-    return patchMaterial(m, { sail: true, clouds: true }, this.sailUniforms);
+    return patchMaterial(m, { sail: true, clouds: true, skin: 3 }, { ...this.sailUniforms, ...this.skinUniforms });
   }
 
   // ---------------------------------------------------------------- hull
@@ -637,7 +666,7 @@ export class ShipModel {
     ig.setAttribute('color', new THREE.Float32BufferAttribute(innerCol, 3));
     ig.setIndex(iidx);
     ig.computeVertexNormals();
-    this.woodParts.push(ig);
+    this.woodParts.push(skinned(ig));
 
     // frames standing proud of the inner bulwark, and a capping plank along the deck edge
     const frameCol = hexL(this.livery.hull).multiplyScalar(0.95);
@@ -844,7 +873,7 @@ export class ShipModel {
       const h = yHigh - yLow;
       const wall = rbox(w * 2, h + 0.1, 0.2, 0.08);
       wall.translate(0, yLow + h / 2, z);
-      this.woodParts.push(colorize(wall, strake.clone().multiplyScalar(0.9)));
+      this.woodParts.push(skinned(colorize(wall, strake.clone().multiplyScalar(0.9))));
       // arched door with a brass knob
       const dh = Math.min(1.3, h - 0.15);
       const door = rbox(0.8, dh, 0.1, 0.12);
@@ -2133,9 +2162,22 @@ export class ShipModel {
     this.sailUniforms.uSailFill.value = fill * sailLevel;
   }
 
+  /** Dresses the ship in a vault skin (null or pattern 0: her own paintwork). Uniforms only, never a recompile. */
+  setSkin(skin: SkinItem | null) {
+    const u = this.skinUniforms;
+    if (u === NO_SKIN) return;
+    u.uSkin.value = skin ? skin.pattern : 0;
+    if (!skin || !skin.pattern) return;
+    u.uSkinA.value.set(skin.colors[0]);
+    u.uSkinB.value.set(skin.colors[1]);
+    u.uSkinC.value.set(skin.colors[2]);
+    u.uSkinP.value.set(skin.glow, skin.sail, 0, (skin.pattern * 7.31) % 10);
+  }
+
   /** Repaints flag and sails in place for a new livery with the same hull. */
   restyle(livery: Livery) {
     if (!this.owned) return;
+    this.skinUniforms.uSkinCloth.value.set(livery.sail);
     flagTexture(livery, this.mats.flag.map as THREE.CanvasTexture);
     sailTexture(livery, false, 5, this.mats.sailPlain as THREE.CanvasTexture);
     sailTexture(livery, true, 5, this.mats.sailEmblem as THREE.CanvasTexture);

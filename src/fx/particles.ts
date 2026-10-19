@@ -228,6 +228,19 @@ class Pool {
 }
 
 
+/** Streak look per shot trail: tint rgb, mode (0 powder, 1 glow, 2 rainbow), length (s of flight), width (m). */
+const STREAKS: Record<string, [number, number, number, number, number, number]> = {
+  powder: [0, 0, 0, 0, 0.075, 0.42],
+  spray: [0, 0, 0, 0, 0.075, 0.42],
+  soot: [0, 0, 0, 0, 0.075, 0.42],
+  ember: [2.6, 1.0, 0.25, 1, 0.1, 0.44],
+  frost: [0.9, 1.8, 2.6, 1, 0.12, 0.44],
+  comet: [3.0, 2.0, 0.6, 1, 0.17, 0.62],
+  ghost: [0.6, 2.6, 1.4, 1, 0.13, 0.5],
+  rainbow: [1, 1, 1, 2, 0.2, 0.58],
+  starfall: [2.2, 2.0, 3.2, 1, 0.16, 0.5],
+};
+
 /**
  * Cannonball streaks: one camera-facing ribbon per ball in flight, stretched
  * back along its velocity. A pale air-wake with a hot core near the ball, so a
@@ -238,21 +251,26 @@ class Streaks {
   private n = 0;
   private aHead: Float32Array;
   private aTail: Float32Array;
+  private aStyle: Float32Array;
   private geo: THREE.InstancedBufferGeometry;
   private attrHead: THREE.InstancedBufferAttribute;
   private attrTail: THREE.InstancedBufferAttribute;
+  private attrStyle: THREE.InstancedBufferAttribute;
 
   constructor(private cap: number, uniforms: Record<string, THREE.IUniform>) {
     this.aHead = new Float32Array(cap * 4);
     this.aTail = new Float32Array(cap * 4);
+    this.aStyle = new Float32Array(cap * 4);
     this.geo = new THREE.InstancedBufferGeometry();
     const quad = new THREE.PlaneGeometry(1, 1);
     this.geo.index = quad.index;
     this.geo.setAttribute('position', quad.getAttribute('position'));
     this.attrHead = new THREE.InstancedBufferAttribute(this.aHead, 4).setUsage(THREE.DynamicDrawUsage);
     this.attrTail = new THREE.InstancedBufferAttribute(this.aTail, 4).setUsage(THREE.DynamicDrawUsage);
+    this.attrStyle = new THREE.InstancedBufferAttribute(this.aStyle, 4).setUsage(THREE.DynamicDrawUsage);
     this.geo.setAttribute('aHead', this.attrHead); // xyz, width
     this.geo.setAttribute('aTail', this.attrTail); // xyz, strength
+    this.geo.setAttribute('aStyle', this.attrStyle); // tint rgb, mode (0 powder, 1 tinted glow, 2 rainbow)
     this.geo.instanceCount = 0;
     const mat = new THREE.ShaderMaterial({
       uniforms,
@@ -262,8 +280,8 @@ class Streaks {
       premultipliedAlpha: true,
       blending: THREE.NormalBlending,
       vertexShader: /* glsl */ `
-        attribute vec4 aHead; attribute vec4 aTail;
-        varying vec2 vUv; varying float vStr; varying float vViewZ;
+        attribute vec4 aHead; attribute vec4 aTail; attribute vec4 aStyle;
+        varying vec2 vUv; varying float vStr; varying float vViewZ; varying vec4 vStyle;
         void main() {
           float along = position.x + 0.5; // 0 tail .. 1 head
           vec3 w = mix(aTail.xyz, aHead.xyz, along);
@@ -276,25 +294,37 @@ class Streaks {
           w += normalize(axis + vec3(1e-5)) * aHead.w * 0.5 * step(0.99, along);
           vUv = vec2(along, position.y * 2.0);
           vStr = aTail.w;
+          vStyle = aStyle;
           vec4 mv = viewMatrix * vec4(w, 1.0);
           vViewZ = -mv.z;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
-        uniform vec3 uLight; uniform float uFlash; uniform float uNight; uniform vec3 uFogColor; uniform vec2 uFogRange;
-        varying vec2 vUv; varying float vStr; varying float vViewZ;
+        uniform vec3 uLight; uniform float uFlash; uniform float uNight; uniform vec3 uFogColor; uniform vec2 uFogRange; uniform float uTime;
+        varying vec2 vUv; varying float vStr; varying float vViewZ; varying vec4 vStyle;
         void main() {
           float across = 1.0 - vUv.y * vUv.y;
           float t = vUv.x;
-          float a = across * t * t * (0.38 + 0.25 * t) * vStr;
-          if (a < 0.003) discard;
-          // hot core right behind the ball, fading into a pale wake
-          float core = pow(max(across, 0.0), 6.0) * smoothstep(0.55, 1.0, t);
-          vec3 wake = vec3(0.98, 0.97, 0.95) * (uLight + uFlash * 0.8);
-          vec3 glow = vec3(3.2, 1.5, 0.45) * core * (0.25 + uNight * 0.9) * vStr;
           float fog = smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.85;
-          vec3 col = mix(wake * a, uFogColor * a, fog) + glow * (1.0 - fog);
-          gl_FragColor = vec4(col, a);
+          if (vStyle.w < 0.5) {
+            float a = across * t * t * (0.38 + 0.25 * t) * vStr;
+            if (a < 0.003) discard;
+            // hot core right behind the ball, fading into a pale wake
+            float core = pow(max(across, 0.0), 6.0) * smoothstep(0.55, 1.0, t);
+            vec3 wake = vec3(0.98, 0.97, 0.95) * (uLight + uFlash * 0.8);
+            vec3 glow = vec3(3.2, 1.5, 0.45) * core * (0.25 + uNight * 0.9) * vStr;
+            vec3 col = mix(wake * a, uFogColor * a, fog) + glow * (1.0 - fog);
+            gl_FragColor = vec4(col, a);
+          } else {
+            // vault trails: a coloured glowing ribbon (or every colour at once)
+            float a = across * pow(t, 1.4) * vStr;
+            if (a < 0.003) discard;
+            vec3 tint = vStyle.rgb;
+            if (vStyle.w > 1.5) tint = clamp(abs(fract(t * 1.4 - uTime * 1.6 + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0) * 2.6 + 0.2;
+            float core = pow(max(across, 0.0), 5.0) * smoothstep(0.35, 1.0, t);
+            vec3 col = tint * (a * 0.6 + core * 1.7) * (1.0 + uNight * 0.6) * (1.0 - fog);
+            gl_FragColor = vec4(col, a * 0.32);
+          }
         }`,
     });
     this.mesh = new THREE.Mesh(this.geo, mat);
@@ -305,13 +335,15 @@ class Streaks {
   begin() { this.n = 0; }
 
   /** A ball at `pos` moving at `vel`, `age` seconds after it left the barrel. */
-  add(pos: THREE.Vector3, vel: THREE.Vector3, age: number) {
+  add(pos: THREE.Vector3, vel: THREE.Vector3, age: number, style = 'powder') {
     if (this.n >= this.cap) return;
     const i = this.n++;
+    const st = STREAKS[style] ?? STREAKS.powder;
     // grows out of the muzzle, then a fixed slice of the flight path
-    const len = Math.min(age, 0.075);
-    const H = this.aHead, T = this.aTail;
-    H[i * 4] = pos.x; H[i * 4 + 1] = pos.y; H[i * 4 + 2] = pos.z; H[i * 4 + 3] = 0.42;
+    const len = Math.min(age, st[4]);
+    const H = this.aHead, T = this.aTail, S = this.aStyle;
+    H[i * 4] = pos.x; H[i * 4 + 1] = pos.y; H[i * 4 + 2] = pos.z; H[i * 4 + 3] = st[5];
+    S[i * 4] = st[0]; S[i * 4 + 1] = st[1]; S[i * 4 + 2] = st[2]; S[i * 4 + 3] = st[3];
     T[i * 4] = pos.x - vel.x * len; T[i * 4 + 1] = pos.y - vel.y * len; T[i * 4 + 2] = pos.z - vel.z * len;
     T[i * 4 + 3] = Math.max(0.35, 1 - age * 0.18); // fades as the shot slows and drops
   }
@@ -326,10 +358,19 @@ class Streaks {
     this.attrTail.clearUpdateRanges();
     this.attrTail.addUpdateRange(0, n * 4);
     this.attrTail.needsUpdate = true;
+    this.attrStyle.clearUpdateRanges();
+    this.attrStyle.addUpdateRange(0, n * 4);
+    this.attrStyle.needsUpdate = true;
   }
 }
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
+const _a = new THREE.Vector3();
+/** A bright, fully saturated colour for hue h (0..1). */
+const hue = (h: number): [number, number, number] => {
+  const f = (n: number) => Math.min(1, Math.max(0, Math.abs((((h + n) % 1) + 1) % 1 * 6 - 3) - 1));
+  return [f(0), f(2 / 3), f(1 / 3)];
+};
 
 export class Particles {
   readonly group = new THREE.Group();
@@ -373,43 +414,189 @@ export class Particles {
 
   // ------------------------------------------------------------- recipes
 
-  muzzle(pos: THREE.Vector3, dir: THREE.Vector3, carry: THREE.Vector3) {
-    // flash core
-    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.12, size: 2.6, sizeEnd: 4.2, color: [9, 6, 2.6], colorEnd: [4, 1.4, 0.3], kind: 0, fadeIn: 0.001 }, true);
-    for (let i = 0; i < 5; i++) {
+  /** A gun going off: flash, sparks and smoke in the look of a vault muzzle blast. */
+  muzzle(pos: THREE.Vector3, dir: THREE.Vector3, carry: THREE.Vector3, style = 'powder') {
+    switch (style) {
+      case 'seasalt':
+        this.flash(pos, 2.8, [9, 9.4, 10], [3, 3.6, 4.4]);
+        this.sparks(pos, dir, carry, 6, [7, 7.5, 8], [2.5, 3, 3.6]);
+        this.smoke(pos, dir, carry, { tint: [1.12, 1.14, 1.16], jet: 9, bank: 6, wisps: 0, alpha: 1.15 });
+        for (let i = 0; i < 10; i++) {
+          const sp = rand(6, 14);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rand(-2, 2) + carry.x, vy: rand(1, 5), vz: dir.z * sp + rand(-2, 2) + carry.z,
+            life: rand(0.6, 1.1), size: rand(0.1, 0.2), sizeEnd: 0.08, color: [1.4, 1.5, 1.55], alpha: 0.9, grav: 12, drag: 1.2, kind: 0, fadeIn: 0.01,
+          });
+        }
+        break;
+      case 'soot':
+        this.flash(pos, 3.0, [9, 4.6, 1.3], [3.5, 1.0, 0.2]);
+        this.sparks(pos, dir, carry, 7, [7, 3, 0.8], [2, 0.5, 0.1]);
+        this.smoke(pos, dir, carry, { tint: [0.4, 0.37, 0.35], jet: 9, bank: 5, wisps: 6, alpha: 1.25 });
+        break;
+      case 'ember':
+        this.flash(pos, 3.0, [10, 5.2, 1.6], [4, 1.2, 0.2]);
+        this.sparks(pos, dir, carry, 6, [8, 3.6, 0.9], [2.4, 0.5, 0.06]);
+        this.embers(pos, dir, carry, 26, 1);
+        this.smoke(pos, dir, carry, { tint: [1.08, 0.98, 0.88], jet: 7, bank: 3, wisps: 2 });
+        break;
+      case 'ring': {
+        this.flash(pos, 2.4, [9, 6, 2.6], [4, 1.4, 0.3]);
+        // a vortex ring rolling out of the gunport, widening as it goes
+        const side = _a.set(-dir.z, 0, dir.x).normalize();
+        const n = 26;
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * Math.PI * 2;
+          const cx = Math.cos(a), cy = Math.sin(a);
+          const rx = side.x * cx, ry = cy, rz = side.z * cx;
+          const sp = rand(7.5, 8.5);
+          this.emit({
+            x: pos.x + dir.x * 1.1 + rx * 0.35, y: pos.y + ry * 0.35, z: pos.z + dir.z * 1.1 + rz * 0.35,
+            vx: dir.x * sp + rx * 2.6 + carry.x * 0.7, vy: ry * 2.6 + 0.35, vz: dir.z * sp + rz * 2.6 + carry.z * 0.7,
+            life: rand(2.6, 3.2), size: 0.7, sizeEnd: rand(2.0, 2.4), color: [1.12, 1.12, 1.14], colorEnd: [1.05, 1.06, 1.1],
+            alpha: 0.78, drag: 1.25, grav: -0.12, spin: rand(-0.3, 0.3), kind: 1, fadeIn: 0.03,
+          });
+        }
+        this.smoke(pos, dir, carry, { tint: [1, 1, 1], jet: 3, bank: 2, wisps: 0, alpha: 0.7 });
+        break;
+      }
+      case 'azure':
+        this.flash(pos, 3.0, [3, 6.5, 11], [0.5, 1.6, 4.5]);
+        this.sparks(pos, dir, carry, 12, [2.5, 6, 10], [0.4, 1.4, 4], 2);
+        for (let i = 0; i < 9; i++) {
+          const sp = rand(6, 16);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rand(-1, 1) + carry.x, vy: rand(-0.2, 1), vz: dir.z * sp + rand(-1, 1) + carry.z,
+            life: rand(0.25, 0.45), size: rand(0.6, 1.0), sizeEnd: rand(1.6, 2.4), color: [2, 4.6, 9], colorEnd: [0.3, 0.7, 2.4], drag: 4, kind: 0, fadeIn: 0.001,
+          }, true);
+        }
+        this.smoke(pos, dir, carry, { tint: [0.84, 0.94, 1.18], jet: 8, bank: 3, wisps: 0 });
+        break;
+      case 'confetti': {
+        this.flash(pos, 2.2, [9, 8, 5], [4, 2.6, 1]);
+        const C: [number, number, number][] = [[1.5, 0.35, 0.75], [1.5, 1.2, 0.2], [0.25, 1.2, 1.5], [0.6, 1.4, 0.3], [1.5, 0.6, 0.15], [0.9, 0.45, 1.5], [1.6, 1.6, 1.6]];
+        for (let i = 0; i < 46; i++) {
+          const sp = rand(5, 15);
+          this.emit({
+            x: pos.x + dir.x * 0.5, y: pos.y, z: pos.z + dir.z * 0.5,
+            vx: dir.x * sp + rand(-4, 4) + carry.x, vy: rand(2, 9), vz: dir.z * sp + rand(-4, 4) + carry.z,
+            life: rand(2.4, 4.0), size: rand(0.13, 0.22), color: C[i % C.length], alpha: 1, grav: 2.4, drag: 1.9, spin: rand(-12, 12), kind: 3, fadeIn: 0.001,
+          });
+        }
+        for (let i = 0; i < 14; i++) {
+          const sp = rand(4, 12);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rand(-3, 3) + carry.x, vy: rand(1, 6), vz: dir.z * sp + rand(-3, 3) + carry.z,
+            life: rand(0.5, 1.0), size: rand(0.2, 0.35), sizeEnd: 0.05, color: [7, 5.5, 2], colorEnd: [3, 1.6, 0.4], drag: 2, grav: 2, kind: 2, fadeIn: 0.01,
+          }, true);
+        }
+        this.smoke(pos, dir, carry, { tint: [1.08, 1.06, 1.1], jet: 4, bank: 2, wisps: 0, alpha: 0.8 });
+        break;
+      }
+      case 'dragon':
+        this.flash(pos, 3.8, [12, 7, 2.2], [4, 1.2, 0.2]);
+        // a roaring cone of fire, white-hot at the mouth
+        for (let i = 0; i < 38; i++) {
+          const sp = rand(12, 30);
+          const spread = sp * 0.12;
+          const hot = i < 10;
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z,
+            vx: dir.x * sp + rand(-spread, spread) + carry.x, vy: rand(-spread, spread) * 0.6 + 0.6, vz: dir.z * sp + rand(-spread, spread) + carry.z,
+            life: rand(0.35, 0.7) * (hot ? 0.7 : 1), size: rand(0.6, 1.0), sizeEnd: rand(2.2, 3.4), color: hot ? [12, 9, 4] : [10, 4.6, 1.1], colorEnd: [3, 0.55, 0.06],
+            drag: 2.6, grav: -2.5, spin: rand(-2, 2), kind: 0, fadeIn: 0.001,
+          }, true);
+        }
+        this.embers(pos, dir, carry, 20, 1.3);
+        this.smoke(pos, dir, carry, { tint: [0.34, 0.31, 0.3], jet: 8, bank: 4, wisps: 3, alpha: 1.1 });
+        break;
+      case 'thunder': {
+        this.flash(pos, 3.4, [8, 8.5, 13], [3, 2, 9]);
+        // crackling arcs flung every way, mostly forward
+        for (let i = 0; i < 18; i++) {
+          const sp = rand(18, 42);
+          const f = rand(0.2, 1);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z,
+            vx: dir.x * sp * f + rand(-1, 1) * sp * 0.6 + carry.x, vy: rand(-0.5, 1) * sp * 0.4, vz: dir.z * sp * f + rand(-1, 1) * sp * 0.6 + carry.z,
+            life: rand(0.12, 0.3), size: rand(0.18, 0.3), sizeEnd: 0.05, color: [7, 7, 14], colorEnd: [3, 1.5, 9], drag: 8, kind: 2, fadeIn: 0.001,
+          }, true);
+        }
+        // a flat violet shock ring racing out over the water
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * Math.PI * 2;
+          this.emit({
+            x: pos.x + dir.x * 1.5, y: pos.y - 0.3, z: pos.z + dir.z * 1.5, vx: Math.cos(a) * 15 + carry.x, vy: 0, vz: Math.sin(a) * 15 + carry.z,
+            life: 0.32, size: 0.9, sizeEnd: 1.8, color: [2.2, 1.8, 5.5], colorEnd: [0.6, 0.4, 2.2], drag: 3.2, kind: 0, fadeIn: 0.001,
+          }, true);
+        }
+        this.smoke(pos, dir, carry, { tint: [1.02, 1.0, 1.1], jet: 7, bank: 3, wisps: 0 });
+        break;
+      }
+      default:
+        this.flash(pos, 2.6, [9, 6, 2.6], [4, 1.4, 0.3]);
+        this.sparks(pos, dir, carry, 5, [6, 3.2, 1.0], [2, 0.5, 0.1]);
+        this.smoke(pos, dir, carry, {});
+    }
+  }
+
+  private flash(pos: THREE.Vector3, size: number, c0: [number, number, number], c1: [number, number, number]) {
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.12, size, sizeEnd: size * 1.6, color: c0, colorEnd: c1, kind: 0, fadeIn: 0.001 }, true);
+  }
+
+  private sparks(pos: THREE.Vector3, dir: THREE.Vector3, carry: THREE.Vector3, n: number, c0: [number, number, number], c1: [number, number, number], kind = 0) {
+    for (let i = 0; i < n; i++) {
       const sp = rand(10, 22);
       this.emit({
         x: pos.x, y: pos.y, z: pos.z,
         vx: dir.x * sp + rand(-2, 2) + carry.x, vy: dir.y * sp + rand(-1, 2), vz: dir.z * sp + rand(-2, 2) + carry.z,
-        life: rand(0.1, 0.22), size: rand(0.8, 1.6), sizeEnd: 0.3, color: [6, 3.2, 1.0], colorEnd: [2, 0.5, 0.1], drag: 6, kind: 0, fadeIn: 0.001,
+        life: rand(0.1, 0.22), size: kind === 2 ? rand(0.2, 0.32) : rand(0.8, 1.6), sizeEnd: kind === 2 ? 0.05 : 0.3, color: c0, colorEnd: c1, drag: 6, kind, fadeIn: 0.001,
       }, true);
     }
-    // billowing smoke: a fast dense jet that rolls out along the barrel...
+  }
+
+  /** Glowing embers that arc out and fall to the sea. */
+  private embers(pos: THREE.Vector3, dir: THREE.Vector3, carry: THREE.Vector3, n: number, reach: number) {
+    for (let i = 0; i < n; i++) {
+      const sp = rand(5, 15) * reach;
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z,
+        vx: dir.x * sp + rand(-3, 3) + carry.x, vy: rand(2, 9), vz: dir.z * sp + rand(-3, 3) + carry.z,
+        life: rand(1.0, 2.2), size: rand(0.14, 0.28), sizeEnd: 0.05, color: [7, 3.2, 0.7], colorEnd: [2.4, 0.4, 0.04], grav: 8, drag: 0.7, kind: 2, fadeIn: 0.01,
+      }, true);
+    }
+  }
+
+  /**
+   * The three layers of gun smoke: a fast dense jet out along the barrel, a
+   * slow bank that hangs by the gunport, and dark powder wisps from the flash.
+   */
+  private smoke(pos: THREE.Vector3, dir: THREE.Vector3, carry: THREE.Vector3, o: { tint?: [number, number, number]; jet?: number; bank?: number; wisps?: number; alpha?: number }) {
+    const [tr, tg, tb] = o.tint ?? [1, 1, 1];
+    const al = o.alpha ?? 1;
     const rain = globalUniforms.uRain.value;
     const thin = 1 - rain * 0.3; // rain knocks the smoke down sooner
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < (o.jet ?? 8); i++) {
       const sp = rand(5, 16);
       const g = rand(0.74, 0.9);
       this.emit({
         x: pos.x + dir.x * 0.6, y: pos.y, z: pos.z + dir.z * 0.6,
         vx: dir.x * sp + rand(-1.4, 1.4) + carry.x * 0.6, vy: rand(0.1, 1.4), vz: dir.z * sp + rand(-1.4, 1.4) + carry.z * 0.6,
-        life: rand(2.4, 4.0) * thin, size: rand(1.0, 1.7), sizeEnd: rand(5.5, 8.5), color: [g * 1.1, g * 1.08, g * 1.05], colorEnd: [g * 1.02, g * 1.02, g * 1.04],
-        alpha: rand(0.5, 0.72), drag: 2.0, grav: -0.3, spin: rand(-0.35, 0.35), kind: 1, fadeIn: 0.04,
+        life: rand(2.4, 4.0) * thin, size: rand(1.0, 1.7), sizeEnd: rand(5.5, 8.5), color: [g * 1.1 * tr, g * 1.08 * tg, g * 1.05 * tb], colorEnd: [g * 1.02 * tr, g * 1.02 * tg, g * 1.04 * tb],
+        alpha: Math.min(1, rand(0.5, 0.72) * al), drag: 2.0, grav: -0.3, spin: rand(-0.35, 0.35), kind: 1, fadeIn: 0.04,
       });
     }
-    // ...a slow bank that hangs by the gunport and spreads wide on the breeze...
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < (o.bank ?? 4); i++) {
       const sp = rand(1.5, 4);
       const g = rand(0.82, 0.95);
       this.emit({
         x: pos.x + dir.x * 1.2 + rand(-0.6, 0.6), y: pos.y + rand(-0.2, 0.5), z: pos.z + dir.z * 1.2 + rand(-0.6, 0.6),
         vx: dir.x * sp + carry.x * 0.8, vy: rand(0.3, 0.9), vz: dir.z * sp + carry.z * 0.8,
-        life: rand(4.5, 6.5) * thin, size: rand(2.2, 3.2), sizeEnd: rand(9, 13), color: [g, g, g * 1.02], colorEnd: [g * 1.04, g * 1.04, g * 1.07],
-        alpha: rand(0.28, 0.4), drag: 1.2, grav: -0.18, spin: rand(-0.15, 0.15), kind: 1, fadeIn: 0.25,
+        life: rand(4.5, 6.5) * thin, size: rand(2.2, 3.2), sizeEnd: rand(9, 13), color: [g * tr, g * tg, g * 1.02 * tb], colorEnd: [g * 1.04 * tr, g * 1.04 * tg, g * 1.07 * tb],
+        alpha: Math.min(1, rand(0.28, 0.4) * al), drag: 1.2, grav: -0.18, spin: rand(-0.15, 0.15), kind: 1, fadeIn: 0.25,
       });
     }
-    // ...and dark powder wisps flung out of the flash
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (o.wisps ?? 3); i++) {
       const sp = rand(14, 24);
       this.emit({
         x: pos.x, y: pos.y, z: pos.z,
@@ -519,12 +706,56 @@ export class Particles {
     }
   }
 
-  /** Thin powder wake left hanging where a ball has passed; it curls away on the wind. */
-  trail(pos: THREE.Vector3, young: number) {
-    this.emit({
-      x: pos.x + rand(-0.08, 0.08), y: pos.y + rand(-0.08, 0.08), z: pos.z + rand(-0.08, 0.08), vy: 0.25,
-      life: rand(1.1, 1.6), size: 0.3, sizeEnd: rand(1.4, 2.0), color: [0.95, 0.94, 0.93], alpha: 0.16 + young * 0.18, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05,
-    });
+  /** What a ball leaves hanging behind it, in the look of a vault shot trail. Called every few hundredths of a second. */
+  trail(pos: THREE.Vector3, young: number, style = 'powder', vel?: THREE.Vector3) {
+    const j = () => rand(-0.08, 0.08);
+    switch (style) {
+      case 'spray':
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.2, life: rand(0.7, 1.0), size: 0.25, sizeEnd: rand(1.0, 1.4), color: [1.15, 1.2, 1.24], alpha: 0.14 + young * 0.12, drag: 1, kind: 1, fadeIn: 0.04 });
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vx: rand(-1, 1), vy: rand(0, 1.5), vz: rand(-1, 1), life: rand(0.4, 0.7), size: rand(0.08, 0.14), sizeEnd: 0.05, color: [1.4, 1.5, 1.55], alpha: 0.85, grav: 9, kind: 0, fadeIn: 0.01 });
+        break;
+      case 'soot':
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.3, life: rand(1.6, 2.3), size: 0.4, sizeEnd: rand(2.0, 2.8), color: [0.32, 0.3, 0.29], colorEnd: [0.5, 0.48, 0.47], alpha: 0.26 + young * 0.18, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05 });
+        break;
+      case 'ember':
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vx: rand(-0.8, 0.8), vy: rand(-0.5, 1.2), vz: rand(-0.8, 0.8), life: rand(0.5, 1.0), size: rand(0.14, 0.24), sizeEnd: 0.04, color: [7, 3, 0.6], colorEnd: [2, 0.3, 0.02], grav: 5, drag: 0.6, kind: 2, fadeIn: 0.01 }, true);
+        if (Math.random() < 0.5) this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.3, life: rand(0.9, 1.3), size: 0.3, sizeEnd: 1.4, color: [0.7, 0.62, 0.56], alpha: 0.12, drag: 1, kind: 1, fadeIn: 0.05 });
+        break;
+      case 'frost':
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.15, life: rand(1.0, 1.5), size: 0.3, sizeEnd: rand(1.3, 1.8), color: [0.9, 1.05, 1.25], alpha: 0.2 + young * 0.14, drag: 1, spin: rand(-0.4, 0.4), kind: 1, fadeIn: 0.05 });
+        if (Math.random() < 0.7) this.emit({ x: pos.x + j() * 3, y: pos.y + j() * 3, z: pos.z + j() * 3, vx: rand(-0.4, 0.4), vy: rand(-0.6, 0.2), vz: rand(-0.4, 0.4), life: rand(0.6, 1.1), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [3, 5, 7], colorEnd: [1, 2.4, 4], kind: 2, fadeIn: 0.05 }, true);
+        break;
+      case 'comet':
+        this.emit({ x: pos.x, y: pos.y, z: pos.z, life: rand(0.4, 0.6), size: 0.6, sizeEnd: 0.12, color: [6, 4, 1.2], colorEnd: [2, 0.8, 0.1], kind: 0, fadeIn: 0.001 }, true);
+        if (Math.random() < 0.6) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.6, 0.6), vy: rand(-0.4, 0.6), vz: rand(-0.6, 0.6), life: rand(0.7, 1.2), size: rand(0.14, 0.24), sizeEnd: 0.03, color: [7, 5, 1.6], colorEnd: [3, 1.4, 0.2], grav: 1.5, kind: 2, fadeIn: 0.01 }, true);
+        this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.2, life: rand(1.0, 1.4), size: 0.3, sizeEnd: 1.5, color: [1.15, 1.05, 0.9], alpha: 0.1 + young * 0.1, drag: 1, kind: 1, fadeIn: 0.05 });
+        break;
+      case 'ghost': {
+        const ph = performance.now() * 0.006;
+        this.emit({ x: pos.x + Math.sin(ph) * 0.2, y: pos.y + Math.cos(ph * 1.3) * 0.2, z: pos.z, vx: rand(-0.4, 0.4), vy: rand(0.4, 1.2), vz: rand(-0.4, 0.4), life: rand(0.6, 1.0), size: 0.45, sizeEnd: 1.3, color: [1.5, 5, 3], colorEnd: [0.15, 1.1, 0.6], spin: rand(-1, 1), kind: 0, fadeIn: 0.05 }, true);
+        if (Math.random() < 0.4) this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.3, life: rand(1.0, 1.4), size: 0.3, sizeEnd: 1.6, color: [0.75, 1.0, 0.88], alpha: 0.12, drag: 1, kind: 1, fadeIn: 0.05 });
+        break;
+      }
+      case 'rainbow': {
+        const h = (performance.now() * 0.0007) % 1;
+        const [r, g, b] = hue(h + rand(-0.04, 0.04));
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), life: rand(0.5, 0.8), size: 0.42, sizeEnd: 0.1, color: [r * 4, g * 4, b * 4], colorEnd: [r * 1.2, g * 1.2, b * 1.2], kind: 0, fadeIn: 0.001 }, true);
+        if (Math.random() < 0.7) {
+          const [r2, g2, b2] = hue(Math.random());
+          this.emit({ x: pos.x + j() * 3, y: pos.y + j() * 3, z: pos.z + j() * 3, vx: rand(-0.8, 0.8), vy: rand(-0.3, 0.9), vz: rand(-0.8, 0.8), life: rand(0.7, 1.3), size: rand(0.14, 0.24), sizeEnd: 0.03, color: [r2 * 5, g2 * 5, b2 * 5], colorEnd: [r2, g2, b2], grav: 1, kind: 2, fadeIn: 0.01 }, true);
+        }
+        break;
+      }
+      case 'starfall':
+        this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.3, 0.3) - (vel?.x ?? 0) * 0.02, vy: rand(-0.4, 0.2), vz: rand(-0.3, 0.3) - (vel?.z ?? 0) * 0.02, life: rand(1.3, 2.2), size: rand(0.2, 0.34), sizeEnd: 0.06, color: Math.random() < 0.5 ? [6, 6, 7.5] : [4.5, 3.2, 8], colorEnd: [1.6, 1.2, 3], grav: 0.5, drag: 1, kind: 2, fadeIn: 0.02 }, true);
+        if (Math.random() < 0.5) this.emit({ x: pos.x, y: pos.y, z: pos.z, life: rand(0.3, 0.5), size: 0.5, sizeEnd: 0.1, color: [3, 2.6, 5.5], colorEnd: [0.8, 0.5, 2], kind: 0, fadeIn: 0.001 }, true);
+        break;
+      default:
+        this.emit({
+          x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.25,
+          life: rand(1.1, 1.6), size: 0.3, sizeEnd: rand(1.4, 2.0), color: [0.95, 0.94, 0.93], alpha: 0.16 + young * 0.18, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05,
+        });
+    }
   }
 
   sparkle(pos: THREE.Vector3, tint?: [number, number, number], scale = 1) {

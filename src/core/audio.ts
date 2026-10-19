@@ -801,6 +801,84 @@ export class Audio {
     o.stop(t + 1);
   }
 
+  /** The vault chest straining at its lock: a low knock and a rising shimmer, brighter for each rarity. */
+  vaultRumble(level: number) {
+    const v = this.voice(0.22 + level * 0.05, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 180 + level * 60;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.9, t + 0.05);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+    n.connect(lp).connect(ng).connect(out);
+    n.start(t, Math.random() * 2);
+    n.stop(t + 0.8);
+    const base = [392, 523.25, 659.25, 783.99][level] ?? 392;
+    [1, 1.5, 2].forEach((m, i) => {
+      const o = ctx.createOscillator();
+      o.type = level >= 2 ? 'triangle' : 'sine';
+      o.frequency.setValueAtTime(base * m * 0.94, t + i * 0.06);
+      o.frequency.exponentialRampToValueAtTime(base * m, t + i * 0.06 + 0.25);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t + i * 0.06);
+      g.gain.linearRampToValueAtTime(0.18, t + i * 0.06 + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.7);
+      o.connect(g).connect(out);
+      o.start(t + i * 0.06);
+      o.stop(t + i * 0.06 + 0.75);
+    });
+  }
+
+  /** The lid bursts open: a whoosh and a chord that swells with the best find inside. */
+  vaultBurst(tier: number) {
+    const v = this.voice(0.3, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(300, t);
+    bp.frequency.exponentialRampToValueAtTime(3200, t + 0.35);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.7, t + 0.08);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t, Math.random() * 2);
+    n.stop(t + 1);
+    this.treasure(Math.min(4, tier + 1));
+  }
+
+  /** A card turning over. */
+  cardFlip(tier: number) {
+    const v = this.voice(0.16, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2400;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.6, t + 0.02);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    n.connect(hp).connect(ng).connect(out);
+    n.start(t, Math.random() * 2);
+    n.stop(t + 0.2);
+    if (tier >= 1) this.treasure(tier + 1);
+  }
+
   click() {
     const v = this.voice(0.12, 0);
     if (!v) return;
