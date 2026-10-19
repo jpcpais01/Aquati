@@ -396,8 +396,8 @@ export class ShipDamage {
     const m = this.masts[mast];
     m.hp -= 0.36;
     world.particles.woodHit(at, _v.copy(ballVel).setY(0).normalize());
-    const [vol, pan] = world.soundAt(at);
-    world.audio.hit(vol, pan);
+    const [vol, pan, d] = world.soundAt(at);
+    world.audio.hit(vol, pan, d);
     if (m.hp <= 0) {
       const s = this.ship;
       const lv = ballVel.clone().applyQuaternion(s.model.root.getWorldQuaternion(_q).invert());
@@ -543,8 +543,8 @@ export class ShipDamage {
   private crack(hinge: THREE.Group, world: World) {
     const wp = hinge.getWorldPosition(new THREE.Vector3());
     world.particles.woodHit(wp, _v.set(rand(-1, 1), 0.5, rand(-1, 1)).normalize());
-    const [vol, pan] = world.soundAt(wp);
-    world.audio.hit(Math.min(1, vol * 1.4), pan);
+    const [vol, pan, d] = world.soundAt(wp);
+    world.audio.hit(Math.min(1, vol * 1.4), pan, d);
   }
 
   private swapGeometry(obj: THREE.Mesh | THREE.LineSegments, g: THREE.BufferGeometry) {

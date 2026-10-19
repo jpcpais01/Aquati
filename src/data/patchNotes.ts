@@ -31,6 +31,15 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Pirate health bars and island toasts have been restyled to match.',
         ],
       },
+      {
+        title: 'Natural cannonball impacts, calmer seas',
+        notes: [
+          'Balls striking a hull now land with a heavy oak thunk, the crack of planks giving way and a burst of snapping splinters, then chunks clattering onto the deck. The odd ringing, xylophone-like tones are gone.',
+          'Shots into the sea hit with a hard slap and a deep underwater whump, the column of water hisses up and then showers back down in a long patter of spray. No more chirpy bubbles.',
+          'Shots into beaches thud dully and scatter sand, and the debris raining down after a ship explodes sounds like real splinters and wreckage.',
+          'The background wind and surf are much quieter now, so the sea sets the mood without drowning out the guns and music.',
+        ],
+      },
     ],
   },
   {
