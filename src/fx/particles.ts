@@ -44,10 +44,12 @@ class Pool {
   private aPos: Float32Array;
   private aCol: Float32Array;
   private aMisc: Float32Array;
+  private aVel: Float32Array;
   private geo: THREE.InstancedBufferGeometry;
   private attrPos: THREE.InstancedBufferAttribute;
   private attrCol: THREE.InstancedBufferAttribute;
   private attrMisc: THREE.InstancedBufferAttribute;
+  private attrVel: THREE.InstancedBufferAttribute;
 
   constructor(private cap: number, additive: boolean, uniforms: Record<string, THREE.IUniform>) {
     for (let i = 0; i < cap; i++) {
@@ -56,6 +58,7 @@ class Pool {
     this.aPos = new Float32Array(cap * 3);
     this.aCol = new Float32Array(cap * 4);
     this.aMisc = new Float32Array(cap * 4);
+    this.aVel = new Float32Array(cap * 3);
     this.geo = new THREE.InstancedBufferGeometry();
     const quad = new THREE.PlaneGeometry(1, 1);
     this.geo.index = quad.index;
@@ -66,6 +69,8 @@ class Pool {
     this.geo.setAttribute('aPos', this.attrPos);
     this.geo.setAttribute('aCol', this.attrCol);
     this.geo.setAttribute('aMisc', this.attrMisc);
+    this.attrVel = new THREE.InstancedBufferAttribute(this.aVel, 3).setUsage(THREE.DynamicDrawUsage);
+    this.geo.setAttribute('aVel', this.attrVel);
     this.geo.instanceCount = 0;
     const mat = new THREE.ShaderMaterial({
       uniforms,
@@ -78,14 +83,30 @@ class Pool {
       vertexShader: /* glsl */ `
         uniform vec3 uSunDir;
         attribute vec3 aPos; attribute vec4 aCol; attribute vec4 aMisc; // size, rot, kind + age, seed
-        varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
+        attribute vec3 aVel; // world velocity incl. the breeze (smoke only)
+        varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying vec2 vNuv; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
         varying vec3 vSunV; varying vec3 vViewDir;
         void main() {
           vCol = aCol; vUv = position.xy * 2.0; vKind = floor(aMisc.z); vAge = fract(aMisc.z); vSeed = aMisc.w;
           vec4 mv = viewMatrix * vec4(aPos, 1.0);
           float c = cos(aMisc.y), s = sin(aMisc.y);
           vec2 q = position.xy * aMisc.x;
-          vec2 qr = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+          vec2 qr;
+          if (vKind > 0.5 && vKind < 1.5) {
+            // smoke shears out along its motion on screen: the jet streams, the drift smears downwind
+            vec2 v2 = (viewMatrix * vec4(aVel, 0.0)).xy;
+            float sp = length(v2);
+            vec2 ax = sp > 1e-3 ? v2 / sp : vec2(1.0, 0.0);
+            float st = 1.0 + min(sp * 0.16, 1.5);
+            vec2 sq = vec2(q.x * st, q.y / sqrt(st));
+            qr = ax * sq.x + vec2(-ax.y, ax.x) * sq.y;
+            // the noise pattern spins on its own and is dragged along the flow, so wisps peel off downstream
+            vec2 u = position.xy * 2.0;
+            vNuv = vec2(c * u.x - s * u.y, s * u.x + c * u.y) * vec2(1.0, 1.0 + (st - 1.0) * 0.6) - vec2(vAge * 0.35 * st, 0.0);
+          } else {
+            qr = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+            vNuv = position.xy * 2.0;
+          }
           vUvV = qr / max(aMisc.x, 1e-4) * 2.0; // billboard uv in view space, for the puff's fake normal
           mv.xy += qr;
           vViewZ = -mv.z;
@@ -97,7 +118,7 @@ class Pool {
         uniform sampler2D uNoiseTex; uniform sampler2D uSceneDepth; uniform vec2 uResolution; uniform vec2 uCamNearFar;
         uniform vec3 uLight; uniform float uFlash; uniform vec3 uSunColor; uniform vec3 uHaze; uniform float uCloudCover;
         uniform vec3 uFogColor; uniform vec2 uFogRange; uniform float uMist; uniform float uRain; uniform float uTime;
-        varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
+        varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying vec2 vNuv; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
         varying vec3 vSunV; varying vec3 vViewDir;
         float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
         void main() {
@@ -108,26 +129,37 @@ class Pool {
           if (vKind < 0.5) {
             a = pow(1.0 - r, 1.6);
           } else if (vKind < 1.5) {
-            // volumetric puff: two noise octaves that slowly churn and erode as the smoke ages
-            vec2 drift = vec2(uTime * 0.018, -uTime * 0.012);
-            vec2 nuv = vUv * 0.22 + vec2(vSeed, vSeed * 1.7) + drift;
-            float n1 = texture(uNoiseTex, nuv).g;
-            float n2 = texture(uNoiseTex, nuv * 2.7 - drift * 2.0).a;
-            float n = n1 * 0.68 + n2 * 0.32;
-            float body = (1.0 - r * r) * (0.5 + n * 1.0) - 0.14 - vAge * 0.22;
-            a = smoothstep(0.0, 0.5 - vAge * 0.18, body);
-            // fake sphere normal, dented by the noise, lit by the sun or moon
-            vec3 nrm = normalize(vec3(vUvV * 0.85 + (vec2(n1, n2) - 0.5) * 0.9, sqrt(max(1.0 - r * r, 0.0)) + 0.25));
-            float wrap = clamp(dot(nrm, vSunV) * 0.6 + 0.4, 0.0, 1.0);
-            float shade = 1.0 - (1.0 - wrap) * (0.55 - vAge * 0.25); // young dense smoke shows deeper shadow
+            // real smoke, not a ball: domain-warped fbm eroded by age into torn wisps and filaments.
+            // Young smoke is dense and billowy (worley cauliflower), old smoke thins into curling strands.
+            vec2 drift = vec2(uTime * 0.021, -uTime * 0.014);
+            vec2 base = vNuv * 0.2 + vec2(vSeed * 3.1, vSeed * 5.3);
+            vec2 warp = texture(uNoiseTex, base * 0.6 + drift).rg - 0.5;
+            vec2 wuv = base + warp * (0.28 + vAge * 0.35);
+            float n1 = texture(uNoiseTex, wuv).g;
+            float n2 = texture(uNoiseTex, wuv * 2.4 - drift * 1.7).a;
+            float cell = 1.0 - texture(uNoiseTex, wuv * 1.3 + drift).b;
+            float fbm = n1 * 0.6 + n2 * 0.4;
+            float billow = mix(cell * 0.55 + fbm * 0.45, fbm, smoothstep(0.0, 0.45, vAge));
+            billow = clamp((billow - 0.5) * 2.4 + 0.5, 0.0, 1.0); // the baked fbm hugs 0.5: stretch its contrast
+            float ridge = clamp(1.0 - abs(n2 - 0.5) * 5.0, 0.0, 1.0);
+            float fall = 1.0 - smoothstep(0.1, 1.0, r);
+            float dens = billow * fall * 2.3 - (0.32 + vAge * 0.38);
+            a = smoothstep(0.0, 0.3 + (1.0 - vAge) * 0.25, dens);
+            a *= mix(1.0, 0.35 + ridge * 0.9, vAge * 0.8); // ageing smoke frays into strands
+            float thick = clamp(dens * 2.2, 0.0, 1.0);
+            // soft normal from the noise relief (a little of the dome so it still turns to the light)
+            vec3 nrm = normalize(vec3(vUvV * 0.35 + (vec2(n1, cell) - 0.5) * 1.6, 0.75));
+            float wrap = clamp(dot(nrm, vSunV) * 0.55 + 0.45, 0.0, 1.0);
+            float shade = 1.0 - (1.0 - wrap) * (0.5 - vAge * 0.25);
+            shade *= 1.0 - thick * (0.3 - vAge * 0.2); // dense cores absorb light
             float open = 1.0 - uCloudCover * 0.65;
-            vec3 sun = uSunColor * 0.16 * wrap * open;
+            vec3 sun = uSunColor * 0.15 * wrap * open;
             // silver lining: thin edges glow when you look toward the light
             float back = max(dot(-vViewDir, -vSunV), 0.0);
             float fwd = back * back; fwd *= fwd;
-            vec3 rim = uSunColor * uHaze * (fwd * 0.55 * (1.0 - a * 0.7)) * open;
-            float sky = 0.82 + nrm.y * 0.18; // brighter on top, from the sky dome
-            lit = lit * (0.66 * shade * sky) + sun + rim;
+            vec3 rim = uSunColor * uHaze * (fwd * 0.6 * (1.0 - thick * 0.8)) * open;
+            float sky = 0.84 + nrm.y * 0.16; // brighter on top, from the sky dome
+            lit = lit * (0.68 * shade * sky) + sun + rim;
           } else if (vKind < 2.5) {
             a = pow(max(1.0 - r, 0.0), 3.0) * 1.6;
           } else {
@@ -181,6 +213,7 @@ class Pool {
     const P = this.aPos;
     const Cc = this.aCol;
     const M = this.aMisc;
+    const V = this.aVel;
     for (let i = 0; i < this.cap; i++) {
       const p = this.ps[i];
       if (p.life >= p.max) continue;
@@ -190,12 +223,15 @@ class Pool {
       p.vx *= k; p.vy *= k; p.vz *= k;
       p.vy -= p.grav * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      let ex = p.vx, ey = p.vy, ez = p.vz;
       if (p.kind === 1) {
         // smoke rides the breeze once its own push dies down, with a lazy curl
-        const ride = Math.min(1, p.life * 1.5) * windDt;
+        const rideK = Math.min(1, p.life * 1.5);
+        const ride = rideK * windDt;
         const ph = p.rot * 3.1 + p.life * 0.9;
         p.x += windX * ride + Math.sin(ph) * 0.25 * dt;
         p.z += windZ * ride + Math.cos(ph * 1.3) * 0.25 * dt;
+        ex += windX * rideK; ez += windZ * rideK;
       }
       p.rot += p.spin * dt;
       const t = p.life / p.max;
@@ -210,6 +246,7 @@ class Pool {
       M[n * 4 + 1] = p.rot;
       M[n * 4 + 2] = p.kind + t * 0.99;
       M[n * 4 + 3] = (i * 0.618) % 1;
+      V[n * 3] = ex; V[n * 3 + 1] = ey; V[n * 3 + 2] = ez;
       n++;
     }
     this.geo.instanceCount = n;
@@ -223,6 +260,9 @@ class Pool {
       this.attrMisc.clearUpdateRanges();
       this.attrMisc.addUpdateRange(0, n * 4);
       this.attrMisc.needsUpdate = true;
+      this.attrVel.clearUpdateRanges();
+      this.attrVel.addUpdateRange(0, n * 3);
+      this.attrVel.needsUpdate = true;
     }
   }
 }
