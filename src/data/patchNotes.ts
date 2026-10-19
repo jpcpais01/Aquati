@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T16:20Z',
+    entries: [
+      {
+        title: 'Version number on the menu',
+        notes: [
+          'The game version and build now sit right next to the patch notes button, so you can tell at a glance which update you are playing.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T16:00Z',
     entries: [
       {

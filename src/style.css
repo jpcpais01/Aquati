@@ -558,6 +558,28 @@ kbd {
   animation: rise 0.9s 0.15s var(--ease) both;
 }
 
+.build-tag {
+  align-self: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: var(--glass-2);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  color: var(--ink-3);
+  font: 600 11px var(--sans);
+  letter-spacing: 0.04em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.build-tag em {
+  font-style: normal;
+  opacity: 0.6;
+  margin-left: 5px;
+}
+
 .tool {
   position: relative;
   display: grid;
