@@ -26,6 +26,20 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Shadows that sweep with the sun',
+        notes: [
+          'As the day passes, shadows now glide smoothly round with the sun instead of creeping along in tiny steps, from long morning shadows to short noon ones and back out at dusk.',
+          'They stay perfectly still and crisp while you sail, zoom and pan, so the extra smoothness costs no shimmer.',
+        ],
+      },
+      {
+        title: 'Refresh always brings the newest build',
+        notes: [
+          'A normal refresh could load an older copy of the game saved on your device, sometimes from before the rename. The game now always fetches the latest version when you are online, and only falls back to the saved copy when you are offline.',
+          'Already installed? Open the game once more and it switches over by itself.',
+        ],
+      },
+      {
         title: 'No more shimmering in motion',
         notes: [
           'Shadows no longer crawl and sparkle while you sail or pan the camera. The soft edges of every shadow are now fixed to the world instead of the screen, so islands, decks and sails stay calm and solid in motion, most of all when zoomed out.',

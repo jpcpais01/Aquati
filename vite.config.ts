@@ -26,6 +26,9 @@ export default defineConfig({
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',
+      // Registered by hand in main.ts: pages are network-first, so a new worker
+      // taking over never needs to reload a page that is already current.
+      injectRegister: false,
       includeAssets: ['favicon.ico', 'icons/icon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
         name: 'Shores of Fortune',
@@ -50,6 +53,24 @@ export default defineConfig({
         globIgnores: ['**/*-latin-ext-*'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
+        // Never answer a page load from the precache first: that is what made a
+        // plain refresh show an old build. Fetch the page fresh, and fall back to
+        // the last copy (or the precached shell) only when offline or too slow.
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 4 },
+              precacheFallback: { fallbackURL: 'index.html' },
+            },
+          },
+        ],
       },
     }),
   ],
