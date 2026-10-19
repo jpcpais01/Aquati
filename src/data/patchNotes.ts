@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'Choose the time of day',
+        notes: [
+          'Tap the clock beside the minimap to cycle Auto, Dawn, Noon, Golden hour, Dusk and Night. The sun sweeps across the sky to your chosen hour and stays there.',
+          'Auto lets the day run again, and your choice is remembered next time you sail. Tap the weather icon to change the weather as before.',
+        ],
+      },
+      {
         title: 'Even lighter on your machine',
         notes: [
           'A second big performance pass, again without changing how the game looks. A typical view out at sea now draws well under half a million triangles, down from over a million.',
