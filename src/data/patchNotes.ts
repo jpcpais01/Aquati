@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T12:00Z',
     entries: [
       {
+        title: 'Airier wind wisps',
+        notes: [
+          'The white wind wisps are now long, fine threads of air that streak past twice as fast, with lazier, sweeping curves and wider loops. There are more of them inside a gust.',
+        ],
+      },
+      {
         title: 'Unroll the sea chart',
         notes: [
           'Tap or click the minimap, or press M, to open a full chart of the whole archipelago. Drag to pan, scroll or pinch to zoom, and tap the ring button to centre on your ship.',
