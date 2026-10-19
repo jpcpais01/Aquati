@@ -13,8 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    // the 13:00 group below is full (five entries), so this hour continues here
-    hour: '2026-10-19T13:00Z',
+    hour: '2026-10-19T14:00Z',
     entries: [
       {
         title: 'Ray-traced light and a Graphics menu',
@@ -24,6 +23,21 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Shadows are now soft the way real sunlight makes them: sharp at the foot of a mast or palm, softening the further they fall.',
           'New Graphics menu, in the harbour and in the pause menu. Pick Auto, Low, Medium, High or Ultra, or tune each effect yourself: reflections, contact shadows, ambient occlusion, bounce light, shadow detail, soft shadows, resolution, anti-aliasing, bloom and tilt-shift. Every change shows live on the sea behind the menu, with a frame-rate readout, and your choice is remembered.',
           'Auto stays the default: it picks a level for your device, trades resolution for a steady frame, and if that is still not enough it gently turns effects down.',
+        ],
+      },
+    ],
+  },
+  {
+    // the 13:00 group below is full (five entries), so this hour continues here
+    hour: '2026-10-19T13:00Z',
+    entries: [
+      {
+        title: 'Aiming you can read at a glance',
+        notes: [
+          'Your guns now show exactly where they can fire: two arcs painted on the sea off either beam, rising and falling with the swell. They fill outward in teal while the crews reload and turn gold the moment the guns are run out, with a knock from the gun deck and a glint on that side\'s button.',
+          'Bring a foe into a gold arc and the guns lock on: chevrons stream toward her, a reticle snaps square around her hull, a gold line marks the range and a pip shows where the shot will land. If she is just outside, the edge you need to turn across glows.',
+          'Your gunners now allow for your own ship\'s speed as well as the enemy\'s, so broadsides in a running fight no longer sail past the bow, and they can train a little further fore and aft.',
+          'With a mouse, point into either side to see that arc, and click to fire it: at the foe in it, or wherever you point. On touch, the side the Fire button will shoot is outlined, and Fire glows when a foe is locked and loaded.',
         ],
       },
       {
