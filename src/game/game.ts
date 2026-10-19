@@ -12,6 +12,7 @@ import { warmDraw } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
+import { ReefLife } from '../fx/fish';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Rain } from '../fx/rain';
@@ -144,6 +145,7 @@ export class Game {
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
   private birds!: Birds;
+  private reef!: ReefLife;
   private windField!: WindField;
   private wisps!: WindWisps;
   private atmos = new Atmosphere();
@@ -363,6 +365,8 @@ export class Game {
     }
     this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.birds.mesh);
+    this.reef = new ReefLife(this.terrain, q.tier === 0);
+    this.opaque.add(this.reef.group);
     ui.progress(0.75);
     await nextFrame();
 
@@ -376,6 +380,7 @@ export class Game {
     buildShore(this.terrain);
     this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
     this.particles = new Particles(q.particles);
+    this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     // the vault's chest and its light: built now so the warm-up draws them
     this.vstage = new VaultStage(this.particles.uniforms);
@@ -2289,6 +2294,9 @@ export class Game {
     P.end();
     P.begin('Birds', 'fx');
     this.birds.update(dt, w, this.ships);
+    P.end();
+    P.begin('Reef fish', 'fx');
+    this.reef.update(dt, w, this.ships, this.rig.camera);
     P.end();
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');

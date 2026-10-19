@@ -20,6 +20,15 @@ export const PATCH_NOTES: PatchGroup[] = [
         notes: ['Every captain gets a one-time gift of 10,000 gold. It lands in your purse the next time you set sail. Spend it in the Treasure Vault or wherever you please.'],
       },
       {
+        title: 'Life on the reefs',
+        notes: [
+          'The shallows around every island now teem with fish. Shoals of blue tangs, yellow tangs, clownfish, striped sergeant majors and pink-striped wrasse wander the turquoise flats, and each island has a great glittering bait ball of silversides.',
+          'They swim like real fish. Tails beat, bodies curl into their turns, and schools flow along the reef, keeping to the shallows. When your hull glides over them they part around the bow, and a cannonball landing nearby makes the whole school flash apart before it drifts back together. Broadsides send them darting too.',
+          'Bigger creatures cruise alone: mottled groupers and parrotfish along the bottom, spotted eagle rays gliding over the sand on slow wingbeats, and sea turtles that paddle about and now and then rise to the surface for a breath.',
+          'Sail close and zoom in to see them best. They sit under the water properly, tinted by its depth and lit by the dancing sun caustics, and the big ones cast shadows on the seabed.',
+        ],
+      },
+      {
         title: 'No more stripes on sails and underwater',
         notes: [
           'Fixed the faint horizontal lines that could streak across sails, island slopes and the whole screen while following a sinking ship underwater. The fine contact shadows were misreading which way some surfaces faced on alternate rows of pixels; they now read every surface correctly and keep their crisp shadows under crew, guns and rigging.',
