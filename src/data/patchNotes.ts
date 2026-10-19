@@ -16,6 +16,10 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T19:00Z',
     entries: [
       {
+        title: 'A gift of 10,000 gold',
+        notes: ['Every captain gets a one-time gift of 10,000 gold. It lands in your purse the next time you set sail. Spend it in the Treasure Vault or wherever you please.'],
+      },
+      {
         title: 'No more stripes on sails and underwater',
         notes: [
           'Fixed the faint horizontal lines that could streak across sails, island slopes and the whole screen while following a sinking ship underwater. The fine contact shadows were misreading which way some surfaces faced on alternate rows of pixels; they now read every surface correctly and keep their crisp shadows under crew, guns and rigging.',
