@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mulberry32, Simplex2, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
+import { shadowOnly } from '../render/passCull';
 import { Terrain, Island } from './terrain';
 import {
   palmGeometry, broadleafGeometry, pineGeometry, bananaGeometry, fernGeometry, bushGeometry, flowerBushGeometry,
@@ -21,7 +22,9 @@ export { palmGeometry } from './flora';
 // cover shrinks away with distance in the vertex shader instead of popping.
 // Within a batch every plant is culled on its own: only those in view, or
 // whose shadow can reach the view, are packed to the front of the instance
-// buffer and drawn, in the main pass and the shadow pass alike.
+// buffer and drawn. Palms and broadleaf trees hand their shadow to a stand-in
+// with the very same fronds and puffs, just more coarsely cut: the detailed
+// mesh is only drawn where it is seen, the stand-in only into the shadow map.
 
 const TAU = Math.PI * 2;
 
@@ -362,9 +365,11 @@ export class Vegetation {
     const lo = 1;
     const palms = [palmGeometry(8.5, 1.6, 3), palmGeometry(10.5, 2.4, 7), palmGeometry(7, 0.9, 13)];
     const palmsLo = [palmGeometry(8.5, 1.6, 3, lo), palmGeometry(10.5, 2.4, 7, lo), palmGeometry(7, 0.9, 13, lo)];
+    const palmsSh = [palmGeometry(8.5, 1.6, 3, 0, true), palmGeometry(10.5, 2.4, 7, 0, true), palmGeometry(7, 0.9, 13, 0, true)];
     const treeSpec: [number, 'round' | 'tall' | 'flame' | 'blossom'][] = [[5, 'round'], [17, 'round'], [29, 'tall'], [41, 'flame'], [52, 'blossom'], [63, 'blossom']];
     const trees = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st));
     const treesLo = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, lo));
+    const treesSh = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, true));
     const pines = [pineGeometry(3), pineGeometry(8)];
     const pinesLo = [pineGeometry(3, lo), pineGeometry(8, lo)];
     const bananas = [bananaGeometry(2), bananaGeometry(9)];
@@ -412,6 +417,8 @@ export class Vegetation {
     type Tint = (t: number, c: THREE.Color) => void;
     interface Opts {
       lo?: THREE.BufferGeometry[];
+      /** a lighter shadow caster standing in for the near mesh */
+      shadow?: THREE.BufferGeometry[];
       tilt?: boolean;
       shadows?: boolean;
       always?: boolean;
@@ -463,12 +470,20 @@ export class Vegetation {
             tint(pl.tint, col);
             inst.setColorAt(k, col);
           });
-          inst.castShadow = o.shadows ?? true;
+          inst.castShadow = (o.shadows ?? true) && !o.shadow;
           inst.receiveShadow = true;
           inst.computeBoundingSphere();
           const mats = (inst.instanceMatrix.array as Float32Array).slice();
           (o.always ? f.always : f.near).add(inst);
           (o.always ? f.alwaysB : f.nearB).push(batch(inst, geos[v], mats, inst.castShadow));
+          if (o.shadow) {
+            const sh = shadowOnly(new THREE.InstancedMesh(o.shadow[v], mat, sub.length));
+            (sh.instanceMatrix.array as Float32Array).set(mats);
+            sh.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
+            sh.boundingSphere = inst.boundingSphere;
+            f.near.add(sh);
+            f.nearB.push(batch(sh, o.shadow[v], mats, true));
+          }
           if (o.lo) {
             // the far LOD plants the very same instances, culled on their own
             const far = new THREE.InstancedMesh(o.lo[v], mat, sub.length);
@@ -484,8 +499,8 @@ export class Vegetation {
       };
 
       const leafy: Tint = (t, c) => c.setRGB(0.88 + t * 0.24, 0.93 + t * 0.12, 0.84 + (1 - t) * 0.14);
-      add(L.palm, palms, palmMat, (t, c) => c.setRGB(0.9 + t * 0.2, 0.95 + t * 0.1, 0.85 + (1 - t) * 0.1), { lo: palmsLo });
-      add(L.tree, trees, treeMat, leafy, { lo: treesLo });
+      add(L.palm, palms, palmMat, (t, c) => c.setRGB(0.9 + t * 0.2, 0.95 + t * 0.1, 0.85 + (1 - t) * 0.1), { lo: palmsLo, shadow: palmsSh });
+      add(L.tree, trees, treeMat, leafy, { lo: treesLo, shadow: treesSh });
       add(L.pine, pines, treeMat, (t, c) => c.setRGB(0.9 + t * 0.15, 0.95 + t * 0.1, 0.95), { lo: pinesLo });
       add(L.banana, bananas, bananaMat, leafy, { lo: bananasLo });
       add(L.bush, bushes, bushMat, leafy, { lo: bushesLo });

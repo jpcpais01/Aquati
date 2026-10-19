@@ -24,6 +24,20 @@ export const PATCH_NOTES: PatchGroup[] = [
           'One tap on the scene hides the controls. The shutter saves a PNG at your screen\'s full resolution, or opens the share sheet on your phone. Leave and the sky and the voyage pick up exactly where they were.',
         ],
       },
+      {
+        title: 'Choose the time of day',
+        notes: [
+          'Tap the clock beside the minimap to cycle Auto, Dawn, Noon, Golden hour, Dusk and Night. The sun sweeps across the sky to your chosen hour and stays there.',
+          'Auto lets the day run again, and your choice is remembered next time you sail. Tap the weather icon to change the weather as before.',
+        ],
+      },
+      {
+        title: 'Even lighter on your machine',
+        notes: [
+          'A second big performance pass, again without changing how the game looks. A typical view out at sea now draws well under half a million triangles, down from over a million.',
+          'Sailors are only drawn with the hats, coats, beards and tools they actually wear, and crews out of sight are skipped. Only the patch of sea in front of the camera is drawn, palms and trees cast their shadows from lighter stand-ins, and water reflections do their tracing on a quarter-size picture of the scene.',
+        ],
+      },
     ],
   },
   {
