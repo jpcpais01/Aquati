@@ -16,6 +16,7 @@ import { WakeField } from '../world/wakeField';
 import { buildWaves } from '../world/waves';
 import { Ship } from '../ships/ship';
 import { PirateAI } from '../ships/ai';
+import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
@@ -23,7 +24,7 @@ import { Projectiles } from './projectiles';
 import { Loot, RARITY } from './loot';
 import { World } from './world';
 
-type State = 'loading' | 'menu' | 'playing' | 'paused' | 'map' | 'dead';
+type State = 'loading' | 'menu' | 'playing' | 'paused' | 'dead';
 
 const PIRATE_NAMES = [
   'Black Gull', 'Salt Widow', 'Crimson Tide', 'Grim Mariner', 'Sea Wraith', 'Rusty Anchor', 'Dread Marlin', 'Bone Siren',
@@ -59,6 +60,7 @@ export class Game {
   private preview: Ship | null = null;
   private state: State = 'loading';
   private discovered = new Set<string>();
+  private chartOpen = false;
   private voyageTime = 0;
   private spawnTimer = 0;
   private nameIdx = Math.floor(Math.random() * PIRATE_NAMES.length);
@@ -71,6 +73,7 @@ export class Game {
   private birds!: Birds;
   private windField!: WindField;
   private wisps!: WindWisps;
+  private crew!: CrewSystem;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -102,9 +105,17 @@ export class Game {
     this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group);
 
     this.wireUI();
+    // browsers only let sound start from a gesture (and on phones a touch only
+    // counts once it lifts), so any tap or key in the harbour wakes the theme
+    const wake = () => {
+      if (this.state !== 'menu' && this.state !== 'loading') return;
+      this.audio.start();
+      this.audio.setMusic(true);
+    };
+    for (const ev of ['pointerup', 'touchend', 'keydown'] as const) addEventListener(ev, wake, true);
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && (this.state === 'playing' || this.state === 'map')) {
+      if (document.hidden && this.state === 'playing') {
         this.setChart(false);
         this.setPaused(true);
       }
@@ -152,6 +163,8 @@ export class Game {
     this.world.gustAt = (x, z) => this.windField.at(x, z);
     this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
+    this.crew = new CrewSystem(q.tier);
+    this.opaque.add(this.crew.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = createEnvironment(this.renderer);
@@ -234,6 +247,11 @@ export class Game {
     this.rig.camera.updateProjectionMatrix();
     // tighter framing on portrait phones
     this.rig.zoom = clamp(this.rig.zoom, 0, 1);
+    this.frameMenu();
+  }
+
+  private frameMenu() {
+    this.rig.menuShift = this.state === 'menu' || this.state === 'loading' ? this.ui.menuFraming() : { x: 0, y: 0 };
   }
 
   // ------------------------------------------------------------------ ships
@@ -309,9 +327,11 @@ export class Game {
     this.input.enabled = false;
     this.ui.showHud(false);
     this.ui.showMenu(true);
+    this.audio.setMusic(true, true);
     this.rig.mode = 'orbit';
     this.setPreview(this.ui.selected);
     this.rig.snapTo(this.spawnPoint);
+    this.frameMenu();
     // a couple of pirates on the horizon for life
     if (!this.ships.some((s) => s.team === 'pirate')) {
       this.spawnPirate(this.spawnPoint, 160, 260);
@@ -322,6 +342,7 @@ export class Game {
   private startVoyage() {
     if (!this.preview) return;
     this.audio.start();
+    this.audio.setMusic(false);
     const p = this.preview;
     this.preview = null;
     p.anchored = false;
@@ -334,6 +355,7 @@ export class Game {
     this.ui.showMenu(false);
     this.ui.showHud(true);
     this.rig.mode = 'follow';
+    this.rig.menuShift = { x: 0, y: 0 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 6;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
@@ -344,6 +366,7 @@ export class Game {
     this.projectiles.clear();
     this.loot.clear();
     this.debris.clear();
+    this.crew.clear();
     this.player = null;
     this.preview = null;
   }
@@ -351,7 +374,8 @@ export class Game {
   private setPaused(on: boolean) {
     if (on && this.state === 'playing') {
       this.state = 'paused';
-      this.ui.showPause(true);
+      const p = this.player;
+      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime } : undefined);
     } else if (!on && this.state === 'paused') {
       this.state = 'playing';
       this.ui.showPause(false);
@@ -359,14 +383,14 @@ export class Game {
     }
   }
 
+  /** The sea chart overlays live play: the world keeps sailing underneath. */
   private setChart(on: boolean) {
-    if (on && this.state === 'playing' && this.player) {
-      this.state = 'map';
+    if (on && !this.chartOpen && this.state === 'playing' && this.player) {
+      this.chartOpen = true;
       this.ui.showChart(true, this.player);
-    } else if (!on && this.state === 'map') {
-      this.state = 'playing';
+    } else if (!on && this.chartOpen) {
+      this.chartOpen = false;
       this.ui.showChart(false);
-      this.last = performance.now();
     }
   }
 
@@ -404,6 +428,7 @@ export class Game {
     this.input.enabled = false;
     setTimeout(() => {
       if (!this.player) return;
+      this.setChart(false);
       this.state = 'dead';
       this.ui.showHud(false);
       this.ui.showDead(true, {
@@ -412,6 +437,7 @@ export class Game {
         isles: this.discovered.size,
         time: this.voyageTime,
         ship: this.player.name,
+        cls: this.player.cls.id,
       });
     }, 3800);
   }
@@ -483,8 +509,10 @@ export class Game {
       }
     }
     if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
-    if (st.pause) this.setPaused(true);
-    else if (st.map) this.setChart(true);
+    if (st.pause) {
+      if (this.chartOpen) this.setChart(false);
+      else this.setPaused(true);
+    } else if (st.map) this.setChart(!this.chartOpen);
   }
 
   // ------------------------------------------------------------------ frame
@@ -505,7 +533,7 @@ export class Game {
     }
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
-    const simDt = this.state === 'paused' || this.state === 'map' || this.state === 'loading' ? 0 : dt;
+    const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt;
     this.update(simDt, dt);
     this.render(simDt);
     this.input.consume();
@@ -523,8 +551,6 @@ export class Game {
       this.voyageTime += dt;
     } else if (this.state === 'paused') {
       if (this.input.state.pause) this.setPaused(false);
-    } else if (this.state === 'map') {
-      if (this.input.state.pause || this.input.state.map) this.setChart(false);
     }
 
     // AI & ships
@@ -588,6 +614,7 @@ export class Game {
     this.rig.update(realDt, fpos, fvel, w.time);
     w.listener.copy(this.rig.target);
     w.listenerZoom = this.rig.distance;
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5);
 
     // gusts roll across whatever the camera is looking at
     const reach = clamp(this.rig.distance * 0.9, 70, 260);
@@ -608,7 +635,8 @@ export class Game {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
       this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered);
-    } else if (p && this.state === 'map') {
+    }
+    if (p && this.chartOpen) {
       this.ui.drawChart({
         player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,

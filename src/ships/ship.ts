@@ -79,6 +79,8 @@ export class Ship {
   gold = 0;
   kills = 0;
   anchored = false;
+  /** World time each gun last fired, by muzzle index (crews time their drill to it). */
+  readonly gunFiredAt: number[];
   private pending: PendingShot[] = [];
   private heave = 0;
   private pitch = 0;
@@ -103,6 +105,7 @@ export class Ship {
     this.dmg = new ShipDamage(this);
     this.hp = cls.hp;
     this.name = cls.title;
+    this.gunFiredAt = this.model.muzzles.map(() => -100);
   }
 
   get maxHp() {
@@ -126,6 +129,16 @@ export class Ship {
     this.root.rotation.y = heading;
   }
 
+  /** How hard the yards and booms are swinging (crews haul on the braces while they do). */
+  rigActivity() {
+    return Math.abs(this.rigBraceV) + Math.abs(this.rigLeeV) * 0.5;
+  }
+
+  /** The side currently heeled up out of the water: +1 port, -1 starboard. */
+  highSide() {
+    return this.roll >= 0 ? 1 : -1;
+  }
+
   canFire(side: 'port' | 'starboard') {
     return this.alive && this.reload[side] <= 0;
   }
@@ -145,6 +158,7 @@ export class Ship {
 
   private shoot(p: PendingShot, world: World) {
     const m = this.model.muzzles[p.muzzle];
+    this.gunFiredAt[p.muzzle] = world.time;
     this.root.updateMatrixWorld();
     const pos = m.pos.clone().applyMatrix4(this.model.root.matrixWorld);
     const dir = m.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
@@ -174,8 +188,8 @@ export class Ship {
     vel.add(this.vel);
     world.onShot({ pos, vel, owner: this, damage: this.cls.damage });
     world.particles.muzzle(pos, dir, this.vel);
-    const [vol, pan] = world.soundAt(pos);
-    world.audio.cannon(vol * 0.55, pan);
+    const [vol, pan, d] = world.soundAt(pos);
+    world.audio.cannon(vol, pan, d, clamp((this.cls.length - 15) / 14, 0, 1));
     world.onShake(this.team === 'player' ? 0.35 : 0.12 * vol, pos);
   }
 
@@ -194,8 +208,8 @@ export class Ship {
       this.sinkT = 0;
       if (attacker) attacker.kills++;
       world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
-      const [vol, pan] = world.soundAt(this.pos);
-      world.audio.cannon(vol, pan);
+      const [vol, pan, d] = world.soundAt(this.pos);
+      world.audio.explosion(vol, pan, d);
       world.onShake(this.team === 'player' ? 1.2 : 0.5 * vol, this.pos);
       this.dmg.onDeath(world);
     }
@@ -357,9 +371,16 @@ export class Ship {
     const spd = Math.abs(this.speed);
     if (spd > 0.3 && wakeK > 0) {
       // pressure every frame: the water field grows the Kelvin arms and transverse swell from it
-      const press = 10.5 * (Math.min(spd, 16) / 12) * Math.sqrt(B / 6.2) * wakeK * dt;
+      // the bow surges and eases as she pitches and the hull yaws a touch, so the arms come
+      // out uneven; a little per-frame jitter roughens the crests
+      const tt = world.time + this.id * 7.31;
+      const surge = 1 + 0.22 * Math.sin(tt * 1.37) * Math.sin(tt * 0.53 + 1.1) + this.pitch * 3;
+      const press = 10.5 * (Math.min(spd, 16) / 12) * Math.sqrt(B / 6.2) * wakeK * dt * Math.max(0.5, surge);
+      const yaw = Math.sin(tt * 0.71) * 0.12 * B;
       for (const [u, wgt, r] of HULL_PRESSURE) {
-        world.wake.press(this.pos.x + fx * L * u, this.pos.z + fz * L * u, B * r, press * wgt);
+        const j = (Math.random() - 0.5) * 0.16 * B + yaw * u * 2;
+        const a = 1 + (Math.random() - 0.5) * 0.35;
+        world.wake.press(this.pos.x + fx * L * u + port.x * j, this.pos.z + fz * L * u + port.z * j, B * r * (0.9 + Math.random() * 0.2), press * wgt * a);
       }
     }
     this.wakeT += dt;
@@ -381,13 +402,17 @@ export class Ship {
       const bx = this.pos.x + fx * L * 0.5;
       const bz = this.pos.z + fz * L * 0.5;
       world.wake.stamp(bx, bz, B * 0.24, 0.32 * k);
+      const rnd = () => 0.5 + Math.random();
       for (const side of [1, -1]) {
         const ox = px * side * B;
         const oz = pz * side * B;
-        world.wake.stamp(bx - fx * L * 0.1 + ox * 0.42, bz - fz * L * 0.1 + oz * 0.42, B * 0.24, 0.26 * k);
-        // lateral wash hugging the hull
-        world.wake.stamp(this.pos.x + fx * L * 0.15 + ox * 0.56, this.pos.z + fz * L * 0.15 + oz * 0.56, B * 0.2, 0.12 * k);
-        world.wake.stamp(this.pos.x - fx * L * 0.22 + ox * 0.56, this.pos.z - fz * L * 0.22 + oz * 0.56, B * 0.2, 0.1 * k);
+        const sp = (Math.random() - 0.5) * L * 0.08;
+        world.wake.stamp(bx - fx * (L * 0.1 + sp) + ox * (0.38 + Math.random() * 0.1), bz - fz * (L * 0.1 + sp) + oz * (0.38 + Math.random() * 0.1), B * 0.24 * rnd(), 0.26 * k * rnd());
+        // lateral wash hugging the hull, in uneven clumps
+        if (Math.random() < 0.7) {
+          const u = 0.2 - Math.random() * 0.45;
+          world.wake.stamp(this.pos.x + fx * L * u + ox * (0.5 + Math.random() * 0.14), this.pos.z + fz * L * u + oz * (0.5 + Math.random() * 0.14), B * 0.2 * rnd(), 0.16 * k * rnd());
+        }
       }
       // hard over: the stern skids outward and smears a fan of foam
       const skid = Math.min(1, Math.abs(this.angVel) * spd * 0.12);
