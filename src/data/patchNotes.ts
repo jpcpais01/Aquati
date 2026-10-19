@@ -16,6 +16,18 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T12:00Z',
     entries: [
       {
+        title: 'Cannons fire on mobile',
+        notes: [
+          'The Fire, Port and Starboard buttons on touch screens now actually fire your broadsides, instantly on contact, with a little buzz on phones that support it.',
+          'Touch controls now appear the moment you touch the screen, even on devices that didn\'t announce themselves as touch, and mouse clicks fire again on touchscreen laptops.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
         title: 'Airier wind wisps',
         notes: [
           'The white wind wisps are now long, fine threads of air that streak past twice as fast, with lazier, sweeping curves and wider loops. There are more of them inside a gust.',

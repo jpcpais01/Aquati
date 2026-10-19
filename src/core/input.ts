@@ -29,7 +29,9 @@ export class Input {
     map: false,
   };
   private keys = new Set<string>();
-  readonly isTouch: boolean;
+  isTouch: boolean;
+  /** Fired once if a touch arrives on a device that didn't report touch up front. */
+  onTouchDetected: () => void = () => {};
   private joyId: number | null = null;
   private joyOrigin = { x: 0, y: 0 };
   private joyEl: HTMLElement | null = null;
@@ -69,8 +71,9 @@ export class Input {
       this.state.pointer.y = e.clientY;
       this.state.pointer.active = true;
     });
-    canvas.addEventListener('mousedown', (e) => {
-      if (!this.enabled || this.isTouch) return;
+    // pointerType keeps mouse-click firing on touchscreen laptops, where isTouch is also true
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!this.enabled || e.pointerType !== 'mouse') return;
       this.state.pointer.x = e.clientX;
       this.state.pointer.y = e.clientY;
       if (e.button === 0) this.state.fireAuto = true;
@@ -81,6 +84,15 @@ export class Input {
 
   private setupTouch() {
     const c = this.canvas;
+    window.addEventListener(
+      'touchstart',
+      () => {
+        if (this.isTouch) return;
+        this.isTouch = true;
+        this.onTouchDetected();
+      },
+      { passive: true, capture: true },
+    );
     c.addEventListener(
       'touchstart',
       (e) => {
@@ -152,6 +164,22 @@ export class Input {
   bindJoystick(el: HTMLElement, knob: HTMLElement) {
     this.joyEl = el;
     this.joyKnob = knob;
+  }
+
+  /** Touch broadside buttons. pointerdown fires on contact, with no click delay or ghost taps. */
+  bindFireButtons(port: HTMLElement, main: HTMLElement, star: HTMLElement) {
+    const bind = (el: HTMLElement, key: 'firePort' | 'fireStarboard' | 'fireAuto') => {
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (!this.enabled) return;
+        this.state[key] = true;
+        navigator.vibrate?.(12);
+      });
+      el.addEventListener('contextmenu', (e) => e.preventDefault());
+    };
+    bind(port, 'firePort');
+    bind(main, 'fireAuto');
+    bind(star, 'fireStarboard');
   }
 
   private showJoy(x: number, y: number) {
