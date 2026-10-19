@@ -71,19 +71,28 @@ vec2 project(vec3 v) {
 bool offscreen(vec2 uv) { return uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0; }
 
 void main() {
-  vec2 uv = vUv;
-  float d = texture(uDepth, uv).r;
+  // Work on one real full-res pixel per half-res pixel. The half-res centre
+  // falls exactly on the corner between four full-res pixels, and nearest
+  // sampling there rounds one way on some rows and the other way on others:
+  // P and its neighbours then come from mismatched pixels, the rebuilt normal
+  // flips row by row, and the sun march paints horizontal lines.
+  vec2 t = uFullTexel;
+  ivec2 lim = textureSize(uDepth, 0) - 1;
+  ivec2 pc = min(ivec2(gl_FragCoord.xy) * 2, lim);
+  vec2 uv = (vec2(pc) + 0.5) * t;
+  float d = texelFetch(uDepth, pc, 0).r;
   if (d >= 0.99999) { oA = vec4(0.0, 0.0, 0.0, 1.0); oB = vec4(0.0, 1e4, 0.0, 1.0); return; }
   vec3 P = viewPos(uv, d);
   float z = -P.z;
 
   // normal from depth: per axis, take whichever neighbour sits on the same
   // surface (smaller step) so silhouettes don't smear the normal
-  vec2 t = uFullTexel;
-  vec3 Pr = viewPos(uv + vec2(t.x, 0.0), texture(uDepth, uv + vec2(t.x, 0.0)).r);
-  vec3 Pl = viewPos(uv - vec2(t.x, 0.0), texture(uDepth, uv - vec2(t.x, 0.0)).r);
-  vec3 Pu = viewPos(uv + vec2(0.0, t.y), texture(uDepth, uv + vec2(0.0, t.y)).r);
-  vec3 Pd = viewPos(uv - vec2(0.0, t.y), texture(uDepth, uv - vec2(0.0, t.y)).r);
+  ivec2 ir = min(pc + ivec2(1, 0), lim), il = max(pc - ivec2(1, 0), ivec2(0));
+  ivec2 iu = min(pc + ivec2(0, 1), lim), id = max(pc - ivec2(0, 1), ivec2(0));
+  vec3 Pr = viewPos((vec2(ir) + 0.5) * t, texelFetch(uDepth, ir, 0).r);
+  vec3 Pl = viewPos((vec2(il) + 0.5) * t, texelFetch(uDepth, il, 0).r);
+  vec3 Pu = viewPos((vec2(iu) + 0.5) * t, texelFetch(uDepth, iu, 0).r);
+  vec3 Pd = viewPos((vec2(id) + 0.5) * t, texelFetch(uDepth, id, 0).r);
   vec3 dx = abs(Pr.z - P.z) < abs(P.z - Pl.z) ? Pr - P : P - Pl;
   vec3 dy = abs(Pu.z - P.z) < abs(P.z - Pd.z) ? Pu - P : P - Pd;
   vec3 N = normalize(cross(dx, dy));
@@ -136,6 +145,11 @@ void main() {
   // resolve; far off, the map covers it and a depth-buffer march over a few
   // pixels of foliage only sparkles and crawls as the view moves
   float near = 1.0 - smoothstep(90.0, 220.0, z);
+  // ...and for surfaces that face the camera: on one seen edge-on (a sail
+  // turned away, the seabed or the sea's underside at a glance) each pixel row
+  // jumps in depth, so a march along it hits and misses row by row and paints
+  // horizontal lines. The shadow map has those surfaces covered anyway.
+  near *= smoothstep(0.12, 0.3, dot(N, normalize(-P)));
   if (ndl > 0.0 && near > 0.0) {
     float len = uCs.x + z * uCs.y;
     // 2x2 jitter so the denoiser can keep these crisp
@@ -189,7 +203,15 @@ void main() {
   vec4 c = texture(uB, vUv);
   float z0 = c.g;
   if (z0 > 9e3) { oA = vec4(0.0, 0.0, 0.0, 1.0); oB = c; return; }
-  float k = 1.0 / (z0 * 0.012 + 0.05);
+  // depth tolerance grows with how steeply the surface recedes per texel, so a
+  // slanted plane still averages across rows instead of keeping each row's
+  // own noise (one-sided steps per axis, so silhouettes stay sharp)
+  float zu = texture(uB, vUv + vec2(0.0, uTexel.y)).g;
+  float zd = texture(uB, vUv - vec2(0.0, uTexel.y)).g;
+  float zr = texture(uB, vUv + vec2(uTexel.x, 0.0)).g;
+  float zl = texture(uB, vUv - vec2(uTexel.x, 0.0)).g;
+  float slope = max(min(abs(zu - z0), abs(z0 - zd)), min(abs(zr - z0), abs(z0 - zl)));
+  float k = 1.0 / (z0 * 0.012 + 0.05 + slope * 2.5);
   vec4 sa = vec4(0.0);
   float wa = 0.0;
   float ss = 0.0;
