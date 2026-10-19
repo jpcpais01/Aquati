@@ -1,8 +1,11 @@
 import './customizer.css';
 import {
-  BACKINGS, drawFlag, emblemThumb, EMBLEMS, FlagDesign, flagThumb, PATTERNS, paintSource, seedPaint, setLivePaint, SHAPES,
+  BACKINGS, drawFlag, emblemThumb, EMBLEMS, FlagDesign, flagThumb, PATTERNS, paintSource, preloadPaint, seedPaint, setLivePaint, SHAPES,
 } from '../ships/heraldry';
-import { DEFAULT_LOOK, HULL_PARTS, HullLook, PALETTES, PRESETS, randomLook, randomShipName, SAIL_PATTERNS, SailPattern, ShipLook } from '../ships/look';
+import {
+  DEFAULT_LOOK, HULL_PARTS, HullLook, loadDesigns, MAX_SAVED, PALETTES, PRESETS, randomLook, randomShipName, SAIL_PATTERNS, SailPattern, sameDesign,
+  SavedDesign, saveDesigns, sameStyle, ShipLook,
+} from '../ships/look';
 
 // The shipwright's panel: flag, sails, hull and presets, with a living flag
 // preview you can paint on. Changes stream out through onChange so the ship
@@ -108,6 +111,7 @@ export class Customizer {
   private brush = { size: 12, color: '#f3ecdc', erase: false };
   private stroke: { x: number; y: number } | null = null;
   private paintBar = el('div', 'sw-paintbar');
+  private syncSave = () => {};
   private paintBtn = el('button', 'sw-chip sw-paint-toggle', '<span>✎</span> Paint');
 
   constructor() {
@@ -408,6 +412,7 @@ export class Customizer {
     inp.addEventListener('input', () => {
       this.look.name = inp.value.replace(/[<>]/g, '').slice(0, 24);
       this.changed('name');
+      this.syncSave();
     });
     const dice = el('button', 'sw-chip', '⚄');
     dice.title = 'A random name';
@@ -415,34 +420,126 @@ export class Customizer {
       this.onClick();
       inp.value = this.look.name = randomShipName();
       this.changed('name');
+      this.syncSave();
     });
     row.append(inp, dice);
     name.appendChild(row);
+    this.renderDesigns();
     const list = el('div', 'sw-presets');
     for (const p of PRESETS) {
-      const b = el('button', 'sw-preset');
-      b.appendChild(flagThumb(p.look.flag, 84, 52));
-      const info = el('div');
-      info.appendChild(el('b', '', p.name));
-      const dots = el('span', 'sw-dots');
-      for (const c of [p.look.hull.topsides, p.look.hull.planks, p.look.sail.cloth, p.look.sail.accent, p.look.hull.gilding]) {
-        const d = el('i');
-        d.style.background = c;
-        dots.appendChild(d);
-      }
-      info.appendChild(dots);
-      b.appendChild(info);
+      const b = this.presetCard(p.look, p.name, sameStyle(p.look, this.look) ? 'sel' : '');
       b.addEventListener('click', () => {
         this.onClick();
         this.commitPaint();
         this.look = { ...structuredClone(p.look), name: this.look.name };
         this.changed('all');
-        list.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel'));
-        b.classList.add('sel');
+        // re-render so the save card and the highlights follow the new look
+        this.rerender();
       });
       list.appendChild(b);
     }
     this.section('Famous colours').appendChild(list);
+  }
+
+  /** A preset card: flag thumbnail, name and the main colours. */
+  private presetCard(look: Omit<ShipLook, 'name'>, name: string, cls = '') {
+    const b = el('button', 'sw-preset' + (cls ? ' ' + cls : ''));
+    const thumb = flagThumb(look.flag, 84, 52);
+    b.appendChild(thumb);
+    // a hand-painted flag decodes in the background; redraw the thumbnail once it has
+    if (look.flag.paint && !paintSource(look.flag.paint)) {
+      void preloadPaint(look.flag.paint).then(() => thumb.replaceWith(flagThumb(look.flag, 84, 52)));
+    }
+    const info = el('div');
+    info.appendChild(el('b', '', name));
+    const dots = el('span', 'sw-dots');
+    for (const c of [look.hull.topsides, look.hull.planks, look.sail.cloth, look.sail.accent, look.hull.gilding]) {
+      const d = el('i');
+      d.style.background = c;
+      dots.appendChild(d);
+    }
+    info.appendChild(dots);
+    b.appendChild(info);
+    return b;
+  }
+
+  /** The player's own saved designs, with a card to save the current one. */
+  private renderDesigns() {
+    const designs = loadDesigns();
+    const list = el('div', 'sw-presets');
+    const full = designs.length >= MAX_SAVED;
+    const add = el('button', 'sw-preset sw-save');
+    // renaming the ship can turn a saved design into a new one, so this follows the name field
+    this.syncSave = () => {
+      const saved = designs.some((d) => sameDesign(d.look, this.look));
+      add.innerHTML = saved
+        ? '<span class="sw-plus">✓</span><b>Saved</b><small>This design is in your collection</small>'
+        : full
+          ? `<span class="sw-plus">⚓</span><b>Hold is full</b><small>Delete a design to save more (max ${MAX_SAVED})</small>`
+          : '<span class="sw-plus">+</span><b>Save this design</b><small>Keep it to sail with later</small>';
+      add.disabled = saved || full;
+    };
+    this.syncSave();
+    add.addEventListener('click', () => {
+      this.onClick();
+      this.commitPaint();
+      const look = structuredClone(this.look);
+      // a second design for the same ship becomes "Sea Biscuit II", and so on
+      const base = look.name.trim() || 'Design';
+      const taken = new Set(designs.map((d) => d.name));
+      const numerals = ['', ' II', ' III', ' IV', ' V', ' VI', ' VII', ' VIII', ' IX', ' X', ' XI', ' XII', ' XIII'];
+      const name = numerals.map((n) => base + n).find((n) => !taken.has(n)) ?? base;
+      const next: SavedDesign[] = [{ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, look }, ...designs];
+      if (!saveDesigns(next)) {
+        add.innerHTML = '<span class="sw-plus">!</span><b>Couldn\'t save</b><small>Your browser is out of room for saved designs</small>';
+        return;
+      }
+      this.rerender();
+    });
+    list.appendChild(add);
+
+    for (const d of designs) {
+      const card = this.presetCard(d.look, d.name, sameDesign(d.look, this.look) ? 'sel' : '');
+      const del = el('span', 'sw-del', '×');
+      del.title = 'Delete this design';
+      del.setAttribute('role', 'button');
+      let armed = 0;
+      del.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onClick();
+        // first tap arms, second tap deletes
+        if (!armed) {
+          card.classList.add('arm');
+          del.textContent = 'Delete?';
+          armed = window.setTimeout(() => {
+            armed = 0;
+            card.classList.remove('arm');
+            del.textContent = '×';
+          }, 4000);
+          return;
+        }
+        clearTimeout(armed);
+        saveDesigns(loadDesigns().filter((x) => x.id !== d.id));
+        this.rerender();
+      });
+      card.appendChild(del);
+      card.addEventListener('click', () => {
+        this.onClick();
+        this.commitPaint();
+        this.look = structuredClone(d.look);
+        this.changed('all');
+        this.rerender();
+      });
+      list.appendChild(card);
+    }
+    this.section('Your designs').appendChild(list);
+  }
+
+  /** Re-renders the open tab without jumping the scroll position. */
+  private rerender() {
+    const top = this.body.scrollTop;
+    this.render();
+    this.body.scrollTop = top;
   }
 
   // ---------------------------------------------------------------- painting
