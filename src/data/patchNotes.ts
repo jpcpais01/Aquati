@@ -26,6 +26,16 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Real skies: sunlight, clouds and distance',
+        notes: [
+          'The sky is now painted the way real air scatters light: a deep blue overhead that pales to a bright band along the horizon, a blazing sun disc with a soft glowing halo, and fine cirrus streaks on fair days.',
+          'Clouds are heaped, billowing cumulus with sunlit edges, blue-grey bellies and a silver rim toward the sun. Cloudy days break into big banks with blue gaps and patches of sunshine racing across the sea, and every shadow on the water belongs to a cloud you can see overhead.',
+          'The sea mirrors the clouds above it and deepens to a rich blue toward the horizon instead of turning milky.',
+          'Far islands and ships now sink into the colour of the air in front of them, warm toward the sun and cool blue away from it, while mountain peaks stay crisp above the sea haze.',
+          'Stronger sunlight against softer, bluer shade and a touch more contrast give islands, hulls and sails more shape, from the deck and from above.',
+        ],
+      },
+      {
         title: 'Volume sliders',
         notes: [
           'Settings now has Master, Music, Effects and Ambience volume sliders, so you can turn the harbour theme down without losing the cannons, or quiet the surf and wind for a cleaner battle mix.',
