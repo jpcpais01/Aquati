@@ -8,7 +8,7 @@ import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { Pipeline } from '../render/pipeline';
-import { warmDraw } from '../render/warmup';
+import { BufferPreloader, warmDraw } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
@@ -112,6 +112,7 @@ export class Game {
    */
   private shipyard: ShipModel[] = [];
   private keel: ShipModel | null = null;
+  private preload: BufferPreloader;
   private ais = new Map<Ship, PirateAI>();
   private lastFoe: Ship | null = null;
   private player: Ship | null = null;
@@ -254,6 +255,7 @@ export class Game {
     this.photo.pickAt = (x, y) => this.pickDepth(x, y);
 
     // the key light: the sun by day, the moon by night (see world/atmosphere.ts)
+    this.preload = new BufferPreloader(this.renderer);
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.quality.shadowSize, this.quality.shadowSize);
@@ -451,6 +453,9 @@ export class Game {
     // Plants stay unculled so every one of their batches is drawn too.
     veg.hold = true;
     this.tradePorts.warm();
+    // the shipyard's uploader compiles its one plain program now, not mid-voyage
+    if (this.preview) this.preload.add(this.preview.root);
+    this.preload.step(true);
     warmDraw([this.opaque, this.water, this.ocean.reflScene], () => {
       this.render(0);
       this.render(0);
@@ -1152,6 +1157,7 @@ export class Game {
   }
 
   private removeShip(s: Ship) {
+    this.preload.drop(s.root);
     this.opaque.remove(s.root);
     this.water.remove(s.bowWave.mesh);
     this.ships.splice(this.ships.indexOf(s), 1);
@@ -1215,6 +1221,7 @@ export class Game {
   private static readonly STOCK: Record<ShipClassId, number> = { sloop: 3, brig: 3, galleon: 1 };
 
   private runShipyard() {
+    this.preload.step();
     if (!this.keel) {
       const ids = Object.keys(Game.STOCK) as ShipClassId[];
       const id = ids.find((k) => this.shipyard.filter((m) => m.cls.id === k).length < Game.STOCK[k]);
@@ -1225,6 +1232,7 @@ export class Game {
     while (performance.now() - t0 < 2.5) {
       if (this.keel.step()) {
         this.shipyard.push(this.keel);
+        this.preload.add(this.keel.root);
         this.keel = null;
         return;
       }

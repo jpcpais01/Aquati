@@ -58,3 +58,56 @@ export function warmDraw(scenes: THREE.Object3D[], draw: () => void) {
     }
   }
 }
+
+/**
+ * Uploads a model's vertex buffers ahead of its first real draw, one mesh a
+ * frame. A pirate hull is megabytes of geometry, built a slice at a time in
+ * the shipyard; left alone, the frame she first sails into view (or into the
+ * shadow map) would push all of it to the GPU at once. Each step draws one
+ * stand-in sharing a mesh's geometry into a 1x1 target with a plain material,
+ * which is all three needs to upload it. The geometry is then simply resident.
+ */
+export class BufferPreloader {
+  private scene = new THREE.Scene();
+  private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  private target = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
+  private proxy = new THREE.Mesh(undefined, undefined);
+  private queue: THREE.BufferGeometry[] = [];
+
+  constructor(private renderer: THREE.WebGLRenderer) {
+    this.scene.overrideMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false });
+    this.proxy.frustumCulled = false;
+    this.scene.add(this.proxy);
+  }
+
+  /** Queues every geometry under `root`. */
+  add(root: THREE.Object3D) {
+    root.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry;
+      if (g && !this.queue.includes(g)) this.queue.push(g);
+    });
+  }
+
+  /** Forgets whatever of `root` is still queued (its ship is gone). */
+  drop(root: THREE.Object3D) {
+    root.traverse((o) => {
+      const i = this.queue.indexOf((o as THREE.Mesh).geometry);
+      if (i >= 0) this.queue.splice(i, 1);
+    });
+  }
+
+  /** Uploads the next queued geometry; `force` empties the queue (behind the loading screen). */
+  step(force = false) {
+    do {
+      const g = this.queue.shift();
+      if (!g) return;
+      if (!g.getAttribute('position')) continue;
+      const r = this.renderer;
+      const prev = r.getRenderTarget();
+      this.proxy.geometry = g;
+      r.setRenderTarget(this.target);
+      r.render(this.scene, this.camera);
+      r.setRenderTarget(prev);
+    } while (force);
+  }
+}

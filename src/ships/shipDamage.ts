@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/noise';
 import { patchInfo, patchMaterial } from '../render/environment';
 import type { World } from '../game/world';
-import { breakSplinters, Cut, filterLines, splitGeometry } from './breakApart';
+import { breakSplinters, Cut, disposeUnshared, filterLines, splitGeometry } from './breakApart';
 import { DAMAGE_MAX_HOLES } from './damageGlsl';
 import type { Ship } from './ship';
 import type { MastDef } from './shipTypes';
@@ -546,6 +546,18 @@ export class ShipDamage {
       const res = splitGeometry(mesh.geometry, mesh.matrix, cut);
       if (!res) continue;
       this.swapGeometry(mesh, res.keep);
+      if (res.keepEdge) {
+        // the stump's side of the clipped seam, in the hull's own material
+        const edge = new THREE.Mesh(res.keepEdge, mesh.material);
+        edge.position.copy(mesh.position);
+        edge.quaternion.copy(mesh.quaternion);
+        edge.scale.copy(mesh.scale);
+        edge.castShadow = mesh.castShadow;
+        edge.receiveShadow = true;
+        edge.userData.dmgSkip = true;
+        root.add(edge);
+        this.caps.push(edge);
+      }
       const pm = new THREE.Mesh(res.piece, skin.material(mesh.material));
       pm.position.copy(mesh.position);
       pm.quaternion.copy(mesh.quaternion);
@@ -615,8 +627,9 @@ export class ShipDamage {
   }
 
   private swapGeometry(obj: THREE.Mesh | THREE.LineSegments, g: THREE.BufferGeometry) {
-    if (!this.originals.has(obj)) this.originals.set(obj, obj.geometry);
-    else obj.geometry.dispose();
+    const first = this.originals.get(obj);
+    if (!first) this.originals.set(obj, obj.geometry);
+    else disposeUnshared(obj.geometry, first);
     obj.geometry = g;
   }
 
@@ -802,7 +815,7 @@ export class ShipDamage {
     }
     this.spars.length = 0;
     this.originals.forEach((g, obj) => {
-      obj.geometry.dispose();
+      disposeUnshared(obj.geometry, g);
       obj.geometry = g;
     });
     this.originals.clear();
