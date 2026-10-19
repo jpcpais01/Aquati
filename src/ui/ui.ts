@@ -6,10 +6,9 @@ import { RARITY } from '../game/loot';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import { SeaChart, ChartScene } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
+import { loadSettings, saveSettings, Settings } from './settings';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
-/** Cards that sit over the menus and close on Esc or a tap outside. */
-const OVERLAYS = ['notes', 'controls', 'graphics'];
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
@@ -24,7 +23,12 @@ export interface VoyageInfo {
   kills: number;
   isles: number;
   time: number;
+  ship?: string;
+  cls?: ShipClassId;
 }
+
+/** Cards that sit over the menus and close on Esc or a tap outside; later ones stack on top. */
+const OVERLAYS = ['notes', 'controls', 'settings', 'graphics'];
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -55,7 +59,12 @@ export class UI {
   onPause: () => void = () => {};
   onMap: (open: boolean) => void = () => {};
   onClick: () => void = () => {};
-  private soundOn = true;
+  /** Live settings changed (sound, music, shake…); the game applies what it owns. */
+  onSettings: (s: Settings) => void = () => {};
+  readonly settings: Settings = loadSettings();
+  private get soundOn() {
+    return this.settings.sound;
+  }
 
   private tipTimer = 0;
   private hudCache = new Map<string, string>();
@@ -90,6 +99,20 @@ export class UI {
       this.onClick();
       this.openOverlay('controls');
     };
+    const openSettings = () => {
+      this.onClick();
+      this.renderSettings();
+      this.openOverlay('settings');
+    };
+    $('btn-settings').addEventListener('click', openSettings);
+    $('btn-settings2').addEventListener('click', openSettings);
+    $('btn-chart').addEventListener('click', () => {
+      this.onClick();
+      this.onResume();
+      this.onMap(true);
+    });
+    this.applySettings();
+    this.listNav($('pause-list'));
     $('btn-notes').addEventListener('click', openNotes);
     $('btn-notes2').addEventListener('click', openNotes);
     $('btn-controls').addEventListener('click', openControls);
@@ -100,16 +123,14 @@ export class UI {
         this.closeOverlay((b.closest('.screen') as HTMLElement).id);
       }),
     );
-    // tap the dimmed sea around a notes / controls card to close it
+    // tap the dimmed sea around a notes / controls / settings sheet to close it
     for (const id of OVERLAYS) {
       $(id).addEventListener('click', (e) => {
         if (e.target === e.currentTarget) this.closeOverlay(id);
       });
     }
     const toggleSound = () => {
-      this.soundOn = !this.soundOn;
-      this.syncSound();
-      this.onSound(this.soundOn);
+      this.setSetting('sound', !this.settings.sound);
       this.onClick();
     };
     $('btn-sound').addEventListener('click', toggleSound);
@@ -117,20 +138,34 @@ export class UI {
       this.onClick();
       this.refreshGame();
     });
-    $('btn-sound2').addEventListener('click', toggleSound);
     $('btn-resume').addEventListener('click', () => {
       this.onClick();
       this.onResume();
     });
+    // leaving loses the voyage, so the first press only arms it
+    let quitArmed = 0;
     $('btn-quit').addEventListener('click', () => {
       this.onClick();
+      const b = $('btn-quit');
+      if (!b.classList.contains('armed')) {
+        b.classList.add('armed');
+        $('quit-label').textContent = 'Press again to leave this voyage';
+        clearTimeout(quitArmed);
+        quitArmed = window.setTimeout(() => this.disarmQuit(), 3200);
+        return;
+      }
+      this.disarmQuit();
       this.onQuit();
     });
     $('btn-again').addEventListener('click', () => {
       this.onClick();
       this.onAgain();
     });
-    $('btn-pause').addEventListener('click', () => this.onPause());
+    $('btn-pause').addEventListener('click', (e) => {
+      // drop focus so Space (fire) can't press it again
+      (e.currentTarget as HTMLElement).blur();
+      this.onPause();
+    });
     this.mapCanvas.addEventListener('click', () => this.onMap(true));
     $('chart-close').addEventListener('click', () => this.onMap(false));
     $('chart-center').addEventListener('click', () => this.chartPlayer && this.chart.recenter(this.chartPlayer));
@@ -146,7 +181,9 @@ export class UI {
       'keydown',
       (e) => {
         if (e.key !== 'Escape') return;
-        const open = OVERLAYS.find((id) => !$(id).classList.contains('hidden'));
+        const open = OVERLAYS.slice()
+          .reverse()
+          .find((id) => !$(id).classList.contains('hidden'));
         if (!open) return;
         e.stopImmediatePropagation();
         e.preventDefault();
@@ -164,16 +201,120 @@ export class UI {
     }
   }
 
+  private overlayReturn: HTMLElement | null = null;
+
   private openOverlay(id: string) {
-    $(id).classList.remove('hidden');
+    const el = $(id);
+    if (!el.classList.contains('hidden')) return;
+    this.overlayReturn = document.activeElement as HTMLElement | null;
+    el.classList.remove('hidden');
+    el.querySelector<HTMLElement>('[data-close]')?.focus({ preventScroll: true });
   }
 
   private closeOverlay(id: string) {
-    $(id).classList.add('hidden');
+    const el = $(id);
+    if (el.classList.contains('hidden')) return;
+    el.classList.add('hidden');
+    // hand focus back to whatever opened it (keeps pad / keyboard navigation flowing)
+    if (this.overlayReturn?.isConnected && this.overlayReturn.offsetParent) this.overlayReturn.focus({ preventScroll: true });
+    this.overlayReturn = null;
   }
 
   private overlayOpen() {
     return OVERLAYS.some((id) => !$(id).classList.contains('hidden'));
+  }
+
+  private disarmQuit() {
+    $('btn-quit').classList.remove('armed');
+    $('quit-label').textContent = 'Return to harbour';
+  }
+
+  /** Up / down arrows walk the buttons of a vertical menu, like a pad would. */
+  private listNav(list: HTMLElement) {
+    // the pointer drives the same highlight, so exactly one row is ever lit
+    list.addEventListener('pointerover', (e) => {
+      if ((e as PointerEvent).pointerType !== 'mouse') return;
+      const b = (e.target as HTMLElement).closest('button');
+      if (b && b !== document.activeElement) b.focus({ preventScroll: true });
+    });
+    list.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const items = [...list.querySelectorAll<HTMLElement>('button:not([disabled])')];
+      const i = items.indexOf(document.activeElement as HTMLElement);
+      const n = items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length];
+      e.preventDefault();
+      e.stopPropagation();
+      n?.focus();
+    });
+  }
+
+  // ------------------------------------------------------------- settings
+
+  private setSetting<K extends keyof Settings>(k: K, v: Settings[K]) {
+    if (this.settings[k] === v) return;
+    this.settings[k] = v;
+    saveSettings(this.settings);
+    this.applySettings();
+    if (k === 'sound') this.onSound(this.settings.sound);
+    this.onSettings(this.settings);
+    if (!$('settings').classList.contains('hidden')) this.renderSettings();
+  }
+
+  /** The bits the page owns: HUD size, the frame counter, the sound buttons. */
+  private applySettings() {
+    document.body.dataset.hud = this.settings.hud;
+    document.body.classList.toggle('no-fps', !this.settings.fps);
+    this.syncSound();
+  }
+
+  private renderSettings() {
+    const s = this.settings;
+    const body = $('settings-body');
+    const focusKey = (document.activeElement as HTMLElement | null)?.dataset?.key;
+    const toggle = (k: 'sound' | 'music' | 'fps', label: string, desc: string) =>
+      `<button class="set-row" data-key="${k}" role="switch" aria-checked="${s[k]}"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><i class="switch${s[k] ? ' on' : ''}"></i></button>`;
+    const seg = <K extends 'hud' | 'shake'>(k: K, label: string, desc: string, opts: [Settings[K], string][]) =>
+      `<div class="set-row has-seg"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><span class="seg" role="radiogroup">${opts
+        .map(([v, t]) => `<button data-key="${k}" data-v="${v}" role="radio" aria-checked="${s[k] === v}" class="${s[k] === v ? 'sel' : ''}">${t}</button>`)
+        .join('')}</span></div>`;
+    body.innerHTML = `
+      <section class="set-group"><h4>Sound</h4>
+        ${toggle('sound', 'Sound', 'Every sound in the game')}
+        ${toggle('music', 'Harbour music', 'The theme that plays on the home screen')}
+      </section>
+      <section class="set-group"><h4>Graphics</h4>
+        <button class="set-row" id="set-gfx"><span class="set-txt"><b>Graphics</b><small>Presets, ray-traced light, shadows and resolution, tuned live</small></span><span class="set-go">${icon(ICONS.chev)}</span></button>
+        ${toggle('fps', 'Frame counter', 'Show frames per second at the top of the screen')}
+      </section>
+      <section class="set-group"><h4>Interface</h4>
+        ${seg('hud', 'HUD size', 'How big the in-game controls and readouts are', [
+          ['compact', 'Compact'],
+          ['standard', 'Standard'],
+          ['large', 'Large'],
+        ])}
+        ${seg('shake', 'Camera shake', 'From cannon fire, rams and treasure', [
+          ['full', 'Full'],
+          ['gentle', 'Gentle'],
+          ['off', 'Off'],
+        ])}
+      </section>`;
+    body.querySelectorAll<HTMLElement>('[data-key]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const k = b.dataset.key as keyof Settings;
+        this.onClick();
+        if (b.dataset.v !== undefined) this.setSetting(k, b.dataset.v as never);
+        else this.setSetting(k, !this.settings[k] as never);
+      }),
+    );
+    $('set-gfx').addEventListener('click', () => {
+      // the graphics card clears the stage to show the sea, so it replaces this sheet
+      this.closeOverlay('settings');
+      $('btn-graphics').click();
+    });
+    if (focusKey) {
+      const v = s[focusKey as keyof Settings];
+      body.querySelector<HTMLElement>(`[data-key="${focusKey}"][data-v="${v}"], button.set-row[data-key="${focusKey}"]`)?.focus({ preventScroll: true });
+    }
   }
 
   /** Menu shortcuts: arrows / A D / 1 2 3 pick a ship, Enter sets sail. */
@@ -182,6 +323,7 @@ export class UI {
     const ids = Object.keys(SHIP_CLASSES) as ShipClassId[];
     const i = ids.indexOf(this.selected);
     const k = e.key.toLowerCase();
+    if (document.activeElement?.closest('.menu-tools, .dock-actions') && (k === 'enter' || k === ' ')) return;
     if (k === 'arrowleft' || k === 'a') this.select(ids[(i + ids.length - 1) % ids.length]);
     else if (k === 'arrowright' || k === 'd') this.select(ids[(i + 1) % ids.length]);
     else if (k >= '1' && k <= String(ids.length)) this.select(ids[+k - 1]);
@@ -219,7 +361,7 @@ export class UI {
     document.querySelectorAll<HTMLElement>('.sound-toggle').forEach((b) => {
       b.querySelector('.ti')!.innerHTML = html;
       b.classList.toggle('off', !this.soundOn);
-      b.title = this.soundOn ? 'Sound on' : 'Sound off';
+      b.dataset.label = this.soundOn ? 'Sound on' : 'Sound off';
       b.setAttribute('aria-pressed', String(this.soundOn));
     });
   }
@@ -298,6 +440,8 @@ export class UI {
       const n = Math.max(1, Math.round(v * 10));
       return Array.from({ length: 10 }, (_, k) => `<i class="${k < n ? 'on' : ''}" style="--k:${k}"></i>`).join('');
     };
+    const ids = Object.keys(SHIP_CLASSES);
+    $('dock-count').textContent = `${String(ids.indexOf(this.selected) + 1).padStart(2, '0')} / ${String(ids.length).padStart(2, '0')}`;
     const detail = $('ship-detail');
     detail.innerHTML = `
       <div class="detail-head">
@@ -366,8 +510,19 @@ export class UI {
 
   showPause(on: boolean, info?: VoyageInfo) {
     $('pause').classList.toggle('hidden', !on);
-    if (on && info) $('pause-summary').innerHTML = this.summary(info);
-    if (!on) OVERLAYS.forEach((id) => this.closeOverlay(id));
+    this.hud.classList.toggle('under', on);
+    if (on && info) {
+      $('pause-summary').innerHTML = this.summary(info);
+      $('pause-ship').innerHTML = info.ship && info.cls ? `<span class="ps-art">${shipSilhouette(SHIP_CLASSES[info.cls])}</span><span><small>${SHIP_CLASSES[info.cls].name}</small><b>${info.ship}</b></span>` : '';
+      $('pause-tip').textContent = TIPS[1 + Math.floor(Math.random() * (TIPS.length - 1))];
+    }
+    if (on) {
+      this.disarmQuit();
+      $('btn-resume').focus({ preventScroll: true });
+    } else {
+      OVERLAYS.forEach((id) => this.closeOverlay(id));
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
   }
 
   private summary(info: VoyageInfo) {
@@ -425,7 +580,7 @@ export class UI {
     const b = $('btn-view');
     b.classList.toggle('on', on);
     b.title = on ? "Bird's-eye view (V)" : "Captain's view (V)";
-    b.innerHTML = icon(ICONS[on ? 'bird' : 'eye']);
+    b.innerHTML = `<span class="ti">${icon(ICONS[on ? 'bird' : 'eye'])}</span>`;
     this.setHelmPrompt('none');
     this.setLook(false, 0, false);
     this.setSpy(0);
@@ -541,7 +696,12 @@ export class UI {
         panel.classList.add('hit');
       }
     }
-    this.hudSet('hud-hull-text', `${Math.ceil(Math.max(0, p.hp))} / ${p.maxHp}`);
+    const hp = `${Math.ceil(Math.max(0, p.hp))}`;
+    if (this.hudCache.get('hp') !== hp + p.maxHp) {
+      this.hudCache.set('hp', hp + p.maxHp);
+      $('hud-hull-text').innerHTML = `<b>${hp}</b><small>/${p.maxHp}</small>`;
+      $('hud-hull-text').classList.toggle('low', frac < 0.35);
+    }
     this.hudSet('hud-gold', `${p.gold}`, true);
     this.hudSet('hud-kills', `${p.kills}`, true);
     this.hudSet('hud-isles', `${isles}/${totalIsles}`, true);
