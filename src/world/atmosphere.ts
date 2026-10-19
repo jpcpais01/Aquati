@@ -140,6 +140,8 @@ const pick = <T>(opts: [T, number][]): T => {
   return opts[opts.length - 1][0];
 };
 
+const MODE_KEY = 'aquati.weather';
+
 export class Atmosphere {
   /** Fraction of the solar day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
   day = 0.36;
@@ -147,6 +149,10 @@ export class Atmosphere {
   private stateT = 0;
   private stateDur = 0;
   private locked = false;
+  /** 'auto' lets the weather turn on its own; a kind holds it there. */
+  mode: WeatherKind | 'auto' = 'auto';
+  /** Speeds up the blend for a moment after the player picks the weather by hand. */
+  private rush = 0;
 
   // eased weather parameters
   cover = WEATHER.clear.cover;
@@ -186,8 +192,17 @@ export class Atmosphere {
     const hr = parseFloat(q.get('hour') ?? '');
     if (Number.isFinite(hr)) this.day = (((hr / 24) % 1) + 1) % 1;
     const wx = q.get('wx') as WeatherKind | null;
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(MODE_KEY);
+    } catch {}
     if (wx && wx in WEATHER) {
       this.setWeather(wx, true);
+      this.locked = true;
+      this.mode = wx;
+    } else if (saved && saved in WEATHER) {
+      this.mode = saved as WeatherKind;
+      this.setWeather(this.mode, true);
       this.locked = true;
     }
     this.update(0);
@@ -214,6 +229,18 @@ export class Atmosphere {
     }
   }
 
+  /** Picks the weather by hand ('auto' hands it back to nature) and blends to it quickly. */
+  setMode(m: WeatherKind | 'auto') {
+    this.mode = m;
+    this.locked = m !== 'auto';
+    if (m !== 'auto') this.setWeather(m);
+    else this.stateDur = Math.min(this.stateDur, this.stateT + 60 + Math.random() * 60);
+    this.rush = 1;
+    try {
+      localStorage.setItem(MODE_KEY, m);
+    } catch {}
+  }
+
   private seaTarget() {
     return this.storm * 1.05 + this.rain * 0.12 + (this.wind - 0.8) * 0.35;
   }
@@ -236,7 +263,10 @@ export class Atmosphere {
     this.stateT += dt;
     if (!this.locked && this.stateT > this.stateDur) this.nextWeather();
     const d = WEATHER[this.kind];
-    const ease = (cur: number, to: number, tau: number) => cur + (to - cur) * (1 - Math.exp(-dt / tau));
+    // a hand-picked change rolls in over a few seconds instead of half a minute
+    this.rush = Math.max(0, this.rush - dt / 12);
+    const fast = 1 + this.rush * 7;
+    const ease = (cur: number, to: number, tau: number) => cur + (to - cur) * (1 - Math.exp((-dt * fast) / tau));
     this.cover = ease(this.cover, d.cover, 22);
     // rain waits for the clouds to thicken, and stops ahead of them clearing
     this.rain = ease(this.rain, d.rain * smooth(0.6, 0.9, this.cover), 14);

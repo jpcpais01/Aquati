@@ -819,6 +819,17 @@ export class UI {
   }
 
   private skyKey = '';
+  private skyTagT = 0;
+  /** Flashes a short label (the chosen weather) under the clock. */
+  skyTag(text: string) {
+    const el = $('hud-sky');
+    el.dataset.tag = text;
+    el.classList.remove('tag');
+    void el.offsetWidth;
+    el.classList.add('tag');
+    clearTimeout(this.skyTagT);
+    this.skyTagT = window.setTimeout(() => el.classList.remove('tag'), 1600);
+  }
   /** Clock & weather badge beside the minimap. */
   setSky(hour: number, icon: string, label: string) {
     const m = Math.floor(((hour % 24) * 60) / 5) * 5;
@@ -827,7 +838,8 @@ export class UI {
     if (key === this.skyKey) return;
     this.skyKey = key;
     const el = $('hud-sky');
-    el.className = `sky ${icon}${hour < 5.5 || hour > 19.5 ? ' night' : ''}`;
+    const tag = el.classList.contains('tag');
+    el.className = `sky ${icon}${hour < 5.5 || hour > 19.5 ? ' night' : ''}${tag ? ' tag' : ''}`;
     el.title = `${label} · ${text}`;
     $('hud-clock').textContent = text;
   }
