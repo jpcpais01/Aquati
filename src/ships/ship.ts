@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { angleDelta, clamp, damp, lerp } from '../core/noise';
 import { World } from '../game/world';
 import { ShipModel } from './shipModel';
-import { ShipDamage } from './shipDamage';
+import { ShipDamage, WRECK_LIFE } from './shipDamage';
 import { Livery, ShipClass } from './shipTypes';
 
 export type Team = 'player' | 'pirate';
@@ -80,6 +80,12 @@ export class Ship {
   hp: number;
   alive = true;
   sinkT = 0;
+  /**
+   * Seconds the wreck lingers afloat before her final plunge. Your own ship
+   * founders within moments, bow lifting as the stern drags her under, so the
+   * farewell can follow her down.
+   */
+  wreckLife = WRECK_LIFE;
   removed = false;
   reload = { port: 0, starboard: 0 };
   lastHit = -100;

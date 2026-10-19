@@ -49,6 +49,11 @@ export class CameraRig {
   private battle = 0;
   private foe = new THREE.Vector3();
   private fitDist = 0;
+  /**
+   * A directed shot (the farewell as your ship goes down): the camera glides
+   * from wherever it is toward `pos`, looking at `look`, by weight `w`.
+   */
+  cine: { pos: THREE.Vector3; look: THREE.Vector3; fov: number; w: number } | null = null;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(34, aspect, 2, 2600);
@@ -216,6 +221,21 @@ export class CameraRig {
         _sq.set(Math.sin(time * 53) * s * 0.022 * e, (Math.sin(time * 47) + Math.sin(time * 31)) * s * 0.012 * e, Math.sin(time * 41 + 1) * s * 0.018 * e);
         this.camera.quaternion.multiply(_fq.setFromEuler(_sq));
       }
+    }
+    const cn = this.cine;
+    if (cn && cn.w > 0) {
+      // whatever the camera faces now, blended toward the shot's subject
+      const fwd = _c.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      const look = _a.copy(this.camera.position).addScaledVector(fwd, this.followDistance).lerp(cn.look, cn.w);
+      this.camera.position.lerp(cn.pos, cn.w);
+      if (s > 0) {
+        const k = s * 0.5 * cn.w;
+        this.camera.position.x += (Math.sin(time * 47) + Math.sin(time * 31)) * k * 0.5;
+        this.camera.position.y += Math.sin(time * 53) * k * 0.4;
+      }
+      this.camera.lookAt(look);
+      this.camera.fov = lerp(this.camera.fov, cn.fov, cn.w);
+      this.target.lerp(_b.set(cn.look.x, 0, cn.look.z), cn.w);
     }
     this.camera.near = lerp(2, 0.1, Math.min(1, e * 1.6));
     this.camera.far = lerp(2600, 3600, e);
