@@ -993,8 +993,9 @@ export class UI {
   setWind(angle: number) {
     // screen: up = north (-z). Arrow svg points up by default.
     const deg = 180 - (angle * 180) / Math.PI;
+    if (Math.abs(deg - this.windDeg) < 0.25) return;
     this.windDeg = deg;
-    this.setGust(0);
+    this.drawWind();
   }
 
   /** The compass arrow puffs up a little while a gust is blowing through. */
@@ -1002,7 +1003,19 @@ export class UI {
     const s = 1 + Math.min(g, 1.2) * 0.22;
     if (Math.abs(s - this.windScale) < 0.01) return;
     this.windScale = s;
-    ($('hud-wind').firstElementChild as HTMLElement).style.transform = `rotate(${this.windDeg}deg) scale(${s.toFixed(3)})`;
+    this.drawWind();
+  }
+
+  private drawWind() {
+    ($('hud-wind').firstElementChild as HTMLElement).style.transform = `rotate(${this.windDeg.toFixed(1)}deg) scale(${Math.max(1, this.windScale).toFixed(3)})`;
+  }
+
+  /** A soft ring ripples off the wind arrow as the wind comes round. */
+  windShift() {
+    const el = $('hud-wind');
+    el.classList.remove('shift');
+    void el.offsetWidth;
+    el.classList.add('shift');
   }
 
   private skyKey = '';

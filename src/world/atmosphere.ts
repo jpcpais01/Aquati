@@ -164,6 +164,17 @@ export interface AtmosSnapshot {
   sea: number;
 }
 
+/** The prevailing wind: the heading the weather keeps bringing it back toward. */
+export const WIND_HOME = 1.25;
+
+const POINTS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+/** Eight-point compass name of the quarter a wind with this heading blows from (map up = north = -z). */
+export function compass(angle: number) {
+  const from = -angle; // bearing of the source, clockwise from north
+  const i = Math.round(from / (Math.PI / 4));
+  return POINTS[((i % 8) + 8) % 8];
+}
+
 export class Atmosphere {
   /** Fraction of the solar day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
   day = 0.36;
@@ -187,6 +198,15 @@ export class Atmosphere {
   wet = 0;
   sea = 0; // 0 calm .. ~1.3 storm swell (lags the storm)
 
+  // wind heading: the bearing the wind blows toward (x = sin, z = cos). Never
+  // wrapped, so it eases (and the HUD arrow turns) the short way round.
+  windAngle = WIND_HOME;
+  /** Where the wind is settling to; it swings round to this over half a minute or so. */
+  windTo = WIND_HOME;
+  private veerT = 0;
+  private veerDur = 100 + Math.random() * 120;
+  private shiftNote = -1;
+
   readonly sunDir = new THREE.Vector3();
   readonly moonDir = new THREE.Vector3();
   /** Direction & colour (intensity baked in) of whichever body lights the scene. */
@@ -200,6 +220,8 @@ export class Atmosphere {
   exposure = 1;
   /** Called when the weather turns, with a short title and a line of flavour. */
   onChange: (kind: WeatherKind, title: string, line: string) => void = () => {};
+  /** Called as a marked wind shift gets under way, with a title and a line naming where it now blows from. */
+  onWindShift: (title: string, line: string) => void = () => {};
 
   private dayRef: number;
   private tmp = new THREE.Vector3();
@@ -261,11 +283,28 @@ export class Atmosphere {
     }
   }
 
+  /**
+   * Sends the wind round to a new heading, up to `span` radians either way.
+   * It wanders about its prevailing direction rather than drifting off for good.
+   * Shifts big enough to notice are announced `note` seconds later.
+   */
+  private shiftWind(span: number, note: number) {
+    this.veerT = 0;
+    this.veerDur = (90 + Math.random() * 150) * (1 - this.storm * 0.55);
+    const off = this.windTo - WIND_HOME;
+    let dir = Math.random() < 0.5 ? -1 : 1;
+    if (Math.abs(off) > 1.2 && Math.random() < 0.8) dir = -Math.sign(off);
+    const turn = dir * span * (0.45 + Math.random() * 0.55);
+    this.windTo += turn;
+    if (Math.abs(turn) > 0.3) this.shiftNote = note;
+  }
+
   /** Picks the weather by hand ('auto' hands it back to nature) and blends to it quickly. */
   setMode(m: WeatherKind | 'auto') {
     this.mode = m;
     this.locked = m !== 'auto';
     if (m !== 'auto') this.setWeather(m);
+    if (m === 'storm') this.shiftWind(1.2, 4);
     else this.stateDur = Math.min(this.stateDur, this.stateT + 60 + Math.random() * 60);
     this.rush = 1;
     try {
@@ -320,6 +359,8 @@ export class Atmosphere {
     const opts = WEATHER[this.kind].next.map(([k, w]) => [k, k === 'mist' ? (dawn ? w * 4 : w * 0.15) : w] as [WeatherKind, number]);
     const k = pick(opts);
     this.setWeather(k);
+    // a change of weather brings the wind round with it: hardest into a storm
+    this.shiftWind(k === 'storm' ? 1.7 : k === 'rain' ? 1.15 : k === 'mist' ? 0.5 : 0.8, 6);
     const a = WEATHER[k].arrive;
     if (a) this.onChange(k, a[0], a[1]);
   }
@@ -349,6 +390,19 @@ export class Atmosphere {
     this.fog = ease(this.fog, d.fog, 25);
     this.wind = ease(this.wind, d.wind, 18);
     this.sea = ease(this.sea, this.seaTarget(), 32);
+
+    // ---------------------------------------------------------- wind heading
+    // now and then the breeze veers or backs; squalls shove it about more often
+    this.veerT += dt;
+    if (this.veerT > this.veerDur) this.shiftWind(0.35 + this.storm * 0.6 + this.rain * 0.2, 0);
+    // swing round to the new heading: a slow start and settle, never faster than a few degrees a second
+    const left = this.windTo - this.windAngle;
+    const maxRate = (0.045 + this.storm * 0.05) * fast;
+    this.windAngle += Math.sign(left) * Math.min(Math.abs(left) * (1 - Math.exp((-dt * fast) / 14)), maxRate * dt);
+    if (this.shiftNote >= 0 && (this.shiftNote -= dt) < 0) {
+      const veer = this.windTo < this.windAngle; // bearing turning clockwise on the compass
+      this.onWindShift(veer ? 'The wind veers' : 'The wind backs', `Now blowing from the ${compass(this.windTo)}`);
+    }
     const wetTo = Math.min(1, this.rain * 1.8);
     this.wet = wetTo > this.wet ? ease(this.wet, wetTo, 7) : ease(this.wet, wetTo, 75); // dries slowly
 

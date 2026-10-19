@@ -21,7 +21,7 @@ import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { buildShore, setSurf } from '../world/shore';
 import { WakeField } from '../world/wakeField';
-import { buildWaves, setSeaState, Wave } from '../world/waves';
+import { buildWaves, setSeaState, turnWaves, Wave } from '../world/waves';
 import { Atmosphere, AtmosSnapshot, TIMES, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
@@ -151,6 +151,9 @@ export class Game {
   private rain!: Rain;
   private lightning!: Lightning;
   private baseWaves: Wave[] = [];
+  /** Heading the swell has turned to; it follows the wind round, but lags it. */
+  private swellAngle = 0;
+  private baseAngle = 0;
   private cloudOff = new THREE.Vector2();
   private sprayT = 0;
   private crew!: CrewSystem;
@@ -290,6 +293,10 @@ export class Game {
     this.atmos.onChange = (_k, title, line) => {
       if (this.state === 'playing') this.ui.toast(title, line, 3.4);
     };
+    this.atmos.onWindShift = (title, line) => {
+      this.ui.windShift();
+      if (this.state === 'playing') this.ui.toast(title, line, 3);
+    };
     this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group, this.sky);
 
     this.wireUI();
@@ -358,9 +365,10 @@ export class Game {
     ui.progress(0.75);
     await nextFrame();
 
-    const windAngle = 1.25;
+    const windAngle = this.atmos.windAngle;
     const waves = buildWaves(windAngle, 1);
     this.baseWaves = waves.map((w) => ({ ...w }));
+    this.swellAngle = this.baseAngle = windAngle;
     this.wake = new WakeField(q.wakeRes, 300);
     const seaFloor = this.terrain.createHeightTexture(512);
     this.wake.setTerrain(seaFloor);
@@ -2341,11 +2349,29 @@ export class Game {
     w.wind.strength = a.wind;
     globalUniforms.uWind.value.z = a.wind;
     this.windField.intensity = 0.55 + a.wind * 0.6;
+    // ...and its heading, as it veers and backs: sails, flags, smoke, plants and gusts all swing round
+    const wa = a.windAngle;
+    if (wa !== w.wind.angle) {
+      w.wind.angle = wa;
+      w.wind.dirX = Math.sin(wa);
+      w.wind.dirZ = Math.cos(wa);
+      globalUniforms.uWind.value.x = w.wind.dirX;
+      globalUniforms.uWind.value.y = w.wind.dirZ;
+      this.windField.setDir(w.wind.dirX, w.wind.dirZ);
+      this.ui.setWind(wa);
+    }
     this.cloudOff.x += dt * w.wind.dirX * (0.002 + a.wind * 0.002 + a.storm * 0.004);
     this.cloudOff.y += dt * w.wind.dirZ * (0.002 + a.wind * 0.002 + a.storm * 0.004);
     globalUniforms.uCloudOffset.value.copy(this.cloudOff);
     // bigger seas: CPU buoyancy and the GPU swell share the very same waves
     setSeaState(w.waves, this.baseWaves, a.sea);
+    // the swell comes round after the wind, slowly, turning about the view so it never slides
+    const swell = this.swellAngle + (a.windAngle - this.swellAngle) * (1 - Math.exp(-dt / 45));
+    if (Math.abs(swell - this.swellAngle) > 1e-6) {
+      this.swellAngle = swell;
+      const c = this.rig.camera.position;
+      turnWaves(w.waves, this.baseWaves, swell - this.baseAngle, c.x, c.z);
+    }
     this.ocean.setWaves(w.waves);
     setSurf(a.storm, a.sea, a.wind);
     this.applyAtmosphere();

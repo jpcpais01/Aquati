@@ -61,6 +61,27 @@ export function setSeaState(waves: Wave[], base: Wave[], sea: number) {
   }
 }
 
+/**
+ * Swings the whole wave set round by `turn` radians from its base headings,
+ * pivoting about (px, pz): each train's phase is nudged so the sea right there
+ * keeps its shape, and the swell only turns slowly round the ship instead of
+ * sliding. CPU and GPU read the same dirs and phases, so buoyancy stays true.
+ */
+export function turnWaves(waves: Wave[], base: Wave[], turn: number, px: number, pz: number) {
+  const c = Math.cos(turn);
+  const s = Math.sin(turn);
+  const TAU = Math.PI * 2;
+  for (let i = 0; i < waves.length; i++) {
+    const w = waves[i];
+    const b = base[i];
+    const nx = b.dirX * c + b.dirZ * s;
+    const nz = b.dirZ * c - b.dirX * s;
+    w.phase = (w.phase + w.k * ((w.dirX - nx) * px + (w.dirZ - nz) * pz)) % TAU;
+    w.dirX = nx;
+    w.dirZ = nz;
+  }
+}
+
 /** Packs waves for GLSL uniforms: vec4(dir.xy, k, amp), vec4(omega, q, phase, 0). */
 export function packWaves(waves: Wave[]): { a: Float32Array; b: Float32Array } {
   const a = new Float32Array(waves.length * 4);

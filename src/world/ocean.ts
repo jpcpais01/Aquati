@@ -802,8 +802,10 @@ export class Ocean {
     const a = this.material.uniforms.uWaveA.value as THREE.Vector4[];
     const b = this.material.uniforms.uWaveB.value as THREE.Vector4[];
     for (let i = 0; i < waves.length; i++) {
-      a[i].w = waves[i].amp;
-      b[i].y = waves[i].q;
+      const w = waves[i];
+      a[i].set(w.dirX, w.dirZ, w.k, w.amp);
+      b[i].y = w.q;
+      b[i].z = w.phase;
     }
   }
 
