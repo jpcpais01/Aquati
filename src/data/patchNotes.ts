@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T15:00Z',
     entries: [
       {
+        title: 'Volume sliders',
+        notes: [
+          'Settings now has Master, Music, Effects and Ambience volume sliders, so you can turn the harbour theme down without losing the cannons, or quiet the surf and wind for a cleaner battle mix.',
+          'Changes are heard live as you drag and are remembered next time you sail.',
+        ],
+      },
+      {
         title: 'Lusher, more beautiful islands',
         notes: [
           'Every island has been replanted. Coconut palms now grow in proper groves with bare stretches of beach between them, with serrated fronds, ringed trunks, the odd dried frond hanging down, coconuts in the crown and more lying in the sand.',

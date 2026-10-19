@@ -334,6 +334,7 @@ export class Game {
     ui.onSound = (on) => this.audio.setMuted(!on);
     ui.onSettings = (st) => {
       this.audio.setMusicEnabled(st.music);
+      this.audio.setVolumes({ master: st.volMaster, music: st.volMusic, effects: st.volEffects, ambience: st.volAmbience });
       this.rig.shakeScale = SHAKE_SCALE[st.shake];
     };
     this.audio.setMuted(!ui.settings.sound);

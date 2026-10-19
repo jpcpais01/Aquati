@@ -6,7 +6,7 @@ import { RARITY } from '../game/loot';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import { SeaChart, ChartScene } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
-import { loadSettings, saveSettings, Settings } from './settings';
+import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
 import { WreckReport, WreckScreen } from './wreck';
 export type { VoyageEvent, WreckReport } from './wreck';
 
@@ -290,9 +290,17 @@ export class UI {
       `<div class="set-row has-seg"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><span class="seg" role="radiogroup">${opts
         .map(([v, t]) => `<button data-key="${k}" data-v="${v}" role="radio" aria-checked="${s[k] === v}" class="${s[k] === v ? 'sel' : ''}">${t}</button>`)
         .join('')}</span></div>`;
+    const slider = (k: VolumeKey, label: string, desc: string) => {
+      const pct = Math.round(s[k] * 100);
+      return `<label class="set-row has-vol"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><span class="vol"><input type="range" min="0" max="100" step="1" value="${pct}" data-vol="${k}" aria-label="${label}" style="--p:${pct}%"><output>${pct}</output></span></label>`;
+    };
     body.innerHTML = `
       <section class="set-group"><h4>Sound</h4>
         ${toggle('sound', 'Sound', 'Every sound in the game')}
+        ${slider('volMaster', 'Master volume', 'Everything at once')}
+        ${slider('volMusic', 'Music', 'The harbour theme')}
+        ${slider('volEffects', 'Effects', 'Cannons, splinters, thunder and the crew')}
+        ${slider('volAmbience', 'Ambience', 'Surf, wind and rain')}
         ${toggle('music', 'Harbour music', 'The theme that plays on the home screen')}
       </section>
       <section class="set-group"><h4>Graphics</h4>
@@ -319,6 +327,21 @@ export class UI {
         else this.setSetting(k, !this.settings[k] as never);
       }),
     );
+    body.querySelectorAll<HTMLInputElement>('input[data-vol]').forEach((r) => {
+      const k = r.dataset.vol as VolumeKey;
+      // live while dragging, no re-render (that would drop the thumb); saved on release
+      r.addEventListener('input', () => {
+        const v = Number(r.value) / 100;
+        this.settings[k] = v;
+        r.style.setProperty('--p', `${r.value}%`);
+        r.nextElementSibling!.textContent = r.value;
+        this.onSettings(this.settings);
+      });
+      r.addEventListener('change', () => {
+        saveSettings(this.settings);
+        this.onClick();
+      });
+    });
     $('set-gfx').addEventListener('click', () => {
       // the graphics card clears the stage to show the sea, so it replaces this sheet
       this.closeOverlay('settings');
