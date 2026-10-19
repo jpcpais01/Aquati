@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T20:00Z',
+    entries: [
+      {
+        title: 'Smooth seas when the wind comes round',
+        notes: [
+          'When the wind veered or backed, the ripples on the sea and the bright sheen rolling over island meadows could suddenly race sideways, faster the longer you had been sailing. Now they keep drifting gently downwind and simply ease onto the new heading as the wind swings, and the long wind streaks on the water turn about your ship instead of sliding across the whole sea.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T19:00Z',
     entries: [
       {

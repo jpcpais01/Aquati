@@ -2364,6 +2364,14 @@ export class Game {
     // ...and its heading, as it veers and backs: sails, flags, smoke, plants and gusts all swing round
     const wa = a.windAngle;
     if (wa !== w.wind.angle) {
+      // re-anchor wind-aligned streaks so they turn about the view, not the world origin
+      const c = this.rig.camera.position;
+      const pv = globalUniforms.uWindPivot.value;
+      const qx = c.x - pv.x, qz = c.z - pv.y;
+      const along = qx * w.wind.dirX + qz * w.wind.dirZ;
+      const across = -qx * w.wind.dirZ + qz * w.wind.dirX;
+      const nx = Math.sin(wa), nz = Math.cos(wa);
+      pv.set(c.x - (along * nx - across * nz), c.z - (along * nz + across * nx));
       w.wind.angle = wa;
       w.wind.dirX = Math.sin(wa);
       w.wind.dirZ = Math.cos(wa);
@@ -2372,6 +2380,8 @@ export class Game {
       this.windField.setDir(w.wind.dirX, w.wind.dirZ);
       this.ui.setWind(wa);
     }
+    globalUniforms.uWindDrift.value.x += dt * w.wind.dirX;
+    globalUniforms.uWindDrift.value.y += dt * w.wind.dirZ;
     this.cloudOff.x += dt * w.wind.dirX * (0.002 + a.wind * 0.002 + a.storm * 0.004);
     this.cloudOff.y += dt * w.wind.dirZ * (0.002 + a.wind * 0.002 + a.storm * 0.004);
     globalUniforms.uCloudOffset.value.copy(this.cloudOff);
