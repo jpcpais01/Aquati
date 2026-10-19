@@ -90,9 +90,6 @@ export function hullTexture(livery: Livery, ports: { u: number; v: number; w: nu
     g.fillRect(x - pw / 2 - 3, y - ph / 2 - 3, pw + 6, ph + 6);
     g.fillStyle = '#120c09';
     g.fillRect(x - pw / 2, y - ph / 2, pw, ph);
-    // open lid above
-    g.fillStyle = livery.strake;
-    g.fillRect(x - pw / 2, y - ph / 2 - ph * 0.55, pw, ph * 0.42);
   }
   // soft grime near the waterline
   const grad = g.createLinearGradient(0, vy(0.42), 0, vy(0.3));
