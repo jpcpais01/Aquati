@@ -3,6 +3,7 @@ import { angleDelta, clamp, damp, lerp } from '../core/noise';
 import { World } from '../game/world';
 import { AMMO, AmmoId, EFFECT } from '../game/ammo';
 import { globalUniforms } from '../render/environment';
+import { BowWave } from '../fx/bowWave';
 import { ShipModel } from './shipModel';
 import { ShipDamage, WRECK_LIFE } from './shipDamage';
 import { Livery, ShipClass } from './shipTypes';
@@ -72,6 +73,8 @@ export class Ship {
   readonly root = new THREE.Group();
   readonly model: ShipModel;
   readonly dmg: ShipDamage;
+  /** The curling sheet of white water at the stem; drawn in the water pass (the game adds it). */
+  readonly bowWave: BowWave;
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
   heading = 0;
@@ -145,6 +148,7 @@ export class Ship {
     this.root.add(this.model.root);
     this.root.rotation.order = 'YXZ';
     this.dmg = new ShipDamage(this);
+    this.bowWave = new BowWave(this.model.shape, cls.length, cls.beam);
     this.hp = cls.hp;
     this.name = cls.title;
     this.gunFiredAt = this.model.muzzles.map(() => -100);
@@ -541,16 +545,18 @@ export class Ship {
         const a = Math.random() * L * 0.12;
         world.wake.stamp(sx + px * o - fx * a, sz + pz * o - fz * a, B * (0.18 + Math.random() * 0.16), 0.16 * k);
       }
-      // cutwater: a split sheet of foam where the stem slices in, peeling back along both bows
-      const bx = this.pos.x + fx * L * 0.5;
-      const bz = this.pos.z + fz * L * 0.5;
-      world.wake.stamp(bx, bz, B * 0.24, 0.32 * k);
+      // where the bow sheet runs out onto the sea it leaves fine ribbons of lace that
+      // peel away on both sides (thin stamps strung along its landing line, not blobs)
       const rnd = () => 0.5 + Math.random();
       for (const side of [1, -1]) {
         const ox = px * side * B;
         const oz = pz * side * B;
-        const sp = (Math.random() - 0.5) * L * 0.08;
-        world.wake.stamp(bx - fx * (L * 0.1 + sp) + ox * (0.38 + Math.random() * 0.1), bz - fz * (L * 0.1 + sp) + oz * (0.38 + Math.random() * 0.1), B * 0.24 * rnd(), 0.26 * k * rnd());
+        for (const s0 of [0.22, 0.45, 0.7, 0.92]) {
+          const [lx, lz] = this.bowWave.landing(s0 + (Math.random() - 0.5) * 0.08, side);
+          const wx = this.pos.x + px * lx + fx * lz;
+          const wz = this.pos.z + pz * lx + fz * lz;
+          world.wake.stamp(wx, wz, (0.35 + Math.random() * 0.3) * Math.sqrt(B / 6.2), (0.22 + 0.1 * s0) * k * rnd());
+        }
         // lateral wash hugging the hull, in uneven clumps
         if (Math.random() < 0.7) {
           const u = 0.2 - Math.random() * 0.45;
@@ -564,31 +570,36 @@ export class Ship {
         world.wake.stamp(this.pos.x - fx * L * 0.38 + px * out, this.pos.z - fz * L * 0.38 + pz * out, B * 0.36, 0.22 * skid * wakeK);
       }
     }
-    // bow spray: flung off both bows at speed, and in bursts when she buries her nose in the swell
-    if (this.alive && spd > c.maxSpeed * 0.4) {
-      const fast = (spd / c.maxSpeed - 0.4) / 0.6;
+    // the bow wave sheet rides the waterline, growing with speed
+    const bowAmp = this.alive ? Math.min(1.2, spd / 12) * wakeK : 0;
+    this.bowWave.update(this.pos.x, this.heave, this.pos.z, this.heading, this.pitch * 0.8, bowAmp, spd, dt);
+    // bow spray: fine droplets thrown off the crest of the sheet at speed, in bursts when
+    // she buries her nose in a swell. Small, quick and falling: water, not puffs of smoke.
+    if (this.alive && spd > c.maxSpeed * 0.35) {
+      const fast = (spd / c.maxSpeed - 0.35) / 0.65;
       const slam = Math.max(0, this.pitch - 0.02) * 30; // positive pitch = bow down
-      this.sprayT += dt * (fast * fast * 14 + slam * 18);
-      const top = this.heave + c.draft * 0.25;
+      this.sprayT += dt * (fast * fast * 40 + slam * 50);
+      const crest = this.heave + (0.18 + 0.7 * bowAmp) * Math.sqrt(B / 6.2) * 0.9;
       while (this.sprayT > 1) {
         this.sprayT -= 1;
         const side = Math.random() < 0.5 ? 1 : -1;
-        const u = 0.36 + Math.random() * 0.1;
-        const out = 1.5 + Math.random() * 3 + fast * 2;
-        const up = 2.2 + Math.random() * 3.2 + slam * 0.6;
-        const x = this.pos.x + fx * L * u + port.x * side * B * 0.42;
-        const z = this.pos.z + fz * L * u + port.z * side * B * 0.42;
-        world.particles.emit({
-          x, y: top, z,
-          vx: port.x * side * out + this.vel.x * 0.7, vy: up, vz: port.z * side * out + this.vel.z * 0.7,
-          life: 0.55 + Math.random() * 0.45, size: 0.35 + Math.random() * 0.4, sizeEnd: 1.1 + Math.random() * 0.7,
-          color: [1.3, 1.38, 1.42], alpha: 0.75, grav: 13, drag: 1.1, kind: 0, fadeIn: 0.02,
-        });
-        if (Math.random() < 0.3) {
+        const [lx, lz] = this.bowWave.landing(0.04 + Math.random() * 0.22, side);
+        const f = 0.25 + Math.random() * 0.35; // up on the curling lip, not out at the landing line
+        const x = this.pos.x + port.x * lx * f + fx * lz;
+        const z = this.pos.z + port.z * lx * f + fz * lz;
+        const out = 1.2 + Math.random() * 2.6 + fast * 1.5;
+        const up = 1.6 + Math.random() * 2.4 + slam * 0.8;
+        const n = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) {
+          const jx = (Math.random() - 0.5) * 0.6;
+          const jy = Math.random() * 0.5;
           world.particles.emit({
-            x, y: top + 0.3, z,
-            vx: port.x * side * out * 0.4 + this.vel.x * 0.5, vy: up * 0.4, vz: port.z * side * out * 0.4 + this.vel.z * 0.5,
-            life: 1 + Math.random() * 0.6, size: 0.8, sizeEnd: 2.6, color: [1.22, 1.3, 1.34], alpha: 0.28, drag: 1.6, grav: 1.5, kind: 1,
+            x, y: crest, z,
+            vx: port.x * side * (out + jx) + this.vel.x * 0.9 - fx * Math.random() * 1.5,
+            vy: up + jy,
+            vz: port.z * side * (out + jx) + this.vel.z * 0.9 - fz * Math.random() * 1.5,
+            life: 0.4 + Math.random() * 0.4, size: 0.06 + Math.random() * 0.09, sizeEnd: 0.035,
+            color: [1.4, 1.5, 1.55], alpha: 0.9, grav: 14, drag: 0.5, kind: 0, fadeIn: 0.01,
           });
         }
       }
@@ -625,5 +636,6 @@ export class Ship {
 
   dispose() {
     this.dmg.dispose();
+    this.bowWave.dispose();
   }
 }

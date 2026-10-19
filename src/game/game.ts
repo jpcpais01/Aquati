@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { setBowWaveScene } from '../fx/bowWave';
 import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
 import { Audio } from '../core/audio';
@@ -1141,11 +1142,13 @@ export class Game {
     }
     this.ships.push(s);
     this.opaque.add(s.root);
+    this.water.add(s.bowWave.mesh);
     return s;
   }
 
   private removeShip(s: Ship) {
     this.opaque.remove(s.root);
+    this.water.remove(s.bowWave.mesh);
     this.ships.splice(this.ships.indexOf(s), 1);
     this.ais.delete(s);
     s.root.traverse((o) => {
@@ -2567,6 +2570,7 @@ export class Game {
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     const eb = this.rig.eyeBlend;
