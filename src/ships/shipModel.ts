@@ -939,7 +939,9 @@ export class ShipModel {
     for (const p of this.yardPivots) p.rotation.y = braceAngle;
     for (const p of this.foreAftPivots) {
       p.rotation.y = -leeSide * 0.35 * (0.4 + 0.6 * fill);
-      for (const ch of p.children) if ((ch as THREE.Mesh).geometry?.getAttribute('aBillow')) ch.scale.z = leeSide;
+      // billow follows the swing through flat; never exactly 0 so normals stay valid
+      const bz = (leeSide < 0 ? -1 : 1) * Math.max(0.04, Math.abs(leeSide));
+      for (const ch of p.children) if ((ch as THREE.Mesh).geometry?.getAttribute('aBillow')) ch.scale.z = bz;
     }
     this.flagPivot.rotation.y = windRelAngle;
     this.sailUniforms.uSailFill.value = fill * sailLevel;

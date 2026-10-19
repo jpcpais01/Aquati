@@ -13,6 +13,27 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
+        title: 'Wind you can see: real gusts',
+        notes: [
+          'Gusts now roll across the sea as dark, shimmering patches of ruffled water racing downwind, just like real cat\'s paws on a breezy day.',
+          'Palms and trees lean with the breeze and get shoved over as a gust sweeps across the island, leaves shivering, then spring back once it passes.',
+          'Little white wisps of air ride inside the strongest gusts, curling and sometimes looping before they fade away.',
+          'Catch a gust and your sails puff out harder for a small burst of speed. The wind sound and the compass arrow swell as it blows through.',
+        ],
+      },
+      {
+        title: 'Sails that swing, not snap',
+        notes: [
+          'When you tack or gybe, the yards and booms now swing across with real weight, overshooting a touch before settling, instead of flipping sides instantly.',
+          'The canvas spills its wind and goes slack as it crosses over, then fills out again on the new side. Bigger ships swing their rigs more slowly.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T05:00Z',
     entries: [
       {
