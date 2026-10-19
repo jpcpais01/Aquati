@@ -25,3 +25,16 @@ Everything is procedural: no models or textures are downloaded.
 - **Gameplay** (`src/game/`): wind-dependent sailing, rippling broadsides with aim assist, pirate AI that jockeys for a broadside and flees when beaten, salvage, island discovery.
 
 Patch notes live in `src/data/patchNotes.ts` and are shown in game.
+
+## Cloud saves (Firebase)
+
+Players can sign in with Google or email from the captain chip in the harbour's top bar; their gold, Treasure Vault collection, livery, saved designs, records and favourite ship then sync through Firestore. Guests keep playing on local saves, and the first sign-in carries that progress into the account. Code: `src/cloud/` (profile + three-way merge in `profile.ts`, sync in `cloud.ts`, the lazily loaded SDK in `firebase.ts`) and the UI in `src/ui/account.ts`.
+
+Setup, once:
+
+1. Create a Firebase project and add a **Web app** to it.
+2. **Authentication** › Sign-in method: enable **Google** and **Email/Password**. Under Settings › Authorized domains, add the Vercel domain(s) the game is served from.
+3. **Firestore Database**: create it (production mode), then paste `firestore.rules` into the Rules tab (or `firebase deploy --only firestore:rules`).
+4. In Vercel › Settings › Environment Variables, set the values from the web app's config (see `.env.example`): `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`, `VITE_FIREBASE_MESSAGING_SENDER_ID`. Redeploy.
+
+Without those variables the sign-in chip is hidden and the game runs on local saves only.

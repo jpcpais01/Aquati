@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T20:00Z',
     entries: [
       {
+        title: 'Captain accounts and cloud saves',
+        notes: [
+          'You can now sign in with Google or an email and password. Tap the captain badge at the top of the harbour screen.',
+          'Once you sign in, your gold, Treasure Vault finds, equipped skins and effects, ship livery, saved designs, records and favourite ship are kept in the cloud. They follow you to any phone, tablet or computer you sign in on.',
+          'Your first sign-in brings everything you earned as a guest along with it. Progress from several devices adds up: gold earned on your phone and gold spent on your laptop both count.',
+          'The game still saves on your device first, so it plays the same offline. Anything you earn while offline is saved to the cloud once you reconnect.',
+          'You can still play as a guest without signing in. Your progress then stays on that device, as before.',
+        ],
+      },
+      {
         title: 'Little clouds over the islands',
         notes: [
           'Zoom all the way out and you now rise above a layer of small, soft cumulus clouds drifting low over the sea. They are lit by the real sun and sky, so they are brilliant white at noon, gold and rose at sunset, silver under the moon and a heavy grey in a storm.',
