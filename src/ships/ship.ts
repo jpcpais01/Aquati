@@ -76,6 +76,8 @@ export class Ship {
   gold = 0;
   kills = 0;
   anchored = false;
+  /** World time each gun last fired, by muzzle index (crews time their drill to it). */
+  readonly gunFiredAt: number[];
   private pending: PendingShot[] = [];
   private heave = 0;
   private pitch = 0;
@@ -100,6 +102,7 @@ export class Ship {
     this.root.rotation.order = 'YXZ';
     this.hp = cls.hp;
     this.name = cls.title;
+    this.gunFiredAt = this.model.muzzles.map(() => -100);
   }
 
   get maxHp() {
@@ -123,6 +126,16 @@ export class Ship {
     this.root.rotation.y = heading;
   }
 
+  /** How hard the yards and booms are swinging (crews haul on the braces while they do). */
+  rigActivity() {
+    return Math.abs(this.rigBraceV) + Math.abs(this.rigLeeV) * 0.5;
+  }
+
+  /** The side currently heeled up out of the water: +1 port, -1 starboard. */
+  highSide() {
+    return this.roll >= 0 ? 1 : -1;
+  }
+
   canFire(side: 'port' | 'starboard') {
     return this.alive && this.reload[side] <= 0;
   }
@@ -142,6 +155,7 @@ export class Ship {
 
   private shoot(p: PendingShot, world: World) {
     const m = this.model.muzzles[p.muzzle];
+    this.gunFiredAt[p.muzzle] = world.time;
     this.root.updateMatrixWorld();
     const pos = m.pos.clone().applyMatrix4(this.model.root.matrixWorld);
     const dir = m.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
