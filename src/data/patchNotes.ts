@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T20:00Z',
     entries: [
       {
+        title: 'Little clouds over the islands',
+        notes: [
+          'Zoom all the way out and you now rise above a layer of small, soft cumulus clouds drifting low over the sea. They are lit by the real sun and sky, so they are brilliant white at noon, gold and rose at sunset, silver under the moon and a heavy grey in a storm.',
+          'They come and go. Some stretches of sea stay clear while others fill with a field of puffs, clear days bring only a few, cloudy ones bring plenty, and the islands breed their own little clouds over their slopes. Each cloud forms from the middle out and frays away at the edges as it drifts downwind.',
+          'Every cloud casts a soft shadow that slides across the water, the beaches and your ship, so even zoomed in you can watch the shadows of the clouds above sweep past.',
+          'A cloud passing over your own ship turns see-through around it, so you never lose sight of her in a fight.',
+        ],
+      },
+      {
         title: 'Roomier ship card',
         notes: [
           'The ship card in the top left is wider, so longer ship names fit without being cut off. Gold, hold, crew and isles now sit together on one row beneath it.',
