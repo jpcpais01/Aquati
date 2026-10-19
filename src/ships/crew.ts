@@ -373,7 +373,8 @@ class ShipCrew {
     // --- muster the crew
     const gunsPerSide = this.posts.filter((p) => p.side === 1).length;
     const hands = (c.id === 'sloop' ? 2 : c.id === 'brig' ? 3 : 5) - (tier === 0 ? 1 : 0);
-    const lookouts = Math.min(this.tops.length, tier === 0 ? 1 : c.id === 'galleon' ? 2 : 1);
+    // nobody posted aloft: a lookout would be left standing on air when the mast comes down
+    const lookouts = 0;
     const roles: Role[] = ['helm', 'captain'];
     for (let i = 0; i < gunsPerSide; i++) roles.push('gunner');
     for (let i = 0; i < hands; i++) roles.push('hand');
