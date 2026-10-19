@@ -55,6 +55,43 @@ function buildGrid(segments: number, half: number): THREE.BufferGeometry {
   return g;
 }
 
+/** A coarse square apron from just inside the grid's rim out toward the horizon,
+ *  so the sea runs all the way to the sky from the captain's eyes. */
+function buildApron(inner: number, outer: number): THREE.BufferGeometry {
+  const P = 64;
+  const R = 7;
+  const pos: number[] = [];
+  for (let j = 0; j <= R; j++) {
+    const r = inner * Math.pow(outer / inner, j / R);
+    for (let k = 0; k < P; k++) {
+      // walk the square's perimeter
+      const u = (k / P) * 4;
+      const side = Math.floor(u);
+      const f = (u - side) * 2 - 1;
+      const [x, z] = side === 0 ? [f, -1] : side === 1 ? [1, f] : side === 2 ? [-f, 1] : [-1, -f];
+      pos.push(x * r, 0, z * r);
+    }
+  }
+  const idx: number[] = [];
+  for (let j = 0; j < R; j++) {
+    for (let k = 0; k < P; k++) {
+      const a = j * P + k;
+      const b = j * P + ((k + 1) % P);
+      const c = a + P;
+      const d = b + P;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  // face up, whichever way the perimeter winds
+  const [ax, az, bx, bz, cx, cz] = [pos[0], pos[2], pos[3], pos[5], pos[P * 3], pos[P * 3 + 2]];
+  if ((bz - az) * (cx - ax) - (bx - ax) * (cz - az) < 0) for (let i = 0; i < idx.length; i += 3) [idx[i + 1], idx[i + 2]] = [idx[i + 2], idx[i + 1]];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), outer * 1.5);
+  return g;
+}
+
 export interface OceanOptions {
   segments: number;
   half: number;
@@ -66,6 +103,8 @@ export interface OceanOptions {
 export class Ocean {
   readonly mesh: THREE.Mesh;
   readonly material: THREE.ShaderMaterial;
+  /** Far sea out to the horizon; only worth drawing when the horizon is in view. */
+  readonly apron: THREE.Mesh;
   private snap: number;
 
   constructor(waves: Wave[], opts: OceanOptions) {
@@ -429,6 +468,11 @@ export class Ocean {
     this.mesh = new THREE.Mesh(buildGrid(opts.segments, opts.half), this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = -10;
+    this.apron = new THREE.Mesh(buildApron(opts.half * 0.985, 3400), this.material);
+    this.apron.frustumCulled = false;
+    this.apron.renderOrder = -10;
+    this.apron.visible = false;
+    this.mesh.add(this.apron);
   }
 
   /** Pushes changed wave amplitudes / steepness (sea state) to the GPU. */
