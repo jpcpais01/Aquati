@@ -2485,11 +2485,26 @@ kbd {
 }
 
 .fpv-prompt.held {
+  /* at the wheel the prompt steps aside: a small tag just above the helm console */
+  top: auto;
+  bottom: calc(92px + var(--safe-b));
+  gap: 6px;
+  padding: 4px 11px 4px 6px;
   border-color: rgba(239, 196, 99, 0.5);
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.fpv-prompt.held kbd {
+  transform: scale(0.8);
 }
 
 .is-touch .fpv-prompt {
   padding: 14px 22px;
+}
+
+.is-touch .fpv-prompt.held {
+  padding: 7px 14px;
 }
 
 .is-touch .fpv-prompt kbd {
