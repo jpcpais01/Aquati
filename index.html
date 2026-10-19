@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#0b3a4a" />
+    <meta name="description" content="Aquati: sail, explore and battle across a sun-drenched pirate archipelago." />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Aquati</title>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+
+    <div id="loading" class="screen">
+      <div class="brand">
+        <div class="logo">AQUATI</div>
+        <div class="tag">Charting the archipelago…</div>
+        <div class="bar"><i id="load-bar"></i></div>
+      </div>
+    </div>
+
+    <div id="menu" class="screen hidden">
+      <header class="menu-head">
+        <div class="logo">AQUATI</div>
+        <div class="tag">Sail the turquoise archipelago</div>
+      </header>
+      <section class="ships" id="ship-cards"></section>
+      <footer class="menu-foot">
+        <button class="btn gold big" id="btn-sail">Set Sail</button>
+        <div class="menu-links">
+          <button class="link" id="btn-notes">Patch notes</button>
+          <span class="dot">·</span>
+          <button class="link" id="btn-controls">Controls</button>
+          <span class="dot">·</span>
+          <button class="link" id="btn-sound">Sound: on</button>
+        </div>
+      </footer>
+    </div>
+
+    <div id="hud" class="hidden">
+      <div class="panel ship-panel">
+        <div class="ship-name"><span id="hud-title">Kestrel</span><small id="hud-class">Sloop</small></div>
+        <div class="hull"><div class="hull-fill" id="hud-hull"></div><span id="hud-hull-text">260</span></div>
+        <div class="stats-row">
+          <span class="coin" title="Gold"></span><b id="hud-gold">0</b>
+          <span class="skull" title="Ships sunk"></span><b id="hud-kills">0</b>
+          <span class="isle" title="Islands discovered"></span><b id="hud-isles">0</b>
+        </div>
+      </div>
+      <div class="map-wrap">
+        <canvas id="minimap" width="360" height="360"></canvas>
+        <div class="compass">N</div>
+        <div class="wind" id="hud-wind"><i></i></div>
+      </div>
+      <div class="bottom">
+        <div class="broadside" id="bs-port"><kbd class="kd">Q</kbd><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg></div><span>Port</span></div>
+        <div class="helm">
+          <div class="sails" id="hud-sails"><i></i><i></i><i></i></div>
+          <div class="speed"><b id="hud-speed">0</b><small>knots</small></div>
+          <div class="hint kd">W / S sails · A / D helm</div>
+        </div>
+        <div class="broadside" id="bs-star"><span>Starboard</span><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg></div><kbd class="kd">E</kbd></div>
+      </div>
+      <button class="icon-btn" id="btn-pause" title="Pause">❚❚</button>
+      <div id="toasts"></div>
+      <div id="floaters"></div>
+      <div id="bars"></div>
+      <div class="touch" id="touch">
+        <div class="joy" id="joy"><div class="knob" id="joy-knob"></div></div>
+        <div class="fire-pad">
+          <button class="fbtn side" id="t-port">◀ Port</button>
+          <button class="fbtn main" id="t-fire">Fire</button>
+          <button class="fbtn side" id="t-star">Stbd ▶</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause" class="screen dim hidden">
+      <div class="card-modal">
+        <h2>Anchored</h2>
+        <button class="btn gold" id="btn-resume">Resume voyage</button>
+        <button class="btn" id="btn-notes2">Patch notes</button>
+        <button class="btn" id="btn-controls2">Controls</button>
+        <button class="btn ghost" id="btn-quit">Return to harbour</button>
+      </div>
+    </div>
+
+    <div id="dead" class="screen dim hidden">
+      <div class="card-modal">
+        <h2>Lost to the depths</h2>
+        <p class="sub" id="dead-sub"></p>
+        <div class="summary" id="dead-summary"></div>
+        <button class="btn gold" id="btn-again">Choose a new ship</button>
+      </div>
+    </div>
+
+    <div id="notes" class="screen dim hidden">
+      <div class="card-modal wide">
+        <h2>Patch notes</h2>
+        <div class="notes" id="notes-body"></div>
+        <button class="btn" data-close>Close</button>
+      </div>
+    </div>
+
+    <div id="controls" class="screen dim hidden">
+      <div class="card-modal wide">
+        <h2>Controls</h2>
+        <div class="controls-grid">
+          <div><kbd>W</kbd><kbd>S</kbd> Raise / lower sail</div>
+          <div><kbd>A</kbd><kbd>D</kbd> Steer to port / starboard</div>
+          <div><kbd>Q</kbd> Fire port broadside</div>
+          <div><kbd>E</kbd> Fire starboard broadside</div>
+          <div><kbd>Click</kbd> Fire the side you point at</div>
+          <div><kbd>Space</kbd> Fire at the nearest foe</div>
+          <div><kbd>Wheel</kbd> Zoom</div>
+          <div><kbd>Esc</kbd> Pause</div>
+          <div class="span">On touch: drag the left side to steer &amp; trim, tap Fire. Pinch to zoom.</div>
+          <div class="span">Sail across the wind for the best speed. Sailing straight into the wind is slow going.</div>
+        </div>
+        <button class="btn" data-close>Close</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,29 @@
+import '@fontsource/cinzel/500.css';
+import '@fontsource/cinzel/700.css';
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/800.css';
+import './style.css';
+import { registerSW } from 'virtual:pwa-register';
+import { Game } from './game/game';
+
+registerSW({ immediate: true });
+
+const canvas = document.getElementById('game') as HTMLCanvasElement;
+
+function fail(msg: string) {
+  const tag = document.querySelector('#loading .tag');
+  if (tag) tag.textContent = msg;
+}
+
+try {
+  const game = new Game(canvas);
+  if (import.meta.env.DEV || location.search.includes('debug')) (window as unknown as { aquati: Game }).aquati = game;
+  game.init().catch((e) => {
+    console.error(e);
+    fail('The sea is rough: something went wrong while loading.');
+  });
+} catch (e) {
+  console.error(e);
+  fail('Aquati needs WebGL 2 to sail. Try a recent Chrome, Safari, Edge or Firefox.');
+}
