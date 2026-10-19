@@ -115,6 +115,8 @@ export class Ship {
   private fireT = 0;
   private galleyT = Math.random();
   name: string;
+  /** Vault cannon cosmetics (style ids): the flash and smoke at the gun, the wake behind the ball. */
+  readonly cannonFx = { blast: 'powder', trail: 'powder' };
 
   /** `model` may be one built ahead of time (see ShipModel's deferred build). */
   constructor(readonly cls: ShipClass, readonly livery: Livery, readonly team: Team, quality = 1, model?: ShipModel) {
@@ -220,8 +222,15 @@ export class Ship {
     const fa = Math.atan2(dir.x, dir.z) + yaw;
     const vel = new THREE.Vector3(Math.sin(fa) * Math.cos(pitch), Math.sin(pitch), Math.cos(fa) * Math.cos(pitch)).multiplyScalar(v);
     vel.add(this.vel);
-    world.onShot({ pos, vel, owner: this, damage: this.cls.damage });
-    world.particles.muzzle(pos, dir, this.vel);
+    world.onShot({ pos, vel, owner: this, damage: this.cls.damage, trail: this.cannonFx.trail });
+    world.particles.muzzle(pos, dir, this.vel, this.cannonFx.blast);
+    if (this.cannonFx.blast === 'thunder') {
+      // the thunderclap's shockwave rings out across the water
+      const wx = pos.x + dir.x * 2.5;
+      const wz = pos.z + dir.z * 2.5;
+      world.wake.stamp(wx, wz, 4, 0.9, true);
+      world.wake.push(wx, wz, 2.2, -0.25);
+    }
     const [vol, pan, d] = world.soundAt(pos);
     world.audio.cannon(vol, pan, d, clamp((this.cls.length - 15) / 14, 0, 1));
     world.onShake(this.team === 'player' ? 0.35 : 0.12 * vol, pos);

@@ -4,14 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b3a4a" />
-    <meta name="description" content="Aquati: sail, explore and battle across a sun-drenched pirate archipelago." />
+    <meta name="description" content="Shores of Fortune: sail, explore and battle across a sun-drenched pirate archipelago." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Fortune" />
+    <meta name="application-name" content="Shores of Fortune" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <title>Aquati</title>
+    <title>Shores of Fortune</title>
   </head>
   <body>
     <canvas id="game"></canvas>
@@ -19,7 +21,7 @@
     <div id="loading" class="screen">
       <div class="brand">
         <div class="crest-slot spin"></div>
-        <div class="logo">AQUATI</div>
+        <div class="logo" aria-label="Shores of Fortune"><span class="logo-pre" aria-hidden="true">Shores <em>of</em></span><span class="logo-main" aria-hidden="true">Fortune</span></div>
         <div class="tag" id="load-tip">Charting the archipelago…</div>
         <div class="bar"><i id="load-bar"></i></div>
       </div>
@@ -29,11 +31,12 @@
       <header class="menu-head">
         <div class="crest-slot"></div>
         <div class="title-block">
-          <div class="logo">AQUATI</div>
+          <div class="logo" aria-label="Shores of Fortune"><span class="logo-pre" aria-hidden="true">Shores <em>of</em></span><span class="logo-main" aria-hidden="true">Fortune</span></div>
           <div class="tag">Sail the turquoise archipelago</div>
         </div>
       </header>
       <nav class="menu-tools">
+        <span class="build-tag" id="build-tag" aria-label="Game version"></span>
         <button class="tool" id="btn-notes" data-label="Patch notes" aria-label="Patch notes"><span class="ti" data-icon="scroll"></span><i class="new-dot" id="notes-dot"></i></button>
         <button class="tool" id="btn-controls" data-label="Controls" aria-label="Controls"><span class="ti" data-icon="keys"></span></button>
         <button class="tool" id="btn-settings" data-label="Settings" aria-label="Settings"><span class="ti" data-icon="sliders"></span></button>

@@ -6,12 +6,14 @@ import {
   DEFAULT_LOOK, HULL_PARTS, HullLook, loadDesigns, MAX_SAVED, PALETTES, PRESETS, randomLook, randomShipName, SAIL_PATTERNS, SailPattern, sameDesign,
   SavedDesign, saveDesigns, sameStyle, ShipLook,
 } from '../ships/look';
+import { ALL, CosmeticKind, Item, KIND_NAMES, RARITIES, VaultStore } from '../ships/cosmetics';
+import { itemCanvas } from './swatch';
 
 // The shipwright's panel: flag, sails, hull and presets, with a living flag
 // preview you can paint on. Changes stream out through onChange so the ship
 // moored in the harbour updates as you go.
 
-export type SwTab = 'flag' | 'sails' | 'hull' | 'presets';
+export type SwTab = 'flag' | 'sails' | 'hull' | 'skins' | 'cannons' | 'presets';
 export type SwChange = 'flag' | 'paint' | 'sail' | 'hull' | 'name' | 'all';
 
 const LIVE = 'live';
@@ -22,8 +24,12 @@ const ICONS: Record<SwTab, string> = {
   flag: '<svg viewBox="0 0 24 24"><path d="M5 21V4" /><path d="M5 4h12l-2.5 4L17 12H5" /></svg>',
   sails: '<svg viewBox="0 0 24 24"><path d="M12 3v17" /><path d="M12 4c4 3 6 8 6 13h-6" /><path d="M11 6c-3 3-5 7-5 11h5" /><path d="M4 20h16" /></svg>',
   hull: '<svg viewBox="0 0 24 24"><path d="M3 13h18l-2.5 6h-13z" /><path d="M7 13V9h7v4" /><path d="M10 9V5" /></svg>',
+  skins: '<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 2-2 0-1.5-1.2-1.6-1.2-2.8 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4c0-4.2-4-7.5-9-7.5z" /><circle cx="7.5" cy="11" r="1.2" /><circle cx="10" cy="7" r="1.2" /><circle cx="15" cy="7.5" r="1.2" /></svg>',
+  cannons: '<svg viewBox="0 0 24 24"><path d="M3 12.5l13-4 1.5 4.5-13 4z" /><circle cx="8" cy="18" r="2.5" /><path d="M18.5 9.5l2.5-1M19 12.5l2.5.5M17.5 7l1-2.5" /></svg>',
   presets: '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z" /></svg>',
 };
+
+const TAB_NAMES: Record<SwTab, string> = { flag: 'Flag', sails: 'Sails', hull: 'Hull', skins: 'Skins', cannons: 'Guns', presets: 'Presets' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -93,6 +99,11 @@ export class Customizer {
   onDone: () => void = () => {};
   onTab: (tab: SwTab, sub?: string) => void = () => {};
   onClick: () => void = () => {};
+  /** A vault item was put on (or taken off, back to the basics). */
+  onEquip: (it: Item) => void = () => {};
+  onVault: () => void = () => {};
+  onTestFire: () => void = () => {};
+  private vault: VaultStore | null = null;
   private look: ShipLook = structuredClone(DEFAULT_LOOK);
   private tab: SwTab = 'flag';
   private hullPart: keyof HullLook = 'topsides';
@@ -125,8 +136,8 @@ export class Customizer {
     head.append(back, titles);
 
     const tabs = el('nav', 'sw-tabs');
-    (['flag', 'sails', 'hull', 'presets'] as SwTab[]).forEach((id) => {
-      const b = el('button', 'sw-tab', `${ICONS[id]}<span>${id[0].toUpperCase() + id.slice(1)}</span>`);
+    (['flag', 'sails', 'hull', 'skins', 'cannons', 'presets'] as SwTab[]).forEach((id) => {
+      const b = el('button', 'sw-tab', `${ICONS[id]}<span>${TAB_NAMES[id]}</span><i class="sw-new"></i>`);
       b.dataset.tab = id;
       b.addEventListener('click', () => {
         if (this.tab === id) return;
@@ -182,6 +193,26 @@ export class Customizer {
 
   get isOpen() {
     return !this.root.classList.contains('hidden');
+  }
+
+  /** Hooks up the player's vault collection for the Skins and Guns tabs. */
+  setVault(v: VaultStore) {
+    this.vault = v;
+    v.subscribe(() => this.markNew());
+    this.markNew();
+  }
+
+  /** Re-renders the cosmetics tabs (after the vault adds something). */
+  refresh() {
+    if (this.isOpen && (this.tab === 'skins' || this.tab === 'cannons')) this.rerender();
+    this.markNew();
+  }
+
+  private markNew() {
+    const u = this.vault?.unseen ?? [];
+    const has = (k: CosmeticKind[]) => u.some((id) => k.includes(ALL.find((i) => i.id === id)?.kind as CosmeticKind));
+    this.root.querySelector('.sw-tab[data-tab="skins"]')?.classList.toggle('has-new', has(['skin']));
+    this.root.querySelector('.sw-tab[data-tab="cannons"]')?.classList.toggle('has-new', has(['blast', 'trail']));
   }
 
   /** The panel's box, so the camera can frame the ship beside it. */
@@ -319,6 +350,8 @@ export class Customizer {
     if (this.tab === 'flag') this.renderFlag();
     else if (this.tab === 'sails') this.renderSails();
     else if (this.tab === 'hull') this.renderHull();
+    else if (this.tab === 'skins') this.renderCosmetics(['skin']);
+    else if (this.tab === 'cannons') this.renderCosmetics(['blast', 'trail']);
     else this.renderPresets();
   }
 
@@ -398,6 +431,71 @@ export class Customizer {
     const sec = this.section('Colour');
     sec.appendChild(sw);
     show();
+  }
+
+  /** Vault cosmetics: every item of these kinds, the ones you own ready to wear. */
+  private renderCosmetics(kinds: CosmeticKind[]) {
+    const v = this.vault;
+    if (!v) return;
+    const banner = el('button', 'sw-vault');
+    banner.innerHTML = `<span class="sw-vault-chest"></span><span class="sw-vault-text"><b>Treasure Vault</b><small>${v.collected()} of ${ALL.filter((i) => !i.base).length} found · new ${kinds[0] === 'skin' ? 'skins' : 'cannon effects'} inside</small></span><span class="sw-vault-purse"><i></i>${v.purse.toLocaleString('en-US')}</span>`;
+    banner.addEventListener('click', () => {
+      this.onClick();
+      this.onVault();
+    });
+    this.body.appendChild(banner);
+    if (kinds[0] !== 'skin') {
+      const fire = el('button', 'btn gold sw-fire', '<svg viewBox="0 0 24 24"><path d="M3 12.5l13-4 1.5 4.5-13 4z" /><circle cx="8" cy="18" r="2.5" /><path d="M18.5 9.5l2.5-1M19 12.5l2.5.5M17.5 7l1-2.5" /></svg><span>Test fire a broadside</span>');
+      let cool = 0;
+      fire.addEventListener('click', () => {
+        if (cool) return;
+        this.onTestFire();
+        fire.classList.add('cool');
+        cool = window.setTimeout(() => {
+          cool = 0;
+          fire.classList.remove('cool');
+        }, 1600);
+      });
+      this.body.appendChild(fire);
+    }
+    for (const kind of kinds) {
+      const items = ALL.filter((i) => i.kind === kind).sort((a, b) => {
+        const oa = v.owns(a.id) ? 0 : 1;
+        const ob = v.owns(b.id) ? 0 : 1;
+        return a.base ? -1 : b.base ? 1 : oa - ob || b.rarity - a.rarity;
+      });
+      const own = items.filter((i) => v.owns(i.id)).length;
+      const sec = this.section(`${KIND_NAMES[kind]}s`, el('small', 'sw-count', `${own}/${items.length}`));
+      const grid = el('div', 'sw-cos');
+      for (const it of items) {
+        const owned = v.owns(it.id);
+        const on = v.equipped[kind] === it.id;
+        const b = el('button', 'sw-cos-card' + (on ? ' sel' : '') + (owned ? '' : ' locked'));
+        b.style.setProperty('--rc', RARITIES[it.rarity].css);
+        b.title = owned ? it.blurb : `${it.blurb} Find it in the Treasure Vault.`;
+        b.appendChild(itemCanvas(it, 168, 110));
+        const isNew = v.unseen.includes(it.id);
+        b.appendChild(el('span', 'sw-cos-info', `<b>${it.name}</b><small>${it.base ? 'Standard' : RARITIES[it.rarity].name}</small>`));
+        if (!owned) b.appendChild(el('span', 'sw-cos-lock', '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'));
+        if (isNew) b.appendChild(el('span', 'sw-cos-new', 'New'));
+        b.addEventListener('click', () => {
+          this.onClick();
+          if (!owned) {
+            this.onVault();
+            return;
+          }
+          if (v.equipped[kind] === it.id) return;
+          v.equip(it.id);
+          grid.querySelectorAll('.sel').forEach((x) => x.classList.remove('sel'));
+          b.classList.add('sel');
+          this.onEquip(it);
+        });
+        grid.appendChild(b);
+      }
+      sec.appendChild(grid);
+    }
+    // what you came to look at is no longer new
+    for (const k of kinds) v.markSeen(k);
   }
 
   private renderPresets() {

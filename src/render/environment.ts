@@ -9,6 +9,7 @@ import {
   GLSL_DAMAGE_VERTEX,
   GLSL_DAMAGE_VERTEX_PARS,
 } from '../ships/damageGlsl';
+import { GLSL_SKIN } from '../ships/skinGlsl';
 
 // One global set of lighting / atmosphere uniforms. Every custom or patched
 // material references the very same uniform objects, so updating them once a
@@ -221,6 +222,50 @@ float causticsAt(vec3 wp, float depth) {
 }
 `;
 
+// Lays the equipped vault skin over the surface. Hull planking is masked by
+// the alpha of its relief map (painted strakes yes, wale, gunports and bottom
+// no); woodwork by a flag in its vertex colour; sails only where the bare
+// cloth shows, so emblems and accent stripes stay on top.
+const GLSL_SKIN_FRAGMENT = /* glsl */ `
+#ifdef AQ_SKIN
+  vec3 skEmis = vec3(0.0);
+  float skAmt = 0.0;
+  float skMetal = 0.0;
+  float skRough = 0.5;
+  if (uSkin > 0.5) {
+    vec2 skp = vec2(0.0);
+    float skMask = 0.0;
+    float skShade = 1.0;
+    #if AQ_SKIN == 1
+      vec3 skn = normalize(vSkinN);
+      skp = abs(skn.x) >= abs(skn.z) ? vSkinP.zy : vSkinP.xy;
+      #ifdef USE_NORMALMAP
+        skMask = texture2D(normalMap, vNormalMapUv).a;
+      #endif
+    #elif AQ_SKIN == 2
+      vec3 skn = abs(normalize(vSkinN));
+      skp = skn.y > max(skn.x, skn.z) ? vSkinP.zx : (skn.x >= skn.z ? vSkinP.zy : vSkinP.xy);
+      skMask = vSkinW;
+    #else
+      #ifdef USE_MAP
+        skp = vec2(vMapUv.x * 6.0, (1.0 - vMapUv.y) * 7.0);
+      #endif
+      vec3 skr = diffuseColor.rgb / max(uSkinCloth, vec3(0.02));
+      float skMean = (skr.r + skr.g + skr.b) / 3.0;
+      float skSpread = (max(skr.r, max(skr.g, skr.b)) - min(skr.r, min(skr.g, skr.b))) / max(skMean, 0.05);
+      skMask = (1.0 - smoothstep(0.1, 0.24, skSpread)) * smoothstep(0.5, 0.66, skMean) * (1.0 - smoothstep(1.3, 1.5, skMean)) * uSkinP.y;
+      skShade = clamp(skMean, 0.6, 1.1);
+    #endif
+    float skNdv = abs(dot(normalize(vNormal), normalize(vViewPosition)));
+    vec3 skCol = aqSkin(skp, skNdv, uTime, AQ_SKIN == 3 ? 1.0 : 0.0, skEmis, skMetal, skRough);
+    diffuseColor.rgb = mix(diffuseColor.rgb, skCol * skShade, skMask);
+    // glowing skins come alive after dark
+    skEmis *= skMask * (0.55 + uNight * 0.9);
+    skAmt = skMask;
+  }
+#endif
+`;
+
 /**
  * Aerial perspective. Needs uFogColor and uFogRange declared and GLSL_ATMOS
  * included first. Distant things don't turn grey, they sink into the colour
@@ -255,6 +300,7 @@ export interface PatchOptions {
   damage?: boolean; // battle damage (holes, scorch, torn canvas, wreck split)
   cut?: boolean; // damage holes cut clean through this surface
   solid?: boolean; // never cut by damage holes (inner surfaces)
+  skin?: 1 | 2 | 3; // takes a vault skin: 1 hull planking, 2 painted woodwork, 3 sailcloth
 }
 
 /** How each material was patched, so ships can re-patch per-hull damage clones. */
@@ -279,6 +325,7 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
     if (opts.flag) defs.push('#define AQ_FLAG');
     if (opts.damage) defs.push('#define AQ_DAMAGE');
     if (opts.cut) defs.push('#define AQ_DMG_CUT');
+    if (opts.skin) defs.push(`#define AQ_SKIN ${opts.skin}`);
     const head = defs.join('\n') + '\n';
 
     shader.vertexShader = shader.vertexShader
@@ -296,7 +343,29 @@ uniform float uSailPhase;
 uniform float uSailDepth;
 attribute float aBillow;
 #endif
+#ifdef AQ_SKIN
+#if AQ_SKIN < 3
+varying vec3 vSkinP;
+varying vec3 vSkinN;
+#endif
+#if AQ_SKIN == 2
+varying float vSkinW;
+#endif
+#endif
 ${GLSL_DAMAGE_VERTEX_PARS}`,
+      )
+      .replace(
+        '#include <color_vertex>',
+        `#include <color_vertex>
+#if defined(AQ_SKIN) && AQ_SKIN == 2
+  // painted woodwork arrives with +4 on blue to say "this part takes the skin"
+  #ifdef USE_COLOR
+    vSkinW = step(3.0, vColor.b);
+    vColor.b -= vSkinW * 4.0;
+  #else
+    vSkinW = 0.0;
+  #endif
+#endif`,
       )
       .replace(
         '#include <beginnormal_vertex>',
@@ -313,6 +382,10 @@ ${GLSL_DAMAGE_VERTEX_PARS}`,
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
+#if defined(AQ_SKIN) && AQ_SKIN < 3
+  vSkinP = transformed;
+  vSkinN = objectNormal;
+#endif
 #ifdef AQ_SWAY
   {
     // Plants lean with the prevailing wind and get shoved over as gust puffs
@@ -391,7 +464,18 @@ uniform vec3 uFogColor;
 uniform vec2 uFogRange;
 ${GLSL_ATMOS}
 ${GLSL_AERIAL}
-${GLSL_DAMAGE_FRAGMENT_PARS}`,
+${GLSL_DAMAGE_FRAGMENT_PARS}
+#ifdef AQ_SKIN
+${GLSL_SKIN}
+uniform vec3 uSkinCloth;
+#if AQ_SKIN < 3
+varying vec3 vSkinP;
+varying vec3 vSkinN;
+#endif
+#if AQ_SKIN == 2
+varying float vSkinW;
+#endif
+#endif`,
       )
       .replace(
         '#include <fog_fragment>',
@@ -403,6 +487,7 @@ ${GLSL_DAMAGE_FRAGMENT_PARS}`,
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
+${GLSL_SKIN_FRAGMENT}
 ${GLSL_DAMAGE_FRAGMENT}
 #ifdef AQ_DETAIL
   {
@@ -426,8 +511,23 @@ ${GLSL_DAMAGE_FRAGMENT}
   roughnessFactor = mix(roughnessFactor, 0.3, aqWet * step(0.0, vAqWorld.y));
 #endif`,
       )
-      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>\n${GLSL_DAMAGE_SURFACE}`)
-      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${GLSL_DAMAGE_EMISSIVE}`)
+      .replace(
+        '#include <metalnessmap_fragment>',
+        `#include <metalnessmap_fragment>
+#ifdef AQ_SKIN
+  metalnessFactor = mix(metalnessFactor, skMetal, skAmt);
+  roughnessFactor = mix(roughnessFactor, skRough, skAmt);
+#endif
+${GLSL_DAMAGE_SURFACE}`,
+      )
+      .replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+#ifdef AQ_SKIN
+  totalEmissiveRadiance += skEmis;
+#endif
+${GLSL_DAMAGE_EMISSIVE}`,
+      )
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>

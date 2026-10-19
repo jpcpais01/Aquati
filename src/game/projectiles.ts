@@ -15,6 +15,7 @@ interface Ball {
   trail: number;
   tore: number; // last ship whose canvas this ball tore through
   heard: boolean;
+  style: string;
 }
 
 export interface HitEvent {
@@ -44,7 +45,7 @@ export class Projectiles {
 
   add(s: Shot) {
     if (this.balls.length >= MAX) this.balls.shift();
-    this.balls.push({ pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0, tore: -1, heard: false });
+    this.balls.push({ pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0, tore: -1, heard: false, style: s.trail ?? 'powder' });
   }
 
   update(dt: number, world: World, ships: Ship[]) {
@@ -146,7 +147,7 @@ export class Projectiles {
         b.trail += dt;
         if (b.trail > 0.035) {
           b.trail = 0;
-          world.particles.trail(b.pos, Math.max(0, 1 - b.age * 0.6));
+          world.particles.trail(b.pos, Math.max(0, 1 - b.age * 0.6), b.style, b.vel);
         }
       }
       if (dead || b.age > 7) this.balls.splice(i, 1);
@@ -154,7 +155,7 @@ export class Projectiles {
     const streaks = world.particles.streaks;
     streaks.begin();
     for (let i = 0; i < this.balls.length; i++) {
-      streaks.add(this.balls[i].pos, this.balls[i].vel, this.balls[i].age);
+      streaks.add(this.balls[i].pos, this.balls[i].vel, this.balls[i].age, this.balls[i].style);
       this.m.makeTranslation(this.balls[i].pos.x, this.balls[i].pos.y, this.balls[i].pos.z);
       this.mesh.setMatrixAt(i, this.m);
     }
