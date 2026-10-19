@@ -6,6 +6,7 @@ export interface Controls {
   firePort: boolean;
   fireStarboard: boolean;
   fireAuto: boolean;
+  fireAim: boolean; // mouse click: the side the pointer is in
   zoom: number; // accumulated wheel / pinch delta
   steerHeading: number | null; // touch joystick: desired world heading
   steerThrottle: number; // 0..1 from joystick magnitude
@@ -21,6 +22,7 @@ export class Input {
     firePort: false,
     fireStarboard: false,
     fireAuto: false,
+    fireAim: false,
     zoom: 0,
     steerHeading: null,
     steerThrottle: 0,
@@ -57,6 +59,9 @@ export class Input {
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
+    canvas.addEventListener('pointerleave', (e) => {
+      if (e.pointerType === 'mouse') this.state.pointer.active = false;
+    });
     canvas.addEventListener(
       'wheel',
       (e) => {
@@ -66,7 +71,9 @@ export class Input {
       },
       { passive: false },
     );
-    canvas.addEventListener('mousemove', (e) => {
+    // only a real mouse aims: touch never leaves a stale pointer on the water
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse') return;
       this.state.pointer.x = e.clientX;
       this.state.pointer.y = e.clientY;
       this.state.pointer.active = true;
@@ -76,7 +83,8 @@ export class Input {
       if (!this.enabled || e.pointerType !== 'mouse') return;
       this.state.pointer.x = e.clientX;
       this.state.pointer.y = e.clientY;
-      if (e.button === 0) this.state.fireAuto = true;
+      this.state.pointer.active = true;
+      if (e.button === 0) this.state.fireAim = true;
     });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.setupTouch();
@@ -206,6 +214,7 @@ export class Input {
     this.state.firePort = false;
     this.state.fireStarboard = false;
     this.state.fireAuto = false;
+    this.state.fireAim = false;
     this.state.zoom = 0;
     this.state.pause = false;
     this.state.map = false;

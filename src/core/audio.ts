@@ -530,6 +530,38 @@ export class Audio {
     }
   }
 
+  /** A side's guns run out again: two dull knocks from the gun deck and a small bright bell. */
+  gunsReady(pan: number) {
+    const v = this.voice(0.2, pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    [0, 0.12].forEach((dt, i) => {
+      const t = ctx.currentTime + dt;
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(i ? 200 : 150, t);
+      o.frequency.exponentialRampToValueAtTime(i ? 120 : 92, t + 0.1);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.9, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.17);
+    });
+    const t = ctx.currentTime + 0.13;
+    const b = ctx.createOscillator();
+    b.type = 'sine';
+    b.frequency.value = 1568;
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0, t);
+    bg.gain.linearRampToValueAtTime(0.12, t + 0.01);
+    bg.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    b.connect(bg).connect(out);
+    b.start(t);
+    b.stop(t + 0.55);
+  }
+
   click() {
     const v = this.voice(0.12, 0);
     if (!v) return;

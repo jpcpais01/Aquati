@@ -11,7 +11,16 @@ interface PendingShot {
   at: number;
   muzzle: number;
   target: Ship | null;
+  point: THREE.Vector3 | null;
 }
+
+/** How far a player's guns can train fore and aft of square, radians. The firing arcs on the water show exactly this. */
+export const PLAYER_ARC = 0.5;
+const PIRATE_ARC = 0.32;
+const GRAVITY = 14;
+
+/** How far a broadside reaches with the guns at full elevation (and a little to spare). */
+export const gunRange = (muzzleSpeed: number) => ((muzzleSpeed * muzzleSpeed) / GRAVITY) * 0.62;
 
 const WIND_TABLE = [
   // relative angle (deg, 0 = running downwind) -> speed factor
@@ -143,14 +152,15 @@ export class Ship {
     return this.alive && this.reload[side] <= 0;
   }
 
-  /** Begins a rippling broadside. Returns false while reloading. */
-  fire(side: 'port' | 'starboard', world: World, target: Ship | null = null): boolean {
+  /** Begins a rippling broadside at a ship (led) or a point on the water. Returns false while reloading. */
+  fire(side: 'port' | 'starboard', world: World, target: Ship | null = null, point: THREE.Vector3 | null = null): boolean {
     if (!this.canFire(side)) return false;
     const s = side === 'port' ? 1 : -1;
     const ms = this.model.muzzles.map((m, i) => ({ m, i })).filter((e) => e.m.side === s);
     // fire from the middle outward for a rolling thunder
     ms.sort((a, b) => Math.abs(a.m.pos.z) - Math.abs(b.m.pos.z));
-    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target }));
+    const pt = point ? point.clone() : null;
+    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt }));
     this.reload[side] = this.cls.reload;
     this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass;
     return true;
@@ -163,24 +173,33 @@ export class Ship {
     const pos = m.pos.clone().applyMatrix4(this.model.root.matrixWorld);
     const dir = m.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
     const v = this.cls.muzzleSpeed * (0.97 + Math.random() * 0.06);
-    const g = 14;
+    const g = GRAVITY;
+    const mine = this.team === 'player';
     let dist = 60;
-    if (p.target && p.target.alive) {
-      // lead the target, but stay within the broadside arc
-      const tp = p.target.pos;
-      const d0 = Math.hypot(tp.x - pos.x, tp.z - pos.z);
-      const tof = d0 / (v * 0.95);
-      const lead = _v2.set(tp.x + p.target.vel.x * tof - pos.x, 0, tp.z + p.target.vel.z * tof - pos.z);
-      dist = lead.length();
-      const ang = Math.atan2(lead.x, lead.z);
+    const aim = p.target && p.target.alive ? p.target.pos : p.point;
+    if (aim) {
+      // Lead the target. Your own crews also allow for the ship's way, which the
+      // ball keeps: in a running duel that drift alone used to carry whole
+      // broadsides past the bow. Pirate crews only lead their mark.
+      const tv = p.target && p.target.alive ? p.target.vel : null;
+      const rvx = (tv ? tv.x : 0) - (mine ? this.vel.x : 0);
+      const rvz = (tv ? tv.z : 0) - (mine ? this.vel.z : 0);
+      let tof = Math.hypot(aim.x - pos.x, aim.z - pos.z) / (v * 0.95);
+      for (let it = 0; it < 2; it++) {
+        _v2.set(aim.x + rvx * tof - pos.x, 0, aim.z + rvz * tof - pos.z);
+        const e = 0.5 * Math.asin(clamp((g * _v2.length()) / (v * v), 0, 1));
+        tof = _v2.length() / (v * Math.cos(e));
+      }
+      dist = _v2.length();
+      const ang = Math.atan2(_v2.x, _v2.z);
       const base = Math.atan2(dir.x, dir.z);
-      const dev = clamp(angleDelta(base, ang), -0.32, 0.32);
-      const fa = base + dev;
+      const arc = mine ? PLAYER_ARC : PIRATE_ARC;
+      const fa = base + clamp(angleDelta(base, ang), -arc, arc);
       dir.set(Math.sin(fa), 0, Math.cos(fa));
     }
     const elev = clamp(0.5 * Math.asin(clamp((g * dist) / (v * v), 0, 1)), 0.015, 0.36);
     // pirate gun crews are a little less disciplined than yours
-    const sloppy = this.team === 'pirate' ? 2.4 : 1;
+    const sloppy = mine ? 1 : 2.4;
     const yaw = (Math.random() - 0.5) * 0.035 * sloppy;
     const pitch = elev + (Math.random() - 0.5) * 0.02 * sloppy;
     const fa = Math.atan2(dir.x, dir.z) + yaw;
