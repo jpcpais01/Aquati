@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T18:00Z',
+    entries: [
+      {
+        title: 'Even lighter on your machine',
+        notes: [
+          'A second big performance pass, again without changing how the game looks. A typical view out at sea now draws well under half a million triangles, down from over a million.',
+          'Sailors are only drawn with the hats, coats, beards and tools they actually wear, and crews out of sight are skipped. Only the patch of sea in front of the camera is drawn, palms and trees cast their shadows from lighter stand-ins, and water reflections do their tracing on a quarter-size picture of the scene.',
+        ],
+      },
+    ],
+  },
+  {
     // the 17:00 group below is full (five entries), so this hour continues here
     hour: '2026-10-19T17:00Z',
     entries: [

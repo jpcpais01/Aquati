@@ -17,6 +17,7 @@ import { Rain } from '../fx/rain';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
+import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, Wave } from '../world/waves';
@@ -173,6 +174,7 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
+    installPassCulling(this.renderer);
     this.quality = detectQuality(this.renderer);
     this.prof = new Profiler(this.renderer, () => ({
       scale: this.scaler.scale,
@@ -294,6 +296,7 @@ export class Game {
     this.particles = new Particles(q.particles);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
+    this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
     this.world.debris = this.debris;
     this.world.onShot = (s) => this.projectiles.add(s);
@@ -1475,6 +1478,7 @@ export class Game {
     P.end();
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
+    this.crew.setView(this.rig.camera, this.toSun);
     this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
     P.end();
 
