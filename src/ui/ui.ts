@@ -3,6 +3,7 @@ import { PATCH_NOTES } from '../data/patchNotes';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Ship } from '../ships/ship';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
+import { SeaChart, ChartScene } from './chart';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -19,6 +20,8 @@ export class UI {
   private mapCanvas = $<HTMLCanvasElement>('minimap');
   private map = this.mapCanvas.getContext('2d')!;
   private mapImage: HTMLCanvasElement | null = null;
+  readonly chart = new SeaChart($<HTMLCanvasElement>('chart-canvas'));
+  private chartPlayer: Ship | null = null;
   private barEls = new Map<number, HTMLDivElement>();
   private floaterPool: { el: HTMLDivElement; t: number; life: number; x: number; y: number; vy: number }[] = [];
   selected: ShipClassId = 'brig';
@@ -29,6 +32,7 @@ export class UI {
   onAgain: () => void = () => {};
   onSound: (on: boolean) => void = () => {};
   onPause: () => void = () => {};
+  onMap: (open: boolean) => void = () => {};
   onClick: () => void = () => {};
   private soundOn = true;
 
@@ -67,6 +71,16 @@ export class UI {
     $('btn-quit').addEventListener('click', () => this.onQuit());
     $('btn-again').addEventListener('click', () => this.onAgain());
     $('btn-pause').addEventListener('click', () => this.onPause());
+    this.mapCanvas.addEventListener('click', () => this.onMap(true));
+    $('chart-close').addEventListener('click', () => this.onMap(false));
+    $('chart-center').addEventListener('click', () => this.chartPlayer && this.chart.recenter(this.chartPlayer));
+    // tapping the dimmed sea around the chart closes it too
+    $('chart').addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) this.onMap(false);
+    });
+    addEventListener('resize', () => {
+      if (!$('chart').classList.contains('hidden')) this.chart.resize();
+    });
     for (let i = 0; i < 24; i++) {
       const el = document.createElement('div');
       el.className = 'floater';
@@ -145,6 +159,17 @@ export class UI {
 
   showPause(on: boolean) {
     $('pause').classList.toggle('hidden', !on);
+  }
+
+  showChart(on: boolean, player?: Ship) {
+    $('chart').classList.toggle('hidden', !on);
+    if (on && player) this.chart.open(player);
+  }
+
+  drawChart(sc: ChartScene) {
+    this.chartPlayer = sc.player;
+    $('chart-isles').textContent = `${sc.discovered.size} / ${sc.islands.length} isles charted`;
+    this.chart.draw(sc);
   }
 
   showDead(on: boolean, info?: { gold: number; kills: number; isles: number; time: number; ship: string }) {
@@ -308,6 +333,7 @@ export class UI {
     }
     g.putImageData(img, 0, 0);
     this.mapImage = c;
+    this.chart.setTerrain(terrain);
   }
 
   drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number }[], islands: Island[], discovered: Set<string>) {

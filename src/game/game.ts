@@ -22,7 +22,7 @@ import { Projectiles } from './projectiles';
 import { Loot } from './loot';
 import { World } from './world';
 
-type State = 'loading' | 'menu' | 'playing' | 'paused' | 'dead';
+type State = 'loading' | 'menu' | 'playing' | 'paused' | 'map' | 'dead';
 
 const PIRATE_NAMES = [
   'Black Gull', 'Salt Widow', 'Crimson Tide', 'Grim Mariner', 'Sea Wraith', 'Rusty Anchor', 'Dread Marlin', 'Bone Siren',
@@ -99,7 +99,10 @@ export class Game {
     this.wireUI();
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && this.state === 'playing') this.setPaused(true);
+      if (document.hidden && (this.state === 'playing' || this.state === 'map')) {
+        this.setChart(false);
+        this.setPaused(true);
+      }
     });
   }
 
@@ -197,6 +200,7 @@ export class Game {
     ui.onSail = () => this.startVoyage();
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
+    ui.onMap = (on) => this.setChart(on);
     ui.onQuit = () => {
       this.ui.showPause(false);
       this.resetWorld();
@@ -344,6 +348,17 @@ export class Game {
     }
   }
 
+  private setChart(on: boolean) {
+    if (on && this.state === 'playing' && this.player) {
+      this.state = 'map';
+      this.ui.showChart(true, this.player);
+    } else if (!on && this.state === 'map') {
+      this.state = 'playing';
+      this.ui.showChart(false);
+      this.last = performance.now();
+    }
+  }
+
   // ------------------------------------------------------------------ combat events
 
   private screenOf(p: THREE.Vector3): [number, number, boolean] {
@@ -457,6 +472,7 @@ export class Game {
     }
     if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) this.setPaused(true);
+    else if (st.map) this.setChart(true);
   }
 
   // ------------------------------------------------------------------ frame
@@ -467,7 +483,7 @@ export class Game {
     this.last = now;
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
-    const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt;
+    const simDt = this.state === 'paused' || this.state === 'map' || this.state === 'loading' ? 0 : dt;
     this.update(simDt, dt);
     this.render(simDt);
     this.input.consume();
@@ -485,6 +501,8 @@ export class Game {
       this.voyageTime += dt;
     } else if (this.state === 'paused') {
       if (this.input.state.pause) this.setPaused(false);
+    } else if (this.state === 'map') {
+      if (this.input.state.pause || this.input.state.map) this.setChart(false);
     }
 
     // AI & ships
@@ -554,6 +572,11 @@ export class Game {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
       this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered);
+    } else if (p && this.state === 'map') {
+      this.ui.drawChart({
+        player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
+        windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
+      });
     }
     this.ui.tickFloaters(realDt);
   }
