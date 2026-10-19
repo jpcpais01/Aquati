@@ -59,6 +59,7 @@ export class Game {
   private pushers: Pusher[] = [];
   private ships: Ship[] = [];
   private ais = new Map<Ship, PirateAI>();
+  private lastFoe: Ship | null = null;
   private player: Ship | null = null;
   private preview: Ship | null = null;
   private state: State = 'loading';
@@ -464,6 +465,28 @@ export class Game {
     }
   }
 
+  /** The pirate the player is duelling, so the camera can frame the two of them:
+   *  the nearest ship hunting her (or that she has just traded shot with) inside gun range. */
+  private battleFoe(): THREE.Vector3 | null {
+    const p = this.player;
+    if (!p || !p.alive) return null;
+    const t = this.world.time;
+    let best: Ship | null = null;
+    let bd = Infinity;
+    for (const [s, ai] of this.ais) {
+      if (!s.alive || s.removed) continue;
+      const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
+      const fighting = ai.mode === 'engage' || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
+      // a little hysteresis so the frame doesn't flicker at the edge of range
+      if (fighting && d < (s === this.lastFoe ? 320 : 270) && d < bd) {
+        bd = d;
+        best = s;
+      }
+    }
+    this.lastFoe = best;
+    return best ? best.pos : null;
+  }
+
   // ------------------------------------------------------------------ combat events
 
   private screenOf(p: THREE.Vector3): [number, number, boolean] {
@@ -681,7 +704,7 @@ export class Game {
     const fpos = focusShip ? focusShip.pos : this.spawnPoint;
     const fvel = focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
-    this.rig.update(realDt, fpos, fvel, w.time);
+    this.rig.update(realDt, fpos, fvel, w.time, this.state === 'playing' || this.state === 'paused' ? this.battleFoe() : null);
     w.listener.copy(this.rig.target);
     w.listenerZoom = this.rig.distance;
     this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5);
