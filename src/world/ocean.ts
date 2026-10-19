@@ -23,7 +23,16 @@ import { WakeField } from './wakeField';
 // storms darken and steepen the sea and streak it with wind-blown spume, and
 // at night ship wakes and breaking surf glow with bioluminescence.
 
-function buildGrid(segments: number, half: number): THREE.BufferGeometry {
+/**
+ * The sea grid, denser near the middle, cut into TILES x TILES patches that
+ * share one vertex buffer. Each patch has its own bounds (padded for the
+ * swell), so the ones behind the camera are skipped like any other mesh
+ * instead of being transformed and clipped every frame. The vertices are the
+ * same as one whole grid's, so the seams are exact.
+ */
+const TILES = 8;
+const SWELL_PAD = 12;
+function buildGrid(segments: number, half: number): THREE.BufferGeometry[] {
   const n = segments + 1;
   const pos = new Float32Array(n * n * 3);
   const a = 0.26;
@@ -38,26 +47,48 @@ function buildGrid(segments: number, half: number): THREE.BufferGeometry {
       pos[k + 2] = map(v);
     }
   }
-  const idx = new Uint32Array(segments * segments * 6);
-  let p = 0;
-  for (let j = 0; j < segments; j++) {
-    for (let i = 0; i < segments; i++) {
-      const a0 = j * n + i;
-      const b0 = a0 + 1;
-      const c0 = a0 + n;
-      const d0 = c0 + 1;
-      idx[p++] = a0;
-      idx[p++] = c0;
-      idx[p++] = b0;
-      idx[p++] = b0;
-      idx[p++] = c0;
-      idx[p++] = d0;
+  const position = new THREE.BufferAttribute(pos, 3);
+  const cut = (t: number) => Math.round((t * segments) / TILES);
+  const out: THREE.BufferGeometry[] = [];
+  for (let tj = 0; tj < TILES; tj++) {
+    for (let ti = 0; ti < TILES; ti++) {
+      const i0 = cut(ti), i1 = cut(ti + 1), j0 = cut(tj), j1 = cut(tj + 1);
+      const idx = new Uint32Array((i1 - i0) * (j1 - j0) * 6);
+      let p = 0;
+      for (let j = j0; j < j1; j++) {
+        for (let i = i0; i < i1; i++) {
+          const a0 = j * n + i;
+          const b0 = a0 + 1;
+          const c0 = a0 + n;
+          const d0 = c0 + 1;
+          idx[p++] = a0;
+          idx[p++] = c0;
+          idx[p++] = b0;
+          idx[p++] = b0;
+          idx[p++] = c0;
+          idx[p++] = d0;
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', position);
+      g.setIndex(new THREE.BufferAttribute(idx, 1));
+      const x0 = pos[(j0 * n + i0) * 3], x1 = pos[(j0 * n + i1) * 3];
+      const z0 = pos[(j0 * n + i0) * 3 + 2], z1 = pos[(j1 * n + i0) * 3 + 2];
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2), Math.hypot(x1 - x0, z1 - z0) / 2 + SWELL_PAD);
+      out.push(g);
     }
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setIndex(new THREE.BufferAttribute(idx, 1));
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), half * 2);
+  return out;
+}
+
+/** The tiled grid as one object to move about. */
+function gridMesh(tiles: THREE.BufferGeometry[], material: THREE.Material, order = 0): THREE.Group {
+  const g = new THREE.Group();
+  for (const geo of tiles) {
+    const m = new THREE.Mesh(geo, material);
+    m.renderOrder = order;
+    g.add(m);
+  }
   return g;
 }
 
@@ -153,6 +184,13 @@ const REFL_FRAG = /* glsl */ `
   uniform mat4 uSSRProj;
   uniform vec4 uSSR;
   uniform vec2 uReflRes;
+  // the ray-tracing pass's half-res linear depth (g), when it ran this frame:
+  // a quarter of the texels of the full depth buffer, already linear
+  uniform sampler2D uHalfZ;
+  uniform float uHalfZOn;
+  float sceneZ(vec2 uv) {
+    return uHalfZOn > 0.5 ? texture(uHalfZ, uv).g : linearDepth(texture(uSceneDepth, uv).r);
+  }
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying float vViewDist;
@@ -169,7 +207,7 @@ const REFL_FRAG = /* glsl */ `
       if (c.w <= 0.0) break;
       vec2 uv = c.xy / c.w * 0.5 + 0.5;
       if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
-      float sz = linearDepth(texture(uSceneDepth, uv).r);
+      float sz = sceneZ(uv);
       float dz = -q.z - sz;
       // the opaque buffer also holds what lies under the sea (keels,
       // the seabed); a ray above the water can't see those
@@ -183,19 +221,19 @@ const REFL_FRAG = /* glsl */ `
           vec3 qm = vp + vr * m;
           vec4 cm = uSSRProj * vec4(qm, 1.0);
           vec2 um = cm.xy / cm.w * 0.5 + 0.5;
-          if (-qm.z - linearDepth(texture(uSceneDepth, um).r) > 0.0) { b = m; uv = um; } else a = m;
+          if (-qm.z - sceneZ(um) > 0.0) { b = m; uv = um; } else a = m;
         }
         vec2 e = min(uv, 1.0 - uv);
         float fade = smoothstep(0.0, 0.06, min(e.x, e.y)) * (1.0 - smoothstep(0.5, 1.0, b / uSSR.x));
         // ropes and stays are a pixel wide: rays hit them only here and
         // there, which reads as dotted noise. Keep hits on solid surfaces.
-        float hz = linearDepth(texture(uSceneDepth, uv).r);
+        float hz = sceneZ(uv);
         vec2 px = 2.0 / uResolution;
         float tol = 0.6 + hz * 0.01;
-        float solid = step(abs(linearDepth(texture(uSceneDepth, uv + vec2(px.x, 0.0)).r) - hz), tol)
-          + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(px.x, 0.0)).r) - hz), tol)
-          + step(abs(linearDepth(texture(uSceneDepth, uv + vec2(0.0, px.y)).r) - hz), tol)
-          + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(0.0, px.y)).r) - hz), tol);
+        float solid = step(abs(sceneZ(uv + vec2(px.x, 0.0)) - hz), tol)
+          + step(abs(sceneZ(uv - vec2(px.x, 0.0)) - hz), tol)
+          + step(abs(sceneZ(uv + vec2(0.0, px.y)) - hz), tol)
+          + step(abs(sceneZ(uv - vec2(0.0, px.y)) - hz), tol);
         fade *= smoothstep(1.5, 3.5, solid);
         return vec4(texture(uSceneColor, uv).rgb, fade);
       }
@@ -280,7 +318,7 @@ export interface OceanOptions {
 }
 
 export class Ocean {
-  readonly mesh: THREE.Mesh;
+  readonly mesh: THREE.Group;
   readonly material: THREE.ShaderMaterial;
   /** Far sea out to the horizon; only worth drawing when the horizon is in view. */
   readonly apron: THREE.Mesh;
@@ -290,12 +328,12 @@ export class Ocean {
    * that turns to a mirror of the deep beyond the critical angle. It lives in
    * the opaque scene, so everything above the waves hides behind it.
    */
-  readonly underside: THREE.Mesh;
+  readonly underside: THREE.Group;
   private under = false;
   /** The same surface again, tracing reflections into a half-resolution buffer. */
   readonly reflScene = new THREE.Scene();
   private readonly reflMaterial: THREE.ShaderMaterial;
-  private readonly reflMesh: THREE.Mesh;
+  private readonly reflMesh: THREE.Group;
   private readonly reflApron: THREE.Mesh;
   private snap: number;
 
@@ -647,9 +685,7 @@ export class Ocean {
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
-    this.mesh = new THREE.Mesh(buildGrid(opts.segments, opts.half), this.material);
-    this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = -10;
+    this.mesh = gridMesh(buildGrid(opts.segments, opts.half), this.material, -10);
     this.apron = new THREE.Mesh(buildApron(opts.half * 0.985, 3400), this.material);
     this.apron.frustumCulled = false;
     this.apron.renderOrder = -10;
@@ -658,23 +694,24 @@ export class Ocean {
 
     // the reflection pass shares every uniform, so one update feeds both
     this.reflMaterial = new THREE.ShaderMaterial({
-      uniforms: { ...uniforms, uReflRes: { value: new THREE.Vector2(1, 1) } },
+      uniforms: { ...uniforms, uReflRes: { value: new THREE.Vector2(1, 1) }, uHalfZ: { value: null as THREE.Texture | null }, uHalfZOn: { value: 0 } },
       defines: { SSR_STEPS: 0 },
       vertexShader: OCEAN_VERT,
       fragmentShader: REFL_FRAG,
     });
     // at half the resolution it needs half the grid: the trace starts a few
     // centimetres off the true crest at most, well under the ripple wobble
-    this.reflMesh = new THREE.Mesh(buildGrid(opts.segments >> 1, opts.half), this.reflMaterial);
-    this.reflMesh.frustumCulled = false;
+    this.reflMesh = gridMesh(buildGrid(opts.segments >> 1, opts.half), this.reflMaterial);
     this.reflApron = new THREE.Mesh(this.apron.geometry, this.reflMaterial);
     this.reflApron.frustumCulled = false;
     this.reflApron.visible = false;
     this.reflMesh.add(this.reflApron);
     this.reflScene.add(this.reflMesh);
 
-    this.underside = new THREE.Mesh(
-      this.mesh.geometry,
+    // the same patches as the sea above, so it is culled the same way
+    const tiles = this.mesh.children.filter((o) => o !== this.apron).map((o) => (o as THREE.Mesh).geometry);
+    this.underside = gridMesh(
+      tiles,
       new THREE.ShaderMaterial({
         uniforms: { ...uniforms },
         defines: { HQ: this.material.defines.HQ },
@@ -683,7 +720,6 @@ export class Ocean {
         fragmentShader: UNDER_FRAG,
       }),
     );
-    this.underside.frustumCulled = false;
     this.underside.visible = false;
   }
 
@@ -749,6 +785,13 @@ export class Ocean {
     this.material.uniforms.uRefl.value = tex;
     this.reflMaterial.uniforms.uReflRes.value.set(w, h);
     this.reflApron.visible = this.apron.visible;
+  }
+
+  /** The ray-tracing pass's half-res depth for this frame's reflection trace (null: use the full depth buffer). */
+  setHalfDepth(tex: THREE.Texture | null) {
+    const u = this.reflMaterial.uniforms;
+    u.uHalfZ.value = tex;
+    u.uHalfZOn.value = tex ? 1 : 0;
   }
 
   setSceneTextures(color: THREE.Texture, depth: THREE.Texture, w: number, h: number, cam: THREE.PerspectiveCamera) {
