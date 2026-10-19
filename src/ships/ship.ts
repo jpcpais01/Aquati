@@ -71,6 +71,12 @@ export class Ship {
   private rollKick = 0;
   private groundCooldown = 0;
   private wakeT = 0;
+  // rig springs: yards and booms swing across instead of snapping on a tack/gybe
+  private rigBrace = 0;
+  private rigBraceV = 0;
+  private rigLee = 1;
+  private rigLeeV = 0;
+  private leeTarget = 1;
   private fireT = 0;
   private sinkSide = Math.random() < 0.5 ? -1 : 1;
   name: string;
@@ -291,13 +297,30 @@ export class Ship {
     this.root.updateMatrixWorld();
 
     // ------------------------------------------------ rig visuals
-    const brace = clamp(rel * 0.45, -0.75, 0.75) * Math.min(1, Math.abs(relDeg) / 30);
-    const leeSide = cross >= 0 ? 1 : -1;
+    const braceTarget = clamp(rel * 0.45, -0.75, 0.75) * Math.min(1, Math.abs(relDeg) / 30);
+    // hysteresis so the canvas doesn't flicker sides when sailing dead on/off the wind
+    if (cross > 0.06) this.leeTarget = 1;
+    else if (cross < -0.06) this.leeTarget = -1;
+    // slightly under-damped springs, slower on heavier hulls: a weighty swing with a soft settle
+    const rigK = 26 / Math.sqrt(c.mass);
+    const rigC = 2 * Math.sqrt(rigK) * 0.72;
+    let rdt = Math.min(dt, 0.1);
+    while (rdt > 0) {
+      const h = Math.min(rdt, 1 / 60);
+      rdt -= h;
+      this.rigBraceV += ((braceTarget - this.rigBrace) * rigK - this.rigBraceV * rigC) * h;
+      this.rigBrace += this.rigBraceV * h;
+      this.rigLeeV += ((this.leeTarget - this.rigLee) * rigK * 0.8 - this.rigLeeV * rigC) * h;
+      this.rigLee = clamp(this.rigLee + this.rigLeeV * h, -1.08, 1.08);
+    }
+    const brace = this.rigBrace;
+    const leeSide = this.rigLee;
     // pennant flies downwind, in ship-local space
     const lx = w.dirX * port.x + w.dirZ * port.z;
     const lz = w.dirX * fx + w.dirZ * fz;
     const flagAng = Math.atan2(-lz, lx);
-    const fill = clamp(windFactor(relDeg) * w.strength * 1.1, 0.25, 1);
+    // canvas spills and luffs while it crosses over, then fills again on the new side
+    const fill = clamp(windFactor(relDeg) * w.strength * 1.1, 0.25, 1) * (0.3 + 0.7 * Math.min(1, Math.abs(leeSide)));
     this.model.updateRig(this.sailLevel, -brace, leeSide, flagAng, fill);
 
     // ------------------------------------------------ wake & fx

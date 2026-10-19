@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
+        title: 'Sails that swing, not snap',
+        notes: [
+          'When you tack or gybe, the yards and booms now swing across with real weight, overshooting a touch before settling, instead of flipping sides instantly.',
+          'The canvas spills its wind and goes slack as it crosses over, then fills out again on the new side. Bigger ships swing their rigs more slowly.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T05:00Z',
     entries: [
       {
