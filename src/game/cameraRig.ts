@@ -59,7 +59,7 @@ export class CameraRig {
     const halfV = THREE.MathUtils.degToRad(30) / 2;
     const fitV = Math.atan(Math.tan(halfV) * Math.max(0.15, this.menuShift.h));
     const fitH = Math.atan(Math.tan(halfV) * this.camera.aspect * Math.max(0.15, this.menuShift.w));
-    const want = (this.orbitSphere.r * 1.06) / Math.sin(Math.min(fitV, fitH));
+    const want = this.orbitSphere.r / Math.sin(Math.min(fitV, fitH));
     this.orbitDist = this.orbitDist ? this.orbitDist + (want - this.orbitDist) * damp(2.5, dt) : want;
     const aim = this.orbitCenter.clone().add(new THREE.Vector3(0, this.orbitSphere.y, 0));
     const dir = new THREE.Vector3(Math.sin(this.orbitAngle) * 1.6, 0.62, Math.cos(this.orbitAngle) * 1.6).normalize();
