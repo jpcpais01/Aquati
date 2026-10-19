@@ -18,7 +18,7 @@ export const PATCH_NOTES: PatchGroup[] = [
       {
         title: 'Clean tracer trails',
         notes: [
-          'The Golden Comet, Ghostlight, Rainbow and Starfall tracers, and fire shot, no longer leave a string of glowing smoke blobs behind the ball. Every tracer now draws one smooth, unbroken trace, with only fine sparks shedding off it, and the Vault and Shipwright previews show it the same way.',
+          'The Golden Comet, Ghostlight, Rainbow Ribbon and Starfall tracers, and fire shot, no longer leave a string of glowing smoke blobs behind the ball. Every tracer now draws one smooth, unbroken trace, with only fine sparks shedding off it, and the Vault and Shipwright previews show it the same way.',
         ],
       },
       {
