@@ -20,8 +20,13 @@ import { Atmosphere, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
-import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { hullKey, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
+import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
+import { Customizer, SwTab } from '../ui/customizer';
+import { Port, PortFocus } from '../port/port';
+import { findPortSite, portClearings } from '../port/site';
 import { CameraRig } from './cameraRig';
 import { Captain } from './captain';
 import { createSkyDome } from '../render/sky';
@@ -30,7 +35,7 @@ import { Loot, RARITY } from './loot';
 import { World } from './world';
 import { ShipCollisions } from './collisions';
 
-type State = 'loading' | 'menu' | 'playing' | 'paused' | 'dead';
+type State = 'loading' | 'menu' | 'port' | 'playing' | 'paused' | 'dead';
 
 const PIRATE_NAMES = [
   'Black Gull', 'Salt Widow', 'Crimson Tide', 'Grim Mariner', 'Sea Wraith', 'Rusty Anchor', 'Dread Marlin', 'Bone Siren',
@@ -90,11 +95,22 @@ export class Game {
   private cloudOff = new THREE.Vector2();
   private sprayT = 0;
   private crew!: CrewSystem;
+  // the shipwright's harbour
+  private look: ShipLook = loadLook();
+  private port!: Port;
+  private shipwright = new Customizer();
+  private veil = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'sw-veil' });
+  private swFocus: PortFocus = 'overview';
+  private swAz = 0;
+  private swZoom = 1;
+  private swTime = 0;
+  private swBusy = false;
+  private saveTimer = 0;
   private captain = new Captain();
   private fpv = false;
   private sky = createSkyDome();
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the final pass encodes sRGB itself
     this.renderer.toneMapping = THREE.NoToneMapping;
@@ -132,10 +148,11 @@ export class Game {
     this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group, this.sky);
 
     this.wireUI();
+    this.wireShipwright();
     // browsers only let sound start from a gesture (and on phones a touch only
     // counts once it lifts), so any tap or key in the harbour wakes the theme
     const wake = () => {
-      if (this.state !== 'menu' && this.state !== 'loading') return;
+      if (this.state !== 'menu' && this.state !== 'loading' && this.state !== 'port') return;
       this.audio.start();
       this.audio.setMusic(true);
     };
@@ -162,11 +179,16 @@ export class Game {
     this.terrain.bakeAO(2);
     ui.progress(0.5);
     await nextFrame();
-    const veg = new Vegetation(this.terrain, q.vegetation);
+    const site = findPortSite(this.terrain, this.spawnPoint);
+    const veg = new Vegetation(this.terrain, q.vegetation, portClearings(site));
     ui.progress(0.62);
     await nextFrame();
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
     this.opaque.add(veg.build());
+    this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
+    await preloadPaint(this.look.flag.paint);
+    await this.port.build(this.look);
+    this.opaque.add(this.port.root);
     this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36);
     this.opaque.add(this.birds.mesh);
     ui.progress(0.75);
@@ -267,6 +289,192 @@ export class Game {
     ui.onSound = (on) => this.audio.setMuted(!on);
   }
 
+  // ------------------------------------------------------------------ shipwright
+
+  private wireShipwright() {
+    const sw = this.shipwright;
+    // entry sits under Set Sail in the menu dock
+    const btn = document.createElement('button');
+    btn.className = 'btn menu-custom';
+    btn.id = 'btn-shipwright';
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 21V4" /><path d="M5 4h12l-2.5 4L17 12H5" /></svg><span>Shipwright</span>';
+    document.getElementById('btn-sail')!.after(btn);
+    btn.addEventListener('click', () => {
+      this.audio.start();
+      this.audio.click();
+      this.openShipwright();
+    });
+    sw.onClick = () => {
+      this.audio.start();
+      this.audio.click();
+    };
+    sw.onDone = () => this.closeShipwright();
+    sw.onTab = (tab: SwTab) => {
+      this.swFocus = ({ flag: 'flag', sails: 'sails', hull: 'hull', presets: 'overview' } as const)[tab];
+      this.swAz = 0;
+    };
+    sw.onChange = (look, what) => this.applyLook(look, what);
+    // a saved hand-painted flag decodes in the background; redraw once it lands
+    onPaintReady(() => {
+      this.port.setLook(this.look);
+      const s = this.preview;
+      if (s) s.model.restyle(lookToLivery(this.look));
+    });
+
+    // drag to swing round the ship, wheel / pinch to zoom
+    const pts = new Map<number, { x: number; y: number }>();
+    let pinch = 0;
+    const c = this.canvas;
+    c.addEventListener('pointerdown', (e) => {
+      if (this.state !== 'port') return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      c.setPointerCapture(e.pointerId);
+      pinch = 0;
+    });
+    c.addEventListener('pointermove', (e) => {
+      const p = pts.get(e.pointerId);
+      if (!p || this.state !== 'port') return;
+      if (pts.size === 1) {
+        this.swAz = clamp(this.swAz - ((e.clientX - p.x) / Math.max(innerWidth, 1)) * 2.6, -1.25, 1);
+      } else if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        const d0 = Math.hypot(a.x - b.x, a.y - b.y);
+        p.x = e.clientX;
+        p.y = e.clientY;
+        const d1 = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinch && d0 > 1) this.swZoom = clamp(this.swZoom * (d0 / d1), 0.6, 1.5);
+        pinch = 1;
+        return;
+      }
+      p.x = e.clientX;
+      p.y = e.clientY;
+    });
+    const up = (e: PointerEvent) => {
+      pts.delete(e.pointerId);
+      pinch = 0;
+    };
+    c.addEventListener('pointerup', up);
+    c.addEventListener('pointercancel', up);
+    c.addEventListener(
+      'wheel',
+      (e) => {
+        if (this.state !== 'port') return;
+        e.preventDefault();
+        this.swZoom = clamp(this.swZoom * Math.exp(e.deltaY * 0.0012), 0.6, 1.5);
+      },
+      { passive: false },
+    );
+  }
+
+  /** Streams a change from the panel onto the moored ship and the harbour. */
+  private applyLook(look: ShipLook, what: 'flag' | 'paint' | 'sail' | 'hull' | 'name' | 'all') {
+    const hullWas = hullKey(this.look);
+    this.look = structuredClone(look);
+    const s = this.preview;
+    if (s) {
+      const liv = lookToLivery(this.look);
+      if (what === 'all' || what === 'name') s.name = this.look.name.trim() || s.cls.title;
+      if (what === 'name') {
+        // nothing to repaint
+      } else if (what === 'paint') s.model.restyleFlag(liv);
+      else if (what === 'flag' || what === 'sail' || hullKey(this.look) === hullWas) s.model.restyle(liv);
+      else {
+        // the hull is baked into the model: build a fresh one at the berth
+        this.setPreview(s.cls.id);
+        this.port.setShip(this.preview);
+        this.port.pin(this.preview!);
+      }
+    }
+    if (what !== 'name') this.port.setLook(this.look);
+    clearTimeout(this.saveTimer);
+    if (this.look.flag.paint !== 'live') this.saveTimer = window.setTimeout(() => saveLook(this.look), 300);
+  }
+
+  private async fade(mid: () => void) {
+    this.swBusy = true;
+    this.veil.classList.add('on');
+    await new Promise((r) => setTimeout(r, 430));
+    mid();
+    await nextFrame();
+    await nextFrame();
+    this.veil.classList.remove('on');
+    this.swBusy = false;
+  }
+
+  private openShipwright() {
+    if (this.state !== 'menu' || this.swBusy) return;
+    this.veil.innerHTML = `<span>Rowing to ${this.port.name}…</span>`;
+    void this.fade(() => {
+      this.state = 'port';
+      this.ui.showMenu(false);
+      for (const s of this.ships) s.root.visible = false;
+      this.setPreview(this.ui.selected);
+      const p = this.preview!;
+      this.port.visible = true;
+      this.port.setLook(this.look);
+      this.port.setShip(p);
+      this.port.pin(p);
+      p.sailLevel = 1;
+      // settle the model at the berth so the first shot finds its flag
+      p.update(0.016, this.world);
+      this.port.pin(p);
+      p.root.updateMatrixWorld(true);
+      this.swFocus = 'flag';
+      this.swAz = 0;
+      this.swZoom = 1;
+      this.shipwright.open(this.look, this.port.name);
+      this.rig.mode = 'port';
+      this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
+      this.framePort(0);
+      this.rig.snapShot();
+    });
+  }
+
+  private closeShipwright() {
+    if (this.state !== 'port' || this.swBusy) return;
+    clearTimeout(this.saveTimer);
+    saveLook(this.look);
+    this.veil.innerHTML = '<span>Back to the open sea…</span>';
+    void this.fade(() => {
+      this.shipwright.close();
+      this.port.visible = false;
+      this.port.setShip(null);
+      this.rig.camera.clearViewOffset();
+      for (const s of this.ships) s.root.visible = true;
+      this.enterMenu();
+    });
+  }
+
+  /** Points the harbour camera at whatever the open tab is about. */
+  private framePort(dt: number) {
+    const p = this.preview;
+    if (!p) return;
+    this.swTime += dt;
+    const sway = Math.sin(this.swTime * 0.16) * 0.07;
+    // keep the ship in the part of the screen the panel leaves free
+    const W = innerWidth;
+    const H = innerHeight;
+    const r = this.shipwright.panelRect();
+    const vs = this.rig.viewShift;
+    let fw = W;
+    let fh = H;
+    if (!r.width) vs.x = vs.y = 0;
+    else if (r.left > W * 0.35) {
+      vs.x = (W - r.left) / 2;
+      vs.y = 0;
+      fw = r.left;
+    } else {
+      vs.x = 0;
+      vs.y = Math.max(0, H - r.top) / 2;
+      fh = Math.max(r.top, H * 0.2);
+    }
+    // the shots are framed for a wide free area; back off when it is narrow or short
+    const fit = clamp(Math.max(1.17 / (fw / H), fh > 0 ? H / fh : 1) ** 0.85, 1, 2.6);
+    const shot = this.port.shot(this.swFocus, p, this.swAz + sway, this.swZoom * fit);
+    this.rig.shotPos.copy(shot.pos);
+    this.rig.shotLook.copy(shot.look);
+  }
+
   private resize() {
     const w = innerWidth;
     const h = innerHeight;
@@ -288,9 +496,10 @@ export class Game {
   // ------------------------------------------------------------------ ships
 
   private makeShip(id: ShipClassId, team: 'player' | 'pirate'): Ship {
-    const livery = team === 'player' ? PLAYER_LIVERY : PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
+    const livery = team === 'player' ? lookToLivery(this.look) : PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
     const s = new Ship(SHIP_CLASSES[id], livery, team, this.quality.physicalHull ? 1 : 0);
-    if (team === 'pirate') {
+    if (team === 'player') s.name = this.look.name.trim() || s.cls.title;
+    else {
       s.name = PIRATE_NAMES[this.nameIdx++ % PIRATE_NAMES.length];
       s.gold = 0;
     }
@@ -307,8 +516,7 @@ export class Game {
       const m = o as THREE.Mesh;
       if (m.geometry) m.geometry.dispose();
     });
-    s.model.sailMaterial.dispose();
-    s.model.sailEmblemMaterial.dispose();
+    s.model.dispose();
     s.dispose();
   }
 
@@ -690,6 +898,10 @@ export class Game {
       if (this.input.state.pause) this.setPaused(false);
     }
 
+    // the shipwright's ship stays tied up at the quay
+    const inPort = this.state === 'port' && this.preview;
+    if (inPort) this.port.pin(this.preview!);
+
     // AI & ships
     for (const ai of this.ais.values()) ai.update(dt, w, this.player && this.player.alive ? this.player : null, this.ships);
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
@@ -699,6 +911,11 @@ export class Game {
     this.pushers.length = 0;
     for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
     this.debris.update(dt, w, this.pushers);
+    if (inPort) {
+      this.port.update(dt, w);
+      this.shipwright.tick(realDt);
+      this.framePort(realDt);
+    }
 
     // player-centric systems
     const p = this.player;
@@ -999,11 +1216,12 @@ export class Game {
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     const eb = this.rig.eyeBlend;
-    this.pipeline.tilt = (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
-    // the horizon only exists from the deck
-    this.sky.visible = eb > 0.001;
+    const port = this.rig.mode === 'port';
+    this.pipeline.tilt = port ? 0.25 : (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
+    // the horizon only exists from the deck (and in the shipwright's harbour)
+    this.sky.visible = eb > 0.001 || port;
     this.sky.position.copy(cam.position);
-    this.ocean.apron.visible = eb > 0.001;
+    this.ocean.apron.visible = eb > 0.001 || port;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);
