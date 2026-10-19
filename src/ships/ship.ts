@@ -342,9 +342,16 @@ export class Ship {
     const spd = Math.abs(this.speed);
     if (spd > 0.3 && wakeK > 0) {
       // pressure every frame: the water field grows the Kelvin arms and transverse swell from it
-      const press = 10.5 * (Math.min(spd, 16) / 12) * Math.sqrt(B / 6.2) * wakeK * dt;
+      // the bow surges and eases as she pitches and the hull yaws a touch, so the arms come
+      // out uneven; a little per-frame jitter roughens the crests
+      const tt = world.time + this.id * 7.31;
+      const surge = 1 + 0.22 * Math.sin(tt * 1.37) * Math.sin(tt * 0.53 + 1.1) + this.pitch * 3;
+      const press = 10.5 * (Math.min(spd, 16) / 12) * Math.sqrt(B / 6.2) * wakeK * dt * Math.max(0.5, surge);
+      const yaw = Math.sin(tt * 0.71) * 0.12 * B;
       for (const [u, wgt, r] of HULL_PRESSURE) {
-        world.wake.press(this.pos.x + fx * L * u, this.pos.z + fz * L * u, B * r, press * wgt);
+        const j = (Math.random() - 0.5) * 0.16 * B + yaw * u * 2;
+        const a = 1 + (Math.random() - 0.5) * 0.35;
+        world.wake.press(this.pos.x + fx * L * u + port.x * j, this.pos.z + fz * L * u + port.z * j, B * r * (0.9 + Math.random() * 0.2), press * wgt * a);
       }
     }
     this.wakeT += dt;
@@ -366,13 +373,17 @@ export class Ship {
       const bx = this.pos.x + fx * L * 0.5;
       const bz = this.pos.z + fz * L * 0.5;
       world.wake.stamp(bx, bz, B * 0.24, 0.32 * k);
+      const rnd = () => 0.5 + Math.random();
       for (const side of [1, -1]) {
         const ox = px * side * B;
         const oz = pz * side * B;
-        world.wake.stamp(bx - fx * L * 0.1 + ox * 0.42, bz - fz * L * 0.1 + oz * 0.42, B * 0.24, 0.26 * k);
-        // lateral wash hugging the hull
-        world.wake.stamp(this.pos.x + fx * L * 0.15 + ox * 0.56, this.pos.z + fz * L * 0.15 + oz * 0.56, B * 0.2, 0.12 * k);
-        world.wake.stamp(this.pos.x - fx * L * 0.22 + ox * 0.56, this.pos.z - fz * L * 0.22 + oz * 0.56, B * 0.2, 0.1 * k);
+        const sp = (Math.random() - 0.5) * L * 0.08;
+        world.wake.stamp(bx - fx * (L * 0.1 + sp) + ox * (0.38 + Math.random() * 0.1), bz - fz * (L * 0.1 + sp) + oz * (0.38 + Math.random() * 0.1), B * 0.24 * rnd(), 0.26 * k * rnd());
+        // lateral wash hugging the hull, in uneven clumps
+        if (Math.random() < 0.7) {
+          const u = 0.2 - Math.random() * 0.45;
+          world.wake.stamp(this.pos.x + fx * L * u + ox * (0.5 + Math.random() * 0.14), this.pos.z + fz * L * u + oz * (0.5 + Math.random() * 0.14), B * 0.2 * rnd(), 0.16 * k * rnd());
+        }
       }
       // hard over: the stern skids outward and smears a fan of foam
       const skid = Math.min(1, Math.abs(this.angVel) * spd * 0.12);
