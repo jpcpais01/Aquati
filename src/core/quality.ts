@@ -1,3 +1,5 @@
+import { savedTier } from './settings';
+
 // Device tiering + runtime dynamic resolution. The tier picks feature
 // levels once; the resolution scaler reacts to real frame times on the
 // player's device and trades pixels for a steady frame.
@@ -15,8 +17,6 @@ export interface QualityProfile {
   particles: number;
   tiltShift: boolean;
   physicalHull: boolean;
-  /** The tier this device would get on auto. */
-  detected?: 0 | 1 | 2;
 }
 
 export function detectQuality(renderer: { capabilities: { maxSamples: number } }): QualityProfile {
@@ -24,15 +24,10 @@ export function detectQuality(renderer: { capabilities: { maxSamples: number } }
   const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
   const cores = navigator.hardwareConcurrency || 4;
   const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 8;
-  let url = new URLSearchParams(location.search).get('q');
-  // the player's own pick from Settings, unless the URL overrides it
-  try {
-    url ??= localStorage.getItem('aquati.quality');
-  } catch {
-    /* storage blocked: auto */
-  }
-  const detected: 0 | 1 | 2 = mobile ? (cores >= 6 && mem >= 4 ? 1 : 0) : cores >= 4 ? 2 : 1;
-  let tier: 0 | 1 | 2 = detected;
+  const url = new URLSearchParams(location.search).get('q');
+  let tier: 0 | 1 | 2 = mobile ? (cores >= 6 && mem >= 4 ? 1 : 0) : cores >= 4 ? 2 : 1;
+  // a preset picked in Graphics settings decides world detail from the next launch
+  tier = savedTier() ?? tier;
   if (url === 'low') tier = 0;
   if (url === 'med') tier = 1;
   if (url === 'high') tier = 2;
@@ -42,31 +37,53 @@ export function detectQuality(renderer: { capabilities: { maxSamples: number } }
     { tier: 1, maxDpr: 1.75, msaa: Math.min(4, maxSamples), shadowSize: 2048, oceanSegments: 210, bloomLevels: 5, wakeRes: 384, vegetation: 0.8, terrainLod: 1, particles: 0.8, tiltShift: true, physicalHull: true },
     { tier: 2, maxDpr: 2, msaa: Math.min(4, maxSamples), shadowSize: 2048, oceanSegments: 280, bloomLevels: 6, wakeRes: 512, vegetation: 1, terrainLod: 1, particles: 1, tiltShift: true, physicalHull: true },
   ];
-  return { ...P[tier], detected };
+  return P[tier];
 }
 
 export class ResolutionScaler {
   scale = 1;
+  /** A fixed render scale from settings; 0 lets the scaler drive it. */
+  fixed = 0;
+  /** Windows spent at the lowest scale and still too slow. */
+  pressure = 0;
   private acc = 0;
-  private frames = 0;
+  private samples: number[] = [];
   private cooldown = 2;
   private avg = 16;
+  private calm = 0;
 
-  /** Returns true when the render scale changed. */
+  /**
+   * Returns true when the render scale changed. A change rebuilds every render
+   * target, itself a hitch, so it reacts to the typical (median) frame of each
+   * window, never to one-off spikes like a ship breaking up, and only creeps
+   * back up after a run of calm windows.
+   */
   sample(dt: number): boolean {
     this.avg += (dt * 1000 - this.avg) * 0.05;
     this.acc += dt;
-    this.frames++;
+    this.samples.push(dt * 1000);
     this.cooldown -= dt;
     if (this.cooldown > 0 || this.acc < 1.5) return false;
-    const ms = (this.acc / this.frames) * 1000;
+    const sorted = this.samples.sort((x, y) => x - y);
+    const ms = sorted[sorted.length >> 1];
     this.acc = 0;
-    this.frames = 0;
+    this.samples = [];
+    if (this.fixed) {
+      const changed = this.scale !== this.fixed;
+      this.scale = this.fixed;
+      return changed;
+    }
+    this.pressure = ms > 22 && this.scale <= 0.56 ? this.pressure + 1 : 0;
     let next = this.scale;
-    if (ms > 21) next = Math.max(0.55, this.scale - 0.1);
-    else if (ms < 14.5 && this.scale < 1) next = Math.min(1, this.scale + 0.05);
+    if (ms > 21) {
+      next = Math.max(0.55, this.scale - 0.1);
+      this.calm = 0;
+    } else if (ms < 14.5 && this.scale < 1) {
+      if (++this.calm >= 3) next = Math.min(1, this.scale + 0.05);
+    } else this.calm = 0;
     if (next !== this.scale) {
       this.scale = next;
+      this.calm = 0;
       this.cooldown = 2.5;
       return true;
     }

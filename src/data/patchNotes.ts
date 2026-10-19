@@ -13,9 +13,64 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T14:00Z',
+    entries: [
+      {
+        title: 'A brand new look for every screen, and a HUD that fits your phone',
+        notes: [
+          'On phones the sailing HUD is far smaller and tidier: a slim ship card with your hull bar, gold, kills and isles; a neater minimap with the wind and the time in a strip underneath; and pause and captain\'s view buttons that sit beside the map instead of on top of your guns. The speed readout now sits low in the middle, out from under your thumb.',
+          'Everything is built from frosted ocean glass with crisp modern type, and whatever you point at or select lights up with a soft white glow. Ship names, isles and the Aquati crest keep their old-world lettering.',
+          'The pause menu is new: a clean list down the left with your voyage stats beside it and a tip from the crew. Use the arrow keys to move through it, jump straight to the sea chart, and Return to harbour now asks for a second press so you never lose a voyage by accident.',
+          'A new Settings screen lets you turn the sound and the harbour music on or off, hide the frame counter, choose a Compact, Standard or Large HUD, and tone the camera shake down to Gentle or Off. Graphics has a button of its own on the home screen and in the pause menu.',
+          'The home screen, sea chart, patch notes, controls, shipwreck screen, Graphics card and the Shipwright all share the new style, and every one of them is laid out for landscape phones, portrait phones, tablets and desktops, clear of notches and rounded corners. The HUD also no longer blurs the sea behind it, which saves a little work on every frame.',
+        ],
+      },
+      {
+        title: 'Finer ships and a livelier crew',
+        notes: [
+          'Hulls now have real planking you can see in the light: raised strakes, seams, butt joints and treenails, with weathering streaks down the sides. The decks show knots and sun-bleached patches, and the sails have double-stitched seams, reef points, corner patches and the odd sewn-on repair.',
+          'Every ship gets a proper stern: a hung rudder with iron straps, gilded quarter pieces at the corners and a gold moulding along the rail. At the bow, a gilded mermaid figurehead leads the way, with carved trailboards, scrolled head rails, hawse holes and an anchor cable.',
+          'Masts are now built in sections, lower mast, topmast and topgallant, with caps and iron bands. Yards carry footropes and blocks, the bowsprit has its martingale and jib-boom footropes, and gun crews have breeching ropes and racks of shot between the guns.',
+          'The decks are fitted out: lattice gratings, a turned ship\'s wheel, a binnacle, a skylight, a ship\'s bell in its belfry, pin rails and fife rails hung with coils of rope, and a galley stovepipe trailing a wisp of smoke on the wind.',
+          'The crew have faces now, with eyes that blink, brows, noses and smiles, plus beards, moustaches, ponytails, eyepatches, earrings, vests, kerchiefs, belts, pistols, boots and the odd peg leg. Your captain wears a long coat with epaulettes and a plumed hat, with a parrot on the shoulder that flaps and looks about.',
+          'Off duty, sailors puff on clay pipes, sip from mugs, and on a bigger crew someone strikes up a fiddle while a few shipmates dance a jig.',
+        ],
+      },
+      {
+        title: 'Smooth battles: no more hitches',
+        notes: [
+          'Fixed the stutter when cannonballs hit, masts snapped or a ship went down, which mostly struck in your first fights and faded the longer you played. The game now does all of that warm-up while it loads: every effect, wreck piece and ship paint scheme is drawn once behind the loading screen, so nothing has to be prepared mid-battle.',
+          'Snapping a mast or breaking a hull in two is about five times faster, and when a ship loses several spars at once they now come down over a few frames instead of all landing in one.',
+          'New pirate ships are built quietly in the background a little at a time, so a ship or a whole flotilla sailing over the horizon no longer causes a hitch, and a replacement waits until the wreck you just sank has settled.',
+          'The automatic resolution adjustment no longer overreacts to one slow moment in a battle. It used to drop the resolution right after a big explosion, which caused another hitch, and then step it back up while you were still fighting.',
+          'The "ship sunk" and island banners no longer blur the sea behind them as they slide in, which used to make the frame jump on some devices, and the game\'s fonts now load up front.',
+        ],
+      },
+      {
+        title: 'Ray-traced light and a Graphics menu',
+        notes: [
+          'The sea is now a mirror: hulls, sails, masts and island cliffs reflect in the water, rippling and breaking up with the waves. Calm water right beside your hull shows it best.',
+          'Light is ray traced across the scene. Shadows fall crisp wherever things touch (crew on the deck, guns on their carriages, rocks on the sand), creases, coves and the deck under the bulwarks sink into soft shade, and sunlight bounces colour onto nearby surfaces.',
+          'Shadows are now soft the way real sunlight makes them: sharp at the foot of a mast or palm, softening the further they fall.',
+          'New Graphics menu, in the harbour and in the pause menu. Pick Auto, Low, Medium, High or Ultra, or tune each effect yourself: reflections, contact shadows, ambient occlusion, bounce light, shadow detail, soft shadows, resolution, anti-aliasing, bloom and tilt-shift. Every change shows live on the sea behind the menu, with a frame-rate readout, and your choice is remembered.',
+          'Auto stays the default: it picks a level for your device, trades resolution for a steady frame, and if that is still not enough it gently turns effects down.',
+        ],
+      },
+    ],
+  },
+  {
     // the 13:00 group below is full (five entries), so this hour continues here
     hour: '2026-10-19T13:00Z',
     entries: [
+      {
+        title: 'Aiming you can read at a glance',
+        notes: [
+          'Your guns now show exactly where they can fire: two arcs painted on the sea off either beam, rising and falling with the swell. They fill outward in teal while the crews reload and turn gold the moment the guns are run out, with a knock from the gun deck and a glint on that side\'s button.',
+          'Bring a foe into a gold arc and the guns lock on: chevrons stream toward her, a reticle snaps square around her hull, a gold line marks the range and a pip shows where the shot will land. If she is just outside, the edge you need to turn across glows.',
+          'Your gunners now allow for your own ship\'s speed as well as the enemy\'s, so broadsides in a running fight no longer sail past the bow, and they can train a little further fore and aft.',
+          'With a mouse, point into either side to see that arc, and click to fire it: at the foe in it, or wherever you point. On touch, the side the Fire button will shoot is outlined, and Fire glows when a foe is locked and loaded.',
+        ],
+      },
       {
         title: 'The Shipwright: make your ship your own',
         notes: [

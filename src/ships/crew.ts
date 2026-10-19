@@ -18,7 +18,7 @@ import { buildSailorGeometry, createCrewMaterial, FLAG, HAT, P, POSE_SIZE, PROP,
 type Role = 'captain' | 'helm' | 'gunner' | 'hand' | 'lookout';
 type Act =
   | 'stand' | 'helm' | 'pace' | 'glass' | 'point' | 'rail' | 'gun' | 'haul' | 'swab' | 'lean' | 'sit' | 'coil' | 'chat'
-  | 'powder' | 'bucket' | 'panic' | 'salute' | 'lookout';
+  | 'powder' | 'bucket' | 'panic' | 'salute' | 'lookout' | 'fiddle' | 'jig';
 type Mode = 'aboard' | 'air' | 'swim' | 'gone';
 
 interface Spot {
@@ -120,34 +120,56 @@ interface Look {
   slots: RGBA[];
   hat: number;
   flags: number;
+  /** Lounges with a pipe / sips grog when there's a moment. */
+  smoker: boolean;
+  drinker: boolean;
 }
+
+const VESTS = {
+  player: ['#7a2f2a', '#2f3d5c', '#8a6a3c', '#3e6b5a', '#c9b58c'],
+  pirate: ['#3a2a22', '#5e1414', '#2d2a33', '#6b4a2b', '#4a3a5a'],
+};
 
 function makeLook(team: 'player' | 'pirate', role: Role): Look {
   const T = TEAM_LOOK[team];
+  const pirate = team === 'pirate';
+  const chance = (p: number) => Math.random() < p;
   const skin = col(pick(SKIN));
   const hair = col(pick(HAIR));
   const shirtHex = pick(T.shirts);
-  const striped = (shirtHex === T.shirts[0] || shirtHex === T.shirts[1]) && Math.random() < 0.55;
+  const striped = (shirtHex === T.shirts[0] || shirtHex === T.shirts[1]) && chance(0.55);
   const shirt = col(shirtHex, striped ? -15 : 0);
-  const rolled = Math.random() < 0.4;
+  const rolled = chance(0.4);
   const trousers = col(pick(T.trousers));
-  const barefoot = Math.random() < (team === 'pirate' ? 0.35 : 0.25);
-  const shortLegs = barefoot && Math.random() < 0.6;
+  const barefoot = chance(pirate ? 0.35 : 0.25);
+  const shortLegs = barefoot && chance(0.6);
   const sash = col(pick(T.sash));
   let [hat, hatCols] = pick(T.hats);
   if (role === 'lookout' && hat === HAT.straw) hat = HAT.knit;
   let hatCol = col(pick(hatCols));
   let flags = 0;
-  if (Math.random() < (team === 'pirate' ? 0.55 : 0.3)) flags |= FLAG.beard;
-  if (hat !== HAT.bandana && Math.random() < 0.25) flags |= FLAG.ponytail;
+  if (chance(pirate ? 0.5 : 0.28)) flags |= FLAG.beard;
+  else if (chance(pirate ? 0.45 : 0.3)) flags |= FLAG.moustache;
+  if (hat !== HAT.bandana && chance(0.22)) flags |= FLAG.ponytail;
+  else if (hat === HAT.none && chance(0.2)) flags |= FLAG.longhair;
+  if (hat === HAT.none && !(flags & (FLAG.ponytail | FLAG.longhair)) && chance(0.3)) flags |= FLAG.bald;
+  if (chance(pirate ? 0.14 : 0.03)) flags |= FLAG.patch;
+  if (chance(pirate ? 0.4 : 0.15)) flags |= FLAG.earring;
+  if (chance(pirate ? 0.32 : 0.25)) flags |= FLAG.vest;
+  if (chance(0.4)) flags |= FLAG.belt;
+  if (pirate && chance(0.25)) flags |= FLAG.pistol;
+  if (chance(pirate ? 0.25 : 0.35)) flags |= FLAG.kerchief;
+  const peg = role !== 'lookout' && role !== 'helm' && chance(pirate ? 0.09 : 0.03);
+  if (peg) flags |= FLAG.peg;
+  else if (!barefoot && chance(pirate ? 0.4 : 0.3)) flags |= FLAG.boots;
   const slots: RGBA[] = Array.from({ length: TINT_SLOTS }, () => [1, 1, 1, 0] as RGBA);
   slots[TINT.skin] = skin;
   slots[TINT.shirt] = shirt;
   slots[TINT.sleeve] = rolled && !striped ? skin : shirt;
-  slots[TINT.forearm] = rolled || Math.random() < 0.5 ? skin : shirt;
+  slots[TINT.forearm] = rolled || chance(0.5) ? skin : shirt;
   slots[TINT.trousers] = trousers;
-  slots[TINT.shin] = shortLegs ? skin : trousers;
-  slots[TINT.boots] = barefoot ? skin : col('#2a1f18');
+  slots[TINT.shin] = shortLegs ? skin : chance(0.3) ? col('#e8e0cf') : trousers;
+  slots[TINT.boots] = barefoot ? skin : col(pick(['#2a1f18', '#3b2a1e', '#1d1714']));
   slots[TINT.sash] = sash;
   slots[TINT.hat] = hatCol;
   slots[TINT.hair] = hair;
@@ -159,23 +181,37 @@ function makeLook(team: 'player' | 'pirate', role: Role): Look {
   slots[TINT.cloth] = col('#d8ccb0');
   slots[TINT.stripe] = col(pick(T.stripe));
   slots[TINT.dark] = col('#1a1210');
+  slots[TINT.white] = col('#f6f2ea');
+  slots[TINT.pupil] = col(pick(['#1a1210', '#2a1a10', '#203048']));
+  slots[TINT.parrot] = col(chance(0.75) ? '#d8322a' : '#2fae55');
+  slots[TINT.wing] = col(chance(0.7) ? '#2a6fd0' : '#f2c230');
+  slots[TINT.beak] = col('#efe2c0');
+  slots[TINT.vest] = col(pick(VESTS[team]));
+  slots[TINT.plume] = col(pirate ? pick(['#1a1616', '#a3241f', '#efe6d6']) : pick(['#f6f2ea', '#1fa3a0']));
+  slots[TINT.leather] = col(pick(['#3b2a1e', '#2a1f18', '#5a3a24']));
   if (role === 'captain') {
     const coat = col(pick(T.coat));
     hat = HAT.tricorn;
-    hatCol = col(team === 'player' ? '#1a1a26' : '#141010');
+    hatCol = col(pirate ? '#141010' : '#1a1a26');
     slots[TINT.hat] = hatCol;
     slots[TINT.coat] = coat;
     slots[TINT.shirt] = coat;
     slots[TINT.sleeve] = coat;
     slots[TINT.forearm] = coat;
-    slots[TINT.trousers] = col(team === 'player' ? '#e8e0cf' : '#2b2523');
+    slots[TINT.trousers] = col(pirate ? '#2b2523' : '#e8e0cf');
     slots[TINT.shin] = col('#1d1714');
     slots[TINT.boots] = col('#1d1714');
-    slots[TINT.sash] = col(team === 'player' ? '#e2b552' : '#a3241f');
-    flags = (flags & ~FLAG.ponytail) | FLAG.coat | (Math.random() < 0.5 ? FLAG.ponytail : 0);
-    if (team === 'pirate' && Math.random() < 0.8) flags |= FLAG.beard;
+    slots[TINT.sash] = col(pirate ? '#a3241f' : '#e2b552');
+    const keep = FLAG.beard | FLAG.moustache | FLAG.earring | FLAG.patch | FLAG.longhair;
+    flags = (flags & keep) | FLAG.coat | FLAG.boots | FLAG.plume | FLAG.belt | (chance(0.5) ? FLAG.ponytail : 0);
+    if (pirate && chance(0.8)) flags |= chance(0.6) ? FLAG.beard : FLAG.moustache;
+    if (pirate && chance(0.4)) flags |= FLAG.patch;
+    if (pirate && chance(0.25)) flags = (flags & ~FLAG.boots) | FLAG.peg;
+    // every captain worth the name keeps a parrot; ours always does
+    if (!pirate || chance(0.6)) flags |= FLAG.parrot;
+    if (flags & FLAG.longhair) flags &= ~FLAG.ponytail;
   }
-  return { slots, hat, flags };
+  return { slots, hat, flags, smoker: chance(0.35), drinker: chance(0.5) };
 }
 
 // ------------------------------------------------------------------ poses
@@ -356,6 +392,7 @@ class ShipCrew {
       if (mast.top) this.tops.push({ x: B * 0.07, z: mz - B * 0.06, y: s.deckY(mast.t) + mast.height * 0.6 + 0.09 });
     });
     this.obstacles.push({ x: B * 0.2, z: z(0.86), r: 0.42 });
+    for (const o of ship.model.deckProps) this.obstacles.push({ ...o });
     const wt = sc ? sc.t * 0.55 : 0.16;
     this.obstacles.push({ x: 0, z: z(wt) - 0.06, r: 0.66 });
     this.helm = { x: 0, z: z(wt) - 0.66 };
@@ -856,6 +893,7 @@ class ShipCrew {
       case 'lean': {
         if (walking) walk(T, sl.phase, run);
         else {
+          if (sl.look.smoker) prop = PROP.pipe;
           T[P.spineX] = 0.5;
           T[P.armLX] = 1.15;
           T[P.armRX] = 1.15;
@@ -874,6 +912,7 @@ class ShipCrew {
       case 'sit': {
         if (walking) walk(T, sl.phase, run);
         else {
+          if (sl.look.smoker) prop = PROP.pipe;
           T[P.legLX] = 1.45;
           T[P.legRX] = 1.45;
           T[P.kneeL] = 1.35 + Math.sin(tt * 1.7) * 0.18;
@@ -908,7 +947,18 @@ class ShipCrew {
         if (walking) walk(T, sl.phase, run);
         else {
           const talk = Math.sin(tt * 0.9 + sl.seed) > 0;
-          if (talk) {
+          if (sl.look.drinker) {
+            prop = PROP.mug;
+            // a swig of grog between remarks
+            const sip = (tt * 0.23 + sl.seed) % 1 < 0.16;
+            T[P.armLX] = -0.2;
+            T[P.armLZ] = 0.4;
+            T[P.elbowL] = 1.7;
+            T[P.armRX] = sip ? 1.85 : talk ? 0.6 + 0.3 * Math.sin(tt * 3.1) : 0.3;
+            T[P.armRZ] = sip ? 0.15 : 0.2;
+            T[P.elbowR] = sip ? 2.35 : 1.35;
+            T[P.headX] = sip ? -0.4 : 0.08 * Math.sin(tt * 4);
+          } else if (talk) {
             T[P.armRX] = 0.55 + 0.35 * Math.sin(tt * 3.1);
             T[P.armRZ] = 0.2;
             T[P.elbowR] = 1.2 + 0.3 * Math.sin(tt * 2.3);
@@ -927,9 +977,75 @@ class ShipCrew {
         }
         break;
       }
+      case 'fiddle': {
+        prop = PROP.fiddle;
+        if (walking) {
+          walk(T, sl.phase, run, true);
+          T[P.armLX] = 0.4;
+          T[P.elbowL] = 1.3;
+          T[P.armRX] = 0.25;
+          T[P.elbowR] = 0.6;
+        } else {
+          // a hornpipe: fiddle tucked under the chin, the bow sawing, a foot tapping the beat
+          const w = time * 7.5;
+          const bow = Math.sin(w * 0.5);
+          T[P.armLX] = 1.15;
+          T[P.armLZ] = -0.55;
+          T[P.elbowL] = 1.95;
+          T[P.armRX] = 0.85;
+          T[P.armRZ] = 0.45 + 0.12 * bow;
+          T[P.elbowR] = 1.1 + 0.45 * bow;
+          T[P.headX] = 0.22;
+          T[P.headY] = 0.35;
+          T[P.spineZ] = 0.07 * bow;
+          T[P.spineX] = -0.04;
+          T[P.legRX] = 0.12 * Math.max(0, Math.sin(w));
+          T[P.kneeR] = 0.1 + 0.18 * Math.max(0, Math.sin(w));
+          T[P.kneeL] = 0.12;
+          T[P.rootY] = -0.015 - 0.015 * Math.abs(Math.sin(w));
+        }
+        break;
+      }
+      case 'jig': {
+        const f = sl.partner;
+        if (!f || f.act !== 'fiddle' || f.mode !== 'aboard') sl.actDur = 0;
+        if (walking) walk(T, sl.phase, run);
+        else {
+          const w = time * 7.5;
+          const k = Math.sin(w * 0.5);
+          if (sl.seed % 2 < 1) {
+            // arms folded high across the chest, sailor-fashion
+            T[P.armLX] = 0.95;
+            T[P.armRX] = 0.95;
+            T[P.armLZ] = -0.55;
+            T[P.armRZ] = -0.55;
+            T[P.elbowL] = 2.1;
+            T[P.elbowR] = 2.1;
+          } else {
+            T[P.armLZ] = 0.5;
+            T[P.armRZ] = 0.5;
+            T[P.elbowL] = 1.6;
+            T[P.elbowR] = 1.6;
+            T[P.armLX] = -0.15;
+            T[P.armRX] = -0.15;
+          }
+          T[P.legLX] = 0.75 * Math.max(0, k);
+          T[P.kneeL] = 0.1 + 1.25 * Math.max(0, k);
+          T[P.legRX] = 0.75 * Math.max(0, -k);
+          T[P.kneeR] = 0.1 + 1.25 * Math.max(0, -k);
+          T[P.rootY] = 0.07 * Math.abs(k) - 0.03;
+          T[P.spineZ] = 0.12 * k;
+          T[P.spineX] = -0.05;
+          T[P.headY] = 0.25 * Math.sin(w * 0.25);
+          T[P.headX] = -0.1;
+          if (f) sl.wantYaw = Math.atan2(f.x - sl.x, f.z - sl.z) + Math.sin(time * 0.6 + sl.seed) * 0.6;
+        }
+        break;
+      }
       default: {
         if (walking) walk(T, sl.phase, run);
         else {
+          if (sl.look.smoker) prop = PROP.pipe;
           T[P.spineX] = 0.02 + 0.015 * Math.sin(tt * 1.7);
           T[P.headY] = sl.lookYaw;
           T[P.legLX] = 0.06 * Math.sin(tt * 0.2);
@@ -996,6 +1112,17 @@ class ShipCrew {
       }
     }
     sl.prop = prop;
+    if (prop === PROP.pipe && Math.random() < dt * 0.45) {
+      const c = Math.cos(sl.yaw);
+      const sn = Math.sin(sl.yaw);
+      const lx = -0.08 * sl.girth;
+      const lz = 0.24 * sl.girth;
+      _p.set(sl.x + lx * c + lz * sn, this.deckY(sl.zone, sl.x, sl.z) + sl.y + sl.pose[P.rootY] + 1.64 * sl.height, sl.z - lx * sn + lz * c).applyMatrix4(sh.root.matrixWorld);
+      world.particles.emit({
+        x: _p.x, y: _p.y, z: _p.z, vx: sh.vel.x + rand(-0.1, 0.1), vy: rand(0.25, 0.45), vz: sh.vel.z + rand(-0.1, 0.1),
+        life: rand(1.4, 2.2), size: 0.08, sizeEnd: rand(0.45, 0.7), color: [0.9, 0.9, 0.9], colorEnd: [1.05, 1.05, 1.05], alpha: 0.4, drag: 1.2, grav: -0.1, kind: 1, fadeIn: 0.1,
+      });
+    }
 
     // lift for the barrel seat / fighting top
     const lift = sl.act === 'lookout' && sl.spot ? sl.topY - this.deckY(sl.zone, sl.x, sl.z) : sl.seat && !walking && sl.act === 'sit' ? 0.74 : 0;
@@ -1216,6 +1343,21 @@ class ShipCrew {
     sl.partner = null;
     const r = Math.random();
     const zone = sl.zone;
+    // a fiddler strikes up now and then, and the hands nearby can't help but dance
+    const fiddler = this.sailors.find((o) => o.act === 'fiddle' && o.mode === 'aboard');
+    if (fiddler && fiddler !== sl && fiddler.zone === zone && !fiddler.goal && fiddler.actDur - fiddler.actT > 4 && Math.random() < 0.6 && this.sailors.filter((o) => o.act === 'jig').length < 3) {
+      this.setTask(sl, 'jig', fiddler.actDur - fiddler.actT);
+      sl.partner = fiddler;
+      const a = rand(0, Math.PI * 2);
+      this.walkTo(sl, fiddler.x + Math.sin(a) * rand(1.1, 1.5), fiddler.z + Math.cos(a) * rand(1.1, 1.5));
+      return;
+    }
+    if (r < 0.08 && !fiddler && this.sailors.filter((o) => o.mode === 'aboard').length >= 5) {
+      this.setTask(sl, 'fiddle', rand(18, 28));
+      const p = this.freeSpot(zone);
+      this.walkTo(sl, p.x, p.z, false, rand(-Math.PI, Math.PI));
+      return;
+    }
     if (r < 0.2) {
       this.setTask(sl, 'swab', rand(7, 13));
       const p = this.freeSpot(zone);
@@ -1640,7 +1782,7 @@ export class CrewSystem {
     this.palette.needsUpdate = true;
     for (let i = this.max - 1; i >= 0; i--) this.free.push(i);
 
-    const geo = buildSailorGeometry();
+    const geo = buildSailorGeometry(tier > 0);
     this.poses = [0, 1, 2, 3].map((k) => {
       const a = new THREE.InstancedBufferAttribute(new Float32Array(this.max * 4), 4);
       a.setUsage(THREE.DynamicDrawUsage);

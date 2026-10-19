@@ -12,7 +12,7 @@ const NOTES_SEEN_KEY = 'aquati.notesSeen';
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
-  'Rake a foe from the side your guns face',
+  'Your guns fire to the sides: bring a foe into a gold arc',
   'Salvage floats to you: sail close to collect it',
   'Every isle you chart pays a bounty',
   'Gusts darken the water: chase them for a burst of speed',
@@ -27,8 +27,8 @@ export interface VoyageInfo {
   cls?: ShipClassId;
 }
 
-const OVERLAYS = ['notes', 'controls', 'settings'];
-const QUALITY_NAMES = ['Low', 'Medium', 'High'];
+/** Cards that sit over the menus and close on Esc or a tap outside; later ones stack on top. */
+const OVERLAYS = ['notes', 'controls', 'settings', 'graphics'];
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -62,8 +62,6 @@ export class UI {
   /** Live settings changed (sound, music, shake…); the game applies what it owns. */
   onSettings: (s: Settings) => void = () => {};
   readonly settings: Settings = loadSettings();
-  private qualityInfo = { detected: 1, active: 1 };
-  private bootQuality = this.settings.quality;
   private get soundOn() {
     return this.settings.sound;
   }
@@ -252,11 +250,6 @@ export class UI {
 
   // ------------------------------------------------------------- settings
 
-  /** Detected and running quality tiers, for the Settings labels. */
-  setQualityInfo(detected: number, active: number) {
-    this.qualityInfo = { detected, active };
-  }
-
   private setSetting<K extends keyof Settings>(k: K, v: Settings[K]) {
     if (this.settings[k] === v) return;
     this.settings[k] = v;
@@ -280,25 +273,17 @@ export class UI {
     const focusKey = (document.activeElement as HTMLElement | null)?.dataset?.key;
     const toggle = (k: 'sound' | 'music' | 'fps', label: string, desc: string) =>
       `<button class="set-row" data-key="${k}" role="switch" aria-checked="${s[k]}"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><i class="switch${s[k] ? ' on' : ''}"></i></button>`;
-    const seg = <K extends 'quality' | 'hud' | 'shake'>(k: K, label: string, desc: string, opts: [Settings[K], string][]) =>
+    const seg = <K extends 'hud' | 'shake'>(k: K, label: string, desc: string, opts: [Settings[K], string][]) =>
       `<div class="set-row has-seg"><span class="set-txt"><b>${label}</b><small>${desc}</small></span><span class="seg" role="radiogroup">${opts
         .map(([v, t]) => `<button data-key="${k}" data-v="${v}" role="radio" aria-checked="${s[k] === v}" class="${s[k] === v ? 'sel' : ''}">${t}</button>`)
         .join('')}</span></div>`;
-    const q = this.qualityInfo;
-    const reload = s.quality !== this.bootQuality;
     body.innerHTML = `
       <section class="set-group"><h4>Sound</h4>
         ${toggle('sound', 'Sound', 'Every sound in the game')}
         ${toggle('music', 'Harbour music', 'The theme that plays on the home screen')}
       </section>
       <section class="set-group"><h4>Graphics</h4>
-        ${seg('quality', 'Quality', `Running on ${QUALITY_NAMES[q.active]}. Auto picks ${QUALITY_NAMES[q.detected]} for this device.`, [
-          ['auto', 'Auto'],
-          ['low', 'Low'],
-          ['med', 'Medium'],
-          ['high', 'High'],
-        ])}
-        ${reload ? '<div class="set-note"><span>The new quality takes effect after a reload.</span><button class="btn primary small" id="set-reload">Reload now</button></div>' : ''}
+        <button class="set-row" id="set-gfx"><span class="set-txt"><b>Graphics</b><small>Presets, ray-traced light, shadows and resolution, tuned live</small></span><span class="set-go">${icon(ICONS.chev)}</span></button>
         ${toggle('fps', 'Frame counter', 'Show frames per second at the top of the screen')}
       </section>
       <section class="set-group"><h4>Interface</h4>
@@ -321,7 +306,11 @@ export class UI {
         else this.setSetting(k, !this.settings[k] as never);
       }),
     );
-    document.getElementById('set-reload')?.addEventListener('click', () => location.reload());
+    $('set-gfx').addEventListener('click', () => {
+      // the graphics card clears the stage to show the sea, so it replaces this sheet
+      this.closeOverlay('settings');
+      $('btn-graphics').click();
+    });
     if (focusKey) {
       const v = s[focusKey as keyof Settings];
       body.querySelector<HTMLElement>(`[data-key="${focusKey}"][data-v="${v}"], button.set-row[data-key="${focusKey}"]`)?.focus({ preventScroll: true });
@@ -738,6 +727,35 @@ export class UI {
     };
     ring('bs-port', 't-port', p.reload.port);
     ring('bs-star', 't-star', p.reload.starboard);
+  }
+
+  /** The HUD twin of the arcs on the water: a side burns gold while a foe sits in its loaded arc. */
+  updateGunnery(sides: Record<'port' | 'starboard', { ready: boolean; target: unknown }>, auto: 'port' | 'starboard' | null) {
+    const hotP = sides.port.ready && !!sides.port.target;
+    const hotS = sides.starboard.ready && !!sides.starboard.target;
+    const hotA = !!auto && sides[auto].ready && !!sides[auto].target;
+    const key = `${+hotP}${+hotS}${+hotA}${auto ?? '-'}`;
+    if (this.hudCache.get('guns') === key) return;
+    this.hudCache.set('guns', key);
+    $('bs-port').classList.toggle('hot', hotP);
+    $('bs-star').classList.toggle('hot', hotS);
+    $('t-port').classList.toggle('hot', hotP);
+    $('t-star').classList.toggle('hot', hotS);
+    // the big Fire button looses whichever side is outlined
+    $('t-port').classList.toggle('aim', auto === 'port');
+    $('t-star').classList.toggle('aim', auto === 'starboard');
+    $('t-fire').classList.toggle('hot', hotA);
+  }
+
+  /** A broadside just finished reloading mid-fight. */
+  gunsReady(side: 'port' | 'starboard') {
+    for (const id of side === 'port' ? ['bs-port', 't-port'] : ['bs-star', 't-star']) {
+      const el = $(id);
+      el.classList.remove('ping');
+      void el.offsetWidth;
+      el.classList.add('ping');
+      setTimeout(() => el.classList.remove('ping'), 650);
+    }
   }
 
   flashBroadside(side: 'port' | 'starboard') {

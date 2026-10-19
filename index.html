@@ -34,7 +34,8 @@
       <nav class="menu-tools">
         <button class="tool" id="btn-notes" data-label="Patch notes" aria-label="Patch notes"><span class="ti" data-icon="scroll"></span><i class="new-dot" id="notes-dot"></i></button>
         <button class="tool" id="btn-controls" data-label="Controls" aria-label="Controls"><span class="ti" data-icon="keys"></span></button>
-        <button class="tool" id="btn-settings" data-label="Settings" aria-label="Settings"><span class="ti" data-icon="gear"></span></button>
+        <button class="tool" id="btn-settings" data-label="Settings" aria-label="Settings"><span class="ti" data-icon="sliders"></span></button>
+        <button class="tool" id="btn-graphics" data-label="Graphics" aria-label="Graphics"><span class="ti"></span></button>
         <button class="tool" id="btn-refresh" data-label="Update &amp; reload" aria-label="Fetch the latest version and reload"><span class="ti" data-icon="refresh"></span></button>
         <button class="tool sound-toggle" id="btn-sound" data-label="Sound" aria-label="Sound"><span class="ti"></span></button>
       </nav>
@@ -119,7 +120,8 @@
           <nav class="menu-list" id="pause-list">
             <button class="mi" id="btn-resume"><span class="ti" data-icon="play"></span><span class="mi-l">Resume voyage</span><kbd class="kd">Esc</kbd></button>
             <button class="mi" id="btn-chart"><span class="ti" data-icon="map"></span><span class="mi-l">Sea chart</span><kbd class="kd">M</kbd></button>
-            <button class="mi" id="btn-settings2"><span class="ti" data-icon="gear"></span><span class="mi-l">Settings</span></button>
+            <button class="mi" id="btn-settings2"><span class="ti" data-icon="sliders"></span><span class="mi-l">Settings</span></button>
+            <button class="mi" id="btn-graphics2"><span class="ti"></span><span class="mi-l">Graphics</span></button>
             <button class="mi" id="btn-controls2"><span class="ti" data-icon="keys"></span><span class="mi-l">Controls</span></button>
             <button class="mi" id="btn-notes2"><span class="ti" data-icon="scroll"></span><span class="mi-l">Patch notes</span></button>
             <button class="mi warn" id="btn-quit"><span class="ti" data-icon="harbour"></span><span class="mi-l" id="quit-label">Return to harbour</span></button>
@@ -194,7 +196,7 @@
           <section class="ctl-group touch-only">
             <h4>On touch</h4>
             <div class="ctl"><span class="gesture">Drag left side</span><span>Steer &amp; trim, like a tiller</span></div>
-            <div class="ctl"><span class="gesture">Fire</span><span>Broadside at the nearest foe</span></div>
+            <div class="ctl"><span class="gesture">Fire</span><span>Fire the outlined side, at the foe in its arc</span></div>
             <div class="ctl"><span class="gesture">◀ Port · Stbd ▶</span><span>Fire one side</span></div>
             <div class="ctl"><span class="gesture">Pinch</span><span>Zoom</span></div>
             <div class="ctl"><span class="gesture">Tap minimap</span><span>Open the sea chart</span></div>
@@ -209,8 +211,8 @@
             <h4>Gunnery</h4>
             <div class="ctl"><span><kbd>Q</kbd></span><span>Port broadside</span></div>
             <div class="ctl"><span><kbd>E</kbd></span><span>Starboard broadside</span></div>
-            <div class="ctl"><span><kbd>Click</kbd></span><span>Fire the side you point at</span></div>
-            <div class="ctl"><span><kbd>Space</kbd></span><span>Fire at the nearest foe</span></div>
+            <div class="ctl"><span><kbd>Click</kbd></span><span>Fire the side you point into, where you point</span></div>
+            <div class="ctl"><span><kbd>Space</kbd></span><span>Fire at the foe in your arcs</span></div>
           </section>
           <section class="ctl-group">
             <h4>Navigation</h4>
@@ -218,6 +220,7 @@
             <div class="ctl"><span><kbd>M</kbd></span><span>Sea chart</span></div>
             <div class="ctl"><span><kbd>Esc</kbd></span><span>Pause</span></div>
           </section>
+          <div class="ctl-tip"><span class="ti" data-icon="cannon"></span>Your guns fire to the sides. Steer until a foe sits in one of the arcs on the water: gold means loaded and locked on, so fire.</div>
           <section class="ctl-group">
             <h4>Captain's view</h4>
             <div class="ctl"><span><kbd>V</kbd></span><span>Step into the captain's boots</span></div>
@@ -229,6 +232,16 @@
           </section>
           <div class="ctl-tip"><span class="ti" data-icon="wheel"></span>Sail across the wind for the best speed. Heading straight into it is slow going.</div>
         </div>
+      </div>
+    </div>
+
+    <div id="graphics" class="screen dim hidden">
+      <div class="sheet gfx-card">
+        <header class="sheet-head">
+          <div><div class="kicker">Tune the light and the sea, live</div><h2 class="screen-title">Graphics</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body gfx-body" id="gfx-body"></div>
       </div>
     </div>
 

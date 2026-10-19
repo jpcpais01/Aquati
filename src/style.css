@@ -314,6 +314,7 @@ kbd {
 
 .round-btn,
 .chart-btn {
+  /* sits on cards that are already over a blurred backdrop */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -326,8 +327,6 @@ kbd {
   background: var(--glass-2);
   box-shadow: var(--hi);
   color: var(--ink);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   transition: transform 0.2s var(--ease), background 0.2s, box-shadow 0.2s;
 }
 
@@ -1333,8 +1332,6 @@ kbd {
   border-radius: 30px;
   background: linear-gradient(180deg, rgba(16, 40, 54, 0.82), rgba(6, 20, 30, 0.92));
   border: 1px solid var(--stroke);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1370,8 +1367,6 @@ kbd {
   border-radius: 30px;
   background: linear-gradient(180deg, rgba(16, 40, 54, 0.84), rgba(6, 20, 30, 0.94));
   border: 1px solid var(--stroke);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   box-shadow: 0 40px 110px rgba(0, 0, 0, 0.5), var(--hi);
   animation: pop 0.45s var(--ease);
   overflow: hidden;
@@ -1783,8 +1778,6 @@ kbd {
   padding: 16px 18px;
   border-radius: 20px;
   background: rgba(8, 22, 32, 0.55);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   text-align: left;
 }
 
@@ -2061,6 +2054,25 @@ button.set-row:focus-visible {
   box-shadow: 0 0 0 2px #fff, 0 0 18px rgba(160, 240, 255, 0.4);
 }
 
+.set-go {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink-2);
+  transition: transform 0.25s var(--ease), background 0.2s;
+}
+
+button.set-row:hover .set-go,
+button.set-row:focus-visible .set-go {
+  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--ink);
+}
+
 .set-note {
   display: flex;
   align-items: center;
@@ -2216,6 +2228,7 @@ button.set-row:focus-visible {
 }
 
 .ctl-tip .ico {
+  flex: none;
   color: var(--aqua);
   width: 22px;
   height: 22px;
@@ -2391,10 +2404,8 @@ body[data-hud='large'] #hud {
 
 .panel {
   position: relative;
-  background: linear-gradient(180deg, rgba(14, 36, 50, 0.56), rgba(6, 20, 30, 0.66));
+  background: linear-gradient(180deg, rgba(14, 36, 50, 0.76), rgba(6, 20, 30, 0.84));
   border: 1px solid var(--stroke);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   box-shadow: 0 10px 30px rgba(0, 8, 14, 0.22), var(--hi);
 }
 
@@ -2563,10 +2574,8 @@ body[data-hud='large'] #hud {
   height: max(20px, calc(26px * var(--k)));
   padding: 0 calc(10px * var(--k)) 0 calc(7px * var(--k));
   border-radius: 99px;
-  background: rgba(8, 22, 32, 0.5);
+  background: rgba(8, 22, 32, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   font: 700 max(10.5px, calc(12.5px * var(--k))) var(--sans);
 }
 
@@ -2635,10 +2644,8 @@ body[data-hud='large'] #hud {
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--stroke);
-  background: var(--glass-2);
+  background: rgba(10, 28, 40, 0.78);
   box-shadow: var(--hi), 0 6px 18px rgba(0, 8, 14, 0.2);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2756,10 +2763,8 @@ body[data-hud='large'] #hud {
   height: max(22px, calc(28px * var(--k)));
   padding: 0 calc(11px * var(--k)) 0 calc(8px * var(--k));
   border-radius: 99px;
-  background: rgba(8, 22, 32, 0.55);
+  background: rgba(8, 22, 32, 0.72);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   pointer-events: auto;
 }
 
@@ -2826,10 +2831,8 @@ body[data-hud='large'] #hud {
   gap: calc(4px * var(--k));
   padding: calc(5px * var(--k));
   border-radius: 999px;
-  background: linear-gradient(180deg, rgba(14, 36, 50, 0.56), rgba(6, 20, 30, 0.7));
+  background: linear-gradient(180deg, rgba(14, 36, 50, 0.76), rgba(6, 20, 30, 0.86));
   border: 1px solid var(--stroke);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   box-shadow: 0 12px 34px rgba(0, 8, 14, 0.28), var(--hi);
 }
 
@@ -3056,11 +3059,10 @@ body[data-hud='large'] #hud {
   text-align: center;
   padding: calc(9px * var(--k)) calc(24px * var(--k)) calc(10px * var(--k));
   border-radius: calc(20px * var(--k));
-  background: linear-gradient(180deg, rgba(12, 32, 44, 0.8), rgba(6, 20, 30, 0.72));
+  /* no backdrop blur: re-blurring the live 3D view under a sliding card hitches the frame */
+  background: linear-gradient(180deg, rgba(12, 32, 44, 0.92), rgba(6, 20, 30, 0.86));
   border: 1px solid rgba(244, 199, 101, 0.38);
   box-shadow: 0 14px 40px rgba(0, 8, 14, 0.35), var(--hi);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   animation: toastIn 0.55s var(--spring), toastOut 0.6s ease forwards;
   animation-delay: 0s, var(--life, 3.4s);
 }
@@ -3267,10 +3269,8 @@ body[data-hud='large'] #hud {
   padding: 0;
   border-radius: 50%;
   border: 1px solid var(--stroke);
-  background: linear-gradient(180deg, rgba(16, 40, 54, 0.62), rgba(6, 20, 30, 0.78));
+  background: linear-gradient(180deg, rgba(16, 40, 54, 0.76), rgba(6, 20, 30, 0.88));
   box-shadow: var(--hi), 0 8px 22px rgba(0, 8, 14, 0.3);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   color: var(--ink-3);
   touch-action: manipulation;
   transition: transform 0.1s, color 0.2s;
@@ -3335,6 +3335,59 @@ body[data-hud='large'] #hud {
 
 .fbtn.flash {
   animation: pulse 0.35s ease;
+}
+
+/* gunnery: a foe sits in this side's loaded arc on the water */
+.broadside.hot {
+  color: var(--ink);
+  background: rgba(244, 199, 101, 0.22);
+  box-shadow: 0 0 0 1px rgba(244, 199, 101, 0.5), 0 0 22px rgba(244, 199, 101, 0.28);
+}
+
+.broadside.hot .ring {
+  animation: gun-hot 0.9s ease-in-out infinite;
+}
+
+@keyframes gun-hot {
+  50% {
+    transform: scale(1.1);
+    filter: brightness(1.25);
+  }
+}
+
+.fbtn.side.aim {
+  border-color: rgba(244, 199, 101, 0.8);
+  color: var(--ink);
+}
+
+.fbtn.side.hot {
+  box-shadow: 0 0 18px rgba(244, 199, 101, 0.6);
+}
+
+.fbtn.main.hot {
+  animation: fire-hot 0.9s ease-in-out infinite;
+}
+
+@keyframes fire-hot {
+  50% {
+    box-shadow: 0 12px 36px rgba(244, 180, 70, 0.75), inset 0 -3px 0 rgba(140, 90, 20, 0.3), inset 0 2px 0 rgba(255, 255, 255, 0.6), 0 0 0 calc(4px * var(--kt)) rgba(6, 20, 30, 0.42),
+      0 0 0 calc(10px * var(--kt)) rgba(244, 199, 101, 0.35);
+  }
+}
+
+/* the guns have just been run out again */
+.broadside.ping,
+.fbtn.side.ping {
+  animation: gun-ping 0.6s ease-out;
+}
+
+@keyframes gun-ping {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 220, 140, 0.8);
+  }
+  100% {
+    box-shadow: 0 0 0 16px rgba(255, 220, 140, 0);
+  }
 }
 
 /* ------------------------------------------------------------------ captain's view */
@@ -3441,8 +3494,6 @@ body[data-hud='large'] #hud {
   border: 1px solid var(--stroke-2);
   background: var(--glass-3);
   box-shadow: 0 10px 30px rgba(0, 8, 14, 0.35), var(--hi);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   color: var(--ink);
   font: 700 15px var(--sans);
   pointer-events: auto;
@@ -3497,9 +3548,7 @@ body[data-hud='large'] #hud {
   gap: 6px;
   padding: 8px 15px;
   border-radius: 999px;
-  background: rgba(5, 18, 26, 0.55);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
+  background: rgba(5, 18, 26, 0.72);
   font-size: 13px;
   color: var(--ink-2);
   pointer-events: none;
@@ -3575,10 +3624,8 @@ body[data-hud='large'] #hud {
   gap: 2px;
   padding: 10px 18px 11px;
   border-radius: 18px;
-  background: var(--glass-2);
+  background: var(--glass-3);
   border: 1px solid var(--stroke);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   pointer-events: none;
   z-index: 1;
 }
@@ -3605,10 +3652,8 @@ body[data-hud='large'] #hud {
   gap: 16px;
   padding: 8px 16px;
   border-radius: 999px;
-  background: var(--glass-2);
+  background: var(--glass-3);
   border: 1px solid var(--stroke);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   font: 600 11.5px var(--sans);
   color: var(--ink-2);
   pointer-events: none;

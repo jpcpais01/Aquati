@@ -1,28 +1,25 @@
-// Player options, kept in localStorage. The quality tier is read once at boot
-// (see core/quality.ts), everything else applies live.
+// Player options outside graphics (those live in core/settings.ts), kept in
+// localStorage and applied live.
 
-export type QualityPref = 'auto' | 'low' | 'med' | 'high';
 export type HudSize = 'compact' | 'standard' | 'large';
 export type ShakePref = 'full' | 'gentle' | 'off';
 
 export interface Settings {
   sound: boolean;
   music: boolean;
-  quality: QualityPref;
   fps: boolean;
   hud: HudSize;
   shake: ShakePref;
 }
 
 const KEY = 'aquati.settings';
-export const QUALITY_KEY = 'aquati.quality';
 
-const DEFAULTS: Settings = { sound: true, music: true, quality: 'auto', fps: true, hud: 'standard', shake: 'full' };
+const DEFAULTS: Settings = { sound: true, music: true, fps: true, hud: 'standard', shake: 'full' };
 
 export function loadSettings(): Settings {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>;
-    return { ...DEFAULTS, ...raw, quality: (localStorage.getItem(QUALITY_KEY) as QualityPref | null) ?? 'auto' };
+    return { ...DEFAULTS, ...raw };
   } catch {
     return { ...DEFAULTS };
   }
@@ -30,10 +27,7 @@ export function loadSettings(): Settings {
 
 export function saveSettings(s: Settings) {
   try {
-    const { quality, ...rest } = s;
-    localStorage.setItem(KEY, JSON.stringify(rest));
-    if (quality === 'auto') localStorage.removeItem(QUALITY_KEY);
-    else localStorage.setItem(QUALITY_KEY, quality);
+    localStorage.setItem(KEY, JSON.stringify(s));
   } catch {
     /* private mode: settings last for this visit */
   }
