@@ -481,10 +481,20 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
 
+  private fpsEl = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'fps' });
+  private fpsFrames = 0;
+  private fpsT = performance.now();
+
   private frame() {
     const now = performance.now();
     let dt = (now - this.last) / 1000;
     this.last = now;
+    this.fpsFrames++;
+    if (now - this.fpsT >= 500) {
+      this.fpsEl.textContent = `${Math.round((this.fpsFrames * 1000) / (now - this.fpsT))} FPS`;
+      this.fpsFrames = 0;
+      this.fpsT = now;
+    }
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
     const simDt = this.state === 'paused' || this.state === 'map' || this.state === 'loading' ? 0 : dt;
