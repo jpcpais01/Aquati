@@ -13,7 +13,7 @@ const OVERLAYS = ['notes', 'controls', 'graphics'];
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
-  'Your guns fire to the sides: bring a foe into a gold arc',
+  'Your guns fire to the sides: a gold glint means fire',
   'Salvage floats to you: sail close to collect it',
   'Every isle you chart pays a bounty',
   'Gusts darken the water: chase them for a burst of speed',
@@ -569,7 +569,7 @@ export class UI {
     ring('bs-star', 't-star', p.reload.starboard);
   }
 
-  /** The HUD twin of the arcs on the water: a side burns gold while a foe sits in its loaded arc. */
+  /** A side's badge warms while a foe sits in its loaded arc. */
   updateGunnery(sides: Record<'port' | 'starboard', { ready: boolean; target: unknown }>, auto: 'port' | 'starboard' | null) {
     const hotP = sides.port.ready && !!sides.port.target;
     const hotS = sides.starboard.ready && !!sides.starboard.target;
