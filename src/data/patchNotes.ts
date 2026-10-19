@@ -17,6 +17,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T13:00Z',
     entries: [
       {
+        title: 'Rolling gun smoke and shot streaks',
+        notes: [
+          'Gun smoke is now a soft, rolling cloud that is lit by the sun: bright on top, shadowed underneath, and glowing at its thin edges when you look toward the light. It turns gold at sunset, cool and dim under the moon, and sinks into the haze in mist and rain.',
+          'Every broadside throws three layers of smoke: a fast jet out of the gunport, a slow bank that hangs by the hull, and dark powder wisps flung from the flash. All of it drifts away on the wind and slowly frays apart, and rain knocks it down sooner.',
+          'Cannonballs now leave a short bright streak behind them, so you can follow every shot across the water. It glows a little hotter at night, and the shot trails a thin wake of powder smoke that curls off on the breeze.',
+        ],
+      },
+      {
         title: "Captain's view: walk your own deck",
         notes: [
           "Press V (or tap the new eye button) and the camera swoops down out of the sky into your captain's eyes. Press it again to soar back up.",
