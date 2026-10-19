@@ -35,6 +35,7 @@ export class WakeField {
   private stampData: Float32Array; // x, z, radius, strength
   private stampKind: Float32Array; // 0 foam blob, 1 foam ring, 2 height, 3 velocity
   private stampCount = 0;
+  private stampWarmed = false;
   private lastCenter = new THREE.Vector2();
   readonly uniforms = {
     uWakeTex: { value: null as THREE.Texture | null },
@@ -232,6 +233,11 @@ export class WakeField {
     renderer.autoClear = false;
     renderer.setRenderTarget(this.rtB);
     renderer.render(this.simScene, this.cam);
+    // a harmless zero-strength stamp on the first step compiles the stamp shader behind the loading screen
+    if (!this.stampWarmed) {
+      this.stampWarmed = true;
+      if (this.stampCount === 0) this.add(cx, cz, 1, 0, 0);
+    }
     if (this.stampCount > 0) {
       this.stampGeo.instanceCount = this.stampCount;
       (this.stampGeo.getAttribute('aStamp') as THREE.InstancedBufferAttribute).needsUpdate = true;
