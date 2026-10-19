@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T17:00Z',
     entries: [
       {
+        title: 'No more sea of white foam',
+        notes: [
+          'Fixed a bug where a huge solid sheet of white foam could spread across the sea around your ship, often after a sinking, and never clear. The wake simulation now shrugs off any bad value instead of letting it grow, so wakes, splashes and wrecks leave only the foam they should.',
+        ],
+      },
+      {
         title: 'Smoother sailing, same view',
         notes: [
           'A big performance pass with nothing taken away from how the game looks. Out at sea the game now draws around a third of the triangles it used to, so frame rates climb noticeably, most of all on high resolution screens.',
