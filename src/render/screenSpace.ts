@@ -132,7 +132,11 @@ void main() {
   float loss = 0.0;
 #if CS_STEPS > 0
   float ndl = dot(N, uSunView);
-  if (ndl > 0.0) {
+  // contact shadows are for the small things up close the shadow map can't
+  // resolve; far off, the map covers it and a depth-buffer march over a few
+  // pixels of foliage only sparkles and crawls as the view moves
+  float near = 1.0 - smoothstep(90.0, 220.0, z);
+  if (ndl > 0.0 && near > 0.0) {
     float len = uCs.x + z * uCs.y;
     // 2x2 jitter so the denoiser can keep these crisp
     float j = bayer2(gl_FragCoord.xy);
@@ -165,7 +169,7 @@ void main() {
           + texture(uShadowMap, vec3(sp.xy + vec2(-o.x, o.y), rz)) + texture(uShadowMap, vec3(sp.xy + vec2(o.x, o.y), rz)));
       }
     }
-    loss = occl * lit * smoothstep(0.0, 0.25, ndl);
+    loss = occl * lit * smoothstep(0.0, 0.25, ndl) * near;
   }
 #endif
 

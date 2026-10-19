@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T17:00Z',
+    entries: [
+      {
+        title: 'No more shimmering in motion',
+        notes: [
+          'Shadows no longer crawl and sparkle while you sail or pan the camera. The soft edges of every shadow are now fixed to the world instead of the screen, so islands, decks and sails stay calm and solid in motion, most of all when zoomed out.',
+          'Hillsides, cliffs and billowing sails no longer catch blotchy patches of their own shadow, so slopes read cleanly in the sun.',
+          'Sails lost the pale little repair patches and a fine weave pattern that could show up as stray light dashes and horizontal lines.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T16:20Z',
     entries: [
       {
