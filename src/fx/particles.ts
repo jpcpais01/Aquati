@@ -445,6 +445,8 @@ const hue = (h: number): [number, number, number] => {
 
 export class Particles {
   readonly group = new THREE.Group();
+  /** Told about every splash (the reef fish bolt from them). */
+  onSplash: ((pos: THREE.Vector3, scale: number) => void) | null = null;
   private alpha: Pool;
   private add: Pool;
   readonly streaks: Streaks;
@@ -684,6 +686,7 @@ export class Particles {
   }
 
   splash(pos: THREE.Vector3, scale = 1) {
+    this.onSplash?.(pos, scale);
     for (let i = 0; i < 22 * scale; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = rand(0.5, 3.2);

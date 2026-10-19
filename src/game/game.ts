@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { setBowWaveScene } from '../fx/bowWave';
 import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
 import { Audio } from '../core/audio';
@@ -11,6 +12,7 @@ import { warmDraw } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
+import { ReefLife } from '../fx/fish';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Rain } from '../fx/rain';
@@ -143,6 +145,7 @@ export class Game {
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
   private birds!: Birds;
+  private reef!: ReefLife;
   private windField!: WindField;
   private wisps!: WindWisps;
   private atmos = new Atmosphere();
@@ -362,6 +365,8 @@ export class Game {
     }
     this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.birds.mesh);
+    this.reef = new ReefLife(this.terrain, q.tier === 0);
+    this.opaque.add(this.reef.group);
     ui.progress(0.75);
     await nextFrame();
 
@@ -375,6 +380,7 @@ export class Game {
     buildShore(this.terrain);
     this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
     this.particles = new Particles(q.particles);
+    this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     // the vault's chest and its light: built now so the warm-up draws them
     this.vstage = new VaultStage(this.particles.uniforms);
@@ -1141,11 +1147,13 @@ export class Game {
     }
     this.ships.push(s);
     this.opaque.add(s.root);
+    this.water.add(s.bowWave.mesh);
     return s;
   }
 
   private removeShip(s: Ship) {
     this.opaque.remove(s.root);
+    this.water.remove(s.bowWave.mesh);
     this.ships.splice(this.ships.indexOf(s), 1);
     this.ais.delete(s);
     s.root.traverse((o) => {
@@ -1331,6 +1339,7 @@ export class Game {
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 4;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
+    if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
 
   private resetWorld() {
@@ -2286,6 +2295,9 @@ export class Game {
     P.begin('Birds', 'fx');
     this.birds.update(dt, w, this.ships);
     P.end();
+    P.begin('Reef fish', 'fx');
+    this.reef.update(dt, w, this.ships, this.rig.camera);
+    P.end();
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');
     this.gunnery.setPointer(this.fpv ? null : this.input.state.pointer, this.rig.camera);
@@ -2567,6 +2579,7 @@ export class Game {
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     const eb = this.rig.eyeBlend;
