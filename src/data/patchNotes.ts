@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T17:00Z',
     entries: [
       {
+        title: 'No more sea of white foam',
+        notes: [
+          'Fixed a bug where a huge solid sheet of white foam could spread across the sea around your ship, often after a sinking, and never clear. The wake simulation now shrugs off any bad value instead of letting it grow, so wakes, splashes and wrecks leave only the foam they should.',
+        ],
+      },
+      {
         title: 'No more shimmering in motion',
         notes: [
           'Shadows no longer crawl and sparkle while you sail or pan the camera. The soft edges of every shadow are now fixed to the world instead of the screen, so islands, decks and sails stay calm and solid in motion, most of all when zoomed out.',

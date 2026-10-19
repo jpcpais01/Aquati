@@ -20,6 +20,14 @@ const WAVE_SPEED = 4; // m/s in deep water
 const VEL_DAMP = 0.18; // 1/s
 const HEIGHT_DECAY = 0.12; // 1/s, keeps long-lived dimples from building up
 const FOAM_HALF_LIFE = 1.9; // s
+// Hard bounds on the field. Normal play stays well inside them (wakes and
+// splashes peak near 1 m and 3 m/s); they exist so one bad value can never
+// run away and flood the canvas.
+const MAX_HEIGHT = 2.5; // m
+const MAX_VEL = 16; // m/s
+const MAX_FOAM = 3;
+const MAX_STAMP_RADIUS = 60; // m
+const MAX_STAMP: number[] = [MAX_FOAM, MAX_FOAM, MAX_HEIGHT, 4]; // per kind: foam blob, foam ring, height, velocity
 
 export class WakeField {
   readonly size: number; // world metres covered
@@ -79,8 +87,15 @@ export class WakeField {
         uniform float uDt; uniform float uK; uniform float uVelDamp;
         uniform vec4 uRect; uniform vec4 uWorldRect;
         varying vec2 vUv;
+        // Anything that isn't a sane finite number reads as still water. A NaN
+        // or infinity fails the comparison, so this holds even where the driver
+        // compiles with fast math and isnan() is optimised away. Without it, one
+        // bad texel leaks into its neighbours every step and the stencil grows it
+        // into a diamond of maxed-out foam across the whole canvas.
+        float fin(float x) { return abs(x) < 1000.0 ? x : 0.0; }
+        vec4 fin4(vec4 c) { return vec4(fin(c.r), fin(c.g), fin(c.b), fin(c.a)); }
         vec4 tap(vec2 uv) {
-          vec4 c = texture2D(uPrev, uv);
+          vec4 c = fin4(texture2D(uPrev, uv));
           // outside the canvas the water is still
           return c * step(0.0, uv.x) * step(uv.x, 1.0) * step(0.0, uv.y) * step(uv.y, 1.0);
         }
@@ -112,8 +127,8 @@ export class WakeField {
           vec2 b = min(vUv, 1.0 - vUv);
           float sponge = mix(0.9, 1.0, smoothstep(0.0, 0.08, min(b.x, b.y)));
           float keep = sponge * wet;
-          v *= keep;
-          float hn = (h + v * uDt) * keep;
+          v = clamp(fin(v * keep), -${MAX_VEL.toFixed(1)}, ${MAX_VEL.toFixed(1)});
+          float hn = clamp(fin((h + v * uDt) * keep), -${MAX_HEIGHT.toFixed(1)}, ${MAX_HEIGHT.toFixed(1)});
 
           // foam: gentle spread, fade, and fresh foam where wake crests break
           vec2 drift = (tn2.rb - 0.5) * t * 1.6;
@@ -121,7 +136,7 @@ export class WakeField {
           float f = (fc * 0.6 + (e.r + w.r + n.r + s.r) * 0.1) * uFoamDecay;
           // only some stretches of a crest break into white
           f += smoothstep(0.08, 0.3, hn) * uFoamGain * smoothstep(0.3, 0.7, tn.b * 0.6 + tn2.g * 0.6);
-          f = min(f, 3.0);
+          f = clamp(fin(f), 0.0, ${MAX_FOAM.toFixed(1)});
 
           gl_FragColor = vec4(f, hn, v, 0.0);
         }`,
@@ -185,6 +200,11 @@ export class WakeField {
 
   private add(x: number, z: number, radius: number, strength: number, kind: number) {
     if (this.stampCount >= MAX_STAMPS) return;
+    // a stray NaN or a runaway number from gameplay never reaches the GPU
+    if (!Number.isFinite(x) || !Number.isFinite(z) || !Number.isFinite(strength) || !(radius > 0)) return;
+    radius = Math.min(radius, MAX_STAMP_RADIUS);
+    const lim = MAX_STAMP[kind];
+    strength = Math.max(kind < 2 ? 0 : -lim, Math.min(lim, strength));
     const i = this.stampCount++;
     this.stampData[i * 4] = x;
     this.stampData[i * 4 + 1] = z;
@@ -210,6 +230,12 @@ export class WakeField {
 
   update(renderer: THREE.WebGLRenderer, focusX: number, focusZ: number, dt: number) {
     const texel = this.size / this.res;
+    // a broken camera target or frame time must not poison the whole field
+    if (!Number.isFinite(focusX) || !Number.isFinite(focusZ)) {
+      focusX = this.center.x;
+      focusZ = this.center.y;
+    }
+    if (!Number.isFinite(dt)) dt = 1 / 60;
     // snap to texels so scrolling never smears the foam
     const cx = Math.round(focusX / texel) * texel;
     const cz = Math.round(focusZ / texel) * texel;
