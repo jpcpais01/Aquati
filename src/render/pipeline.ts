@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Profiler } from '../core/profiler';
 import { GLSL_SS_APPLY, ScreenSpaceLighting, TraceConfig } from './screenSpace';
 
 // Frame graph:
@@ -56,6 +57,8 @@ export class Pipeline {
   private ssOn = false;
   sun: THREE.DirectionalLight | null = null;
   sunDir = new THREE.Vector3(0, 1, 0);
+  /** Times each pass when the frame profiler is open. */
+  prof: Profiler | null = null;
 
   constructor(private renderer: THREE.WebGLRenderer, settings: PipelineSettings) {
     this.settings = settings;
@@ -353,13 +356,17 @@ export class Pipeline {
 
   render(opaque: THREE.Scene, water: THREE.Scene, camera: THREE.Camera, time: number) {
     const r = this.renderer;
+    const P = this.prof;
+    P?.begin('World (islands, ships)', 'render', true);
     r.autoClear = false;
     r.setClearColor(0x0b2a3a, 1);
     r.setRenderTarget(this.rtOpaque);
     r.clear(true, true, false);
     r.render(opaque, camera);
+    P?.end(true);
 
     if (this.ssOn && this.sun) {
+      P?.begin('Ray tracing (AO, GI, contact)', 'render', true);
       const cam = camera as THREE.PerspectiveCamera;
       this.ss.render(r, this.rtOpaque.texture, this.rtOpaque.depthTexture!, this.width, this.height, cam, this.sun, this.sunDir);
       const [a, b] = this.ss.textures!;
@@ -371,13 +378,17 @@ export class Pipeline {
         u.uSceneDepth.value = this.rtOpaque.depthTexture;
         u.uSSNearFar.value.set(cam.near, cam.far);
       }
+      P?.end(true);
     }
 
+    P?.begin('Water, reflections & FX', 'ocean', true);
     r.setRenderTarget(this.rtWater);
     r.setClearColor(0x000000, 0);
     r.clear(true, true, false);
     r.render(water, camera);
+    P?.end(true);
 
+    P?.begin('Bloom', 'render', true);
     // half-res combine
     const cu = this.combineMat.uniforms;
     cu.uOpaque.value = this.rtOpaque.texture;
@@ -405,6 +416,9 @@ export class Pipeline {
       this.blit(this.upMat, this.bloomRTs[i - 1], false);
     }
 
+    P?.end(true);
+
+    P?.begin('Final grade & sharpen', 'render', true);
     const fu = this.finalMat.uniforms;
     fu.uOpaque.value = this.rtOpaque.texture;
     fu.uWater.value = this.rtWater.texture;
@@ -418,6 +432,7 @@ export class Pipeline {
     fu.uTilt.value = this.settings.tiltShift ? this.tilt : 0;
     fu.uTime.value = time % 100;
     this.blit(this.finalMat, null);
+    P?.end(true);
   }
 
   tilt = 1;

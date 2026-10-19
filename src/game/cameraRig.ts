@@ -113,6 +113,7 @@ export class CameraRig {
     this.target.set(this.curLook.x, 0, this.curLook.z);
     this.focus.copy(this.target);
     this.camera.fov = 38;
+    this.camera.near = 2;
     const w = innerWidth;
     const h = innerHeight;
     if (Math.abs(ps.x) > 0.5 || Math.abs(ps.y) > 0.5) this.camera.setViewOffset(w, h, ps.x, ps.y, w, h);
@@ -237,7 +238,9 @@ export class CameraRig {
       this.camera.fov = lerp(this.camera.fov, cn.fov, cn.w);
       this.target.lerp(_b.set(cn.look.x, 0, cn.look.z), cn.w);
     }
-    this.camera.near = lerp(2, 0.1, Math.min(1, e * 1.6));
+    // the near plane rides up with the camera: a zoomed-out view keeps ~15x the
+    // depth precision, so distant decks, sails and shorelines never z-fight
+    this.camera.near = lerp(clamp(this.camera.position.y * 0.08, 2, 30), 0.1, Math.min(1, e * 1.6));
     this.camera.far = lerp(2600, 3600, e);
     // slide the frame so the ship sits in the space the menu leaves free;
     // fades out as the camera swings into follow

@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { angleDelta, clamp, damp, lerp } from '../core/noise';
 import { World } from '../game/world';
 import { Ship } from './ship';
-import { HullShape } from './shipModel';
-import { buildSailorGeometry, createCrewMaterial, FLAG, HAT, P, POSE_SIZE, PROP, TINT, TINT_SLOTS } from './crewModel';
+import { HullShape, Stair } from './shipModel';
+import { CrewRenderer, FLAG, HAT, P, POSE_SIZE, PROP, TINT, TINT_SLOTS } from './crewModel';
 
 // Living crews. Every ship carries a captain, a helmsman, gun crews and deck
 // hands who read what their ship is doing: they man the guns on the side the
@@ -53,6 +53,13 @@ interface Zone {
   t0: number;
   t1: number;
   y: (t: number) => number;
+}
+/** A companion stair as the crew use it: from a spot on the castle deck down to one on the main deck. */
+interface Flight {
+  st: Stair;
+  castle: Zone;
+  head: Spot;
+  foot: Spot;
 }
 interface GunPost {
   muzzle: number;
@@ -130,7 +137,7 @@ const VESTS = {
   pirate: ['#3a2a22', '#5e1414', '#2d2a33', '#6b4a2b', '#4a3a5a'],
 };
 
-function makeLook(team: 'player' | 'pirate', role: Role): Look {
+export function makeLook(team: 'player' | 'pirate', role: Role): Look {
   const T = TEAM_LOOK[team];
   const pirate = team === 'pirate';
   const chance = (p: number) => Math.random() < p;
@@ -139,14 +146,16 @@ function makeLook(team: 'player' | 'pirate', role: Role): Look {
   const shirtHex = pick(T.shirts);
   const striped = (shirtHex === T.shirts[0] || shirtHex === T.shirts[1]) && chance(0.55);
   const shirt = col(shirtHex, striped ? -15 : 0);
-  const rolled = chance(0.4);
+  // short sleeves, sleeves rolled to the elbow, or long sleeves buttoned at the wrist
+  const sleeves = Math.random();
   const trousers = col(pick(T.trousers));
   const barefoot = chance(pirate ? 0.35 : 0.25);
-  const shortLegs = barefoot && chance(0.6);
+  // bare calves, stockings, or long trousers to the ankle
+  const legs = barefoot && chance(0.6) ? 'bare' : chance(0.4) ? 'stockings' : 'long';
   const sash = col(pick(T.sash));
   let [hat, hatCols] = pick(T.hats);
   if (role === 'lookout' && hat === HAT.straw) hat = HAT.knit;
-  let hatCol = col(pick(hatCols));
+  let hatCol = col(pick(hatCols), hat === HAT.bandana && chance(0.5) ? -1 : 0); // half the bandanas are spotted
   let flags = 0;
   if (chance(pirate ? 0.5 : 0.28)) flags |= FLAG.beard;
   else if (chance(pirate ? 0.45 : 0.3)) flags |= FLAG.moustache;
@@ -162,14 +171,18 @@ function makeLook(team: 'player' | 'pirate', role: Role): Look {
   const peg = role !== 'lookout' && role !== 'helm' && chance(pirate ? 0.09 : 0.03);
   if (peg) flags |= FLAG.peg;
   else if (!barefoot && chance(pirate ? 0.4 : 0.3)) flags |= FLAG.boots;
+  if (barefoot) flags |= FLAG.barefoot;
+  if (legs !== 'long' && !(flags & FLAG.boots)) flags |= FLAG.garters;
+  if (sleeves > 0.3 && sleeves < 0.7) flags |= FLAG.rolled;
+  else if (sleeves >= 0.7) flags |= FLAG.cuffs;
   const slots: RGBA[] = Array.from({ length: TINT_SLOTS }, () => [1, 1, 1, 0] as RGBA);
   slots[TINT.skin] = skin;
   slots[TINT.shirt] = shirt;
-  slots[TINT.sleeve] = rolled && !striped ? skin : shirt;
-  slots[TINT.forearm] = rolled || chance(0.5) ? skin : shirt;
+  slots[TINT.sleeve] = sleeves <= 0.3 ? skin : shirt;
+  slots[TINT.forearm] = sleeves < 0.7 ? skin : shirt;
   slots[TINT.trousers] = trousers;
-  slots[TINT.shin] = shortLegs ? skin : chance(0.3) ? col('#e8e0cf') : trousers;
-  slots[TINT.boots] = barefoot ? skin : col(pick(['#2a1f18', '#3b2a1e', '#1d1714']));
+  slots[TINT.shin] = legs === 'bare' ? skin : legs === 'stockings' ? col(pick(['#e8e0cf', '#efe9dc', '#d9cdb4'])) : trousers;
+  slots[TINT.boots] = col(pick(['#2a1f18', '#3b2a1e', '#1d1714', '#4a3222']));
   slots[TINT.sash] = sash;
   slots[TINT.hat] = hatCol;
   slots[TINT.hair] = hair;
@@ -182,7 +195,10 @@ function makeLook(team: 'player' | 'pirate', role: Role): Look {
   slots[TINT.stripe] = col(pick(T.stripe));
   slots[TINT.dark] = col('#1a1210');
   slots[TINT.white] = col('#f6f2ea');
-  slots[TINT.pupil] = col(pick(['#1a1210', '#2a1a10', '#203048']));
+  slots[TINT.pupil] = col(pick(['#5a3a1e', '#6b4423', '#3f2a18', '#3b6e8f', '#4a7a9a', '#4f7a3a', '#7a6a2a']));
+  slots[TINT.mouth] = col('#4a1618');
+  slots[TINT.tongue] = col('#c75a5e');
+  slots[TINT.shine] = col('#ffffff', 0.6);
   slots[TINT.parrot] = col(chance(0.75) ? '#d8322a' : '#2fae55');
   slots[TINT.wing] = col(chance(0.7) ? '#2a6fd0' : '#f2c230');
   slots[TINT.beak] = col('#efe2c0');
@@ -202,7 +218,7 @@ function makeLook(team: 'player' | 'pirate', role: Role): Look {
     slots[TINT.shin] = col('#1d1714');
     slots[TINT.boots] = col('#1d1714');
     slots[TINT.sash] = col(pirate ? '#a3241f' : '#e2b552');
-    const keep = FLAG.beard | FLAG.moustache | FLAG.earring | FLAG.patch | FLAG.longhair;
+    const keep = FLAG.beard | FLAG.moustache | FLAG.earring | FLAG.patch | FLAG.longhair | FLAG.bald;
     flags = (flags & keep) | FLAG.coat | FLAG.boots | FLAG.plume | FLAG.belt | (chance(0.5) ? FLAG.ponytail : 0);
     if (pirate && chance(0.8)) flags |= chance(0.6) ? FLAG.beard : FLAG.moustache;
     if (pirate && chance(0.4)) flags |= FLAG.patch;
@@ -224,6 +240,8 @@ function rest(o: Float32Array) {
   o[P.elbowR] = 0.15;
   o[P.kneeL] = 0.04;
   o[P.kneeR] = 0.04;
+  o[P.handL] = 0.3;
+  o[P.handR] = 0.3;
 }
 
 function walk(o: Float32Array, ph: number, run: number, armsBusy = false) {
@@ -285,9 +303,14 @@ class Sailor {
   moving = 0;
   stuck = 0;
   ignore: Obstacle | null = null;
+  // on a companion stair: +1 going down, -1 climbing
+  flight: Flight | null = null;
+  flightDir = 1;
+  flightK = 0;
   // flavour
   readonly seed = Math.random() * 100;
   readonly tempo = rand(0.88, 1.12);
+  readonly mood = rand(-0.15, 0.55); // some sailors just grin more than others
   readonly height = rand(0.94, 1.06);
   readonly girth = rand(0.92, 1.12);
   lookYaw = 0;
@@ -338,6 +361,7 @@ class ShipCrew {
   readonly posts: GunPost[] = [];
   readonly helm: Spot;
   readonly hauls: { x: number; z: number; side: number; zone: Zone }[] = [];
+  readonly flights: Flight[] = [];
   readonly hatch: Spot;
   readonly tops: { x: number; z: number; y: number }[] = [];
   battle = false;
@@ -402,6 +426,17 @@ class ShipCrew {
     this.obstacles.push({ x: 0, z: capZ, r: 0.9 });
     if (c.id === 'galleon') for (let k = -2; k <= 2; k++) this.obstacles.push({ x: 0, z: z(0.62) + k * 0.85, r: 0.95 });
     for (const st of ship.model.stairs) for (const f of [0.2, 0.55, 0.9]) this.obstacles.push({ x: st.x, z: lerp(st.z0, st.z1, f), r: st.w * 0.62, stair: true });
+    for (const st of ship.model.stairs) {
+      const down = Math.sign(st.z0 - st.z1); // stern castle stairs run down toward the bow
+      const castle = down > 0 ? this.quarter : this.fore;
+      if (!castle) continue;
+      const on = (zone: Zone, z: number): Spot => {
+        const t = clamp(this.tOf(z), zone.t0, zone.t1);
+        const hw = this.halfWidth(zone, t) - 0.28;
+        return { x: clamp(st.x, -hw, hw), z: this.shape.z(t) };
+      };
+      this.flights.push({ st, castle, head: on(castle, st.z1 - down), foot: on(this.main, st.z0 + down * 0.45) });
+    }
     const hatchT = [0.46, 0.6].find((t) => !c.masts.some((mm) => Math.abs(mm.t - t) < 0.05)) ?? 0.46;
     this.hatch = { x: B * 0.05, z: z(hatchT) + 0.5 };
 
@@ -674,6 +709,43 @@ class ShipCrew {
     return false;
   }
 
+  /** Starts down (dir 1) or up (dir -1) a companion stair; the walk ends on the other deck. */
+  private takeFlight(sl: Sailor, f: Flight, dir: number) {
+    sl.flight = f;
+    sl.flightDir = dir;
+    sl.flightK = 0;
+    sl.goal = null;
+    sl.zone = dir > 0 ? this.main : f.castle;
+    sl.actDur = 0; // straight to a chore at the bottom
+  }
+
+  /** One step along the stair, treads underfoot. Returns true while still on it. */
+  private stepFlight(sl: Sailor, dt: number): boolean {
+    const f = sl.flight!;
+    const a = sl.flightDir > 0 ? f.head : f.foot;
+    const b = sl.flightDir > 0 ? f.foot : f.head;
+    const len = Math.max(0.1, Math.hypot(b.x - a.x, b.z - a.z));
+    sl.flightK = Math.min(1, sl.flightK + (1.05 * sl.tempo * dt) / len);
+    const px = sl.x;
+    const pz = sl.z;
+    sl.x = lerp(a.x, b.x, sl.flightK);
+    sl.z = lerp(a.z, b.z, sl.flightK);
+    const moved = Math.hypot(sl.x - px, sl.z - pz);
+    sl.moving = moved / Math.max(dt, 1e-4);
+    sl.phase += (moved / 1.1) * Math.PI * 2;
+    sl.wantYaw = Math.atan2(b.x - a.x, b.z - a.z);
+    // the treads: castle deck, the slope of the flight, then the main deck
+    const st = f.st;
+    const u = (sl.z - st.z1) / (st.z0 - st.z1);
+    const t = this.tOf(sl.z);
+    const floor = u <= 0 ? f.castle.y(t) : u >= 1 ? this.main.y(t) : lerp(st.y1, st.y0, u);
+    sl.y = floor - this.deckY(sl.zone, sl.x, sl.z);
+    if (sl.flightK < 1) return true;
+    sl.flight = null;
+    sl.moving = 0;
+    return false;
+  }
+
   private confine(sl: Sailor) {
     const zn = sl.zone;
     const t = clamp(this.tOf(sl.z), zn.t0, zn.t1);
@@ -706,7 +778,7 @@ class ShipCrew {
     else if (sl.role === 'captain') this.captainPlan(sl, time);
     else this.handPlan(sl);
 
-    const walking = sl.goal !== null && !this.stepWalk(sl, dt);
+    const walking = sl.flight ? this.stepFlight(sl, dt) : sl.goal !== null && !this.stepWalk(sl, dt);
     const run = sl.run ? 1 : 0;
     // chores are timed from arrival, not from setting off
     if (walking && sl.act !== 'gun') sl.actT = 0;
@@ -732,8 +804,12 @@ class ShipCrew {
         sl.wantYaw = 0;
         if (sl.cheer > 0) {
           T[P.armRX] = 2.7 + Math.sin(tt * 9) * 0.25;
-          T[P.armRZ] = 0.35;
+          T[P.armRZ] = -0.3;
           T[P.elbowR] = 0.3;
+          T[P.handR] = 1;
+          T[P.jaw] = 0.6 + 0.3 * Math.sin(tt * 9);
+          T[P.smile] = 1;
+          T[P.brow] = 0.7;
         }
         break;
       }
@@ -1069,6 +1145,8 @@ class ShipCrew {
       sl.lookYaw = rand(-0.9, 0.9);
     }
 
+    face(sl, T, tt, walking, !!this.enemy && this.enemyDist < 260, prop);
+
     // overlays: cheering and ducking
     if (sl.cheer > 0) {
       sl.cheer -= dt;
@@ -1079,11 +1157,17 @@ class ShipCrew {
           rest(o);
           o[P.armRX] = 2.7 + 0.3 * Math.sin(tt * 8.5);
           o[P.armLX] = 2.5 + 0.3 * Math.sin(tt * 8.5 + 1.3);
-          o[P.armRZ] = 0.45;
-          o[P.armLZ] = 0.45;
+          o[P.armRZ] = -0.35;
+          o[P.armLZ] = -0.35;
           o[P.elbowL] = 0.35;
           o[P.elbowR] = 0.2;
           o[P.headX] = -0.3;
+          o[P.handL] = 1;
+          o[P.handR] = 1;
+          o[P.jaw] = 0.65 + 0.35 * Math.sin(tt * 8.5);
+          o[P.brow] = 0.8;
+          o[P.smile] = 1;
+          o[P.gazeY] = 0.3;
           o[P.kneeL] = 0.5 * (1 - j);
           o[P.kneeR] = 0.5 * (1 - j);
           o[P.legLX] = 0.25 * (1 - j);
@@ -1108,6 +1192,11 @@ class ShipCrew {
           o[P.elbowL] = 1.9;
           o[P.elbowR] = 1.9;
           o[P.headX] = 0.55;
+          o[P.handL] = 0.15;
+          o[P.handR] = 0.15;
+          o[P.jaw] = 0.35;
+          o[P.brow] = 1;
+          o[P.smile] = -0.7;
         }, w);
       }
     }
@@ -1126,13 +1215,16 @@ class ShipCrew {
 
     // lift for the barrel seat / fighting top
     const lift = sl.act === 'lookout' && sl.spot ? sl.topY - this.deckY(sl.zone, sl.x, sl.z) : sl.seat && !walking && sl.act === 'sit' ? 0.74 : 0;
-    sl.y += (lift - sl.y) * damp(sl.act === 'lookout' ? 50 : 9, dt);
+    if (!sl.flight) sl.y += (lift - sl.y) * damp(sl.act === 'lookout' ? 50 : 9, dt);
     this.ease(sl, dt, walking ? 16 : 9);
   }
 
   private ease(sl: Sailor, dt: number, rate: number) {
     const k = damp(rate, dt);
     for (let i = 0; i < POSE_SIZE; i++) sl.pose[i] += (sl.target[i] - sl.pose[i]) * k;
+    // the eyes get there first: they lead every turn of the head, and of the body
+    const lead = (sl.target[P.headY] - sl.pose[P.headY]) * 1.4 + angleDelta(sl.yaw, sl.wantYaw) * 0.8;
+    sl.pose[P.gazeX] = clamp(sl.target[P.gazeX] + lead, -0.6, 0.6);
     sl.yaw += angleDelta(sl.yaw, sl.wantYaw) * damp(sl.goal ? 10 : 6, dt);
   }
 
@@ -1170,15 +1262,48 @@ class ShipCrew {
 
   // ---------------------------------------------------------------- roles
 
-  /** The helmsman hands over the wheel when the captain takes it, and waits at their elbow. */
+  /**
+   * The helmsman hands over the wheel when the captain takes it: he goes down
+   * the companion stair to the main deck and turns to like any other hand,
+   * out of the captain's view, then climbs back to the wheel once it's free.
+   */
   private helmPlan(sl: Sailor) {
-    const yielded = !!this.pilot?.active && this.pilot.atHelm;
-    const t = this.tOf(this.helm.z);
-    const want = yielded ? { x: Math.min(0.95, this.halfWidth(sl.zone, t) - 0.45), z: this.helm.z + 0.3 } : this.helm;
-    if (Math.hypot(sl.x - want.x, sl.z - want.z) > 0.08) {
-      if (!sl.goal || Math.abs(sl.goal.x - want.x) + Math.abs(sl.goal.z - want.z) > 0.01) this.walkTo(sl, want.x, want.z, false, yielded ? -Math.PI / 2 : 0);
+    if (sl.flight) {
       sl.act = 'stand';
-    } else sl.act = yielded ? 'stand' : 'helm';
+      return;
+    }
+    const yielded = !!this.pilot?.active && this.pilot.atHelm;
+    const up = this.helmZone;
+    const flights = this.flights.filter((f) => f.castle === up);
+    const near = (k: 'head' | 'foot') => flights.reduce((a, b) => (Math.hypot(b[k].x - sl.x, b[k].z - sl.z) < Math.hypot(a[k].x - sl.x, a[k].z - sl.z) ? b : a));
+    if (yielded) {
+      if (sl.zone === this.main) return this.handPlan(sl);
+      if (!flights.length) return this.idleAt(sl, { x: Math.min(0.95, this.halfWidth(sl.zone, this.tOf(this.helm.z)) - 0.45), z: this.helm.z + 0.3 }, -Math.PI / 2, 'stand');
+      const f = near('head');
+      if (Math.hypot(sl.x - f.head.x, sl.z - f.head.z) > 0.1) this.idleAt(sl, f.head, null, 'stand');
+      else this.takeFlight(sl, f, 1);
+      return;
+    }
+    if (sl.act !== 'helm' && sl.act !== 'stand') {
+      this.setTask(sl, 'stand', 0);
+      sl.spot = null;
+    }
+    if (sl.zone !== up && flights.length) {
+      // back up to the wheel
+      const f = near('foot');
+      if (Math.hypot(sl.x - f.foot.x, sl.z - f.foot.z) > 0.1) this.idleAt(sl, f.foot, null, 'stand');
+      else this.takeFlight(sl, f, -1);
+      return;
+    }
+    this.idleAt(sl, this.helm, 0, 'helm');
+  }
+
+  /** Walks to a spot and, once there, takes up `act`. */
+  private idleAt(sl: Sailor, want: Spot, yaw: number | null, act: Act) {
+    if (Math.hypot(sl.x - want.x, sl.z - want.z) > 0.08) {
+      if (!sl.goal || Math.abs(sl.goal.x - want.x) + Math.abs(sl.goal.z - want.z) > 0.01) this.walkTo(sl, want.x, want.z, false, yaw);
+      sl.act = 'stand';
+    } else sl.act = act;
   }
 
   /** The player walks the captain: copy their feet over and animate the stride. */
@@ -1202,6 +1327,7 @@ class ShipCrew {
       T[P.spineY] = r * 0.18;
     } else if (p.speed > 0.15) walk(T, p.phase, p.speed > 3 ? 1 : 0);
     else T[P.spineX] = 0.02 + 0.015 * Math.sin(tt * 1.7);
+    face(sl, T, tt, !p.atHelm && p.speed > 0.15, false, PROP.none);
     const k = damp(16, dt);
     for (let i = 0; i < POSE_SIZE; i++) sl.pose[i] += (T[i] - sl.pose[i]) * k;
   }
@@ -1551,9 +1677,9 @@ class ShipCrew {
         this.stepWalk(sl, dt);
         walk(T, sl.phase, 0);
       } else {
-        T[P.armRX] = 1.25;
-        T[P.armRZ] = 1.05;
-        T[P.elbowR] = 2.35;
+        T[P.armRX] = 2.0;
+        T[P.armRZ] = 0.3;
+        T[P.elbowR] = 1.7;
         T[P.headX] = -0.15;
         sl.wantYaw = 0;
       }
@@ -1606,6 +1732,21 @@ class ShipCrew {
         crouch(T, 0.3);
         if (sl.panicDelay <= 0) this.leap(sl);
       }
+    }
+    if (sl.act === 'salute') {
+      // stiff upper lip; the hand flat at the brim
+      T[P.handR] = 0;
+      T[P.brow] = -0.2;
+      T[P.smile] = 0.1;
+      T[P.handL] = 0.6;
+    } else {
+      // terror: brows up, mouth wide, hands splayed
+      T[P.jaw] = 0.75 + 0.25 * Math.sin(tt * 6);
+      T[P.brow] = 1;
+      T[P.smile] = -0.8;
+      T[P.handL] = 0;
+      T[P.handR] = 0;
+      T[P.gazeY] = 0.2 * Math.sin(tt * 2);
     }
     if (sl.mode === 'aboard') this.ease(sl, dt, 12);
     // the sea comes over the rail: whoever is still aboard is now swimming (or gone down with her)
@@ -1666,6 +1807,112 @@ function blendInto(T: Float32Array, make: (o: Float32Array) => void, w: number) 
   for (let i = 0; i < POSE_SIZE; i++) T[i] = lerp(T[i], _tmpPose[i], k);
 }
 const _tmpPose = new Float32Array(POSE_SIZE);
+
+// props gripped two-handed, and how tight the off hand closes
+const OFF_HAND: Record<number, number> = {
+  [PROP.rammer]: 0.95, [PROP.mop]: 0.95, [PROP.bucket]: 0.9, [PROP.spyglass]: 0.85, [PROP.fiddle]: 0.7,
+};
+
+/** Hands and faces: what each sailor's fingers and features are doing for the job at hand. */
+function face(sl: Sailor, T: Float32Array, tt: number, walking: boolean, battle: boolean, prop: number) {
+  T[P.smile] = sl.mood;
+  T[P.brow] = 0.15 * Math.sin(tt * 0.37);
+  if (battle) {
+    T[P.smile] = Math.min(sl.mood, 0) - 0.25;
+    T[P.brow] = -0.55;
+  }
+  if (prop !== PROP.none) {
+    T[P.handR] = prop === PROP.fiddle ? 0.8 : 1;
+    T[P.handL] = OFF_HAND[prop] ?? T[P.handL];
+  }
+  if (walking) return;
+  switch (sl.act) {
+    case 'helm':
+    case 'haul':
+      T[P.handL] = 1;
+      T[P.handR] = 1;
+      T[P.brow] -= sl.act === 'haul' ? 0.3 : 0.15;
+      if (sl.act === 'haul') T[P.jaw] = 0.3 + 0.3 * Math.max(0, Math.sin(tt * 4.2)); // heave-ho
+      break;
+    case 'coil':
+    case 'swab':
+      T[P.handL] = Math.max(T[P.handL], 0.85);
+      T[P.handR] = Math.max(T[P.handR], 0.85);
+      break;
+    case 'pace':
+      // hands clasped at the small of the back
+      T[P.handL] = 0.7;
+      T[P.handR] = 0.7;
+      T[P.brow] -= 0.25;
+      break;
+    case 'lean':
+      T[P.handL] = 0.55;
+      T[P.handR] = prop === PROP.pipe ? 1 : 0.55;
+      break;
+    case 'lookout':
+      T[P.brow] -= 0.35; // squinting at the horizon
+      break;
+    case 'point':
+    case 'rail':
+      if (battle) {
+        // bellowing orders across the deck
+        T[P.jaw] = 0.45 + 0.4 * Math.max(0, Math.sin(tt * 5.3));
+        T[P.brow] = -0.9;
+        T[P.smile] = -0.3;
+      }
+      break;
+    case 'gun':
+      T[P.brow] = -0.6;
+      T[P.jaw] = 0.12;
+      break;
+    case 'powder':
+    case 'bucket':
+      T[P.brow] = 0.5;
+      T[P.jaw] = 0.35;
+      T[P.smile] = -0.3;
+      break;
+    case 'chat': {
+      const talk = Math.sin(tt * 0.9 + sl.seed) > 0;
+      if (talk) {
+        // syllables, and the eyebrows doing half the talking
+        T[P.jaw] = 0.12 + 0.4 * Math.max(0, Math.sin(tt * 11)) * (0.5 + 0.5 * Math.sin(tt * 2.7));
+        T[P.brow] = 0.45 * Math.max(0, Math.sin(tt * 1.9));
+        T[P.smile] = sl.mood + 0.3;
+        if (prop === PROP.none) T[P.handR] = 0.15;
+      } else {
+        T[P.smile] = sl.mood + 0.15 + 0.4 * Math.max(0, Math.sin(tt * 1.3)); // listening, amused
+        T[P.handL] = 0.5;
+        T[P.handR] = prop === PROP.none ? 0.5 : T[P.handR];
+      }
+      break;
+    }
+    case 'fiddle':
+      T[P.smile] = 0.7;
+      T[P.brow] = 0.3;
+      T[P.gazeY] = -0.25;
+      break;
+    case 'jig': {
+      const hips = sl.seed % 2 >= 1;
+      T[P.handL] = hips ? 0.5 : 0.7;
+      T[P.handR] = hips ? 0.5 : 0.7;
+      T[P.smile] = 1;
+      T[P.jaw] = 0.3 * Math.max(0, Math.sin(tt * 3.75));
+      T[P.brow] = 0.5;
+      break;
+    }
+    case 'sit':
+      T[P.handL] = 0.4;
+      T[P.handR] = prop === PROP.pipe ? 1 : 0.4;
+      T[P.smile] = sl.mood + 0.2;
+      break;
+    default:
+      if (T[P.elbowL] > 1.4 && T[P.armLZ] > 0.4) {
+        // hands on hips
+        T[P.handL] = 0.55;
+        T[P.handR] = 0.55;
+      }
+  }
+}
 
 /** Airborne leapers and swimmers live in world space. */
 function updateLoose(sl: Sailor, dt: number, world: World) {
@@ -1734,6 +1981,22 @@ function updateLoose(sl: Sailor, dt: number, world: World) {
     sl.wy += (wh - sl.fade - sl.wy) * damp(5, dt);
     if (sl.fade > 2.2) sl.mode = 'gone';
   }
+  if (sl.mode === 'air') {
+    // the yell all the way down
+    T[P.jaw] = 1;
+    T[P.brow] = 1;
+    T[P.smile] = sl.dive ? 0.2 : 0.6;
+    T[P.handL] = sl.dive ? 0 : 1;
+    T[P.handR] = sl.dive ? 0 : 1;
+  } else if (sl.mode === 'swim') {
+    // spluttering, eyes on the horizon
+    T[P.jaw] = 0.25 + 0.25 * Math.max(0, Math.sin(tt * 3.2 + 1.5));
+    T[P.brow] = 0.55;
+    T[P.smile] = -0.4;
+    T[P.handL] = 0.15;
+    T[P.handR] = 0.15;
+    T[P.gazeY] = 0.35;
+  }
   const k = damp(10, dt);
   for (let i = 0; i < POSE_SIZE; i++) sl.pose[i] += (T[i] - sl.pose[i]) * k;
   sl.yaw += angleDelta(sl.yaw, sl.wantYaw) * damp(4, dt);
@@ -1761,61 +2024,23 @@ function looseMatrix(sl: Sailor, out: THREE.Matrix4) {
 // ------------------------------------------------------------------ system
 
 export class CrewSystem {
-  readonly mesh: THREE.InstancedMesh;
+  readonly mesh: THREE.Group;
   private readonly crews = new Map<Ship, ShipCrew>();
   private orphans: Sailor[] = [];
   private readonly free: number[] = [];
-  private readonly palette: THREE.DataTexture;
-  private readonly paletteData: Float32Array;
-  private readonly poses: THREE.InstancedBufferAttribute[];
-  private readonly style: THREE.InstancedBufferAttribute;
+  private readonly view: CrewRenderer;
   private readonly max: number;
 
   constructor(readonly tier: number) {
     this.max = tier === 0 ? 200 : 320;
-    const data = new Float32Array(TINT_SLOTS * this.max * 4);
-    this.paletteData = data;
-    this.palette = new THREE.DataTexture(data, TINT_SLOTS, this.max, THREE.RGBAFormat, THREE.FloatType);
-    this.palette.minFilter = THREE.NearestFilter;
-    this.palette.magFilter = THREE.NearestFilter;
-    this.palette.colorSpace = THREE.NoColorSpace;
-    this.palette.needsUpdate = true;
     for (let i = this.max - 1; i >= 0; i--) this.free.push(i);
-
-    const geo = buildSailorGeometry(tier > 0);
-    this.poses = [0, 1, 2, 3].map((k) => {
-      const a = new THREE.InstancedBufferAttribute(new Float32Array(this.max * 4), 4);
-      a.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute(`aPose${k}`, a);
-      return a;
-    });
-    this.style = new THREE.InstancedBufferAttribute(new Float32Array(this.max * 4), 4);
-    this.style.setUsage(THREE.DynamicDrawUsage);
-    geo.setAttribute('aStyle', this.style);
-    const { material, depth } = createCrewMaterial(this.palette);
-    this.mesh = new THREE.InstancedMesh(geo, material, this.max);
-    this.mesh.customDepthMaterial = depth;
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.mesh.count = 0;
-    this.mesh.frustumCulled = false;
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
+    this.view = tier === 0 ? new CrewRenderer(this.max, 0.65, 0.35, 16) : new CrewRenderer(this.max, 0.8, 0.45, 32);
+    this.mesh = this.view.group;
   }
 
   private alloc = () => this.free.pop() ?? -1;
 
-  private writeLook = (row: number, look: Look) => {
-    const d = this.paletteData;
-    for (let s = 0; s < TINT_SLOTS; s++) {
-      const o = (row * TINT_SLOTS + s) * 4;
-      const c = look.slots[s];
-      d[o] = c[0];
-      d[o + 1] = c[1];
-      d[o + 2] = c[2];
-      d[o + 3] = c[3];
-    }
-    this.palette.needsUpdate = true;
-  };
+  private writeLook = (row: number, look: Look) => this.view.setRow(row, look.slots);
 
   private release(sl: Sailor) {
     this.free.push(sl.row);
@@ -1840,10 +2065,11 @@ export class CrewSystem {
     for (const sl of this.orphans) this.release(sl);
     this.crews.clear();
     this.orphans = [];
-    this.mesh.count = 0;
+    this.view.begin();
+    this.view.end();
   }
 
-  update(dt: number, world: World, ships: Ship[], focus: THREE.Vector3, viewR: number) {
+  update(dt: number, world: World, ships: Ship[], focus: THREE.Vector3, viewR: number, eye: THREE.Vector3 | null = null) {
     // crews come aboard new ships, and are cast adrift when a ship is gone
     for (const s of ships) if (!this.crews.has(s) && !s.removed) this.crews.set(s, new ShipCrew(s, this.alloc, this.tier, this.writeLook));
     for (const [s, c] of this.crews) {
@@ -1864,26 +2090,14 @@ export class CrewSystem {
       }
     };
 
-    let n = 0;
-    const im = this.mesh.instanceMatrix.array as Float32Array;
-    const pa = this.poses.map((a) => a.array as Float32Array);
-    const st = this.style.array as Float32Array;
+    const view = this.view;
+    view.begin();
+    // the full sculpt (fingers, lashes, laces) only for those close enough to see it
+    const near2 = 26 * 26;
     const emit = (sl: Sailor, m: THREE.Matrix4) => {
-      if (n >= this.max) return;
-      m.toArray(im, n * 16);
-      const o = n * 4;
-      for (let k = 0; k < 4; k++) {
-        const arr = pa[k];
-        arr[o] = sl.pose[k * 4];
-        arr[o + 1] = sl.pose[k * 4 + 1];
-        arr[o + 2] = sl.pose[k * 4 + 2];
-        arr[o + 3] = sl.pose[k * 4 + 3];
-      }
-      st[o] = sl.row;
-      st[o + 1] = sl.look.hat;
-      st[o + 2] = sl.prop;
-      st[o + 3] = sl.look.flags;
-      n++;
+      const e = m.elements;
+      const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
+      view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, near);
     };
 
     const m = _mOut;
@@ -1911,17 +2125,7 @@ export class CrewSystem {
       looseMatrix(sl, m);
       emit(sl, m);
     }
-    this.mesh.count = n;
-    if (n > 0) {
-      this.mesh.instanceMatrix.clearUpdateRanges();
-      this.mesh.instanceMatrix.addUpdateRange(0, n * 16);
-      this.mesh.instanceMatrix.needsUpdate = true;
-      for (const a of [...this.poses, this.style]) {
-        a.clearUpdateRanges();
-        a.addUpdateRange(0, n * 4);
-        a.needsUpdate = true;
-      }
-    }
+    view.end();
   }
 }
 const _mOut = new THREE.Matrix4();

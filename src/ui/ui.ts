@@ -318,7 +318,7 @@ export class UI {
       </section>
       <section class="set-group"><h4>Graphics</h4>
         <button class="set-row" id="set-gfx"><span class="set-txt"><b>Graphics</b><small>Presets, ray-traced light, shadows and resolution, tuned live</small></span><span class="set-go">${icon(ICONS.chev)}</span></button>
-        ${toggle('fps', 'Frame counter', 'Show frames per second at the top of the screen')}
+        ${toggle('fps', 'Frame counter', 'Show frames per second at the top of the screen. Tap it for the frame profiler')}
       </section>
       <section class="set-group"><h4>Interface</h4>
         ${seg('hud', 'HUD size', 'How big the in-game controls and readouts are', [
@@ -423,6 +423,10 @@ export class UI {
       /* ignore */
     }
     $('notes-dot').classList.toggle('hidden', !PATCH_NOTES.length || seen === PATCH_NOTES[0].hour);
+    const tag = $('build-tag');
+    tag.textContent = `v${__APP_VERSION__}`;
+    if (__APP_COMMIT__) tag.insertAdjacentHTML('beforeend', `<em>${__APP_COMMIT__}</em>`);
+    tag.title = `Version ${__APP_VERSION__}${__APP_COMMIT__ ? ` (build ${__APP_COMMIT__})` : ''}`;
   }
 
   private startTips() {

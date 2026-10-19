@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-19T16:00Z',
+    hour: '2026-10-19T16:20Z',
     entries: [
       {
         title: 'Five kinds of shot',
@@ -23,6 +23,69 @@ export const PATCH_NOTES: PatchGroup[] = [
           'On PC the Port and Starboard pills are gone. In their place is a rack of shot: press 1 to 5 (or R to cycle, or click) to load. The loaded shot sits in a ring whose left half fills as your port guns reload and right half as the starboard ones do. Q and E still fire each side.',
           'On phones, tap the new shot button above Fire and pick from the fan.',
           'Special shot is carried in short supply. Salvage, chests and every newly charted isle restock the magazine, and pirates load some nasty shot of their own now and then. Burning, shredded or short-handed ships show it on their health bar.',
+        ],
+      },
+      {
+        title: 'Your helmsman makes way',
+        notes: [
+          "When you take the wheel in the captain's view, your helmsman no longer hovers at your elbow blocking the view. He heads down the companion stairs to the main deck and pitches in with the other hands, then climbs back up and takes the wheel again once you let go.",
+        ],
+      },
+      {
+        title: 'A whole new crew',
+        notes: [
+          'Every sailor has been rebuilt from scratch: smooth sculpted bodies with real shoulders, waists and calves, hands with fingers and thumbs, and proper faces with noses, ears, lidded eyes in a dozen colours, eyebrows and mouths.',
+          'Faces come alive: crewmates blink, glance about, smile, frown in battle, bellow orders, chatter with their mates, grin through a jig, cheer with mouths wide open and look plain terrified when the ship goes down. Hands clench round rammers, ropes and tankards, and fall open in a panic.',
+          'Far more variety in dress: striped, rolled or short sleeves, bare legs, stockings or long trousers, bare feet, boots, garters, vests, belts, kerchiefs, earrings, beards, moustaches, ponytails, long hair and bald pates, under tricorns, spotted bandanas, knit caps and straw hats. Captains wear lapelled coats with epaulettes, cuffs and a lace jabot, with a parrot on the shoulder.',
+          'Cheering sailors now throw their arms up in a V, and a captain going down with the ship gives a proper salute.',
+          'The pirates of Puerto Marea in the Shipwright harbour got the same makeover, from the accordion player to the lookout with a spyglass.',
+          'Crewmates far from the camera use a lighter version of the model, so the extra detail costs little.',
+        ],
+      },
+      {
+        title: 'Version number on the menu',
+        notes: [
+          'The game version and build now sit right next to the patch notes button, so you can tell at a glance which update you are playing.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T16:00Z',
+    entries: [
+      {
+        title: 'Aquati is now Shores of Fortune',
+        notes: [
+          'The game has a new name: Shores of Fortune. Same sea, same ships, same saves, just a name worthy of the treasure out there.',
+          'The home screen and loading screen carry a new gilded wordmark that catches a slow glint of sunlight, and the app shows as "Fortune" under its home-screen icon.',
+          'The volcano in the north now goes by Monte Fortuna.',
+        ],
+      },
+      {
+        title: 'Steady shadows from up high',
+        notes: [
+          'Zoomed far out, islands, decks and sails no longer shimmer or flicker. Sun shadows now hold perfectly still as you sail, zoom and fight, and only creep along gently as the sun crosses the sky.',
+          'Distant shorelines, hulls and rigging stay crisp and solid at any zoom, with no more flickering where two surfaces meet.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T16:00Z',
+    entries: [
+      {
+        title: 'A frame profiler behind the FPS counter',
+        notes: [
+          'Tap the FPS counter at the top of the screen (or press F3) to open a live profiler. It shows how many milliseconds each part of the game takes on the CPU, from pirate AI and ship physics to particles, wind and the HUD, sorted busiest first.',
+          'On browsers that support GPU timers it also times every render pass on the graphics card: shadow maps, the world, ray-traced lighting, water and reflections, bloom and the final grade.',
+          'A scrolling frame-time graph, a CPU-bound or GPU-bound verdict, draw calls, triangles, shader programs, render resolution and quality round it out. Closed, it costs nothing.',
+        ],
+      },
+      {
+        title: 'Smoke that looks like smoke',
+        notes: [
+          'Gun smoke, wreck smoke and the volcano plume no longer look like round puffs. Each cloud is torn and swirled from the inside, dense and billowing as it leaves the gun, then fraying into thin curling strands as it thins out.',
+          'Smoke now stretches and shears along the way it moves: a broadside throws long streaming jets, and the drifting bank smears out downwind, so a stiff breeze drags it into ragged streamers.',
         ],
       },
       {
