@@ -189,7 +189,9 @@ export class Figure {
     const g = style.girth ?? 1;
     this.chest.scale.set(g, 1, g);
     this.hips.add(this.head);
-    this.head.position.set(0, 0.88, 0);
+    // a touch less chibi, so they sit beside the ship crews without looking like toddlers
+    this.head.position.set(0, 0.86, 0);
+    this.head.scale.setScalar(0.84);
     this.hips.add(this.armL, this.armR);
     this.armL.position.set(0.29 * g, 0.53, 0);
     this.armR.position.set(-0.29 * g, 0.53, 0);
