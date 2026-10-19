@@ -16,6 +16,7 @@ import { ReefLife } from '../fx/fish';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Rain } from '../fx/rain';
+import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
@@ -30,16 +31,18 @@ import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { ShipModel } from '../ships/shipModel';
 import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
-import { hullKey, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
+import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
-import type { VoyageEvent, WreckReport } from '../ui/wreck';
+import { loadRecords, type VoyageEvent, type WreckReport } from '../ui/wreck';
 import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
 import { PhotoMode } from '../ui/photo';
-import { FxItem, fxItem, Item as Cosmetic, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { FxItem, fxItem, Item as Cosmetic, POOL, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { Cloud, Part } from '../cloud/cloud';
+import { AccountPanel } from '../ui/account';
 import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, findTradeSites, portClearings } from '../port/site';
@@ -153,6 +156,7 @@ export class Game {
   private skyEnv: SkyEnvironment;
   private envT = 0;
   private rain!: Rain;
+  private clouds!: LowClouds;
   private lightning!: Lightning;
   private baseWaves: Wave[] = [];
   /** Heading the swell has turned to; it follows the wind round, but lags it. */
@@ -178,6 +182,10 @@ export class Game {
   private shipwright = new Customizer();
   // the treasure vault: purse, collection and the chest itself
   private vaultStore = new VaultStore();
+  // cloud saves: sign in from the harbour's top bar and progress follows you
+  private cloudSave = new Cloud();
+  /** Synced parts still to take up (the livery and ship wait for the harbour). */
+  private cloudParts = new Set<Part>();
   private vault = new Vault(this.vaultStore);
   // the chest out on the water, and what the vault is showing
   private vstage!: VaultStage;
@@ -416,6 +424,8 @@ export class Game {
     this.rain = new Rain([2400, 4800, 7200][q.tier]);
     this.lightning = new Lightning();
     this.water.add(this.rain.mesh, this.lightning.mesh);
+    this.clouds = new LowClouds(this.terrain.islands, q.tier);
+    this.water.add(this.clouds.mesh);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
@@ -446,27 +456,54 @@ export class Game {
     await this.renderer.compileAsync(this.opaque, this.rig.camera);
     await this.renderer.compileAsync(this.water, this.rig.camera);
     await this.renderer.compileAsync(this.ocean.reflScene, this.rig.camera);
+    await this.renderer.compileAsync(this.clouds.shadowScene, this.rig.camera);
     ui.progress(0.96);
     await nextFrame();
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
     // twice: the first pass makes the shadow map, which the water then switches on.
     // Plants stay unculled so every one of their batches is drawn too.
     veg.hold = true;
+    this.clouds.warm = true;
     this.tradePorts.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
     if (this.preview) this.preload.add(this.preview.root);
     this.preload.step(true);
-    warmDraw([this.opaque, this.water, this.ocean.reflScene], () => {
+    warmDraw([this.opaque, this.water, this.ocean.reflScene, this.clouds.shadowScene], () => {
       this.render(0);
       this.render(0);
     });
     veg.hold = false;
+    this.clouds.warm = false;
     await fonts;
     ui.progress(1);
     await nextFrame();
     ui.hideLoading();
     this.last = performance.now();
     this.renderer.setAnimationLoop(() => this.frame());
+    // sign-in loads once the harbour is up, off the critical path
+    setTimeout(() => this.cloudSave.start(), 900);
+  }
+
+  /** The cloud rewrote some saves (another device's progress, or a sign-out). */
+  private applyCloud(parts: Set<Part>) {
+    if (parts.has('vault')) {
+      this.vaultStore.reload();
+      this.applyCosmetics();
+    }
+    if (!parts.has('look') && !parts.has('ship')) return;
+    parts.forEach((p) => this.cloudParts.add(p));
+    // the moored ship only changes in the harbour, between scenes
+    if (this.state === 'menu' && !this.vault.isOpen && !this.swBusy && this.adoptCloud()) this.setPreview(this.ui.selected);
+  }
+
+  /** Takes up a synced livery and favourite ship; true if the preview needs rebuilding. */
+  private adoptCloud() {
+    const p = this.cloudParts;
+    if (!p.size) return false;
+    if (p.has('look')) this.look = loadLook();
+    this.ui.adoptSavedShip();
+    p.clear();
+    return true;
   }
 
   private wireUI() {
@@ -563,6 +600,23 @@ export class Game {
     this.vaultStore.subscribe(syncDot);
     syncDot();
     this.wireVault();
+    const account = new AccountPanel(
+      this.cloudSave,
+      () => ({
+        gold: this.vaultStore.purse,
+        treasures: this.vaultStore.collected(),
+        total: POOL.length,
+        designs: loadDesigns().length,
+        voyages: loadRecords().voyages,
+      }),
+      () => this.ui.openOverlay('account'),
+      () => {
+        this.audio.start();
+        this.audio.click();
+      },
+    );
+    this.cloudSave.onWelcome = (w) => account.welcome(w);
+    this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     sw.setVault(this.vaultStore);
     sw.onEquip = () => this.applyCosmetics();
     sw.onVault = () => this.openVault();
@@ -1305,6 +1359,8 @@ export class Game {
 
   private enterMenu() {
     this.state = 'menu';
+    this.adoptCloud();
+    this.cloudSave.flush();
     this.player = null;
     this.input.enabled = false;
     this.ui.showHud(false);
@@ -2281,6 +2337,10 @@ export class Game {
     P.begin('Crew', 'ships');
     this.crew.setView(this.rig.camera, this.toSun);
     this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
+    // laid rope, blocks and deck clutter only on ships big enough on screen to show them
+    const cam = this.rig.camera;
+    const pxK = innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) / cam.zoom);
+    for (const s of this.ships) s.model.updateDetail(pxK / Math.max(1, cam.position.distanceTo(s.root.position)));
     P.end();
 
     // gusts roll across whatever the camera is looking at
@@ -2372,6 +2432,14 @@ export class Game {
     // ...and its heading, as it veers and backs: sails, flags, smoke, plants and gusts all swing round
     const wa = a.windAngle;
     if (wa !== w.wind.angle) {
+      // re-anchor wind-aligned streaks so they turn about the view, not the world origin
+      const c = this.rig.camera.position;
+      const pv = globalUniforms.uWindPivot.value;
+      const qx = c.x - pv.x, qz = c.z - pv.y;
+      const along = qx * w.wind.dirX + qz * w.wind.dirZ;
+      const across = -qx * w.wind.dirZ + qz * w.wind.dirX;
+      const nx = Math.sin(wa), nz = Math.cos(wa);
+      pv.set(c.x - (along * nx - across * nz), c.z - (along * nz + across * nx));
       w.wind.angle = wa;
       w.wind.dirX = Math.sin(wa);
       w.wind.dirZ = Math.cos(wa);
@@ -2380,6 +2448,8 @@ export class Game {
       this.windField.setDir(w.wind.dirX, w.wind.dirZ);
       this.ui.setWind(wa);
     }
+    globalUniforms.uWindDrift.value.x += dt * w.wind.dirX;
+    globalUniforms.uWindDrift.value.y += dt * w.wind.dirZ;
     this.cloudOff.x += dt * w.wind.dirX * (0.002 + a.wind * 0.002 + a.storm * 0.004);
     this.cloudOff.y += dt * w.wind.dirZ * (0.002 + a.wind * 0.002 + a.storm * 0.004);
     globalUniforms.uCloudOffset.value.copy(this.cloudOff);
@@ -2590,6 +2660,16 @@ export class Game {
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    P.end();
+    // the low puffs (seen only from high up) and the shadows they drift over the sea
+    P.begin('Low clouds', 'fx', true);
+    const cl = this.clouds;
+    cl.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    const keep = this.player && this.player.alive && this.state === 'playing' && !this.photo.active ? this.player.pos : null;
+    cl.update(dt, cam, target, this.toSun, this.atmos, this.world.wind.dirX, this.world.wind.dirZ, keep);
+    cl.renderShadow(this.renderer);
+    P.end(true);
+    P.begin('Camera & sky binding', 'render');
     const eb = this.rig.eyeBlend;
     const port = this.rig.mode === 'port';
     this.pipeline.tilt = port ? 0.25 : (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
@@ -2606,7 +2686,10 @@ export class Game {
     if (under || this.isUnder) this.setUnder(under);
     this.isUnder = under;
     // no rain or wind wisps down here
-    if (under) this.rain.mesh.visible = false;
+    if (under) {
+      this.rain.mesh.visible = false;
+      this.clouds.mesh.visible = false;
+    }
     this.wisps.mesh.visible = !under;
     this.sky.visible = !under && (eb > 0.001 || port || cine > 0);
     this.sky.position.copy(cam.position);

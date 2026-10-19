@@ -1,0 +1,562 @@
+/* ------------------------------------------------------------------ account chip (harbour top bar) */
+
+.tool.acct-chip {
+  display: flex;
+  align-items: center;
+  gap: calc(9px * var(--u));
+  width: auto;
+  max-width: calc(260px * var(--u));
+  padding: 0 calc(16px * var(--u)) 0 calc(4px * var(--u));
+  border-radius: calc(999px * var(--u));
+  font: 700 calc(13px * var(--t)) var(--sans);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.tool.acct-chip.hidden {
+  display: none;
+}
+
+.acct-chip .acct-name,
+.acct-chip .acct-flash {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: max-width 0.5s var(--ease), opacity 0.3s;
+}
+
+.acct-chip .acct-name {
+  max-width: calc(120px * var(--u));
+}
+
+.acct-chip .acct-flash {
+  max-width: 0;
+  opacity: 0;
+  color: var(--gold-hi);
+}
+
+/* after signing in the chip stretches to say hello, then settles back */
+.acct-chip.flash .acct-name {
+  max-width: 0;
+  opacity: 0;
+}
+
+.acct-chip.flash .acct-flash {
+  max-width: calc(230px * var(--u));
+  opacity: 1;
+}
+
+.acct-chip.flash {
+  box-shadow: var(--hi), 0 0 0 1px rgba(244, 199, 101, 0.45), 0 calc(10px * var(--u)) calc(30px * var(--u)) rgba(244, 180, 70, 0.28);
+}
+
+.acct-chip[data-state='guest'] {
+  color: var(--gold-hi);
+}
+
+.acct-dot {
+  position: absolute;
+  left: calc(29px * var(--u));
+  top: calc(28px * var(--u));
+  width: calc(10px * var(--u));
+  height: calc(10px * var(--u));
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(8, 26, 36, 0.95);
+  background: transparent;
+  opacity: 0;
+  transition: background 0.3s, opacity 0.3s;
+}
+
+.acct-chip[data-state='synced'] .acct-dot {
+  opacity: 1;
+  background: var(--aqua);
+}
+
+.acct-chip[data-state='syncing'] .acct-dot,
+.acct-chip[data-state='starting'] .acct-dot {
+  opacity: 1;
+  background: var(--gold);
+  animation: acct-pulse 1s ease-in-out infinite;
+}
+
+.acct-chip[data-state='offline'] .acct-dot {
+  opacity: 1;
+  background: rgba(220, 230, 235, 0.55);
+}
+
+.acct-chip[data-state='error'] .acct-dot {
+  opacity: 1;
+  background: var(--coral);
+}
+
+@keyframes acct-pulse {
+  50% {
+    transform: scale(0.65);
+    opacity: 0.55;
+  }
+}
+
+/* ------------------------------------------------------------------ avatars */
+
+.acct-av {
+  --h: 38;
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: calc(34px * var(--u));
+  height: calc(34px * var(--u));
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(145deg, hsl(var(--h) 70% 62%), hsl(calc(var(--h) + 28) 62% 38%));
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.28), 0 2px 8px rgba(0, 0, 0, 0.25);
+  color: #fff;
+  font: 800 calc(13px * var(--t)) var(--sans);
+  letter-spacing: 0.02em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.acct-av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.acct-av.guest {
+  background: radial-gradient(circle at 50% 30%, rgba(255, 231, 168, 0.28), rgba(244, 199, 101, 0.08) 70%);
+  box-shadow: inset 0 0 0 1.5px rgba(244, 199, 101, 0.45);
+  color: var(--gold-hi);
+}
+
+.acct-av .ico {
+  width: 62%;
+  height: 62%;
+}
+
+.acct-av.big {
+  width: calc(64px * var(--u));
+  height: calc(64px * var(--u));
+  font-size: calc(23px * var(--t));
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3), 0 calc(10px * var(--u)) calc(28px * var(--u)) rgba(0, 0, 0, 0.35);
+}
+
+/* ------------------------------------------------------------------ the card */
+
+#account {
+  z-index: 36;
+}
+
+.acct-card {
+  width: min(calc(470px * var(--u)), 100%);
+}
+
+.acct-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(14px * var(--u));
+}
+
+.acct-lede {
+  margin: 0;
+  font: 500 calc(14px * var(--t)) / 1.5 var(--sans);
+  color: var(--ink-2);
+}
+
+.acct-fine {
+  margin: 0;
+  font: 500 calc(12px * var(--t)) / 1.5 var(--sans);
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.acct-kicker {
+  margin-bottom: calc(-6px * var(--u));
+  font: 700 calc(10.5px * var(--t)) var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.acct-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: calc(8px * var(--u));
+}
+
+.acct-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(3px * var(--u));
+  padding: calc(12px * var(--u)) calc(4px * var(--u)) calc(10px * var(--u));
+  border-radius: calc(16px * var(--u));
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  min-width: 0;
+}
+
+.acct-stat .ti {
+  color: var(--gold);
+  margin-bottom: calc(2px * var(--u));
+}
+
+.acct-stat b {
+  font: 800 calc(17px * var(--t)) var(--sans);
+  color: var(--ink);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.acct-stat b em {
+  font-style: normal;
+  font-weight: 600;
+  font-size: 0.72em;
+  color: var(--ink-3);
+}
+
+.acct-stat small {
+  font: 600 calc(9.5px * var(--t)) var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* the Google button follows Google's own light style */
+.btn.acct-google {
+  width: 100%;
+  min-height: calc(50px * var(--u));
+  background: #fff;
+  color: #1f1f1f;
+  border-color: transparent;
+  box-shadow: 0 calc(8px * var(--u)) calc(24px * var(--u)) rgba(0, 0, 0, 0.25);
+  font-weight: 600;
+}
+
+.btn.acct-google:hover {
+  background: #f2f5f7;
+}
+
+.g-logo {
+  width: calc(20px * var(--u));
+  height: calc(20px * var(--u));
+  flex: none;
+}
+
+.acct-or {
+  display: flex;
+  align-items: center;
+  gap: calc(12px * var(--u));
+  font: 600 calc(11px * var(--t)) var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.acct-or::before,
+.acct-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.acct-form {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10px * var(--u));
+}
+
+.acct-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--u));
+}
+
+.acct-field > span {
+  font: 600 calc(11.5px * var(--t)) var(--sans);
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+
+.acct-field input {
+  width: 100%;
+  min-height: calc(46px * var(--u));
+  padding: 0 calc(15px * var(--u));
+  border-radius: calc(14px * var(--u));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(0, 10, 18, 0.35);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+  color: var(--ink);
+  /* 16px stops iOS zooming into the field */
+  font: 500 max(16px, calc(15px * var(--t))) var(--sans);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.acct-field input::placeholder {
+  color: var(--ink-4);
+}
+
+.acct-field input:focus {
+  border-color: rgba(94, 227, 212, 0.7);
+  background: rgba(0, 10, 18, 0.5);
+  box-shadow: 0 0 0 4px rgba(94, 227, 212, 0.14);
+}
+
+.acct-link {
+  align-self: center;
+  padding: calc(6px * var(--u)) calc(10px * var(--u));
+  border: 0;
+  border-radius: calc(8px * var(--u));
+  background: none;
+  color: var(--ink-2);
+  font: 500 calc(13px * var(--t)) var(--sans);
+}
+
+.acct-link b {
+  color: var(--aqua);
+  font-weight: 700;
+}
+
+.acct-link:hover {
+  color: var(--ink);
+}
+
+.acct-link:focus-visible {
+  box-shadow: var(--focus);
+  outline: none;
+}
+
+.acct-link.inline {
+  position: absolute;
+  right: calc(4px * var(--u));
+  top: calc(-4px * var(--u));
+  padding: calc(3px * var(--u)) calc(6px * var(--u));
+  font-size: calc(11.5px * var(--t));
+  color: var(--aqua);
+}
+
+.acct-go {
+  width: 100%;
+  margin-top: calc(4px * var(--u));
+}
+
+.acct-go[disabled],
+.acct-google[disabled] {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.acct-spin {
+  width: calc(16px * var(--u));
+  height: calc(16px * var(--u));
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: turn 0.8s linear infinite;
+}
+
+.acct-msg {
+  margin: 0;
+  padding: calc(10px * var(--u)) calc(13px * var(--u));
+  border-radius: calc(12px * var(--u));
+  font: 500 calc(13px * var(--t)) / 1.45 var(--sans);
+  animation: rise 0.3s var(--ease);
+}
+
+.acct-msg.bad {
+  background: rgba(255, 117, 99, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(255, 117, 99, 0.3);
+  color: #ffc4ba;
+}
+
+.acct-msg.good {
+  background: rgba(94, 227, 212, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(94, 227, 212, 0.28);
+  color: #c4fbf4;
+}
+
+/* signed in */
+
+.acct-id {
+  display: flex;
+  align-items: center;
+  gap: calc(16px * var(--u));
+}
+
+.acct-who {
+  display: flex;
+  flex-direction: column;
+  gap: calc(3px * var(--u));
+  min-width: 0;
+}
+
+.acct-who b {
+  font: 700 calc(21px * var(--t)) / 1.15 var(--serif);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acct-who > span {
+  font: 500 calc(13px * var(--t)) var(--sans);
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.acct-via {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--u));
+  align-self: flex-start;
+  margin-top: calc(3px * var(--u));
+  padding: calc(3px * var(--u)) calc(9px * var(--u)) calc(3px * var(--u)) calc(7px * var(--u));
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font: 600 normal calc(11px * var(--t)) var(--sans);
+  color: var(--ink-2);
+}
+
+.acct-via .g-logo,
+.acct-via .ico {
+  width: calc(13px * var(--u));
+  height: calc(13px * var(--u));
+}
+
+.acct-sync {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--u));
+  padding: calc(8px * var(--u)) calc(8px * var(--u)) calc(8px * var(--u)) calc(14px * var(--u));
+  border-radius: calc(16px * var(--u));
+  background: rgba(94, 227, 212, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(94, 227, 212, 0.2);
+  color: var(--aqua);
+}
+
+.acct-sync-l {
+  flex: 1;
+  min-width: 0;
+  font: 600 calc(13px * var(--t)) / 1.35 var(--sans);
+  color: var(--ink);
+}
+
+.acct-sync[data-state='syncing'] {
+  color: var(--gold);
+  background: rgba(244, 199, 101, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(244, 199, 101, 0.22);
+}
+
+.acct-sync[data-state='syncing'] > .ti {
+  animation: acct-pulse 1s ease-in-out infinite;
+}
+
+.acct-sync[data-state='offline'],
+.acct-sync[data-state='error'] {
+  color: var(--ink-3);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.acct-sync[data-state='error'] {
+  color: var(--coral);
+}
+
+.acct-sync .btn {
+  flex: none;
+}
+
+.acct-foot {
+  display: flex;
+  flex-direction: column;
+  gap: calc(10px * var(--u));
+  padding-top: calc(4px * var(--u));
+}
+
+.btn.acct-out {
+  width: 100%;
+  color: var(--ink-2);
+}
+
+.btn.acct-out.armed,
+.btn.warn {
+  color: #fff;
+  background: rgba(229, 96, 79, 0.85);
+  border-color: transparent;
+}
+
+.acct-warn {
+  padding: calc(12px * var(--u)) calc(14px * var(--u));
+  border-radius: calc(14px * var(--u));
+  background: rgba(244, 199, 101, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(244, 199, 101, 0.3);
+  font: 500 calc(13px * var(--t)) / 1.45 var(--sans);
+  color: var(--ink-2);
+}
+
+.acct-warn b {
+  display: block;
+  color: var(--gold-hi);
+}
+
+.acct-row {
+  display: flex;
+  gap: calc(8px * var(--u));
+}
+
+.acct-row .btn {
+  flex: 1;
+}
+
+/* ------------------------------------------------------------------ small screens */
+
+@media (max-width: 760px) and (min-height: 601px), (max-width: 560px), (max-height: 600px) {
+  /* just the avatar beside the other round tools */
+  .tool.acct-chip {
+    padding: 0;
+    justify-content: center;
+    width: max(34px, calc(40px * var(--u)));
+  }
+
+  .acct-chip .acct-name,
+  .acct-chip .acct-flash {
+    display: none;
+  }
+
+  .acct-chip .acct-av {
+    width: 84%;
+    height: 84%;
+  }
+
+  .acct-dot {
+    left: auto;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    width: 9px;
+    height: 9px;
+  }
+}
+
+@media (max-width: 420px) {
+  .acct-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-height: 560px) {
+  #account {
+    padding: calc(calc(8px * var(--u)) + var(--safe-t)) calc(calc(12px * var(--u)) + var(--safe-r)) calc(calc(8px * var(--u)) + var(--safe-b)) calc(calc(12px * var(--u)) + var(--safe-l));
+  }
+
+  .acct-lede {
+    display: none;
+  }
+}

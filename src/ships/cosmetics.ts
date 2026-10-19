@@ -1,7 +1,10 @@
 // Special cosmetics won from the Treasure Vault: hull skins (procedural paint
 // jobs that run in the ship's own shaders, the legendary ones alive and
 // glowing), muzzle blasts and shot trails. The catalogue, the odds and the
-// player's collection (kept in this browser) all live here.
+// player's collection (kept in this browser, and in the cloud once signed in)
+// all live here.
+
+import { progressSaved } from '../core/progress';
 
 export type Rarity = 0 | 1 | 2 | 3;
 export type CosmeticKind = 'skin' | 'blast' | 'trail';
@@ -165,7 +168,7 @@ export interface Equipped {
   trail: string;
 }
 
-interface VaultState {
+export interface VaultState {
   purse: number;
   owned: Record<string, number>;
   equip: Equipped;
@@ -177,14 +180,16 @@ interface VaultState {
   unseen: string[];
 }
 
-const KEY = 'aquati.vault.v1';
+export const VAULT_KEY = 'aquati.vault.v1';
+/** One-off gifts: `aquati.gift.<key>` holds the gold it paid. */
+export const GIFT_PREFIX = 'aquati.gift.';
 
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-function fresh(): VaultState {
+export function freshVault(): VaultState {
   return {
     purse: START_PURSE,
     owned: { [BASE.skin]: 1, [BASE.blast]: 1, [BASE.trail]: 1 },
@@ -197,9 +202,9 @@ function fresh(): VaultState {
 }
 
 function load(): VaultState {
-  const s = fresh();
+  const s = freshVault();
   try {
-    const r = JSON.parse(localStorage.getItem(KEY) || 'null');
+    const r = JSON.parse(localStorage.getItem(VAULT_KEY) || 'null');
     if (!r || typeof r !== 'object') return s;
     if (Number.isFinite(r.purse)) s.purse = Math.max(0, Math.floor(r.purse));
     if (r.owned && typeof r.owned === 'object') for (const [k, v] of Object.entries(r.owned)) if (BY_ID.has(k) && Number.isFinite(v)) s.owned[k] = Math.max(1, Math.floor(v as number));
@@ -267,10 +272,17 @@ export class VaultStore {
 
   private save() {
     try {
-      localStorage.setItem(KEY, JSON.stringify(this.s));
+      localStorage.setItem(VAULT_KEY, JSON.stringify(this.s));
     } catch {
       // the vault still works for this session
     }
+    this.subs.forEach((f) => f());
+    progressSaved();
+  }
+
+  /** Re-reads the save after the cloud (or a sign-out) rewrote it. */
+  reload() {
+    this.s = load();
     this.subs.forEach((f) => f());
   }
 
@@ -282,10 +294,10 @@ export class VaultStore {
 
   /** Hands out a one-off gift once per save; true if it was given just now. */
   gift(key: string, gold: number) {
-    const k = `aquati.gift.${key}`;
+    const k = GIFT_PREFIX + key;
     try {
       if (localStorage.getItem(k)) return false;
-      localStorage.setItem(k, '1');
+      localStorage.setItem(k, String(Math.round(gold)));
     } catch {
       return false;
     }

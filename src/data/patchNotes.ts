@@ -13,13 +13,65 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-19T20:00Z',
+    hour: '2026-10-19T21:00Z',
     entries: [
       {
         title: 'Smooth sinkings, no more stutter',
         notes: [
           'Sinking a ship no longer makes the game hitch. When a mast or bowsprit snapped off a wreck, the game used to rebuild and resend the entire ship to your graphics card, several megabytes each time and several times per sinking. Now only the broken spar is cut free and the rest of the hull stays exactly where it is, so the break takes a fraction of the time and creates almost no garbage for the browser to clean up later.',
           'Fresh pirate ships now load onto your graphics card a little at a time while they wait in the shipyard, so a new sail on the horizon no longer causes a stutter when she first comes into view.',
+        ],
+      },
+      {
+        title: 'Finer ships and livelier crews',
+        notes: [
+          'Zoom in close and the rigging is now real laid rope with a little sag, tarred black for the standing rigging and pale hemp for the running lines. Shrouds are set up with deadeyes and lanyards, masts are bound with rope wooldings, and new clewlines, halyards and futtock shrouds lead down to the rails.',
+          'Guns sit on proper stepped carriages with four wheels, iron tyres and a wedge under the breech, with rammers and sponges racked along the rail between them. Bronze swivel guns are mounted on the rails fore and aft.',
+          'The decks have more life: entry steps on the side, leather fire buckets and a sea chest by the quarterdeck, and a ship\'s cat curled up on the bow crate.',
+          'Crew are better built, with fuller chests, shoulders and calves and narrower waists. Their clothes now fold and crease: shirts blouse over the sash, sleeves wrinkle at the elbow, trousers crease behind the knee and captains\' coats hang in pleats.',
+          'All the extra detail only appears on ships close to the camera, so a full battle runs as smoothly as before.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T20:00Z',
+    entries: [
+      {
+        title: 'Captain accounts and cloud saves',
+        notes: [
+          'You can now sign in with Google or an email and password. Tap the captain badge at the top of the harbour screen.',
+          'Once you sign in, your gold, Treasure Vault finds, equipped skins and effects, ship livery, saved designs, records and favourite ship are kept in the cloud. They follow you to any phone, tablet or computer you sign in on.',
+          'Your first sign-in brings everything you earned as a guest along with it. Progress from several devices adds up: gold earned on your phone and gold spent on your laptop both count.',
+          'The game still saves on your device first, so it plays the same offline. Anything you earn while offline is saved to the cloud once you reconnect.',
+          'You can still play as a guest without signing in. Your progress then stays on that device, as before.',
+        ],
+      },
+      {
+        title: 'Little clouds over the islands',
+        notes: [
+          'Zoom all the way out and you now rise above a layer of small, soft cumulus clouds drifting low over the sea. They are lit by the real sun and sky, so they are brilliant white at noon, gold and rose at sunset, silver under the moon and a heavy grey in a storm.',
+          'They come and go. Some stretches of sea stay clear while others fill with a field of puffs, clear days bring only a few, cloudy ones bring plenty, and the islands breed their own little clouds over their slopes. Each cloud forms from the middle out and frays away at the edges as it drifts downwind.',
+          'Every cloud casts a soft shadow that slides across the water, the beaches and your ship, so even zoomed in you can watch the shadows of the clouds above sweep past.',
+          'A cloud passing over your own ship turns see-through around it, so you never lose sight of her in a fight.',
+        ],
+      },
+      {
+        title: 'Clean tracer trails',
+        notes: [
+          'The Golden Comet, Ghostlight, Rainbow Ribbon and Starfall tracers, and fire shot, no longer leave a string of glowing smoke blobs behind the ball. Every tracer now draws one smooth, unbroken trace, with only fine sparks shedding off it, and the Vault and Shipwright previews show it the same way.',
+        ],
+      },
+      {
+        title: 'Roomier ship card',
+        notes: [
+          'The ship card in the top left is wider, so longer ship names fit without being cut off. Gold, hold, crew and isles now sit together on one row beneath it.',
+        ],
+      },
+      {
+        title: 'Smooth seas when the wind comes round',
+        notes: [
+          'When the wind veered or backed, the ripples on the sea and the bright sheen rolling over island meadows could suddenly race sideways, faster the longer you had been sailing. Now they keep drifting gently downwind and simply ease onto the new heading as the wind swings, and the long wind streaks on the water turn about your ship instead of sliding across the whole sea.',
         ],
       },
     ],

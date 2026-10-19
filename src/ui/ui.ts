@@ -12,9 +12,22 @@ import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
 import { WreckReport, WreckScreen } from './wreck';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock } from '../game/ammo';
 import { ammoIcon } from './ammoArt';
+import { progressSaved } from '../core/progress';
 export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
+/** The ship last picked in the harbour; part of the captain's synced profile. */
+export const SHIP_KEY = 'aquati.ship';
+
+function savedShip(): ShipClassId {
+  try {
+    const id = localStorage.getItem(SHIP_KEY);
+    if (id && id in SHIP_CLASSES) return id as ShipClassId;
+  } catch {
+    /* private mode: start on the brigantine */
+  }
+  return 'brig';
+}
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
@@ -35,7 +48,7 @@ export interface VoyageInfo {
 }
 
 /** Cards that sit over the menus and close on Esc or a tap outside; later ones stack on top. */
-const OVERLAYS = ['notes', 'controls', 'settings', 'graphics'];
+const OVERLAYS = ['notes', 'controls', 'settings', 'graphics', 'account'];
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -56,7 +69,7 @@ export class UI {
   private chartPlayer: Ship | null = null;
   private barEls = new Map<number, HTMLDivElement>();
   private floaterPool: { el: HTMLDivElement; t: number; life: number; x: number; y: number; vy: number }[] = [];
-  selected: ShipClassId = 'brig';
+  selected: ShipClassId = savedShip();
   onSelect: (id: ShipClassId) => void = () => {};
   onSail: () => void = () => {};
   onResume: () => void = () => {};
@@ -243,7 +256,7 @@ export class UI {
 
   private overlayReturn: HTMLElement | null = null;
 
-  private openOverlay(id: string) {
+  openOverlay(id: string) {
     const el = $(id);
     if (!el.classList.contains('hidden')) return;
     this.overlayReturn = document.activeElement as HTMLElement | null;
@@ -494,8 +507,23 @@ export class UI {
     if (this.selected === id) return;
     this.selected = id;
     this.onClick();
+    try {
+      localStorage.setItem(SHIP_KEY, id);
+      progressSaved();
+    } catch {
+      /* private mode: remembered for this visit */
+    }
     this.onSelect(id);
     this.renderDetail(true);
+  }
+
+  /** Takes up the ship the save names (after a cloud sync); the caller rebuilds the preview. */
+  adoptSavedShip() {
+    const id = savedShip();
+    if (id === this.selected) return false;
+    this.selected = id;
+    this.renderDetail(false);
+    return true;
   }
 
   private renderDetail(animate: boolean) {

@@ -1,5 +1,6 @@
 import { BACKINGS, EMBLEMS, FlagDesign, PATTERNS, SHAPES } from './heraldry';
 import { Livery, PLAYER_LIVERY } from './shipTypes';
+import { progressSaved } from '../core/progress';
 
 // The player's ship styling: flag, sails and paintwork. Saved locally and
 // turned into a Livery for the ship builder.
@@ -197,7 +198,7 @@ export function randomLook(keepName = ''): ShipLook {
 
 // ------------------------------------------------------------------ persistence
 
-const KEY = 'aquati.look.v1';
+export const LOOK_KEY = 'aquati.look.v1';
 const isHex = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
 
 function sanitize(raw: unknown): ShipLook {
@@ -228,7 +229,7 @@ function sanitize(raw: unknown): ShipLook {
 
 export function loadLook(): ShipLook {
   try {
-    const s = localStorage.getItem(KEY);
+    const s = localStorage.getItem(LOOK_KEY);
     return sanitize(s ? JSON.parse(s) : null);
   } catch {
     return structuredClone(DEFAULT_LOOK);
@@ -237,10 +238,12 @@ export function loadLook(): ShipLook {
 
 export function saveLook(look: ShipLook) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(look));
+    localStorage.setItem(LOOK_KEY, JSON.stringify(look));
   } catch {
     // private mode / quota: the look still applies for this session
+    return;
   }
+  progressSaved();
 }
 
 // ------------------------------------------------------------------ your own presets
@@ -251,7 +254,7 @@ export interface SavedDesign {
   look: ShipLook;
 }
 
-const SAVED_KEY = 'aquati.designs.v1';
+export const SAVED_KEY = 'aquati.designs.v1';
 export const MAX_SAVED = 12;
 
 export function loadDesigns(): SavedDesign[] {
@@ -271,6 +274,7 @@ export function loadDesigns(): SavedDesign[] {
 export function saveDesigns(list: SavedDesign[]): boolean {
   try {
     localStorage.setItem(SAVED_KEY, JSON.stringify(list.slice(0, MAX_SAVED)));
+    progressSaved();
     return true;
   } catch {
     return false;
