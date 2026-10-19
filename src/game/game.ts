@@ -141,7 +141,7 @@ export class Game {
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
     this.windField = new WindField(this.world.wind.dirX, this.world.wind.dirZ, q.tier === 0 ? 6 : 8);
     this.world.gustAt = (x, z) => this.windField.at(x, z);
-    this.wisps = new WindWisps(this.windField, q.tier === 0 ? 8 : 16, (x, z) => this.terrain.heightAt(x, z));
+    this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
