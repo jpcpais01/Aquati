@@ -1,14 +1,13 @@
-// Gunnery: lays the player's broadsides and draws them on the sea.
+// Gunnery: lays the player's broadsides, and marks them on the sea as quietly
+// as a sailor would.
 //
-// Each side's guns cover a fan off the beam. The fans are painted onto the
-// swell itself (same Gerstner waves as the ocean) so they ride every crest:
-// cool teal while the crews reload, filling outward as they work, then warm
-// gold when the guns are run out. A foe inside a loaded fan is locked: the fan
-// streams chevrons toward it, a reticle closes on the ship and a pip marks
-// where the balls will fall, already led for both ships' way. A foe just
-// outside lights the edge you need to turn across. With a mouse, the side you
-// point at is the side you fire, and with no foe in it the shot goes where you
-// point.
+// Each side's guns cover a fan off the beam. In a fight its edges show as a
+// few short ticks on the water by the hull, riding the swell: dim and cool
+// while the crews reload, filling outward as they work, warm once the guns are
+// run out. A foe inside a loaded fan is locked, and a soft gold glint circles
+// her waterline: fire now. The guns lead for both ships' way. With a mouse, the
+// side you point at is the side you fire, and with no foe in it the shot goes
+// where you point.
 
 import * as THREE from 'three';
 import { angleDelta, clamp, damp } from '../core/noise';
@@ -36,7 +35,7 @@ export interface Broadside {
 
 const GRAVITY = 14;
 const ANG_SEG = 44;
-const RAD_SEG = 30;
+const RAD_SEG = 8;
 const U_SPAN = 1.25; // fans extend a little past the arc so an edge can glow outward
 const RN_SPAN = 1.04;
 
@@ -68,20 +67,17 @@ export class Gunnery {
 
   private fan: THREE.Mesh;
   private fanMat: THREE.ShaderMaterial;
-  private reticle: THREE.Mesh;
-  private pip: THREE.Mesh;
+  private glint: THREE.Mesh;
   private depthU = {
     uSceneDepth: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCamNearFar: { value: new THREE.Vector2(1, 1000) },
   };
   private uA = [new THREE.Vector4(1, 1, 0, 0), new THREE.Vector4(1, 1, 0, 0)]; // progress, ready, hot, hover
-  private uB = [new THREE.Vector4(-1, 1, 0, 0), new THREE.Vector4(-1, 1, 0, 0)]; // aim metres, sweep, lean, ping
+  private uB = [new THREE.Vector4(-1, 1, 0, 0), new THREE.Vector4(-1, 1, 0, 0)]; // aim metres, -, lean, ping
   private vis = 0;
   private lastFire = -100;
   private wasReady = { port: true, starboard: true };
-  private retScale = 1.6;
-  private retTarget: Ship | null = null;
   private pointer: THREE.Vector3 | null = null;
   private pointerSide: Side | null = null;
   private ptrLast = { x: 0, y: 0 };
@@ -115,11 +111,7 @@ export class Gunnery {
       depthWrite: false,
       depthTest: false,
       side: THREE.DoubleSide,
-      // premultiplied "over": the field of fire veils the sea a shade darker so
-      // its glowing lines read on bright tropical shallows as well as at night
-      blending: THREE.CustomBlending,
-      blendSrc: THREE.OneFactor,
-      blendDst: THREE.OneMinusSrcAlphaFactor,
+      blending: THREE.AdditiveBlending,
       premultipliedAlpha: true,
       uniforms: {
         uTime: globalUniforms.uTime,
@@ -166,58 +158,25 @@ export class Gunnery {
           vec4 A = port ? uA[0] : uA[1];
           vec4 B = port ? uB[0] : uB[1];
           float prog = A.x, ready = A.y, hot = A.z, hover = A.w;
-          float aimM = B.x, sweep = B.y, lean = B.z, ping = B.w;
+          float lean = B.z, ping = B.w;
           float u = vFan.x, au = abs(u), rn = vFan.y;
 
-          float inA = 1.0 - smoothstep(1.0 - max(fwidth(u), 1e-4) * 1.5, 1.0, au);
-          float inR = 1.0 - smoothstep(1.0 - max(fwidth(rn), 1e-4) * 1.5, 1.0, rn);
-          float inside = inA * inR;
-          float nearF = smoothstep(0.0, 0.14, rn); // melt into the hull's own wash
           float t = uTime;
+          // dotted ticks along each edge of the arc, fading away from the hull
+          float edge = aaLine(au, 1.0, 1.3);
+          float dots = smoothstep(0.3, 0.42, fract(rn * 3.0 + 0.15));
+          float along = smoothstep(0.0, 0.12, rn) * (1.0 - smoothstep(0.45, 1.0, rn));
+          float tick = edge * dots * along;
 
-          vec3 cool = vec3(0.42, 0.86, 1.0);
-          vec3 gold = vec3(1.0, 0.58, 0.16);
-          vec3 base = mix(cool, gold, ready);
-
-          // a faint veil over the whole field of fire, a touch stronger toward the rim
-          float veil = inside * nearF * (0.07 + 0.06 * rn) * (0.8 + 0.4 * hover + 0.5 * hot);
-          float body = veil * 0.18;
-          // the edges of the arc and the extreme range
-          float edge = aaLine(au, 1.0, 1.6) * inR * nearF * (1.0 - 0.45 * rn) * (0.3 + 0.25 * ready + 0.3 * hot + 0.25 * hover);
-          float rim = aaLine(rn, 1.0, 1.8) * inA * (0.4 + 0.35 * ready + 0.3 * hot);
-          // dashed range marks at a third and two thirds
-          float dash = step(0.45, fract(u * 4.0 + 0.5));
-          float ticks = (aaLine(rn, 0.3333, 1.2) + aaLine(rn, 0.6667, 1.2)) * dash * inside * 0.22;
-
-          // reloading: the crews' progress fills the fan outward from the hull
-          float loading = 1.0 - ready;
-          float fill = loading * inside * nearF * (1.0 - smoothstep(prog - 0.02, prog + 0.02, rn)) * 0.06;
-          float front = loading * inA * exp(-sq((rn - prog) * 60.0)) * 0.3 * step(0.02, prog);
-
-          // locked and loaded: chevrons stream out toward the foe
-          float ch = fract(rn * 3.0 - au * 0.3 - t * 0.7);
-          float chev = smoothstep(0.88, 0.94, ch) * (1.0 - smoothstep(0.94, 0.985, ch)) * inside * nearF * hot * 0.2 * (1.0 - 0.5 * rn);
-
-          // where the balls will fall
-          float bd = vDist - aimM;
-          float band = aimM > 0.0 ? (exp(-bd * bd) + exp(-bd * bd / 18.0) * 0.3) * inA : 0.0;
-
-          // the broadside rolling out over the water when you fire
-          float sw = sweep < 1.0 ? (exp(-sq((rn - sweep) * 22.0)) * 0.45 + step(rn, sweep) * 0.05) * (1.0 - sweep) * inside * smoothstep(0.0, 0.1, rn) : 0.0;
-
-          // a foe just past an edge: that edge breathes, inviting you to turn across it
-          float leanG = abs(lean) * step(0.0, u * lean) * exp(-sq((au - 1.0) * 14.0)) * nearF * inR * (1.0 - 0.5 * rn)
-                      * (0.5 + 0.5 * sin(t * 5.0)) * 0.3;
-
-          float pingG = ping * inside * nearF * (0.08 + 0.5 * exp(-sq((rn - (1.0 - ping)) * 14.0)));
-
-          vec3 col = base * (body + edge + rim + ticks + chev + pingG)
-                   + cool * (fill + front)
-                   + vec3(1.0, 0.88, 0.62) * band * (0.45 + 0.4 * ready)
-                   + vec3(1.0, 0.86, 0.6) * sw
-                   + gold * leanG;
-          float k = uVis * occ;
-          gl_FragColor = vec4(col * 0.9 * k, veil * k);
+          // the crews' progress creeps out along the ticks; loaded, they're whole and warm
+          float filled = mix(1.0 - smoothstep(prog - 0.03, prog + 0.03, rn), 1.0, ready);
+          vec3 col = mix(vec3(0.55, 0.85, 1.0), vec3(1.0, 0.66, 0.26), ready);
+          // a foe just beyond this edge: it brightens a touch, the edge to turn across
+          float leanE = abs(lean) * step(0.0, u * lean);
+          float glow = tick * mix(0.22, 1.0, filled) * (0.32 + 0.18 * hot + 0.12 * hover + 0.25 * leanE);
+          // run out again: a glint slides out along the ticks
+          glow += tick * ping * exp(-sq((rn - (1.0 - ping)) * 8.0)) * 0.6;
+          gl_FragColor = vec4(col * glow * uVis * occ, 0.0);
         }`,
     });
     this.fan = new THREE.Mesh(g, this.fanMat);
@@ -225,13 +184,12 @@ export class Gunnery {
     this.fan.renderOrder = 4;
     this.fan.visible = false;
 
-    this.reticle = this.marker(0);
-    this.pip = this.marker(1);
-    this.group.add(this.fan, this.reticle, this.pip);
+    this.glint = this.marker();
+    this.group.add(this.fan, this.glint);
   }
 
-  /** Reticle (mode 0) and impact pip (mode 1): flat glyphs on the water. */
-  private marker(mode: number): THREE.Mesh {
+  /** The lock glint: a flat glyph on the water around the foe's waterline. */
+  private marker(): THREE.Mesh {
     const g = new THREE.PlaneGeometry(2, 2);
     g.rotateX(-Math.PI / 2);
     const m = new THREE.ShaderMaterial({
@@ -242,12 +200,10 @@ export class Gunnery {
       premultipliedAlpha: true,
       uniforms: {
         uTime: globalUniforms.uTime,
-        uColor: { value: new THREE.Color(1, 1, 1) },
+        uColor: { value: new THREE.Color(1.9, 1.25, 0.45) },
         uAlpha: { value: 0 },
-        uLock: { value: 0 },
         ...this.depthU,
       },
-      defines: { MODE: mode },
       vertexShader: /* glsl */ `
         varying vec2 vP; varying float vViewZ;
         void main() {
@@ -257,7 +213,7 @@ export class Gunnery {
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime; uniform vec3 uColor; uniform float uAlpha; uniform float uLock;
+        uniform float uTime; uniform vec3 uColor; uniform float uAlpha;
         varying vec2 vP; varying float vViewZ;
         ${DEPTH_GLSL}
         float sq(float x) { return x * x; }
@@ -268,28 +224,11 @@ export class Gunnery {
           float r = length(vP);
           float a = atan(vP.y, vP.x);
           float v = 0.0;
-          #if MODE == 0
-            // four brackets that turn slowly, then lock square when the guns bear
-            float spin = a + uTime * 0.7 * (1.0 - uLock);
-            float seg = fract(spin / 1.5707963 + 0.5);
-            float br = smoothstep(0.12, 0.16, seg) * (1.0 - smoothstep(0.84, 0.88, seg));
-            v += aaLine(r, 0.88, 2.2) * br;
-            v += aaLine(r, 0.88, 1.2) * 0.25;
-            // inward ticks at the cardinal points
-            float q = fract(spin / 1.5707963);
-            float arcLen = min(q, 1.0 - q) * 1.5707963 * r;
-            v += (1.0 - smoothstep(0.03, 0.055, arcLen)) * step(0.68, r) * step(r, 0.82) * (0.4 + 0.6 * uLock);
-            // a soft glow pooled on the water beneath the mark
-            v += exp(-sq((r - 0.88) * 7.0)) * 0.18;
-          #else
-            // impact pip: a ring, a dot and a breathing halo
-            v += aaLine(r, 0.6, 1.8);
-            v += (1.0 - smoothstep(0.1, 0.16, r)) * 0.9;
-            float c = 1.0 - smoothstep(0.03, 0.06, min(abs(vP.x), abs(vP.y)));
-            v += c * step(0.3, r) * step(r, 0.9) * 0.6;
-            float br = 0.5 + 0.5 * sin(uTime * 6.0);
-            v += exp(-sq((r - 0.6 - br * 0.25) * 8.0)) * 0.35 * (1.0 - br);
-          #endif
+          // a thin warm line at the waterline with one glint slowly circling it
+          v += aaLine(r, 0.86, 1.4) * 0.35;
+          v += exp(-sq((r - 0.86) * 10.0)) * 0.12;
+          float g = pow(0.5 + 0.5 * cos(a - uTime * 1.3), 24.0);
+          v += g * exp(-sq((r - 0.86) * 12.0)) * 0.9;
           v *= 1.0 - smoothstep(0.92, 1.0, r);
           gl_FragColor = vec4(uColor * v * uAlpha * occ, 0.0);
         }`,
@@ -434,7 +373,6 @@ export class Gunnery {
       A.w += ((st.hover ? 1 : 0) - A.w) * damp(10, dt);
       const B = this.uB[i];
       B.x = st.aimDist;
-      B.y = Math.min(1, B.y + dt * 1.6);
       B.w = Math.max(0, B.w - dt * 1.8);
       B.z = 0;
     }
@@ -455,7 +393,7 @@ export class Gunnery {
     u.uShip.value.set(p.pos.x, p.pos.z);
     u.uHeading.value = p.heading;
     u.uR0.value = r0;
-    u.uR.value = R;
+    u.uR.value = r0 + 6 + p.cls.length * 0.8; // the ticks reach just a hull's length out
     this.fan.visible = this.vis > 0.01;
 
     this.updateMarkers(dt, p, world);
@@ -472,56 +410,23 @@ export class Gunnery {
   }
 
   private updateMarkers(dt: number, p: Ship, world: World) {
-    // the reticle rides the locked foe (the side that would fire), else the nearest one in reach
+    // the glint only shows on a foe the loaded guns are laid on: the moment to fire
     const auto = this.autoSide(p);
-    const locked = auto ? this.sides[auto].target : null;
-    const mark = locked ?? (this.sides.port.target || this.sides.starboard.target || this.focus);
-    const rm = this.reticle.material as THREE.ShaderMaterial;
-    if (mark !== this.retTarget) {
-      this.retTarget = mark;
-      this.retScale = 1.7;
-    }
-    const lockSide = mark === this.sides.port.target ? this.sides.port : mark === this.sides.starboard.target ? this.sides.starboard : null;
+    const st = auto ? this.sides[auto] : null;
+    const mark = st && st.ready ? st.target : null;
+    const u = (this.glint.material as THREE.ShaderMaterial).uniforms;
     if (mark) {
-      this.reticle.visible = true;
-      const hot = !!lockSide && lockSide.ready;
-      rm.uniforms.uAlpha.value = Math.min(1, rm.uniforms.uAlpha.value + dt * 4);
-      rm.uniforms.uLock.value += ((lockSide ? 1 : 0) - rm.uniforms.uLock.value) * damp(6, dt);
-      const c = rm.uniforms.uColor.value as THREE.Color;
-      if (hot) c.setRGB(2.4, 1.55, 0.5);
-      else if (lockSide) c.setRGB(1.1, 1.5, 1.7);
-      else c.setRGB(0.7, 0.72, 0.78);
-      this.retScale += ((lockSide ? 1 : 1.25) - this.retScale) * damp(7, dt);
-      const s = mark.cls.length * 0.62 * this.retScale;
-      this.reticle.scale.setScalar(s);
-      this.reticle.position.set(mark.pos.x, world.waterHeight(mark.pos.x, mark.pos.z) + 0.3, mark.pos.z);
-    } else {
-      rm.uniforms.uAlpha.value = Math.max(0, rm.uniforms.uAlpha.value - dt * 3);
-      this.reticle.visible = rm.uniforms.uAlpha.value > 0.01;
-    }
-
-    // impact pip: where the locked broadside will land, once that's visibly off the hull
-    const pm = this.pip.material as THREE.ShaderMaterial;
-    const showPip = lockSide && lockSide.target ? Math.hypot(lockSide.impact.x - lockSide.target.pos.x, lockSide.impact.z - lockSide.target.pos.z) > 4 : false;
-    if (showPip && lockSide) {
-      this.pip.visible = true;
-      pm.uniforms.uAlpha.value = Math.min(1, pm.uniforms.uAlpha.value + dt * 4);
-      (pm.uniforms.uColor.value as THREE.Color).setRGB(...((lockSide.ready ? [2.2, 1.5, 0.55] : [1.0, 1.35, 1.55]) as [number, number, number]));
-      const ip = lockSide.impact;
-      this.pip.position.set(ip.x, world.waterHeight(ip.x, ip.z) + 0.3, ip.z);
-      this.pip.scale.setScalar(3.2 + p.cls.length * 0.08);
-    } else {
-      pm.uniforms.uAlpha.value = Math.max(0, pm.uniforms.uAlpha.value - dt * 4);
-      this.pip.visible = pm.uniforms.uAlpha.value > 0.01;
-    }
+      this.glint.visible = true;
+      u.uAlpha.value = Math.min(1, u.uAlpha.value + dt * 3);
+      this.glint.scale.setScalar(mark.cls.length * 0.6);
+      this.glint.position.set(mark.pos.x, world.waterHeight(mark.pos.x, mark.pos.z) + 0.25, mark.pos.z);
+    } else this.fadeMarkers(dt);
   }
 
   private fadeMarkers(dt: number) {
-    for (const m of [this.reticle, this.pip]) {
-      const u = (m.material as THREE.ShaderMaterial).uniforms;
-      u.uAlpha.value = Math.max(0, u.uAlpha.value - dt * 3);
-      m.visible = u.uAlpha.value > 0.01;
-    }
+    const u = (this.glint.material as THREE.ShaderMaterial).uniforms;
+    u.uAlpha.value = Math.max(0, u.uAlpha.value - dt * 3);
+    this.glint.visible = u.uAlpha.value > 0.01;
   }
 
   /** The broadside that the one-button fire (Space, the touch Fire button) should loose. */
@@ -555,9 +460,8 @@ export class Gunnery {
     return { target: null, point: new THREE.Vector3(p.pos.x + Math.sin(a) * R * 0.6, 0, p.pos.z + Math.cos(a) * R * 0.6) };
   }
 
-  /** The broadside went off: roll a sweep of light out across that fan. */
-  fired(side: Side, time: number) {
-    this.uB[side === 'port' ? 0 : 1].y = 0;
+  /** The broadside went off: keeps the ticks up for a moment after. */
+  fired(time: number) {
     this.lastFire = time;
   }
 }

@@ -2362,19 +2362,12 @@ kbd {
 /* gunnery: a foe sits in this side's loaded arc on the water */
 .broadside.hot {
   color: var(--ink);
-  background: rgba(239, 196, 99, 0.22);
-  box-shadow: 0 0 0 1px rgba(239, 196, 99, 0.5), 0 0 22px rgba(239, 196, 99, 0.28);
+  background: rgba(239, 196, 99, 0.16);
+  box-shadow: 0 0 0 1px rgba(239, 196, 99, 0.35);
 }
 
-.broadside.hot .ring {
-  animation: gun-hot 0.9s ease-in-out infinite;
-}
-
-@keyframes gun-hot {
-  50% {
-    transform: scale(1.1);
-    filter: brightness(1.25);
-  }
+.broadside.hot .ring .ti {
+  color: var(--gold);
 }
 
 .fbtn.side.aim {
@@ -2383,17 +2376,11 @@ kbd {
 }
 
 .fbtn.side.hot {
-  box-shadow: 0 0 18px rgba(239, 196, 99, 0.6);
+  box-shadow: 0 0 12px rgba(239, 196, 99, 0.4);
 }
 
 .fbtn.main.hot {
-  animation: fire-hot 0.9s ease-in-out infinite;
-}
-
-@keyframes fire-hot {
-  50% {
-    box-shadow: 0 10px 34px rgba(239, 180, 80, 0.75), inset 0 -3px 0 rgba(140, 90, 20, 0.35), 0 0 0 4px rgba(8, 26, 36, 0.55), 0 0 0 10px rgba(239, 196, 99, 0.35);
-  }
+  box-shadow: 0 10px 30px rgba(239, 180, 80, 0.5), inset 0 -3px 0 rgba(140, 90, 20, 0.35), 0 0 0 4px rgba(8, 26, 36, 0.55), 0 0 0 7px rgba(239, 196, 99, 0.3);
 }
 
 /* the guns have just been run out again */
