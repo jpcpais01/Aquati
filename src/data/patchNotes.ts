@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    // the 14:00 group below is full (five entries), so this hour continues here
+    hour: '2026-10-19T14:00Z',
+    entries: [
+      {
+        title: 'Save your own ship designs',
+        notes: [
+          'The Shipwright\'s Presets tab has a new Your designs shelf. Tap Save this design to keep the flag, sails, hull and ship\'s name you are wearing, and tap a saved design any time to put it straight back on your ship.',
+          'Keep up to twelve. Saving another design for the same ship numbers it for you (Sea Biscuit II), and the × on a card deletes it after a second tap, so nothing goes by accident. Your designs stay saved on this device between visits.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T14:00Z',
     entries: [
       {
