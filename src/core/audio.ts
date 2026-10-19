@@ -314,6 +314,49 @@ export class Audio {
     });
   }
 
+  /** Chest pickup: a coin clink plus a rising arpeggio that grows with rarity. */
+  treasure(tier: number) {
+    this.coin();
+    const v = this.voice(0.14 + tier * 0.04, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    // C major climbing higher and longer for finer chests; legendary ends on a shimmering chord
+    const runs = [[], [784, 1046.5], [784, 987.8, 1318.5], [659.3, 784, 987.8, 1318.5, 1568], [523.3, 659.3, 784, 1046.5, 1318.5, 1568, 2093]];
+    const notes = runs[tier] ?? [];
+    const step = 0.075;
+    notes.forEach((fr, i) => {
+      const t = ctx.currentTime + 0.05 + i * step;
+      const o = ctx.createOscillator();
+      o.type = tier >= 3 ? 'triangle' : 'sine';
+      o.frequency.value = fr;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.45, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.6 + tier * 0.15);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.9 + tier * 0.15);
+    });
+    if (tier === 4) {
+      const t = ctx.currentTime + 0.05 + notes.length * step;
+      [1046.5, 1318.5, 1568, 2093].forEach((fr) => {
+        for (const det of [-6, 6]) {
+          const o = ctx.createOscillator();
+          o.type = 'sine';
+          o.frequency.value = fr;
+          o.detune.value = det;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.16, t + 0.04);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 2.2);
+          o.connect(g).connect(out);
+          o.start(t);
+          o.stop(t + 2.3);
+        }
+      });
+    }
+  }
+
   click() {
     const v = this.voice(0.12, 0);
     if (!v) return;

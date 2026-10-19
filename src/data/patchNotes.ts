@@ -13,7 +13,6 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    // the next 12:00 group is full (five entries), so this hour continues in a second group
     hour: '2026-10-19T12:00Z',
     entries: [
       {
@@ -24,6 +23,25 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Sound now travels at its real speed. Watch a pirate fire far off and you will see the flash first and hear the boom a heartbeat later, dulled and softened by the distance.',
           'On your own deck you hear the gun carriages slam back on their trucks and the breeching ropes snap taut, and the sea and wind dip for a moment under the roar.',
           'New impacts too: splintering, groaning timbers when a ball smashes a hull, a deep thoomp and falling spray when one plunges into the sea, dull thuds on beaches, enemy shot tearing past your ears, and ships going up with a magazine blast and raining wreckage.',
+        ],
+      },
+      {
+        title: 'Frame rate counter',
+        notes: ['A tiny FPS counter now sits at the top of the screen, refreshed twice a second.'],
+      },
+    ],
+  },
+  {
+    // the next 12:00 group is full (five entries), so this hour continues in a second group
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
+        title: 'Treasure rarities: common, rare, epic, legendary',
+        notes: [
+          'Chests now come in four rarities. Common chests are weathered wood and iron, Rare ones sea-blue lacquer and silver, Epic ones royal violet with gold and an amethyst, and Legendary chests are gilded, lid thrown open on a glowing hoard of coins and jewels.',
+          'Finer chests shine a beam of coloured light into the sky and cast a glowing ring on the water, so you can spot a prize from across the bay. They are also plotted in their colours on the minimap and sea chart.',
+          'Scooping one up sets off a burst of coins and coloured sparks with a rising chime, bigger for every rarity. Epic and Legendary finds get a banner, a heavier haul of gold and a bigger hull patch.',
+          'Tougher prey drops better treasure: brigs beat sloops, and every sunk galleon is guaranteed at least a Rare chest.',
         ],
       },
       {

@@ -19,7 +19,7 @@ import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../sh
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
 import { Projectiles } from './projectiles';
-import { Loot } from './loot';
+import { Loot, RARITY } from './loot';
 import { World } from './world';
 
 type State = 'loading' | 'menu' | 'playing' | 'paused' | 'map' | 'dead';
@@ -138,7 +138,8 @@ export class Game {
     this.wake.setTerrain(seaFloor);
     this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
     this.particles = new Particles(q.particles);
-    this.water.add(this.ocean.mesh, this.particles.group);
+    this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
+    this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
@@ -384,7 +385,8 @@ export class Game {
 
   private onSunk(ship: Ship, attacker: Ship) {
     const bounty = { sloop: 60, brig: 110, galleon: 220 }[ship.cls.id];
-    this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), ship.cls.id === 'galleon');
+    const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
+    this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
     if (attacker === this.player) {
       this.player.gold += bounty;
       this.ui.toast(`+${bounty} gold bounty`, `${ship.name} sunk`, 3.2);
@@ -481,10 +483,20 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
 
+  private fpsEl = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'fps' });
+  private fpsFrames = 0;
+  private fpsT = performance.now();
+
   private frame() {
     const now = performance.now();
     let dt = (now - this.last) / 1000;
     this.last = now;
+    this.fpsFrames++;
+    if (now - this.fpsT >= 500) {
+      this.fpsEl.textContent = `${Math.round((this.fpsFrames * 1000) / (now - this.fpsT))} FPS`;
+      this.fpsFrames = 0;
+      this.fpsT = now;
+    }
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
     const simDt = this.state === 'paused' || this.state === 'map' || this.state === 'loading' ? 0 : dt;
@@ -525,8 +537,19 @@ export class Game {
         p.gold += it.value;
         p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
         const [x, y] = this.screenOf(new THREE.Vector3(it.x, 2, it.z));
-        this.ui.floater(`+${it.value} gold`, x, y, 'loot');
-        this.audio.coin();
+        if (it.tier === 0) {
+          this.ui.floater(`+${it.value} gold`, x, y, 'loot');
+          this.audio.coin();
+          continue;
+        }
+        const R = RARITY[it.tier];
+        this.ui.floater(`${R.name} chest +${it.value}`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[it.tier]);
+        w.particles.treasure(new THREE.Vector3(it.x, w.waterHeight(it.x, it.z), it.z), R.glow, it.tier);
+        this.audio.treasure(it.tier);
+        if (it.tier >= 3) {
+          this.ui.toast(`${R.name} treasure`, `+${it.value} gold`, it.tier === 4 ? 3.6 : 2.8);
+          this.rig.shake(it.tier === 4 ? 0.22 : 0.1);
+        }
       }
       this.checkDiscoveries(p);
       this.directSpawns(dt);
