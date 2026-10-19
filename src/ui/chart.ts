@@ -2,6 +2,7 @@
 // pan (drag), zoom (wheel / pinch) and live markers for the player, nearby
 // pirates, salvage and every isle, named once discovered.
 
+import { RARITY } from '../game/loot';
 import { Ship } from '../ships/ship';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 
@@ -12,7 +13,7 @@ const MAX_ZOOM = 6;
 export interface ChartScene {
   player: Ship;
   ships: Ship[];
-  loot: { x: number; z: number }[];
+  loot: { x: number; z: number; tier?: number }[];
   islands: Island[];
   discovered: Set<string>;
   windX: number;
@@ -251,13 +252,13 @@ export class SeaChart {
     g.stroke();
 
     // salvage
-    g.fillStyle = '#ffe08a';
-    g.shadowColor = 'rgba(255, 210, 110, 0.9)';
-    g.shadowBlur = 8;
     for (const l of sc.loot) {
       const [x, y] = toS(l.x, l.z);
+      const t = l.tier ?? 0;
+      g.fillStyle = g.shadowColor = RARITY[t].css;
+      g.shadowBlur = t >= 3 ? 14 : 8;
       g.beginPath();
-      g.arc(x, y, 3.5, 0, Math.PI * 2);
+      g.arc(x, y, t >= 3 ? 5 : t ? 4 : 3, 0, Math.PI * 2);
       g.fill();
     }
     g.shadowBlur = 0;

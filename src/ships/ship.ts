@@ -36,6 +36,18 @@ export function windFactor(relDeg: number) {
   return 0.3;
 }
 
+// Hull pressure along the keel: [fraction of length from midships, weight, radius in beams].
+// The bow shoves water up, the shoulders, waist and quarters draw it down and
+// the stern lifts it again (net zero, so a hove-to ship never digs a hole).
+// The wake simulation turns this into the bow and stern V-waves.
+const HULL_PRESSURE: [number, number, number][] = [
+  [0.44, 1, 0.32],
+  [0.24, -0.75, 0.36],
+  [0.0, -0.5, 0.4],
+  [-0.22, -0.35, 0.38],
+  [-0.42, 0.6, 0.34],
+];
+
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _g = new THREE.Vector2();
@@ -73,6 +85,7 @@ export class Ship {
   private rollKick = 0;
   private groundCooldown = 0;
   private wakeT = 0;
+  private sprayT = 0;
   // rig springs: yards and booms swing across instead of snapping on a tack/gybe
   private rigBrace = 0;
   private rigBraceV = 0;
@@ -172,8 +185,8 @@ export class Ship {
     vel.add(this.vel);
     world.onShot({ pos, vel, owner: this, damage: this.cls.damage });
     world.particles.muzzle(pos, dir, this.vel);
-    const [vol, pan] = world.soundAt(pos);
-    world.audio.cannon(vol * 0.55, pan);
+    const [vol, pan, d] = world.soundAt(pos);
+    world.audio.cannon(vol, pan, d, clamp((this.cls.length - 15) / 14, 0, 1));
     world.onShake(this.team === 'player' ? 0.35 : 0.12 * vol, pos);
   }
 
@@ -190,8 +203,8 @@ export class Ship {
       this.sinkT = 0;
       if (attacker) attacker.kills++;
       world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
-      const [vol, pan] = world.soundAt(this.pos);
-      world.audio.cannon(vol, pan);
+      const [vol, pan, d] = world.soundAt(this.pos);
+      world.audio.explosion(vol, pan, d);
       world.onShake(this.team === 'player' ? 1.2 : 0.5 * vol, this.pos);
     }
     return dmg;
@@ -339,19 +352,77 @@ export class Ship {
     this.model.updateRig(this.sailLevel, -brace, leeSide, flagAng, fill);
 
     // ------------------------------------------------ wake & fx
+    const wakeK = this.alive ? 1 : Math.max(0, 1 - this.sinkT / 3);
+    const spd = Math.abs(this.speed);
+    if (spd > 0.3 && wakeK > 0) {
+      // pressure every frame: the water field grows the Kelvin arms and transverse swell from it
+      const press = 10.5 * (Math.min(spd, 16) / 12) * Math.sqrt(B / 6.2) * wakeK * dt;
+      for (const [u, wgt, r] of HULL_PRESSURE) {
+        world.wake.press(this.pos.x + fx * L * u, this.pos.z + fz * L * u, B * r, press * wgt);
+      }
+    }
     this.wakeT += dt;
-    if (this.wakeT > 0.05 && this.speed > 0.6 && (this.alive || this.sinkT < 3)) {
+    if (this.wakeT > 0.04 && spd > 0.5 && wakeK > 0) {
       this.wakeT = 0;
-      const k = clamp(this.speed / 12, 0, 1.2);
-      const sx = this.pos.x - fx * L * 0.48;
-      const sz = this.pos.z - fz * L * 0.48;
-      world.wake.stamp(sx, sz, B * 0.55, 0.35 * k);
-      const bx = this.pos.x + fx * L * 0.42;
-      const bz = this.pos.z + fz * L * 0.42;
-      world.wake.stamp(bx + port.x * B * 0.45, bz + port.z * B * 0.45, B * 0.28, 0.32 * k);
-      world.wake.stamp(bx - port.x * B * 0.45, bz - port.z * B * 0.45, B * 0.28, 0.32 * k);
-      world.wake.stamp(this.pos.x + port.x * B * 0.52, this.pos.z + port.z * B * 0.52, B * 0.2, 0.15 * k);
-      world.wake.stamp(this.pos.x - port.x * B * 0.52, this.pos.z - port.z * B * 0.52, B * 0.2, 0.15 * k);
+      const k = clamp(spd / 12, 0, 1.25) * wakeK;
+      const px = port.x;
+      const pz = port.z;
+      // stern: churned white wash, a dense core with ragged eddies tumbling off it
+      const sx = this.pos.x - fx * L * 0.5;
+      const sz = this.pos.z - fz * L * 0.5;
+      world.wake.stamp(sx, sz, B * 0.5, 0.3 * k);
+      for (let i = 0; i < 2; i++) {
+        const o = (Math.random() - 0.5) * B * 0.8;
+        const a = Math.random() * L * 0.12;
+        world.wake.stamp(sx + px * o - fx * a, sz + pz * o - fz * a, B * (0.18 + Math.random() * 0.16), 0.16 * k);
+      }
+      // cutwater: a split sheet of foam where the stem slices in, peeling back along both bows
+      const bx = this.pos.x + fx * L * 0.5;
+      const bz = this.pos.z + fz * L * 0.5;
+      world.wake.stamp(bx, bz, B * 0.24, 0.32 * k);
+      for (const side of [1, -1]) {
+        const ox = px * side * B;
+        const oz = pz * side * B;
+        world.wake.stamp(bx - fx * L * 0.1 + ox * 0.42, bz - fz * L * 0.1 + oz * 0.42, B * 0.24, 0.26 * k);
+        // lateral wash hugging the hull
+        world.wake.stamp(this.pos.x + fx * L * 0.15 + ox * 0.56, this.pos.z + fz * L * 0.15 + oz * 0.56, B * 0.2, 0.12 * k);
+        world.wake.stamp(this.pos.x - fx * L * 0.22 + ox * 0.56, this.pos.z - fz * L * 0.22 + oz * 0.56, B * 0.2, 0.1 * k);
+      }
+      // hard over: the stern skids outward and smears a fan of foam
+      const skid = Math.min(1, Math.abs(this.angVel) * spd * 0.12);
+      if (skid > 0.08) {
+        const out = -Math.sign(this.angVel) * B * 0.55;
+        world.wake.stamp(this.pos.x - fx * L * 0.38 + px * out, this.pos.z - fz * L * 0.38 + pz * out, B * 0.36, 0.22 * skid * wakeK);
+      }
+    }
+    // bow spray: flung off both bows at speed, and in bursts when she buries her nose in the swell
+    if (this.alive && spd > c.maxSpeed * 0.4) {
+      const fast = (spd / c.maxSpeed - 0.4) / 0.6;
+      const slam = Math.max(0, this.pitch - 0.02) * 30; // positive pitch = bow down
+      this.sprayT += dt * (fast * fast * 14 + slam * 18);
+      const top = this.heave + c.draft * 0.25;
+      while (this.sprayT > 1) {
+        this.sprayT -= 1;
+        const side = Math.random() < 0.5 ? 1 : -1;
+        const u = 0.36 + Math.random() * 0.1;
+        const out = 1.5 + Math.random() * 3 + fast * 2;
+        const up = 2.2 + Math.random() * 3.2 + slam * 0.6;
+        const x = this.pos.x + fx * L * u + port.x * side * B * 0.42;
+        const z = this.pos.z + fz * L * u + port.z * side * B * 0.42;
+        world.particles.emit({
+          x, y: top, z,
+          vx: port.x * side * out + this.vel.x * 0.7, vy: up, vz: port.z * side * out + this.vel.z * 0.7,
+          life: 0.55 + Math.random() * 0.45, size: 0.35 + Math.random() * 0.4, sizeEnd: 1.1 + Math.random() * 0.7,
+          color: [1.3, 1.38, 1.42], alpha: 0.75, grav: 13, drag: 1.1, kind: 0, fadeIn: 0.02,
+        });
+        if (Math.random() < 0.3) {
+          world.particles.emit({
+            x, y: top + 0.3, z,
+            vx: port.x * side * out * 0.4 + this.vel.x * 0.5, vy: up * 0.4, vz: port.z * side * out * 0.4 + this.vel.z * 0.5,
+            life: 1 + Math.random() * 0.6, size: 0.8, sizeEnd: 2.6, color: [1.22, 1.3, 1.34], alpha: 0.28, drag: 1.6, grav: 1.5, kind: 1,
+          });
+        }
+      }
     }
     // fires when badly damaged or sinking
     const hpFrac = this.hp / this.maxHp;
