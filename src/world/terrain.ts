@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Simplex2, mulberry32, clamp, lerp, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import { createTerrainMaterial } from './terrainMaterial';
+import { WORLD_SIZE } from './worldSize';
 
 export type IslandKind = 'lush' | 'volcanic' | 'atoll' | 'rocky';
 
@@ -18,7 +19,7 @@ export interface Island {
   tint: number; // -1..1 hue / lushness variation
 }
 
-export const WORLD_SIZE = 2048;
+export { WORLD_SIZE };
 export const CELL = 2;
 export const GRID_N = WORLD_SIZE / CELL + 1;
 const HALF = WORLD_SIZE / 2;
@@ -48,6 +49,9 @@ export class Terrain {
   /** Normalised inland depth (0 at the shore, 1 at the island centre) of the owner. */
   private inland = new Float32Array(GRID_N * GRID_N);
   private lastInland = 0;
+  /** 1 inside an atoll's lagoon, where the reef ring breaks the swell. */
+  private lagoon = new Uint8Array(GRID_N * GRID_N);
+  private lastLagoon = 0;
   private simplex: Simplex2;
   private seed: number;
 
@@ -119,6 +123,7 @@ export class Terrain {
     lz += s.noise(x * 0.0105 - 40.3, z * 0.0105 + isl.seed) * isl.r * 0.2;
     let d = Math.sqrt(lx * lx + lz * lz) / isl.r;
     this.lastInland = 0;
+    this.lastLagoon = 0;
     const ang = Math.atan2(lz, lx);
     const lobes = s.fbm(Math.cos(ang) * 1.15 + isl.seed * 3.1, Math.sin(ang) * 1.15 - isl.seed, 3);
     d *= 1 + lobes * (isl.kind === 'atoll' ? 0.12 : 0.34);
@@ -134,6 +139,7 @@ export class Terrain {
         return 2.3 * smoothstep(0, 0.09, ringF) + s.noise(x * 0.06, z * 0.06) * 0.25 * smoothstep(0, 0.1, ringF);
       }
       if (d < ringR) {
+        this.lastLagoon = 1;
         const lag = -2.4 + s.fbm(x * 0.02, z * 0.02, 2) * 0.9;
         return lerp(0, lag, smoothstep(0, 0.07, -ringF));
       }
@@ -222,6 +228,7 @@ export class Terrain {
             if (h > -14) {
               this.owner[k] = idx;
               this.inland[k] = this.lastInland;
+              this.lagoon[k] = this.lastLagoon;
             }
           }
           H[k] = smax(H[k], h, 3);
@@ -246,6 +253,13 @@ export class Terrain {
     const c = H[k + GRID_N];
     const d = H[k + GRID_N + 1];
     return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
+  }
+
+  /** Whether (x, z) lies in a sheltered atoll lagoon (nearest grid cell). */
+  lagoonAt(x: number, z: number): boolean {
+    const i = Math.round(clamp((x + HALF) / CELL, 0, GRID_N - 1));
+    const j = Math.round(clamp((z + HALF) / CELL, 0, GRID_N - 1));
+    return this.lagoon[j * GRID_N + i] === 1;
   }
 
   /** Downhill gradient (dh/dx, dh/dz). */

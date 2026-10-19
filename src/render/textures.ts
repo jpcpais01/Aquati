@@ -186,6 +186,115 @@ export function createCausticTexture(size = 256, seed = 23): THREE.DataTexture {
   return makeDataTexture(data, size);
 }
 
+/**
+ * Tileable sea foam. Real foam is a web of bubble rafts around dark holes of
+ * every size, thick in some places and frayed to threads in others. R holds
+ * that web as a "foam potential", histogram-equalised so a threshold of
+ * 1 - c covers exactly c of the surface: shaders dissolve foam just by lowering
+ * c, and the holes open, the rafts thin to threads and the threads snap into
+ * flecks. G is a finer fbm (fraying), B a second web from the smaller holes
+ * (to break the tiling), A a soft fbm for patchiness.
+ */
+export function createFoamTexture(size = 384, seed = 31): THREE.DataTexture {
+  const rnd = mulberry32(seed);
+  const warpX = periodicFbm(size, 4, 3, rnd);
+  const warpY = periodicFbm(size, 4, 3, rnd);
+  const patch = periodicFbm(size, 3, 4, rnd);
+  const fray = periodicFbm(size, 12, 3, rnd);
+  const soft = periodicFbm(size, 4, 4, rnd);
+  // cell sites, each with its own size so holes range from pinpricks to pools
+  const sites = (cells: number, spread: number) => {
+    const p = new Float32Array(cells * cells * 3);
+    for (let i = 0; i < cells * cells; i++) {
+      p[i * 3] = 0.1 + rnd() * 0.8;
+      p[i * 3 + 1] = 0.1 + rnd() * 0.8;
+      p[i * 3 + 2] = 1 / (1 - spread + rnd() * spread * 2);
+    }
+    return p;
+  };
+  // weighted Worley: distance to the nearest site (F1) and how far inside
+  // its cell we are, measured against the runner-up (the wall falls at 0)
+  let wallD = 0;
+  const cell = (pts: Float32Array, cells: number, fx: number, fy: number) => {
+    const cx = Math.floor(fx);
+    const cy = Math.floor(fy);
+    let d1 = 9;
+    let d2 = 9;
+    for (let oy = -1; oy <= 1; oy++) {
+      for (let ox = -1; ox <= 1; ox++) {
+        const gx = cx + ox;
+        const gy = cy + oy;
+        const k = ((((gy % cells) + cells) % cells) * cells + (((gx % cells) + cells) % cells)) * 3;
+        const ddx = gx + pts[k] - fx;
+        const ddy = gy + pts[k + 1] - fy;
+        const d = Math.sqrt(ddx * ddx + ddy * ddy) * pts[k + 2];
+        if (d < d1) {
+          d2 = d1;
+          d1 = d;
+        } else if (d < d2) d2 = d;
+      }
+    }
+    wallD = d2 - d1;
+  };
+  const cA = 7;
+  const cB = 17;
+  const cC = 38;
+  const pA = sites(cA, 0.45);
+  const pB = sites(cB, 0.4);
+  const pC = sites(cC, 0.35);
+  const n = size * size;
+  const webA = new Float32Array(n);
+  const webB = new Float32Array(n);
+  const hole = (e: number, w: number) => Math.min(1, e / w);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = y * size + x;
+      // a strong warp so the holes are soft, lopsided blobs, never polygons
+      const wx = (warpX[i] - 0.5) * 1.6;
+      const wy = (warpY[i] - 0.5) * 1.6;
+      const u = x / size;
+      const v = y / size;
+      cell(pA, cA, (u + wx / cA) * cA, (v + wy / cA) * cA);
+      const hA = hole(wallD, 0.55);
+      cell(pB, cB, (u - wy / cB) * cB, (v + wx / cB) * cB);
+      const hB = hole(wallD, 0.5);
+      cell(pC, cC, (u + wy * 0.6 / cC) * cC, (v - wx * 0.6 / cC) * cC);
+      const hC = hole(wallD, 0.45);
+      // foam is wherever no hole has opened: the deepest hole of the three
+      // scales wins, so big pools are fringed with smaller bubbles
+      const open = Math.max(hA * hA * (0.75 + 0.5 * patch[i]), hB * (0.8 + 0.3 * fray[i]) * 0.9, hC * 0.72);
+      webA[i] = 1 - open + (patch[i] - 0.5) * 0.55 + (fray[i] - 0.5) * 0.25;
+      webB[i] = 1 - Math.max(hB * hB, hC * 0.6) + (soft[i] - 0.5) * 0.5;
+    }
+  }
+  const equalise = (f: Float32Array) => {
+    // value and index packed in one float64, so the native numeric sort does it
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 0; i < n; i++) {
+      lo = Math.min(lo, f[i]);
+      hi = Math.max(hi, f[i]);
+    }
+    const keys = new Float64Array(n);
+    const scale = 1e6 / Math.max(hi - lo, 1e-6);
+    for (let i = 0; i < n; i++) keys[i] = Math.floor((f[i] - lo) * scale) * 262144 + i;
+    keys.sort();
+    const out = new Float32Array(n);
+    for (let r = 0; r < n; r++) out[keys[r] % 262144] = r / (n - 1);
+    return out;
+  };
+  const eA = equalise(webA);
+  const eB = equalise(webB);
+  const data = new Uint8Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    data[i * 4] = Math.round(eA[i] * 255);
+    data[i * 4 + 1] = Math.round(fray[i] * 255);
+    data[i * 4 + 2] = Math.round(eB[i] * 255);
+    data[i * 4 + 3] = Math.round(soft[i] * 255);
+  }
+  return makeDataTexture(data, size);
+}
+
 export interface SharedTextures {
   waterNormal: THREE.DataTexture;
   noise: THREE.DataTexture;

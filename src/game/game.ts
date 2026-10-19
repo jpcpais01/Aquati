@@ -18,6 +18,7 @@ import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
 import { Ocean } from '../world/ocean';
+import { buildShore, setSurf } from '../world/shore';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, Wave } from '../world/waves';
 import { Atmosphere, WEATHER } from '../world/atmosphere';
@@ -290,6 +291,7 @@ export class Game {
     this.wake = new WakeField(q.wakeRes, 300);
     const seaFloor = this.terrain.createHeightTexture(512);
     this.wake.setTerrain(seaFloor);
+    buildShore(this.terrain);
     this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
     this.particles = new Particles(q.particles);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
@@ -1565,6 +1567,7 @@ export class Game {
     // bigger seas: CPU buoyancy and the GPU swell share the very same waves
     setSeaState(w.waves, this.baseWaves, a.sea);
     this.ocean.setWaves(w.waves);
+    setSurf(a.storm, a.sea, a.wind);
     this.applyAtmosphere();
   }
 
