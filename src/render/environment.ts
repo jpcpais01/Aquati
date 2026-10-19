@@ -147,8 +147,15 @@ const float AQ_CLOUD_ALT = 700.0;
 float cloudLo() {
   return 0.76 - uCloudCover * 0.58;
 }
-float cloudN(vec2 uv) {
-  return texture(uNoiseTex, uv).r * 0.62 + texture(uNoiseTex, uv * 2.7 + vec2(0.37, 0.71)).r * 0.38;
+// The cloud field: broad weather systems, fields of cloud within them, and
+// inverted Worley cells that heap each cloud into billows. The sky, its
+// reflection and the shadows on sea and islands all read this one field.
+float cloudField(vec2 uv) {
+  float n = texture(uNoiseTex, uv * 0.43 + vec2(0.61, 0.17)).r * 0.46
+    + texture(uNoiseTex, uv).r * 0.34
+    + texture(uNoiseTex, uv * 2.7 + vec2(0.37, 0.71)).r * 0.2;
+  float b = 1.0 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b;
+  return 0.5 + (n - 0.5) * 1.35 + (b - 0.55) * 0.12;
 }
 // cloud-texture coordinates where a ray from p along d meets the deck at
 // altitude alt; every slice of a column maps to the patch of sea it shades
@@ -163,22 +170,19 @@ vec2 cloudUv(vec3 p, vec3 d, float alt, out float dist) {
 // one that casts the shadows; inverted Worley cells heap it into billows.
 vec3 cloudSample(vec2 uv) {
   float lo = cloudLo();
-  float b1 = 1.0 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b;
-  float b2 = 1.0 - texture(uNoiseTex, uv * 0.95 + vec2(0.71, 0.29)).b;
-  float dn = cloudN(uv) + (b1 * 0.7 + b2 * 0.3 - 0.55) * 0.2;
-  float body = smoothstep(lo - 0.02, lo + 0.1, dn);
-  float thick = smoothstep(lo, lo + 0.25 + uCloudCover * 0.2, dn);
-  vec2 ts = normalize(uSunDir.xz + vec2(1e-4)) * 0.05;
-  float ns = cloudN(uv + ts) + (0.45 - texture(uNoiseTex, (uv + ts) * 0.38 + vec2(0.13, 0.57)).b) * 0.14;
+  float dn = cloudField(uv) + (0.5 - texture(uNoiseTex, uv * 0.95 + vec2(0.71, 0.29)).b) * 0.06;
+  float body = smoothstep(lo, lo + 0.1, dn);
+  // thin at the rim, dense in the core: each cloud carries its own shading
+  float thick = smoothstep(lo, lo + 0.14 + uCloudCover * 0.3, dn);
+  float ns = cloudField(uv + normalize(uSunDir.xz + vec2(1e-4)) * 0.05);
   float sunlit = exp(-max(ns - lo, 0.0) * 4.0);
   return vec3(body, thick, sunlit);
 }
-// two taps: enough for the cloud deck's reflection in a moving sea
+// the cloud deck's reflection in a moving sea needs no self-shadowing
 vec3 cloudSampleLite(vec2 uv) {
   float lo = cloudLo();
-  float b1 = 1.0 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b;
-  float dn = texture(uNoiseTex, uv).r + (b1 - 0.55) * 0.16;
-  return vec3(smoothstep(lo - 0.02, lo + 0.12, dn), smoothstep(lo, lo + 0.25 + uCloudCover * 0.2, dn), 0.6);
+  float dn = cloudField(uv);
+  return vec3(smoothstep(lo, lo + 0.1, dn), smoothstep(lo, lo + 0.14 + uCloudCover * 0.3, dn), 0.6);
 }
 // Lit cloud seen along d. Seen from below, thin edges glow with the sun
 // passing through them while dense cores sink to a blue-grey lit only by the
@@ -187,15 +191,15 @@ vec3 cloudColor(vec3 c, vec3 d) {
   float mu = dot(d, uSunDir);
   float fwd = pow(max(mu, 0.0), 8.0);
   vec3 sky = mix(uSkyHorizon, uSkyZenith, 0.4) * 0.55 + uLight * 0.32;
-  vec3 amb = sky * (1.05 - c.y * (0.48 + uStorm * 0.25));
-  float tr = c.z * (1.0 - c.y * 0.72);
+  vec3 amb = sky * (1.05 - c.y * (0.5 + uStorm * 0.25));
+  float tr = c.z * exp(-c.y * 2.0);
   vec3 sun = uSunColor * tr * (0.3 + 0.22 * max(mu, 0.0) + fwd * 1.1);
   return amb + sun + vec3(0.62, 0.7, 0.95) * uFlash * 0.6;
 }
 float cloudShadow(vec2 xz) {
   vec2 uv = xz * 0.0011 + uCloudOffset;
-  // the same billowed field the sky draws, so shadows match the clouds above
-  float n = cloudN(uv) + (0.45 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b) * 0.14;
+  // the same field the sky draws, so every shadow belongs to a cloud above
+  float n = cloudField(uv);
   // coverage slides the threshold: a few puffs on a clear day, a solid deck in a storm
   float lo = cloudLo();
   return mix(1.0, 0.5, smoothstep(lo, lo + 0.18, n));
