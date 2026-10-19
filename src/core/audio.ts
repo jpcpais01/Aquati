@@ -719,6 +719,49 @@ export class Audio {
     }
   }
 
+  /** The harbour bell on the quay: a bronze strike with inharmonic partials, rung `n` times. */
+  bell(n = 2, vol = 0.22) {
+    const v = this.voice(vol, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    for (let k = 0; k < n; k++) {
+      const t = ctx.currentTime + k * 0.62;
+      [[523.3, 1], [1046.5, 0.5], [1260, 0.32], [1570, 0.22], [2095, 0.12]].forEach(([fr, a]) => {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = fr;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(0.5 * a, t + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 2.4 - a * 0.6);
+        o.connect(g).connect(out);
+        o.start(t);
+        o.stop(t + 2.5);
+      });
+    }
+  }
+
+  /** A sale: coins pour into the purse, more for a bigger sum. */
+  sale(value: number) {
+    const v = this.voice(0.16, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const n = Math.min(14, 3 + Math.floor(Math.log2(1 + value / 30)));
+    for (let i = 0; i < n; i++) {
+      const t = ctx.currentTime + i * 0.055 + Math.random() * 0.02;
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = 1900 + Math.random() * 1600;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.32, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.2);
+    }
+    this.coin();
+  }
+
   /** A side's guns run out again: two dull knocks from the gun deck and a small bright bell. */
   gunsReady(pan: number) {
     const v = this.voice(0.2, pan);

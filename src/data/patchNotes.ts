@@ -26,6 +26,16 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Plunder and trading ports',
+        notes: [
+          'Chests and barrels no longer spill plain gold. They hold real plunder: 30 kinds of goods across five rarities, from casks of rum, coffee and cheese up through silk, pearls, emeralds, old paintings and a sultan\'s ruby, to legendary finds like the Crown of the Drowned King and the Kraken\'s Pearl.',
+          'Everything you haul aboard goes into your ship\'s hold. A sloop carries 10 lots, a brig 16 and a galleon 26. When it is full, cheaper cargo goes over the side to make room for finer goods. Tap the crate beside your gold to see what is aboard. If she sinks, the hold goes down with her.',
+          'To turn plunder into gold, sail to one of four trading ports around the archipelago: Port Cinnabar, Goldwater, Saint Coral and Rumbelow. They are marked on the minimap and the chart. Come alongside the quay and press F (or tap the prompt) to dock.',
+          'Each market has its own tastes. The bankers of Goldwater pay best for gems and gold, Saint Coral collects art and relics, and Rumbelow is thirsty for rum. Prices drift a little over time. Sell lot by lot or the whole hold at once, then pay for repairs and fresh special shot before you cast off.',
+          'The ports are alive. Townsfolk wave as you sail in, the harbourmaster rings the bell, and porters run up the gangplank to carry your goods ashore while the quay cheers a big sale. Merchants cry their wares, a fiddler plays, children run about and a fisherman tends his line.',
+        ],
+      },
+      {
         title: 'Surf that really breaks on the beach',
         notes: [
           'Waves now roll in to every island, line up along the coast, swing into the bays and stand up as the water gets shallow, glowing turquoise through their thin faces before they spill over into whitewater.',

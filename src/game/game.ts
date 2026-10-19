@@ -37,16 +37,20 @@ import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
 import { PhotoMode } from '../ui/photo';
-import { FxItem, fxItem, Item, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { FxItem, fxItem, Item as Cosmetic, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
 import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
-import { findPortSite, portClearings } from '../port/site';
+import { findPortSite, findTradeSites, portClearings } from '../port/site';
+import { TradePort, TradePorts } from '../port/tradePort';
+import { holdPeek, MarketUI } from '../ui/market';
+import { lootIcon } from '../ui/lootArt';
+import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES } from './treasure';
 import { CameraRig } from './cameraRig';
 import { Gunnery, Side } from './gunnery';
 import { Captain } from './captain';
 import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
-import { Loot, RARITY } from './loot';
+import { Item, Loot, RARITY } from './loot';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
 import { World } from './world';
 
@@ -59,7 +63,7 @@ const SHADOW_TOP = 320;
 const SHADOW_FLOOR = -140;
 import { ShipCollisions } from './collisions';
 
-type State = 'loading' | 'menu' | 'port' | 'playing' | 'paused' | 'dead';
+type State = 'loading' | 'menu' | 'port' | 'playing' | 'paused' | 'docked' | 'dead';
 
 const PIRATE_NAMES = [
   'Black Gull', 'Salt Widow', 'Crimson Tide', 'Grim Mariner', 'Sea Wraith', 'Rusty Anchor', 'Dread Marlin', 'Bone Siren',
@@ -168,7 +172,7 @@ export class Game {
   private vstage!: VaultStage;
   private vaultOn = false;
   private vShot: StageShot = 'home';
-  private vShow: Item | null = null;
+  private vShow: Cosmetic | null = null;
   private vFireT = 0;
   private vTime = 0;
   private vSide: 1 | -1 = 1;
@@ -188,6 +192,14 @@ export class Game {
   /** Pixel ratio forced for one high-resolution capture (0 in play). */
   private captureDpr = 0;
   private fpv = false;
+  // the trading ports: the hold you fill at sea and the markets that buy it
+  private tradePorts!: TradePorts;
+  private market = new MarketUI();
+  private hold = new Hold(HOLD_ROOM.sloop);
+  private peek = document.createElement('div');
+  private dockPort: TradePort | null = null;
+  private dockT = 0;
+  private holdNagT = 0;
   private sky = createSkyDome();
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -278,6 +290,7 @@ export class Game {
 
     this.wireUI();
     this.wireShipwright();
+    this.wireTrade();
     // browsers only let sound start from a gesture (and on phones a touch only
     // counts once it lifts), so any tap or key in the harbour wakes the theme
     const wake = () => {
@@ -314,7 +327,8 @@ export class Game {
     ui.progress(0.5);
     await nextFrame();
     const site = findPortSite(this.terrain, this.spawnPoint);
-    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, portClearings(site), q.tier === 0));
+    const tradeSites = findTradeSites(this.terrain, 4, [site]);
+    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [site, ...tradeSites].flatMap(portClearings), q.tier === 0));
     ui.progress(0.62);
     await nextFrame();
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
@@ -323,6 +337,18 @@ export class Game {
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
+    this.tradePorts = new TradePorts(tradeSites, (x, z) => this.terrain.heightAt(x, z));
+    this.opaque.add(this.tradePorts.root);
+    for (const tp of this.tradePorts.ports) {
+      tp.onBell = () => this.audio.bell(2, tp === this.dockPort ? 0.22 : 0.08);
+      tp.onDelivered = (id, on, at) => {
+        // a lot set down in the warehouse: it glints in its rarity's colour
+        if (tp !== this.dockPort || on) return;
+        const c = RARITY[LOOT[id].rarity].glow;
+        const tint: [number, number, number] = LOOT[id].rarity ? [c[0] * 0.6, c[1] * 0.6, c[2] * 0.6] : [1.4, 1.1, 0.6];
+        for (let i = 0; i < 5; i++) this.particles.sparkle(at, tint, 0.8);
+      };
+    }
     this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.birds.mesh);
     ui.progress(0.75);
@@ -406,6 +432,7 @@ export class Game {
     // twice: the first pass makes the shadow map, which the water then switches on.
     // Plants stay unculled so every one of their batches is drawn too.
     veg.hold = true;
+    this.tradePorts.warm();
     warmDraw([this.opaque, this.water, this.ocean.reflScene], () => {
       this.render(0);
       this.render(0);
@@ -627,7 +654,7 @@ export class Game {
   }
 
   /** The showcase: your ship tries on an item (or goes back to what she wears). */
-  private vaultPreview(it: Item | null) {
+  private vaultPreview(it: Cosmetic | null) {
     const s = this.preview;
     this.vShow = it;
     this.vstage.hushed = !!it;
@@ -829,10 +856,16 @@ export class Game {
     if (!p) return;
     this.swTime += dt;
     const sway = Math.sin(this.swTime * 0.16) * 0.07;
-    // keep the ship in the part of the screen the panel leaves free
+    const fit = this.fitPanel(this.shipwright.panelRect());
+    const shot = this.port.shot(this.swFocus, p, this.swAz + sway, this.swZoom * fit);
+    this.rig.shotPos.copy(shot.pos);
+    this.rig.shotLook.copy(shot.look);
+  }
+
+  /** Shifts the view into the part of the screen a side panel (or bottom sheet) leaves free; returns how far to back off. */
+  private fitPanel(r: DOMRect) {
     const W = innerWidth;
     const H = innerHeight;
-    const r = this.shipwright.panelRect();
     const vs = this.rig.viewShift;
     let fw = W;
     let fh = H;
@@ -847,10 +880,217 @@ export class Game {
       fh = Math.max(r.top, H * 0.2);
     }
     // the shots are framed for a wide free area; back off when it is narrow or short
-    const fit = clamp(Math.max(1.17 / (fw / H), fh > 0 ? H / fh : 1) ** 0.85, 1, 2.6);
-    const shot = this.port.shot(this.swFocus, p, this.swAz + sway, this.swZoom * fit);
+    return clamp(Math.max(1.17 / (fw / H), fh > 0 ? H / fh : 1) ** 0.85, 1, 2.6);
+  }
+
+  // ------------------------------------------------------------------ trading ports
+
+  private wireTrade() {
+    const m = this.market;
+    document.body.appendChild(m.root);
+    m.onClick = () => {
+      this.audio.start();
+      this.audio.click();
+    };
+    m.onDock = () => {
+      const near = this.player && this.tradePorts.nearest(this.player.pos.x, this.player.pos.z);
+      if (near) this.dock(near.port);
+    };
+    m.onSell = (id) => this.sell(id);
+    m.onSellAll = () => this.sell(null);
+    m.onRepair = () => this.buyRepair();
+    m.onShot = () => this.buyShot();
+    m.onLeave = () => this.castOff();
+    // the hold chip opens a peek at what's aboard
+    const chip = document.getElementById('hud-hold-chip')!;
+    const peek = this.peek;
+    peek.className = 'hold-peek';
+    document.getElementById('hud')!.appendChild(peek);
+    const draw = () => {
+      peek.innerHTML = `<h4>Ship's hold <span>${this.hold.used} / ${this.hold.capacity} room</span></h4>${holdPeek(this.hold)}`;
+    };
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.audio.click();
+      if (!peek.classList.toggle('on')) return;
+      draw();
+    });
+    addEventListener('pointerdown', (e) => {
+      if (peek.classList.contains('on') && !peek.contains(e.target as Node) && !chip.contains(e.target as Node)) peek.classList.remove('on');
+    });
+    this.hold.onChange = () => {
+      this.ui.setHold(this.hold.used, this.hold.capacity);
+      if (peek.classList.contains('on')) draw();
+    };
+  }
+
+  /** Off a quay's seaward face: offer to come alongside (F or a tap), unless pirates are on her tail. */
+  private updateDockPrompt(p: Ship) {
+    const near = p.alive ? this.tradePorts.nearest(p.pos.x, p.pos.z) : null;
+    const port = near && near.port.inReach(p.pos.x, p.pos.z) ? near.port : null;
+    if (!port) {
+      this.market.setDock(null);
+      return;
+    }
+    const chased = !!this.lastFoe;
+    const n = this.hold.count;
+    const why = chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
+    this.market.setDock({ name: port.name, ok: !chased, why });
+    if (!chased && !this.fpv && this.input.state.helm) this.dock(port);
+  }
+
+  /** Comes alongside: the ship ties up, the porters wake and the market opens. */
+  private dock(port: TradePort) {
+    const p = this.player;
+    if (!p || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe) return;
+    this.setChart(false);
+    this.setView(false);
+    this.input.releaseLook();
+    this.input.enabled = false;
+    this.peek.classList.remove('on');
+    this.veil.innerHTML = `<span>Coming alongside at ${port.name}…</span>`;
+    void this.fade(() => {
+      this.state = 'docked';
+      this.dockPort = port;
+      this.ui.showHud(false);
+      this.market.setDock(null);
+      p.anchored = true;
+      p.sailTarget = 0;
+      p.rudder = 0;
+      port.setShip(p);
+      port.pin(p);
+      p.update(0.016, this.world);
+      port.pin(p);
+      p.root.updateMatrixWorld(true);
+      this.market.open(port.name, port.spec.taste.tagline, port.market, this.hold, p.gold, this.world.time);
+      this.refreshServices();
+      // start wide and let the camera settle in on the quay
+      this.dockT = 0;
+      this.rig.mode = 'port';
+      this.frameDock(0);
+      this.rig.snapShot();
+      this.note('trade', `Docked at ${port.name}`, port.spec.house);
+    });
+  }
+
+  private frameDock(dt: number) {
+    const port = this.dockPort;
+    const p = this.player;
+    if (!port || !p) return;
+    this.dockT += dt;
+    const fit = this.fitPanel(this.market.panelRect());
+    const settle = 1 + 0.8 * Math.exp(-this.dockT * 0.7);
+    const sway = Math.sin(this.dockT * 0.13) * 0.08;
+    const shot = port.shot(p, sway, fit * settle);
     this.rig.shotPos.copy(shot.pos);
     this.rig.shotLook.copy(shot.look);
+  }
+
+  /** What the chandlery can do for her right now. */
+  private serviceCosts() {
+    const p = this.player!;
+    const hp = Math.max(0, Math.ceil(p.maxHp - p.hp));
+    let shotN = 0;
+    for (const id of SPECIALS) shotN += Math.max(0, AMMO[id].max - this.ammoStock[id]);
+    return { repair: Math.ceil(hp * 0.5), repairHp: hp, shot: shotN * 9, shotN };
+  }
+
+  private refreshServices() {
+    this.market.setServices(this.serviceCosts());
+    this.market.setGold(this.player?.gold ?? 0);
+  }
+
+  /** Sells one lot (or the whole hold) at today's prices. */
+  private sell(id: LootId | null) {
+    const port = this.dockPort;
+    const p = this.player;
+    if (!port || !p || this.state !== 'docked') return;
+    const t = this.world.time;
+    const lots = id ? [{ id, n: this.hold.has(id) }] : this.hold.list();
+    const goods: LootId[] = [];
+    let total = 0;
+    let best = 0;
+    for (const lot of lots) {
+      if (!lot.n) continue;
+      total += port.market.price(lot.id, t) * lot.n;
+      best = Math.max(best, LOOT[lot.id].rarity);
+      this.hold.take(lot.id, lot.n, false);
+      for (let i = 0; i < lot.n; i++) goods.push(lot.id);
+    }
+    if (!total) return;
+    this.hold.onChange();
+    p.gold += total;
+    this.vaultStore.earn(total);
+    if (id) this.market.sold(id, total);
+    else this.market.soldAll(total);
+    this.refreshServices();
+    // the porters carry it ashore, finest first, and the quay cheers a good sale
+    port.unload(goods);
+    port.cheer(total >= 1500 || best >= 4 ? 2 : total >= 250 || best >= 2 ? 1 : 0.5);
+    this.audio.sale(total);
+    if (best >= 3) this.audio.treasure(best);
+    this.note('trade', id ? `Sold ${goods.length > 1 ? `${goods.length} × ` : ''}${LOOT[id].name}` : `Sold the hold (${goods.length} goods)`, `${port.name} · +${total} gold`);
+  }
+
+  private buyRepair() {
+    const p = this.player;
+    const port = this.dockPort;
+    if (!p || !port) return;
+    const c = this.serviceCosts();
+    if (!c.repair || c.repair > p.gold) return;
+    p.gold -= c.repair;
+    p.hp = p.maxHp;
+    port.unload(['calico', 'calico', 'cheese'].slice(0, 1 + Math.min(2, Math.floor(c.repairHp / 80))) as LootId[], true);
+    this.audio.coin();
+    this.refreshServices();
+  }
+
+  private buyShot() {
+    const p = this.player;
+    const port = this.dockPort;
+    if (!p || !port) return;
+    const c = this.serviceCosts();
+    if (!c.shot || c.shot > p.gold) return;
+    p.gold -= c.shot;
+    const add: Partial<AmmoStock> = {};
+    for (const id of SPECIALS) add[id] = AMMO[id].max - this.ammoStock[id];
+    this.stockAmmo(add, null);
+    port.unload(['rum', 'rum'] as LootId[], true);
+    this.audio.coin();
+    this.refreshServices();
+  }
+
+  /** Casts off: back out to sea, clear of the quay, sails set. */
+  private castOff() {
+    const p = this.player;
+    const port = this.dockPort;
+    if (!p || !port || this.state !== 'docked' || this.swBusy) return;
+    this.veil.innerHTML = '<span>Casting off…</span>';
+    void this.fade(() => this.undock(true));
+  }
+
+  /** Lets go of the quay; `sail` puts her back at sea under way. */
+  private undock(sail: boolean) {
+    const p = this.player;
+    const port = this.dockPort;
+    this.market.close();
+    this.dockPort = null;
+    port?.setShip(null);
+    this.rig.camera.clearViewOffset();
+    this.rig.viewShift.x = this.rig.viewShift.y = 0;
+    if (!p || !port || !sail) return;
+    const c = port.castOff(p.cls.beam);
+    p.pos.set(c.x, 0, c.z);
+    p.heading = c.heading;
+    p.anchored = false;
+    p.speed = 3;
+    p.sailTarget = 2 / 3;
+    this.state = 'playing';
+    this.input.enabled = true;
+    this.ui.showHud(true);
+    this.rig.mode = 'follow';
+    this.rig.snapTo(p.pos);
+    this.last = performance.now();
   }
 
   private resize() {
@@ -1046,6 +1286,8 @@ export class Game {
     this.log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] };
     this.discovered.clear();
     this.ammoStock = freshStock();
+    this.hold.capacity = HOLD_ROOM[p.cls.id] ?? 12;
+    this.hold.clear();
     p.ammo = 'round';
     this.ui.setFan(false);
     this.input.enabled = true;
@@ -1059,6 +1301,8 @@ export class Game {
   }
 
   private resetWorld() {
+    if (this.dockPort) this.undock(false);
+    this.peek.classList.remove('on');
     this.setView(false);
     this.rig.resetEye();
     for (const s of this.ships.slice()) this.removeShip(s);
@@ -1353,9 +1597,48 @@ export class Game {
     }
   }
 
+  /** Salvage hauled aboard: its goods go into the hold, its shot into the racks, and it patches the hull. */
+  private haul(p: Ship, it: Item) {
+    const w = this.world;
+    p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
+    const at = new THREE.Vector3(it.x, 2, it.z);
+    this.stockAmmo(ammoLoot(it.tier), at);
+    const res = this.hold.stow(it.goods);
+    const [x, y] = this.screenOf(at);
+    const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
+    const best = kept[0];
+    if (res.tossed.length) this.nagHold(res.tossed.length);
+    if (!best) return;
+    const k = LOOT[best];
+    const more = kept.length > 1 ? ` +${kept.length - 1}` : '';
+    if (it.tier === 0) {
+      this.ui.floater(`${k.name}${more}`, x, y, 'loot');
+      this.audio.coin();
+      return;
+    }
+    const R = RARITY[it.tier];
+    this.log.chests++;
+    this.log.best = Math.max(this.log.best, it.tier);
+    if (it.tier >= 2) this.note('chest', `${R.name} chest`, kept.map((id) => LOOT[id].name).join(', '));
+    this.ui.floater(`${R.name} chest: ${k.name}${more}`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[it.tier]);
+    w.particles.treasure(new THREE.Vector3(it.x, w.waterHeight(it.x, it.z), it.z), R.glow, it.tier);
+    this.audio.treasure(it.tier);
+    if (k.rarity >= 2) this.ui.lootToast(lootIcon(best), k.rarity, `${RARITIES[k.rarity].name} plunder`, k.name, k.rarity === 4 ? 3.8 : 3);
+    if (it.tier >= 3) this.rig.shake(it.tier === 4 ? 0.22 : 0.1);
+  }
+
+  /** Says (now and then) that the hold is full and where to empty it. */
+  private nagHold(tossed = 0) {
+    if (this.holdNagT > 0) return;
+    this.holdNagT = 9;
+    const near = this.player && this.tradePorts.nearest(this.player.pos.x, this.player.pos.z);
+    const where = near ? `Sell at ${near.port.name} to make room` : 'Sell at a trading port to make room';
+    this.ui.toast(tossed ? `Hold full · ${tossed} cheap ${tossed === 1 ? 'good' : 'goods'} over the side` : 'Hold full', where, 3.4);
+  }
+
   /** A line in the ship's log, for the farewell. */
   private note(kind: VoyageEvent['kind'], text: string, detail = '') {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' && this.state !== 'docked') return;
     const ev = this.log.events;
     ev.push({ t: this.voyageTime, kind, text, detail });
     if (ev.length > 40) ev.splice(0, 1);
@@ -1369,6 +1652,7 @@ export class Game {
     this.input.releaseLook();
     this.setChart(false);
     this.setView(false);
+    if (this.hold.count) this.note('trade', 'The hold went down with her', `${this.hold.count} goods worth about ${this.hold.worth} gold`);
     this.state = 'dead';
     // your own ship founders in moments rather than lingering as a hulk
     p.wreckLife = 3;
@@ -1820,11 +2104,13 @@ export class Game {
     // the shipwright's ship stays tied up at the quay
     const inPort = this.state === 'port' && this.preview;
     if (inPort) this.port.pin(this.preview!);
+    const docked = this.state === 'docked' && this.player && this.dockPort;
     P.end();
 
     // AI & ships
     P.begin('Pirate AI', 'ships');
-    for (const ai of this.ais.values()) ai.update(dt, w, this.player && this.player.alive ? this.player : null, this.ships);
+    const prey = this.player && this.player.alive && this.state !== 'docked' ? this.player : null;
+    for (const ai of this.ais.values()) ai.update(dt, w, prey, this.ships);
     P.end();
     P.begin('Ship physics & rigging', 'ships');
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
@@ -1843,6 +2129,14 @@ export class Game {
     P.end();
     P.begin('Shipyard (prebuilds)', 'ships');
     if (dt > 0) this.runShipyard();
+    P.end();
+    P.begin('Trading ports', 'sim');
+    this.tradePorts.update(dt, w, this.player, this.rig.camera.position, this.ships);
+    if (docked) {
+      this.dockPort!.pin(this.player!);
+      this.market.tick(realDt, w.time);
+      this.frameDock(realDt);
+    }
     P.end();
     if (inPort) {
       P.begin('Harbour', 'sim');
@@ -1863,30 +2157,16 @@ export class Game {
     const p = this.player;
     if (p && this.state === 'playing') {
       if (p.alive && w.time - p.lastHit > 9) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.01 * dt);
-      const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2);
-      for (const it of got) {
-        p.gold += it.value;
-        this.vaultStore.earn(it.value);
-        p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
-        this.stockAmmo(ammoLoot(it.tier), new THREE.Vector3(it.x, 2, it.z));
-        const [x, y] = this.screenOf(new THREE.Vector3(it.x, 2, it.z));
-        if (it.tier === 0) {
-          this.ui.floater(`+${it.value} gold`, x, y, 'loot');
-          this.audio.coin();
-          continue;
-        }
-        const R = RARITY[it.tier];
-        this.log.chests++;
-        this.log.best = Math.max(this.log.best, it.tier);
-        if (it.tier >= 2) this.note('chest', `${R.name} chest`, `+${it.value} gold`);
-        this.ui.floater(`${R.name} chest +${it.value}`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[it.tier]);
-        w.particles.treasure(new THREE.Vector3(it.x, w.waterHeight(it.x, it.z), it.z), R.glow, it.tier);
-        this.audio.treasure(it.tier);
-        if (it.tier >= 3) {
-          this.ui.toast(`${R.name} treasure`, `+${it.value} gold`, it.tier === 4 ? 3.6 : 2.8);
-          this.rig.shake(it.tier === 4 ? 0.22 : 0.1);
-        }
-      }
+      // a full hold leaves what it can't take bobbing on the swell
+      const refuse = (it: { goods: LootId[] }) => {
+        if (this.hold.wouldKeep(it.goods)) return false;
+        this.nagHold();
+        return true;
+      };
+      const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2, refuse);
+      for (const it of got) this.haul(p, it);
+      this.holdNagT -= dt;
+      this.updateDockPrompt(p);
       this.checkDiscoveries(p);
       this.directSpawns(dt);
       // rammed or holed on a reef: no cannonball to report it
@@ -1986,11 +2266,12 @@ export class Game {
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.ui.updateAmmo(p.ammo, this.ammoStock);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
-      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered);
+      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports);
     }
     if (p && this.chartOpen) {
       this.ui.drawChart({
         player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
+        ports: this.tradePorts.ports.map((tp) => ({ x: tp.x, z: tp.z, name: tp.name })),
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });
     }

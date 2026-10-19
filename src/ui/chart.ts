@@ -10,12 +10,53 @@ const HALF = WORLD_SIZE / 2;
 const SPYGLASS = 650; // pirates are only charted within this range of you
 const MAX_ZOOM = 6;
 
+/** A trading port on a map: a gilt disc with a pair of scales. */
+export function portMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  g.save();
+  g.translate(x, y);
+  g.shadowColor = 'rgba(255, 196, 80, 0.8)';
+  g.shadowBlur = r;
+  g.fillStyle = '#f4c255';
+  g.strokeStyle = 'rgba(40, 22, 6, 0.85)';
+  g.lineWidth = Math.max(1.5, r * 0.2);
+  g.beginPath();
+  g.arc(0, 0, r, 0, Math.PI * 2);
+  g.fill();
+  g.shadowBlur = 0;
+  g.stroke();
+  // scales: post, beam and two pans
+  const k = r / 10;
+  g.strokeStyle = '#4a2a0c';
+  g.lineWidth = 1.6 * k;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(0, -5.5 * k);
+  g.lineTo(0, 5.5 * k);
+  g.moveTo(-4 * k, 5.5 * k);
+  g.lineTo(4 * k, 5.5 * k);
+  g.moveTo(-5.5 * k, -3.5 * k);
+  g.lineTo(5.5 * k, -3.5 * k);
+  g.stroke();
+  g.fillStyle = '#4a2a0c';
+  for (const s of [-1, 1]) {
+    g.beginPath();
+    g.moveTo(s * 5.5 * k - 3 * k, 0.5 * k);
+    g.lineTo(s * 5.5 * k + 3 * k, 0.5 * k);
+    g.lineTo(s * 5.5 * k, -3.5 * k);
+    g.closePath();
+    g.fill();
+  }
+  g.restore();
+}
+
 export interface ChartScene {
   player: Ship;
   ships: Ship[];
   loot: { x: number; z: number; tier?: number }[];
   islands: Island[];
   discovered: Set<string>;
+  /** Trading ports, always marked: sailors know where the markets are. */
+  ports?: { x: number; z: number; name: string }[];
   windX: number;
   windZ: number;
   time: number;
@@ -289,6 +330,18 @@ export class SeaChart {
         g.fillStyle = 'rgba(255, 241, 200, 0.7)';
         g.fillText('Uncharted', x, ly);
       }
+    }
+
+    // trading ports
+    g.font = '600 12px Cinzel, Georgia, serif';
+    for (const pt of sc.ports ?? []) {
+      const [x, y] = toS(pt.x, pt.z);
+      portMark(g, x, y, 9);
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+      g.strokeText(pt.name, x, y - 18);
+      g.fillStyle = '#ffd77a';
+      g.fillText(pt.name, x, y - 18);
     }
 
     const p = sc.player;
