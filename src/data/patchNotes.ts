@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T19:00Z',
     entries: [
       {
+        title: 'No more stripes on sails and underwater',
+        notes: [
+          'Fixed the faint horizontal lines that could streak across sails, island slopes and the whole screen while following a sinking ship underwater. The fine contact shadows were misreading which way some surfaces faced on alternate rows of pixels; they now read every surface correctly and keep their crisp shadows under crew, guns and rigging.',
+        ],
+      },
+      {
         title: 'A bow wave made of water, not smoke',
         notes: [
           'The puffy white blobs at the front of every ship are gone. Now a curling sheet of white water climbs the stem, rolls over into a lip and peels back along both bows, growing taller the faster you sail.',
