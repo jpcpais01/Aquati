@@ -16,6 +16,18 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'Calmer seas: fewer pirates',
+        notes: [
+          'About 60% fewer pirates now roam around you: two to start, rising to at most four as you sink more, and new sails take noticeably longer to appear on the horizon.',
+          'Pirate flotillas are rarer and smaller, usually a flagship with one or two escorts, so there is more time to explore between fights.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T18:00Z',
+    entries: [
+      {
         title: 'Photo mode',
         notes: [
           'Press P, tap the new camera button by the minimap, or pick Photo mode from the pause menu. The voyage freezes mid-moment, every bit of HUD steps aside and the camera is yours.',

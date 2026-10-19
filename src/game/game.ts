@@ -896,9 +896,8 @@ export class Game {
     this.frameMenu();
     // a couple of pirates on the horizon for life
     if (!this.ships.some((s) => s.team === 'pirate')) {
-      this.spawnPirate(this.spawnPoint, 160, 260);
-      this.spawnPirate(this.spawnPoint, 220, 340);
-      this.spawnFlotilla(this.spawnPoint, 300, 420, 3);
+      this.spawnPirate(this.spawnPoint, 180, 300);
+      this.spawnFlotilla(this.spawnPoint, 300, 420, 2);
     }
   }
 
@@ -1210,7 +1209,7 @@ export class Game {
 
   private onSunk(ship: Ship, attacker: Ship) {
     // the replacement waits until the wreck has settled
-    this.spawnTimer = Math.max(this.spawnTimer, 5);
+    this.spawnTimer = Math.max(this.spawnTimer, 10);
     const bounty = { sloop: 60, brig: 110, galleon: 220 }[ship.cls.id];
     const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
@@ -2000,13 +1999,13 @@ export class Game {
       if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
     }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive).length;
-    const want = Math.min(11, 6 + Math.floor(p.kills / 2));
+    const want = Math.min(4, 2 + Math.floor(p.kills / 4));
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
       const room = want - alivePirates;
-      if (room >= 3 && this.voyageTime > 40 && Math.random() < 0.4) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, p.kills >= 6 ? 4 : 3));
+      if (room >= 2 && this.voyageTime > 60 && Math.random() < 0.25) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, 3));
       else this.spawnPirate(p.pos, 280, 480);
-      this.spawnTimer = 5 + Math.random() * 5;
+      this.spawnTimer = 12 + Math.random() * 8;
     }
   }
 
