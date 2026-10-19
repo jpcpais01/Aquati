@@ -405,6 +405,8 @@ export class ShipModel {
   readonly yardPivots: THREE.Object3D[] = [];
   readonly foreAftPivots: THREE.Object3D[] = [];
   readonly flagPivot = new THREE.Group();
+  /** Where a gull can land (hull-root space): mast caps, fighting-top rails, the jib-boom knob. `spar` is the mast index, -1 the bowsprit. */
+  readonly perches: { pos: THREE.Vector3; spar: number }[] = [];
   /** Ensign on a staff over the taffrail; it flies the same flag. */
   readonly ensignPivot = new THREE.Group();
   readonly sailMaterial: THREE.MeshStandardMaterial;
@@ -1241,6 +1243,7 @@ export class ShipModel {
       this.trimParts.push(cap);
       const top = new THREE.Vector3(0, y0 + H, z);
       mastTops.push(top);
+      this.perches.push({ pos: new THREE.Vector3(0, y0 + H + 0.05 + r0 * 0.4, z), spar: mi });
       if (H > maxMast) {
         maxMast = H;
         maxMastTop = top.clone();
@@ -1259,6 +1262,7 @@ export class ShipModel {
         rail.rotateX(Math.PI / 2);
         rail.translate(0, ty + 0.62, z);
         this.trimParts.push(rail);
+        for (const side of [1, -1]) this.perches.push({ pos: new THREE.Vector3(side * B * 0.155, ty + 0.66, z), spar: mi });
         for (let i = 0; i < 8; i++) {
           if (i === 2 || i === 6) continue; // gaps where the shrouds come up
           const a = (i / 8) * Math.PI * 2;
@@ -1503,6 +1507,7 @@ export class ShipModel {
     const jbEnd = tip.clone().addScaledVector(bsDir, c.bowsprit * 0.4);
     this.woodParts.push(colorize(spar(tip.clone().addScaledVector(bsDir, -1.2).add(new THREE.Vector3(0, 0.16, 0)), jbEnd.clone().add(new THREE.Vector3(0, 0.12, 0)), 0.09, 0.06, 6), woodCol));
     this.trimParts.push(ball(0.11, jbEnd.clone().add(new THREE.Vector3(0, 0.12, 0))));
+    this.perches.push({ pos: jbEnd.clone().add(new THREE.Vector3(0, 0.23, 0)), spar: -1 });
     const capG = rbox(0.42, 0.62, 0.3, 0.1);
     capG.applyMatrix4(new THREE.Matrix4().compose(tip.clone().add(new THREE.Vector3(0, 0.1, 0)), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), bsDir), new THREE.Vector3(1, 1, 1)));
     this.woodParts.push(colorize(capG, darkWood));
@@ -1570,7 +1575,9 @@ export class ShipModel {
     for (let i = 0; i < mastTops.length - 1; i++) this.rope(mastTops[i], mastTops[i + 1].clone().add(new THREE.Vector3(0, -c.masts[i + 1].height * 0.35, 0)));
     for (const side of [1, -1]) this.rope(mastTops[0], s.skinPoint(0.05, s.top(0.05) + 0.05, side, -0.12));
 
-    // the ship's flag on the tallest mast
+    // the ship's flag on the tallest mast (so no gull sits on that cap)
+    const flagCap = this.perches.findIndex((p) => p.pos.x === 0 && Math.abs(p.pos.z - maxMastTop.z) < 1e-4);
+    if (flagCap >= 0) this.perches.splice(flagCap, 1);
     this.flagPivot.position.copy(maxMastTop).add(new THREE.Vector3(0, 0.35, 0));
     const flagW = 2.2 + c.length * 0.07;
     const flag = new THREE.Mesh(this.flagGeometry(flagW), this.mats.flag);

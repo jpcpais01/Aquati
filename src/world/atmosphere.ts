@@ -141,6 +141,28 @@ const pick = <T>(opts: [T, number][]): T => {
 };
 
 const MODE_KEY = 'aquati.weather';
+const TIME_KEY = 'aquati.time';
+
+export const TIMES = {
+  dawn: { name: 'Dawn', hour: 6.3 },
+  noon: { name: 'Noon', hour: 12.5 },
+  golden: { name: 'Golden hour', hour: 17.7 },
+  dusk: { name: 'Dusk', hour: 19.3 },
+  night: { name: 'Night', hour: 23 },
+};
+export type TimeMode = keyof typeof TIMES | 'auto';
+
+export interface AtmosSnapshot {
+  day: number;
+  kind: WeatherKind;
+  cover: number;
+  rain: number;
+  storm: number;
+  fog: number;
+  wind: number;
+  wet: number;
+  sea: number;
+}
 
 export class Atmosphere {
   /** Fraction of the solar day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
@@ -153,6 +175,8 @@ export class Atmosphere {
   mode: WeatherKind | 'auto' = 'auto';
   /** Speeds up the blend for a moment after the player picks the weather by hand. */
   private rush = 0;
+  /** 'auto' lets the day run; any other hour holds the clock there. */
+  timeMode: TimeMode = 'auto';
 
   // eased weather parameters
   cover = WEATHER.clear.cover;
@@ -190,7 +214,15 @@ export class Atmosphere {
 
     const q = new URLSearchParams(location.search);
     const hr = parseFloat(q.get('hour') ?? '');
+    let savedT: string | null = null;
+    try {
+      savedT = localStorage.getItem(TIME_KEY);
+    } catch {}
     if (Number.isFinite(hr)) this.day = (((hr / 24) % 1) + 1) % 1;
+    else if (savedT && savedT in TIMES) {
+      this.timeMode = savedT as TimeMode;
+      this.day = TIMES[this.timeMode as Exclude<TimeMode, 'auto'>].hour / 24;
+    }
     const wx = q.get('wx') as WeatherKind | null;
     let saved: string | null = null;
     try {
@@ -241,6 +273,43 @@ export class Atmosphere {
     } catch {}
   }
 
+  /** Everything photo mode may change, so leaving it puts the sky back exactly as it was. */
+  snapshot(): AtmosSnapshot {
+    return { day: this.day, kind: this.kind, cover: this.cover, rain: this.rain, storm: this.storm, fog: this.fog, wind: this.wind, wet: this.wet, sea: this.sea };
+  }
+
+  restore(s: AtmosSnapshot) {
+    Object.assign(this, s);
+    this.update(0);
+  }
+
+  /**
+   * Photo mode's sky: a clock time and, unless null (the sky as it was), a
+   * weather settled in at once. The sea keeps the swell it had, since the
+   * frozen ships still float on those waves.
+   */
+  preview(base: AtmosSnapshot, hour: number, kind: WeatherKind | null) {
+    this.day = (((hour / 24) % 1) + 1) % 1;
+    const d = kind ? WEATHER[kind] : null;
+    this.kind = kind ?? base.kind;
+    this.cover = d ? d.cover : base.cover;
+    this.rain = d ? d.rain : base.rain;
+    this.storm = d ? d.storm : base.storm;
+    this.fog = d ? d.fog : base.fog;
+    this.wind = d ? d.wind : base.wind;
+    this.wet = d ? Math.min(1, d.rain * 1.6) : base.wet;
+    this.sea = base.sea;
+    this.update(0);
+  }
+
+  /** Holds the clock at a chosen hour ('auto' lets the day run again). */
+  setTimeMode(m: TimeMode) {
+    this.timeMode = m;
+    try {
+      localStorage.setItem(TIME_KEY, m);
+    } catch {}
+  }
+
   private seaTarget() {
     return this.storm * 1.05 + this.rain * 0.12 + (this.wind - 0.8) * 0.35;
   }
@@ -257,7 +326,13 @@ export class Atmosphere {
 
   update(dt: number) {
     // ---------------------------------------------------------- clock
-    this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
+    if (this.timeMode === 'auto') this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
+    else {
+      // sweep forward to the chosen hour, so the sun travels there rather than jumping
+      const to = TIMES[this.timeMode].hour / 24;
+      const left = (to - this.day + 1) % 1;
+      if (left > 1e-4) this.day = (this.day + Math.min(left, Math.max(left * 0.9, 0.02) * dt)) % 1;
+    }
 
     // ---------------------------------------------------------- weather
     this.stateT += dt;

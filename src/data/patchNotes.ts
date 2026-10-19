@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-19T17:00Z',
+    hour: '2026-10-19T18:00Z',
     entries: [
       {
         title: 'A whole new Treasure Vault',
@@ -23,6 +23,85 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Your cards fly out of the chest\'s mouth. They have holographic foil that follows your finger, tilt in 3D, and wear rarity frames; legendaries get a turning golden border. Skin cards show the full pattern, and cannon effect cards fire their shot on a loop.',
           'Tap any card to try it on for real. Skins dress your actual ship while the camera circles it, and trails and muzzle blasts fire real broadsides so you see exactly what you get. Equip from there, or flick through your haul with the arrows.',
           'The collection works the same way, so you can preview pieces you have not found yet.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T18:00Z',
+    entries: [
+      {
+        title: 'Calmer seas: fewer pirates',
+        notes: [
+          'About 60% fewer pirates now roam around you: two to start, rising to at most four as you sink more, and new sails take noticeably longer to appear on the horizon.',
+          'Pirate flotillas are rarer and smaller, usually a flagship with one or two escorts, so there is more time to explore between fights.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T18:00Z',
+    entries: [
+      {
+        title: 'Photo mode',
+        notes: [
+          'Press P, tap the new camera button by the minimap, or pick Photo mode from the pause menu. The voyage freezes mid-moment, every bit of HUD steps aside and the camera is yours.',
+          'Orbit round any point or switch to Fly and roam the frozen scene: drag to turn, right drag or two fingers to pan, wheel or pinch to zoom, WASD with Q and E to move. Set the field of view, roll the horizon, and frame the shot in 16:9, 3:2, square, portrait or widescreen cinema, with a rule of thirds grid.',
+          'Retime the day with a slider from dawn to moonlight, swap in any weather, and add real depth of field: double-tap or double-click anything to pull it into focus and let the rest melt away. Exposure, eight film looks from Vivid and Golden to Noir and Old chart, vignette and grain finish it off.',
+          'One tap on the scene hides the controls. The shutter saves a PNG at your screen\'s full resolution, or opens the share sheet on your phone. Leave and the sky and the voyage pick up exactly where they were.',
+        ],
+      },
+      {
+        title: 'Down with the ship',
+        notes: [
+          'When your ship sinks in open water the camera no longer stops at the surface. It dives under with her, and you watch her go down from below: her dark hull against the bright window of the sky, the waves rippling overhead, sunbeams slanting through the water and a stream of air bubbles and broken timbers pouring out of her.',
+          'Her fires hiss out as she goes under. She heels over as she sinks, settles onto the seabed on her side in a slow cloud of sand, and the light fades as the deep closes in before the farewell screen appears. Sink on a shallow reef and the water still closes over you as before.',
+        ],
+      },
+      {
+        title: 'Real seagulls',
+        notes: [
+          'The gulls are reborn as proper herring gulls: a rounded body and head, a hooked yellow beak with its red spot, grey backs, long wings with black tips and white spots, a fanned tail and pink webbed feet.',
+          'They fly like gulls now. They glide and wheel on the wind with a few lazy wingbeats, bank into their turns, rock in the gusts and beat hard to climb, flaring their wings and spreading their tails to land.',
+          'They have a life of their own. Gulls trail passing ships and circle the masts, land on mast caps, fighting tops and the jib-boom, loaf on the shore rocks, bob on the swell, and throw their heads back to call. Fire your guns and they burst off in a screaming cloud.',
+        ],
+      },
+      {
+        title: 'Choose the time of day',
+        notes: [
+          'Tap the clock beside the minimap to cycle Auto, Dawn, Noon, Golden hour, Dusk and Night. The sun sweeps across the sky to your chosen hour and stays there.',
+          'Auto lets the day run again, and your choice is remembered next time you sail. Tap the weather icon to change the weather as before.',
+        ],
+      },
+      {
+        title: 'Even lighter on your machine',
+        notes: [
+          'A second big performance pass, again without changing how the game looks. A typical view out at sea now draws well under half a million triangles, down from over a million.',
+          'Sailors are only drawn with the hats, coats, beards and tools they actually wear, and crews out of sight are skipped. Only the patch of sea in front of the camera is drawn, palms and trees cast their shadows from lighter stand-ins, and water reflections do their tracing on a quarter-size picture of the scene.',
+        ],
+      },
+    ],
+  },
+  {
+    // the 17:00 group below is full (five entries), so this hour continues here
+    hour: '2026-10-19T17:00Z',
+    entries: [
+      {
+        title: 'Unbroken cannon trails',
+        notes: [
+          'A cannonball no longer leaves a dotted line of separate puffs behind it. Every shot now draws one continuous thread of smoke along its whole flight, smooth at any frame rate.',
+          'The thread starts thin right behind the ball, then swells, twists and frays as it ages, drifts off on the wind and fades from the far end. Glowing vault trails and fire and fused shells keep a hot glow along the fresh part of the line, with their sparks, embers and stars still scattering around it.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T17:00Z',
+    entries: [
+      {
+        title: 'No more sea of white foam',
+        notes: [
+          'Fixed a bug where a huge solid sheet of white foam could spread across the sea around your ship, often after a sinking, and never clear. The wake simulation now shrugs off any bad value instead of letting it grow, so wakes, splashes and wrecks leave only the foam they should.',
         ],
       },
       {

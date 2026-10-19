@@ -476,6 +476,74 @@ export class Audio {
     } else if (vol > 0.45) this.duck(at, 0.25);
   }
 
+  /**
+   * A herring gull calling, synthesised on the spot: each note a nasal, raspy
+   * "kyow" that leaps up then falls away; several in a row make the laughing call.
+   */
+  gull(vol: number, pan: number, notes = 1, delay = 0) {
+    const ctx = this.ctx;
+    if (!ctx || this.muted || vol < 0.01) return;
+    const out = ctx.createGain();
+    out.gain.value = Math.min(1, vol) * 0.2;
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.value = clamp1(pan);
+      out.connect(panner).connect(this.ambBus);
+    } else out.connect(this.ambBus);
+    // a nasal formant over a sawtooth voice, with the throat's rasp as fast vibrato
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 2100 + Math.random() * 500;
+    bp.Q.value = 2.2;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 600;
+    bp.connect(hp).connect(out);
+    const voice = 0.85 + Math.random() * 0.3;
+    const t0 = ctx.currentTime + delay;
+    const gap = 0.27 + Math.random() * 0.08;
+    let end = t0;
+    for (let i = 0; i < notes; i++) {
+      const t = t0 + i * gap;
+      const len = (i === 0 && notes > 1 ? 0.34 : 0.24) + Math.random() * 0.05;
+      const f = voice * (1 - i * 0.04);
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(900 * f, t);
+      o.frequency.linearRampToValueAtTime(1550 * f, t + len * 0.22);
+      o.frequency.exponentialRampToValueAtTime(720 * f, t + len);
+      const rasp = ctx.createOscillator();
+      rasp.frequency.value = 34 + Math.random() * 12;
+      const raspAmt = ctx.createGain();
+      raspAmt.gain.value = 55 * f;
+      rasp.connect(raspAmt).connect(o.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(1, t + 0.025);
+      g.gain.setValueAtTime(1, t + len * 0.5);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(g).connect(bp);
+      o.start(t);
+      rasp.start(t);
+      o.stop(t + len + 0.02);
+      rasp.stop(t + len + 0.02);
+      o.onended = () => {
+        o.disconnect();
+        rasp.disconnect();
+        raspAmt.disconnect();
+        g.disconnect();
+      };
+      end = t + len + 0.05;
+    }
+    // let the filter chain go once the last note has died away
+    setTimeout(() => {
+      bp.disconnect();
+      hp.disconnect();
+      out.disconnect();
+      panner?.disconnect();
+    }, (end - ctx.currentTime) * 1000 + 200);
+  }
+
   /** A ship's magazine going up. */
   explosion(vol: number, pan: number, dist = 0) {
     const at = this.emit(pick(this.bank.blast), { vol: vol * 0.95, pan, dist, rate: 0.92 + Math.random() * 0.1, wet: 0.7 });
@@ -991,5 +1059,28 @@ export class Audio {
     o.connect(g).connect(out);
     o.start(t);
     o.stop(t + 0.1);
+  }
+  /** A camera shutter: the blades snap open, then shut. */
+  shutter() {
+    const v = this.voice(0.2, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t0 = ctx.currentTime;
+    for (const [dt, f, g0] of [[0, 3800, 0.7], [0.075, 2600, 0.55]] as const) {
+      const t = t0 + dt;
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 1.4;
+      bp.frequency.value = f;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(g0, t + 0.004);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      n.connect(bp).connect(ng).connect(out);
+      n.start(t, Math.random() * 2);
+      n.stop(t + 0.06);
+    }
   }
 }

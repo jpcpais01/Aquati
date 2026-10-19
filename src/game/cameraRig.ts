@@ -72,6 +72,7 @@ export class CameraRig {
 
   /** Effective viewing distance (drives shadow reach, sound and fx radii). */
   get distance() {
+    if (this.photoDist > 0) return this.photoDist;
     return lerp(this.followDistance, 55, this.eyeBlend);
   }
 
@@ -86,6 +87,9 @@ export class CameraRig {
     this.firstPerson = false;
     this.fp = 0;
   }
+
+  /** Photo mode's camera distance while it drives the camera (0 in play). */
+  photoDist = 0;
 
   /** Player setting: 1 full, 0 off. */
   shakeScale = 1;
