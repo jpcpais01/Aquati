@@ -1087,7 +1087,7 @@ export class ShipDamage {
     this.drainBreaks(world);
     this.updateHinges(dt, world);
     this.state.y = this.ship.burning;
-    for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40);
+    for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40) * afloat * afloat;
     return { y, pitch: k.pitch * e - plunge, roll: k.roll * e + heel, done: !founder && t > life + WRECK_FINAL, afloat };
   }
 

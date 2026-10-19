@@ -604,9 +604,9 @@ export class Ship {
         });
       }
     }
-    // fires when badly damaged or sinking
+    // fires when badly damaged or sinking, doused as she goes under
     const hpFrac = this.hp / this.maxHp;
-    this.burning = this.alive ? (hpFrac < 0.4 ? (0.4 - hpFrac) / 0.4 : 0) : this.sinkT < 22 ? (1 - this.sinkT / 26) * swell : 0;
+    this.burning = this.alive ? (hpFrac < 0.4 ? (0.4 - hpFrac) / 0.4 : 0) : this.sinkT < 22 ? (1 - this.sinkT / 26) * swell ** 3 : 0;
     // set alight by fire shot: the flames run along her whole deck
     if (this.afire > 0 && this.alive) this.burning = Math.max(this.burning, 0.55 + 0.45 * Math.min(1, this.afire / 8));
     if (this.burning > 0) {
