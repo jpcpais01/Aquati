@@ -11,6 +11,7 @@ export interface Controls {
   steerThrottle: number; // 0..1 from joystick magnitude
   pointer: { x: number; y: number; active: boolean };
   pause: boolean;
+  map: boolean;
 }
 
 export class Input {
@@ -25,9 +26,12 @@ export class Input {
     steerThrottle: 0,
     pointer: { x: 0, y: 0, active: false },
     pause: false,
+    map: false,
   };
   private keys = new Set<string>();
-  readonly isTouch: boolean;
+  isTouch: boolean;
+  /** Fired once if a touch arrives on a device that didn't report touch up front. */
+  onTouchDetected: () => void = () => {};
   private joyId: number | null = null;
   private joyOrigin = { x: 0, y: 0 };
   private joyEl: HTMLElement | null = null;
@@ -49,6 +53,7 @@ export class Input {
       if (k === 'e') this.state.fireStarboard = true;
       if (k === ' ') this.state.fireAuto = true;
       if (k === 'escape' || k === 'p') this.state.pause = true;
+      if (k === 'm') this.state.map = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
@@ -66,8 +71,9 @@ export class Input {
       this.state.pointer.y = e.clientY;
       this.state.pointer.active = true;
     });
-    canvas.addEventListener('mousedown', (e) => {
-      if (!this.enabled || this.isTouch) return;
+    // pointerType keeps mouse-click firing on touchscreen laptops, where isTouch is also true
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!this.enabled || e.pointerType !== 'mouse') return;
       this.state.pointer.x = e.clientX;
       this.state.pointer.y = e.clientY;
       if (e.button === 0) this.state.fireAuto = true;
@@ -78,6 +84,15 @@ export class Input {
 
   private setupTouch() {
     const c = this.canvas;
+    window.addEventListener(
+      'touchstart',
+      () => {
+        if (this.isTouch) return;
+        this.isTouch = true;
+        this.onTouchDetected();
+      },
+      { passive: true, capture: true },
+    );
     c.addEventListener(
       'touchstart',
       (e) => {
@@ -151,6 +166,22 @@ export class Input {
     this.joyKnob = knob;
   }
 
+  /** Touch broadside buttons. pointerdown fires on contact, with no click delay or ghost taps. */
+  bindFireButtons(port: HTMLElement, main: HTMLElement, star: HTMLElement) {
+    const bind = (el: HTMLElement, key: 'firePort' | 'fireStarboard' | 'fireAuto') => {
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (!this.enabled) return;
+        this.state[key] = true;
+        navigator.vibrate?.(12);
+      });
+      el.addEventListener('contextmenu', (e) => e.preventDefault());
+    };
+    bind(port, 'firePort');
+    bind(main, 'fireAuto');
+    bind(star, 'fireStarboard');
+  }
+
   private showJoy(x: number, y: number) {
     if (!this.joyEl) return;
     this.joyEl.style.left = `${x}px`;
@@ -177,5 +208,6 @@ export class Input {
     this.state.fireAuto = false;
     this.state.zoom = 0;
     this.state.pause = false;
+    this.state.map = false;
   }
 }

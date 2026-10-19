@@ -29,7 +29,7 @@ export const GLSL_DAMAGE_FRAGMENT_PARS = /* glsl */ `
 #define AQ_MAX_HOLES ${DAMAGE_MAX_HOLES}
 uniform mat4 uDmgInv;
 uniform vec4 uDmgHoles[AQ_MAX_HOLES];    // local centre xyz, radius (negative = patched)
-uniform vec4 uDmgHoleInfo[AQ_MAX_HOLES]; // outward side (+1 port / -1 starboard), y of hull top, seed, birth time
+uniform vec4 uDmgHoleInfo[AQ_MAX_HOLES]; // outward side (+1 port / -1 starboard), hold floor y, seed, birth time
 uniform int uDmgCount;
 uniform vec4 uDmgSplit;                  // break z, kept side (+1 bow / -1 stern / 0 whole), jag, burn
 uniform vec4 uDmgState;                  // hull wear, fire, seed, canvas wear
@@ -75,7 +75,7 @@ export const GLSL_DAMAGE_FRAGMENT = /* glsl */ `
       aqSeam = (aqDl.z - uDmgSplit.x - jag) * uDmgSplit.y;
       if (aqSeam < 0.0) discard;
     }
-    float aqHole = 0.0, aqRim = 0.0, aqSoot = 0.0, aqPatch = 0.0, aqPatchLine = 0.0, aqHeat = 0.0;
+    float aqHole = 0.0, aqCut = 0.0, aqRim = 0.0, aqSoot = 0.0, aqPatch = 0.0, aqPatchLine = 0.0, aqHeat = 0.0;
     for (int i = 0; i < AQ_MAX_HOLES; i++) {
       if (i >= uDmgCount) break;
       vec4 h = uDmgHoles[i];
@@ -102,14 +102,18 @@ export const GLSL_DAMAGE_FRAGMENT = /* glsl */ `
       float n2 = texture(uNoiseTex, q * vec2(0.05, 0.3) + info.z * 1.7).a;
       float r = sqrt(d2) / R;
       float rr = r + (n - 0.5) * 0.9 + (n2 - 0.5) * 0.55;
-      aqHole = max(aqHole, 1.0 - step(0.5, rr));
+      float hole = 1.0 - step(0.5, rr);
+      aqHole = max(aqHole, hole);
+      aqCut = max(aqCut, hole * step(info.y, aqDl.y));
       aqRim = max(aqRim, 1.0 - smoothstep(0.5, 0.82, rr));
       aqSoot = max(aqSoot, 1.0 - smoothstep(0.45, 1.9, r + (n - 0.5) * 0.8));
       float age = uTime - info.w;
       aqHeat = max(aqHeat, (1.0 - smoothstep(0.48, 0.95, rr)) * (exp(-age * 0.5) + uDmgState.y * 0.3));
     }
     #ifdef AQ_DMG_CUT
-      if (aqHole > 0.5 && gl_FrontFacing) discard;
+      if (aqCut > 0.5 && gl_FrontFacing) discard;
+    #else
+      aqCut = 0.0;
     #endif
     if (!gl_FrontFacing) {
       // looking into the hold through a breach: dark, damp timber
@@ -130,12 +134,11 @@ export const GLSL_DAMAGE_FRAGMENT = /* glsl */ `
       vec3 raw = vec3(0.7, 0.52, 0.33) * (0.7 + 0.6 * texture(uNoiseTex, aqDl.zy * vec2(0.25, 3.0)).a);
       diffuseColor.rgb *= 1.0 - aqSoot * 0.84;
       diffuseColor.rgb = mix(diffuseColor.rgb, raw * mix(1.0, 0.3, aqSoot * aqSoot), aqRim * (1.0 - aqHole));
-      #ifndef AQ_DMG_CUT
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.025, 0.02), aqHole);
-      #endif
+      // breaches that can't open (below the hold floor, or iron) are dark, sooty pits
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.025, 0.02, 0.016), aqHole * (1.0 - aqCut));
       aqDmgRough = max(aqRim, aqSoot * 0.85);
       float flick = 0.62 + 0.38 * sin(uTime * 9.0 + aqDl.z * 3.1 + aqDl.y * 4.7) * sin(uTime * 5.3 + aqDl.y * 2.0);
-      aqDmgEmber = vec3(2.6, 0.75, 0.12) * aqHeat * aqHeat * flick * (1.0 - aqHole);
+      aqDmgEmber = vec3(2.6, 0.75, 0.12) * aqHeat * aqHeat * flick * (1.0 - aqCut);
     }
   }
 #endif

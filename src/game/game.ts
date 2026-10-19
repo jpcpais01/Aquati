@@ -8,6 +8,7 @@ import { Pipeline } from '../render/pipeline';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
 import { Debris, Pusher } from '../fx/debris';
+import { WindField, WindWisps } from '../fx/wind';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
 import { Ocean } from '../world/ocean';
@@ -19,10 +20,10 @@ import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../sh
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
 import { Projectiles } from './projectiles';
-import { Loot } from './loot';
+import { Loot, RARITY } from './loot';
 import { World } from './world';
 
-type State = 'loading' | 'menu' | 'playing' | 'paused' | 'dead';
+type State = 'loading' | 'menu' | 'playing' | 'paused' | 'map' | 'dead';
 
 const PIRATE_NAMES = [
   'Black Gull', 'Salt Widow', 'Crimson Tide', 'Grim Mariner', 'Sea Wraith', 'Rusty Anchor', 'Dread Marlin', 'Bone Siren',
@@ -68,6 +69,8 @@ export class Game {
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
   private birds!: Birds;
+  private windField!: WindField;
+  private wisps!: WindWisps;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -82,6 +85,8 @@ export class Game {
     this.input = new Input(canvas);
     this.ui.setTouch(this.input.isTouch);
     this.input.bindJoystick(document.getElementById('joy')!, document.getElementById('joy-knob')!);
+    this.input.bindFireButtons(document.getElementById('t-port')!, document.getElementById('t-fire')!, document.getElementById('t-star')!);
+    this.input.onTouchDetected = () => this.ui.setTouch(true);
 
     this.sun = new THREE.DirectionalLight(new THREE.Color(SUN_COLOR).multiplyScalar(1 / 3.1), 3.1);
     this.sun.castShadow = true;
@@ -99,7 +104,10 @@ export class Game {
     this.wireUI();
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && this.state === 'playing') this.setPaused(true);
+      if (document.hidden && (this.state === 'playing' || this.state === 'map')) {
+        this.setChart(false);
+        this.setPaused(true);
+      }
     });
   }
 
@@ -129,14 +137,21 @@ export class Game {
     const windAngle = 1.25;
     const waves = buildWaves(windAngle, 1);
     this.wake = new WakeField(q.wakeRes, 300);
-    this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: this.terrain.createHeightTexture(512), wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
+    const seaFloor = this.terrain.createHeightTexture(512);
+    this.wake.setTerrain(seaFloor);
+    this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
     this.particles = new Particles(q.particles);
-    this.water.add(this.ocean.mesh, this.particles.group);
+    this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
+    this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
     this.world.debris = this.debris;
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
+    this.windField = new WindField(this.world.wind.dirX, this.world.wind.dirZ, q.tier === 0 ? 6 : 8);
+    this.world.gustAt = (x, z) => this.windField.at(x, z);
+    this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
+    this.water.add(this.wisps.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = createEnvironment(this.renderer);
@@ -194,6 +209,7 @@ export class Game {
     ui.onSail = () => this.startVoyage();
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
+    ui.onMap = (on) => this.setChart(on);
     ui.onQuit = () => {
       this.ui.showPause(false);
       this.resetWorld();
@@ -343,6 +359,17 @@ export class Game {
     }
   }
 
+  private setChart(on: boolean) {
+    if (on && this.state === 'playing' && this.player) {
+      this.state = 'map';
+      this.ui.showChart(true, this.player);
+    } else if (!on && this.state === 'map') {
+      this.state = 'playing';
+      this.ui.showChart(false);
+      this.last = performance.now();
+    }
+  }
+
   // ------------------------------------------------------------------ combat events
 
   private screenOf(p: THREE.Vector3): [number, number, boolean] {
@@ -364,7 +391,8 @@ export class Game {
 
   private onSunk(ship: Ship, attacker: Ship) {
     const bounty = { sloop: 60, brig: 110, galleon: 220 }[ship.cls.id];
-    this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), ship.cls.id === 'galleon');
+    const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
+    this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
     if (attacker === this.player) {
       this.player.gold += bounty;
       this.ui.toast(`+${bounty} gold bounty`, `${ship.name} sunk`, 3.2);
@@ -456,17 +484,28 @@ export class Game {
     }
     if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) this.setPaused(true);
+    else if (st.map) this.setChart(true);
   }
 
   // ------------------------------------------------------------------ frame
+
+  private fpsEl = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'fps' });
+  private fpsFrames = 0;
+  private fpsT = performance.now();
 
   private frame() {
     const now = performance.now();
     let dt = (now - this.last) / 1000;
     this.last = now;
+    this.fpsFrames++;
+    if (now - this.fpsT >= 500) {
+      this.fpsEl.textContent = `${Math.round((this.fpsFrames * 1000) / (now - this.fpsT))} FPS`;
+      this.fpsFrames = 0;
+      this.fpsT = now;
+    }
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
-    const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt;
+    const simDt = this.state === 'paused' || this.state === 'map' || this.state === 'loading' ? 0 : dt;
     this.update(simDt, dt);
     this.render(simDt);
     this.input.consume();
@@ -484,6 +523,8 @@ export class Game {
       this.voyageTime += dt;
     } else if (this.state === 'paused') {
       if (this.input.state.pause) this.setPaused(false);
+    } else if (this.state === 'map') {
+      if (this.input.state.pause || this.input.state.map) this.setChart(false);
     }
 
     // AI & ships
@@ -493,20 +534,31 @@ export class Game {
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
     this.projectiles.update(dt, w, this.ships);
     this.pushers.length = 0;
-    for (const s of this.ships) if (s.alive) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
+    for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
     this.debris.update(dt, w, this.pushers);
 
     // player-centric systems
     const p = this.player;
     if (p && this.state === 'playing') {
       if (p.alive && w.time - p.lastHit > 9) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.01 * dt);
-      const got = this.loot.update(dt, w, p.alive ? p.pos : null, p.cls.beam * 0.5 + 5);
+      const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2);
       for (const it of got) {
         p.gold += it.value;
         p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
         const [x, y] = this.screenOf(new THREE.Vector3(it.x, 2, it.z));
-        this.ui.floater(`+${it.value} gold`, x, y, 'loot');
-        this.audio.coin();
+        if (it.tier === 0) {
+          this.ui.floater(`+${it.value} gold`, x, y, 'loot');
+          this.audio.coin();
+          continue;
+        }
+        const R = RARITY[it.tier];
+        this.ui.floater(`${R.name} chest +${it.value}`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[it.tier]);
+        w.particles.treasure(new THREE.Vector3(it.x, w.waterHeight(it.x, it.z), it.z), R.glow, it.tier);
+        this.audio.treasure(it.tier);
+        if (it.tier >= 3) {
+          this.ui.toast(`${R.name} treasure`, `+${it.value} gold`, it.tier === 4 ? 3.6 : 2.8);
+          this.rig.shake(it.tier === 4 ? 0.22 : 0.1);
+        }
       }
       this.checkDiscoveries(p);
       this.directSpawns(dt);
@@ -537,6 +589,15 @@ export class Game {
     w.listener.copy(this.rig.target);
     w.listenerZoom = this.rig.distance;
 
+    // gusts roll across whatever the camera is looking at
+    const reach = clamp(this.rig.distance * 0.9, 70, 260);
+    const tgt = this.rig.target;
+    this.windField.update(dt, tgt.x, tgt.z, reach);
+    this.wisps.update(dt, tgt.x, tgt.z, reach, this.rig.camera, w.wind.dirX, w.wind.dirZ);
+    const gustHere = this.windField.at(fpos.x, fpos.z);
+    this.audio.setGust(gustHere);
+    this.ui.setGust(gustHere);
+
     this.particles.update(dt);
     this.birds.update(dt, w.time);
     this.pipeline.decayFlash(realDt);
@@ -547,6 +608,11 @@ export class Game {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
       this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered);
+    } else if (p && this.state === 'map') {
+      this.ui.drawChart({
+        player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
+        windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
+      });
     }
     this.ui.tickFloaters(realDt);
   }
@@ -652,6 +718,7 @@ export class Game {
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.6 : 0.8;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);

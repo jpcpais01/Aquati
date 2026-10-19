@@ -26,6 +26,8 @@ export class World {
   readonly wind: Wind;
   listener = new THREE.Vector3();
   listenerZoom = 140;
+  /** Gust intensity at a point (0 calm .. ~1.4), fed by the wind field. */
+  gustAt: (x: number, z: number) => number = () => 0;
   onShot: (s: Shot) => void = () => {};
   onShake: (amount: number, at: THREE.Vector3) => void = () => {};
   debris!: Debris;

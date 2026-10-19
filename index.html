@@ -51,7 +51,7 @@
         </div>
       </div>
       <div class="map-wrap">
-        <canvas id="minimap" width="360" height="360"></canvas>
+        <canvas id="minimap" width="360" height="360" title="Open sea chart (M)"></canvas>
         <div class="compass">N</div>
         <div class="wind" id="hud-wind"><i></i></div>
       </div>
@@ -88,6 +88,26 @@
       </div>
     </div>
 
+    <div id="chart" class="screen dim hidden">
+      <div class="chart-frame">
+        <canvas id="chart-canvas"></canvas>
+        <div class="chart-head">
+          <h2>Sea Chart</h2>
+          <span id="chart-isles"></span>
+        </div>
+        <div class="chart-legend">
+          <span><i class="lg-you"></i>You</span>
+          <span><i class="lg-foe"></i>Pirates</span>
+          <span><i class="lg-loot"></i>Salvage</span>
+          <span><i class="lg-wind"></i>Wind</span>
+        </div>
+        <div class="chart-btns">
+          <button class="chart-btn" id="chart-center" title="Centre on ship">&#9678;</button>
+          <button class="chart-btn" id="chart-close" title="Close (M)">&#10005;</button>
+        </div>
+      </div>
+    </div>
+
     <div id="dead" class="screen dim hidden">
       <div class="card-modal">
         <h2>Lost to the depths</h2>
@@ -116,6 +136,7 @@
           <div><kbd>Click</kbd> Fire the side you point at</div>
           <div><kbd>Space</kbd> Fire at the nearest foe</div>
           <div><kbd>Wheel</kbd> Zoom</div>
+          <div><kbd>M</kbd> Sea chart (or tap the minimap)</div>
           <div><kbd>Esc</kbd> Pause</div>
           <div class="span">On touch: drag the left side to steer &amp; trim, tap Fire. Pinch to zoom.</div>
           <div class="span">Sail across the wind for the best speed. Sailing straight into the wind is slow going.</div>

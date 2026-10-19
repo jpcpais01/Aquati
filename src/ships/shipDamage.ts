@@ -58,7 +58,7 @@ class DamageSkin {
       const o = info.opts;
       const fabric = !!(o.sail || o.flag);
       const mat = (base as THREE.MeshStandardMaterial).clone();
-      patchMaterial(mat, { ...o, damage: true, cut: !fabric }, { ...info.extra, ...this.uniforms });
+      patchMaterial(mat, { ...o, damage: true, cut: !fabric && !o.solid }, { ...info.extra, ...this.uniforms });
       // textured shell surfaces (planking, transom, deck) show the hold through a breach
       if (mat.map && !fabric) mat.side = THREE.DoubleSide;
       cloneBase.set(mat, base);
@@ -186,6 +186,42 @@ export class ShipDamage {
     this.shards.frustumCulled = false;
     this.shards.userData.dmgSkip = true;
     model.root.add(this.shards);
+    model.root.add(this.buildHold());
+  }
+
+  /**
+   * A dark plank floor just above the waterline inside the hull, so a breach
+   * looks into the shadowy hold rather than at the sea surface within the hull.
+   */
+  private holdY(t: number) {
+    return this.ship.model.shape.mainDeckY(t) - 0.18;
+  }
+
+  private buildHold() {
+    const s = this.ship.model.shape;
+    const pos: number[] = [];
+    const idx: number[] = [];
+    const n = 40;
+    for (let k = 0; k <= n; k++) {
+      const t = 0.015 + (k / n) * 0.97;
+      const y = this.holdY(t);
+      const w = Math.max(0.02, s.halfWidthAtY(t, y) - 0.03);
+      const z = s.z(t);
+      pos.push(-w, y, z, w, y, z);
+      if (k > 0) {
+        const a = (k - 1) * 2;
+        idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const base = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x1c130c, roughness: 1, side: THREE.DoubleSide }), { solid: true });
+    const mesh = new THREE.Mesh(g, this.skin.material(base));
+    mesh.userData.dmgSkip = true;
+    mesh.receiveShadow = true;
+    return mesh;
   }
 
   /** The ship's vertex-coloured timber material, as built (undamaged). */
@@ -216,7 +252,8 @@ export class ShipDamage {
     let n = 0;
     for (const h of this.holes) {
       this.holeVecs[n].set(h.c.x, h.c.y, h.c.z, h.patched ? -h.r : h.r);
-      this.infoVecs[n].set(h.side, 0, h.seed, h.birth);
+      // breaches only open up above the hold floor; lower ones read as dark, flooded holes
+      this.infoVecs[n].set(h.side, this.holdY(clamp(h.c.z / this.ship.cls.length + 0.5, 0, 1)), h.seed, h.birth);
       n++;
     }
     this.count.value = n;
@@ -240,8 +277,8 @@ export class ShipDamage {
         const dir = _v2.set(h.side * rand(0.35, 1.1), rand(-0.35, 0.35) + Math.sin(a) * 0.3, -along * rand(0.5, 1.0)).normalize();
         _q.setFromUnitVectors(_v.set(1, 0, 0), dir);
         _q.multiply(new THREE.Quaternion().setFromAxisAngle(_v.set(1, 0, 0), rand(0, Math.PI)));
-        const len = h.r * rand(0.45, 1.0);
-        _m.compose(pos, _q, _v.set(len, rand(0.8, 1.3), rand(0.7, 1.2)));
+        const len = h.r * rand(0.6, 1.25);
+        _m.compose(pos, _q, _v.set(len, rand(1.1, 1.8), rand(1.0, 1.7)));
         this.shards.setMatrixAt(base + k, _m);
         const c = Math.random() < 0.45 ? painted[Math.floor(Math.random() * painted.length)].clone() : new THREE.Color(0.8, 0.62, 0.42);
         this.shards.setColorAt(base + k, c.multiplyScalar(rand(0.85, 1.1)));
@@ -297,7 +334,7 @@ export class ShipDamage {
     const side = local.x >= 0 ? 1 : -1;
     const y = clamp(local.y, -0.7, shape.top(t) - 0.2);
     const c = new THREE.Vector3(side * shape.halfWidthAtY(t, y), y, shape.z(t));
-    const r = rand(0.42, 0.68) * clamp(dmg / 20, 0.85, 1.3) * (0.85 + L / 120);
+    const r = rand(0.6, 0.9) * clamp(dmg / 20, 0.85, 1.3) * (0.8 + L / 100);
     this.addHole(c, side, r, world.time);
 
     // planks blasted out into the sea
@@ -529,6 +566,8 @@ export class ShipDamage {
     const cut: Cut = {
       plane: new THREE.Plane(new THREE.Vector3(0, 1, 0), -yCut),
       lateral: (p) => Math.hypot(p.x, p.z - m.z) < colR || (Math.abs(p.z - m.z) < 0.8 && Math.abs(p.x) < B * 1.15 && p.y > yCut + 0.8),
+      // shrouds and ratlines go slack with the mast
+      rigging: (p) => Math.abs(p.z - m.z) < 2.4 && p.y > m.y0 + 0.5,
     };
     const dir = fall.clone().setY(0);
     if (dir.lengthSq() < 1e-4) dir.set(Math.random() < 0.5 ? 1 : -1, 0, 0);
@@ -631,9 +670,9 @@ export class ShipDamage {
       lean += h.side * h.r * (1 + clamp(1 - h.c.y / 1.6, 0, 1.2));
     }
     const dmg = 1 - f;
-    const listTarget = s.alive ? clamp(-lean * 0.02, -0.15, 0.15) * Math.min(1, dmg * 2.2) : this.list;
+    const listTarget = s.alive ? clamp(-lean * 0.016, -0.1, 0.1) * Math.min(1, dmg * 2.2) : this.list;
     this.list += (listTarget - this.list) * Math.min(1, dt * 0.35);
-    const lowTarget = Math.pow(dmg, 1.35) * c.freeboard * 0.36;
+    const lowTarget = Math.pow(dmg, 1.5) * c.freeboard * 0.24;
     this.lowered += (lowTarget - this.lowered) * Math.min(1, dt * 0.4);
 
     // scorch and torn canvas build quickly, fade slowly as the crew repairs
@@ -752,10 +791,13 @@ export class ShipDamage {
         this.breakMast(i, new THREE.Vector3(fallSide, 0, rand(-0.3, 0.3)), world, rand(0.6, 2.5));
       }
     }
-    // lights out
-    model.root.traverse((o) => {
+    // lights out: lanterns dark, stern windows black
+    s.root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (m.isMesh && (m.material as THREE.Material).type === 'MeshBasicMaterial') m.visible = false;
+      if (!m.isMesh || Array.isArray(m.material)) return;
+      if (m.material.type === 'MeshBasicMaterial') m.visible = false;
+      const sm = m.material as THREE.MeshStandardMaterial;
+      if (sm.emissiveMap && cloneBase.has(sm)) sm.emissiveIntensity = 0;
     });
     // cargo and timber spill out
     const wp = new THREE.Vector3(0, shape.mainDeckY(0.5), 0).applyMatrix4(model.root.matrixWorld);
@@ -795,8 +837,9 @@ export class ShipDamage {
     const wp = new THREE.Vector3(0, 0.5, this.splitZ).applyMatrix4(root.matrixWorld);
     world.particles.explosion(wp, 0.8);
     world.particles.splash(wp, 1.6);
-    world.wake.stamp(wp.x, wp.z, 6, 1.5);
-    world.wake.stamp(wp.x, wp.z, 10, 1, true);
+    world.wake.stamp(wp.x, wp.z, 4, 0.8);
+    world.wake.stamp(wp.x, wp.z, 7, 0.5, true);
+    world.wake.push(wp.x, wp.z, 5, -0.9);
   }
 
   /** Wreck pose at `t` seconds after sinking: ship-root offsets, plus the two halves. */
@@ -827,14 +870,14 @@ export class ShipDamage {
       this.bowRoot.position.z += k.sep * e;
     }
     // bubbles and foam as she goes
-    if ((t < 8 || (t > WRECK_LIFE && t < WRECK_LIFE + WRECK_FINAL)) && Math.random() < 0.2) {
+    if ((t < 7 || (t > WRECK_LIFE && t < WRECK_LIFE + WRECK_FINAL)) && Math.random() < 0.12) {
       const L = s.cls.length;
       const a = rand(-0.45, 0.45) * L;
       const px = s.pos.x + Math.sin(s.heading) * a + rand(-1, 1) * s.cls.beam * 0.5;
       const pz = s.pos.z + Math.cos(s.heading) * a + rand(-1, 1) * s.cls.beam * 0.5;
       const wy = world.waterHeight(px, pz);
-      world.particles.splash(new THREE.Vector3(px, wy, pz), 0.35);
-      world.wake.stamp(px, pz, rand(1.5, 3.5), 0.8, Math.random() < 0.5);
+      world.particles.splash(new THREE.Vector3(px, wy, pz), 0.3);
+      world.wake.stamp(px, pz, rand(1.2, 2.6), 0.35);
     }
     // thin smoke keeps rising from the smouldering wreck long after the flames die
     if (t > 20 && t < 100 && Math.random() < 0.06) {

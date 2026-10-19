@@ -11,6 +11,7 @@ import * as THREE from 'three';
 export interface Cut {
   plane: THREE.Plane; // positive side breaks away
   lateral: (p: THREE.Vector3) => boolean; // which part of the positive side
+  rigging?: (p: THREE.Vector3) => boolean; // extra rope ends that lose their purchase
 }
 
 export interface SplitResult {
@@ -158,7 +159,7 @@ export function filterLines(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cu
   const p = src.getAttribute('position') as THREE.BufferAttribute;
   const out: number[] = [];
   let dropped = 0;
-  const inCut = (v: THREE.Vector3) => cut.plane.distanceToPoint(v) > -0.05 && cut.lateral(v);
+  const inCut = (v: THREE.Vector3) => (cut.plane.distanceToPoint(v) > -0.05 && cut.lateral(v)) || (!!cut.rigging && cut.rigging(v));
   for (let i = 0; i + 1 < p.count; i += 2) {
     _a.fromBufferAttribute(p, i).applyMatrix4(toRoot);
     _b.fromBufferAttribute(p, i + 1).applyMatrix4(toRoot);

@@ -164,7 +164,7 @@ export class Debris {
       const vel = new THREE.Vector3(outward.x * sp + rand(-3, 3) + carry.x, rand(3, 10), outward.z * sp + rand(-3, 3) + carry.z);
       const c = colors[Math.floor(Math.random() * colors.length)].clone().multiplyScalar(rand(0.8, 1.1));
       const len = rand(0.45, 1.5);
-      this.add(0, at, vel, c, new THREE.Vector3(len, 1, rand(0.7, 1.3)), rand(22, 40));
+      this.add(0, at, vel, c, new THREE.Vector3(len, 1, rand(0.7, 1.3)), rand(35, 70));
     }
   }
 
@@ -175,8 +175,8 @@ export class Debris {
       const sp = rand(1.5, 6);
       const vel = new THREE.Vector3(Math.cos(a) * sp + carry.x, rand(4, 9), Math.sin(a) * sp + carry.z);
       const p = at.clone().add(_v.set(rand(-spread, spread), rand(0, 1), rand(-spread, spread)));
-      if (Math.random() < 0.6) this.add(1, p, vel, new THREE.Color(0.55, 0.36, 0.2).multiplyScalar(rand(0.85, 1.1)), new THREE.Vector3(1, 1, 1), rand(40, 70));
-      else this.add(2, p, vel, new THREE.Color(0.7, 0.52, 0.33).multiplyScalar(rand(0.85, 1.1)), new THREE.Vector3(1, 1, 1).multiplyScalar(rand(0.8, 1.15)), rand(40, 70));
+      if (Math.random() < 0.6) this.add(1, p, vel, new THREE.Color(0.55, 0.36, 0.2).multiplyScalar(rand(0.85, 1.1)), new THREE.Vector3(1, 1, 1), rand(60, 110));
+      else this.add(2, p, vel, new THREE.Color(0.7, 0.52, 0.33).multiplyScalar(rand(0.85, 1.1)), new THREE.Vector3(1, 1, 1).multiplyScalar(rand(0.8, 1.15)), rand(60, 110));
     }
   }
 
@@ -222,7 +222,8 @@ export class Debris {
           if (p.kind === 1 && Math.random() < 0.65) p.floatQ.multiply(_q.setFromAxisAngle(_v.set(1, 0, 0), Math.PI / 2)); // barrels roll on their side
           if (Math.random() < (p.kind === 0 ? 0.3 : 1)) {
             world.particles.splash(p.pos.clone().setY(wh), p.kind === 0 ? 0.25 : 0.45);
-            world.wake.stamp(p.pos.x, p.pos.z, 1.2, 0.5, true);
+            world.wake.stamp(p.pos.x, p.pos.z, 1.1, 0.3, true);
+            world.wake.push(p.pos.x, p.pos.z, 0.9, p.kind === 0 ? -0.08 : -0.18);
           }
         }
       } else if (p.floating) {
@@ -286,8 +287,9 @@ export class Debris {
             const sp = o.position.clone().addScaledVector(tip, (b.len * k) / 4);
             sp.y = world.waterHeight(sp.x, sp.z);
             world.particles.splash(sp, 1.1);
-            world.wake.stamp(sp.x, sp.z, 3.5, 1.2);
-            world.wake.stamp(sp.x, sp.z, 6, 0.9, true);
+            world.wake.stamp(sp.x, sp.z, 2.2, 0.6);
+            world.wake.stamp(sp.x, sp.z, 4, 0.45, true);
+            world.wake.push(sp.x, sp.z, 2.4, -0.45);
           }
         }
       } else {
@@ -302,11 +304,13 @@ export class Debris {
         _q2.setFromAxisAngle(UP, Math.sin(b.bob * 0.15) * 0.0015);
         b.settleTo.premultiply(_q2);
         o.quaternion.slerpQuaternions(b.settleFrom, b.settleTo, st);
-        if (b.age > b.life) b.sink += dt * (0.25 + (b.age - b.life) * 0.05);
+        // waterlogged spars ride low and slowly go under
+        b.sink += dt * (b.age > b.life ? 0.25 + (b.age - b.life) * 0.05 : 0.025);
         const mid = _v.copy(b.axis).applyQuaternion(o.quaternion).multiplyScalar(b.len * 0.5).add(o.position);
         const wh = world.waterHeight(mid.x, mid.z);
         const ground = world.terrain.heightAt(mid.x, mid.z);
-        const ty = Math.max(wh - 0.35 - b.sink + Math.sin(b.bob * 1.2) * 0.08, ground + 0.2) - (mid.y - o.position.y);
+        for (const s of pushers) this.push(o.position, b.vel, s, 0.1);
+        const ty = Math.max(wh - 0.45 - b.sink + Math.sin(b.bob * 1.2) * 0.08, ground + 0.2) - (mid.y - o.position.y);
         o.position.y += (ty - o.position.y) * Math.min(1, dt * 2.5);
         if (b.sink > 9) {
           this.removeBody(i);
