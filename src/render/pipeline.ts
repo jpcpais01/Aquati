@@ -28,6 +28,23 @@ export interface PipelineSettings {
   tiltShift: boolean;
 }
 
+/** Photo mode's look, fed straight into the final pass. */
+export interface PhotoLook {
+  saturation: number;
+  contrast: number;
+  fade: number;
+  grain: number;
+  vignette: number;
+  tint: [number, number, number];
+  mono: [number, number, number];
+  monoAmount: number;
+  /** View depth (m) held sharp, and how fast the blur grows away from it (0 = no depth of field). */
+  focus: number;
+  aperture: number;
+  /** Sea level, standing in for the water's missing depth. */
+  waterY: number;
+}
+
 const SS_UNIFORMS = () => ({
   uSSA: { value: null as THREE.Texture | null },
   uSSB: { value: null as THREE.Texture | null },
@@ -149,6 +166,9 @@ export class Pipeline {
       uniform vec2 uHalfTexel; uniform float uExposure; uniform float uBloomStrength; uniform float uTilt;
       uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor; uniform float uLightning;
       uniform vec2 uTexel; uniform float uSharpen; uniform float uDepth; uniform float uDesat;
+      // photo mode: depth of field and a film look, uniforms only (see PhotoLook)
+      uniform float uPhoto; uniform vec4 uPGrade; uniform vec3 uPTint; uniform vec4 uPMono; uniform float uPVig;
+      uniform vec4 uDof; uniform sampler2D uDofDepth; uniform vec2 uDofNearFar; uniform mat4 uInvProj; uniform mat3 uCamRot; uniform float uCamY;
       varying vec2 vUv;
       #if SS
       ${GLSL_SS_APPLY}
@@ -228,6 +248,31 @@ export class Pipeline {
           }
         }
 
+        // photo mode depth of field: a golden-angle disc gathered from the
+        // half-res image, its radius set by how far each pixel sits from the
+        // focal plane. The open sea has no opaque depth of its own (the opaque
+        // pass sees the seabed through it), so the water plane stands in.
+        if (uDof.w > 0.0) {
+          float dz = texture2D(uDofDepth, vUv).r;
+          float n = uDofNearFar.x, f = uDofNearFar.y;
+          float d = (n * f) / (f - (f - n) * dz);
+          vec4 vp = uInvProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+          vec3 rv = normalize(vp.xyz / vp.w);
+          vec3 rw = uCamRot * rv;
+          if (rw.y < -1e-4) d = min(d, uCamY / -rw.y * -rv.z);
+          float coc = clamp(abs(d - uDof.x) / max(d, 1e-3) * uDof.y, 0.0, 1.0);
+          if (coc > 0.015) {
+            float r = coc * uDof.z;
+            vec3 acc = vec3(0.0);
+            for (int i = 0; i < 24; i++) {
+              float fi = float(i) + 0.5;
+              float a = fi * 2.39996;
+              acc += texture2D(uHalf, uv + vec2(cos(a), sin(a)) * sqrt(fi / 24.0) * r * uTexel).rgb;
+            }
+            col = mix(col, acc / 24.0, smoothstep(0.015, 0.18, coc));
+          }
+        }
+
         vec3 bloom = texture2D(uBloom, vUv).rgb;
         col += bloom * uBloomStrength;
         col += uFlashColor * uFlash;
@@ -264,11 +309,23 @@ export class Pipeline {
         float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
         col = mix(vec3(l2), col, 1.12 - uDesat);
 
+        // photo mode filter: white balance, saturation, contrast, a toned
+        // monochrome and lifted, faded blacks
+        if (uPhoto > 0.5) {
+          col *= uPTint;
+          float pl = dot(col, vec3(0.2126, 0.7152, 0.0722));
+          col = mix(vec3(pl), col, uPGrade.x);
+          col = clamp((col - 0.42) * uPGrade.y + 0.42, 0.0, 1.0);
+          col = mix(col, min(vec3(pl) * uPMono.rgb, 1.0), uPMono.a);
+          col = col * (1.0 - uPGrade.z * 0.32) + vec3(0.11, 0.1, 0.12) * uPGrade.z;
+        }
+
         vec2 vc = vUv - 0.5;
-        col *= 1.0 - dot(vc, vc) * (uVignette + uDesat * 1.1 + uDepth * 0.9);
+        col *= 1.0 - dot(vc, vc) * (uVignette + uDesat * 1.1 + uDepth * 0.9 + uPVig);
 
         col = toSRGB(clamp(col, 0.0, 1.0));
         col += (hash(vUv * 1000.0 + uTime) - 0.5) / 255.0; // dither
+        if (uPGrade.w > 0.0) col += (hash(gl_FragCoord.xy * 0.913 + 17.0) + hash(gl_FragCoord.yx * 0.71 + 3.0) - 1.0) * uPGrade.w;
         gl_FragColor = vec4(col, 1.0);
       }`,
       {
@@ -289,6 +346,17 @@ export class Pipeline {
         uLightning: { value: 0 },
         uDepth: { value: 0 },
         uDesat: { value: 0 },
+        uPhoto: { value: 0 },
+        uPGrade: { value: new THREE.Vector4(1, 1, 0, 0) },
+        uPTint: { value: new THREE.Vector3(1, 1, 1) },
+        uPMono: { value: new THREE.Vector4(1, 1, 1, 0) },
+        uPVig: { value: 0 },
+        uDof: { value: new THREE.Vector4(50, 0, 0, 0) },
+        uDofDepth: { value: null },
+        uDofNearFar: { value: new THREE.Vector2(1, 1000) },
+        uInvProj: { value: new THREE.Matrix4() },
+        uCamRot: { value: new THREE.Matrix3() },
+        uCamY: { value: 10 },
         ...SS_UNIFORMS(),
       },
     );
@@ -449,11 +517,31 @@ export class Pipeline {
     fu.uExposure.value = this.exposure;
     fu.uTilt.value = this.settings.tiltShift ? this.tilt : 0;
     fu.uTime.value = time % 100;
+    const ph = this.photo;
+    fu.uPhoto.value = ph ? 1 : 0;
+    fu.uPVig.value = ph ? ph.vignette : 0;
+    fu.uPGrade.value.set(ph ? ph.saturation : 1, ph ? ph.contrast : 1, ph ? ph.fade : 0, ph ? ph.grain : 0);
+    if (ph) {
+      fu.uPTint.value.fromArray(ph.tint);
+      fu.uPMono.value.set(ph.mono[0], ph.mono[1], ph.mono[2], ph.monoAmount);
+    }
+    const dof = ph && ph.aperture > 0;
+    fu.uDof.value.set(ph ? ph.focus : 50, ph ? ph.aperture : 0, this.height * 0.018, dof ? 1 : 0);
+    if (dof) {
+      const cam = camera as THREE.PerspectiveCamera;
+      fu.uDofDepth.value = this.rtOpaque.depthTexture;
+      fu.uDofNearFar.value.set(cam.near, cam.far);
+      fu.uInvProj.value.copy(cam.projectionMatrixInverse);
+      fu.uCamRot.value.setFromMatrix4(cam.matrixWorld);
+      fu.uCamY.value = cam.position.y - ph.waterY;
+    }
     this.blit(this.finalMat, null);
     P?.end(true);
   }
 
   tilt = 1;
+  /** Photo mode's lens and filter, or null in play. Uniforms only: the same program draws it. */
+  photo: PhotoLook | null = null;
   /**
    * How far beneath the waves the picture is (0 above .. 1 drowned): drowns the
    * reds, swims the image, blurs it and lets sun shafts through. A uniform only,
