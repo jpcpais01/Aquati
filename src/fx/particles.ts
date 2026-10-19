@@ -342,8 +342,43 @@ export class Particles {
     this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.3, life: 0.9, size: 0.35, sizeEnd: 1.4, color: [0.9, 0.9, 0.9], alpha: 0.28, drag: 1, kind: 1 });
   }
 
-  sparkle(pos: THREE.Vector3) {
-    this.emit({ x: pos.x + rand(-0.8, 0.8), y: pos.y + rand(0.2, 1.4), z: pos.z + rand(-0.8, 0.8), vy: 0.8, life: rand(0.5, 0.9), size: rand(0.3, 0.6), sizeEnd: 0.05, color: [6, 4.6, 1.6], kind: 2, fadeIn: 0.1 }, true);
+  sparkle(pos: THREE.Vector3, tint?: [number, number, number], scale = 1) {
+    const c: [number, number, number] = tint ? [tint[0] * 2.2, tint[1] * 2.2, tint[2] * 2.2] : [6, 4.6, 1.6];
+    this.emit({ x: pos.x + rand(-0.8, 0.8) * scale, y: pos.y + rand(0.2, 1.4) * scale, z: pos.z + rand(-0.8, 0.8) * scale, vy: 0.8 * scale, life: rand(0.5, 0.9), size: rand(0.3, 0.6) * scale, sizeEnd: 0.05, color: c, kind: 2, fadeIn: 0.1 }, true);
+  }
+
+  /** Treasure pickup: a flash, a fountain of coins and a ring of rarity-coloured sparks. */
+  treasure(pos: THREE.Vector3, tint: [number, number, number], tier: number) {
+    const big = 0.6 + tier * 0.35;
+    const t = (k: number): [number, number, number] => [tint[0] * k, tint[1] * k, tint[2] * k];
+    this.emit({ x: pos.x, y: pos.y + 0.8, z: pos.z, life: 0.35 + tier * 0.08, size: 2 * big, sizeEnd: 6 * big, color: t(2.4), colorEnd: t(0.4), kind: 0, fadeIn: 0.001 }, true);
+    // gold coins tumbling up and back down
+    for (let i = 0; i < 8 + tier * 8; i++) {
+      const a = Math.random() * Math.PI * 2, r = rand(1, 3.5) * big;
+      this.emit({
+        x: pos.x, y: pos.y + 0.6, z: pos.z, vx: Math.cos(a) * r, vy: rand(6, 11) * Math.sqrt(big), vz: Math.sin(a) * r,
+        life: rand(0.8, 1.3), size: rand(0.16, 0.26), color: [5.5, 3.8, 1.1], colorEnd: [3, 1.6, 0.3], grav: 16, drag: 0.4, spin: rand(-14, 14), kind: 3, fadeIn: 0.001,
+      }, true);
+    }
+    // ring of rarity sparks racing outward across the water
+    const ring = 10 + tier * 8;
+    for (let i = 0; i < ring; i++) {
+      const a = (i / ring) * Math.PI * 2 + rand(-0.1, 0.1), sp = rand(5, 8) * big;
+      this.emit({
+        x: pos.x, y: pos.y + 0.4, z: pos.z, vx: Math.cos(a) * sp, vy: rand(0.5, 2), vz: Math.sin(a) * sp,
+        life: rand(0.5, 0.8), size: rand(0.25, 0.45), sizeEnd: 0.05, color: t(3), colorEnd: t(0.8), drag: 2.4, kind: 2, fadeIn: 0.001,
+      }, true);
+    }
+    // epic and legendary: a pillar of motes spiralling up to the sky
+    if (tier >= 3) {
+      for (let i = 0; i < tier * 10; i++) {
+        const a = i * 0.7, r = rand(0.4, 1.4);
+        this.emit({
+          x: pos.x + Math.cos(a) * r, y: pos.y + rand(0, 2), z: pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 1.5, vy: rand(5, 12), vz: Math.cos(a) * 1.5,
+          life: rand(0.9, 1.6), size: rand(0.25, 0.5), sizeEnd: 0.05, color: t(2.6), colorEnd: [1.5, 1.2, 0.5], drag: 0.6, kind: 2, fadeIn: 0.02,
+        }, true);
+      }
+    }
   }
 
   setScene(depth: THREE.Texture, w: number, h: number, cam: THREE.PerspectiveCamera) {

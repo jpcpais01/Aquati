@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { PATCH_NOTES } from '../data/patchNotes';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Ship } from '../ships/ship';
+import { RARITY } from '../game/loot';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import { SeaChart, ChartScene } from './chart';
 import { crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
@@ -409,13 +410,13 @@ export class UI {
     setTimeout(() => el.remove(), (life + 0.7) * 1000);
   }
 
-  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' = '') {
+  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' = '') {
     const f = this.floaterPool.find((p) => p.t >= p.life) ?? this.floaterPool[0];
     f.el.textContent = text;
     f.el.className = 'floater' + (kind ? ' ' + kind : '');
     f.el.style.display = 'block';
     f.t = 0;
-    f.life = 1.3;
+    f.life = kind === 'legendary' ? 2.4 : kind === 'epic' ? 1.9 : kind === 'rare' ? 1.6 : 1.3;
     f.x = x + (Math.random() - 0.5) * 24;
     f.y = y;
     f.vy = -48;
@@ -427,7 +428,7 @@ export class UI {
       f.t += dt;
       f.y += f.vy * dt;
       f.vy *= 0.97;
-      const a = f.t < 0.15 ? f.t / 0.15 : 1 - Math.max(0, (f.t - 0.7) / 0.6);
+      const a = f.t < 0.15 ? f.t / 0.15 : 1 - Math.max(0, (f.t - (f.life - 0.6)) / 0.6);
       const sc = f.t < 0.12 ? 0.6 + f.t * 4 : 1.08 - Math.min(0.08, f.t * 0.2);
       f.el.style.transform = `translate(${f.x}px, ${f.y}px) translate(-50%, -50%) scale(${sc})`;
       f.el.style.opacity = `${Math.max(0, a)}`;
@@ -553,7 +554,7 @@ export class UI {
     this.chart.setTerrain(terrain);
   }
 
-  drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number }[], islands: Island[], discovered: Set<string>) {
+  drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number; tier?: number }[], islands: Island[], discovered: Set<string>) {
     const g = this.map;
     const S = this.mapCanvas.width;
     const R = 420; // world metres from centre to edge
@@ -580,11 +581,12 @@ export class UI {
         g.fillText('?', x, y + 6);
       }
     }
-    g.fillStyle = '#ffe08a';
     for (const l of loot) {
       const [x, y] = toMap(l.x, l.z);
+      const t = l.tier ?? 0;
+      g.fillStyle = RARITY[t].css;
       g.beginPath();
-      g.arc(x, y, 3.5, 0, Math.PI * 2);
+      g.arc(x, y, t >= 3 ? 4.5 : t ? 3.5 : 2.6, 0, Math.PI * 2);
       g.fill();
     }
     const tri = (s: Ship, color: string, size: number) => {

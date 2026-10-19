@@ -46,7 +46,7 @@ export class CameraRig {
     this.target.copy(this.focus);
 
     // follow pose: camera due south of the focus looking north & down
-    const pitch = lerp(1.06, 1.25, this.zoomSmooth); // radians above the horizon
+    const pitch = lerp(0.91, 1.1, this.zoomSmooth); // radians above the horizon
     const dist = this.distance;
     const followPos = new THREE.Vector3(this.focus.x, this.focus.y + Math.sin(pitch) * dist, this.focus.z + Math.cos(pitch) * dist);
 
