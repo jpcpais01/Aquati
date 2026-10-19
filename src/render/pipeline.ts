@@ -294,8 +294,9 @@ export class Pipeline {
           rays *= rays * smoothstep(0.05, 1.0, yUp);
           // dancing caustic light where the surface sits overhead
           float cz = sin(vUv.x * 40.0 + sin(vUv.y * 23.0 + uTime) * 2.0 + uTime * 0.8) * sin(vUv.y * 37.0 - uTime * 0.6);
-          vec3 lit = seen * 0.55 + vec3(0.32, 0.72, 0.68) * (rays * 0.42 + max(cz, 0.0) * smoothstep(0.6, 1.0, yUp) * 0.12);
-          col = mix(col, lit, uDepth);
+          // the gloom builds with depth; the shafts are at full strength from a third of the way down
+          col = mix(col, seen * 0.55, uDepth);
+          col += vec3(0.32, 0.72, 0.68) * (rays * 0.42 + max(cz, 0.0) * smoothstep(0.6, 1.0, yUp) * 0.12) * min(uDepth * 3.0, 1.0);
         }
 
         // gentle split-tone grade: teal shadows, warm highlights
@@ -438,7 +439,7 @@ export class Pipeline {
     const P = this.prof;
     P?.begin('World (islands, ships)', 'render', true);
     r.autoClear = false;
-    r.setClearColor(0x0b2a3a, 1);
+    r.setClearColor(this.clearColor, 1);
     r.setRenderTarget(this.rtOpaque);
     r.clear(true, true, false);
     r.render(opaque, camera);
@@ -545,6 +546,8 @@ export class Pipeline {
   tilt = 1;
   /** Photo mode's lens and filter, or null in play. Uniforms only: the same program draws it. */
   photo: PhotoLook | null = null;
+  /** What shows where nothing is drawn (the deep sea colour; the water itself when the camera is under). */
+  readonly clearColor = new THREE.Color(0x0b2a3a);
   /**
    * How far beneath the waves the picture is (0 above .. 1 drowned): drowns the
    * reds, swims the image, blurs it and lets sun shafts through. A uniform only,

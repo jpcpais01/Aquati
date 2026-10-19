@@ -25,6 +25,21 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Down with the ship',
+        notes: [
+          'When your ship sinks in open water the camera no longer stops at the surface. It dives under with her, and you watch her go down from below: her dark hull against the bright window of the sky, the waves rippling overhead, sunbeams slanting through the water and a stream of air bubbles and broken timbers pouring out of her.',
+          'Her fires hiss out as she goes under. She heels over as she sinks, settles onto the seabed on her side in a slow cloud of sand, and the light fades as the deep closes in before the farewell screen appears. Sink on a shallow reef and the water still closes over you as before.',
+        ],
+      },
+      {
+        title: 'Real seagulls',
+        notes: [
+          'The gulls are reborn as proper herring gulls: a rounded body and head, a hooked yellow beak with its red spot, grey backs, long wings with black tips and white spots, a fanned tail and pink webbed feet.',
+          'They fly like gulls now. They glide and wheel on the wind with a few lazy wingbeats, bank into their turns, rock in the gusts and beat hard to climb, flaring their wings and spreading their tails to land.',
+          'They have a life of their own. Gulls trail passing ships and circle the masts, land on mast caps, fighting tops and the jib-boom, loaf on the shore rocks, bob on the swell, and throw their heads back to call. Fire your guns and they burst off in a screaming cloud.',
+        ],
+      },
+      {
         title: 'Choose the time of day',
         notes: [
           'Tap the clock beside the minimap to cycle Auto, Dawn, Noon, Golden hour, Dusk and Night. The sun sweeps across the sky to your chosen hour and stays there.',
