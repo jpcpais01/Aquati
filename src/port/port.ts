@@ -10,6 +10,7 @@ import { PRESETS, ShipLook } from '../ships/look';
 import type { Ship } from '../ships/ship';
 import type { World } from '../game/world';
 import { Crowd, Figure, HIP, PirateStyle, PropGeo } from './pirates';
+import { FLAG, P, PROP } from '../ships/crewModel';
 import { PortSite, PORT_HALF_WIDTH } from './site';
 
 // Puerto: a stilt-town harbour on a sunny beach. A plank quay on pilings, a
@@ -244,7 +245,7 @@ const CAST: PirateStyle[] = [
   // 9 swabbie
   { shirt: 0xc8d6d2, pants: 0x8a5a32, skin: 0xa86e48, hat: 'bandana', hatColor: 0x9c2a2a, beard: null, patch: false, boots: 0x3a2618 },
   // 10 captain
-  { shirt: 0x7a1f2b, pants: 0x1f1b1a, skin: 0xf0c7a4, hat: 'tricorn', hatColor: 0x141212, beard: 0x141212, patch: false, boots: 0x141212, girth: 1.08 },
+  { shirt: 0x7a1f2b, pants: 0x1f1b1a, skin: 0xf0c7a4, hat: 'tricorn', hatColor: 0x141212, beard: 0x141212, patch: false, boots: 0x141212, girth: 1.08, flags: FLAG.coat | FLAG.parrot | FLAG.plume },
   // 11 sleeper
   { shirt: 0xe9a23b, pants: 0x3a3634, skin: 0xd8a07a, hat: 'none', hatColor: 0, beard: 0x6b4a2b, patch: false, boots: 0x3a2618, girth: 1.22 },
 ];
@@ -945,23 +946,19 @@ export class Port {
     // accordion
     this.accordion = this.prop(PropGeo.accordion(), f[3].hips);
     this.accordion.position.set(0, 0.36, 0.42);
-    // mugs
-    for (const i of [5, 6]) this.prop(PropGeo.mug(), f[i].handR).position.set(0, -0.05, 0.06);
+    // tankards
+    for (const i of [5, 6]) f[i].prop = PROP.mug;
     // painter's brush: the tip takes your topsides colour
     const brush = new THREE.Group();
     this.prop(PropGeo.brush(1.7), brush);
     this.prop(PropGeo.brushTip(1.7), brush, this.paintMat);
     f[7].handR.add(brush);
     // lookout's spyglass
-    this.prop(PropGeo.spyglass(), f[8].head).position.set(-0.085, 0.04, 0.2);
+    f[8].prop = PROP.spyglass;
     // swabbie's mop
     const mop = this.prop(PropGeo.mop(), f[9].hips);
     mop.position.set(0, 0.32, 0.36);
     mop.rotation.x = 0.55;
-    // captain's parrot
-    const parrot = this.prop(PropGeo.parrot(), f[10].hips);
-    parrot.position.set(0.33, 0.66, -0.04);
-    parrot.name = 'parrot';
     // rowboat for the painter, with a paint bucket
     this.buildRowboat();
     this.rowboat.add(f[7].root);
@@ -1248,8 +1245,11 @@ export class Port {
       const fig = f[8];
       fig.root.position.set(28.6, DECK + 9.15, -3.2);
       fig.root.rotation.y = 0.6 + Math.sin(t * 0.22) * 1.1;
-      fig.armR.rotation.set(-1.62, 0, -0.32);
-      fig.armL.rotation.set(-1.25, 0, 0.62);
+      // glass to the eye, the off hand steadying the draw tube
+      fig.reach(false, 1.62, 0.32, 1.52);
+      fig.reach(true, 1.25, 0.3, 1.55);
+      fig.pose[P.handL] = 0.85;
+      fig.pose[P.brow] = -0.35;
       fig.head.rotation.x = -0.05;
     }
     // -- 9: swabbing the deck
@@ -1282,12 +1282,6 @@ export class Port {
       fig.armR.rotation.set(0.35 * (1 - point) - point * 1.55, -point * 0.3, -0.75 * (1 - point) - point * 0.1);
       fig.head.rotation.y = -0.3 + Math.sin(t * 0.5) * 0.35 - point * 0.25;
       fig.hips.rotation.x = -0.05;
-      const parrot = fig.hips.getObjectByName('parrot');
-      if (parrot) {
-        parrot.rotation.x = Math.sin(t * 3.1) * 0.08;
-        parrot.rotation.y = Math.sin(t * 0.7) * 0.6;
-        parrot.scale.x = cyc > 3 && cyc < 3.4 ? 1.6 : 1;
-      }
     }
     // -- 11: napping in the hammock
     {

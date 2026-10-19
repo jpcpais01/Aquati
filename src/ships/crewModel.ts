@@ -97,6 +97,8 @@ const EL_Y = 1.125;
 const HIP_X = 0.09;
 const HIP_Y = 0.88;
 const KNEE_Y = 0.5;
+/** The joint pivots (model space, metres), for skeletons that drive the sailor from outside. */
+export const RIG = { neckY: NECK.y, shX: SH_X, shY: SH_Y, elY: EL_Y, hipX: HIP_X, hipY: HIP_Y, kneeY: KNEE_Y, gripY: 0.818 } as const;
 const HX = SH_X + 0.01; // wrist / hand centre line
 const KN_Y = 0.832; // knuckles
 const FM_Y = 0.806; // middle finger joint
@@ -1916,10 +1918,9 @@ export class CrewRenderer {
     this.palette.colorSpace = THREE.NoColorSpace;
     this.palette.needsUpdate = true;
     const { material, depth } = createCrewMaterial(this.palette);
-    this.batches = [
-      [nearRes, nearMax],
-      [farRes, rows],
-    ].map(([res, max]) => {
+    // a crowd that always fits in the near batch never needs the far sculpt
+    const levels = nearMax >= rows ? [[nearRes, rows]] : [[nearRes, nearMax], [farRes, rows]];
+    this.batches = levels.map(([res, max]) => {
       const geo = buildSailorGeometry(res);
       const poses = [0, 1, 2, 3, 4, 5].map((k) => {
         const a = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
@@ -1962,9 +1963,9 @@ export class CrewRenderer {
 
   /** Queues one posed sailor; `near` asks for the detailed sculpt (if there's room). */
   push(m: THREE.Matrix4, pose: ArrayLike<number>, row: number, hat: number, prop: number, flags: number, near: boolean) {
-    let b = this.batches[near ? 0 : 1];
+    let b = this.batches[near ? 0 : this.batches.length - 1];
     if (b.n >= b.max) b = this.batches[1];
-    if (b.n >= b.max) return;
+    if (!b || b.n >= b.max) return;
     const n = b.n++;
     m.toArray(b.mesh.instanceMatrix.array as Float32Array, n * 16);
     const o = n * 4;
