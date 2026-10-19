@@ -280,6 +280,19 @@ export class VaultStore {
     this.save();
   }
 
+  /** Hands out a one-off gift once per save; true if it was given just now. */
+  gift(key: string, gold: number) {
+    const k = `aquati.gift.${key}`;
+    try {
+      if (localStorage.getItem(k)) return false;
+      localStorage.setItem(k, '1');
+    } catch {
+      return false;
+    }
+    this.earn(gold);
+    return true;
+  }
+
   equip(id: string) {
     const it = BY_ID.get(id);
     if (!it || !this.s.owned[id]) return false;
