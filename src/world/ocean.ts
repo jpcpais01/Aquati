@@ -4,11 +4,15 @@ import { getSharedTextures } from '../render/textures';
 import { GLSL_WAVES, packWaves, Wave } from './waves';
 import { WORLD_SIZE } from './terrain';
 import { WakeField } from './wakeField';
+import { GLSL_SURF, shoreUniforms } from './shore';
 
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
-// reflection, sun glitter, crest sub-surface glow, and three kinds of foam
-// (shoreline surf bands, hull contact, and ship wakes). Ship wakes come from
+// reflection, sun glitter, crest sub-surface glow, and foam: breaking surf,
+// hull and waterline contact, whitecaps and ship wakes. The surf (see
+// shore.ts) rolls in to every beach, stands up and spills into whitewater
+// that thins into lace as its bubbles pop, picked up on the sand by the
+// ground shader's swash. Ship wakes come from
 // a live wave simulation (see WakeField): its height lifts the surface and
 // bends the normals, and its foam breaks up into lace as it ages. Open water
 // layers anti-tiled ripples, wind slicks and gust cat's paws over the swell,
@@ -132,15 +136,18 @@ function buildApron(inner: number, outer: number): THREE.BufferGeometry {
 const OCEAN_VERT = /* glsl */ `
   ${GLSL_WAVES}
   uniform float uTime;
+  uniform sampler2D uNoiseTex;
   uniform sampler2D uHeightTex;
   uniform vec4 uWorldRect;
   uniform sampler2D uWakeTex;
   uniform vec4 uWakeRect;
+  ${GLSL_SURF}
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying float vCrest;
   varying float vTerrain;
   varying float vViewDist;
+  varying vec4 vShore;
   void main() {
     vec4 wp = modelMatrix * vec4(position, 1.0);
     vec2 huv = (wp.xz - uWorldRect.xy) * uWorldRect.w;
@@ -155,6 +162,17 @@ const OCEAN_VERT = /* glsl */ `
     vec2 wb = min(wuv, 1.0 - wuv);
     float wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
     wp.y += clamp(texture(uWakeTex, wuv).g, -0.9, 0.9) * wIn;
+    // surf: breakers lift the water as they roll in over the shallows (the
+    // sharp face and the foam come per pixel, in the fragment shader)
+    vec4 sf = shoreField(wp.xz);
+    float reach = mix(0.22, 1.0, sf.a) * (1.0 - smoothstep(12.0, 17.0, sf.r));
+    float psi = surfPhase(wp.xz, sf.r);
+    if (reach * (1.0 - smoothstep(4.5, 8.0, -th)) > 0.001) {
+      float sth = fract(psi);
+      vec3 sw = surfWave(wp.xz, floor(psi) + step(0.7, sth), max(-th, 0.0), reach);
+      wp.y += sw.x * (surfShape(sth, 0.3) - 0.37);
+    }
+    vShore = vec4(psi, sf.gb, reach);
     vWorld = wp.xyz;
     vNormal = n;
     vCrest = crest;
@@ -344,6 +362,7 @@ export class Ocean {
     const uniforms = {
       ...globalUniforms,
       ...opts.wake.uniforms,
+      ...shoreUniforms,
       uWaveA: { value: Array.from({ length: waves.length }, (_, i) => new THREE.Vector4().fromArray(packed.a, i * 4)) },
       uWaveB: { value: Array.from({ length: waves.length }, (_, i) => new THREE.Vector4().fromArray(packed.b, i * 4)) },
       uHeightTex: { value: opts.heightTex },
@@ -379,11 +398,13 @@ export class Ocean {
         uniform vec3 uFogColor;
         uniform vec2 uFogRange;
         ${GLSL_AERIAL}
+        ${GLSL_SURF}
         varying vec3 vWorld;
         varying vec3 vNormal;
         varying float vCrest;
         varying float vTerrain;
         varying float vViewDist;
+        varying vec4 vShore;
         #ifdef WATER_SHADOW
           uniform sampler2DShadow uShadowMap;
           uniform mat4 uShadowMatrix;
@@ -533,6 +554,29 @@ export class Ocean {
           float wChop = clamp(length(wGrad) * 5.0 + wk.r * wIn * 0.6, 0.0, 1.4);
           vec2 wRip = (texture(uNormalTex, p * 0.29 - vec2(t * 0.07, -t * 0.05) + 0.61).xy * 2.0 - 1.0) + (wn2.rb - 0.5) * 1.2;
           N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 1.9 + vec3(wRip.x, 0.0, wRip.y) * 0.22 * wChop);
+
+          // ---- surf: the breaker under this pixel and the one rolling in behind it
+          float fp = length(fwidth(p));
+          float sDepth = max(-vTerrain, 0.0);
+          float sth = fract(vShore.x);
+          float sAge = sth * SURF_T; // seconds since the last crest went by
+          float swf = 0.16;
+          bool sFace = sth > 1.0 - swf;
+          vec3 sPrev = vec3(0.0);
+          vec3 sNext = vec3(0.0);
+          if (vShore.w * (1.0 - smoothstep(4.5, 8.0, sDepth)) > 0.001) {
+            float sn = floor(vShore.x);
+            sPrev = surfWave(p, sn, sDepth, vShore.w);
+            sNext = surfWave(p, sn + 1.0, sDepth, vShore.w);
+            vec3 sCur = sFace ? sNext : sPrev;
+            // the phase climbs 1 / (c T) per metre out to sea, c = sqrt(g d)
+            vec2 sdir = vShore.yz / max(length(vShore.yz), 0.2);
+            float sg = sCur.x * surfSlope(sth, swf) / (sqrt(9.81 * max(sDepth, 0.15)) * SURF_T);
+            // a broken face is a rumpled tumble of water, not a clean slope
+            sg *= 1.0 - sCur.y * 0.45;
+            vec2 sGrad = sdir * clamp(sg, -0.8, 0.8);
+            N = normalize(N - vec3(sGrad.x, 0.0, sGrad.y) * 1.6);
+          }
           vec3 Ng = normalize(N + vec3(gustRip.x, 0.0, gustRip.y) * 0.5);
 
           // ---- refraction with leak protection
@@ -582,6 +626,13 @@ export class Ocean {
           body += vec3(0.04, 0.36, 0.34) * clamp(wakeH * 1.6, -0.25, 1.0) * (0.45 + sssView) * light * 0.5;
           // ruffled water under a gust scatters less light back up: darker, matte
           body *= 1.0 - gust * 0.18;
+          // a breaker standing up in the shallows: its thin face glows turquoise
+          // where the light shines through, the moment before the lip spills
+          float sGlass = sNext.z * (1.0 - sNext.y * 0.7) * smoothstep(1.0 - swf - 0.12, 1.0, sth);
+          body += vec3(0.05, 0.42, 0.38) * sGlass * (0.5 + sssView) * light * 0.55;
+          // churned water behind a breaker is full of bubbles: milky aquamarine
+          float sAer = sPrev.y * exp(-sAge * 0.4);
+          body = mix(body, vec3(0.3, 0.56, 0.52) * light * (0.55 + 0.45 * cloud), sAer * 0.3);
           // under a grey sky the sea loses its blue and turns pewter
           body = mix(body, vec3(dot(body, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), uCloudCover * uCloudCover * 0.4);
 
@@ -637,13 +688,27 @@ export class Ocean {
           vec4 nz2 = texture(uNoiseTex, vWorld.xz * 0.15 - vec2(t * 0.017, t * 0.009));
           float lace = texture(uNoiseTex, vWorld.xz * 0.045 + vec2(t * 0.011, -t * 0.007)).b;
           float lace2 = texture(uNoiseTex, vWorld.xz * 0.027 - vec2(t * 0.008, t * 0.012)).g;
-          float bubbles = smoothstep(0.3, 0.72, lace * 0.75 + lace2 * 0.55 - 0.08);
-          float colDepth = max(vWorld.y - vTerrain, 0.0);
-          float bands = sin(colDepth * 3.0 - t * 1.5 + nz.g * 6.0) * 0.5 + 0.5;
-          float shore = (1.0 - smoothstep(0.2, 2.2, colDepth)) * smoothstep(0.55, 0.95, bands) * 0.8;
-          float edge = 1.0 - smoothstep(0.02, 0.4, colDepth);
-          float contact = (1.0 - smoothstep(0.0, 0.9, thick)) * step(-1.0, vTerrain) ;
-          contact = max(contact, (1.0 - smoothstep(0.0, 0.6, thick)) * 0.8);
+          // a standing web of bubble rafts, for the foam that has no age of its own
+          float fv = foamField(p);
+          float bubbles = foamCut(fv, 0.62, fp);
+          // the vertical depth of water over whatever lies below (seabed, hull)
+          vec3 camFwd = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+          float vThick = thick * max(V.y, 0.05) / max(dot(-V, camFwd), 0.05);
+          // whitewater: a dense bore right behind each broken crest that leaves a
+          // sheet of foam behind it, opening into lace as the bubbles pop
+          float surfCover = sPrev.y * (exp(-sAge * 1.4) + 0.4 * exp(-sAge * 0.42));
+          // the spilling lip on the face of a breaking wave
+          surfCover = max(surfCover, sNext.y * smoothstep(1.0 - swf * 0.85, 1.0, sth));
+          // stray rafts of old foam drifting about the surf zone between sets
+          float sZone = max(sPrev.y, sNext.y * 0.7);
+          surfCover = max(surfCover, sZone * 0.26 * smoothstep(0.35, 0.75, nz.g * 0.7 + nz2.a * 0.45));
+          // a thin lacy rim where the water meets sand, rock or a hull
+          // (beaches shelve so gently that a few centimetres span metres of sand)
+          float rim = 1.0 - smoothstep(0.0, 0.07 + 0.08 * sZone, vThick);
+          // hulls and boulders standing in the water churn a collar of foam
+          float contact = (1.0 - smoothstep(0.0, 0.6, vThick)) * smoothstep(0.25, 0.6, sDepth - vThick);
+          surfCover = max(surfCover, max(rim * 0.6, contact * 0.85));
+          float surfFoam = foamCut(fv, clamp(surfCover, 0.0, 1.0), fp);
           // wake foam: a dense churned core that breaks up into lacy cells as it thins out
           float wf = clamp(wk.r * wIn, 0.0, 2.5);
           float pat = lace * 0.55 + lace2 * 0.45 + (nz2.r - 0.5) * 0.3 + (wn.b - 0.5) * 0.35;
@@ -661,7 +726,7 @@ export class Ocean {
             float sn = texture(uNoiseTex, sp).g * 0.7 + texture(uNoiseTex, sp * 2.3 + 0.5).a * 0.3;
             spume = smoothstep(0.62, 0.8, sn) * uStorm * 0.55 * (0.4 + 0.6 * hgt);
           }
-          float foam = clamp(shore + contact * 0.85, 0.0, 1.0) * bubbles + edge * (0.55 + 0.45 * bubbles);
+          float foam = surfFoam * (0.82 + 0.18 * clamp(surfCover, 0.0, 1.0));
           foam += wakeFoam * (0.8 + 0.2 * bubbles);
           // whitecaps break up softly; the cellular lace alone reads as polka dots on a big cap
           float capBreak = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
@@ -669,11 +734,11 @@ export class Ocean {
           foam += spume * (0.5 + 0.5 * bubbles) + rainSplash * 0.7;
           foam = clamp(foam, 0.0, 1.0);
           vec3 foamCol = vec3(0.96, 0.98, 1.0) * (uSunColor * (0.25 + 0.75 * ndl) * cloud * 0.42 + uSkyZenith * 0.55);
-          col = mix(col, foamCol, foam * 0.88);
+          col = mix(col, foamCol, foam * 0.9);
 
           // ---- bioluminescence: on dark nights churned water glows blue-green
           if (uNight > 0.05) {
-            float churn = (wakeFoam * 0.9 + clamp(shore + contact * 0.85, 0.0, 1.0) * 0.45) * bubbles
+            float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5
               + (crestFoam * 0.18 * capBreak + spume * 0.08) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;
