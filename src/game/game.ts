@@ -312,11 +312,19 @@ export class Game {
     if (old) this.removeShip(old);
     this.preview = s;
     this.rig.orbitCenter.set(s.pos.x, 0, s.pos.z);
-    // bounding sphere of hull + rig: bowsprit to transom, keel to the tallest truck
-    const c = s.cls;
-    const top = Math.max(...c.masts.map((m) => m.height)) + c.freeboard + 1;
-    const half = (c.length + c.bowsprit) / 2;
-    this.rig.orbitSphere = { y: top * 0.45, r: Math.hypot(half, top * 0.55) };
+    // the real bounds of hull + rig (bowsprit to transom, keel to the tallest truck), in the ship's own frame
+    const pos = s.root.position.clone();
+    const rot = s.root.quaternion.clone();
+    s.root.position.set(0, 0, 0);
+    s.root.quaternion.identity();
+    s.root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(s.root);
+    box.min.y = Math.max(box.min.y, -1.5);
+    s.root.position.copy(pos);
+    s.root.quaternion.copy(rot);
+    s.root.updateMatrixWorld(true);
+    this.rig.orbitBox = box;
+    this.rig.orbitQuat = rot;
   }
 
   private findOpenWater(cx: number, cz: number, rMin: number, rMax: number): THREE.Vector3 {

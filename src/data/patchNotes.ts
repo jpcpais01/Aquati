@@ -28,7 +28,7 @@ export const PATCH_NOTES: PatchGroup[] = [
       {
         title: 'Your whole ship on the home screen',
         notes: [
-          'The home screen camera now frames your entire ship, from keel to the top of the tallest mast and out to the tip of the bowsprit, on any screen size. It sits in the open water beside the menu, and smoothly pulls back for the towering galleon.',
+          'The home screen camera now frames your entire ship, from keel to the top of the tallest mast and out to the tip of the bowsprit, on any screen size. It fits snugly to the ship\'s real shape, so she sits big and centred in the open water beside the menu, and the camera glides in or out as you switch between the sloop, brigantine and galleon.',
         ],
       },
       {
