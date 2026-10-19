@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T21:00Z',
+    entries: [
+      {
+        title: 'Finer ships and livelier crews',
+        notes: [
+          'Zoom in close and the rigging is now real laid rope with a little sag, tarred black for the standing rigging and pale hemp for the running lines. Shrouds are set up with deadeyes and lanyards, masts are bound with rope wooldings, and new clewlines, halyards and futtock shrouds lead down to the rails.',
+          'Guns sit on proper stepped carriages with four wheels, iron tyres and a wedge under the breech, with rammers and sponges racked along the rail between them. Bronze swivel guns are mounted on the rails fore and aft.',
+          'The decks have more life: entry steps on the side, leather fire buckets and a sea chest by the quarterdeck, and a ship\'s cat curled up on the bow crate.',
+          'Crew are better built, with fuller chests, shoulders and calves and narrower waists. Their clothes now fold and crease: shirts blouse over the sash, sleeves wrinkle at the elbow, trousers crease behind the knee and captains\' coats hang in pleats.',
+          'All the extra detail only appears on ships close to the camera, so a full battle runs as smoothly as before.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T20:00Z',
     entries: [
       {
