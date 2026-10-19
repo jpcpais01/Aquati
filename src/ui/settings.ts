@@ -10,11 +10,18 @@ export interface Settings {
   fps: boolean;
   hud: HudSize;
   shake: ShakePref;
+  /** Volume sliders, 0..1. */
+  volMaster: number;
+  volMusic: number;
+  volEffects: number;
+  volAmbience: number;
 }
 
 const KEY = 'aquati.settings';
 
-const DEFAULTS: Settings = { sound: true, music: true, fps: true, hud: 'standard', shake: 'full' };
+const DEFAULTS: Settings = { sound: true, music: true, fps: true, hud: 'standard', shake: 'full', volMaster: 1, volMusic: 0.8, volEffects: 1, volAmbience: 1 };
+
+export type VolumeKey = 'volMaster' | 'volMusic' | 'volEffects' | 'volAmbience';
 
 export function loadSettings(): Settings {
   try {
