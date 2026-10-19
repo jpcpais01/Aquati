@@ -21,7 +21,7 @@ import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, Wave } from '../world/waves';
-import { Atmosphere, TIMES, WEATHER } from '../world/atmosphere';
+import { Atmosphere, AtmosSnapshot, TIMES, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
@@ -35,6 +35,7 @@ import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
+import { PhotoMode } from '../ui/photo';
 import { fxItem, skinItem, VaultStore } from '../ships/cosmetics';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, portClearings } from '../port/site';
@@ -169,6 +170,13 @@ export class Game {
   private swBusy = false;
   private saveTimer = 0;
   private captain = new Captain();
+  /** Photo mode: the voyage frozen, the HUD gone and a free camera; see ui/photo.ts. */
+  private photo: PhotoMode;
+  private photoSnap: AtmosSnapshot | null = null;
+  private photoSky = false;
+  private photoSkyT = 0;
+  /** Pixel ratio forced for one high-resolution capture (0 in play). */
+  private captureDpr = 0;
   private fpv = false;
   private sky = createSkyDome();
 
@@ -202,6 +210,16 @@ export class Game {
     this.input.bindViewButtons(document.getElementById('btn-view')!, document.getElementById('btn-helm')!, document.getElementById('t-spy')!);
     this.captain.onStep = (k) => this.audio.footstep(k);
     this.input.onTouchDetected = () => this.ui.setTouch(true);
+    this.photo = new PhotoMode(canvas);
+    this.photo.onClick = () => this.ui.onClick();
+    this.photo.onClose = () => this.closePhoto();
+    this.photo.onCapture = () => void this.capturePhoto();
+    this.photo.onScene = (hour, kind) => {
+      if (!this.photoSnap) return;
+      this.atmos.preview(this.photoSnap, hour, kind);
+      this.photoSky = true;
+    };
+    this.photo.pickAt = (x, y) => this.pickDepth(x, y);
 
     // the key light: the sun by day, the moon by night (see world/atmosphere.ts)
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
@@ -388,6 +406,7 @@ export class Game {
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
     ui.onMap = (on) => this.setChart(on);
+    ui.onPhoto = () => this.openPhoto();
     ui.onQuit = () => {
       this.ui.showPause(false);
       this.resetWorld();
@@ -706,7 +725,7 @@ export class Game {
   private resize() {
     const w = innerWidth;
     const h = innerHeight;
-    this.dpr = Math.min(devicePixelRatio || 1, this.quality.maxDpr) * this.scaler.scale;
+    this.dpr = this.captureDpr || Math.min(devicePixelRatio || 1, this.quality.maxDpr) * this.scaler.scale;
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.setSize(w, h, false);
     this.pipeline.setSize(w * this.dpr, h * this.dpr);
@@ -954,6 +973,159 @@ export class Game {
       this.ui.showPause(false);
       this.last = performance.now();
     }
+  }
+
+  // ------------------------------------------------------------------ photo mode
+
+  /** Freezes the voyage, clears the HUD away and hands the camera to photo mode. */
+  private openPhoto() {
+    const p = this.player;
+    if (this.photo.active || !p || this.wreck.t >= 0) return;
+    let fromPause: boolean;
+    if (this.state === 'playing') {
+      this.setChart(false);
+      this.input.releaseLook();
+      this.state = 'paused';
+      fromPause = false;
+    } else if (this.state === 'paused') {
+      this.ui.showPause(false);
+      fromPause = true;
+    } else return;
+    this.input.enabled = false;
+    this.photoSnap = this.atmos.snapshot();
+    document.body.classList.add('photo');
+    this.photo.open(this.rig.camera, p.pos, this.atmos.hour, fromPause);
+  }
+
+  /** Puts the sky back as it was and returns to the pause menu or the helm. */
+  private closePhoto() {
+    if (!this.photo.active) return;
+    this.photo.close();
+    if (this.photoSnap) this.atmos.restore(this.photoSnap);
+    this.photoSnap = null;
+    this.envT = 0;
+    this.rig.photoDist = 0;
+    this.pipeline.photo = null;
+    document.body.classList.remove('photo');
+    this.input.enabled = true;
+    if (this.photo.fromPause) {
+      const p = this.player;
+      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime, ship: p.name, cls: p.cls.id } : undefined);
+    } else {
+      this.state = 'playing';
+      this.last = performance.now();
+    }
+  }
+
+  /** View depth (m) of the first thing under a screen point: a hull, an island or the sea. */
+  private pickDepth(x: number, y: number): number | null {
+    const cam = this.rig.camera;
+    const dir = PhotoMode.ray(cam, x, y, _a);
+    const o = cam.position;
+    let best = Infinity;
+    for (const s of this.ships) {
+      if (s.removed) continue;
+      // a sphere round the hull and lower rig
+      const r = s.cls.length * 0.55;
+      const cx = s.pos.x - o.x;
+      const cy = s.root.position.y + 6 - o.y;
+      const cz = s.pos.z - o.z;
+      const t = cx * dir.x + cy * dir.y + cz * dir.z;
+      const d2 = cx * cx + cy * cy + cz * cz - t * t;
+      if (t > 0 && d2 < r * r) best = Math.min(best, t - Math.sqrt(r * r - d2) * 0.5);
+    }
+    const w = this.world;
+    const ground = (px: number, pz: number) => Math.max(this.terrain.heightAt(px, pz), w.waterHeight(px, pz));
+    let prev = 0;
+    for (let t = 1; t < Math.min(best, 2400); t += Math.max(0.6, t * 0.025)) {
+      const px = o.x + dir.x * t;
+      const py = o.y + dir.y * t;
+      const pz = o.z + dir.z * t;
+      if (py < ground(px, pz)) {
+        // home in on the surface
+        let lo = prev;
+        let hi = t;
+        for (let i = 0; i < 6; i++) {
+          const m = (lo + hi) / 2;
+          if (o.y + dir.y * m < ground(o.x + dir.x * m, o.z + dir.z * m)) hi = m;
+          else lo = m;
+        }
+        best = Math.min(best, hi);
+        break;
+      }
+      prev = t;
+    }
+    if (!Number.isFinite(best)) return null;
+    // distance along the ray to depth along the view
+    return best * dir.dot(cam.getWorldDirection(new THREE.Vector3()));
+  }
+
+  /**
+   * The shutter: one frame redrawn at the screen's full pixel density (higher
+   * than play renders at), cropped to the chosen frame and saved as a PNG, or
+   * handed to the share sheet on a phone.
+   */
+  private async capturePhoto() {
+    if (!this.photo.active) return;
+    const w = innerWidth;
+    const h = innerHeight;
+    const maxTex = this.renderer.capabilities.maxTextureSize;
+    let dpr = Math.max(this.dpr, Math.min(devicePixelRatio || 1, 2.5));
+    // stay within a 4K-class frame and what the GPU can allocate
+    dpr = Math.min(dpr, Math.sqrt(8.3e6 / (w * h)), maxTex / Math.max(w, h));
+    const crop = this.photo.crop();
+    const out = document.createElement('canvas');
+    try {
+      if (Math.abs(dpr - this.dpr) > 0.01) {
+        this.captureDpr = dpr;
+        this.resize();
+      }
+      this.render(0);
+      const cw = this.canvas.width;
+      const ch = this.canvas.height;
+      out.width = Math.round(cw * crop.w);
+      out.height = Math.round(ch * crop.h);
+      out.getContext('2d')!.drawImage(this.canvas, Math.round(cw * crop.x), Math.round(ch * crop.y), out.width, out.height, 0, 0, out.width, out.height);
+    } finally {
+      if (this.captureDpr) {
+        this.captureDpr = 0;
+        this.resize();
+        this.render(0);
+      }
+    }
+    this.photo.flash();
+    this.audio.shutter();
+    const blob = await new Promise<Blob | null>((r) => out.toBlob(r, 'image/png'));
+    if (!blob) return;
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`;
+    const name = `shores-of-fortune-${stamp}.png`;
+    const size = `${out.width} × ${out.height}`;
+    if (this.input.isTouch && navigator.canShare) {
+      const file = new File([blob], name, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Shores of Fortune' });
+          this.photo.saved(blob, 'Photo shared', size);
+          return;
+        } catch (e) {
+          if ((e as Error).name === 'AbortError') {
+            this.photo.saved(blob, 'Photo taken', 'Sharing cancelled');
+            return;
+          }
+          // no share sheet after all: fall through to a download
+        }
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    this.photo.saved(blob, 'Photo saved', `${size} · Downloads`);
   }
 
   /** The sea chart overlays live play: the world keeps sailing underneath. */
@@ -1465,6 +1637,7 @@ export class Game {
       if (this.chartOpen) this.setChart(false);
       else this.setPaused(true);
     } else if (st.map) this.setChart(!this.chartOpen);
+    else if (st.photo) this.openPhoto();
   }
 
   // ------------------------------------------------------------------ frame
@@ -1509,8 +1682,9 @@ export class Game {
       this.voyageTime += dt;
       const pl = this.player;
       if (pl) this.log.metres += Math.abs(pl.speed) * dt;
-    } else if (this.state === 'paused') {
+    } else if (this.state === 'paused' && !this.photo.active) {
       if (this.input.state.pause) this.setPaused(false);
+      else if (this.input.state.photo) this.openPhoto();
     }
 
     // the shipwright's ship stays tied up at the quay
@@ -1608,7 +1782,20 @@ export class Game {
     const fvel = focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
     this.updateCaptain(dt);
-    this.rig.update(realDt, fpos, fvel, w.time, this.state === 'playing' || this.state === 'paused' ? this.battleFoe() : null);
+    if (this.photo.active) {
+      const ph = this.photo;
+      ph.cam.ground = (x, z) => Math.max(this.terrain.heightAt(x, z) + 1.4, w.waterHeight(x, z) + 0.9);
+      ph.update(realDt, this.rig.camera);
+      // shadows, the sea and the crews gather round what the lens looks at
+      const fp = ph.cam.focusPoint;
+      this.rig.target.set(fp.x, 0, fp.z);
+      this.rig.photoDist = Math.min(ph.cam.shownDist, 320);
+      // auto-focus settles on whatever sits mid-frame
+      const af = this.pickDepth(0, 0) ?? ph.cam.shownDist;
+      ph.autoFocus += (af - ph.autoFocus) * Math.min(1, realDt * 8);
+      // the captain stands at the helm in the shot, even seen from their own eyes
+      if (this.captain.ship) this.captain.pilot.hidden = false;
+    } else this.rig.update(realDt, fpos, fvel, w.time, this.state === 'playing' || this.state === 'paused' ? this.battleFoe() : null);
     const eb = this.rig.eyeBlend;
     if (eb > 0) {
       // hear the sea from where you stand, panned to where you face
@@ -1651,13 +1838,14 @@ export class Game {
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');
     this.gunnery.setPointer(this.fpv ? null : this.input.state.pointer, this.rig.camera);
-    this.gunnery.update(dt, p, this.ships, w, this.state === 'playing');
+    // the lock-on glow fades out of a photo even though the world is frozen
+    this.gunnery.update(this.photo.active ? realDt : dt, p, this.ships, w, this.state === 'playing');
     if (this.state === 'playing') this.gunTip();
     P.end();
 
     // HUD
     P.begin('HUD, minimap & chart', 'ui');
-    if (p && (this.state === 'playing' || this.state === 'paused')) {
+    if (p && (this.state === 'playing' || this.state === 'paused') && !this.photo.active) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.ui.updateAmmo(p.ammo, this.ammoStock);
@@ -1883,6 +2071,12 @@ export class Game {
     this.sun.target.updateMatrixWorld();
     updateSoftShadows(this.sun, this.softShadows, 1 / sd.y);
     P.end();
+    // photo mode's sky sliders relight the frozen scene, a few times a second at most
+    if (this.photoSky && performance.now() - this.photoSkyT > 120) {
+      this.photoSky = false;
+      this.photoSkyT = performance.now();
+      this.envT = 0;
+    }
     // the sky's light changes slowly: refresh the image-based lighting a few times a second
     this.envT -= dt > 0 ? dt : 0;
     if (this.envT <= 0) {
@@ -1929,6 +2123,15 @@ export class Game {
     this.ocean.setReflectionTarget(rr.texture, rr.width, rr.height);
     this.pipeline.refl = this.ocean.reflecting ? this.ocean.reflScene : null;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
+    if (this.photo.active) {
+      // a free camera can look out to the horizon: the sky and the far sea come in,
+      // the diorama blur gives way to the lens's own depth of field
+      this.pipeline.tilt = 0;
+      this.sky.visible = true;
+      this.ocean.apron.visible = true;
+      this.pipeline.photo = this.photo.look(0);
+      this.pipeline.exposure = this.atmos.exposure * Math.pow(2, this.photo.exposure);
+    }
     P.end();
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);

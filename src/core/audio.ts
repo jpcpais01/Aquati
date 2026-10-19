@@ -1060,4 +1060,27 @@ export class Audio {
     o.start(t);
     o.stop(t + 0.1);
   }
+  /** A camera shutter: the blades snap open, then shut. */
+  shutter() {
+    const v = this.voice(0.2, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t0 = ctx.currentTime;
+    for (const [dt, f, g0] of [[0, 3800, 0.7], [0.075, 2600, 0.55]] as const) {
+      const t = t0 + dt;
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = 1.4;
+      bp.frequency.value = f;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(g0, t + 0.004);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+      n.connect(bp).connect(ng).connect(out);
+      n.start(t, Math.random() * 2);
+      n.stop(t + 0.06);
+    }
+  }
 }

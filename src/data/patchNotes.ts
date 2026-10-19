@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'Photo mode',
+        notes: [
+          'Press P, tap the new camera button by the minimap, or pick Photo mode from the pause menu. The voyage freezes mid-moment, every bit of HUD steps aside and the camera is yours.',
+          'Orbit round any point or switch to Fly and roam the frozen scene: drag to turn, right drag or two fingers to pan, wheel or pinch to zoom, WASD with Q and E to move. Set the field of view, roll the horizon, and frame the shot in 16:9, 3:2, square, portrait or widescreen cinema, with a rule of thirds grid.',
+          'Retime the day with a slider from dawn to moonlight, swap in any weather, and add real depth of field: double-tap or double-click anything to pull it into focus and let the rest melt away. Exposure, eight film looks from Vivid and Golden to Noir and Old chart, vignette and grain finish it off.',
+          'One tap on the scene hides the controls. The shutter saves a PNG at your screen\'s full resolution, or opens the share sheet on your phone. Leave and the sky and the voyage pick up exactly where they were.',
+        ],
+      },
+      {
         title: 'Down with the ship',
         notes: [
           'When your ship sinks in open water the camera no longer stops at the surface. It dives under with her, and you watch her go down from below: her dark hull against the bright window of the sky, the waves rippling overhead, sunbeams slanting through the water and a stream of air bubbles and broken timbers pouring out of her.',

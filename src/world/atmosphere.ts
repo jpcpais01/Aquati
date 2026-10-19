@@ -152,6 +152,18 @@ export const TIMES = {
 };
 export type TimeMode = keyof typeof TIMES | 'auto';
 
+export interface AtmosSnapshot {
+  day: number;
+  kind: WeatherKind;
+  cover: number;
+  rain: number;
+  storm: number;
+  fog: number;
+  wind: number;
+  wet: number;
+  sea: number;
+}
+
 export class Atmosphere {
   /** Fraction of the solar day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
   day = 0.36;
@@ -259,6 +271,35 @@ export class Atmosphere {
     try {
       localStorage.setItem(MODE_KEY, m);
     } catch {}
+  }
+
+  /** Everything photo mode may change, so leaving it puts the sky back exactly as it was. */
+  snapshot(): AtmosSnapshot {
+    return { day: this.day, kind: this.kind, cover: this.cover, rain: this.rain, storm: this.storm, fog: this.fog, wind: this.wind, wet: this.wet, sea: this.sea };
+  }
+
+  restore(s: AtmosSnapshot) {
+    Object.assign(this, s);
+    this.update(0);
+  }
+
+  /**
+   * Photo mode's sky: a clock time and, unless null (the sky as it was), a
+   * weather settled in at once. The sea keeps the swell it had, since the
+   * frozen ships still float on those waves.
+   */
+  preview(base: AtmosSnapshot, hour: number, kind: WeatherKind | null) {
+    this.day = (((hour / 24) % 1) + 1) % 1;
+    const d = kind ? WEATHER[kind] : null;
+    this.kind = kind ?? base.kind;
+    this.cover = d ? d.cover : base.cover;
+    this.rain = d ? d.rain : base.rain;
+    this.storm = d ? d.storm : base.storm;
+    this.fog = d ? d.fog : base.fog;
+    this.wind = d ? d.wind : base.wind;
+    this.wet = d ? Math.min(1, d.rain * 1.6) : base.wet;
+    this.sea = base.sea;
+    this.update(0);
   }
 
   /** Holds the clock at a chosen hour ('auto' lets the day run again). */

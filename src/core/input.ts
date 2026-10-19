@@ -15,6 +15,7 @@ export interface Controls {
   pointer: { x: number; y: number; active: boolean };
   pause: boolean;
   map: boolean;
+  photo: boolean; // pulse: photo mode (P)
   // captain's view
   walkX: number; // -1 left .. +1 right
   walkY: number; // -1 back .. +1 forward
@@ -42,6 +43,7 @@ export class Input {
     pointer: { x: 0, y: 0, active: false },
     pause: false,
     map: false,
+    photo: false,
     walkX: 0,
     walkY: 0,
     run: false,
@@ -91,7 +93,8 @@ export class Input {
       if (k === ' ') this.state.fireAuto = true;
       if (k >= '1' && k <= '5') this.state.ammoPick = +k - 1;
       if (k === 'r') this.state.ammoNext = true;
-      if (k === 'escape' || k === 'p') this.state.pause = true;
+      if (k === 'escape') this.state.pause = true;
+      if (k === 'p') this.state.photo = true;
       if (k === 'm') this.state.map = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
@@ -347,6 +350,7 @@ export class Input {
     this.state.zoom = 0;
     this.state.pause = false;
     this.state.map = false;
+    this.state.photo = false;
     this.state.view = false;
     this.state.helm = false;
     this.state.lookX = 0;
