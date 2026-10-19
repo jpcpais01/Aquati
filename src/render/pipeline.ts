@@ -248,6 +248,9 @@ export class Pipeline {
         col = mix(col, col * vec3(1.05, 1.0, 0.94), smoothstep(0.5, 2.0, lum) * 0.3);
 
         col = aces(col);
+        // a gentle S-curve: deeper shade and cleaner highlights, so a hazy
+        // distance still has punch instead of going milky
+        col = mix(col, col * col * (3.0 - 2.0 * col), 0.14);
         // saturation lift for that sun-drenched toy palette
         float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
         col = mix(vec3(l2), col, 1.12 - uDesat);
