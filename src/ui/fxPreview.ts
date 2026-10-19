@@ -194,47 +194,49 @@ const BLAST: Record<string, (s: Sim, x: number, y: number) => void> = {
 
 // --------------------------------------------------------------- trails
 
-const TRAIL: Record<string, { streak: RGB | 'rainbow' | null; emit: (s: Sim, x: number, y: number, t: number) => void }> = {
-  powder: { streak: null, emit: (s, x, y) => s.add({ x, y, vy: -6, max: 1.1, s0: 1.5, s1: 7, c0: [240, 238, 234], c1: [235, 235, 235], a: 0.35, drag: 1, shape: 1 }) },
+/** Each trail is one continuous smoke trace (rgb, alpha) plus an optional glow streak and loose sparks: never puffs. */
+const TRAIL: Record<string, { smoke: [RGB, number]; streak: RGB | 'rainbow' | null; emit?: (s: Sim, x: number, y: number, t: number) => void }> = {
+  powder: { smoke: [[240, 238, 234], 0.45], streak: null },
   spray: {
+    smoke: [[240, 252, 255], 0.4],
     streak: null,
-    emit: (s, x, y) => {
-      s.add({ x, y, vy: -4, max: 0.8, s0: 1.5, s1: 6, c0: [240, 252, 255], c1: [220, 240, 250], a: 0.32, shape: 1 });
-      s.add({ x, y, vx: rand(-20, 20), vy: rand(-20, 0), max: 0.6, s0: 1, s1: 0.6, c0: [240, 252, 255], c1: [190, 230, 245], grav: 120, shape: 2 });
-    },
+    emit: (s, x, y) => s.add({ x, y, vx: rand(-20, 20), vy: rand(-20, 0), max: 0.6, s0: 1, s1: 0.6, c0: [240, 252, 255], c1: [190, 230, 245], grav: 120, shape: 2 }),
   },
-  soot: { streak: null, emit: (s, x, y) => s.add({ x, y, vy: -6, max: 1.5, s0: 2, s1: 9, c0: [70, 64, 60], c1: [110, 105, 102], a: 0.5, drag: 1, shape: 1 }) },
-  ember: { streak: [255, 140, 50], emit: (s, x, y) => s.add({ x, y, vx: rand(-15, 15), vy: rand(-10, 10), max: rand(0.5, 0.9), s0: 1.6, s1: 0.4, c0: [255, 190, 90], c1: [255, 60, 10], add: true, grav: 80, shape: 2 }) },
+  soot: { smoke: [[70, 64, 60], 0.6], streak: null },
+  ember: { smoke: [[190, 170, 155], 0.35], streak: [255, 140, 50], emit: (s, x, y) => s.add({ x, y, vx: rand(-15, 15), vy: rand(-10, 10), max: rand(0.5, 0.9), s0: 1.6, s1: 0.4, c0: [255, 190, 90], c1: [255, 60, 10], add: true, grav: 80, shape: 2 }) },
   frost: {
+    smoke: [[225, 245, 255], 0.42],
     streak: [140, 220, 255],
     emit: (s, x, y) => {
-      s.add({ x, y, vy: -3, max: 1.1, s0: 1.5, s1: 6, c0: [225, 245, 255], c1: [200, 235, 255], a: 0.35, shape: 1 });
       if (Math.random() < 0.7) s.add({ x: x + rand(-4, 4), y: y + rand(-4, 4), vx: rand(-8, 8), vy: rand(-4, 12), max: rand(0.6, 1), s0: 1.5, s1: 0.3, c0: [210, 245, 255], c1: [90, 180, 255], add: true, shape: 2 });
     },
   },
   comet: {
+    smoke: [[255, 240, 215], 0.35],
     streak: [255, 200, 90],
     emit: (s, x, y) => {
-      s.add({ x, y, max: 0.5, s0: 5, s1: 1, c0: [255, 220, 120], c1: [255, 120, 20], add: true });
       if (Math.random() < 0.6) s.add({ x: x + rand(-3, 3), y: y + rand(-3, 3), vx: rand(-10, 10), vy: rand(-6, 10), max: rand(0.6, 1.1), s0: 1.6, s1: 0.3, c0: [255, 230, 140], c1: [255, 140, 30], add: true, shape: 2 });
     },
   },
   ghost: {
+    smoke: [[190, 255, 225], 0.35],
     streak: [110, 255, 180],
-    emit: (s, x, y, t) => s.add({ x: x + Math.sin(t * 9) * 3, y: y + Math.cos(t * 11) * 3, vx: rand(-6, 6), vy: rand(-20, -6), max: rand(0.6, 0.9), s0: 3, s1: 8, c0: [120, 255, 190], c1: [10, 120, 70], add: true }),
+    emit: (s, x, y, t) => {
+      if (Math.random() < 0.6) s.add({ x: x + Math.sin(t * 9) * 3, y: y + Math.cos(t * 11) * 3, vx: rand(-6, 6), vy: rand(-14, -4), max: rand(0.6, 1), s0: 1.6, s1: 0.3, c0: [140, 255, 200], c1: [20, 160, 90], add: true, shape: 2 });
+    },
   },
   rainbow: {
+    smoke: [[255, 255, 255], 0.3],
     streak: 'rainbow',
     emit: (s, x, y, t) => {
-      const c = hue(t * 0.7);
-      s.add({ x, y, max: 0.6, s0: 4, s1: 1, c0: c, c1: c.map((v) => v * 0.4) as RGB, add: true });
       if (Math.random() < 0.7) {
-        const c2 = hue(Math.random());
+        const c2 = hue(t * 0.7 + rand(-0.25, 0.25));
         s.add({ x: x + rand(-4, 4), y: y + rand(-4, 4), vx: rand(-14, 14), vy: rand(-8, 14), max: rand(0.7, 1.2), s0: 1.7, s1: 0.3, c0: c2, c1: c2, add: true, shape: 2 });
       }
     },
   },
   starfall: {
+    smoke: [[220, 220, 255], 0.3],
     streak: [210, 190, 255],
     emit: (s, x, y) => {
       const v = Math.random() < 0.5;
@@ -356,21 +358,35 @@ export function drawFx(c: HTMLCanvasElement, it: FxItem, card = false): (t: numb
       if (bx > (card ? 165 : 215) || by > H) ballT = -1;
       else {
         hist.push([bx, by]);
-        if (hist.length > 14) hist.shift();
-        trailFx.emit(sim, bx, by, t);
-        if (Math.random() < 0.5) trailFx.emit(sim, bx - 2, by + 1, t + 0.05);
+        if (hist.length > 40) hist.shift();
+        trailFx.emit?.(sim, bx, by, t);
+        if (Math.random() < 0.5) trailFx.emit?.(sim, bx - 2, by + 1, t + 0.05);
+        // the smoke trace: one unbroken line, widening and fading behind the ball
+        const [sc, sa] = trailFx.smoke;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        for (let i = 1; i < hist.length; i++) {
+          const f = i / hist.length;
+          g.strokeStyle = `rgba(${sc[0]},${sc[1]},${sc[2]},${sa * f})`;
+          g.lineWidth = (6 - f * 3.5) * k;
+          g.beginPath();
+          g.moveTo(hist[i - 1][0] * k, hist[i - 1][1] * k);
+          g.lineTo(hist[i][0] * k, hist[i][1] * k);
+          g.stroke();
+        }
         const st = trailFx.streak;
-        if (st && hist.length > 1) {
+        const tail = hist.slice(-14);
+        if (st && tail.length > 1) {
           g.globalCompositeOperation = 'lighter';
           g.lineCap = 'round';
-          for (let i = 1; i < hist.length; i++) {
-            const f = i / hist.length;
+          for (let i = 1; i < tail.length; i++) {
+            const f = i / tail.length;
             const col = st === 'rainbow' ? hue(t * 1.2 - f * 0.8) : st;
             g.strokeStyle = `rgba(${col[0] | 0},${col[1] | 0},${col[2] | 0},${f * 0.9})`;
             g.lineWidth = (1 + f * 3.5) * k;
             g.beginPath();
-            g.moveTo(hist[i - 1][0] * k, hist[i - 1][1] * k);
-            g.lineTo(hist[i][0] * k, hist[i][1] * k);
+            g.moveTo(tail[i - 1][0] * k, tail[i - 1][1] * k);
+            g.lineTo(tail[i][0] * k, tail[i][1] * k);
             g.stroke();
           }
           g.globalCompositeOperation = 'source-over';
