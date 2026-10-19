@@ -39,6 +39,12 @@ export const globalUniforms = {
   uCausticTex: { value: tex.caustics as THREE.Texture },
   uCloudOffset: { value: new THREE.Vector2() },
   uWind: { value: new THREE.Vector3(0, 1, 1) }, // dir.xz, strength
+  // the wind's heading integrated over time: scroll textures along this, never dir * uTime,
+  // which would whip them sideways whenever the wind veers
+  uWindDrift: { value: new THREE.Vector2() },
+  // origin for streaks laid out along the wind (dot(p - pivot, dir)): moved as the wind
+  // turns so they swing round about the view instead of sweeping across it
+  uWindPivot: { value: new THREE.Vector2() },
   // travelling gust puffs (see fx/wind.ts): xz centre, radius, amplitude
   uGusts: { value: Array.from({ length: MAX_GUSTS }, () => new THREE.Vector4(0, 0, 1, 0)) },
   // day cycle & weather (see world/atmosphere.ts)
@@ -59,6 +65,8 @@ export const globalUniforms = {
 
 export const GLSL_GUST = /* glsl */ `
 uniform vec3 uWind;
+uniform vec2 uWindDrift;
+uniform vec2 uWindPivot;
 uniform vec4 uGusts[${MAX_GUSTS}];
 
 // Sum of soft, wind-stretched puffs. Same maths as WindField.at() on the CPU.

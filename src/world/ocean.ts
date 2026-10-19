@@ -269,10 +269,10 @@ const REFL_FRAG = /* glsl */ `
     // pass lets the fine ripples wobble the image instead of scattering rays
     float t = uTime;
     vec2 p = vWorld.xz;
-    vec2 wdir = uWind.xy;
-    vec2 wperp = vec2(-wdir.y, wdir.x);
-    vec2 r1 = texture(uNormalTex, mat2(0.825, -0.565, 0.565, 0.825) * p * 0.031 + wdir * t * 0.021).xy * 2.0 - 1.0;
-    vec2 r2 = texture(uNormalTex, mat2(-0.416, -0.909, 0.909, -0.416) * p * 0.067 + wperp * t * 0.017 + 0.37).xy * 2.0 - 1.0;
+    vec2 wdrift = uWindDrift;
+    vec2 wpdrift = vec2(-wdrift.y, wdrift.x);
+    vec2 r1 = texture(uNormalTex, mat2(0.825, -0.565, 0.565, 0.825) * p * 0.031 + wdrift * 0.021).xy * 2.0 - 1.0;
+    vec2 r2 = texture(uNormalTex, mat2(-0.416, -0.909, 0.909, -0.416) * p * 0.067 + wpdrift * 0.017 + 0.37).xy * 2.0 - 1.0;
     vec2 rip = (r1 * mat2(0.825, -0.565, 0.565, 0.825)) * 0.8 + (r2 * mat2(-0.416, -0.909, 0.909, -0.416)) * 0.7;
     rip *= (0.6 + 0.4 * (1.0 - smoothstep(140.0, 520.0, vViewDist))) * (1.0 + uStorm * 0.9);
     vec3 V = normalize(cameraPosition - vWorld);
@@ -298,9 +298,9 @@ const UNDER_FRAG = /* glsl */ `
   void main() {
     float t = uTime;
     vec2 p = vWorld.xz;
-    vec2 wd = uWind.xy;
-    vec2 r1 = texture(uNormalTex, p * 0.043 + wd * t * 0.03).xy * 2.0 - 1.0;
-    vec2 r2 = texture(uNormalTex, p * 0.11 - wd * t * 0.021 + 0.37).xy * 2.0 - 1.0;
+    vec2 wdrift = uWindDrift;
+    vec2 r1 = texture(uNormalTex, p * 0.043 + wdrift * 0.03).xy * 2.0 - 1.0;
+    vec2 r2 = texture(uNormalTex, p * 0.11 - wdrift * 0.021 + 0.37).xy * 2.0 - 1.0;
     vec3 N = normalize(normalize(vNormal) + vec3(r1.x + r2.x * 0.6, 0.0, r1.y + r2.y * 0.6) * 0.2);
     vec3 V = normalize(vWorld - cameraPosition);
     float d = length(vWorld - cameraPosition);
@@ -470,8 +470,12 @@ export class Ocean {
           // the sea from place to place so no two stretches read alike.
           vec2 wdir = uWind.xy;
           vec2 wperp = vec2(-wdir.y, wdir.x);
-          vec4 mac = texture(uNoiseTex, vWorld.xz * 0.0021 + vec2(0.13, 0.71) + wdir * t * 0.0004);
-          vec4 mac2 = texture(uNoiseTex, vWorld.xz * 0.0053 + vec2(0.52, 0.27) - wperp * t * 0.0007);
+          // the breeze's run so far (its heading integrated over time): textures
+          // scroll along it, so they keep flowing smoothly as the wind comes round
+          vec2 wdrift = uWindDrift;
+          vec2 wpdrift = vec2(-wdrift.y, wdrift.x);
+          vec4 mac = texture(uNoiseTex, vWorld.xz * 0.0021 + vec2(0.13, 0.71) + wdrift * 0.0004);
+          vec4 mac2 = texture(uNoiseTex, vWorld.xz * 0.0053 + vec2(0.52, 0.27) - wpdrift * 0.0007);
           float detailFade = 1.0 - smoothstep(140.0, 520.0, vViewDist);
 
           // ---- ripples: four layers at unrelated scales and rotations, each
@@ -481,23 +485,23 @@ export class Ocean {
           vec2 p1 = mat2(0.825, -0.565, 0.565, 0.825) * p;
           vec2 p2 = mat2(-0.416, -0.909, 0.909, -0.416) * p;
           vec2 p3 = mat2(0.276, 0.961, -0.961, 0.276) * p;
-          vec2 r1 = texture(uNormalTex, p1 * 0.031 + wdir * t * 0.021).xy * 2.0 - 1.0;
-          vec2 r2 = texture(uNormalTex, p2 * 0.067 + wperp * t * 0.017 + 0.37).xy * 2.0 - 1.0;
-          vec2 r3 = texture(uNormalTex, p3 * 0.149 - wdir * t * 0.038 + 0.61).xy * 2.0 - 1.0;
+          vec2 r1 = texture(uNormalTex, p1 * 0.031 + wdrift * 0.021).xy * 2.0 - 1.0;
+          vec2 r2 = texture(uNormalTex, p2 * 0.067 + wpdrift * 0.017 + 0.37).xy * 2.0 - 1.0;
+          vec2 r3 = texture(uNormalTex, p3 * 0.149 - wdrift * 0.038 + 0.61).xy * 2.0 - 1.0;
           // rotate each sample back into world space so the slopes stay coherent
           r1 = r1 * mat2(0.825, -0.565, 0.565, 0.825);
           r2 = r2 * mat2(-0.416, -0.909, 0.909, -0.416);
           r3 = r3 * mat2(0.276, 0.961, -0.961, 0.276);
           vec2 rip = r1 * (0.45 + 0.75 * mac.r) + r2 * (0.4 + 0.6 * mac2.g) + r3 * (0.25 + 0.4 * (1.0 - mac.g)) * detailFade;
           #if HQ
-            vec2 r4 = texture(uNormalTex, p * 0.331 + wperp * t * 0.061 + 0.19).xy * 2.0 - 1.0;
+            vec2 r4 = texture(uNormalTex, p * 0.331 + wpdrift * 0.061 + 0.19).xy * 2.0 - 1.0;
             rip += r4 * 0.22 * detailFade;
           #endif
           rip *= (0.6 + 0.4 * detailFade) * (1.0 + uStorm * 0.9);
 
           // ---- wind slicks: long glassy streaks lying along the wind, where the
           // surface film calms the ripples. Read mostly in the sun glitter.
-          vec2 sl = vec2(dot(p, wdir) * 0.0042, dot(p, wperp) * 0.034) + vec2(t * 0.0021, 0.0);
+          vec2 sl = vec2(dot(p - uWindPivot, wdir) * 0.0042, dot(p - uWindPivot, wperp) * 0.034) + vec2(t * 0.0021, 0.0);
           float slickN = texture(uNoiseTex, sl).g * 0.75 + mac2.a * 0.35;
           float slick = smoothstep(0.6, 0.78, slickN) * 0.7;
           float calm = 1.0 - slick;
@@ -508,12 +512,12 @@ export class Ocean {
           float gust = gustAt(p);
           vec2 gustRip = vec2(0.0);
           if (gust > 0.002) {
-            vec4 gn = texture(uNoiseTex, p * 0.017 - wdir * t * 0.21);
-            vec4 gn2 = texture(uNoiseTex, p * 0.053 - wdir * t * 0.33 + 0.41);
+            vec4 gn = texture(uNoiseTex, p * 0.017 - wdrift * 0.21);
+            vec4 gn2 = texture(uNoiseTex, p * 0.053 - wdrift * 0.33 + 0.41);
             float rag = smoothstep(0.32, 0.78, gn.g * 0.65 + gn2.a * 0.35 + gust * 0.3 - 0.08);
             gust *= rag;
-            vec2 rg = texture(uNormalTex, p2 * 0.21 - wdir * t * 0.09 + 0.23).xy * 2.0 - 1.0;
-            vec2 rg2 = texture(uNoiseTex, p * 0.41 - wdir * t * 0.17).xy - 0.5;
+            vec2 rg = texture(uNormalTex, p2 * 0.21 - wdrift * 0.09 + 0.23).xy * 2.0 - 1.0;
+            vec2 rg2 = texture(uNoiseTex, p * 0.41 - wdrift * 0.17).xy - 0.5;
             gustRip = (rg * 0.8 + rg2 * 1.4) * gust * detailFade;
             calm = mix(calm, 1.0, gust);
           }
@@ -717,12 +721,12 @@ export class Ocean {
           float wakeFoam = foamCut(fv, wCover, fp) * smoothstep(0.01, 0.06, wf);
           wakeFoam *= 0.7 + 0.3 * smoothstep(0.0, 0.6, wf);
           // whitecaps break only here and there, and more often where a gust blows
-          float breaking = smoothstep(0.54 - uStorm * 0.34, 0.8 - uStorm * 0.22, texture(uNoiseTex, p * 0.0093 - wdir * t * 0.017).g + gust * 0.35);
+          float breaking = smoothstep(0.54 - uStorm * 0.34, 0.8 - uStorm * 0.22, texture(uNoiseTex, p * 0.0093 - wdrift * 0.017).g + gust * 0.35);
           float crestFoam = smoothstep(0.5 - uStorm * 0.22, 0.95, vCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.3);
           // storm spume: long streaks of foam torn off the crests and laid down the wind
           float spume = 0.0;
           if (uStorm > 0.05) {
-            vec2 sp = vec2(dot(p, wdir) * 0.011, dot(p, wperp) * 0.14) - vec2(t * 0.05, 0.0);
+            vec2 sp = vec2(dot(p - uWindPivot, wdir) * 0.011, dot(p - uWindPivot, wperp) * 0.14) - vec2(t * 0.05, 0.0);
             float sn = texture(uNoiseTex, sp).g * 0.7 + texture(uNoiseTex, sp * 2.3 + 0.5).a * 0.3;
             spume = smoothstep(0.62, 0.8, sn) * uStorm * 0.55 * (0.4 + 0.6 * hgt);
           }
