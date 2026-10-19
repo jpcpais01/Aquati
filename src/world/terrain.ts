@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Simplex2, mulberry32, clamp, lerp, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
+import { createTerrainMaterial } from './terrainMaterial';
 
 export type IslandKind = 'lush' | 'volcanic' | 'atoll' | 'rocky';
 
@@ -33,30 +34,8 @@ function smax(a: number, b: number, k: number): number {
   return Math.max(a, b) + h * h * k * 0.25;
 }
 
-function hex(c: number): THREE.Color {
-  return new THREE.Color(c).convertSRGBToLinear();
-}
-
-const C = {
-  deepSand: hex(0xa89a78),
-  sand: hex(0xf3e6c4),
-  sandWarm: hex(0xead3a2),
-  wetSand: hex(0xd8c49a),
-  seagrass: hex(0x4f7a52),
-  coral1: hex(0xf08a7a),
-  coral2: hex(0xffb38a),
-  coral3: hex(0xf6c26b),
-  grass: hex(0x6fb043),
-  grassDry: hex(0xa9b850),
-  grassDeep: hex(0x3f8a34),
-  jungle: hex(0x2e6b2c),
-  rock: hex(0x8c8478),
-  rockDark: hex(0x5d5852),
-  sandstone: hex(0xd09a68),
-  sandstoneDark: hex(0xa8724e),
-  basalt: hex(0x4a4442),
-  ash: hex(0x77706a),
-};
+/** Colour of the endless deep seabed plane (matches T_SAND_DEEP in the ground shader). */
+const DEEP_SAND = new THREE.Color(0xa99a76).convertSRGBToLinear();
 
 export class Terrain {
   readonly heights = new Float32Array(GRID_N * GRID_N);
@@ -64,6 +43,9 @@ export class Terrain {
   readonly islands: Island[] = [];
   /** Island index owning each cell (-1 = open sea); used for colouring. */
   private owner = new Int8Array(GRID_N * GRID_N).fill(-1);
+  /** Normalised inland depth (0 at the shore, 1 at the island centre) of the owner. */
+  private inland = new Float32Array(GRID_N * GRID_N);
+  private lastInland = 0;
   private simplex: Simplex2;
   private seed: number;
 
@@ -134,6 +116,7 @@ export class Terrain {
     lx += s.noise(x * 0.0105 + isl.seed, z * 0.0105) * isl.r * 0.2;
     lz += s.noise(x * 0.0105 - 40.3, z * 0.0105 + isl.seed) * isl.r * 0.2;
     let d = Math.sqrt(lx * lx + lz * lz) / isl.r;
+    this.lastInland = 0;
     const ang = Math.atan2(lz, lx);
     const lobes = s.fbm(Math.cos(ang) * 1.15 + isl.seed * 3.1, Math.sin(ang) * 1.15 - isl.seed, 3);
     d *= 1 + lobes * (isl.kind === 'atoll' ? 0.12 : 0.34);
@@ -156,6 +139,7 @@ export class Terrain {
     }
 
     const f = 1 - d;
+    this.lastInland = Math.max(0, f);
     if (f <= 0) return this.shelf(-f, x, z, isl.kind === 'lush' ? 1 : 0.5);
 
     const beachW = isl.kind === 'rocky' ? 0.05 : isl.kind === 'volcanic' ? 0.09 : 0.13;
@@ -233,7 +217,10 @@ export class Terrain {
           const h = this.islandHeight(isl, x, z);
           if (h > best[k]) {
             best[k] = h;
-            if (h > -14) this.owner[k] = idx;
+            if (h > -14) {
+              this.owner[k] = idx;
+              this.inland[k] = this.lastInland;
+            }
           }
           H[k] = smax(H[k], h, 3);
         }
@@ -366,81 +353,31 @@ export class Terrain {
 
   // ---------------------------------------------------------------- meshing
 
-  private colorAt(i: number, j: number, h: number, ny: number, out: THREE.Color) {
-    const x = -HALF + i * CELL;
-    const z = -HALF + j * CELL;
-    const s = this.simplex;
-    const own = this.owner[j * GRID_N + i];
+  /** Per-vertex inputs for the ground shader: island kind, tint, summit and crater masks. */
+  private surfaceInfo(k: number, h: number, kind: Float32Array, info: Float32Array, o: number) {
+    const own = this.owner[k];
     const isl = own >= 0 ? this.islands[own] : null;
-    const kind = isl?.kind ?? 'lush';
-    const tint = isl?.tint ?? 0;
-    const n1 = s.noise(x * 0.035, z * 0.035);
-    const n2 = s.noise(x * 0.11 + 7, z * 0.11 - 3);
-    const slope = 1 - ny;
-
-    if (h < 0) {
-      // seabed: bright sand in the shallows, darker and grassier with depth
-      const depthT = smoothstep(-1, -12, h);
-      out.copy(C.sand).lerp(C.deepSand, depthT);
-      const grassMask = smoothstep(0.25, 0.55, s.noise(x * 0.018 + 3, z * 0.018)) * smoothstep(-1.2, -3.5, h) * (1 - smoothstep(-8, -12, h));
-      out.lerp(C.seagrass, grassMask * 0.45);
-      if (kind !== 'rocky' && h > -5 && h < -0.6) {
-        const cn = s.noise(x * 0.09, z * 0.09);
-        const coral = smoothstep(0.55, 0.78, cn) * smoothstep(-0.6, -1.4, h) * (1 - smoothstep(-3.2, -4.4, h));
-        if (coral > 0) {
-          const pick = s.noise(x * 0.21 + 11, z * 0.21);
-          const cc = pick > 0.25 ? C.coral1 : pick < -0.25 ? C.coral2 : C.coral3;
-          out.lerp(cc, coral * 0.55);
-        }
-      }
-      if (slope > 0.35) out.lerp(kind === 'volcanic' ? C.basalt : C.rockDark, smoothstep(0.35, 0.7, slope) * 0.7);
-      return;
+    if (!isl) return;
+    kind[o] = isl.kind === 'volcanic' ? 1 : 0;
+    kind[o + 1] = isl.kind === 'atoll' ? 1 : 0;
+    kind[o + 2] = isl.kind === 'rocky' ? 1 : 0;
+    info[o] = isl.tint;
+    if (isl.kind !== 'atoll') {
+      info[o + 1] = smoothstep(isl.peak * 0.7, isl.peak * 0.95, h) * (isl.kind === 'volcanic' ? 1 : 0.6);
     }
-
-    // land
-    const beachTop = (kind === 'atoll' ? 1.6 : 1.25) + n1 * 0.45;
-    out.copy(C.sand).lerp(C.sandWarm, smoothstep(-0.4, 0.6, n2) * 0.6);
-    if (h < 0.5) out.lerp(C.wetSand, (1 - h / 0.5) * 0.4);
-    const grassT = smoothstep(beachTop, beachTop + 0.9, h + n2 * 0.3);
-    if (grassT > 0) {
-      const g = new THREE.Color().copy(C.grass);
-      g.lerp(C.grassDry, smoothstep(0.1, 0.8, n1 + tint * 0.4) * 0.55);
-      g.lerp(C.grassDeep, smoothstep(0.2, 0.9, -n1 + 0.2) * 0.6);
-      const jungleT = smoothstep(4, 14, h) * smoothstep(-0.1, 0.5, s.noise(x * 0.02 + 5, z * 0.02 - 2));
-      g.lerp(C.jungle, jungleT * 0.75);
-      out.lerp(g, grassT);
-    }
-    // rock on steep slopes / high summits
-    let rockT = smoothstep(0.28, 0.5, slope + n2 * 0.06);
-    if (isl) rockT = Math.max(rockT, smoothstep(isl.peak * 0.72, isl.peak * 0.95, h) * (kind === 'volcanic' ? 1 : 0.6));
-    if (rockT > 0) {
-      const r = new THREE.Color();
-      if (kind === 'rocky') {
-        r.copy(C.sandstone).lerp(C.sandstoneDark, smoothstep(-0.3, 0.6, Math.sin(h * 2.2 + n1 * 2)) * 0.8);
-      } else if (kind === 'volcanic') {
-        r.copy(C.rock).lerp(C.basalt, smoothstep(20, 50, h)).lerp(C.ash, smoothstep(0.3, 0.8, n2) * 0.4);
-      } else {
-        r.copy(C.rock).lerp(C.rockDark, smoothstep(-0.2, 0.7, n1) * 0.6);
-      }
-      out.lerp(r, rockT);
-    }
+    if (isl.kind === 'volcanic') info[o + 2] = smoothstep(0.86, 0.975, this.inland[k]);
   }
 
   /**
    * Builds the terrain as 64 m chunks (so frustum culling works) sharing the
    * global height grid: seams are exact and normals continuous.
    */
-  buildMeshes(lod = 1): THREE.Group {
+  buildMeshes(lod = 1, lite = false): THREE.Group {
     const group = new THREE.Group();
     group.name = 'terrain';
-    const mat = patchMaterial(
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9 }),
-      { caustics: true, clouds: true, wetSand: true, detail: true },
-    );
-    patchAO(mat);
+    const mat = createTerrainMaterial(lite);
     const chunkCells = 32;
     const chunks = Math.floor((GRID_N - 1) / chunkCells);
-    const col = new THREE.Color();
     for (let cj = 0; cj < chunks; cj++) {
       for (let ci = 0; ci < chunks; ci++) {
         // skip chunks that are pure deep seafloor (the floor plane covers them)
@@ -456,7 +393,8 @@ export class Terrain {
         const vn = res + 1;
         const pos = new Float32Array(vn * vn * 3);
         const nrm = new Float32Array(vn * vn * 3);
-        const clr = new Float32Array(vn * vn * 3);
+        const kindA = new Float32Array(vn * vn * 3);
+        const infoA = new Float32Array(vn * vn * 3);
         const aoA = new Float32Array(vn * vn);
         for (let vj = 0; vj < vn; vj++) {
           for (let vi = 0; vi < vn; vi++) {
@@ -476,10 +414,7 @@ export class Terrain {
             nrm[k * 3] = nx * inv;
             nrm[k * 3 + 1] = ny * inv;
             nrm[k * 3 + 2] = nz * inv;
-            this.colorAt(i, j, h, ny * inv, col);
-            clr[k * 3] = col.r;
-            clr[k * 3 + 1] = col.g;
-            clr[k * 3 + 2] = col.b;
+            this.surfaceInfo(j * GRID_N + i, h, kindA, infoA, k * 3);
             aoA[k] = this.ao[j * GRID_N + i];
           }
         }
@@ -500,7 +435,8 @@ export class Terrain {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
-        geo.setAttribute('color', new THREE.BufferAttribute(clr, 3));
+        geo.setAttribute('aqKind', new THREE.BufferAttribute(kindA, 3));
+        geo.setAttribute('aqInfo', new THREE.BufferAttribute(infoA, 3));
         geo.setAttribute('aqAO', new THREE.BufferAttribute(aoA, 1));
         geo.setIndex(idx);
         geo.computeBoundingSphere();
@@ -514,7 +450,7 @@ export class Terrain {
     // the endless seabed under everything
     const floorGeo = new THREE.PlaneGeometry(WORLD_SIZE * 3, WORLD_SIZE * 3, 1, 1);
     floorGeo.rotateX(-Math.PI / 2);
-    const floorMat = patchMaterial(new THREE.MeshStandardMaterial({ color: C.deepSand, roughness: 1 }), { caustics: true, detail: true });
+    const floorMat = patchMaterial(new THREE.MeshStandardMaterial({ color: DEEP_SAND, roughness: 1 }), { caustics: true, detail: true });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.position.y = FLOOR_DEPTH - 1.2;
     floor.receiveShadow = false;
@@ -541,26 +477,4 @@ export class Terrain {
     tex.needsUpdate = true;
     return tex;
   }
-}
-
-/** Uses the baked `aqAO` vertex attribute to occlude ambient (and a bit of direct) light. */
-export function patchAO(mat: THREE.Material) {
-  const prev = mat.onBeforeCompile;
-  const prevKey = mat.customProgramCacheKey();
-  mat.customProgramCacheKey = () => prevKey + '|ao';
-  mat.onBeforeCompile = (shader, renderer) => {
-    prev.call(mat, shader, renderer);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aqAO;\nvarying float vAqAO;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqAO = aqAO;');
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vAqAO;')
-      .replace(
-        '#include <lights_fragment_end>',
-        `#include <lights_fragment_end>
-  reflectedLight.indirectDiffuse *= vAqAO;
-  reflectedLight.indirectSpecular *= vAqAO;
-  reflectedLight.directDiffuse *= mix(1.0, vAqAO, 0.45);`,
-      );
-  };
 }

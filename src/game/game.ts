@@ -7,6 +7,7 @@ import { createEnvironment, FOG_COLOR, globalUniforms, SUN_COLOR, SUN_DIR } from
 import { Pipeline } from '../render/pipeline';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
+import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
@@ -15,6 +16,7 @@ import { WakeField } from '../world/wakeField';
 import { buildWaves } from '../world/waves';
 import { Ship } from '../ships/ship';
 import { PirateAI } from '../ships/ai';
+import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
@@ -50,6 +52,8 @@ export class Game {
   private world!: World;
   private projectiles = new Projectiles();
   private loot = new Loot();
+  private debris = new Debris();
+  private pushers: Pusher[] = [];
   private ships: Ship[] = [];
   private ais = new Map<Ship, PirateAI>();
   private player: Ship | null = null;
@@ -69,6 +73,7 @@ export class Game {
   private birds!: Birds;
   private windField!: WindField;
   private wisps!: WindWisps;
+  private crew!: CrewSystem;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -97,9 +102,17 @@ export class Game {
     sc.far = 900;
     this.opaque.add(this.sun, this.sun.target);
     this.opaque.fog = new THREE.Fog(FOG_COLOR.clone(), 380, 1500);
-    this.opaque.add(this.projectiles.mesh, this.loot.group);
+    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group);
 
     this.wireUI();
+    // browsers only let sound start from a gesture (and on phones a touch only
+    // counts once it lifts), so any tap or key in the harbour wakes the theme
+    const wake = () => {
+      if (this.state !== 'menu' && this.state !== 'loading') return;
+      this.audio.start();
+      this.audio.setMusic(true);
+    };
+    for (const ev of ['pointerup', 'touchend', 'keydown'] as const) addEventListener(ev, wake, true);
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state === 'playing') {
@@ -125,7 +138,7 @@ export class Game {
     const veg = new Vegetation(this.terrain, q.vegetation);
     ui.progress(0.62);
     await nextFrame();
-    this.opaque.add(this.terrain.buildMeshes(q.terrainLod));
+    this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
     this.opaque.add(veg.build());
     this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36);
     this.opaque.add(this.birds.mesh);
@@ -142,6 +155,7 @@ export class Game {
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
+    this.world.debris = this.debris;
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
@@ -149,6 +163,8 @@ export class Game {
     this.world.gustAt = (x, z) => this.windField.at(x, z);
     this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
+    this.crew = new CrewSystem(q.tier);
+    this.opaque.add(this.crew.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = createEnvironment(this.renderer);
@@ -262,6 +278,7 @@ export class Game {
     });
     s.model.sailMaterial.dispose();
     s.model.sailEmblemMaterial.dispose();
+    s.dispose();
   }
 
   private setPreview(id: ShipClassId) {
@@ -314,6 +331,7 @@ export class Game {
     this.input.enabled = false;
     this.ui.showHud(false);
     this.ui.showMenu(true);
+    this.audio.setMusic(true, true);
     this.rig.mode = 'orbit';
     this.setPreview(this.ui.selected);
     this.rig.snapTo(this.spawnPoint);
@@ -328,6 +346,7 @@ export class Game {
   private startVoyage() {
     if (!this.preview) return;
     this.audio.start();
+    this.audio.setMusic(false);
     const p = this.preview;
     this.preview = null;
     p.anchored = false;
@@ -350,6 +369,8 @@ export class Game {
     for (const s of this.ships.slice()) this.removeShip(s);
     this.projectiles.clear();
     this.loot.clear();
+    this.debris.clear();
+    this.crew.clear();
     this.player = null;
     this.preview = null;
   }
@@ -542,6 +563,9 @@ export class Game {
     this.resolveShipCollisions();
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
     this.projectiles.update(dt, w, this.ships);
+    this.pushers.length = 0;
+    for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
+    this.debris.update(dt, w, this.pushers);
 
     // player-centric systems
     const p = this.player;
@@ -594,6 +618,7 @@ export class Game {
     this.rig.update(realDt, fpos, fvel, w.time);
     w.listener.copy(this.rig.target);
     w.listenerZoom = this.rig.distance;
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5);
 
     // gusts roll across whatever the camera is looking at
     const reach = clamp(this.rig.distance * 0.9, 70, 260);
@@ -653,6 +678,8 @@ export class Game {
         const a = ships[i];
         const b = ships[j];
         if (a.removed || b.removed) continue;
+        // wrecks settle below the keels of passing ships
+        if ((!a.alive && a.sinkT > 3) || (!b.alive && b.sinkT > 3)) continue;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;
         const d = Math.hypot(dx, dz);
@@ -724,7 +751,8 @@ export class Game {
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
-    this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.6 : 0.8;
+    this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.55 : 0.35;
+    this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);
   }
