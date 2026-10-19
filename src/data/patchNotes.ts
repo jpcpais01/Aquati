@@ -32,6 +32,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T13:00Z',
     entries: [
       {
+        title: 'Hulls collide: ramming and running aground',
+        notes: [
+          'Ships now properly bump into each other, shaped like their hulls: a glancing blow slides along her side and swings both bows, while a bow driven square into a beam stops dead. Heavy ships hold their ground and light ones get shoved aside and spun.',
+          'Ramming hurts. A hit lands with a deep timber crunch, splinters, a burst of spray and a jolt of the camera, and staves in planking based on how fast you closed. Your bow takes the blow far better than the side you hit, so a galleon at full sail can break a sloop in half. Two ships grinding slowly past each other creak and squeeze up foam instead.',
+          'Running aground now sounds like it too, with the keel grinding on rock and water thrown up along the shore.',
+        ],
+      },
+      {
         title: 'Battles framed like a duel',
         notes: [
           'When you trade broadsides with another ship, the camera now glides to the middle of the two of you and pulls back just enough to keep both hulls in view, so you can always see your foe, her guns and where your shot is falling. When the fight ends it eases back to follow your ship again.',

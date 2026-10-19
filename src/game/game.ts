@@ -28,6 +28,7 @@ import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
 import { Loot, RARITY } from './loot';
 import { World } from './world';
+import { ShipCollisions } from './collisions';
 
 type State = 'loading' | 'menu' | 'playing' | 'paused' | 'dead';
 
@@ -58,6 +59,7 @@ export class Game {
   private projectiles = new Projectiles();
   private loot = new Loot();
   private debris = new Debris();
+  private collisions = new ShipCollisions(() => this.player);
   private pushers: Pusher[] = [];
   private ships: Ship[] = [];
   private ais = new Map<Ship, PirateAI>();
@@ -689,7 +691,7 @@ export class Game {
     // AI & ships
     for (const ai of this.ais.values()) ai.update(dt, w, this.player && this.player.alive ? this.player : null, this.ships);
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
-    this.resolveShipCollisions();
+    this.collisions.resolve(this.ships, w);
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
     this.projectiles.update(dt, w, this.ships);
     this.pushers.length = 0;
@@ -923,36 +925,6 @@ export class Game {
     (mat.uniforms.uColor.value as THREE.Color).setRGB(t.inArc && ready ? 2.2 : 1.2, t.inArc && ready ? 1.5 : 1.2, t.inArc && ready ? 0.5 : 1.2);
     ring.position.set(t.ship.pos.x, this.world.waterHeight(t.ship.pos.x, t.ship.pos.z) + 0.25, t.ship.pos.z);
     ring.scale.setScalar(t.ship.cls.length * 0.62);
-  }
-
-  private resolveShipCollisions() {
-    const ships = this.ships;
-    for (let i = 0; i < ships.length; i++) {
-      for (let j = i + 1; j < ships.length; j++) {
-        const a = ships[i];
-        const b = ships[j];
-        if (a.removed || b.removed) continue;
-        // wrecks settle below the keels of passing ships
-        if ((!a.alive && a.sinkT > 3) || (!b.alive && b.sinkT > 3)) continue;
-        const dx = b.pos.x - a.pos.x;
-        const dz = b.pos.z - a.pos.z;
-        const d = Math.hypot(dx, dz);
-        const minD = (a.cls.beam + b.cls.beam) * 0.5 + Math.min(a.cls.length, b.cls.length) * 0.25;
-        if (d < minD && d > 1e-3) {
-          const push = (minD - d) * 0.5;
-          const nx = dx / d;
-          const nz = dz / d;
-          const ma = a.cls.mass;
-          const mb = b.cls.mass;
-          a.pos.x -= nx * push * (mb / (ma + mb)) * 2;
-          a.pos.z -= nz * push * (mb / (ma + mb)) * 2;
-          b.pos.x += nx * push * (ma / (ma + mb)) * 2;
-          b.pos.z += nz * push * (ma / (ma + mb)) * 2;
-          a.speed *= 0.97;
-          b.speed *= 0.97;
-        }
-      }
-    }
   }
 
   private checkDiscoveries(p: Ship) {

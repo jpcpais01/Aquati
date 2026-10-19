@@ -39,6 +39,7 @@ export class Audio {
     earth: [],
     whoosh: [],
     blast: [],
+    crunch: [],
   };
   private music: HTMLAudioElement | null = null;
   private musicGain: GainNode | null = null;
@@ -442,6 +443,13 @@ export class Audio {
 
   hit(vol: number, pan: number, dist = 0) {
     this.emit(pick(this.bank.wood), { vol: vol * 0.7, pan, dist, rate: 0.88 + Math.random() * 0.24, wet: 0.35 });
+  }
+
+  /** Hulls colliding or a keel grinding onto rock. `force` 0 = a nudge .. 1 = a full-speed ram. */
+  crunch(vol: number, pan: number, dist = 0, force = 1) {
+    const f = Math.max(0, Math.min(1, force));
+    const at = this.emit(pick(this.bank.crunch), { vol: vol * (0.35 + 0.55 * f), pan, dist, rate: 1.12 - f * 0.22 + Math.random() * 0.08, wet: 0.45 });
+    if (at >= 0 && dist < 40 && f > 0.4) this.duck(at, 0.3 * f);
   }
 
   /** Shot ploughing into a beach or hillside. */
