@@ -324,9 +324,9 @@ export class UI {
     if (!dock.width) return { x: 0, y: 0, w: 1, h: 1 };
     const head = document.querySelector('.menu-head')!.getBoundingClientRect();
     if (dock.right < W * 0.6) {
-      // side dock: the ship gets the space to its right, clear of the title and tools
+      // side dock: the ship gets the space to its right, below the tool buttons
       const left = dock.right + 16;
-      const top = Math.min(head.bottom, H * 0.2);
+      const top = Math.min(document.querySelector('.menu-tools')!.getBoundingClientRect().bottom + 8, H * 0.15);
       return { x: (left + W) / 2 / W - 0.5, y: (top + H) / 2 / H - 0.5, w: (W - left) / W, h: (H - top) / H };
     }
     // bottom dock: the ship gets the gap between the title and the dock
