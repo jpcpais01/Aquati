@@ -16,6 +16,21 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'A whole new Treasure Vault',
+        notes: [
+          'The vault now happens out on the water. A gilded sea chest bursts up beside your ship and bobs on the swell, ready to open.',
+          'Opening it is a show: the chest trembles and leaks light through its seams, shifting colour as the rarity inside climbs. Then the lid flies open in a pillar of light and god rays, with a shockwave across the sea and fireworks for epic and legendary finds.',
+          'Your cards fly out of the chest\'s mouth. They have holographic foil that follows your finger, tilt in 3D, and wear rarity frames; legendaries get a turning golden border. Skin cards show the full pattern, and cannon effect cards fire their shot on a loop.',
+          'Tap any card to try it on for real. Skins dress your actual ship while the camera circles it, and trails and muzzle blasts fire real broadsides so you see exactly what you get. Equip from there, or flick through your haul with the arrows.',
+          'The collection works the same way, so you can preview pieces you have not found yet.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T18:00Z',
+    entries: [
+      {
         title: 'Scenic loading screen',
         notes: [
           'While the archipelago loads you now look out over a real moment from the game, slowly drifting behind the wordmark, instead of a plain blue backdrop. More scenes will join the rotation soon.',

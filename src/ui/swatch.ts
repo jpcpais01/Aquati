@@ -267,6 +267,82 @@ export function drawSkinCard(c: HTMLCanvasElement, skin: SkinItem, t: number) {
   g.stroke();
 }
 
+/**
+ * Card art for a skin: the paintwork itself, full bleed, like a swatch of
+ * lacquered planking, with a ship's silhouette riding over it.
+ */
+export function drawSkinFabric(c: HTMLCanvasElement, skin: SkinItem, t: number) {
+  const g = c.getContext('2d')!;
+  const W = c.width;
+  const H = c.height;
+  const R = RARITIES[skin.rarity];
+  const r = skin.pattern ? skinImage(skin, Math.min(W, 320), Math.min(H, 200), 0, t, [0, 0, 4.2, 4.2 * (H / W)]) : null;
+  if (r) g.drawImage(r[0], r[1], r[2], r[3], r[4], 0, 0, W, H);
+  else {
+    const bg = g.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, skin.colors[0]);
+    bg.addColorStop(1, skin.colors[1]);
+    g.fillStyle = bg;
+    g.fillRect(0, 0, W, H);
+  }
+  // planking seams, so it reads as a hull and not a tablecloth
+  g.globalAlpha = 0.14;
+  g.fillStyle = '#000';
+  for (let i = 1; i < 7; i++) g.fillRect(0, (H * i) / 7, W, Math.max(1, H * 0.006));
+  g.globalAlpha = 1;
+  // light from above, rounding away into shade
+  const sh = g.createLinearGradient(0, 0, 0, H);
+  sh.addColorStop(0, 'rgba(255,255,255,0.22)');
+  sh.addColorStop(0.3, 'rgba(255,255,255,0)');
+  sh.addColorStop(0.62, 'rgba(0,0,0,0.05)');
+  sh.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = sh;
+  g.fillRect(0, 0, W, H);
+  // a slow glint sweeping across the lacquer
+  const gx = ((t * 0.18) % 1.6 - 0.3) * W;
+  const gl = g.createLinearGradient(gx - W * 0.25, 0, gx + W * 0.25, H * 0.4);
+  gl.addColorStop(0, 'rgba(255,255,255,0)');
+  gl.addColorStop(0.5, 'rgba(255,255,255,0.16)');
+  gl.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gl;
+  g.fillRect(0, 0, W, H);
+  // a ship's silhouette riding the bottom edge, in the rarity's light
+  const s = W / 200;
+  g.save();
+  g.translate(W * 0.5, H * 0.94);
+  g.scale(s, s);
+  g.fillStyle = 'rgba(4, 14, 22, 0.72)';
+  g.beginPath();
+  g.moveTo(-70, -16);
+  g.quadraticCurveTo(0, -8, 64, -22);
+  g.quadraticCurveTo(58, -2, 48, 8);
+  g.lineTo(-58, 8);
+  g.quadraticCurveTo(-70, 0, -70, -16);
+  g.fill();
+  g.fillRect(-2, -78, 4, 62);
+  g.fillRect(-36, -62, 4, 46);
+  g.beginPath();
+  g.moveTo(-26, -70);
+  g.quadraticCurveTo(-6, -58, -24, -22);
+  g.lineTo(26, -22);
+  g.quadraticCurveTo(10, -50, 26, -70);
+  g.closePath();
+  g.fill();
+  g.beginPath();
+  g.moveTo(-54, -56);
+  g.quadraticCurveTo(-38, -44, -52, -24);
+  g.lineTo(-40, -24);
+  g.lineTo(-40, -56);
+  g.closePath();
+  g.fill();
+  g.restore();
+  const glow = g.createRadialGradient(W * 0.5, H, 0, W * 0.5, H, W * 0.7);
+  glow.addColorStop(0, R.css + '55');
+  glow.addColorStop(1, R.css + '00');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, W, H);
+}
+
 /** A flat patch of the skin (for chips and the showcase background). */
 export function drawSkinPatch(c: HTMLCanvasElement, skin: SkinItem, t: number, mode: 0 | 1 = 0) {
   const g = c.getContext('2d')!;
@@ -318,6 +394,9 @@ function loop() {
     l.seen = true;
     if (!l.visible) continue;
     if (!l.drawn || (l.animated && frame % 2 === 0)) {
+      // the observer still counts a canvas under visibility: hidden (the
+      // Shipwright while the vault is open over it), so ask the page too
+      if (l.drawn && l.c.checkVisibility?.({ visibilityProperty: true }) === false) continue;
       l.draw(t);
       l.drawn = true;
     }
@@ -326,7 +405,7 @@ function loop() {
 }
 
 /** A canvas showing an item: animated while on screen, dropped once it leaves the page. */
-export function itemCanvas(it: Item, w: number, h: number, cls = ''): HTMLCanvasElement {
+export function itemCanvas(it: Item, w: number, h: number, cls = '', art: 'ship' | 'card' = 'ship'): HTMLCanvasElement {
   const c = document.createElement('canvas');
   const dpr = Math.min(devicePixelRatio || 1, 2);
   c.width = Math.round(w * dpr);
@@ -335,11 +414,11 @@ export function itemCanvas(it: Item, w: number, h: number, cls = ''): HTMLCanvas
   let draw: (t: number) => void;
   let animated: boolean;
   if (it.kind === 'skin') {
-    draw = (t) => drawSkinCard(c, it, t);
+    draw = art === 'card' ? (t) => drawSkinFabric(c, it, t) : (t) => drawSkinCard(c, it, t);
     animated = true; // the sea always moves; animated skins move too
   } else {
     const fx = it as FxItem;
-    const sim = drawFx(c, fx);
+    const sim = drawFx(c, fx, art === 'card');
     draw = (t) => sim(t);
     animated = true;
   }

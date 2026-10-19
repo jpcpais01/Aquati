@@ -277,7 +277,7 @@ function drawGun(g: CanvasRenderingContext2D, k: number, x: number, y: number, r
 }
 
 /** Returns a per-frame painter for an fx item's card art. */
-export function drawFx(c: HTMLCanvasElement, it: FxItem): (t: number) => void {
+export function drawFx(c: HTMLCanvasElement, it: FxItem, card = false): (t: number) => void {
   const g = c.getContext('2d')!;
   const sim = new Sim();
   const R = RARITIES[it.rarity];
@@ -289,13 +289,13 @@ export function drawFx(c: HTMLCanvasElement, it: FxItem): (t: number) => void {
   const blastFx = it.kind === 'blast' ? BLAST[it.style] ?? BLAST.powder : null;
   const hist: [number, number][] = [];
   return (t: number) => {
-    // design space is 200 x 120, scaled to the canvas
-    const k = c.width / 200;
+    // design space is 200 x 120, scaled to the canvas; a card zooms in on the gun
+    const k = c.width / (card ? 150 : 200);
     const H = c.height / k;
     const dt = last < 0 ? 0 : Math.min(0.05, t - last);
     last = t;
     next -= dt;
-    const gx = 40, gy = H * 0.56;
+    const gx = card ? 34 : 40, gy = H * (card ? 0.6 : 0.56);
     if (next <= 0) {
       next = it.kind === 'blast' ? 2.1 : 2.4;
       recoil = 1;
@@ -309,23 +309,51 @@ export function drawFx(c: HTMLCanvasElement, it: FxItem): (t: number) => void {
     recoil = Math.max(0, recoil - dt * 4);
     sim.step(dt);
     g.clearRect(0, 0, c.width, c.height);
-    const bg = g.createRadialGradient(c.width * 0.5, c.height * 0.5, 0, c.width * 0.5, c.height * 0.5, c.width * 0.7);
-    bg.addColorStop(0, R.deep + '55');
-    bg.addColorStop(1, '#04121c00');
-    g.fillStyle = bg;
-    g.fillRect(0, 0, c.width, c.height);
-    // a strip of sea for the shots to fly over
-    const sea = g.createLinearGradient(0, (H * 0.8) * k, 0, c.height);
-    sea.addColorStop(0, 'rgba(30,120,150,0.55)');
-    sea.addColorStop(1, 'rgba(6,34,52,0.9)');
-    g.fillStyle = sea;
-    g.fillRect(0, H * 0.8 * k, c.width, c.height);
+    if (card) {
+      // a dusk sky over a dark sea, lit by the rarity's colour
+      const sky = g.createLinearGradient(0, 0, 0, c.height);
+      sky.addColorStop(0, '#061522');
+      sky.addColorStop(0.6, R.deep + '99');
+      sky.addColorStop(0.74, '#0b2c3c');
+      sky.addColorStop(1, '#03101a');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, c.width, c.height);
+      const glow = g.createRadialGradient(c.width * 0.72, H * 0.66 * k, 0, c.width * 0.72, H * 0.66 * k, c.width * 0.6);
+      glow.addColorStop(0, R.css + '66');
+      glow.addColorStop(1, R.css + '00');
+      g.fillStyle = glow;
+      g.fillRect(0, 0, c.width, c.height);
+      // horizon and a few swell lines
+      g.fillStyle = 'rgba(255,255,255,0.18)';
+      g.fillRect(0, H * 0.72 * k, c.width, Math.max(1, 0.6 * k));
+      g.strokeStyle = 'rgba(160,220,240,0.12)';
+      g.lineWidth = Math.max(1, 0.8 * k);
+      for (let i = 0; i < 4; i++) {
+        const y = (H * 0.78 + i * i * 2.4 + i * 2) * k;
+        const ph = t * (0.6 + i * 0.2) + i * 1.7;
+        g.beginPath();
+        for (let x = 0; x <= 150; x += 6) g.lineTo(x * k, y + Math.sin(x * 0.09 + ph) * (0.8 + i * 0.5) * k);
+        g.stroke();
+      }
+    } else {
+      const bg = g.createRadialGradient(c.width * 0.5, c.height * 0.5, 0, c.width * 0.5, c.height * 0.5, c.width * 0.7);
+      bg.addColorStop(0, R.deep + '55');
+      bg.addColorStop(1, '#04121c00');
+      g.fillStyle = bg;
+      g.fillRect(0, 0, c.width, c.height);
+      // a strip of sea for the shots to fly over
+      const sea = g.createLinearGradient(0, H * 0.8 * k, 0, c.height);
+      sea.addColorStop(0, 'rgba(30,120,150,0.55)');
+      sea.addColorStop(1, 'rgba(6,34,52,0.9)');
+      g.fillStyle = sea;
+      g.fillRect(0, H * 0.8 * k, c.width, c.height);
+    }
     // ball in flight
     if (trailFx && ballT >= 0) {
       ballT += dt;
       const bx = gx + ballT * 150;
       const by = gy - ballT * 70 + ballT * ballT * 55;
-      if (bx > 215 || by > H) ballT = -1;
+      if (bx > (card ? 165 : 215) || by > H) ballT = -1;
       else {
         hist.push([bx, by]);
         if (hist.length > 14) hist.shift();

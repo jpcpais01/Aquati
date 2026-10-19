@@ -33,6 +33,9 @@ export class CameraRig {
   /** Harbour framing: the camera glides to these. */
   readonly shotPos = new THREE.Vector3();
   readonly shotLook = new THREE.Vector3();
+  /** Harbour field of view, and how briskly the camera chases the shot (1 = the Shipwright's glide). */
+  shotFov = 38;
+  shotPace = 1;
   private curPos = new THREE.Vector3();
   private curLook = new THREE.Vector3();
   /** Screen-space shift (px) that keeps the subject clear of side panels. */
@@ -54,6 +57,8 @@ export class CameraRig {
    * from wherever it is toward `pos`, looking at `look`, by weight `w`.
    */
   cine: { pos: THREE.Vector3; look: THREE.Vector3; fov: number; w: number } | null = null;
+  /** A cross-fade from a frozen camera pose into whatever the rig computes next (mode switches). */
+  private easeFrom: { pos: THREE.Vector3; quat: THREE.Quaternion; fov: number; t: number; dur: number } | null = null;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(34, aspect, 2, 2600);
@@ -98,6 +103,39 @@ export class CameraRig {
     this.target.copy(p);
   }
 
+  /** Glide from where the camera is now into the next mode's view over `dur` seconds, instead of cutting. */
+  easeIn(dur = 1.2) {
+    const c = this.camera;
+    this.easeFrom = { pos: c.position.clone(), quat: c.quaternion.clone(), fov: c.fov, t: 0, dur };
+  }
+
+  /** Starts the harbour camera from the current view, so a new shot glides in from here. */
+  shotFromHere() {
+    const c = this.camera;
+    this.curPos.copy(c.position);
+    this.curLook.copy(c.position).addScaledVector(_c.set(0, 0, -1).applyQuaternion(c.quaternion), 30);
+    this.portShift.x = this.viewShift.x;
+    this.portShift.y = this.viewShift.y;
+  }
+
+  private applyEase(dt: number) {
+    const e = this.easeFrom;
+    if (!e) return;
+    e.t += dt;
+    const k = Math.min(1, e.t / e.dur);
+    if (k >= 1) {
+      this.easeFrom = null;
+      return;
+    }
+    const w = 1 - k * k * (3 - 2 * k);
+    const c = this.camera;
+    c.position.lerp(e.pos, w);
+    _fq.copy(c.quaternion);
+    c.quaternion.copy(_fq).slerp(e.quat, w);
+    c.fov = lerp(c.fov, e.fov, w);
+    c.updateProjectionMatrix();
+  }
+
   /** Jump straight to the current harbour shot (behind a fade). */
   snapShot() {
     this.curPos.copy(this.shotPos);
@@ -106,17 +144,25 @@ export class CameraRig {
     this.portShift.y = this.viewShift.y;
   }
 
-  private updatePort(dt: number) {
-    this.curPos.lerp(this.shotPos, damp(2.4, dt));
-    this.curLook.lerp(this.shotLook, damp(3.0, dt));
+  private updatePort(dt: number, time: number) {
+    this.curPos.lerp(this.shotPos, damp(2.4 * this.shotPace, dt));
+    this.curLook.lerp(this.shotLook, damp(3.0 * this.shotPace, dt));
     const ps = this.portShift;
     ps.x += (this.viewShift.x - ps.x) * damp(6, dt);
     ps.y += (this.viewShift.y - ps.y) * damp(6, dt);
     this.camera.position.copy(this.curPos);
+    // the vault's chest can jolt the camera here too
+    this.trauma = Math.max(0, this.trauma - dt * 1.6);
+    const s = this.trauma * this.trauma;
+    if (s > 0) {
+      this.camera.position.x += (Math.sin(time * 47) + Math.sin(time * 31)) * s * 0.12;
+      this.camera.position.y += Math.sin(time * 53) * s * 0.1;
+      this.camera.position.z += Math.sin(time * 41 + 1) * s * 0.12;
+    }
     this.camera.lookAt(this.curLook);
     this.target.set(this.curLook.x, 0, this.curLook.z);
     this.focus.copy(this.target);
-    this.camera.fov = 38;
+    this.camera.fov = this.shotFov;
     this.camera.near = 2;
     const w = innerWidth;
     const h = innerHeight;
@@ -128,7 +174,8 @@ export class CameraRig {
   /** `foe` is the enemy ship the player is fighting, or null out of battle. */
   update(dt: number, follow: THREE.Vector3, vel: THREE.Vector3, time: number, foe: THREE.Vector3 | null = null) {
     if (this.mode === 'port') {
-      this.updatePort(dt);
+      this.updatePort(dt, time);
+      this.applyEase(dt);
       return;
     }
     this.zoomSmooth += (this.zoom - this.zoomSmooth) * damp(5, dt);
@@ -246,6 +293,7 @@ export class CameraRig {
     // depth precision, so distant decks, sails and shorelines never z-fight
     this.camera.near = lerp(clamp(this.camera.position.y * 0.08, 2, 30), 0.1, Math.min(1, e * 1.6));
     this.camera.far = lerp(2600, 3600, e);
+    this.applyEase(dt);
     // slide the frame so the ship sits in the space the menu leaves free;
     // fades out as the camera swings into follow
     const k = damp(2.5, dt);
