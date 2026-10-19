@@ -5,6 +5,7 @@ import { Particles } from '../fx/particles';
 import { WakeField } from '../world/wakeField';
 import { Audio } from '../core/audio';
 import type { Debris } from '../fx/debris';
+import type { AmmoId } from './ammo';
 
 export interface Wind {
   angle: number; // direction the wind blows toward
@@ -20,7 +21,12 @@ export interface Shot {
   damage: number;
   /** Vault shot trail the ball leaves behind. */
   trail?: string;
+  /** What kind of shot it is (round when absent). */
+  ammo?: AmmoId;
 }
+
+/** A lasting effect a special shot left on a ship. */
+export type ShipStatus = 'ablaze' | 'shredded' | 'crew';
 
 /** Everything a ship / projectile needs to know about its surroundings. */
 export class World {
@@ -34,6 +40,10 @@ export class World {
   gustAt: (x: number, z: number) => number = () => 0;
   onShot: (s: Shot) => void = () => {};
   onShake: (amount: number, at: THREE.Vector3) => void = () => {};
+  /** Damage that isn't a ball strike (a ship burning), reported in ticks. */
+  onDot: (ship: unknown, attacker: unknown, damage: number) => void = () => {};
+  /** A special shot just set a lasting effect on a ship. */
+  onStatus: (ship: unknown, status: ShipStatus, attacker: unknown) => void = () => {};
   debris!: Debris;
 
   constructor(

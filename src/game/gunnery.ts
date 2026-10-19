@@ -160,7 +160,7 @@ export class Gunnery {
    * horizontal reach the guns are elevated for.
    */
   private predict(p: Ship, foe: Ship, out: THREE.Vector3, lead = _lead): number {
-    const v = p.cls.muzzleSpeed;
+    const v = p.muzzleSpeed;
     const rvx = foe.vel.x - p.vel.x;
     const rvz = foe.vel.z - p.vel.z;
     let tof = Math.hypot(foe.pos.x - p.pos.x, foe.pos.z - p.pos.z) / v;
@@ -182,7 +182,7 @@ export class Gunnery {
   }
 
   range(p: Ship) {
-    return gunRange(p.cls.muzzleSpeed);
+    return gunRange(p.muzzleSpeed);
   }
 
   update(dt: number, p: Ship | null, ships: Ship[], world: World, playing: boolean) {
@@ -235,7 +235,7 @@ export class Gunnery {
       const st = this.sides[side];
       const rl = p.reload[side];
       st.ready = rl <= 0;
-      st.progress = clamp(1 - rl / p.cls.reload, 0, 1);
+      st.progress = clamp(1 - rl / p.reloadFull[side], 0, 1);
       st.target = best[side].s;
       st.hover = this.pointerSide === side;
       st.aimDist = -1;

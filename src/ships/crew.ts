@@ -588,7 +588,7 @@ class ShipCrew {
       const want = rel > 0 ? 1 : -1;
       const cur = this.gunSide > 0 ? 'port' : 'starboard';
       // don't abandon a half-loaded battery unless the enemy is plainly on the other beam
-      const mid = sh.reload[cur] > 0 && sh.reload[cur] < sh.cls.reload * 0.75;
+      const mid = sh.reload[cur] > 0 && sh.reload[cur] < sh.reloadFull[cur] * 0.75;
       if (want !== this.gunSide && Math.abs(Math.abs(rel) - Math.PI / 2) < 1.2 && !mid) this.gunSide = want;
     }
     // hits make everyone duck; kills make everyone roar
@@ -1563,7 +1563,7 @@ class ShipCrew {
     sl.wantYaw = g.side * Math.PI / 2;
     const side = g.side > 0 ? 'port' : 'starboard';
     const reload = sh.reload[side];
-    const p = 1 - reload / sh.cls.reload;
+    const p = 1 - reload / sh.reloadFull[side];
     const fired = sh.gunFiredAt[g.muzzle] ?? -100;
     const since = time - fired;
     const volley = this.volleyAt[side];

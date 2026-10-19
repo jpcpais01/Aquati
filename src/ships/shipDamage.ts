@@ -410,6 +410,22 @@ export class ShipDamage {
     return { kind: 0, mast: -1 };
   }
 
+  /** The standing mast nearest a point along the keel (root space), or -1 if she's dismasted. */
+  nearestMast(localZ: number): number {
+    let best = -1;
+    let bd = Infinity;
+    for (let i = 0; i < this.masts.length; i++) {
+      const m = this.masts[i];
+      if (m.broken) continue;
+      const d = Math.abs(m.z - localZ);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    return best;
+  }
+
   /** A ball tore through canvas or smashed into a mast. */
   onRigHit(kind: 1 | 2, mast: number, at: THREE.Vector3, ballVel: THREE.Vector3, world: World) {
     this.sinceHit = 0;
