@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    // the 17:00 group below is full (five entries), so this hour continues here
+    hour: '2026-10-19T17:00Z',
+    entries: [
+      {
+        title: 'Unbroken cannon trails',
+        notes: [
+          'A cannonball no longer leaves a dotted line of separate puffs behind it. Every shot now draws one continuous thread of smoke along its whole flight, smooth at any frame rate.',
+          'The thread starts thin right behind the ball, then swells, twists and frays as it ages, drifts off on the wind and fades from the far end. Glowing vault trails and fire and fused shells keep a hot glow along the fresh part of the line, with their sparks, embers and stars still scattering around it.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T17:00Z',
     entries: [
       {

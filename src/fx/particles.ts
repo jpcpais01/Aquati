@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getSharedTextures } from '../render/textures';
 import { globalUniforms } from '../render/environment';
+import { Ribbons } from './trails';
 
 // CPU-simulated, GPU-instanced billboard particles. Two pools: alpha
 // (premultiplied: smoke, spray, splinters) and additive (fire, flashes,
@@ -447,6 +448,7 @@ export class Particles {
   private alpha: Pool;
   private add: Pool;
   readonly streaks: Streaks;
+  readonly ribbons: Ribbons;
   readonly uniforms = {
     uNoiseTex: { value: getSharedTextures().noise as THREE.Texture },
     uSceneDepth: { value: null as THREE.Texture | null },
@@ -472,12 +474,14 @@ export class Particles {
     this.alpha = new Pool(Math.floor(2600 * scale), false, this.uniforms);
     this.add = new Pool(Math.floor(1400 * scale), true, this.uniforms);
     this.streaks = new Streaks(640, this.uniforms);
-    this.group.add(this.alpha.mesh, this.streaks.mesh, this.add.mesh);
+    this.ribbons = new Ribbons(96, this.uniforms);
+    this.group.add(this.alpha.mesh, this.ribbons.mesh, this.streaks.mesh, this.add.mesh);
   }
 
   update(dt: number) {
     this.alpha.update(dt);
     this.add.update(dt);
+    this.ribbons.update(dt);
   }
 
   emit(e: Emit, additive = false) {
@@ -779,33 +783,27 @@ export class Particles {
   }
 
   /** What a ball leaves hanging behind it, in the look of a vault shot trail. Called every few hundredths of a second. */
-  trail(pos: THREE.Vector3, young: number, style = 'powder', vel?: THREE.Vector3) {
+  trail(pos: THREE.Vector3, _young: number, style = 'powder', vel?: THREE.Vector3) {
     const j = () => rand(-0.08, 0.08);
     switch (style) {
       case 'spray':
-        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.2, life: rand(0.7, 1.0), size: 0.25, sizeEnd: rand(1.0, 1.4), color: [1.15, 1.2, 1.24], alpha: 0.14 + young * 0.12, drag: 1, kind: 1, fadeIn: 0.04 });
         this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vx: rand(-1, 1), vy: rand(0, 1.5), vz: rand(-1, 1), life: rand(0.4, 0.7), size: rand(0.08, 0.14), sizeEnd: 0.05, color: [1.4, 1.5, 1.55], alpha: 0.85, grav: 9, kind: 0, fadeIn: 0.01 });
         break;
       case 'soot':
-        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.3, life: rand(1.6, 2.3), size: 0.4, sizeEnd: rand(2.0, 2.8), color: [0.32, 0.3, 0.29], colorEnd: [0.5, 0.48, 0.47], alpha: 0.26 + young * 0.18, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05 });
         break;
       case 'ember':
         this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vx: rand(-0.8, 0.8), vy: rand(-0.5, 1.2), vz: rand(-0.8, 0.8), life: rand(0.5, 1.0), size: rand(0.14, 0.24), sizeEnd: 0.04, color: [7, 3, 0.6], colorEnd: [2, 0.3, 0.02], grav: 5, drag: 0.6, kind: 2, fadeIn: 0.01 }, true);
-        if (Math.random() < 0.5) this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.3, life: rand(0.9, 1.3), size: 0.3, sizeEnd: 1.4, color: [0.7, 0.62, 0.56], alpha: 0.12, drag: 1, kind: 1, fadeIn: 0.05 });
         break;
       case 'frost':
-        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.15, life: rand(1.0, 1.5), size: 0.3, sizeEnd: rand(1.3, 1.8), color: [0.9, 1.05, 1.25], alpha: 0.2 + young * 0.14, drag: 1, spin: rand(-0.4, 0.4), kind: 1, fadeIn: 0.05 });
         if (Math.random() < 0.7) this.emit({ x: pos.x + j() * 3, y: pos.y + j() * 3, z: pos.z + j() * 3, vx: rand(-0.4, 0.4), vy: rand(-0.6, 0.2), vz: rand(-0.4, 0.4), life: rand(0.6, 1.1), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [3, 5, 7], colorEnd: [1, 2.4, 4], kind: 2, fadeIn: 0.05 }, true);
         break;
       case 'comet':
         this.emit({ x: pos.x, y: pos.y, z: pos.z, life: rand(0.4, 0.6), size: 0.6, sizeEnd: 0.12, color: [6, 4, 1.2], colorEnd: [2, 0.8, 0.1], kind: 0, fadeIn: 0.001 }, true);
         if (Math.random() < 0.6) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.6, 0.6), vy: rand(-0.4, 0.6), vz: rand(-0.6, 0.6), life: rand(0.7, 1.2), size: rand(0.14, 0.24), sizeEnd: 0.03, color: [7, 5, 1.6], colorEnd: [3, 1.4, 0.2], grav: 1.5, kind: 2, fadeIn: 0.01 }, true);
-        this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.2, life: rand(1.0, 1.4), size: 0.3, sizeEnd: 1.5, color: [1.15, 1.05, 0.9], alpha: 0.1 + young * 0.1, drag: 1, kind: 1, fadeIn: 0.05 });
         break;
       case 'ghost': {
         const ph = performance.now() * 0.006;
         this.emit({ x: pos.x + Math.sin(ph) * 0.2, y: pos.y + Math.cos(ph * 1.3) * 0.2, z: pos.z, vx: rand(-0.4, 0.4), vy: rand(0.4, 1.2), vz: rand(-0.4, 0.4), life: rand(0.6, 1.0), size: 0.45, sizeEnd: 1.3, color: [1.5, 5, 3], colorEnd: [0.15, 1.1, 0.6], spin: rand(-1, 1), kind: 0, fadeIn: 0.05 }, true);
-        if (Math.random() < 0.4) this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.3, life: rand(1.0, 1.4), size: 0.3, sizeEnd: 1.6, color: [0.75, 1.0, 0.88], alpha: 0.12, drag: 1, kind: 1, fadeIn: 0.05 });
         break;
       }
       case 'rainbow': {
@@ -821,23 +819,18 @@ export class Particles {
       case 'fuse':
         // a lit fuse sputtering on the shell, and a thin thread of powder smoke
         this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vx: rand(-1.5, 1.5), vy: rand(-0.5, 2), vz: rand(-1.5, 1.5), life: rand(0.18, 0.4), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [8, 5, 1.6], colorEnd: [3, 1, 0.1], grav: 6, drag: 1, kind: 2, fadeIn: 0.001 }, true);
-        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.25, life: rand(0.9, 1.3), size: 0.22, sizeEnd: rand(1.0, 1.4), color: [0.55, 0.52, 0.5], alpha: 0.18 + young * 0.14, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05 });
         break;
       case 'fire':
         // red-hot iron: a flame streaming off the ball, embers and a ribbon of dark smoke
         this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: rand(0.5, 1.5), life: rand(0.3, 0.5), size: rand(0.55, 0.75), sizeEnd: 0.15, color: [9, 3.8, 0.9], colorEnd: [2.6, 0.45, 0.05], spin: rand(-3, 3), kind: 0, fadeIn: 0.001 }, true);
         if (Math.random() < 0.55) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.8, 0.8), vy: rand(0, 1.6), vz: rand(-0.8, 0.8), life: rand(0.5, 1.0), size: rand(0.14, 0.24), sizeEnd: 0.04, color: [8, 3.4, 0.7], colorEnd: [2, 0.3, 0.02], grav: 4, drag: 0.6, kind: 2, fadeIn: 0.01 }, true);
-        if (Math.random() < 0.6) this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.5, life: rand(1.4, 2.0), size: 0.35, sizeEnd: rand(1.8, 2.4), color: [0.3, 0.27, 0.25], colorEnd: [0.46, 0.44, 0.43], alpha: 0.2 + young * 0.18, drag: 1, spin: rand(-0.6, 0.6), kind: 1, fadeIn: 0.06 });
         break;
       case 'starfall':
         this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.3, 0.3) - (vel?.x ?? 0) * 0.02, vy: rand(-0.4, 0.2), vz: rand(-0.3, 0.3) - (vel?.z ?? 0) * 0.02, life: rand(1.3, 2.2), size: rand(0.2, 0.34), sizeEnd: 0.06, color: Math.random() < 0.5 ? [6, 6, 7.5] : [4.5, 3.2, 8], colorEnd: [1.6, 1.2, 3], grav: 0.5, drag: 1, kind: 2, fadeIn: 0.02 }, true);
         if (Math.random() < 0.5) this.emit({ x: pos.x, y: pos.y, z: pos.z, life: rand(0.3, 0.5), size: 0.5, sizeEnd: 0.1, color: [3, 2.6, 5.5], colorEnd: [0.8, 0.5, 2], kind: 0, fadeIn: 0.001 }, true);
         break;
       default:
-        this.emit({
-          x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.25,
-          life: rand(1.1, 1.6), size: 0.3, sizeEnd: rand(1.4, 2.0), color: [0.95, 0.94, 0.93], alpha: 0.16 + young * 0.18, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05,
-        });
+        // plain powder: the smoke ribbon is the whole trail
     }
   }
 

@@ -21,6 +21,7 @@ interface Ball {
   style: string;
   ammo: AmmoId;
   spin: number;
+  rib: number; // smoke ribbon id: -2 not laid yet, -1 none
 }
 
 export interface HitEvent {
@@ -52,6 +53,7 @@ interface Rake {
 export class Projectiles {
   readonly mesh: THREE.InstancedMesh;
   private balls: Ball[] = [];
+  private dropped: number[] = [];
   private m = new THREE.Matrix4();
   private rakes = new Map<Ship, Rake>();
   private soundT = new Map<number, number>();
@@ -69,12 +71,12 @@ export class Projectiles {
   }
 
   add(s: Shot) {
-    if (this.balls.length >= MAX) this.balls.shift();
+    if (this.balls.length >= MAX) this.dropped.push(this.balls.shift()!.rib);
     const ammo = s.ammo ?? 'round';
     this.balls.push({
       pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0, tore: -1,
       // only the odd grape ball whistles past, or a volley would be a swarm of bees
-      heard: ammo === 'grape' && Math.random() > 0.2, style: s.trail ?? 'powder', ammo, spin: Math.random() * Math.PI * 2,
+      heard: ammo === 'grape' && Math.random() > 0.2, style: s.trail ?? 'powder', ammo, spin: Math.random() * Math.PI * 2, rib: -2,
     });
   }
 
@@ -87,6 +89,8 @@ export class Projectiles {
   }
 
   update(dt: number, world: World, ships: Ship[]) {
+    for (const r of this.dropped) if (r >= 0) world.particles.ribbons.release(r);
+    this.dropped.length = 0;
     const steps = 2;
     const h = dt / steps;
     for (let i = this.balls.length - 1; i >= 0; i--) {
@@ -236,6 +240,8 @@ export class Projectiles {
           }
         }
       }
+      if (b.rib === -2) b.rib = b.ammo === 'grape' ? -1 : world.particles.ribbons.start(b.pos, b.style);
+      if (b.rib >= 0) world.particles.ribbons.follow(b.rib, b.pos);
       if (!dead && b.ammo !== 'grape') {
         b.trail += dt;
         if (b.trail > 0.035) {
@@ -243,7 +249,10 @@ export class Projectiles {
           world.particles.trail(b.pos, Math.max(0, 1 - b.age * 0.6), b.style, b.vel);
         }
       }
-      if (dead || b.age > 7) this.balls.splice(i, 1);
+      if (dead || b.age > 7) {
+        if (b.rib >= 0) world.particles.ribbons.release(b.rib);
+        this.balls.splice(i, 1);
+      }
     }
     this.flushRakes(dt);
     this.draw(world);
@@ -395,6 +404,7 @@ export class Projectiles {
 
   clear() {
     this.balls.length = 0;
+    this.dropped.length = 0;
     this.rakes.clear();
     this.soundT.clear();
     this.mesh.count = 0;

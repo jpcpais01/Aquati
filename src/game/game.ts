@@ -905,6 +905,7 @@ export class Game {
     this.projectiles.clear();
     this.particles.streaks.begin();
     this.particles.streaks.end();
+    this.particles.ribbons.clear();
     this.loot.clear();
     this.debris.clear();
     this.crew.clear();
