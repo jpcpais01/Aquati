@@ -138,7 +138,7 @@ export class Game {
     const veg = new Vegetation(this.terrain, q.vegetation);
     ui.progress(0.62);
     await nextFrame();
-    this.opaque.add(this.terrain.buildMeshes(q.terrainLod));
+    this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
     this.opaque.add(veg.build());
     this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36);
     this.opaque.add(this.birds.mesh);
@@ -747,7 +747,8 @@ export class Game {
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
-    this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.6 : 0.8;
+    this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.55 : 0.35;
+    this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);
   }
