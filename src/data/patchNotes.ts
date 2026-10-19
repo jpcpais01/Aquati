@@ -13,6 +13,20 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T19:00Z',
+    entries: [
+      {
+        title: 'A bow wave made of water, not smoke',
+        notes: [
+          'The puffy white blobs at the front of every ship are gone. Now a curling sheet of white water climbs the stem, rolls over into a lip and peels back along both bows, growing taller the faster you sail.',
+          'The whitewater streams aft along the hull and opens into lace as it runs out onto the sea, leaving fine ribbons of foam that peel away on either side.',
+          'Bow spray is now fine, quick droplets flung off the crest that fall back into the sea, with bigger bursts when the bow digs into a swell.',
+          'All wake foam now uses the same realistic bubble web as the breaking surf, so it opens into holes, thins to threads and breaks into flecks as it fades.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T18:00Z',
     entries: [
       {

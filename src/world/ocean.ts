@@ -711,11 +711,11 @@ export class Ocean {
           float surfFoam = foamCut(fv, clamp(surfCover, 0.0, 1.0), fp);
           // wake foam: a dense churned core that breaks up into lacy cells as it thins out
           float wf = clamp(wk.r * wIn, 0.0, 2.5);
-          float pat = lace * 0.55 + lace2 * 0.45 + (nz2.r - 0.5) * 0.3 + (wn.b - 0.5) * 0.35;
-          float thr = 0.9 - wf * (0.48 + 0.3 * wn2.r);
-          float wakeFoam = smoothstep(thr - 0.09, thr + 0.07, pat) * smoothstep(0.015, 0.1, wf);
-          wakeFoam = max(wakeFoam, smoothstep(0.9, 1.7, wf));
-          wakeFoam *= 0.55 + 0.45 * smoothstep(0.0, 0.7, wf);
+          // through the same bubble web as the surf: a churned sheet that opens into holes,
+          // thins to threads and snaps into flecks as the bubbles pop, never soft puffs
+          float wCover = clamp(wf * (0.5 + 0.32 * wn2.r) + (wn.b - 0.5) * 0.12 * smoothstep(0.02, 0.3, wf), 0.0, 0.98);
+          float wakeFoam = foamCut(fv, wCover, fp) * smoothstep(0.01, 0.06, wf);
+          wakeFoam *= 0.7 + 0.3 * smoothstep(0.0, 0.6, wf);
           // whitecaps break only here and there, and more often where a gust blows
           float breaking = smoothstep(0.54 - uStorm * 0.34, 0.8 - uStorm * 0.22, texture(uNoiseTex, p * 0.0093 - wdir * t * 0.017).g + gust * 0.35);
           float crestFoam = smoothstep(0.5 - uStorm * 0.22, 0.95, vCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.3);
