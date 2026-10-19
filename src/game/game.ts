@@ -187,6 +187,13 @@ export class Game {
     this.opaque.fog = new THREE.Fog(new THREE.Color(), 380, 1500);
     this.skyEnv = new SkyEnvironment(this.renderer);
     this.applyAtmosphere();
+    const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm'] as const;
+    document.getElementById('hud-sky')!.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const m = modes[(modes.indexOf(this.atmos.mode) + 1) % modes.length];
+      this.atmos.setMode(m);
+      this.ui.skyTag(m === 'auto' ? 'Auto' : WEATHER[m].name);
+    });
     this.atmos.onChange = (_k, title, line) => {
       if (this.state === 'playing') this.ui.toast(title, line, 3.4);
     };

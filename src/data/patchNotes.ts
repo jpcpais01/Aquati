@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T16:00Z',
+    entries: [
+      {
+        title: 'Choose your weather',
+        notes: [
+          'Tap the little weather badge by the clock to cycle the skies: Auto, Clear, Fair, Cloudy, Mist, Rain and Storm.',
+          'The new weather rolls in over a few seconds, clouds, rain, swell and all, and your pick is remembered next time you sail. Auto lets the weather change on its own again.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T15:00Z',
     entries: [
       {
