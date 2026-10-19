@@ -1223,7 +1223,7 @@ export class Game {
     }
     w.listenerZoom = this.rig.distance;
     // the spyglass can pick out a crew at the far side of a battle
-    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260);
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
 
     // gusts roll across whatever the camera is looking at
     const reach = clamp(this.rig.distance * 0.9, 70, 260);
