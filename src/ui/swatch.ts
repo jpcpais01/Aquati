@@ -394,6 +394,9 @@ function loop() {
     l.seen = true;
     if (!l.visible) continue;
     if (!l.drawn || (l.animated && frame % 2 === 0)) {
+      // the observer still counts a canvas under visibility: hidden (the
+      // Shipwright while the vault is open over it), so ask the page too
+      if (l.drawn && l.c.checkVisibility?.({ visibilityProperty: true }) === false) continue;
       l.draw(t);
       l.drawn = true;
     }

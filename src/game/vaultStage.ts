@@ -735,11 +735,12 @@ export class VaultStage {
         break;
       }
       case 'guns': {
-        // over the far rail, looking across the deck as the broadside goes out
+        // off the bow quarter, low over the water, looking back down the
+        // gunports as the broadside rolls out across the frame
         const L = s.cls.length;
         const hb = s.cls.beam / 2;
-        pos.set(s.pos.x, 0, s.pos.z).addScaledVector(o, -(hb + 3) * fit).addScaledVector(f, L * 0.02).addScaledVector(UP, 6 + fit * 1.5);
-        look.set(s.pos.x, 0, s.pos.z).addScaledVector(o, hb + 30).addScaledVector(f, L * 0.5).addScaledVector(UP, 1);
+        pos.set(s.pos.x, 0, s.pos.z).addScaledVector(o, hb + 7 * fit).addScaledVector(f, L * 0.75 * fit).addScaledVector(UP, 3.4);
+        look.set(s.pos.x, 0, s.pos.z).addScaledVector(o, hb + 5.5).addScaledVector(f, -L * 0.15).addScaledVector(UP, 1.8);
         fov = 50;
         break;
       }

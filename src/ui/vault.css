@@ -550,6 +550,10 @@
   gap: 10px;
 }
 
+.vt-reveal-row .btn {
+  white-space: nowrap;
+}
+
 .vt-reveal-tip {
   font: 600 12.5px var(--sans);
   color: var(--ink-2);
@@ -886,6 +890,10 @@
 
 .vc.locked .vc-art canvas {
   filter: grayscale(0.85) brightness(0.5);
+}
+
+.vc.locked .vc-foil {
+  opacity: 0.12;
 }
 
 .vc.locked .vc-plate b {
