@@ -12,6 +12,7 @@ import { patchMaterial } from '../render/environment';
 //   aqKind  (volcanic, atoll, rocky) one-hot of the owning island, 0 = lush
 //   aqInfo  (tint -1..1, summit rock 0..1, crater 0..1)
 //   aqAO    baked horizon AO
+//   aqCanopy  tree cover (0..1): mossy forest floor and leaf litter under crowns
 
 function lin(hex: number): string {
   const c = new THREE.Color(hex).convertSRGBToLinear();
@@ -28,11 +29,14 @@ const vec3 T_CORAL_A = ${lin(0xf27e74)};
 const vec3 T_CORAL_B = ${lin(0xffb07a)};
 const vec3 T_CORAL_C = ${lin(0xb98ad6)};
 const vec3 T_CORAL_D = ${lin(0xf5d06a)};
-const vec3 T_GRASS = ${lin(0x72b443)};
-const vec3 T_GRASS_LIGHT = ${lin(0x9fd25a)};
+const vec3 T_GRASS = ${lin(0x6eaa48)};
+const vec3 T_GRASS_LIGHT = ${lin(0xa2cc5e)};
 const vec3 T_GRASS_DRY = ${lin(0xb4bd56)};
 const vec3 T_GRASS_DEEP = ${lin(0x3d8a35)};
 const vec3 T_JUNGLE = ${lin(0x2b6a2e)};
+const vec3 T_GRASS_GOLD = ${lin(0xc2c062)};
+const vec3 T_FOREST_FLOOR = ${lin(0x34562a)};
+const vec3 T_LEAF_LITTER = ${lin(0x7a6440)};
 const vec3 T_FLOWER_A = ${lin(0xfff6e0)};
 const vec3 T_FLOWER_B = ${lin(0xffd34a)};
 const vec3 T_FLOWER_C = ${lin(0xff7aa8)};
@@ -50,6 +54,7 @@ const vec3 T_ASH = ${lin(0x9a9186)};
 const FRAG_HEAD = /* glsl */ `
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
+varying float vAqCanopy;
 ${PALETTE}
 float aqBump = 0.0;
 float aqRough = 0.94;
@@ -135,6 +140,12 @@ const FRAG_ALBEDO = /* glsl */ `
   g = mix(g, T_GRASS_DEEP, smoothstep(0.5, 0.62, 1.0 - nS.g + (nD.r - 0.5) * 0.1) * 0.6);
   float jungle = smoothstep(3.5, 10.0, h) * smoothstep(0.44, 0.58, nM.g + (nD.g - 0.5) * 0.08) * (1.0 - kA);
   g = mix(g, T_JUNGLE, jungle * 0.8);
+  // sun-cured grass up on the high lush ridges
+  g = mix(g, T_GRASS_GOLD, smoothstep(14.0, 32.0, h + (nM.g - 0.5) * 10.0) * 0.42 * kL);
+  // forest floor under the trees: deep moss with drifts of fallen leaves
+  float under = smoothstep(0.15, 0.85, vAqCanopy + (nD.g - 0.5) * 0.35) * (1.0 - kA);
+  vec3 floorC = mix(T_FOREST_FLOOR, T_LEAF_LITTER, smoothstep(0.52, 0.7, nF.r + (nD.a - 0.5) * 0.3) * 0.75);
+  g = mix(g, floorC, under * 0.72);
   // tufts: per-blade-clump light and dark
   float tuft = nF.g;
   g *= 0.9 + tuft * 0.2;
@@ -150,7 +161,16 @@ const FRAG_ALBEDO = /* glsl */ `
   #endif
   vec3 flc = mix(T_FLOWER_A, T_FLOWER_B, step(0.5, nD.r));
   flc = mix(flc, T_FLOWER_C, step(0.6, nM.a) * step(nD.g, 0.5));
+  fl *= 1.0 - under;
   g = mix(g, flc, fl * 0.9);
+  #ifndef AQ_TERRAIN_LITE
+  // wind rolling over the meadows: bright waves of bent blades sweep downwind,
+  // brightest where a gust is passing
+  vec2 wv = xz * 0.045 - uWind.xy * uTime * 0.22;
+  float sheen = texture(uNoiseTex, wv).r * 0.6 + texture(uNoiseTex, wv * 2.3 + 0.37).g * 0.4;
+  sheen = smoothstep(0.45, 0.8, sheen) * (0.35 + gustAt(xz) * 0.8);
+  g *= 1.0 + sheen * 0.14 * (1.0 - under) * (1.0 - jungle * 0.7);
+  #endif
   float bGrass = ((tuft - 0.5) * 0.09 + fl * 0.06) * (1.0 - smoothstep(0.04, 0.1, fp)) - lip * 0.02;
   // sun-bleached dry rim on the sand just below the turf
   float rim = smoothstep(-0.5, -0.05, edge) * (1.0 - grassT);
@@ -244,11 +264,13 @@ export function createTerrainMaterial(lite = false): THREE.MeshStandardMaterial 
 attribute vec3 aqKind;
 attribute vec3 aqInfo;
 attribute float aqAO;
+attribute float aqCanopy;
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
-varying float vAqAO;`,
+varying float vAqAO;
+varying float vAqCanopy;`,
       )
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;');
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', `${lite ? '#define AQ_TERRAIN_LITE\n' : ''}varying float vAqAO;\n${FRAG_HEAD}\nvoid main() {`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_ALBEDO}`)

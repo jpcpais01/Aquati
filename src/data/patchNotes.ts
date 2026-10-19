@@ -13,6 +13,45 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T15:00Z',
+    entries: [
+      {
+        title: 'Real skies: sunlight, clouds and distance',
+        notes: [
+          'The sky is now painted the way real air scatters light: a deep blue overhead that pales to a bright band along the horizon, a blazing sun disc with a soft glowing halo, and fine cirrus streaks on fair days.',
+          'Clouds are heaped, billowing cumulus with sunlit edges, blue-grey bellies and a silver rim toward the sun. Cloudy days break into big banks with blue gaps and patches of sunshine racing across the sea, and every shadow on the water belongs to a cloud you can see overhead.',
+          'The sea mirrors the clouds above it and deepens to a rich blue toward the horizon instead of turning milky.',
+          'Far islands and ships now sink into the colour of the air in front of them, warm toward the sun and cool blue away from it, while mountain peaks stay crisp above the sea haze.',
+          'Stronger sunlight against softer, bluer shade and a touch more contrast give islands, hulls and sails more shape, from the deck and from above.',
+        ],
+      },
+      {
+        title: 'Volume sliders',
+        notes: [
+          'Settings now has Master, Music, Effects and Ambience volume sliders, so you can turn the harbour theme down without losing the cannons, or quiet the surf and wind for a cleaner battle mix.',
+          'Changes are heard live as you drag and are remembered next time you sail.',
+        ],
+      },
+      {
+        title: 'Lusher, more beautiful islands',
+        notes: [
+          'Every island has been replanted. Coconut palms now grow in proper groves with bare stretches of beach between them, with serrated fronds, ringed trunks, the odd dried frond hanging down, coconuts in the crown and more lying in the sand.',
+          'New trees: rounded rain trees, tall jungle giants, scarlet flame trees and pink or lilac blossom trees standing alone in the meadows, and island pines on the high ridges and rocky isles. Their crowns now look soft and full, and the sun glows through the leaves.',
+          'The forests have an understorey of banana plants and ferns, the meadows are dotted with hibiscus in four colours, red and gold croton and patches of daisies, buttercups, pinks and periwinkles, and sea oats grow along the top of the beaches.',
+          'The ground has changed too. Under the trees there is a mossy forest floor with fallen leaves, the high ridges of the green isles turn golden, and you can see gusts roll across the meadows as bright waves in the grass. Shells now wash up along the tideline.',
+          'Islands far from the camera use simpler trees, and the smallest plants fade out with distance, so the extra detail costs little.',
+        ],
+      },
+      {
+        title: 'A new app icon',
+        notes: [
+          'Aquati has a brand new icon: a three-masted galleon under full sail, gun ports glinting and stern lanterns lit, cutting a bow wave across a turquoise lagoon with a palm-crowned isle and the golden sun behind her.',
+          'It looks sharp everywhere, from your home screen and app drawer (including Android\'s round and squircle shapes) to iPhone home screens and the little browser tab icon. If you installed Aquati already, your phone may take a day or a reinstall to pick it up.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T14:00Z',
     entries: [
       {
