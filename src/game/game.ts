@@ -100,6 +100,14 @@ export class Game {
     this.opaque.add(this.projectiles.mesh, this.loot.group);
 
     this.wireUI();
+    // browsers only let sound start from a gesture (and on phones a touch only
+    // counts once it lifts), so any tap or key in the harbour wakes the theme
+    const wake = () => {
+      if (this.state !== 'menu' && this.state !== 'loading') return;
+      this.audio.start();
+      this.audio.setMusic(true);
+    };
+    for (const ev of ['pointerup', 'touchend', 'keydown'] as const) addEventListener(ev, wake, true);
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state === 'playing') {
@@ -310,6 +318,7 @@ export class Game {
     this.input.enabled = false;
     this.ui.showHud(false);
     this.ui.showMenu(true);
+    this.audio.setMusic(true, true);
     this.rig.mode = 'orbit';
     this.setPreview(this.ui.selected);
     this.rig.snapTo(this.spawnPoint);
@@ -324,6 +333,7 @@ export class Game {
   private startVoyage() {
     if (!this.preview) return;
     this.audio.start();
+    this.audio.setMusic(false);
     const p = this.preview;
     this.preview = null;
     p.anchored = false;
