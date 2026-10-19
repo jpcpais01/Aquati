@@ -1103,7 +1103,7 @@ class ShipCrew {
       } else if (sl.goal) sl.actT = 0;
       return;
     }
-    if (sh.burning > 0 && sl.role === 'hand') return this.firefight(sl);
+    if (sh.burning > 0) return this.firefight(sl);
 
     // trimming canvas or swinging yards: hands to the pin rails
     const trimming = Math.abs(sh.sailTarget - sh.sailLevel) > 0.03 || sh.rigActivity() > 0.35;
@@ -1481,8 +1481,8 @@ function updateLoose(sl: Sailor, dt: number, world: World) {
       sl.wy = wh;
       _p.set(sl.wx, wh, sl.wz);
       world.particles.splash(_p, 0.32);
-      const [vol, pan] = world.soundAt(_p);
-      world.audio.splash(vol * 0.18, pan);
+      const [vol, pan, d] = world.soundAt(_p);
+      world.audio.splash(vol * 0.18, pan, d);
     }
   } else if (sl.mode === 'swim') {
     sl.swimT += dt;
