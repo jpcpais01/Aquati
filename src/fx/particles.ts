@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getSharedTextures } from '../render/textures';
+import { globalUniforms } from '../render/environment';
 
 // CPU-simulated, GPU-instanced billboard particles. Two pools: alpha
 // (premultiplied: smoke, spray, splinters) and additive (fire, flashes,
@@ -88,6 +89,7 @@ class Pool {
         }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D uNoiseTex; uniform sampler2D uSceneDepth; uniform vec2 uResolution; uniform vec2 uCamNearFar;
+        uniform vec3 uLight; uniform float uFlash;
         varying vec4 vCol; varying vec2 vUv; varying float vKind; varying float vSeed; varying float vViewZ;
         float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
         void main() {
@@ -113,7 +115,8 @@ class Pool {
           #if ADDITIVE
             gl_FragColor = vec4(vCol.rgb * a, 0.0);
           #else
-            gl_FragColor = vec4(vCol.rgb * a, a);
+            // smoke and spray are lit by the sky: warm at sunset, dim blue at night
+            gl_FragColor = vec4(vCol.rgb * (uLight + uFlash * 0.8) * a, a);
           #endif
         }`,
     });
@@ -196,6 +199,8 @@ export class Particles {
     uSceneDepth: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCamNearFar: { value: new THREE.Vector2(1, 1000) },
+    uLight: globalUniforms.uLight,
+    uFlash: globalUniforms.uFlash,
   };
 
   constructor(scale = 1) {

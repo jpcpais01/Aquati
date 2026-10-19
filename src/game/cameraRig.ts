@@ -23,9 +23,13 @@ export class CameraRig {
   private orbitAngle = 0.6;
   private blend = 0; // 0 orbit .. 1 follow
   orbitCenter = new THREE.Vector3();
-  orbitRadius = 34;
-  /** Menu framing: where the orbited ship sits, as a fraction of the screen from centre. */
-  menuShift = { x: 0, y: 0 };
+  /** Bounds of the menu ship relative to orbitCenter (world axes); the orbit camera fits them snugly in view. */
+  orbitBox = new THREE.Box3(new THREE.Vector3(-4, -2, -12), new THREE.Vector3(4, 20, 12));
+  /** The menu ship's orientation, so its own-frame bounds can be turned into the world. */
+  orbitQuat = new THREE.Quaternion();
+  private orbitDist = 0;
+  /** Menu framing: where the orbited ship sits (fraction of the screen from centre) and how much of the screen is free for it. */
+  menuShift = { x: 0, y: 0, w: 1, h: 1 };
   private shift = { x: 0, y: 0 };
   /** First-person: wanted (0/1) and the eased swoop between them. */
   firstPerson = false;
@@ -82,18 +86,29 @@ export class CameraRig {
 
     // orbit pose: low, slow, cinematic
     this.orbitAngle += dt * 0.06;
-    // pull back on narrow portrait screens so the whole ship fits across
-    const fit = this.camera.aspect < 1 ? Math.min(2.2, this.camera.aspect ** -0.75) : 1;
-    const r = this.orbitRadius * fit;
-    const op = new THREE.Vector3(
-      this.orbitCenter.x + Math.sin(this.orbitAngle) * r * 1.6,
-      this.orbitCenter.y + r * 0.62 + Math.sin(time * 0.2) * 1.5,
-      this.orbitCenter.z + Math.cos(this.orbitAngle) * r * 1.6,
-    );
+    // pull in as close as possible while every corner of the ship's bounds,
+    // masts and bowsprit included, stays inside the screen area the menu leaves free
+    const tanV = Math.tan(THREE.MathUtils.degToRad(15)) * Math.max(0.15, this.menuShift.h) * 0.94;
+    const tanH = Math.tan(THREE.MathUtils.degToRad(15)) * this.camera.aspect * Math.max(0.15, this.menuShift.w) * 0.94;
+    const box = this.orbitBox;
+    const mid = box.getCenter(new THREE.Vector3());
+    const aim = this.orbitCenter.clone().add(mid.clone().applyQuaternion(this.orbitQuat));
+    const dir = new THREE.Vector3(Math.sin(this.orbitAngle) * 1.6, 0.62, Math.cos(this.orbitAngle) * 1.6).normalize();
+    const right = new THREE.Vector3().crossVectors(dir.clone().negate(), new THREE.Vector3(0, 1, 0)).normalize();
+    const up = new THREE.Vector3().crossVectors(right, dir.clone().negate());
+    let want = 10;
+    const q = new THREE.Vector3();
+    for (let i = 0; i < 8; i++) {
+      q.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).sub(mid).applyQuaternion(this.orbitQuat);
+      const z = q.dot(dir);
+      want = Math.max(want, z + Math.abs(q.dot(right)) / tanH, z + Math.abs(q.dot(up)) / tanV);
+    }
+    this.orbitDist = this.orbitDist ? this.orbitDist + (want - this.orbitDist) * damp(2.5, dt) : want;
+    const op = aim.clone().addScaledVector(dir, this.orbitDist);
+    op.y += Math.sin(time * 0.2) * 1.2;
     const b = this.blend * this.blend * (3 - 2 * this.blend);
     this.camera.position.lerpVectors(op, followPos, b);
-    // aim a little below the ship so it sits between the title and the cards
-    const lookAt = new THREE.Vector3().lerpVectors(this.orbitCenter.clone().add(new THREE.Vector3(0, -this.orbitRadius * 0.07, 0)), this.focus, b);
+    const lookAt = new THREE.Vector3().lerpVectors(aim, this.focus, b);
 
     // trauma shake (squared for a punchy falloff)
     this.trauma = Math.max(0, this.trauma - dt * 1.6);

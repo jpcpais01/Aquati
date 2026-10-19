@@ -141,6 +141,9 @@ export const ICONS = {
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
   play: '<path d="M8 5.5v13l10.5-6.5z"/>',
   chev: '<path d="m9 5 7 7-7 7"/>',
+  chevL: '<path d="m15 5-7 7 7 7"/>',
+  cannon:
+    '<path d="M3 9.6 15.6 7.2a1 1 0 0 1 1.1.8l.7 3.6a1 1 0 0 1-.8 1.2L4 15.2z" fill="currentColor" fill-opacity=".9"/><path d="M17.6 7.6l2.6-.5.8 4-2.6.5"/><circle cx="8.5" cy="16.2" r="3.3" fill="rgba(4,18,26,.6)"/><circle cx="8.5" cy="16.2" r=".8"/><path d="M13 19.5h7"/>',
   pause: '<path d="M9 5.5v13M15 5.5v13"/>',
   wheel: STAT_ICONS.agility,
   harbour: '<path d="M3 20h18M5 20V10l7-5 7 5v10M9.5 20v-5h5v5"/>',
@@ -166,3 +169,26 @@ export const crest = () => {
   <circle cx="32" cy="32" r="2.4" fill="#0b3546" stroke="url(#crest-g)" stroke-width="1.2"/>
 </svg>`.replace(/crest-g/g, id);
 };
+
+/** Brass compass bezel for the round minimap: ticks every 15°, cardinal letters. */
+export function compassBezel(): string {
+  let ticks = '';
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const major = i % 6 === 0;
+    if (major) continue;
+    const r0 = i % 3 === 0 ? 89 : 92;
+    const x0 = 100 + Math.sin(a) * r0;
+    const y0 = 100 - Math.cos(a) * r0;
+    const x1 = 100 + Math.sin(a) * 96;
+    const y1 = 100 - Math.cos(a) * 96;
+    ticks += `<line x1="${f(x0)}" y1="${f(y0)}" x2="${f(x1)}" y2="${f(y1)}"/>`;
+  }
+  const letter = (t: string, x: number, y: number) => `<text x="${x}" y="${y}">${t}</text>`;
+  return `<defs><linearGradient id="bz-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset=".5" stop-color="#efc463"/><stop offset="1" stop-color="#a87422"/></linearGradient></defs>
+    <circle cx="100" cy="100" r="97" fill="none" stroke="url(#bz-g)" stroke-width="3"/>
+    <circle cx="100" cy="100" r="86.5" fill="none" stroke="rgba(255,240,210,.35)" stroke-width="1"/>
+    <g class="bz-ticks">${ticks}</g>
+    <g class="bz-letters">${letter('E', 192, 104)}${letter('S', 100, 196)}${letter('W', 8, 104)}</g>
+    <path class="bz-north" d="M100 -2 L108 13 L100 10 L92 13 Z"/>`;
+}
