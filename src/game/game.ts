@@ -225,6 +225,11 @@ export class Game {
     this.rig.camera.updateProjectionMatrix();
     // tighter framing on portrait phones
     this.rig.zoom = clamp(this.rig.zoom, 0, 1);
+    this.frameMenu();
+  }
+
+  private frameMenu() {
+    this.rig.menuShift = this.state === 'menu' || this.state === 'loading' ? this.ui.menuFraming() : { x: 0, y: 0 };
   }
 
   // ------------------------------------------------------------------ ships
@@ -302,6 +307,7 @@ export class Game {
     this.rig.mode = 'orbit';
     this.setPreview(this.ui.selected);
     this.rig.snapTo(this.spawnPoint);
+    this.frameMenu();
     // a couple of pirates on the horizon for life
     if (!this.ships.some((s) => s.team === 'pirate')) {
       this.spawnPirate(this.spawnPoint, 160, 260);
@@ -324,6 +330,7 @@ export class Game {
     this.ui.showMenu(false);
     this.ui.showHud(true);
     this.rig.mode = 'follow';
+    this.rig.menuShift = { x: 0, y: 0 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 6;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
@@ -340,7 +347,8 @@ export class Game {
   private setPaused(on: boolean) {
     if (on && this.state === 'playing') {
       this.state = 'paused';
-      this.ui.showPause(true);
+      const p = this.player;
+      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime } : undefined);
     } else if (!on && this.state === 'paused') {
       this.state = 'playing';
       this.ui.showPause(false);
@@ -400,6 +408,7 @@ export class Game {
         isles: this.discovered.size,
         time: this.voyageTime,
         ship: this.player.name,
+        cls: this.player.cls.id,
       });
     }, 3800);
   }
