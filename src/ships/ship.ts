@@ -96,6 +96,7 @@ export class Ship {
   private rigLeeV = 0;
   private leeTarget = 1;
   private fireT = 0;
+  private galleyT = Math.random();
   name: string;
 
   constructor(readonly cls: ShipClass, readonly livery: Livery, readonly team: Team, quality = 1) {
@@ -448,6 +449,22 @@ export class Ship {
             life: 1 + Math.random() * 0.6, size: 0.8, sizeEnd: 2.6, color: [1.22, 1.3, 1.34], alpha: 0.28, drag: 1.6, grav: 1.5, kind: 1,
           });
         }
+      }
+    }
+    // a lazy wisp from the galley stovepipe, carried off downwind
+    const pipe = this.model.chimney;
+    if (pipe && this.alive) {
+      this.galleyT += dt * 2.2;
+      while (this.galleyT > 1) {
+        this.galleyT -= 1;
+        _fp.copy(pipe).applyMatrix4(this.model.root.matrixWorld);
+        const drift = 0.6 + w.strength * 1.4;
+        world.particles.emit({
+          x: _fp.x, y: _fp.y + 0.05, z: _fp.z,
+          vx: this.vel.x * 0.85 + w.dirX * drift + (Math.random() - 0.5) * 0.2, vy: 0.7 + Math.random() * 0.3, vz: this.vel.z * 0.85 + w.dirZ * drift + (Math.random() - 0.5) * 0.2,
+          life: 2.2 + Math.random() * 1.2, size: 0.32, sizeEnd: 1.6 + Math.random() * 0.8,
+          color: [0.82, 0.8, 0.78], colorEnd: [1.05, 1.04, 1.02], alpha: 0.32, drag: 0.6, grav: -0.15, spin: (Math.random() - 0.5) * 0.6, kind: 1, fadeIn: 0.15,
+        });
       }
     }
     // fires when badly damaged or sinking
