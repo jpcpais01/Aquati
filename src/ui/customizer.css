@@ -13,6 +13,15 @@
   pointer-events: auto;
 }
 
+/* stepped aside while the Treasure Vault is open over it */
+.sw.sw-away {
+  visibility: hidden;
+}
+
+.sw.sw-away > * {
+  pointer-events: none;
+}
+
 /* a soft shade behind the title so it reads over bright sky */
 .sw::before {
   content: '';
@@ -117,7 +126,7 @@
 
 .sw-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 4px;
   margin: 10px 10px 0;
   padding: 4px;
@@ -870,5 +879,285 @@
 
   .sw-parts {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ------------------------------------------------------------------ vault cosmetics (skins & guns tabs) */
+
+.sw-tab {
+  position: relative;
+  min-width: 0;
+}
+
+.sw-tab span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sw-new {
+  position: absolute;
+  top: 5px;
+  right: calc(50% - 18px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 0 2px rgba(6, 20, 30, 0.9), 0 0 10px rgba(244, 199, 101, 0.8);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.2s, transform 0.3s var(--spring);
+}
+
+.sw-tab.has-new .sw-new {
+  opacity: 1;
+  transform: none;
+}
+
+.sw-vault {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(244, 199, 101, 0.35);
+  background:
+    radial-gradient(ellipse 60% 120% at 0% 50%, rgba(255, 190, 61, 0.25), transparent 70%),
+    linear-gradient(180deg, rgba(40, 28, 8, 0.55), rgba(16, 12, 4, 0.6));
+  box-shadow: var(--hi), 0 0 24px rgba(244, 199, 101, 0.1);
+  text-align: left;
+  overflow: hidden;
+  transition: transform 0.2s var(--ease), box-shadow 0.25s;
+}
+
+.sw-vault::after {
+  content: '';
+  position: absolute;
+  inset: -40%;
+  background: linear-gradient(105deg, transparent 42%, rgba(255, 240, 200, 0.16) 50%, transparent 58%);
+  animation: sw-sheen 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes sw-sheen {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(50%);
+  }
+}
+
+.sw-vault:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--hi), 0 0 34px rgba(244, 199, 101, 0.25);
+}
+
+.sw-vault:focus-visible {
+  box-shadow: var(--focus);
+}
+
+.sw-vault-chest {
+  width: 40px;
+  height: 34px;
+  flex: none;
+  border-radius: 8px 8px 5px 5px;
+  background:
+    linear-gradient(90deg, transparent 18%, #f1c35c 18% 26%, transparent 26% 74%, #f1c35c 74% 82%, transparent 82%),
+    linear-gradient(180deg, #8a4f2a 0 42%, #f1c35c 42% 50%, #5e3218 50%);
+  box-shadow: 0 0 16px rgba(255, 190, 61, 0.5), inset 0 0 0 2px rgba(241, 195, 92, 0.7);
+}
+
+.sw-vault-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sw-vault-text b {
+  font: 800 15px var(--sans);
+  color: var(--gold-hi);
+}
+
+.sw-vault-text small {
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.sw-vault-purse {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 800 13px var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--gold-hi);
+}
+
+.sw-vault-purse i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 32%, #fff6cf, #f1c35c 48%, #a86b1c);
+}
+
+.sw-fire {
+  width: 100%;
+  margin-top: 10px;
+  gap: 10px;
+}
+
+.sw-fire svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sw-fire.cool {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.sw-count {
+  font: 700 11px var(--sans);
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+
+.sw-cos {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.sw-cos-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--rc) 40%, transparent);
+  background: linear-gradient(180deg, rgba(10, 30, 42, 0.8), rgba(4, 14, 22, 0.9));
+  overflow: hidden;
+  text-align: left;
+  transition: transform 0.2s var(--ease), box-shadow 0.25s, border-color 0.2s;
+}
+
+.sw-cos-card canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 168 / 110;
+}
+
+.sw-cos-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--rc) 30%, transparent);
+}
+
+.sw-cos-card.sel {
+  border-color: transparent;
+  box-shadow: var(--focus);
+}
+
+.sw-cos-card:focus-visible {
+  box-shadow: var(--focus);
+}
+
+.sw-cos-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 7px 10px 9px;
+}
+
+.sw-cos-info b {
+  font: 700 12.5px / 1.2 var(--sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-cos-info small {
+  font: 800 9.5px var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rc);
+}
+
+.sw-cos-card.locked canvas {
+  filter: grayscale(0.85) brightness(0.5);
+}
+
+.sw-cos-card.locked b {
+  color: var(--ink-3);
+}
+
+.sw-cos-lock {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  aspect-ratio: 168 / 110;
+  display: grid;
+  place-items: center;
+}
+
+.sw-cos-lock svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.8);
+  stroke-width: 2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+
+.sw-cos-new {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font: 800 9px var(--sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #1f1404;
+  background: var(--gold-grad);
+}
+
+/* six tabs: stack icon over label wherever the row would be too tight */
+@media (max-height: 560px) and (min-width: 561px) {
+  .sw-tab {
+    flex-direction: column;
+    gap: 1px;
+    padding: 5px 2px;
+  }
+
+  .sw-tab span {
+    font-size: 8.5px;
+    letter-spacing: 0.08em;
+  }
+}
+
+@media (max-width: 760px) and (min-height: 561px), (max-width: 560px) {
+  .sw-tab {
+    flex-direction: column;
+    gap: 2px;
+    padding: 7px 2px 6px;
+  }
+
+  .sw-tab span {
+    font-size: 9px;
+    letter-spacing: 0.08em;
   }
 }

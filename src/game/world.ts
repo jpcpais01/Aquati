@@ -18,6 +18,8 @@ export interface Shot {
   vel: THREE.Vector3;
   owner: unknown;
   damage: number;
+  /** Vault shot trail the ball leaves behind. */
+  trail?: string;
 }
 
 /** Everything a ship / projectile needs to know about its surroundings. */

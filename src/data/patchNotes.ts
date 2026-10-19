@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T15:00Z',
     entries: [
       {
+        title: 'The Treasure Vault: rare ship skins and new cannon effects',
+        notes: [
+          'A new Treasure Vault sits beside the Shipwright on the home screen. Spend the gold you win at sea to open its chest, one at a time or ten at once, and watch it shake and glow brighter the rarer the haul inside. Then flip your cards. Your first chest every day is free.',
+          'There are 18 ship skins to find, painted across your hull, upper walls and sails: stripes, harlequin, tiger, tartan, marble, kintsugi gold seams, royal damask and more. The five Legendary skins are alive. Molten Core flows with glowing lava, Aurora Borealis ripples green and violet, Starlit Voyage twinkles, Ghostfire flickers with spectral flame and Living Tide rolls with sea foam. They glow brightest at night.',
+          'Your cannons have two new things to customise. Muzzle blasts change the burst when a gun fires, from a sea-salt mist and a smoke ring up to a roaring dragon breath and a thunderclap that rocks the water. Shot trails change what follows the ball, from frost and embers up to a comet, a rainbow and a wake of falling stars.',
+          'Common, Rare, Epic and Legendary each have their own colour. A Legendary is certain within 50 opens, and the odds keep rising after 35. Every ten-chest open holds at least an Epic, and anything you already own pays back gold. The vault favours things you haven\'t found yet.',
+          'The Shipwright has new Skins and Guns tabs. They show every item, including the ones you haven\'t found yet as a live preview, and Test fire lets you see your blast and trail from the dock. Your collection is saved on this device.',
+        ],
+      },
+      {
         title: 'Real skies: sunlight, clouds and distance',
         notes: [
           'The sky is now painted the way real air scatters light: a deep blue overhead that pales to a bright band along the horizon, a blazing sun disc with a soft glowing halo, and fine cirrus streaks on fair days.',

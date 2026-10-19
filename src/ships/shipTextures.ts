@@ -29,10 +29,17 @@ function toTex(c: HTMLCanvasElement, srgb = true, repeat = false): THREE.CanvasT
 function heightToNormal(src: HTMLCanvasElement, strength: number, repeat = false): THREE.CanvasTexture {
   const W = src.width;
   const H = src.height;
-  const h = src.getContext('2d')!.getImageData(0, 0, W, H).data;
   const [c, g] = canvas(W, H);
   const img = g.createImageData(W, H);
-  const o = img.data;
+  normalPixels(src, strength, repeat, img.data);
+  g.putImageData(img, 0, 0);
+  return toTex(c, false, repeat);
+}
+
+function normalPixels(src: HTMLCanvasElement, strength: number, repeat: boolean, o: Uint8ClampedArray | Uint8Array, flip = false) {
+  const W = src.width;
+  const H = src.height;
+  const h = src.getContext('2d')!.getImageData(0, 0, W, H).data;
   const at = (x: number, y: number) => {
     if (repeat) {
       x = (x + W) % W;
@@ -48,15 +55,38 @@ function heightToNormal(src: HTMLCanvasElement, strength: number, repeat = false
       const nx = (at(x - 1, y) - at(x + 1, y)) * strength;
       const ny = (at(x, y + 1) - at(x, y - 1)) * strength;
       const il = 1 / Math.hypot(nx, ny, 1);
-      const i = (y * W + x) * 4;
+      const i = ((flip ? H - 1 - y : y) * W + x) * 4;
       o[i] = (nx * il * 0.5 + 0.5) * 255;
       o[i + 1] = (ny * il * 0.5 + 0.5) * 255;
       o[i + 2] = (il * 0.5 + 0.5) * 255;
       o[i + 3] = 255;
     }
   }
-  g.putImageData(img, 0, 0);
-  return toTex(c, false, repeat);
+}
+
+/**
+ * A relief map that also carries a mask in its alpha: where a vault skin may
+ * paint the hull. Raw pixels (not a canvas) so the alpha can't premultiply
+ * the normals away.
+ */
+function heightToNormalMasked(src: HTMLCanvasElement, mask: HTMLCanvasElement, strength: number): THREE.DataTexture {
+  const W = src.width;
+  const H = src.height;
+  const o = new Uint8Array(W * H * 4);
+  // texture rows run up from v = 0, canvas rows down from the top
+  normalPixels(src, strength, false, o, true);
+  const m = mask.getContext('2d')!.getImageData(0, 0, W, H).data;
+  for (let y = 0; y < H; y++) {
+    const row = (H - 1 - y) * W;
+    for (let x = 0; x < W; x++) o[(row + x) * 4 + 3] = m[(y * W + x) * 4];
+  }
+  const t = new THREE.DataTexture(o, W, H, THREE.RGBAFormat);
+  t.anisotropy = 8;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
 }
 
 const grey = (v: number) => {
@@ -76,7 +106,7 @@ export function hullTexture(livery: Livery, ports: { u: number; v: number; w: nu
 }
 
 /** The painted planking and a matching relief map: caulked seams, butt joints, treenails and recessed ports. */
-export function hullTextures(livery: Livery, ports: { u: number; v: number; w: number; h: number }[], lengthM: number, seed = 1): { map: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
+export function hullTextures(livery: Livery, ports: { u: number; v: number; w: number; h: number }[], lengthM: number, seed = 1): { map: THREE.CanvasTexture; normal: THREE.Texture } {
   const W = 1024;
   const H = 512;
   const [c, g] = canvas(W, H);
@@ -193,7 +223,21 @@ export function hullTextures(livery: Livery, ports: { u: number; v: number; w: n
     g.fillStyle = sg;
     g.fillRect(x - 3, y, 6, H * 0.12);
   }
-  return { map: toTex(c), normal: heightToNormal(hc, 3.2) };
+  // where a vault skin may paint: the planking and the topsides, never the
+  // bottom, the boot top, the wale, the gilding or a gunport
+  const [mc, mg] = canvas(W, H);
+  mg.fillStyle = '#000';
+  mg.fillRect(0, 0, W, H);
+  mg.fillStyle = '#fff';
+  mg.fillRect(0, vy(0.655), W, vy(0.318) - vy(0.655));
+  mg.fillRect(0, vy(0.93), W, vy(0.716) - vy(0.93));
+  mg.fillStyle = '#000';
+  for (const p of ports) {
+    const pw = p.w * W;
+    const ph = p.h * H;
+    mg.fillRect(p.u * W - pw / 2 - 6, vy(p.v) - ph / 2 - 6, pw + 12, ph + 12);
+  }
+  return { map: toTex(c), normal: heightToNormalMasked(hc, mc, 3.2) };
 }
 
 export function deckTexture(seed = 3): THREE.CanvasTexture {

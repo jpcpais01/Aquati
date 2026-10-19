@@ -32,6 +32,8 @@ import type { VoyageEvent, WreckReport } from '../ui/wreck';
 import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
+import { Vault } from '../ui/vault';
+import { fxItem, skinItem, VaultStore } from '../ships/cosmetics';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, portClearings } from '../port/site';
 import { CameraRig } from './cameraRig';
@@ -132,6 +134,9 @@ export class Game {
   private look: ShipLook = loadLook();
   private port!: Port;
   private shipwright = new Customizer();
+  // the treasure vault: purse, collection and the chest itself
+  private vaultStore = new VaultStore();
+  private vault = new Vault(this.vaultStore);
   private veil = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'sw-veil' });
   private swFocus: PortFocus = 'overview';
   private swAz = 0;
@@ -373,24 +378,44 @@ export class Game {
 
   private wireShipwright() {
     const sw = this.shipwright;
-    // entry sits under Set Sail in the menu dock
+    // entries sit under Set Sail in the menu dock: the Shipwright and the Vault side by side
+    const row = document.createElement('div');
+    row.className = 'dock-row';
     const btn = document.createElement('button');
     btn.className = 'btn menu-custom';
     btn.id = 'btn-shipwright';
     btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 21V4" /><path d="M5 4h12l-2.5 4L17 12H5" /></svg><span>Shipwright</span>';
-    document.getElementById('btn-sail')!.after(btn);
+    const vbtn = document.createElement('button');
+    vbtn.className = 'btn menu-custom menu-vault';
+    vbtn.id = 'btn-vault';
+    vbtn.innerHTML = '<span class="mv-chest"></span><span>Vault</span><i class="mv-dot"></i>';
+    row.append(btn, vbtn);
+    document.getElementById('btn-sail')!.after(row);
     btn.addEventListener('click', () => {
       this.audio.start();
       this.audio.click();
       this.openShipwright();
     });
+    vbtn.addEventListener('click', () => {
+      this.audio.start();
+      this.audio.click();
+      this.openVault();
+    });
+    const syncDot = () => vbtn.classList.toggle('ready', this.vaultStore.freeReady || this.vaultStore.unseen.length > 0);
+    this.vaultStore.subscribe(syncDot);
+    syncDot();
+    this.wireVault();
+    sw.setVault(this.vaultStore);
+    sw.onEquip = () => this.applyCosmetics();
+    sw.onVault = () => this.openVault();
+    sw.onTestFire = () => this.testFire();
     sw.onClick = () => {
       this.audio.start();
       this.audio.click();
     };
     sw.onDone = () => this.closeShipwright();
     sw.onTab = (tab: SwTab) => {
-      this.swFocus = ({ flag: 'flag', sails: 'sails', hull: 'hull', presets: 'overview' } as const)[tab];
+      this.swFocus = ({ flag: 'flag', sails: 'sails', hull: 'hull', skins: 'overview', cannons: 'overview', presets: 'overview' } as const)[tab];
       this.swAz = 0;
     };
     sw.onChange = (look, what) => this.applyLook(look, what);
@@ -444,6 +469,65 @@ export class Game {
       },
       { passive: false },
     );
+  }
+
+  private wireVault() {
+    const v = this.vault;
+    const a = this.audio;
+    v.sounds = {
+      click: () => a.click(),
+      rumble: (l) => a.vaultRumble(l),
+      burst: (t) => a.vaultBurst(t),
+      flip: (t) => a.cardFlip(t),
+      coin: () => a.coin(),
+    };
+    v.onEquip = () => this.applyCosmetics();
+    v.onClose = () => this.closeVault();
+  }
+
+  /** The vault opens over the home screen or over the Shipwright's harbour. */
+  private openVault() {
+    if (this.vault.isOpen || this.swBusy || (this.state !== 'menu' && this.state !== 'port')) return;
+    this.audio.start();
+    if (this.state === 'menu') this.ui.showMenu(false);
+    else this.shipwright.root.classList.add('sw-away');
+    this.vault.open();
+  }
+
+  private closeVault() {
+    this.vault.close();
+    if (this.state === 'menu') {
+      this.ui.showMenu(true);
+      this.frameMenu();
+    } else if (this.state === 'port') {
+      this.shipwright.root.classList.remove('sw-away');
+      this.shipwright.refresh();
+    }
+  }
+
+  /** Dresses your ship (at the berth, in the menu or at sea) in what the vault says is equipped. */
+  private applyCosmetics(s: Ship | null = this.player ?? this.preview) {
+    if (!s || s.team !== 'player') return;
+    const eq = this.vaultStore.equipped;
+    s.model.setSkin(skinItem(eq.skin));
+    s.cannonFx.blast = fxItem(eq.blast)?.style ?? 'powder';
+    s.cannonFx.trail = fxItem(eq.trail)?.style ?? 'powder';
+  }
+
+  /** Shipwright: run out the guns on the seaward side and fire a broadside to see the blast and trail. */
+  private testFire() {
+    const p = this.preview;
+    if (this.state !== 'port' || !p) return;
+    const left = p.portDir(new THREE.Vector3());
+    const reach = 45;
+    const hl = this.terrain.heightAt(p.pos.x + left.x * reach, p.pos.z + left.z * reach);
+    const hr = this.terrain.heightAt(p.pos.x - left.x * reach, p.pos.z - left.z * reach);
+    const side = hl <= hr ? 'port' : 'starboard';
+    const k = side === 'port' ? 1 : -1;
+    p.reload[side] = 0;
+    const at = new THREE.Vector3(p.pos.x + left.x * k * 70 + Math.sin(p.heading) * 6, 0, p.pos.z + left.z * k * 70 + Math.cos(p.heading) * 6);
+    this.audio.start();
+    if (p.fire(side, this.world, null, at)) this.swAz = k > 0 ? 0.5 : -0.5;
   }
 
   /** Streams a change from the panel onto the moored ship and the harbour. */
@@ -581,7 +665,10 @@ export class Game {
 
   private makeShip(id: ShipClassId, team: 'player' | 'pirate', livery = team === 'player' ? lookToLivery(this.look) : this.pirateLivery(), model?: ShipModel): Ship {
     const s = new Ship(SHIP_CLASSES[id], livery, team, this.quality.physicalHull ? 1 : 0, model);
-    if (team === 'player') s.name = this.look.name.trim() || s.cls.title;
+    if (team === 'player') {
+      s.name = this.look.name.trim() || s.cls.title;
+      this.applyCosmetics(s);
+    }
     else {
       s.name = PIRATE_NAMES[this.nameIdx++ % PIRATE_NAMES.length];
       s.gold = 0;
@@ -867,6 +954,7 @@ export class Game {
     if (attacker === this.player) {
       this.note('kill', `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
       this.player.gold += bounty;
+      this.vaultStore.earn(bounty);
       this.ui.toast(`+${bounty} gold bounty`, `${ship.name} sunk`, 3.2);
       this.audio.coin();
     }
@@ -1167,6 +1255,7 @@ export class Game {
       const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2);
       for (const it of got) {
         p.gold += it.value;
+        this.vaultStore.earn(it.value);
         p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
         const [x, y] = this.screenOf(new THREE.Vector3(it.x, 2, it.z));
         if (it.tier === 0) {
@@ -1383,6 +1472,7 @@ export class Game {
         const reward = 40 + Math.round(isl.r * 0.4);
         this.note('isle', `Charted ${isl.name}`, `+${reward} gold`);
         p.gold += reward;
+        this.vaultStore.earn(reward);
         this.ui.toast(`Island discovered · +${reward} gold`, isl.name, 3.6);
         this.audio.chime();
       }

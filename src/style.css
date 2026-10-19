@@ -1009,6 +1009,73 @@ kbd {
   stroke-linejoin: round;
 }
 
+/* Shipwright and Vault share one row under Set Sail */
+.dock-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dock-row .btn {
+  min-width: 0;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.menu-vault {
+  position: relative;
+}
+
+.mv-chest {
+  width: 20px;
+  height: 17px;
+  flex: none;
+  border-radius: 5px 5px 3px 3px;
+  background:
+    linear-gradient(90deg, transparent 18%, #f1c35c 18% 28%, transparent 28% 72%, #f1c35c 72% 82%, transparent 82%),
+    linear-gradient(180deg, #8a4f2a 0 42%, #f1c35c 42% 52%, #5e3218 52%);
+  box-shadow: inset 0 0 0 1.5px rgba(241, 195, 92, 0.75);
+  transition: transform 0.35s var(--ease), box-shadow 0.35s var(--ease);
+}
+
+.menu-vault:hover .mv-chest {
+  transform: translateY(-2px) rotate(-6deg);
+  box-shadow: 0 0 12px rgba(255, 190, 61, 0.6), inset 0 0 0 1.5px rgba(241, 195, 92, 0.75);
+}
+
+/* a pip when a free pull is waiting or new treasure is unseen */
+.mv-dot {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #ffbe3d;
+  box-shadow: 0 0 0 2px rgba(2, 14, 22, 0.6), 0 0 10px #ffbe3d;
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.3s ease, transform 0.3s var(--ease);
+  pointer-events: none;
+}
+
+.menu-vault.ready .mv-dot {
+  opacity: 1;
+  transform: none;
+  animation: mv-pulse 2.2s ease-in-out infinite;
+}
+
+.menu-vault.ready .mv-chest {
+  box-shadow: 0 0 12px rgba(255, 190, 61, 0.55), inset 0 0 0 1.5px rgba(241, 195, 92, 0.75);
+}
+
+@keyframes mv-pulse {
+  50% {
+    box-shadow: 0 0 0 2px rgba(2, 14, 22, 0.6), 0 0 18px 3px #ffbe3d;
+  }
+}
+
 .dock-hint {
   text-align: center;
   font-size: 11px;
@@ -1169,6 +1236,14 @@ kbd {
 
   .dock-actions .btn:not(.big) {
     min-height: 40px;
+  }
+
+  .dock-row {
+    gap: 7px;
+  }
+
+  .dock-row .btn {
+    padding: 0 8px;
   }
 }
 
