@@ -294,7 +294,6 @@ float aerialAt(float dist, float y) {
 export interface PatchOptions {
   caustics?: boolean;
   clouds?: boolean;
-  wetSand?: boolean;
   detail?: boolean;
   sway?: number; // vegetation sway amplitude (instanced)
   foliage?: boolean; // thin leaves: sunlight bleeds through to the shaded side
@@ -320,7 +319,6 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
     const defs: string[] = ['#define AQ_PCSS'];
     if (opts.caustics) defs.push('#define AQ_CAUSTICS');
     if (opts.clouds) defs.push('#define AQ_CLOUDS');
-    if (opts.wetSand) defs.push('#define AQ_WET');
     if (opts.detail) defs.push('#define AQ_DETAIL');
     if (opts.sway) defs.push(`#define AQ_SWAY ${opts.sway.toFixed(3)}`);
     if (opts.foliage) defs.push('#define AQ_FOLIAGE');
@@ -514,18 +512,13 @@ ${GLSL_DAMAGE_FRAGMENT}
 #endif
   // rain-soaked surfaces darken (and turn glossy below)
   diffuseColor.rgb *= 1.0 - uWet * 0.26;
-#ifdef AQ_WET
-  float aqWet = 1.0 - smoothstep(0.05, 1.1 + sin(uTime * 0.6 + vAqWorld.x * 0.05) * 0.25, vAqWorld.y);
-  diffuseColor.rgb *= mix(1.0, 0.64, aqWet);
-#endif`,
+`,
       )
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
   roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.42, uWet);
-#ifdef AQ_WET
-  roughnessFactor = mix(roughnessFactor, 0.3, aqWet * step(0.0, vAqWorld.y));
-#endif`,
+`,
       )
       .replace(
         '#include <metalnessmap_fragment>',

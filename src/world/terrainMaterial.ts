@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { patchMaterial } from '../render/environment';
+import { GLSL_SURF, shoreUniforms } from './shore';
 
 // Per-pixel island shading. The heightfield is only 2 m per vertex, so any
 // colour baked into vertices smears into soft blotches up close. Instead every
@@ -7,6 +8,8 @@ import { patchMaterial } from '../render/environment';
 // world position, slope and tiling noise, with crisp, slightly rounded edges
 // for a clean toy-diorama read, and a procedural bump gives each layer real
 // lit relief: wind ripples, grass tufts, layered cliffs and basalt columns.
+// Along the waterline every breaker runs up the beach as a foaming sheet and
+// drains back, leaving dark glistening sand that dries between waves.
 //
 // Per-vertex inputs (from Terrain.buildMeshes):
 //   aqKind  (volcanic, atoll, rocky) one-hot of the owning island, 0 = lush
@@ -56,6 +59,11 @@ varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqCanopy;
 ${PALETTE}
+${GLSL_SURF}
+// the swash cycle, as fractions of a wave period: the sheet runs up until
+// SW_UP, then drains back until SW_END
+#define SW_UP 0.3
+#define SW_END 0.82
 float aqBump = 0.0;
 float aqRough = 0.94;
 vec3 aqLava = vec3(0.0);
@@ -234,6 +242,69 @@ const FRAG_ALBEDO = /* glsl */ `
     aqBump -= seam * 0.15;
   }
 
+  // ---------------------------------------------------------------- swash
+  // Each breaker that reaches the beach runs on up the sand as a thin sheet,
+  // its foaming front scalloped into tongues, slows, stops and drains back.
+  // It leaves dark, glossy sand that dries out between waves and a stranded
+  // line of foam that pops away. The phase is the ocean's own (shore.ts), so
+  // the sheet sets off the moment the whitewater reaches the waterline.
+  float wetSand = 1.0 - smoothstep(-0.06, 0.04, h); // under the sea it is all wet
+  float film = 0.0;
+  float gloss = 0.0;
+  float sFoam = 0.0;
+  if (h > -0.1 && h < 2.6) {
+    float reach = mix(0.22, 1.0, shoreField(xz).a);
+    float psi = surfPhase(xz, 0.0);
+    float sn = floor(psi);
+    float su = psi - sn;
+    // the band the bigger sets reach stays damp
+    wetSand = max(wetSand, (1.0 - smoothstep(0.0, uSurf.y * reach * 1.6 + 0.12, h)) * 0.38);
+    // this wave and the one before it (still draining, or its sand still wet)
+    for (int c = 0; c < 2; c++) {
+      float idx = sn - float(c);
+      float uc = su + float(c);
+      float lobe = texture(uNoiseTex, xz * 0.012 + vec2(idx * 0.41, idx * 0.23)).b;
+      float R = uSurf.y * reach * surfVar(xz, idx) * (0.62 + 0.6 * (1.0 - lobe));
+      if (h >= R) continue;
+      R = max(R, 1e-3);
+      float q = sqrt(max(1.0 - max(h, 0.0) / R, 0.0));
+      float ua = SW_UP * (1.0 - q);
+      float ul = SW_UP + (SW_END - SW_UP) * q;
+      if (uc < ua) continue;
+      if (uc < ul) {
+        // under the sheet: how far below its leading edge, in metres of height
+        float x = (uc - SW_UP) / (SW_END - SW_UP);
+        float front = uc < SW_UP ? R * (1.0 - (1.0 - uc / SW_UP) * (1.0 - uc / SW_UP)) : R * (1.0 - x * x);
+        float d = front - h;
+        film = max(film, smoothstep(0.0, 0.03, d));
+        wetSand = 1.0;
+        float ta = (uc - ua) * SURF_T;
+        float edgeBand = 1.0 - smoothstep(0.0, 0.02 + R * 0.09, d);
+        sFoam = max(sFoam, uc < SW_UP ? max(edgeBand, 0.62 * exp(-ta * 1.1)) : max(edgeBand * 0.4, 0.38 * exp(-ta * 0.6)));
+      } else {
+        float td = (uc - ul) * SURF_T; // seconds since the water left
+        wetSand = max(wetSand, exp(-td * 0.15));
+        gloss = max(gloss, exp(-td * 0.9));
+        // foam stranded where the sheet stopped
+        float strand = mix(0.08, 0.5, smoothstep(0.55 * R, 0.97 * R, h));
+        sFoam = max(sFoam, strand * exp(-td * 0.45));
+      }
+    }
+  }
+  // under the resting sea the ocean draws the water; here only the sand is wet
+  film *= step(0.0, h);
+  gloss *= step(0.0, h);
+  albedo *= mix(1.0, 0.62, wetSand);
+  // the sheet itself: a sliver of clear sea water over the sand
+  albedo = mix(albedo, albedo * vec3(0.6, 0.86, 0.9), film * 0.55);
+  aqRough = mix(aqRough, 0.38, wetSand * 0.6 * step(0.0, h));
+  aqRough = mix(aqRough, 0.05, max(film, gloss * 0.75));
+  aqBump *= 1.0 - film * 0.75;
+  float sLace = sFoam > 0.002 ? foamCut(foamField(xz), sFoam, fp) : 0.0;
+  albedo = mix(albedo, vec3(0.9, 0.92, 0.94), sLace * 0.95);
+  aqRough = mix(aqRough, 0.8, sLace);
+  aqBump += sLace * 0.012;
+
   // Relief only where the sun can rake it: on slopes turned away from the sun
   // a bumped normal would peek into the shadow map at grazing angles and show
   // its texel stair-steps.
@@ -250,7 +321,8 @@ const FRAG_ALBEDO = /* glsl */ `
 export function createTerrainMaterial(lite = false): THREE.MeshStandardMaterial {
   const mat = patchMaterial(
     new THREE.MeshStandardMaterial({ roughness: 0.94, metalness: 0, envMapIntensity: 0.9 }),
-    { caustics: true, clouds: true, wetSand: true },
+    { caustics: true, clouds: true },
+    shoreUniforms,
   );
   const prev = mat.onBeforeCompile;
   const prevKey = mat.customProgramCacheKey();
