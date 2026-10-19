@@ -16,6 +16,18 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T14:00Z',
     entries: [
       {
+        title: 'Aiming without the clutter',
+        notes: [
+          'All aiming marks are gone from the sea. Out of a fight, nothing is drawn at all.',
+          'In a fight, the only sign is warm lantern light that gathers and shimmers on the water around an enemy when she sits off one of your loaded broadsides. When you see it, fire. It fades the moment you do and returns when the guns are run out again.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T14:00Z',
+    entries: [
+      {
         title: 'A brand new look for every screen, and a HUD that fits your phone',
         notes: [
           'On phones the sailing HUD is far smaller and tidier: a slim ship card with your hull bar, gold, kills and isles; a neater minimap with the wind and the time in a strip underneath; and pause and captain\'s view buttons that sit beside the map instead of on top of your guns. The speed readout now sits low in the middle, out from under your thumb.',

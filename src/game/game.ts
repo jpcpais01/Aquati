@@ -257,7 +257,7 @@ export class Game {
     this.opaque.environmentIntensity = 0.8;
     this.ui.buildMap(this.terrain);
     this.ui.setWind(windAngle);
-    this.gunnery = new Gunnery(this.ocean.material.uniforms);
+    this.gunnery = new Gunnery();
     this.gunnery.onReady = (side) => this.onGunsReady(side);
     this.water.add(this.gunnery.group);
     ui.progress(0.88);
@@ -871,8 +871,7 @@ export class Game {
   private tryFire(side: Side) {
     const p = this.player!;
     const a = this.gunnery.aim(p, side);
-    if (p.fire(side, this.world, a.target, a.point)) this.gunnery.fired(this.world.time);
-    else this.ui.flashBroadside(side);
+    if (!p.fire(side, this.world, a.target, a.point)) this.ui.flashBroadside(side);
   }
 
   /** One-button fire: the loaded side with a foe in its arc, else the side facing the nearest foe. */
@@ -902,7 +901,7 @@ export class Game {
       /* private mode: show it anyway */
     }
     const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
-    this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and glints gold, ${how}`, 5.5);
+    this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and warm light gathers around her, ${how}`, 5.5);
   }
 
   private controlPlayer() {
