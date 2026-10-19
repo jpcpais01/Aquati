@@ -8,6 +8,13 @@ import { Ship } from './ship';
 
 type Mode = 'patrol' | 'engage' | 'flee';
 
+/** A pirate flotilla: wingmen keep station on the flagship, and when one ship
+ *  sights you the whole pack comes about to hunt together. */
+export class Pack {
+  alertT = -1e9;
+  leader: PirateAI | null = null;
+}
+
 export class PirateAI {
   mode: Mode = 'patrol';
   private wp = { x: 0, z: 0 };
@@ -17,6 +24,9 @@ export class PirateAI {
   private rnd = mulberry32(Math.floor(Math.random() * 1e9));
   private aimDelay = 0;
   readonly aggression: number;
+  pack: Pack | null = null;
+  /** Station relative to the flagship: x to starboard, z astern (metres). */
+  slot = { x: 0, z: 0 };
 
   constructor(readonly ship: Ship, difficulty: number) {
     this.aggression = clamp(0.55 + difficulty * 0.15, 0.4, 1);
@@ -77,13 +87,32 @@ export class PirateAI {
 
     if (this.think <= 0) {
       this.think = 0.4 + this.rnd() * 0.3;
-      const provoked = s.lastAttacker === target && world.time - s.lastHit < 25;
+      let provoked = s.lastAttacker === target && world.time - s.lastHit < 25;
+      const pk = this.pack;
+      if (pk && pk.leader && !pk.leader.ship.alive) pk.leader = null;
+      // the pack answers a sighting by any of its ships
+      if (pk && target && world.time - pk.alertT < 20 && dist < 560) provoked = true;
       if (target && hpF < 0.22 && this.mode !== 'flee' && this.rnd() < 0.5) this.mode = 'flee';
       else if (target && (dist < 230 || provoked) && this.mode !== 'flee') this.mode = 'engage';
       else if (this.mode === 'engage' && (!target || dist > 340)) this.mode = 'patrol';
       else if (this.mode === 'flee' && (!target || dist > 300)) this.mode = 'patrol';
 
-      if (this.mode === 'patrol') {
+      if (pk && this.mode === 'engage' && target) pk.alertT = world.time;
+
+      const lead = pk && pk.leader && pk.leader !== this ? pk.leader.ship : null;
+      if (this.mode === 'patrol' && lead) {
+        // keep station on the flagship's quarter
+        const sh = Math.sin(lead.heading);
+        const ch = Math.cos(lead.heading);
+        const tx = lead.pos.x + ch * this.slot.x - sh * this.slot.z;
+        const tz = lead.pos.z - sh * this.slot.x - ch * this.slot.z;
+        const gap = Math.hypot(tx - s.pos.x, tz - s.pos.z);
+        // aim a little ahead of the station so we fall in alongside rather than chase its stern
+        const ax = tx + sh * 20;
+        const az = tz + ch * 20;
+        this.desired = gap < 14 ? lead.heading : Math.atan2(ax - s.pos.x, az - s.pos.z);
+        s.sailTarget = clamp(lead.sailTarget + (gap > 40 ? 0.35 : gap > 18 ? 0.15 : 0), 0.25, 1);
+      } else if (this.mode === 'patrol') {
         if (Math.hypot(this.wp.x - s.pos.x, this.wp.z - s.pos.z) < 40) this.pickWaypoint(world);
         this.desired = Math.atan2(this.wp.x - s.pos.x, this.wp.z - s.pos.z);
         s.sailTarget = 0.5;

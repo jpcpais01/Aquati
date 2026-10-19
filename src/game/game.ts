@@ -15,7 +15,7 @@ import { Ocean } from '../world/ocean';
 import { WakeField } from '../world/wakeField';
 import { buildWaves } from '../world/waves';
 import { Ship } from '../ships/ship';
-import { PirateAI } from '../ships/ai';
+import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
@@ -319,18 +319,54 @@ export class Game {
     return new THREE.Vector3(cx + rMax, 0, cz);
   }
 
-  private spawnPirate(near: THREE.Vector3, rMin: number, rMax: number) {
+  private spawnPirate(near: THREE.Vector3, rMin: number, rMax: number, forceId?: ShipClassId) {
     const kills = this.player?.kills ?? 0;
     const roll = Math.random();
-    let id: ShipClassId = roll < 0.48 ? 'sloop' : roll < 0.82 ? 'brig' : 'galleon';
-    if (kills < 2 && id === 'galleon') id = 'brig';
-    const s = this.makeShip(id, 'pirate');
+    let id: ShipClassId = forceId ?? (roll < 0.48 ? 'sloop' : roll < 0.82 ? 'brig' : 'galleon');
+    if (!forceId && kills < 2 && id === 'galleon') id = 'brig';
     const p = this.findOpenWater(near.x, near.z, rMin, rMax);
-    s.place(p.x, p.z, Math.random() * Math.PI * 2);
+    return this.launchPirate(id, p.x, p.z, Math.random() * Math.PI * 2);
+  }
+
+  private launchPirate(id: ShipClassId, x: number, z: number, heading: number) {
+    const kills = this.player?.kills ?? 0;
+    const s = this.makeShip(id, 'pirate');
+    s.place(x, z, heading);
     s.sailTarget = 0.5;
     s.sailLevel = 0.5;
     s.speed = s.cls.maxSpeed * 0.4;
-    this.ais.set(s, new PirateAI(s, kills / 4));
+    const ai = new PirateAI(s, kills / 4);
+    this.ais.set(s, ai);
+    return ai;
+  }
+
+  /** A flotilla: a flagship with two or three escorts in a loose vee. */
+  private spawnFlotilla(near: THREE.Vector3, rMin: number, rMax: number, size: number) {
+    const kills = this.player?.kills ?? 0;
+    const flagId: ShipClassId = kills >= 4 && Math.random() < 0.6 ? 'galleon' : 'brig';
+    const flag = this.spawnPirate(near, rMin, rMax, flagId);
+    const pack = new Pack();
+    pack.leader = flag;
+    flag.pack = pack;
+    const fs = flag.ship;
+    const h = fs.heading;
+    const sh = Math.sin(h);
+    const ch = Math.cos(h);
+    for (let i = 0; i < size - 1; i++) {
+      const side = i % 2 === 0 ? 1 : -1;
+      const rank = 1 + Math.floor(i / 2);
+      const slot = { x: side * 34 * rank, z: 30 * rank };
+      let x = fs.pos.x + ch * slot.x - sh * slot.z;
+      let z = fs.pos.z - sh * slot.x - ch * slot.z;
+      if (this.terrain.heightAt(x, z) > -9) {
+        const o = this.findOpenWater(fs.pos.x, fs.pos.z, 50, 110);
+        x = o.x;
+        z = o.z;
+      }
+      const ai = this.launchPirate(Math.random() < 0.65 ? 'sloop' : 'brig', x, z, h);
+      ai.pack = pack;
+      ai.slot = slot;
+    }
   }
 
   private enterMenu() {
@@ -348,6 +384,7 @@ export class Game {
     if (!this.ships.some((s) => s.team === 'pirate')) {
       this.spawnPirate(this.spawnPoint, 160, 260);
       this.spawnPirate(this.spawnPoint, 220, 340);
+      this.spawnFlotilla(this.spawnPoint, 300, 420, 3);
     }
   }
 
@@ -369,7 +406,7 @@ export class Game {
     this.rig.mode = 'follow';
     this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
-    this.spawnTimer = 6;
+    this.spawnTimer = 4;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
   }
 
@@ -724,12 +761,20 @@ export class Game {
 
   private directSpawns(dt: number) {
     const p = this.player!;
+    // pirates left far astern while cruising are recycled so the seas around you stay busy
+    for (const s of this.ships.slice()) {
+      if (s.team !== 'pirate' || !s.alive) continue;
+      const ai = this.ais.get(s);
+      if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
+    }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive).length;
-    const want = Math.min(6, 3 + Math.floor(p.kills / 3));
+    const want = Math.min(11, 6 + Math.floor(p.kills / 2));
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
-      this.spawnPirate(p.pos, 300, 460);
-      this.spawnTimer = 9 + Math.random() * 6;
+      const room = want - alivePirates;
+      if (room >= 3 && this.voyageTime > 40 && Math.random() < 0.4) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, p.kills >= 6 ? 4 : 3));
+      else this.spawnPirate(p.pos, 280, 480);
+      this.spawnTimer = 5 + Math.random() * 5;
     }
   }
 
