@@ -24,6 +24,16 @@ export const PATCH_NOTES: PatchGroup[] = [
           'All wake foam now uses the same realistic bubble web as the breaking surf, so it opens into holes, thins to threads and breaks into flecks as it fades.',
         ],
       },
+      {
+        title: 'Menus that fit your phone, with your ship front and centre',
+        notes: [
+          'On a phone held sideways the home screen now gives the stage to your ship. The title and the system buttons sit in a slim row along the top, the ship\'s name, numbers and bars stand on the sea down the left, and the ship picker and Set Sail, Shipwright and Vault share the bottom row. Nothing is cut off any more.',
+          'Held upright, the title shrinks to the top, the ship fills the middle and a slimmer card along the bottom holds the picker, the numbers and one row of buttons.',
+          'The pause menu fits short screens without scrolling: the list runs down the left, and the title, your ship and the voyage so far sit on the right.',
+          'Every menu, from Settings and Controls to Graphics and the Patch Notes, now scales its text and spacing to your screen, so small phones get a tighter layout and big screens keep the roomy one.',
+          'The version and build number now appear next to the Patch Notes title instead of in the button row.',
+        ],
+      },
     ],
   },
   {
