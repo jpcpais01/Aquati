@@ -28,6 +28,7 @@ import { Customizer, SwTab } from '../ui/customizer';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, portClearings } from '../port/site';
 import { CameraRig } from './cameraRig';
+import { Gunnery, Side } from './gunnery';
 import { Captain } from './captain';
 import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
@@ -78,9 +79,9 @@ export class Game {
   private spawnTimer = 0;
   private nameIdx = Math.floor(Math.random() * PIRATE_NAMES.length);
   private last = performance.now();
-  private targetRing!: THREE.Mesh;
+  private gunnery!: Gunnery;
+  private gunTipShown = false;
   private smokeT = 0;
-  private raycaster = new THREE.Raycaster();
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
   private birds!: Birds;
@@ -224,7 +225,9 @@ export class Game {
     this.opaque.environmentIntensity = 0.8;
     this.ui.buildMap(this.terrain);
     this.ui.setWind(windAngle);
-    this.buildTargetRing();
+    this.gunnery = new Gunnery(this.ocean.material.uniforms);
+    this.gunnery.onReady = (side) => this.onGunsReady(side);
+    this.water.add(this.gunnery.group);
     ui.progress(0.88);
     await nextFrame();
 
@@ -239,30 +242,6 @@ export class Game {
     ui.hideLoading();
     this.last = performance.now();
     this.renderer.setAnimationLoop(() => this.frame());
-  }
-
-  private buildTargetRing() {
-    const g = new THREE.RingGeometry(0.95, 1, 72);
-    g.rotateX(-Math.PI / 2);
-    const m = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      premultipliedAlpha: true,
-      uniforms: { uColor: { value: new THREE.Color(1, 0.8, 0.35) }, uTime: globalUniforms.uTime, uAlpha: { value: 0 } },
-      vertexShader: /* glsl */ `varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: /* glsl */ `
-        uniform vec3 uColor; uniform float uTime; uniform float uAlpha; varying vec2 vP;
-        void main(){
-          float a = atan(vP.y, vP.x);
-          float dash = smoothstep(0.2, 0.5, sin(a * 12.0 + uTime * 2.0) * 0.5 + 0.5);
-          gl_FragColor = vec4(uColor * (0.5 + dash) * uAlpha, 0.0);
-        }`,
-    });
-    this.targetRing = new THREE.Mesh(g, m);
-    this.targetRing.visible = false;
-    this.targetRing.renderOrder = 5;
-    this.water.add(this.targetRing);
   }
 
   private wireUI() {
@@ -781,48 +760,41 @@ export class Game {
 
   // ------------------------------------------------------------------ player
 
-  private bestTarget(side: 'port' | 'starboard' | null): { ship: Ship; side: 'port' | 'starboard'; inArc: boolean } | null {
-    const p = this.player;
-    if (!p) return null;
-    const range = ((p.cls.muzzleSpeed * p.cls.muzzleSpeed) / 14) * 0.62;
-    let best: { ship: Ship; side: 'port' | 'starboard'; inArc: boolean } | null = null;
-    let bestScore = Infinity;
-    for (const s of this.ships) {
-      if (s === p || !s.alive) continue;
-      const dx = s.pos.x - p.pos.x;
-      const dz = s.pos.z - p.pos.z;
-      const d = Math.hypot(dx, dz);
-      if (d > range * 1.15) continue;
-      const rel = angleDelta(p.heading, Math.atan2(dx, dz));
-      const sd: 'port' | 'starboard' = rel > 0 ? 'port' : 'starboard';
-      if (side && sd !== side) continue;
-      const off = Math.abs(Math.abs(rel) - Math.PI / 2);
-      const inArc = off < 0.55 && d < range;
-      const score = d + off * 120;
-      if (score < bestScore) {
-        bestScore = score;
-        best = { ship: s, side: sd, inArc };
-      }
-    }
-    return best;
-  }
-
-  private pointerSide(): 'port' | 'starboard' | null {
-    const p = this.player;
-    const ptr = this.input.state.pointer;
-    if (!p || !ptr.active) return null;
-    const ndc = new THREE.Vector2((ptr.x / innerWidth) * 2 - 1, -(ptr.y / innerHeight) * 2 + 1);
-    this.raycaster.setFromCamera(ndc, this.rig.camera);
-    const hit = new THREE.Vector3();
-    if (!this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) return null;
-    const rel = angleDelta(p.heading, Math.atan2(hit.x - p.pos.x, hit.z - p.pos.z));
-    return rel > 0 ? 'port' : 'starboard';
-  }
-
-  private tryFire(side: 'port' | 'starboard') {
+  private tryFire(side: Side) {
     const p = this.player!;
-    const t = this.bestTarget(side);
-    if (!p.fire(side, this.world, t && t.inArc ? t.ship : null)) this.ui.flashBroadside(side);
+    const a = this.gunnery.aim(p, side);
+    if (p.fire(side, this.world, a.target, a.point)) this.gunnery.fired(side, this.world.time);
+    else this.ui.flashBroadside(side);
+  }
+
+  /** One-button fire: the loaded side with a foe in its arc, else the side facing the nearest foe. */
+  private fireAuto() {
+    const p = this.player!;
+    const side = this.gunnery.autoSide(p) ?? (p.canFire('port') || !p.canFire('starboard') ? 'port' : 'starboard');
+    this.tryFire(side);
+  }
+
+  /** A side's guns are run out again mid-fight: a knock from the gun deck and a glint on its button. */
+  private onGunsReady(side: Side) {
+    const p = this.player;
+    if (!p) return;
+    const a = p.heading + (side === 'port' ? 1 : -1) * (Math.PI / 2);
+    this.audio.gunsReady(Math.sin(a) * 0.6);
+    this.ui.gunsReady(side);
+  }
+
+  /** The first fight of a voyage on this device: explain the arcs once. */
+  private gunTip() {
+    if (this.gunTipShown || !this.gunnery.combat) return;
+    this.gunTipShown = true;
+    try {
+      if (localStorage.getItem('aquati.gunTip') === '1') return;
+      localStorage.setItem('aquati.gunTip', '1');
+    } catch {
+      /* private mode: show it anyway */
+    }
+    const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
+    this.ui.toast('Guns fire to the sides', `Turn until a foe sits in a gold arc, ${how}`, 5.5);
   }
 
   private controlPlayer() {
@@ -845,13 +817,14 @@ export class Game {
     if (st.fireAuto) {
       // from the deck you fire the beam you're facing
       const ls = this.fpv ? this.captain.lookSide() : 0;
-      const ps = this.fpv ? (ls > 0 ? 'port' : ls < 0 ? 'starboard' : null) : this.input.isTouch ? null : this.pointerSide();
-      if (ps) this.tryFire(ps);
-      else {
-        const t = this.bestTarget(null);
-        if (t) this.tryFire(t.side);
-        else this.tryFire(p.canFire('port') ? 'port' : 'starboard');
-      }
+      if (ls) this.tryFire(ls > 0 ? 'port' : 'starboard');
+      else this.fireAuto();
+    }
+    if (st.fireAim) {
+      // a click fires the side you point into, at what you point at
+      const hs = this.gunnery.hoverSide();
+      if (hs) this.tryFire(hs);
+      else this.fireAuto();
     }
     if (st.zoom && !this.fpv) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) {
@@ -995,11 +968,14 @@ export class Game {
     this.particles.update(dt);
     this.birds.update(dt, w.time);
     this.pipeline.decayFlash(realDt);
-    this.updateTargetRing();
+    this.gunnery.setPointer(this.fpv ? null : this.input.state.pointer, this.rig.camera);
+    this.gunnery.update(dt, p, this.ships, w, this.state === 'playing');
+    if (this.state === 'playing') this.gunTip();
 
     // HUD
     if (p && (this.state === 'playing' || this.state === 'paused')) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
+      this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
       this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered);
     }
@@ -1124,28 +1100,6 @@ export class Game {
     this.ui.setSky(a.hour, icon, WEATHER[k].name);
   }
 
-  private updateTargetRing() {
-    const ring = this.targetRing;
-    const p = this.player;
-    const mat = ring.material as THREE.ShaderMaterial;
-    if (!p || !p.alive || this.state !== 'playing') {
-      ring.visible = false;
-      return;
-    }
-    const t = this.bestTarget(null);
-    if (!t) {
-      mat.uniforms.uAlpha.value = Math.max(0, mat.uniforms.uAlpha.value - 0.05);
-      ring.visible = mat.uniforms.uAlpha.value > 0.01;
-      return;
-    }
-    ring.visible = true;
-    const ready = p.canFire(t.side);
-    mat.uniforms.uAlpha.value = Math.min(1, mat.uniforms.uAlpha.value + 0.08) * (t.inArc ? 1 : 0.55);
-    (mat.uniforms.uColor.value as THREE.Color).setRGB(t.inArc && ready ? 2.2 : 1.2, t.inArc && ready ? 1.5 : 1.2, t.inArc && ready ? 0.5 : 1.2);
-    ring.position.set(t.ship.pos.x, this.world.waterHeight(t.ship.pos.x, t.ship.pos.z) + 0.25, t.ship.pos.z);
-    ring.scale.setScalar(t.ship.cls.length * 0.62);
-  }
-
   private checkDiscoveries(p: Ship) {
     for (const isl of this.terrain.islands) {
       if (this.discovered.has(isl.name)) continue;
@@ -1215,6 +1169,7 @@ export class Game {
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     const eb = this.rig.eyeBlend;
     const port = this.rig.mode === 'port';
     this.pipeline.tilt = port ? 0.25 : (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
