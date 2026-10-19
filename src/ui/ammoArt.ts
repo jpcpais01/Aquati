@@ -1,6 +1,5 @@
 // Little portraits of each kind of shot for the gun rack: drawn as SVG so
-// they stay crisp at any HUD size. Gradient ids are shared between copies,
-// which is fine: every copy defines them identically.
+// they stay crisp at any HUD size.
 
 import type { AmmoId } from '../game/ammo';
 
@@ -56,6 +55,13 @@ const ART: Record<AmmoId, string> = {
     <path d="M10 20.5c-1 6 3 10.5 10 10.8 7-.3 11-4.8 10-10.8" stroke="#b49a6c" stroke-width="0.9" fill="none" opacity="0.65" stroke-dasharray="1.6 1.4"/>`,
 };
 
+let uid = 0;
+
+/**
+ * Each copy gets its own gradient ids: a gradient defined inside a hidden
+ * copy (the desktop rack on a phone) would otherwise blank out every other.
+ */
 export function ammoIcon(id: AmmoId): string {
-  return `<svg class="ammo-ico" viewBox="0 0 40 40" aria-hidden="true">${ART[id]}</svg>`;
+  const k = `-${++uid}`;
+  return `<svg class="ammo-ico" viewBox="0 0 40 40" aria-hidden="true">${ART[id].replace(/(id="|url\(#)(aqa-[a-z]+)/g, `$1$2${k}`)}</svg>`;
 }

@@ -3689,7 +3689,7 @@ body[data-hud='large'] #hud {
 /* five chips on a quarter arc, from straight up round to due left */
 .chip-a {
   --ac: #d9e2e6;
-  --r: calc(118px * var(--kt));
+  --r: calc(140px * var(--kt));
   --ang: calc(-90deg - var(--i) * 22.5deg);
   position: absolute;
   left: 0;

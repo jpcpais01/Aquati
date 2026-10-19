@@ -825,6 +825,15 @@ export class UI {
       navigator.vibrate?.(8);
     });
     this.ammoBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+    // a touch anywhere else folds the fan away
+    window.addEventListener(
+      'pointerdown',
+      (e) => {
+        const t = e.target as Node;
+        if (this.fan.classList.contains('open') && !this.fan.contains(t) && !this.ammoBtn.contains(t)) this.setFan(false);
+      },
+      true,
+    );
   }
 
   /** Touch: the fan of shot chips around the shot button. Closes itself after a few idle seconds. */
