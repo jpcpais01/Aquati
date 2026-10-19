@@ -442,11 +442,6 @@ export function sailTexture(livery: Livery, emblem: boolean, seed = 5, target?: 
     g.fillRect(x0 + 5, 0, 1, S);
   }
   g.globalAlpha = 1;
-  // a faint weave
-  g.globalAlpha = 0.05;
-  g.fillStyle = '#000';
-  for (let y = 0; y < S; y += 3) g.fillRect(0, y, S, 1);
-  g.globalAlpha = 1;
   // reef bands with their rows of reef points
   for (const [f, wgt] of [
     [0.14, 6],
@@ -481,23 +476,12 @@ export function sailTexture(livery: Livery, emblem: boolean, seed = 5, target?: 
   g.fillRect(0, S - 22, S, 22);
   const mark = emblem ? legacyMark(livery) : null;
   if (mark) drawEmblem(g, S / 2, S * 0.5, S * 0.56, mark.emblem, mark.backing, mark.color);
-  // weathering toward the foot, with a few patched repairs
+  // weathering toward the foot
   const grad = g.createLinearGradient(0, 0, 0, S);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
   grad.addColorStop(1, 'rgba(60,45,20,0.16)');
   g.fillStyle = grad;
   g.fillRect(0, 0, S, S);
-  for (let i = 0; i < 2; i++) {
-    const x = S * (0.15 + rnd() * 0.7);
-    const y = S * (0.55 + rnd() * 0.3);
-    g.fillStyle = shade(livery.sail, 0.88 + rnd() * 0.1);
-    g.fillRect(x, y, 26 + rnd() * 20, 22 + rnd() * 16);
-    g.strokeStyle = shade(livery.sailSeam, 0.85);
-    g.setLineDash([3, 3]);
-    g.lineWidth = 1.5;
-    g.strokeRect(x, y, 26, 22);
-    g.setLineDash([]);
-  }
   // bolt rope edge
   g.strokeStyle = shade(livery.sailSeam, 0.8);
   g.lineWidth = 8;
