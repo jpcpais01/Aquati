@@ -3696,23 +3696,313 @@ body[data-hud='large'] #hud {
 
 #fps {
   position: fixed;
-  top: calc(4px + var(--safe-t));
+  top: calc(2px + var(--safe-t));
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
   font: 600 11px/1 ui-monospace, monospace;
   color: #fff;
   opacity: 0.6;
-  pointer-events: none;
   text-shadow: 0 1px 2px #000a;
   contain: strict;
+  box-sizing: content-box;
   width: 6ch;
   height: 12px;
+  padding: 3px 10px 6px;
   text-align: center;
+  cursor: pointer;
+  border-radius: 0 0 8px 8px;
+  transition: opacity 0.2s, background 0.2s;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.no-fps #fps {
+#fps:hover,
+#fps.open {
+  opacity: 1;
+  background: rgba(8, 20, 30, 0.45);
+}
+
+.no-fps #fps,
+.no-fps #prof {
   display: none;
+}
+
+/* frame profiler: tap the FPS counter */
+#prof {
+  position: fixed;
+  top: calc(24px + var(--safe-t));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 49;
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px - var(--safe-t));
+  max-height: calc(100dvh - 40px - var(--safe-t));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: 12px 14px 10px;
+  border-radius: 14px;
+  background: rgba(9, 22, 32, 0.78);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+  color: #e8f1f6;
+  font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  animation: pf-in 0.18s ease-out;
+}
+
+#prof[hidden] {
+  display: none;
+}
+
+@keyframes pf-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
+#prof b {
+  color: #fff;
+  font-weight: 700;
+}
+
+#prof small {
+  color: #9db3c0;
+  font-weight: 500;
+}
+
+.pf-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.pf-fps b {
+  font-size: 26px;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.pf-fps span {
+  margin-left: 3px;
+  color: #9db3c0;
+}
+
+.pf-ms {
+  color: #9db3c0;
+  font-size: 10px;
+}
+
+.pf-verdict {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 99px;
+  font-weight: 700;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.pf-verdict.ok {
+  background: rgba(95, 224, 160, 0.18);
+  color: #7ff0b8;
+}
+
+.pf-verdict.cpu {
+  background: rgba(255, 179, 92, 0.2);
+  color: #ffc77f;
+}
+
+.pf-verdict.gpu {
+  background: rgba(195, 155, 255, 0.2);
+  color: #d6bbff;
+}
+
+.pf-close {
+  all: unset;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  border-radius: 50%;
+  font-size: 16px;
+  color: #9db3c0;
+}
+
+.pf-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.pf-graph {
+  display: block;
+  width: 100%;
+  height: 64px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.pf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 5px 0 2px;
+  color: #9db3c0;
+  font-size: 9.5px;
+}
+
+.pf-legend i,
+.pf-row > i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: 0;
+}
+
+.pf-legend .pf-gpu-key {
+  height: 2px;
+  width: 10px;
+  vertical-align: 2px;
+  background: #fff;
+}
+
+#prof section {
+  margin-top: 10px;
+}
+
+#prof h4 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #9db3c0;
+}
+
+.pf-stack {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+  margin-bottom: 5px;
+}
+
+.pf-stack u {
+  display: block;
+  height: 100%;
+}
+
+.pf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 17px;
+}
+
+.pf-row > i {
+  flex: none;
+  margin: 0;
+}
+
+.pf-name {
+  flex: 0 1 46%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pf-row em {
+  font-style: normal;
+  font-size: 9px;
+  color: #ff9c7a;
+}
+
+.pf-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.pf-bar u {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  opacity: 0.85;
+  transition: width 0.25s;
+}
+
+.pf-pct {
+  width: 3.5ch;
+  text-align: right;
+  color: #9db3c0;
+  font-size: 10px;
+}
+
+.pf-row b {
+  width: 7.5ch;
+  text-align: right;
+}
+
+.pf-rest,
+.pf-none {
+  color: #9db3c0;
+  font-size: 10px;
+}
+
+.pf-none {
+  padding: 2px 0;
+  line-height: 1.45;
+}
+
+.pf-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.pf-facts div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pf-facts span {
+  color: #9db3c0;
+  font-size: 9.5px;
+}
+
+.pf-facts b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pf-more {
+  all: unset;
+  display: block;
+  margin: 9px auto 0;
+  padding: 4px 10px;
+  border-radius: 99px;
+  cursor: pointer;
+  color: #9db3c0;
+  font-size: 10px;
+}
+
+.pf-more:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }
 
 @media (prefers-reduced-motion: reduce) {

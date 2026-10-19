@@ -3,6 +3,7 @@ import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
 import { Audio } from '../core/audio';
 import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality';
+import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { Pipeline } from '../render/pipeline';
@@ -130,6 +131,7 @@ export class Game {
   private settings: Settings;
   private softShadows = false;
   private fps = 60;
+  private prof!: Profiler;
   // the shipwright's harbour
   private look: ShipLook = loadLook();
   private port!: Port;
@@ -157,8 +159,18 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
     this.quality = detectQuality(this.renderer);
+    this.prof = new Profiler(this.renderer, () => ({
+      scale: this.scaler.scale,
+      width: this.pipeline.width,
+      height: this.pipeline.height,
+      preset: this.settings.value.preset,
+      tier: this.quality.tier,
+      msaa: this.pipeline.settings.msaa,
+      shadow: this.sun.shadow.mapSize.x,
+    }));
     this.settings = new Settings(this.quality.tier);
     this.pipeline = new Pipeline(this.renderer, { msaa: this.quality.msaa, bloomLevels: this.quality.bloomLevels, tiltShift: this.quality.tiltShift });
+    this.pipeline.prof = this.prof;
     this.rig = new CameraRig(innerWidth / innerHeight);
     this.input = new Input(canvas);
     this.ui.setTouch(this.input.isTouch);
@@ -1190,21 +1202,13 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
 
-  private fpsEl = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'fps' });
-  private fpsFrames = 0;
-  private fpsT = performance.now();
-
   private frame() {
     const now = performance.now();
     let dt = (now - this.last) / 1000;
     this.last = now;
-    this.fpsFrames++;
-    if (now - this.fpsT >= 500) {
-      this.fps = (this.fpsFrames * 1000) / (now - this.fpsT);
-      this.fpsEl.textContent = `${Math.round(this.fps)} FPS`;
-      this.fpsFrames = 0;
-      this.fpsT = now;
-    }
+    const P = this.prof;
+    P.tick(now);
+    this.fps = P.fps;
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
     // Auto's last resort: still slow at the lowest resolution, so shed effects
@@ -1212,19 +1216,26 @@ export class Game {
       this.scaler.pressure = 0;
       this.settings.stepDown();
     }
+    P.begin('Sinking & wrecks', 'sim');
     this.updateWreck(dt);
+    P.end();
     const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt * this.timeScale;
     this.update(simDt, dt);
     this.render(simDt);
     this.input.consume();
+    P.frameEnd();
   }
 
   private update(dt: number, realDt: number) {
     const w = this.world;
+    const P = this.prof;
     w.time += dt;
     globalUniforms.uTime.value = w.time;
+    P.begin('Weather & sea state', 'sim');
     this.updateWeather(dt);
+    P.end();
 
+    P.begin('Input & helm', 'sim');
     this.input.poll();
     if (this.state === 'playing') {
       this.controlPlayer();
@@ -1238,24 +1249,40 @@ export class Game {
     // the shipwright's ship stays tied up at the quay
     const inPort = this.state === 'port' && this.preview;
     if (inPort) this.port.pin(this.preview!);
+    P.end();
 
     // AI & ships
+    P.begin('Pirate AI', 'ships');
     for (const ai of this.ais.values()) ai.update(dt, w, this.player && this.player.alive ? this.player : null, this.ships);
+    P.end();
+    P.begin('Ship physics & rigging', 'ships');
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
+    P.end();
+    P.begin('Collisions', 'ships');
     this.collisions.resolve(this.ships, w);
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
+    P.end();
+    P.begin('Cannonballs', 'ships');
     this.projectiles.update(dt, w, this.ships);
+    P.end();
+    P.begin('Debris & flotsam', 'fx');
     this.pushers.length = 0;
     for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
     this.debris.update(dt, w, this.pushers);
+    P.end();
+    P.begin('Shipyard (prebuilds)', 'ships');
     if (dt > 0) this.runShipyard();
+    P.end();
     if (inPort) {
+      P.begin('Harbour', 'sim');
       this.port.update(dt, w);
       this.shipwright.tick(realDt);
       this.framePort(realDt);
+      P.end();
     }
 
     // player-centric systems
+    P.begin('Loot, spawns & discovery', 'sim');
     const p = this.player;
     if (p && this.state === 'playing') {
       if (p.alive && w.time - p.lastHit > 9) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.01 * dt);
@@ -1291,6 +1318,8 @@ export class Game {
       this.loot.update(dt, w, null, 0);
     }
 
+    P.end();
+
     // volcano plume
     this.smokeT += dt;
     if (this.smokeT > 0.32) {
@@ -1305,6 +1334,7 @@ export class Game {
     }
 
     // camera
+    P.begin('Camera & captain', 'sim');
     const focusShip = p ?? this.preview;
     const fpos = focusShip ? focusShip.pos : this.spawnPoint;
     const fvel = focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
@@ -1323,10 +1353,14 @@ export class Game {
       w.listenerRight.set(1, 0);
     }
     w.listenerZoom = this.rig.distance;
+    P.end();
     // the spyglass can pick out a crew at the far side of a battle
+    P.begin('Crew', 'ships');
     this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260);
+    P.end();
 
     // gusts roll across whatever the camera is looking at
+    P.begin('Wind & gusts', 'fx');
     const reach = clamp(this.rig.distance * 0.9, 70, 260);
     const tgt = this.rig.target;
     this.windField.update(dt, tgt.x, tgt.z, reach);
@@ -1334,16 +1368,26 @@ export class Game {
     const gustHere = this.windField.at(fpos.x, fpos.z);
     this.audio.setGust(gustHere);
     this.ui.setGust(gustHere);
+    P.end();
 
+    P.begin('Rain, lightning & sky FX', 'fx');
     this.updateSkyFx(dt);
+    P.end();
+    P.begin('Particles', 'fx');
     this.particles.update(dt);
+    P.end();
+    P.begin('Birds', 'fx');
     this.birds.update(dt, w.time);
+    P.end();
     this.pipeline.decayFlash(realDt);
+    P.begin('Gunnery & aiming', 'ships');
     this.gunnery.setPointer(this.fpv ? null : this.input.state.pointer, this.rig.camera);
     this.gunnery.update(dt, p, this.ships, w, this.state === 'playing');
     if (this.state === 'playing') this.gunTip();
+    P.end();
 
     // HUD
+    P.begin('HUD, minimap & chart', 'ui');
     if (p && (this.state === 'playing' || this.state === 'paused')) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
@@ -1357,6 +1401,7 @@ export class Game {
       });
     }
     this.ui.tickFloaters(realDt);
+    P.end();
   }
 
   /** Walks the captain, aims their eyes, and keeps the deck chrome in step. */
@@ -1507,6 +1552,8 @@ export class Game {
 
   private render(dt: number) {
     if (!this.ocean) return;
+    const P = this.prof;
+    P.begin('Shadow & scene setup', 'render');
     const cam = this.rig.camera;
     const target = this.rig.target;
     // fit & snap the sun's shadow frustum around the view
@@ -1531,15 +1578,23 @@ export class Game {
     this.sun.position.set(cx + kd.x * kk * 400, ky * 400, cz + kd.z * kk * 400);
     this.sun.target.updateMatrixWorld();
     updateSoftShadows(this.sun, this.softShadows);
+    P.end();
     // the sky's light changes slowly: refresh the image-based lighting a few times a second
     this.envT -= dt > 0 ? dt : 0;
     if (this.envT <= 0) {
       this.envT = 0.35;
+      P.begin('Sky lighting (IBL)', 'render', true);
       this.skyEnv.update();
+      P.end(true);
     }
 
+    P.begin('Vegetation culling', 'sim');
     this.veg?.update(cam.position);
+    P.end();
+    P.begin('Wake simulation', 'ocean', true);
     this.wake.update(this.renderer, target.x, target.z, dt);
+    P.end(true);
+    P.begin('Ocean & scene binding', 'ocean');
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
@@ -1555,6 +1610,7 @@ export class Game {
     this.sky.position.copy(cam.position);
     this.ocean.apron.visible = eb > 0.001 || port || cine > 0;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
+    P.end();
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);
   }

@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T16:00Z',
     entries: [
       {
+        title: 'A frame profiler behind the FPS counter',
+        notes: [
+          'Tap the FPS counter at the top of the screen (or press F3) to open a live profiler. It shows how many milliseconds each part of the game takes on the CPU, from pirate AI and ship physics to particles, wind and the HUD, sorted busiest first.',
+          'On browsers that support GPU timers it also times every render pass on the graphics card: shadow maps, the world, ray-traced lighting, water and reflections, bloom and the final grade.',
+          'A scrolling frame-time graph, a CPU-bound or GPU-bound verdict, draw calls, triangles, shader programs, render resolution and quality round it out. Closed, it costs nothing.',
+        ],
+      },
+      {
         title: 'Hull hits that splinter and boom',
         notes: [
           'A cannonball striking a ship now sounds like heavy oak giving way, not a dull thump: a sharp crack, the crackling rip of planking tearing through, a hollow boom from inside the hull and a shower of splinters.',
