@@ -1,3 +1,6 @@
+import type { BackingId, EmblemId, FlagDesign } from './heraldry';
+import type { SailPattern } from './look';
+
 export type ShipClassId = 'sloop' | 'brig' | 'galleon';
 
 export interface MastDef {
@@ -163,6 +166,12 @@ export interface Livery {
   emblemColor: string;
   flag: string;
   flag2: string;
+  /** Full flag artwork; without one the flag is drawn from flag / flag2 / emblem. */
+  flagDesign?: FlagDesign;
+  sailAccent?: string;
+  sailPattern?: SailPattern;
+  /** Emblem painted on the main sails; overrides `emblem` when present. */
+  sailMark?: { emblem: EmblemId; backing: BackingId; color: string } | null;
 }
 
 export const PLAYER_LIVERY: Livery = {

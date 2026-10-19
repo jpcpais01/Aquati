@@ -4,8 +4,10 @@
 // The harbour theme is the one recorded file: streamed, never decoded whole.
 
 import { BankKind, bankJobs, CALIBERS } from './sfx';
+import { renderThunder } from './thunder';
 
 const SPEED_OF_SOUND = 343;
+const AMBIENCE_LEVEL = 0.35;
 const MUSIC_URL = '/music/sunset-archipelago.mp3';
 const MUSIC_VOL = 0.55;
 
@@ -18,6 +20,12 @@ export class Audio {
   private noise!: AudioBuffer;
   private surfGain!: GainNode;
   private windGain!: GainNode;
+  private rainGain!: GainNode;
+  private roarGain!: GainNode;
+  private wx = { rain: 0, storm: 0, wind: 0.8 };
+  private thunderNear: AudioBuffer[] = [];
+  private thunderFar: AudioBuffer[] = [];
+  private thunderQueued = false;
   private gust = 0;
   private duckGain!: GainNode;
   private reverb!: ConvolverNode;
@@ -31,6 +39,7 @@ export class Audio {
     earth: [],
     whoosh: [],
     blast: [],
+    crunch: [],
   };
   private music: HTMLAudioElement | null = null;
   private musicGain: GainNode | null = null;
@@ -68,7 +77,10 @@ export class Audio {
     wet.gain.value = 0.75;
     this.reverbIn.connect(this.reverb).connect(wet).connect(this.master);
     this.duckGain = ctx.createGain();
-    this.duckGain.connect(this.master);
+    // sea + wind sit well under the guns and music: a bed, not a wall
+    const bed = ctx.createGain();
+    bed.gain.value = AMBIENCE_LEVEL;
+    this.duckGain.connect(bed).connect(this.master);
 
     const len = ctx.sampleRate * 3;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -119,6 +131,32 @@ export class Audio {
     wind.connect(bp).connect(this.windGain).connect(this.duckGain);
     wind.start(0, 1.3);
     lfo2.start();
+
+    // rain: hiss of drops on the sea and the deck, plus a low roar in a downpour
+    const rain = ctx.createBufferSource();
+    rain.buffer = this.noise;
+    rain.loop = true;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1400;
+    const rlp = ctx.createBiquadFilter();
+    rlp.type = 'lowpass';
+    rlp.frequency.value = 9000;
+    this.rainGain = ctx.createGain();
+    this.rainGain.gain.value = 0;
+    rain.connect(hp).connect(rlp).connect(this.rainGain).connect(this.duckGain);
+    rain.start(0, 0.7);
+    const roar = ctx.createBufferSource();
+    roar.buffer = this.noise;
+    roar.loop = true;
+    roar.playbackRate.value = 0.55;
+    const roarLp = ctx.createBiquadFilter();
+    roarLp.type = 'lowpass';
+    roarLp.frequency.value = 380;
+    this.roarGain = ctx.createGain();
+    this.roarGain.gain.value = 0;
+    roar.connect(roarLp).connect(this.roarGain).connect(this.duckGain);
+    roar.start(0, 2.1);
 
     this.buildBank();
   }
@@ -195,8 +233,76 @@ export class Audio {
   setSailing(speed01: number) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.windGain.gain.setTargetAtTime(0.04 + speed01 * 0.08 + this.gust * 0.06, t, 0.5);
-    this.surfGain.gain.setTargetAtTime(0.2 + speed01 * 0.12, t, 0.5);
+    const w = this.wx;
+    const blow = Math.max(0, w.wind - 0.8);
+    this.windGain.gain.setTargetAtTime(0.04 + speed01 * 0.08 + this.gust * 0.06 + blow * 0.2 + w.storm * 0.07, t, 0.5);
+    this.surfGain.gain.setTargetAtTime(0.2 + speed01 * 0.12 + w.storm * 0.14, t, 0.5);
+  }
+
+  /** Weather beds: rain hiss & roar, a howling wind and heavier surf in a storm. */
+  setWeather(rain: number, storm: number, wind: number) {
+    this.wx.rain = rain;
+    this.wx.storm = storm;
+    this.wx.wind = wind;
+    if (this.ctx) {
+      const t = this.ctx.currentTime;
+      this.rainGain.gain.setTargetAtTime(rain * 0.13, t, 0.6);
+      this.roarGain.gain.setTargetAtTime(rain * rain * 0.12 + storm * 0.1, t, 0.8);
+    }
+    if (storm > 0.1 && !this.thunderQueued && this.ctx) {
+      // render the thunder bank a piece per tick, well before the first strike
+      this.thunderQueued = true;
+      const ctx = this.ctx;
+      const jobs: [boolean, number][] = [[true, 1], [false, 2], [true, 3], [false, 4]];
+      const next = () => {
+        const j = jobs.shift();
+        if (!j) return;
+        const data = renderThunder(ctx.sampleRate, j[0], j[1]);
+        const b = ctx.createBuffer(2, data[0].length, ctx.sampleRate);
+        b.getChannelData(0).set(data[0]);
+        b.getChannelData(1).set(data[1]);
+        (j[0] ? this.thunderNear : this.thunderFar).push(b);
+        setTimeout(next, 30);
+      };
+      setTimeout(next, 0);
+    }
+  }
+
+  /** Thunder from a strike `dist` metres away: it arrives late, and far peals are dull and long. */
+  thunder(vol: number, pan: number, dist: number) {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const near = dist < 700;
+    const buf = pick(near ? this.thunderNear : this.thunderFar) ?? pick(this.thunderNear) ?? pick(this.thunderFar);
+    if (!buf) return;
+    const at = ctx.currentTime + dist / SPEED_OF_SOUND;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.playbackRate.value = (near ? 0.9 : 0.75) + Math.random() * 0.15;
+    const air = ctx.createBiquadFilter();
+    air.type = 'lowpass';
+    air.frequency.value = Math.max(260, 9000 * Math.exp(-dist / 260));
+    const g = ctx.createGain();
+    g.gain.value = vol;
+    src.connect(air).connect(g);
+    let p: StereoPannerNode | null = null;
+    if (ctx.createStereoPanner) {
+      p = ctx.createStereoPanner();
+      p.pan.value = clamp1(pan);
+      g.connect(p).connect(this.master);
+    } else g.connect(this.master);
+    const send = ctx.createGain();
+    send.gain.value = 0.5;
+    air.connect(send).connect(this.reverbIn);
+    src.start(at);
+    if (near && vol > 0.5) this.duck(at, 0.3);
+    src.onended = () => {
+      src.disconnect();
+      air.disconnect();
+      g.disconnect();
+      p?.disconnect();
+      send.disconnect();
+    };
   }
 
   private voice(vol: number, pan: number): [AudioContext, GainNode] | null {
@@ -339,6 +445,13 @@ export class Audio {
     this.emit(pick(this.bank.wood), { vol: vol * 0.7, pan, dist, rate: 0.88 + Math.random() * 0.24, wet: 0.35 });
   }
 
+  /** Hulls colliding or a keel grinding onto rock. `force` 0 = a nudge .. 1 = a full-speed ram. */
+  crunch(vol: number, pan: number, dist = 0, force = 1) {
+    const f = Math.max(0, Math.min(1, force));
+    const at = this.emit(pick(this.bank.crunch), { vol: vol * (0.35 + 0.55 * f), pan, dist, rate: 1.12 - f * 0.22 + Math.random() * 0.08, wet: 0.45 });
+    if (at >= 0 && dist < 40 && f > 0.4) this.duck(at, 0.3 * f);
+  }
+
   /** Shot ploughing into a beach or hillside. */
   thud(vol: number, pan: number, dist = 0) {
     this.emit(pick(this.bank.earth), { vol: vol * 0.45, pan, dist, rate: 0.85 + Math.random() * 0.3, wet: 0.3 });
@@ -422,6 +535,87 @@ export class Audio {
           o.stop(t + 2.3);
         }
       });
+    }
+  }
+
+  /** A side's guns run out again: two dull knocks from the gun deck and a small bright bell. */
+  gunsReady(pan: number) {
+    const v = this.voice(0.2, pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    [0, 0.12].forEach((dt, i) => {
+      const t = ctx.currentTime + dt;
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(i ? 200 : 150, t);
+      o.frequency.exponentialRampToValueAtTime(i ? 120 : 92, t + 0.1);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.9, t + 0.005);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.17);
+    });
+    const t = ctx.currentTime + 0.13;
+    const b = ctx.createOscillator();
+    b.type = 'sine';
+    b.frequency.value = 1568;
+    const bg = ctx.createGain();
+    bg.gain.setValueAtTime(0, t);
+    bg.gain.linearRampToValueAtTime(0.12, t + 0.01);
+    bg.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+    b.connect(bg).connect(out);
+    b.start(t);
+    b.stop(t + 0.55);
+  }
+
+  /** A boot on deck planking: a soft woody knock, now and then a creak of the boards. */
+  footstep(k: number) {
+    const v = this.voice(0.11 + k * 0.08, (Math.random() - 0.5) * 0.15);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 260 + Math.random() * 140 + k * 120;
+    bp.Q.value = 1.6;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.11 + k * 0.04);
+    src.connect(bp).connect(g).connect(out);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 0.2);
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(120 + Math.random() * 30, t);
+    o.frequency.exponentialRampToValueAtTime(60, t + 0.08);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.5, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.12);
+    if (Math.random() < 0.12) {
+      // the planking answers with a short creak
+      const c = ctx.createOscillator();
+      c.type = 'sawtooth';
+      const f = 180 + Math.random() * 120;
+      c.frequency.setValueAtTime(f, t + 0.05);
+      c.frequency.linearRampToValueAtTime(f * (0.8 + Math.random() * 0.5), t + 0.32);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'bandpass';
+      lp.frequency.value = 900;
+      lp.Q.value = 6;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(0, t + 0.05);
+      cg.gain.linearRampToValueAtTime(0.06, t + 0.12);
+      cg.gain.exponentialRampToValueAtTime(0.001, t + 0.34);
+      c.connect(lp).connect(cg).connect(out);
+      c.start(t + 0.05);
+      c.stop(t + 0.36);
     }
   }
 

@@ -11,7 +11,16 @@ interface PendingShot {
   at: number;
   muzzle: number;
   target: Ship | null;
+  point: THREE.Vector3 | null;
 }
+
+/** How far a player's guns can train fore and aft of square, radians. The firing arcs on the water show exactly this. */
+export const PLAYER_ARC = 0.5;
+const PIRATE_ARC = 0.32;
+const GRAVITY = 14;
+
+/** How far a broadside reaches with the guns at full elevation (and a little to spare). */
+export const gunRange = (muzzleSpeed: number) => ((muzzleSpeed * muzzleSpeed) / GRAVITY) * 0.62;
 
 const WIND_TABLE = [
   // relative angle (deg, 0 = running downwind) -> speed factor
@@ -79,6 +88,8 @@ export class Ship {
   gold = 0;
   kills = 0;
   anchored = false;
+  /** Sideways drift (x, z m/s) from being shoved by another hull; bleeds off against the water. */
+  readonly drift = new THREE.Vector2();
   /** World time each gun last fired, by muzzle index (crews time their drill to it). */
   readonly gunFiredAt: number[];
   private pending: PendingShot[] = [];
@@ -107,6 +118,11 @@ export class Ship {
     this.hp = cls.hp;
     this.name = cls.title;
     this.gunFiredAt = this.model.muzzles.map(() => -100);
+  }
+
+  /** Heel the hull over by `amount` radians (positive lifts the port rail); it springs back on its own. */
+  kickRoll(amount: number) {
+    this.rollKick = clamp(this.rollKick + amount, -0.3, 0.3);
   }
 
   get maxHp() {
@@ -144,14 +160,15 @@ export class Ship {
     return this.alive && this.reload[side] <= 0;
   }
 
-  /** Begins a rippling broadside. Returns false while reloading. */
-  fire(side: 'port' | 'starboard', world: World, target: Ship | null = null): boolean {
+  /** Begins a rippling broadside at a ship (led) or a point on the water. Returns false while reloading. */
+  fire(side: 'port' | 'starboard', world: World, target: Ship | null = null, point: THREE.Vector3 | null = null): boolean {
     if (!this.canFire(side)) return false;
     const s = side === 'port' ? 1 : -1;
     const ms = this.model.muzzles.map((m, i) => ({ m, i })).filter((e) => e.m.side === s);
     // fire from the middle outward for a rolling thunder
     ms.sort((a, b) => Math.abs(a.m.pos.z) - Math.abs(b.m.pos.z));
-    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target }));
+    const pt = point ? point.clone() : null;
+    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt }));
     this.reload[side] = this.cls.reload;
     this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass;
     return true;
@@ -164,24 +181,33 @@ export class Ship {
     const pos = m.pos.clone().applyMatrix4(this.model.root.matrixWorld);
     const dir = m.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
     const v = this.cls.muzzleSpeed * (0.97 + Math.random() * 0.06);
-    const g = 14;
+    const g = GRAVITY;
+    const mine = this.team === 'player';
     let dist = 60;
-    if (p.target && p.target.alive) {
-      // lead the target, but stay within the broadside arc
-      const tp = p.target.pos;
-      const d0 = Math.hypot(tp.x - pos.x, tp.z - pos.z);
-      const tof = d0 / (v * 0.95);
-      const lead = _v2.set(tp.x + p.target.vel.x * tof - pos.x, 0, tp.z + p.target.vel.z * tof - pos.z);
-      dist = lead.length();
-      const ang = Math.atan2(lead.x, lead.z);
+    const aim = p.target && p.target.alive ? p.target.pos : p.point;
+    if (aim) {
+      // Lead the target. Your own crews also allow for the ship's way, which the
+      // ball keeps: in a running duel that drift alone used to carry whole
+      // broadsides past the bow. Pirate crews only lead their mark.
+      const tv = p.target && p.target.alive ? p.target.vel : null;
+      const rvx = (tv ? tv.x : 0) - (mine ? this.vel.x : 0);
+      const rvz = (tv ? tv.z : 0) - (mine ? this.vel.z : 0);
+      let tof = Math.hypot(aim.x - pos.x, aim.z - pos.z) / (v * 0.95);
+      for (let it = 0; it < 2; it++) {
+        _v2.set(aim.x + rvx * tof - pos.x, 0, aim.z + rvz * tof - pos.z);
+        const e = 0.5 * Math.asin(clamp((g * _v2.length()) / (v * v), 0, 1));
+        tof = _v2.length() / (v * Math.cos(e));
+      }
+      dist = _v2.length();
+      const ang = Math.atan2(_v2.x, _v2.z);
       const base = Math.atan2(dir.x, dir.z);
-      const dev = clamp(angleDelta(base, ang), -0.32, 0.32);
-      const fa = base + dev;
+      const arc = mine ? PLAYER_ARC : PIRATE_ARC;
+      const fa = base + clamp(angleDelta(base, ang), -arc, arc);
       dir.set(Math.sin(fa), 0, Math.cos(fa));
     }
     const elev = clamp(0.5 * Math.asin(clamp((g * dist) / (v * v), 0, 1)), 0.015, 0.36);
     // pirate gun crews are a little less disciplined than yours
-    const sloppy = this.team === 'pirate' ? 2.4 : 1;
+    const sloppy = mine ? 1 : 2.4;
     const yaw = (Math.random() - 0.5) * 0.035 * sloppy;
     const pitch = elev + (Math.random() - 0.5) * 0.02 * sloppy;
     const fa = Math.atan2(dir.x, dir.z) + yaw;
@@ -264,7 +290,9 @@ export class Ship {
     const port = this.portDir(_v2);
     const cross = w.dirX * port.x + w.dirZ * port.z;
     const slip = cross * 0.35 * this.sailLevel * w.strength;
-    this.vel.set(fx * this.speed + port.x * slip, 0, fz * this.speed + port.z * slip);
+    // a shove from another hull: the keel resists sideways motion far more than fore-and-aft
+    this.drift.multiplyScalar(1 - damp(1.5, dt));
+    this.vel.set(fx * this.speed + port.x * slip + this.drift.x, 0, fz * this.speed + port.z * slip + this.drift.y);
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
 
@@ -287,6 +315,10 @@ export class Ship {
           this.damage(this.speed * 1.8, null, world, _fp.set(px, 0.2, pz));
           this.groundCooldown = 1.2;
           world.particles.sandHit(new THREE.Vector3(px, 0.5, pz));
+          world.particles.splash(new THREE.Vector3(px, world.waterHeight(px, pz), pz), 0.5 + Math.min(0.6, this.speed / 25));
+          const [vol, pan, d] = world.soundAt(this.pos);
+          world.audio.crunch(vol, pan, d, Math.min(1, this.speed / 12));
+          world.audio.thud(vol, pan, d);
           world.onShake(this.team === 'player' ? 0.5 : 0, this.pos);
         }
         this.speed *= pf > 0.3 ? 0.86 : 0.95;

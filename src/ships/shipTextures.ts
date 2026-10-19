@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/noise';
 import { Livery } from './shipTypes';
+import { BackingId, drawEmblem, drawFlag, EmblemId, FlagDesign } from './heraldry';
 
 // Hand-painted-looking ship textures drawn on canvas at startup.
 
@@ -327,75 +328,76 @@ export function sternTexture(livery: Livery, rows: number): { map: THREE.CanvasT
   return { map: toTex(c), emissive: toTex(ce) };
 }
 
-function drawSkull(g: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string) {
-  g.fillStyle = color;
-  g.strokeStyle = color;
-  // crossed bones
-  g.lineWidth = s * 0.16;
-  g.lineCap = 'round';
-  g.beginPath();
-  g.moveTo(cx - s * 0.9, cy + s * 0.2);
-  g.lineTo(cx + s * 0.9, cy + s * 1.1);
-  g.moveTo(cx + s * 0.9, cy + s * 0.2);
-  g.lineTo(cx - s * 0.9, cy + s * 1.1);
-  g.stroke();
-  // skull
-  g.beginPath();
-  g.ellipse(cx, cy - s * 0.1, s * 0.6, s * 0.55, 0, 0, Math.PI * 2);
-  g.fill();
-  g.fillRect(cx - s * 0.32, cy + s * 0.2, s * 0.64, s * 0.35);
-  g.globalCompositeOperation = 'destination-out';
-  g.beginPath();
-  g.ellipse(cx - s * 0.22, cy - s * 0.08, s * 0.15, s * 0.17, 0, 0, Math.PI * 2);
-  g.ellipse(cx + s * 0.22, cy - s * 0.08, s * 0.15, s * 0.17, 0, 0, Math.PI * 2);
-  g.fill();
-  g.globalCompositeOperation = 'source-over';
+function surface(target: THREE.CanvasTexture | undefined, w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  if (target) {
+    const c = target.image as HTMLCanvasElement;
+    return [c, c.getContext('2d')!];
+  }
+  return canvas(w, h);
 }
 
-function drawSun(g: CanvasRenderingContext2D, cx: number, cy: number, s: number, color: string) {
-  g.fillStyle = color;
-  for (let i = 0; i < 12; i++) {
-    const a = (i / 12) * Math.PI * 2;
-    g.beginPath();
-    g.moveTo(cx + Math.cos(a - 0.12) * s * 0.55, cy + Math.sin(a - 0.12) * s * 0.55);
-    g.lineTo(cx + Math.cos(a) * s * 1.05, cy + Math.sin(a) * s * 1.05);
-    g.lineTo(cx + Math.cos(a + 0.12) * s * 0.55, cy + Math.sin(a + 0.12) * s * 0.55);
-    g.fill();
-  }
-  g.beginPath();
-  g.arc(cx, cy, s * 0.52, 0, Math.PI * 2);
-  g.fill();
-  // wave across the sun
-  g.strokeStyle = '#1f8a8a';
-  g.lineWidth = s * 0.14;
-  g.beginPath();
-  for (let i = 0; i <= 20; i++) {
-    const x = cx - s * 0.75 + (i / 20) * s * 1.5;
-    const y = cy + s * 0.12 + Math.sin(i * 0.65) * s * 0.12;
-    if (i === 0) g.moveTo(x, y);
-    else g.lineTo(x, y);
-  }
-  g.stroke();
+function legacyMark(livery: Livery): { emblem: EmblemId; backing: BackingId; color: string } | null {
+  if (livery.sailMark !== undefined) return livery.sailMark;
+  if (livery.emblem === 'skull') return { emblem: 'skull', backing: 'bones', color: livery.emblemColor };
+  if (livery.emblem === 'sun') return { emblem: 'sun', backing: 'none', color: livery.emblemColor };
+  return null;
 }
 
-export function sailTexture(livery: Livery, emblem: boolean, seed = 5): THREE.CanvasTexture {
+/** Sail cloth with cloths, reef bands, an optional accent pattern and emblem. Redraws into `target` if given. */
+export function sailTexture(livery: Livery, emblem: boolean, seed = 5, target?: THREE.CanvasTexture): THREE.CanvasTexture {
   const S = 512;
-  const [c, g] = canvas(S, S);
+  const [c, g] = surface(target, S, S);
   const rnd = mulberry32(seed);
+  const accent = livery.sailAccent ?? livery.sailSeam;
   g.fillStyle = livery.sail;
   g.fillRect(0, 0, S, S);
   // vertical cloths, each a slightly different bolt of canvas
   const cloths = 9;
+  const pattern = livery.sailPattern ?? 'plain';
   for (let i = 0; i < cloths; i++) {
     const x0 = (i / cloths) * S;
-    g.fillStyle = shade(livery.sail, 0.95 + rnd() * 0.08);
-    g.fillRect(x0, 0, S / cloths, S);
-    g.fillStyle = livery.sailSeam;
-    g.fillRect(x0, 0, 2.5, S);
-    g.globalAlpha = 0.35;
-    g.fillRect(x0 + 5, 0, 1, S); // double-stitched
-    g.globalAlpha = 1;
+    const base = pattern === 'stripes' && i % 2 === 1 ? accent : livery.sail;
+    g.fillStyle = shade(base, 0.95 + rnd() * 0.08);
+    g.fillRect(x0, 0, S / cloths + 1, S);
   }
+  g.fillStyle = accent;
+  switch (pattern) {
+    case 'band':
+      g.fillRect(0, S * 0.6, S, S * 0.2);
+      break;
+    case 'border': {
+      const b = S * 0.085;
+      g.fillRect(0, 0, S, b);
+      g.fillRect(0, S - b, S, b);
+      g.fillRect(0, 0, b, S);
+      g.fillRect(S - b, 0, b, S);
+      break;
+    }
+    case 'cross':
+      g.fillRect(S * 0.43, 0, S * 0.14, S);
+      g.fillRect(0, S * 0.42, S, S * 0.14);
+      break;
+    case 'diagonal':
+      g.beginPath();
+      g.moveTo(0, S * 0.35);
+      g.lineTo(S * 0.65, S);
+      g.lineTo(0, S);
+      g.closePath();
+      g.fill();
+      break;
+    default:
+      break;
+  }
+  // double-stitched seams between the cloths
+  g.fillStyle = livery.sailSeam;
+  for (let i = 0; i < cloths; i++) {
+    const x0 = (i / cloths) * S;
+    g.globalAlpha = 0.85;
+    g.fillRect(x0, 0, 2.5, S);
+    g.globalAlpha = 0.3;
+    g.fillRect(x0 + 5, 0, 1, S);
+  }
+  g.globalAlpha = 1;
   // a faint weave
   g.globalAlpha = 0.05;
   g.fillStyle = '#000';
@@ -433,6 +435,8 @@ export function sailTexture(livery: Livery, emblem: boolean, seed = 5): THREE.Ca
   // a broad tabling along the foot
   g.fillStyle = shade(livery.sail, 0.92);
   g.fillRect(0, S - 22, S, 22);
+  const mark = emblem ? legacyMark(livery) : null;
+  if (mark) drawEmblem(g, S / 2, S * 0.5, S * 0.56, mark.emblem, mark.backing, mark.color);
   // weathering toward the foot, with a few patched repairs
   const grad = g.createLinearGradient(0, 0, 0, S);
   grad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -454,9 +458,9 @@ export function sailTexture(livery: Livery, emblem: boolean, seed = 5): THREE.Ca
   g.strokeStyle = shade(livery.sailSeam, 0.8);
   g.lineWidth = 8;
   g.strokeRect(4, 4, S - 8, S - 8);
-  if (emblem) {
-    if (livery.emblem === 'skull') drawSkull(g, S / 2, S * 0.45, S * 0.24, livery.emblemColor);
-    else if (livery.emblem === 'sun') drawSun(g, S / 2, S * 0.5, S * 0.22, livery.emblemColor);
+  if (target) {
+    target.needsUpdate = true;
+    return target;
   }
   return toTex(c);
 }
@@ -494,12 +498,36 @@ export function sailNormalTexture(): THREE.CanvasTexture {
   return sailNormalTex;
 }
 
-export function flagTexture(livery: Livery): THREE.CanvasTexture {
-  const [c, g] = canvas(128, 32);
-  g.fillStyle = livery.flag;
-  g.fillRect(0, 0, 128, 32);
-  g.fillStyle = livery.flag2;
-  g.fillRect(0, 13, 128, 6);
-  if (livery.emblem === 'skull') drawSkull(g, 22, 13, 9, livery.flag2);
-  return toTex(c);
+/** The flag design a livery flies (pirate liveries get a classic jolly roger). */
+export function liveryFlag(livery: Livery): FlagDesign {
+  if (livery.flagDesign) return livery.flagDesign;
+  const skull = livery.emblem === 'skull';
+  return {
+    shape: skull ? 'tattered' : 'square',
+    bg: livery.flag,
+    pattern: 'plain',
+    patternColor: livery.flag2,
+    emblem: skull ? 'skull' : livery.emblem === 'sun' ? 'sun' : 'none',
+    emblemColor: livery.flag2,
+    backing: skull ? 'bones' : 'none',
+    emblemScale: 0.95,
+    paint: '',
+  };
+}
+
+export const FLAG_ASPECT = 0.62;
+
+/** Full flag with its fly-edge cut out in alpha. Redraws into `target` if given. */
+export function flagTexture(livery: Livery, target?: THREE.CanvasTexture): THREE.CanvasTexture {
+  const W = 256;
+  const H = Math.round(W * FLAG_ASPECT);
+  const [c, g] = surface(target, W, H);
+  drawFlag(g, W, H, liveryFlag(livery));
+  if (target) {
+    target.needsUpdate = true;
+    return target;
+  }
+  const t = toTex(c);
+  t.anisotropy = 4;
+  return t;
 }

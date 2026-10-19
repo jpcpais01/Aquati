@@ -144,17 +144,21 @@ export class Projectiles {
       }
       if (!dead) {
         b.trail += dt;
-        if (b.trail > 0.045) {
+        if (b.trail > 0.035) {
           b.trail = 0;
-          world.particles.trail(b.pos);
+          world.particles.trail(b.pos, Math.max(0, 1 - b.age * 0.6));
         }
       }
       if (dead || b.age > 7) this.balls.splice(i, 1);
     }
+    const streaks = world.particles.streaks;
+    streaks.begin();
     for (let i = 0; i < this.balls.length; i++) {
+      streaks.add(this.balls[i].pos, this.balls[i].vel, this.balls[i].age);
       this.m.makeTranslation(this.balls[i].pos.x, this.balls[i].pos.y, this.balls[i].pos.z);
       this.mesh.setMatrixAt(i, this.m);
     }
+    streaks.end();
     this.mesh.count = this.balls.length;
     this.mesh.instanceMatrix.needsUpdate = true;
   }

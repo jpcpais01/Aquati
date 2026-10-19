@@ -281,8 +281,8 @@ export class Debris {
           b.settleTo.setFromUnitVectors(ax.normalize(), flat).multiply(o.quaternion);
           // splash all along its length
           const tip = _v2.copy(b.axis).applyQuaternion(o.quaternion);
-          const [vol, pan] = world.soundAt(mid);
-          world.audio.splash(vol, pan);
+          const [vol, pan, d] = world.soundAt(mid);
+          world.audio.splash(vol, pan, d);
           for (let k = 0; k <= 4; k++) {
             const sp = o.position.clone().addScaledVector(tip, (b.len * k) / 4);
             sp.y = world.waterHeight(sp.x, sp.z);

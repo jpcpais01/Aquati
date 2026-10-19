@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getSharedTextures } from '../render/textures';
+import { globalUniforms } from '../render/environment';
 
 // CPU-simulated, GPU-instanced billboard particles. Two pools: alpha
 // (premultiplied: smoke, spray, splinters) and additive (fire, flashes,
@@ -75,31 +76,58 @@ class Pool {
       blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
       defines: { ADDITIVE: additive ? 1 : 0 },
       vertexShader: /* glsl */ `
-        attribute vec3 aPos; attribute vec4 aCol; attribute vec4 aMisc; // size, rot, kind, seed
-        varying vec4 vCol; varying vec2 vUv; varying float vKind; varying float vSeed; varying float vViewZ;
+        uniform vec3 uSunDir;
+        attribute vec3 aPos; attribute vec4 aCol; attribute vec4 aMisc; // size, rot, kind + age, seed
+        varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
+        varying vec3 vSunV; varying vec3 vViewDir;
         void main() {
-          vCol = aCol; vUv = position.xy * 2.0; vKind = aMisc.z; vSeed = aMisc.w;
+          vCol = aCol; vUv = position.xy * 2.0; vKind = floor(aMisc.z); vAge = fract(aMisc.z); vSeed = aMisc.w;
           vec4 mv = viewMatrix * vec4(aPos, 1.0);
           float c = cos(aMisc.y), s = sin(aMisc.y);
           vec2 q = position.xy * aMisc.x;
-          mv.xy += vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+          vec2 qr = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+          vUvV = qr / max(aMisc.x, 1e-4) * 2.0; // billboard uv in view space, for the puff's fake normal
+          mv.xy += qr;
           vViewZ = -mv.z;
+          vViewDir = normalize(mv.xyz);
+          vSunV = normalize((viewMatrix * vec4(uSunDir, 0.0)).xyz);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D uNoiseTex; uniform sampler2D uSceneDepth; uniform vec2 uResolution; uniform vec2 uCamNearFar;
-        varying vec4 vCol; varying vec2 vUv; varying float vKind; varying float vSeed; varying float vViewZ;
+        uniform vec3 uLight; uniform float uFlash; uniform vec3 uSunColor; uniform vec3 uHaze; uniform float uCloudCover;
+        uniform vec3 uFogColor; uniform vec2 uFogRange; uniform float uMist; uniform float uRain; uniform float uTime;
+        varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
+        varying vec3 vSunV; varying vec3 vViewDir;
         float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
         void main() {
           float r = length(vUv);
           if (r > 1.0) discard;
           float a;
+          vec3 lit = uLight + uFlash * 0.8;
           if (vKind < 0.5) {
             a = pow(1.0 - r, 1.6);
           } else if (vKind < 1.5) {
-            vec2 nuv = vUv * 0.22 + vec2(vSeed, vSeed * 1.7);
-            float n = texture(uNoiseTex, nuv).g * 0.7 + texture(uNoiseTex, nuv * 2.3).a * 0.3;
-            a = smoothstep(0.0, 0.55, (1.0 - r) * (0.55 + n * 0.9) - 0.12);
+            // volumetric puff: two noise octaves that slowly churn and erode as the smoke ages
+            vec2 drift = vec2(uTime * 0.018, -uTime * 0.012);
+            vec2 nuv = vUv * 0.22 + vec2(vSeed, vSeed * 1.7) + drift;
+            float n1 = texture(uNoiseTex, nuv).g;
+            float n2 = texture(uNoiseTex, nuv * 2.7 - drift * 2.0).a;
+            float n = n1 * 0.68 + n2 * 0.32;
+            float body = (1.0 - r * r) * (0.5 + n * 1.0) - 0.14 - vAge * 0.22;
+            a = smoothstep(0.0, 0.5 - vAge * 0.18, body);
+            // fake sphere normal, dented by the noise, lit by the sun or moon
+            vec3 nrm = normalize(vec3(vUvV * 0.85 + (vec2(n1, n2) - 0.5) * 0.9, sqrt(max(1.0 - r * r, 0.0)) + 0.25));
+            float wrap = clamp(dot(nrm, vSunV) * 0.6 + 0.4, 0.0, 1.0);
+            float shade = 1.0 - (1.0 - wrap) * (0.55 - vAge * 0.25); // young dense smoke shows deeper shadow
+            float open = 1.0 - uCloudCover * 0.65;
+            vec3 sun = uSunColor * 0.16 * wrap * open;
+            // silver lining: thin edges glow when you look toward the light
+            float back = max(dot(-vViewDir, -vSunV), 0.0);
+            float fwd = back * back; fwd *= fwd;
+            vec3 rim = uSunColor * uHaze * (fwd * 0.55 * (1.0 - a * 0.7)) * open;
+            float sky = 0.82 + nrm.y * 0.18; // brighter on top, from the sky dome
+            lit = lit * (0.66 * shade * sky) + sun + rim;
           } else if (vKind < 2.5) {
             a = pow(max(1.0 - r, 0.0), 3.0) * 1.6;
           } else {
@@ -113,7 +141,11 @@ class Pool {
           #if ADDITIVE
             gl_FragColor = vec4(vCol.rgb * a, 0.0);
           #else
-            gl_FragColor = vec4(vCol.rgb * a, a);
+            // smoke and spray are lit by the sky: warm at sunset, dim blue at night, sunk into mist and rain haze
+            vec3 col = vCol.rgb * lit;
+            float fog = max(smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.85, (1.0 - exp(-vViewZ * 0.0045)) * (uMist * 0.7 + uRain * 0.15));
+            col = mix(col, uFogColor, fog);
+            gl_FragColor = vec4(col * a, a);
           #endif
         }`,
     });
@@ -143,6 +175,9 @@ class Pool {
 
   update(dt: number) {
     let n = 0;
+    const w = globalUniforms.uWind.value;
+    const windSpeed = 1.2 + w.z * 4.5;
+    const windX = w.x * windSpeed, windZ = w.y * windSpeed, windDt = dt;
     const P = this.aPos;
     const Cc = this.aCol;
     const M = this.aMisc;
@@ -155,6 +190,13 @@ class Pool {
       p.vx *= k; p.vy *= k; p.vz *= k;
       p.vy -= p.grav * dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
+      if (p.kind === 1) {
+        // smoke rides the breeze once its own push dies down, with a lazy curl
+        const ride = Math.min(1, p.life * 1.5) * windDt;
+        const ph = p.rot * 3.1 + p.life * 0.9;
+        p.x += windX * ride + Math.sin(ph) * 0.25 * dt;
+        p.z += windZ * ride + Math.cos(ph * 1.3) * 0.25 * dt;
+      }
       p.rot += p.spin * dt;
       const t = p.life / p.max;
       const fin = Math.min(1, p.life / Math.max(p.fadeIn, 1e-3));
@@ -166,7 +208,7 @@ class Pool {
       Cc[n * 4 + 3] = p.a * fin * fout;
       M[n * 4] = p.s0 + (p.s1 - p.s0) * Math.sqrt(t);
       M[n * 4 + 1] = p.rot;
-      M[n * 4 + 2] = p.kind;
+      M[n * 4 + 2] = p.kind + t * 0.99;
       M[n * 4 + 3] = (i * 0.618) % 1;
       n++;
     }
@@ -185,23 +227,139 @@ class Pool {
   }
 }
 
+
+/**
+ * Cannonball streaks: one camera-facing ribbon per ball in flight, stretched
+ * back along its velocity. A pale air-wake with a hot core near the ball, so a
+ * shot reads at a glance by day and glows faintly at night. One draw call.
+ */
+class Streaks {
+  readonly mesh: THREE.Mesh;
+  private n = 0;
+  private aHead: Float32Array;
+  private aTail: Float32Array;
+  private geo: THREE.InstancedBufferGeometry;
+  private attrHead: THREE.InstancedBufferAttribute;
+  private attrTail: THREE.InstancedBufferAttribute;
+
+  constructor(private cap: number, uniforms: Record<string, THREE.IUniform>) {
+    this.aHead = new Float32Array(cap * 4);
+    this.aTail = new Float32Array(cap * 4);
+    this.geo = new THREE.InstancedBufferGeometry();
+    const quad = new THREE.PlaneGeometry(1, 1);
+    this.geo.index = quad.index;
+    this.geo.setAttribute('position', quad.getAttribute('position'));
+    this.attrHead = new THREE.InstancedBufferAttribute(this.aHead, 4).setUsage(THREE.DynamicDrawUsage);
+    this.attrTail = new THREE.InstancedBufferAttribute(this.aTail, 4).setUsage(THREE.DynamicDrawUsage);
+    this.geo.setAttribute('aHead', this.attrHead); // xyz, width
+    this.geo.setAttribute('aTail', this.attrTail); // xyz, strength
+    this.geo.instanceCount = 0;
+    const mat = new THREE.ShaderMaterial({
+      uniforms,
+      transparent: true,
+      depthWrite: false,
+      depthTest: true,
+      premultipliedAlpha: true,
+      blending: THREE.NormalBlending,
+      vertexShader: /* glsl */ `
+        attribute vec4 aHead; attribute vec4 aTail;
+        varying vec2 vUv; varying float vStr; varying float vViewZ;
+        void main() {
+          float along = position.x + 0.5; // 0 tail .. 1 head
+          vec3 w = mix(aTail.xyz, aHead.xyz, along);
+          vec3 axis = aHead.xyz - aTail.xyz;
+          vec3 side = cross(axis, cameraPosition - w);
+          float sl = length(side);
+          side = sl > 1e-5 ? side / sl : vec3(1.0, 0.0, 0.0);
+          // thicker toward the ball, a hair past it so the head is rounded
+          w += side * position.y * aHead.w * (0.45 + 0.55 * along);
+          w += normalize(axis + vec3(1e-5)) * aHead.w * 0.5 * step(0.99, along);
+          vUv = vec2(along, position.y * 2.0);
+          vStr = aTail.w;
+          vec4 mv = viewMatrix * vec4(w, 1.0);
+          vViewZ = -mv.z;
+          gl_Position = projectionMatrix * mv;
+        }`,
+      fragmentShader: /* glsl */ `
+        uniform vec3 uLight; uniform float uFlash; uniform float uNight; uniform vec3 uFogColor; uniform vec2 uFogRange;
+        varying vec2 vUv; varying float vStr; varying float vViewZ;
+        void main() {
+          float across = 1.0 - vUv.y * vUv.y;
+          float t = vUv.x;
+          float a = across * t * t * (0.38 + 0.25 * t) * vStr;
+          if (a < 0.003) discard;
+          // hot core right behind the ball, fading into a pale wake
+          float core = pow(max(across, 0.0), 6.0) * smoothstep(0.55, 1.0, t);
+          vec3 wake = vec3(0.98, 0.97, 0.95) * (uLight + uFlash * 0.8);
+          vec3 glow = vec3(3.2, 1.5, 0.45) * core * (0.25 + uNight * 0.9) * vStr;
+          float fog = smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.85;
+          vec3 col = mix(wake * a, uFogColor * a, fog) + glow * (1.0 - fog);
+          gl_FragColor = vec4(col, a);
+        }`,
+    });
+    this.mesh = new THREE.Mesh(this.geo, mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 15;
+  }
+
+  begin() { this.n = 0; }
+
+  /** A ball at `pos` moving at `vel`, `age` seconds after it left the barrel. */
+  add(pos: THREE.Vector3, vel: THREE.Vector3, age: number) {
+    if (this.n >= this.cap) return;
+    const i = this.n++;
+    // grows out of the muzzle, then a fixed slice of the flight path
+    const len = Math.min(age, 0.075);
+    const H = this.aHead, T = this.aTail;
+    H[i * 4] = pos.x; H[i * 4 + 1] = pos.y; H[i * 4 + 2] = pos.z; H[i * 4 + 3] = 0.42;
+    T[i * 4] = pos.x - vel.x * len; T[i * 4 + 1] = pos.y - vel.y * len; T[i * 4 + 2] = pos.z - vel.z * len;
+    T[i * 4 + 3] = Math.max(0.35, 1 - age * 0.18); // fades as the shot slows and drops
+  }
+
+  end() {
+    const n = this.n;
+    this.geo.instanceCount = n;
+    if (n === 0) return;
+    this.attrHead.clearUpdateRanges();
+    this.attrHead.addUpdateRange(0, n * 4);
+    this.attrHead.needsUpdate = true;
+    this.attrTail.clearUpdateRanges();
+    this.attrTail.addUpdateRange(0, n * 4);
+    this.attrTail.needsUpdate = true;
+  }
+}
+
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 export class Particles {
   readonly group = new THREE.Group();
   private alpha: Pool;
   private add: Pool;
+  readonly streaks: Streaks;
   readonly uniforms = {
     uNoiseTex: { value: getSharedTextures().noise as THREE.Texture },
     uSceneDepth: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCamNearFar: { value: new THREE.Vector2(1, 1000) },
+    uLight: globalUniforms.uLight,
+    uFlash: globalUniforms.uFlash,
+    uSunDir: globalUniforms.uSunDir,
+    uSunColor: globalUniforms.uSunColor,
+    uHaze: globalUniforms.uHaze,
+    uCloudCover: globalUniforms.uCloudCover,
+    uFogColor: globalUniforms.uFogColor,
+    uFogRange: globalUniforms.uFogRange,
+    uMist: globalUniforms.uMist,
+    uRain: globalUniforms.uRain,
+    uTime: globalUniforms.uTime,
+    uNight: globalUniforms.uNight,
   };
 
   constructor(scale = 1) {
     this.alpha = new Pool(Math.floor(2600 * scale), false, this.uniforms);
     this.add = new Pool(Math.floor(1400 * scale), true, this.uniforms);
-    this.group.add(this.alpha.mesh, this.add.mesh);
+    this.streaks = new Streaks(256, this.uniforms);
+    this.group.add(this.alpha.mesh, this.streaks.mesh, this.add.mesh);
   }
 
   update(dt: number) {
@@ -226,15 +384,38 @@ export class Particles {
         life: rand(0.1, 0.22), size: rand(0.8, 1.6), sizeEnd: 0.3, color: [6, 3.2, 1.0], colorEnd: [2, 0.5, 0.1], drag: 6, kind: 0, fadeIn: 0.001,
       }, true);
     }
-    // billowing smoke
-    for (let i = 0; i < 9; i++) {
-      const sp = rand(3, 13);
-      const g = rand(0.72, 0.92);
+    // billowing smoke: a fast dense jet that rolls out along the barrel...
+    const rain = globalUniforms.uRain.value;
+    const thin = 1 - rain * 0.3; // rain knocks the smoke down sooner
+    for (let i = 0; i < 8; i++) {
+      const sp = rand(5, 16);
+      const g = rand(0.74, 0.9);
       this.emit({
         x: pos.x + dir.x * 0.6, y: pos.y, z: pos.z + dir.z * 0.6,
-        vx: dir.x * sp + rand(-1.2, 1.2) + carry.x * 0.6, vy: rand(0.2, 1.6), vz: dir.z * sp + rand(-1.2, 1.2) + carry.z * 0.6,
-        life: rand(2.2, 3.8), size: rand(1.2, 2.0), sizeEnd: rand(5.5, 8.5), color: [g * 1.15, g * 1.12, g * 1.08], colorEnd: [g, g, g * 1.02],
-        alpha: rand(0.45, 0.7), drag: 1.7, grav: -0.25, spin: rand(-0.4, 0.4), kind: 1, fadeIn: 0.05,
+        vx: dir.x * sp + rand(-1.4, 1.4) + carry.x * 0.6, vy: rand(0.1, 1.4), vz: dir.z * sp + rand(-1.4, 1.4) + carry.z * 0.6,
+        life: rand(2.4, 4.0) * thin, size: rand(1.0, 1.7), sizeEnd: rand(5.5, 8.5), color: [g * 1.1, g * 1.08, g * 1.05], colorEnd: [g * 1.02, g * 1.02, g * 1.04],
+        alpha: rand(0.5, 0.72), drag: 2.0, grav: -0.3, spin: rand(-0.35, 0.35), kind: 1, fadeIn: 0.04,
+      });
+    }
+    // ...a slow bank that hangs by the gunport and spreads wide on the breeze...
+    for (let i = 0; i < 4; i++) {
+      const sp = rand(1.5, 4);
+      const g = rand(0.82, 0.95);
+      this.emit({
+        x: pos.x + dir.x * 1.2 + rand(-0.6, 0.6), y: pos.y + rand(-0.2, 0.5), z: pos.z + dir.z * 1.2 + rand(-0.6, 0.6),
+        vx: dir.x * sp + carry.x * 0.8, vy: rand(0.3, 0.9), vz: dir.z * sp + carry.z * 0.8,
+        life: rand(4.5, 6.5) * thin, size: rand(2.2, 3.2), sizeEnd: rand(9, 13), color: [g, g, g * 1.02], colorEnd: [g * 1.04, g * 1.04, g * 1.07],
+        alpha: rand(0.28, 0.4), drag: 1.2, grav: -0.18, spin: rand(-0.15, 0.15), kind: 1, fadeIn: 0.25,
+      });
+    }
+    // ...and dark powder wisps flung out of the flash
+    for (let i = 0; i < 3; i++) {
+      const sp = rand(14, 24);
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z,
+        vx: dir.x * sp + rand(-3, 3) + carry.x, vy: rand(-0.5, 2), vz: dir.z * sp + rand(-3, 3) + carry.z,
+        life: rand(0.9, 1.5), size: rand(0.5, 0.8), sizeEnd: rand(2.5, 3.5), color: [0.36, 0.33, 0.3], colorEnd: [0.7, 0.68, 0.66],
+        alpha: rand(0.5, 0.7), drag: 4.5, grav: -0.2, spin: rand(-1, 1), kind: 1, fadeIn: 0.01,
       });
     }
   }
@@ -338,8 +519,12 @@ export class Particles {
     }
   }
 
-  trail(pos: THREE.Vector3) {
-    this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.3, life: 0.9, size: 0.35, sizeEnd: 1.4, color: [0.9, 0.9, 0.9], alpha: 0.28, drag: 1, kind: 1 });
+  /** Thin powder wake left hanging where a ball has passed; it curls away on the wind. */
+  trail(pos: THREE.Vector3, young: number) {
+    this.emit({
+      x: pos.x + rand(-0.08, 0.08), y: pos.y + rand(-0.08, 0.08), z: pos.z + rand(-0.08, 0.08), vy: 0.25,
+      life: rand(1.1, 1.6), size: 0.3, sizeEnd: rand(1.4, 2.0), color: [0.95, 0.94, 0.93], alpha: 0.16 + young * 0.18, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05,
+    });
   }
 
   sparkle(pos: THREE.Vector3, tint?: [number, number, number], scale = 1) {
