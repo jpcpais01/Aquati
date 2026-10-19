@@ -3,8 +3,9 @@ import { PATCH_NOTES } from '../data/patchNotes';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
+import { HOLD_ROOM } from '../game/treasure';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
-import { SeaChart, ChartScene } from './chart';
+import { SeaChart, ChartScene, portMark } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
 import { WreckReport, WreckScreen } from './wreck';
@@ -510,7 +511,7 @@ export class UI {
     detail.innerHTML = `
       <div class="detail-head">
         <div><small>The ${c.title}</small><h3>${c.name}</h3></div>
-        <div class="facts"><span><b>${c.cannonsPerSide * 2}</b>guns</span><span><b>${c.hp}</b>hull</span><span><b>${c.reload.toFixed(1)}s</b>reload</span></div>
+        <div class="facts"><span><b>${c.cannonsPerSide * 2}</b>guns</span><span><b>${c.hp}</b>hull</span><span><b>${c.reload.toFixed(1)}s</b>reload</span><span><b>${HOLD_ROOM[c.id] ?? 12}</b>hold</span></div>
       </div>
       <p class="blurb">${c.blurb}</p>
       <div class="stats">${STAT_LABELS.map(
@@ -638,6 +639,17 @@ export class UI {
     setTimeout(() => el.remove(), (life + 0.7) * 1000);
   }
 
+  /** A toast with a picture: a fine piece of plunder hauled aboard. */
+  lootToast(art: string, rarity: number, kicker: string, title: string, life = 3.2) {
+    const el = document.createElement('div');
+    el.className = `toast loot-toast r-${rarity}`;
+    el.style.setProperty('--life', `${life}s`);
+    el.innerHTML = `${art}<span><small>${kicker}</small><b>${title}</b></span>`;
+    this.toasts.appendChild(el);
+    while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
+    setTimeout(() => el.remove(), (life + 0.7) * 1000);
+  }
+
   /** Captain's view chrome: the toggle, walk hints, reticle and the touch spyglass. */
   setFpv(on: boolean) {
     this.hud.classList.toggle('fpv', on);
@@ -722,6 +734,12 @@ export class UI {
   }
 
   /** Writes a HUD value only when it changes; `bump` pops the chip when a count goes up. */
+  /** The hold chip: room used of room aboard, bumping as plunder comes in. */
+  setHold(used: number, cap: number) {
+    this.hudSet('hud-hold', `${used}/${cap}`, true);
+    $('hud-hold-chip').classList.toggle('full', used >= cap);
+  }
+
   private hudSet(id: string, v: string, bump = false) {
     if (this.hudCache.get(id) === v) return;
     const prev = this.hudCache.get(id);
@@ -1087,7 +1105,7 @@ export class UI {
     this.chart.setTerrain(terrain);
   }
 
-  drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number; tier?: number }[], islands: Island[], discovered: Set<string>) {
+  drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number; tier?: number }[], islands: Island[], discovered: Set<string>, ports: { x: number; z: number }[] = []) {
     const g = this.map;
     const S = this.mapCanvas.width;
     const R = 420; // world metres from centre to edge
@@ -1121,6 +1139,27 @@ export class UI {
       g.beginPath();
       g.arc(x, y, t >= 3 ? 4.5 : t ? 3.5 : 2.6, 0, Math.PI * 2);
       g.fill();
+    }
+    // trading ports: in view where they are, else the nearest pinned to the rim to steer by
+    let near: { x: number; z: number } | null = null;
+    let nd = Infinity;
+    let inView = false;
+    for (const pt of ports) {
+      const d = Math.hypot(pt.x - player.pos.x, pt.z - player.pos.z);
+      if (d < R - 20) {
+        portMark(g, ...toMap(pt.x, pt.z), 13);
+        inView = true;
+      } else if (d < nd) {
+        nd = d;
+        near = pt;
+      }
+    }
+    if (near && !inView) {
+      const a = Math.atan2(near.z - player.pos.z, near.x - player.pos.x);
+      const rr = S / 2 - 18;
+      g.globalAlpha = 0.9;
+      portMark(g, S / 2 + Math.cos(a) * rr, S / 2 + Math.sin(a) * rr, 10);
+      g.globalAlpha = 1;
     }
     const tri = (s: Ship, color: string, size: number) => {
       const [x, y] = toMap(s.pos.x, s.pos.z);

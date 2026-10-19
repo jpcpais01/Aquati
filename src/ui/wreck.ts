@@ -11,7 +11,7 @@ import { crest, icon, ICONS } from './art';
 
 export interface VoyageEvent {
   t: number;
-  kind: 'kill' | 'chest' | 'isle';
+  kind: 'kill' | 'chest' | 'isle' | 'trade';
   text: string;
   detail: string;
 }
@@ -127,7 +127,7 @@ function quip(r: WreckReport) {
   return fits[(Math.random() * fits.length) | 0];
 }
 
-const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle' };
+const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle', trade: 'coin' };
 
 export class WreckScreen {
   private cine = $('cine');

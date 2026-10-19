@@ -23,10 +23,10 @@ export const DECK = 1.8;
 const SHIP_X = -3;
 const TAU = Math.PI * 2;
 
-const lin = (hex: number) => new THREE.Color(hex).convertSRGBToLinear();
+export const lin = (hex: number) => new THREE.Color(hex).convertSRGBToLinear();
 
-type Bucket = 'wood' | 'iron' | 'glow' | 'gold';
-type Paint = THREE.Color | ((p: THREE.Vector3) => THREE.Color);
+export type Bucket = 'wood' | 'iron' | 'glow' | 'gold';
+export type Paint = THREE.Color | ((p: THREE.Vector3) => THREE.Color);
 interface Xf {
   rx?: number;
   ry?: number;
@@ -35,7 +35,7 @@ interface Xf {
   flat?: boolean;
 }
 
-function colorize(geo: THREE.BufferGeometry, paint: Paint): THREE.BufferGeometry {
+export function colorize(geo: THREE.BufferGeometry, paint: Paint): THREE.BufferGeometry {
   const g = geo.index ? geo.toNonIndexed() : geo;
   for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal') g.deleteAttribute(k);
   const pos = g.getAttribute('position');
@@ -52,7 +52,7 @@ function colorize(geo: THREE.BufferGeometry, paint: Paint): THREE.BufferGeometry
   return g;
 }
 
-class Builder {
+export class Builder {
   readonly parts: Record<Bucket, THREE.BufferGeometry[]> = { wood: [], iron: [], glow: [], gold: [] };
 
   add(geo: THREE.BufferGeometry, pos: [number, number, number], paint: Paint, o: Xf = {}) {
@@ -117,7 +117,7 @@ class Builder {
   }
 }
 
-const C = {
+export const C = {
   timber: lin(0x5a3d26),
   timberDark: lin(0x3e2a1a),
   pile: lin(0x5b4330),
@@ -141,7 +141,7 @@ const C = {
   door: lin(0x7a3626),
 };
 
-const shade = (c: THREE.Color, f: number) => c.clone().multiplyScalar(f);
+export const shade = (c: THREE.Color, f: number) => c.clone().multiplyScalar(f);
 
 // ------------------------------------------------------------------ sign atlas
 
