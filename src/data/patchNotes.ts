@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T12:00Z',
     entries: [
       {
+        title: 'Wakes with a wilder edge',
+        notes: [
+          'Ship wakes no longer look ruler-straight. The wake arms now wander, kink and fray as they spread, and they fade in and out in patches.',
+          'Churned water behind a hull is choppy instead of glassy, and the foam drifts in slow eddies and breaks white only here and there. The bow surges as she pitches, so no two wakes look the same.',
+        ],
+      },
+      {
         title: 'Frame rate counter',
         notes: ['A tiny FPS counter now sits at the top of the screen, refreshed twice a second.'],
       },
