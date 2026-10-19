@@ -15,6 +15,7 @@ import { WakeField } from '../world/wakeField';
 import { buildWaves } from '../world/waves';
 import { Ship } from '../ships/ship';
 import { PirateAI } from '../ships/ai';
+import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
 import { CameraRig } from './cameraRig';
@@ -68,6 +69,7 @@ export class Game {
   private birds!: Birds;
   private windField!: WindField;
   private wisps!: WindWisps;
+  private crew!: CrewSystem;
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
@@ -143,6 +145,8 @@ export class Game {
     this.world.gustAt = (x, z) => this.windField.at(x, z);
     this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
+    this.crew = new CrewSystem(q.tier);
+    this.opaque.add(this.crew.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = createEnvironment(this.renderer);
@@ -333,6 +337,7 @@ export class Game {
     for (const s of this.ships.slice()) this.removeShip(s);
     this.projectiles.clear();
     this.loot.clear();
+    this.crew.clear();
     this.player = null;
     this.preview = null;
   }
@@ -552,6 +557,7 @@ export class Game {
     this.rig.update(realDt, fpos, fvel, w.time);
     w.listener.copy(this.rig.target);
     w.listenerZoom = this.rig.distance;
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5);
 
     // gusts roll across whatever the camera is looking at
     const reach = clamp(this.rig.distance * 0.9, 70, 260);
