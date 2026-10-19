@@ -1,4 +1,6 @@
-# Aquati
+# Shores of Fortune
+
+_(repo and code name: Aquati)_
 
 A sun-drenched pirate archipelago: sail, explore and battle. Built with **Vite + TypeScript + three.js (WebGL 2)** as an installable PWA, deployed to Vercel from `main`.
 

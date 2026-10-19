@@ -1,5 +1,5 @@
 /* =====================================================================
-   Aquati UI: glass over a living sea.
+   Shores of Fortune UI: glass over a living sea.
    Inter for the interface, Cinzel only for proper names (the logo, ships,
    isles). Frosted ocean glass, warm gold for the one thing you should
    press, a white focus glow for whatever you're on.
@@ -395,17 +395,93 @@ kbd {
 
 .logo {
   position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
   font-family: var(--serif);
   font-weight: 700;
-  font-size: clamp(48px, 10vw, 112px);
-  letter-spacing: 0.2em;
-  padding-left: 0.2em;
-  background: linear-gradient(180deg, #fffaf0 0%, #ffe3a0 50%, #e2a84a 100%);
+  font-size: clamp(44px, 9vw, 104px);
+  line-height: 1;
+  filter: drop-shadow(0 6px 26px rgba(0, 0, 0, 0.35));
+}
+
+/* "— SHORES of —": a small engraved line riding above the name */
+.logo-pre {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  font-size: 0.26em;
+  font-weight: 600;
+  letter-spacing: 0.5em;
+  padding-left: 0.5em;
+  text-transform: uppercase;
+  color: #ffe9b8;
+  margin-bottom: 0.32em;
+}
+
+.logo-pre em {
+  font-style: italic;
+  font-family: Georgia, 'Times New Roman', serif;
+  text-transform: none;
+  letter-spacing: 0.08em;
+  font-size: 1.25em;
+  font-weight: 400;
+  color: var(--gold);
+}
+
+.logo-pre::before,
+.logo-pre::after {
+  content: '';
+  width: 2.6em;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(244, 199, 101, 0.9));
+}
+
+.logo-pre::after {
+  background: linear-gradient(270deg, transparent, rgba(244, 199, 101, 0.9));
+}
+
+.logo-main {
+  position: relative;
+  letter-spacing: 0.14em;
+  padding-left: 0.14em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #fffaf0 0%, #ffe3a0 48%, #e2a84a 78%, #b9802c 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 6px 26px rgba(0, 0, 0, 0.35));
-  line-height: 1;
+}
+
+/* a slow glint of sunlight sweeping across the gilt letters */
+.logo-main::after {
+  content: 'Fortune';
+  position: absolute;
+  inset: 0;
+  padding-left: inherit;
+  letter-spacing: inherit;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, 0.85) 50%, transparent 62%) -160% 0 / 220% 100% no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: logoGlint 7s ease-in-out 1.2s infinite;
+  pointer-events: none;
+}
+
+@keyframes logoGlint {
+  0%,
+  70% {
+    background-position: -160% 0;
+  }
+  100% {
+    background-position: 260% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-main::after {
+    animation: none;
+    display: none;
+  }
 }
 
 .tag {
@@ -1292,7 +1368,7 @@ kbd {
   }
 
   .menu-head .logo {
-    font-size: clamp(36px, 12vw, 54px);
+    font-size: clamp(34px, 10.5vw, 50px);
   }
 
   .menu-head .tag {

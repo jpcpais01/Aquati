@@ -66,7 +66,7 @@ export class Terrain {
     const pickName = () => names.splice(Math.floor(rnd() * names.length), 1)[0] ?? 'Isla';
     // A hero volcano anchors the composition north of the spawn point.
     this.islands.push({
-      name: 'Monte Aquati', kind: 'volcanic', x: -30, z: -170, r: 125, peak: 62, rot: 0.4, stretch: 1.18,
+      name: 'Monte Fortuna', kind: 'volcanic', x: -30, z: -170, r: 125, peak: 62, rot: 0.4, stretch: 1.18,
       seed: rnd() * 100, tint: 0.2,
     });
     // A lagoon atoll near spawn so the first thing you see is turquoise water.
