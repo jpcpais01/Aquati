@@ -279,6 +279,13 @@ const STREAKS: Record<string, [number, number, number, number, number, number]> 
   ghost: [0.6, 2.6, 1.4, 1, 0.13, 0.5],
   rainbow: [1, 1, 1, 2, 0.2, 0.58],
   starfall: [2.2, 2.0, 3.2, 1, 0.16, 0.5],
+  // shot types
+  fuse: [2.4, 1.3, 0.45, 1, 0.09, 0.36],
+  fire: [3.4, 1.3, 0.32, 1, 0.22, 0.7],
+  chain: [0, 0, 0, 0, 0.05, 0.62],
+  grape: [0, 0, 0, 0, 0.045, 0.13],
+  // the chain itself, slung between two half-balls: solid iron, no glow
+  link: [0.045, 0.045, 0.05, 3, 0, 0.07],
 };
 
 /**
@@ -346,7 +353,13 @@ class Streaks {
           float across = 1.0 - vUv.y * vUv.y;
           float t = vUv.x;
           float fog = smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.85;
-          if (vStyle.w < 0.5) {
+          if (vStyle.w > 2.5) {
+            // solid iron (chain shot's chain): an opaque, softly edged strip
+            float a = smoothstep(1.0, 0.55, abs(vUv.y)) * vStr;
+            if (a < 0.01) discard;
+            vec3 col = mix(vStyle.rgb * (uLight + uFlash * 0.8) * (0.7 + 0.6 * across), uFogColor, fog);
+            gl_FragColor = vec4(col * a, a);
+          } else if (vStyle.w < 0.5) {
             float a = across * t * t * (0.38 + 0.25 * t) * vStr;
             if (a < 0.003) discard;
             // hot core right behind the ball, fading into a pale wake
@@ -373,6 +386,17 @@ class Streaks {
   }
 
   begin() { this.n = 0; }
+
+  /** A fixed segment from `tail` to `head` (the chain between chain-shot halves). */
+  addSeg(head: THREE.Vector3, tail: THREE.Vector3, style: string, strength = 1) {
+    if (this.n >= this.cap) return;
+    const i = this.n++;
+    const st = STREAKS[style] ?? STREAKS.powder;
+    const H = this.aHead, T = this.aTail, S = this.aStyle;
+    H[i * 4] = head.x; H[i * 4 + 1] = head.y; H[i * 4 + 2] = head.z; H[i * 4 + 3] = st[5];
+    T[i * 4] = tail.x; T[i * 4 + 1] = tail.y; T[i * 4 + 2] = tail.z; T[i * 4 + 3] = strength;
+    S[i * 4] = st[0]; S[i * 4 + 1] = st[1]; S[i * 4 + 2] = st[2]; S[i * 4 + 3] = st[3];
+  }
 
   /** A ball at `pos` moving at `vel`, `age` seconds after it left the barrel. */
   add(pos: THREE.Vector3, vel: THREE.Vector3, age: number, style = 'powder') {
@@ -439,7 +463,7 @@ export class Particles {
   constructor(scale = 1) {
     this.alpha = new Pool(Math.floor(2600 * scale), false, this.uniforms);
     this.add = new Pool(Math.floor(1400 * scale), true, this.uniforms);
-    this.streaks = new Streaks(256, this.uniforms);
+    this.streaks = new Streaks(640, this.uniforms);
     this.group.add(this.alpha.mesh, this.streaks.mesh, this.add.mesh);
   }
 
@@ -786,6 +810,17 @@ export class Particles {
         }
         break;
       }
+      case 'fuse':
+        // a lit fuse sputtering on the shell, and a thin thread of powder smoke
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vx: rand(-1.5, 1.5), vy: rand(-0.5, 2), vz: rand(-1.5, 1.5), life: rand(0.18, 0.4), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [8, 5, 1.6], colorEnd: [3, 1, 0.1], grav: 6, drag: 1, kind: 2, fadeIn: 0.001 }, true);
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: 0.25, life: rand(0.9, 1.3), size: 0.22, sizeEnd: rand(1.0, 1.4), color: [0.55, 0.52, 0.5], alpha: 0.18 + young * 0.14, drag: 1, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.05 });
+        break;
+      case 'fire':
+        // red-hot iron: a flame streaming off the ball, embers and a ribbon of dark smoke
+        this.emit({ x: pos.x + j(), y: pos.y + j(), z: pos.z + j(), vy: rand(0.5, 1.5), life: rand(0.3, 0.5), size: rand(0.55, 0.75), sizeEnd: 0.15, color: [9, 3.8, 0.9], colorEnd: [2.6, 0.45, 0.05], spin: rand(-3, 3), kind: 0, fadeIn: 0.001 }, true);
+        if (Math.random() < 0.55) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.8, 0.8), vy: rand(0, 1.6), vz: rand(-0.8, 0.8), life: rand(0.5, 1.0), size: rand(0.14, 0.24), sizeEnd: 0.04, color: [8, 3.4, 0.7], colorEnd: [2, 0.3, 0.02], grav: 4, drag: 0.6, kind: 2, fadeIn: 0.01 }, true);
+        if (Math.random() < 0.6) this.emit({ x: pos.x, y: pos.y, z: pos.z, vy: 0.5, life: rand(1.4, 2.0), size: 0.35, sizeEnd: rand(1.8, 2.4), color: [0.3, 0.27, 0.25], colorEnd: [0.46, 0.44, 0.43], alpha: 0.2 + young * 0.18, drag: 1, spin: rand(-0.6, 0.6), kind: 1, fadeIn: 0.06 });
+        break;
       case 'starfall':
         this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.3, 0.3) - (vel?.x ?? 0) * 0.02, vy: rand(-0.4, 0.2), vz: rand(-0.3, 0.3) - (vel?.z ?? 0) * 0.02, life: rand(1.3, 2.2), size: rand(0.2, 0.34), sizeEnd: 0.06, color: Math.random() < 0.5 ? [6, 6, 7.5] : [4.5, 3.2, 8], colorEnd: [1.6, 1.2, 3], grav: 0.5, drag: 1, kind: 2, fadeIn: 0.02 }, true);
         if (Math.random() < 0.5) this.emit({ x: pos.x, y: pos.y, z: pos.z, life: rand(0.3, 0.5), size: 0.5, sizeEnd: 0.1, color: [3, 2.6, 5.5], colorEnd: [0.8, 0.5, 2], kind: 0, fadeIn: 0.001 }, true);
@@ -834,6 +869,164 @@ export class Particles {
           life: rand(0.9, 1.6), size: rand(0.25, 0.5), sizeEnd: 0.05, color: t(2.6), colorEnd: [1.5, 1.2, 0.5], drag: 0.6, kind: 2, fadeIn: 0.02,
         }, true);
       }
+    }
+  }
+
+  // ------------------------------------------------------------- shot types
+
+  /** What a special load adds to the gun's own (vault) blast. */
+  ammoMuzzle(pos: THREE.Vector3, dir: THREE.Vector3, carry: THREE.Vector3, ammo: string) {
+    switch (ammo) {
+      case 'shell':
+        // the fuse catches as the shell leaves: a spit of bright sparks
+        this.sparks(pos, dir, carry, 7, [9, 6, 2], [3, 1, 0.15], 2);
+        break;
+      case 'fire':
+        // red-hot shot: a gout of flame and a spray of embers out of the gunport
+        for (let i = 0; i < 12; i++) {
+          const sp = rand(8, 20);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rand(-1.5, 1.5) + carry.x, vy: rand(0, 1.5), vz: dir.z * sp + rand(-1.5, 1.5) + carry.z,
+            life: rand(0.25, 0.5), size: rand(0.5, 0.9), sizeEnd: rand(1.6, 2.4), color: [10, 4.4, 1], colorEnd: [2.6, 0.4, 0.04], drag: 3, grav: -2, spin: rand(-2, 2), kind: 0, fadeIn: 0.001,
+          }, true);
+        }
+        this.embers(pos, dir, carry, 18, 1.1);
+        break;
+      case 'chain':
+        // iron grinding on iron as the chain whips out
+        this.sparks(pos, dir, carry, 5, [6, 6, 6.5], [1.6, 1.6, 2], 2);
+        break;
+      case 'grape': {
+        // a wide cone: the bag bursts at the muzzle
+        for (let i = 0; i < 14; i++) {
+          const sp = rand(14, 30);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rand(-5, 5) + carry.x, vy: rand(-1, 3), vz: dir.z * sp + rand(-5, 5) + carry.z,
+            life: rand(0.12, 0.26), size: rand(0.16, 0.26), sizeEnd: 0.04, color: [7, 5, 2.4], colorEnd: [2, 0.8, 0.2], drag: 5, kind: 2, fadeIn: 0.001,
+          }, true);
+        }
+        for (let i = 0; i < 5; i++) {
+          const sp = rand(6, 14);
+          this.emit({
+            x: pos.x + dir.x, y: pos.y, z: pos.z + dir.z, vx: dir.x * sp + rand(-3, 3) + carry.x, vy: rand(0, 1.2), vz: dir.z * sp + rand(-3, 3) + carry.z,
+            life: rand(1.6, 2.6), size: rand(0.8, 1.2), sizeEnd: rand(4, 6), color: [0.88, 0.87, 0.85], alpha: 0.5, drag: 2.4, grav: -0.2, spin: rand(-0.4, 0.4), kind: 1, fadeIn: 0.03,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  /** An explosive shell bursting: fireball, shrapnel, a pall of smoke, and a tall column of sea if it burst in the water. */
+  shellBurst(pos: THREE.Vector3, water: boolean, scale = 1) {
+    const s = scale;
+    this.emit({ x: pos.x, y: pos.y + 0.5, z: pos.z, life: 0.16, size: 6 * s, sizeEnd: 11 * s, color: [14, 9, 4], colorEnd: [4, 1.4, 0.3], kind: 0, fadeIn: 0.001 }, true);
+    for (let i = 0; i < 16; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rand(2, 9) * s;
+      this.emit({
+        x: pos.x, y: pos.y + 0.6, z: pos.z, vx: Math.cos(a) * sp, vy: rand(2, 10) * s, vz: Math.sin(a) * sp,
+        life: rand(0.35, 0.75), size: rand(1.2, 2.2) * s, sizeEnd: rand(2.5, 3.6) * s, color: [10, 4.2, 1.1], colorEnd: [2.2, 0.35, 0.04], drag: 3, grav: -1, spin: rand(-2, 2), kind: 0, fadeIn: 0.001,
+      }, true);
+    }
+    // shrapnel: white-hot streaks flung out low and fast
+    for (let i = 0; i < 26; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rand(14, 34);
+      this.emit({
+        x: pos.x, y: pos.y + 0.5, z: pos.z, vx: Math.cos(a) * sp, vy: rand(1, 12), vz: Math.sin(a) * sp,
+        life: rand(0.25, 0.6), size: rand(0.18, 0.3), sizeEnd: 0.04, color: [9, 7, 3.6], colorEnd: [3, 1, 0.2], grav: 10, drag: 2.2, kind: 2, fadeIn: 0.001,
+      }, true);
+    }
+    for (let i = 0; i < 12; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rand(4, 12);
+      const br = rand(0.25, 0.5);
+      this.emit({
+        x: pos.x, y: pos.y + 0.5, z: pos.z, vx: Math.cos(a) * sp, vy: rand(5, 14), vz: Math.sin(a) * sp,
+        life: rand(1, 1.8), size: rand(0.15, 0.35), color: [br, br * 0.9, br * 0.8], grav: 18, drag: 0.3, spin: rand(-14, 14), kind: 3, fadeIn: 0.001,
+      });
+    }
+    // a black-brown pall that rolls up and hangs
+    for (let i = 0; i < 9; i++) {
+      this.emit({
+        x: pos.x + rand(-1, 1), y: pos.y + rand(0.5, 2), z: pos.z + rand(-1, 1), vx: rand(-1.6, 1.6), vy: rand(1.5, 4), vz: rand(-1.6, 1.6),
+        life: rand(2.6, 4.5), size: 2.2 * s, sizeEnd: rand(7, 10) * s, color: [0.2, 0.18, 0.17], colorEnd: [0.48, 0.46, 0.45], alpha: 0.62, drag: 0.9, grav: -0.35, spin: rand(-0.4, 0.4), kind: 1, fadeIn: 0.06,
+      });
+    }
+    if (water) {
+      // the sea thrown up in a white column around the blast
+      this.splash(pos, 1.5);
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        this.emit({
+          x: pos.x, y: pos.y + 0.2, z: pos.z, vx: Math.cos(a) * 9, vy: rand(1, 3), vz: Math.sin(a) * 9,
+          life: rand(0.8, 1.2), size: 1.4, sizeEnd: 3.4, color: [1.3, 1.36, 1.4], alpha: 0.5, drag: 2.4, grav: 2, kind: 1, fadeIn: 0.01,
+        });
+      }
+    }
+  }
+
+  /** Fire shot striking home: a burst of flame that catches and climbs. */
+  fireHit(pos: THREE.Vector3) {
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.2, size: 4, sizeEnd: 6, color: [10, 4.5, 1.2], colorEnd: [3, 0.6, 0.06], kind: 0, fadeIn: 0.001 }, true);
+    for (let i = 0; i < 14; i++) {
+      this.emit({
+        x: pos.x + rand(-0.6, 0.6), y: pos.y + rand(-0.2, 0.4), z: pos.z + rand(-0.6, 0.6), vx: rand(-1.5, 1.5), vy: rand(2.5, 6), vz: rand(-1.5, 1.5),
+        life: rand(0.4, 0.8), size: rand(0.8, 1.5), sizeEnd: 0.3, color: [9, 3.8, 0.9], colorEnd: [3, 0.5, 0.06], spin: rand(-2, 2), drag: 1, kind: 0, fadeIn: 0.02,
+      }, true);
+    }
+    for (let i = 0; i < 16; i++) {
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: rand(-7, 7), vy: rand(2, 9), vz: rand(-7, 7),
+        life: rand(0.8, 1.6), size: rand(0.14, 0.26), sizeEnd: 0.04, color: [8, 3.4, 0.7], colorEnd: [2.4, 0.4, 0.04], grav: 9, drag: 0.7, kind: 2, fadeIn: 0.01,
+      }, true);
+    }
+  }
+
+  /** Hot iron into the sea: a hissing gout of steam. */
+  steam(pos: THREE.Vector3) {
+    this.splash(pos, 0.6);
+    for (let i = 0; i < 9; i++) {
+      this.emit({
+        x: pos.x + rand(-0.5, 0.5), y: pos.y + 0.3, z: pos.z + rand(-0.5, 0.5), vx: rand(-0.8, 0.8), vy: rand(2, 5), vz: rand(-0.8, 0.8),
+        life: rand(1.4, 2.4), size: 0.8, sizeEnd: rand(3.5, 5), color: [1.32, 1.34, 1.36], alpha: 0.42, drag: 1.4, grav: -0.8, spin: rand(-0.6, 0.6), kind: 1, fadeIn: 0.04,
+      });
+    }
+  }
+
+  /** A grape-shot ball striking a deck: a puff of splinters, not a breach. */
+  pelletHit(pos: THREE.Vector3) {
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.08, size: 0.9, sizeEnd: 1.4, color: [7, 4.2, 1.6], colorEnd: [2, 0.6, 0.1], kind: 0, fadeIn: 0.001 }, true);
+    for (let i = 0; i < 4; i++) {
+      const br = rand(0.55, 0.9);
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: rand(-4, 4), vy: rand(2, 7), vz: rand(-4, 4),
+        life: rand(0.6, 1.1), size: rand(0.08, 0.2), color: [0.55 * br, 0.36 * br, 0.2 * br], grav: 18, drag: 0.4, spin: rand(-14, 14), kind: 3, fadeIn: 0.001,
+      });
+    }
+  }
+
+  /** Chain shot through the rigging: canvas torn to ribbons, cordage and splinters whirling away. */
+  shreds(pos: THREE.Vector3, vel: THREE.Vector3, sail: [number, number, number]) {
+    for (let i = 0; i < 18; i++) {
+      this.emit({
+        x: pos.x + rand(-1.2, 1.2), y: pos.y + rand(-1, 1), z: pos.z + rand(-1.2, 1.2), vx: vel.x * 0.06 + rand(-3, 3), vy: rand(-0.5, 3), vz: vel.z * 0.06 + rand(-3, 3),
+        life: rand(1.6, 3), size: rand(0.18, 0.45), color: sail, grav: 2.2, drag: 2.4, spin: rand(-9, 9), kind: 3, fadeIn: 0.001,
+      });
+    }
+    for (let i = 0; i < 6; i++) {
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: vel.x * 0.05 + rand(-4, 4), vy: rand(0, 4), vz: vel.z * 0.05 + rand(-4, 4),
+        life: rand(1, 1.8), size: rand(0.1, 0.18), color: [0.3, 0.22, 0.14], grav: 9, drag: 1, spin: rand(-12, 12), kind: 3, fadeIn: 0.001,
+      });
+    }
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, vx: vel.x * 0.04, vz: vel.z * 0.04, life: 1.4, size: 1, sizeEnd: 3.4, color: sail, alpha: 0.3, drag: 2, kind: 1 });
+    for (let i = 0; i < 4; i++) {
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: rand(-8, 8), vy: rand(-2, 6), vz: rand(-8, 8),
+        life: rand(0.15, 0.3), size: rand(0.16, 0.24), sizeEnd: 0.04, color: [6, 6, 6.5], colorEnd: [1.5, 1.5, 2], drag: 4, kind: 2, fadeIn: 0.001,
+      }, true);
     }
   }
 

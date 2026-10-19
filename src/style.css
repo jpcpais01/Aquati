@@ -2899,90 +2899,11 @@ body[data-hud='large'] #hud {
   box-shadow: 0 12px 34px rgba(0, 8, 14, 0.28), var(--hi);
 }
 
-.broadside {
-  display: flex;
-  align-items: center;
-  gap: calc(9px * var(--k));
-  font: 700 max(9px, calc(10px * var(--k))) var(--sans);
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-  padding: calc(6px * var(--k)) calc(12px * var(--k));
-  border-radius: 999px;
-  transition: color 0.2s, background 0.2s;
-}
-
-.broadside .kd {
-  margin: 0;
-}
-
-.broadside.ready {
-  color: var(--ink);
-  background: rgba(244, 199, 101, 0.12);
-}
-
-.broadside.flash {
-  animation: pulse 0.35s ease;
-}
-
 @keyframes pulse {
   50% {
     background: rgba(255, 117, 99, 0.32);
     transform: scale(1.04);
   }
-}
-
-.ring {
-  position: relative;
-  width: calc(38px * var(--k));
-  height: calc(38px * var(--k));
-  flex: none;
-}
-
-.ring > svg {
-  width: 100%;
-  height: 100%;
-  transform: rotate(-90deg);
-}
-
-.ring > svg circle {
-  fill: rgba(4, 18, 26, 0.45);
-  stroke: rgba(255, 255, 255, 0.1);
-  stroke-width: 3.5;
-}
-
-.ring > svg circle.p {
-  fill: none;
-  stroke: var(--aqua);
-  stroke-linecap: round;
-  stroke-dasharray: 106.8;
-  stroke-dashoffset: 0;
-  transition: stroke 0.2s;
-}
-
-.ring .ti {
-  position: absolute;
-  inset: 0;
-  color: var(--ink-4);
-  transition: color 0.2s, transform 0.25s cubic-bezier(0.2, 0.9, 0.3, 1.5);
-}
-
-.ring .ico {
-  width: calc(20px * var(--k));
-  height: calc(20px * var(--k));
-}
-
-#bs-port .ring .ti {
-  transform: scaleX(-1);
-}
-
-.broadside.ready .ring > svg circle.p {
-  stroke: var(--gold);
-}
-
-.broadside.ready .ring .ti {
-  color: var(--gold);
-  filter: drop-shadow(0 0 6px rgba(244, 199, 101, 0.6));
 }
 
 .helm {
@@ -2991,9 +2912,298 @@ body[data-hud='large'] #hud {
   align-items: center;
   gap: 2px;
   min-width: calc(128px * var(--k));
-  padding: calc(5px * var(--k)) calc(16px * var(--k)) calc(4px * var(--k));
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  padding: calc(5px * var(--k)) calc(14px * var(--k)) calc(4px * var(--k)) calc(18px * var(--k));
   border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ------------------------------------------------------------------ the shot rack
+   A slot per kind of shot. The loaded one sits forward in a white ring whose
+   halves are the two broadsides: the left half fills as the port guns reload,
+   the right half as the starboard guns do, and each turns gold when run out. */
+
+.rack {
+  --rp: 1;
+  --rs: 1;
+  --ac: #d9e2e6;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: calc(3px * var(--k));
+  padding: 0 calc(6px * var(--k)) 0 calc(2px * var(--k));
+  pointer-events: auto;
+}
+
+.slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(44px * var(--k));
+  height: calc(48px * var(--k));
+  padding: 0;
+  border: 0;
+  border-radius: calc(14px * var(--k));
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: transform 0.25s var(--spring), opacity 0.2s;
+}
+
+.slot .ball {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: calc(34px * var(--k));
+  height: calc(34px * var(--k));
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03) 70%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+  transition: transform 0.3s var(--spring), box-shadow 0.2s, background 0.2s;
+}
+
+.ammo-ico {
+  width: 88%;
+  height: 88%;
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+
+.slot .kd {
+  position: absolute;
+  top: calc(1px * var(--k));
+  left: calc(1px * var(--k));
+  min-width: 0;
+  margin: 0;
+  padding: 0 calc(3px * var(--k));
+  border: 0;
+  border-radius: 4px;
+  background: rgba(4, 16, 24, 0.7);
+  color: var(--ink-3);
+  font: 700 max(8px, calc(8.5px * var(--k))) / 1.45 var(--sans);
+}
+
+.slot .n {
+  position: absolute;
+  bottom: calc(-1px * var(--k));
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: calc(16px * var(--k));
+  padding: 0 calc(4px * var(--k));
+  border-radius: 99px;
+  background: rgba(4, 16, 24, 0.86);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  color: var(--ink-2);
+  font: 800 max(8.5px, calc(9px * var(--k))) / 1.5 var(--sans);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.slot:hover .ball {
+  transform: translateY(-2px) scale(1.05);
+  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.14), rgba(0, 0, 0, 0.12));
+}
+
+.slot.empty {
+  opacity: 0.38;
+}
+
+.slot.empty .n {
+  color: #ff9d8c;
+}
+
+/* the loaded shot: forward, ringed, its colour glowing faintly behind it */
+.slot.on {
+  z-index: 1;
+  color: var(--ink);
+  transform: scale(1.12);
+}
+
+.slot.on .ball {
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--ac) 30%, transparent), rgba(4, 16, 24, 0.4) 72%);
+}
+
+.slot.on .kd {
+  background: var(--ink);
+  color: #06141e;
+}
+
+.slot.on .n {
+  color: var(--ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ac) 70%, transparent);
+}
+
+/* reload halves (port left, starboard right): fill aqua, gold when run out */
+.slot.on .ball::before,
+.slot.on .ball::after {
+  content: '';
+  position: absolute;
+  inset: calc(-4px * var(--k));
+  border-radius: 50%;
+  --fill: var(--aqua);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  pointer-events: none;
+  transition: filter 0.2s;
+}
+
+.slot.on .ball::before {
+  background: conic-gradient(from 180deg, var(--fill) calc(var(--rp) * 178deg), rgba(255, 255, 255, 0.14) 0 178deg, transparent 0);
+}
+
+.slot.on .ball::after {
+  transform: scaleX(-1);
+  background: conic-gradient(from 180deg, var(--fill) calc(var(--rs) * 178deg), rgba(255, 255, 255, 0.14) 0 178deg, transparent 0);
+}
+
+.rack.p-ready .slot.on .ball::before,
+.rack.s-ready .slot.on .ball::after {
+  --fill: #ffffff;
+}
+
+/* a foe sits in that side's loaded arc: that half warms to gold */
+.rack.p-hot.p-ready .slot.on .ball::before,
+.rack.s-hot.s-ready .slot.on .ball::after {
+  --fill: var(--gold);
+  filter: drop-shadow(0 0 4px rgba(244, 199, 101, 0.9));
+}
+
+.rack.flash-p .slot.on .ball::before,
+.rack.flash-s .slot.on .ball::after {
+  animation: half-flash 0.4s ease;
+}
+
+@keyframes half-flash {
+  40% {
+    --fill: var(--coral);
+    filter: drop-shadow(0 0 6px rgba(255, 117, 99, 0.95));
+  }
+}
+
+.rack.ping-p .slot.on .ball::before,
+.rack.ping-s .slot.on .ball::after {
+  animation: half-ping 0.6s ease-out;
+}
+
+@keyframes half-ping {
+  0% {
+    filter: drop-shadow(0 0 0 rgba(255, 230, 160, 1)) brightness(2);
+  }
+  100% {
+    filter: drop-shadow(0 0 8px rgba(255, 230, 160, 0)) brightness(1);
+  }
+}
+
+/* rammed home: the ball drops in with a little bounce */
+.slot.load .ammo-ico,
+.fbtn.ammo.load .ab {
+  animation: ball-load 0.45s var(--spring);
+}
+
+@keyframes ball-load {
+  0% {
+    transform: translateY(-40%) scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(6%) scale(1.06);
+    opacity: 1;
+  }
+}
+
+.slot.deny,
+.chip-a.deny {
+  animation: deny 0.38s ease;
+}
+
+@keyframes deny {
+  20%,
+  60% {
+    translate: -3px 0;
+  }
+  40%,
+  80% {
+    translate: 3px 0;
+  }
+}
+
+/* shot found in salvage: "+n" rises off the slot */
+.gain {
+  position: absolute;
+  top: calc(-6px * var(--k));
+  left: 50%;
+  translate: -50% 0;
+  font: 800 max(10px, calc(11px * var(--k))) var(--sans);
+  font-style: normal;
+  color: var(--ac);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gain-on .gain {
+  animation: gain-rise 1.3s var(--ease);
+}
+
+.gain-on .ball,
+.fbtn.ammo.gain-on .ab {
+  animation: gain-bump 0.5s var(--spring);
+}
+
+@keyframes gain-rise {
+  0% {
+    opacity: 0;
+    translate: -50% 6px;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: -50% -22px;
+  }
+}
+
+@keyframes gain-bump {
+  40% {
+    transform: scale(1.22);
+  }
+}
+
+/* the name of the shot and what it does, floated over the rack */
+.ammo-tag {
+  position: absolute;
+  bottom: calc(100% + 10px * var(--k));
+  right: calc(8px * var(--k));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  max-width: calc(300px * var(--k));
+  padding: calc(6px * var(--k)) calc(11px * var(--k));
+  border-radius: calc(12px * var(--k));
+  background: linear-gradient(180deg, rgba(14, 36, 50, 0.84), rgba(6, 20, 30, 0.92));
+  border: 1px solid var(--stroke);
+  box-shadow: 0 10px 26px rgba(0, 8, 14, 0.3), var(--hi);
+  text-align: right;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.2s, transform 0.3s var(--ease);
+  pointer-events: none;
+}
+
+.ammo-tag.show {
+  opacity: 1;
+  transform: none;
+}
+
+.ammo-tag b {
+  font: 800 max(11px, calc(12px * var(--k))) var(--sans);
+  letter-spacing: 0.04em;
+  color: var(--ac);
+}
+
+.ammo-tag span {
+  font: 500 max(10px, calc(10.5px * var(--k))) / 1.35 var(--sans);
+  color: var(--ink-2);
 }
 
 .sails {
@@ -3056,7 +3266,8 @@ body[data-hud='large'] #hud {
 
 /* on touch the console is just sails & speed, low and centred between the thumbs */
 .is-touch .hint,
-.is-touch .broadside {
+.is-touch .rack,
+.is-touch .ammo-tag {
   display: none;
 }
 
@@ -3188,6 +3399,40 @@ body[data-hud='large'] #hud {
   color: #fff1b8;
 }
 
+.floater.burn {
+  color: #ffb070;
+  font-size: 13px;
+}
+
+.floater.ablaze,
+.floater.shredded,
+.floater.crew,
+.floater.ammo {
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.floater.ablaze {
+  color: #ffd2a0;
+  text-shadow: 0 0 10px rgba(255, 110, 40, 0.95), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.floater.shredded {
+  color: #d6efff;
+  text-shadow: 0 0 10px rgba(120, 200, 255, 0.8), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.floater.crew {
+  color: #e4d8ff;
+  text-shadow: 0 0 10px rgba(170, 140, 255, 0.85), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.floater.ammo {
+  color: #fff4d6;
+  text-shadow: 0 0 10px rgba(255, 190, 90, 0.7), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
 .floater.rare {
   color: #9fdcff;
   font-size: 17px;
@@ -3223,7 +3468,6 @@ body[data-hud='large'] #hud {
   margin-left: -32px;
   border-radius: 99px;
   background: rgba(4, 14, 20, 0.62);
-  overflow: hidden;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 0 2px 6px rgba(0, 0, 0, 0.35);
   will-change: transform;
 }
@@ -3231,12 +3475,68 @@ body[data-hud='large'] #hud {
 .ebar i {
   display: block;
   height: 100%;
+  border-radius: inherit;
   transform-origin: left;
   background: linear-gradient(90deg, #d8402f, #ff9d6a);
   transition: transform 0.2s ease;
 }
 
+/* ablaze: the bar itself smoulders */
+.ebar.afire i {
+  background: linear-gradient(90deg, #d8402f, #ffb347, #ff6a3d, #ffd27a);
+  background-size: 200% 100%;
+  animation: smoulder 0.9s linear infinite;
+}
+
+@keyframes smoulder {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* little marks for what special shot has done: flames, torn canvas, thinned crews */
+.ebar .fx {
+  position: absolute;
+  left: calc(100% + 5px);
+  top: 50%;
+  translate: 0 -50%;
+  display: flex;
+  gap: 2px;
+}
+
+.ebar .fx u {
+  display: none;
+  width: 13px;
+  height: 13px;
+  background: center / contain no-repeat;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+
+.ebar.afire .fx .f {
+  display: block;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1c.6 2.6 3.8 4 3.8 8.2A3.8 3.8 0 0 1 4.2 9.4C4.2 7.6 5.3 6.4 6 5.6c.2 1.4.8 2 1.5 2.3C7 5.4 7.4 3 8 1z' fill='%23ff8a3d'/%3E%3Cpath d='M8 8.2c.4 1 1.6 1.6 1.6 3a1.6 1.6 0 0 1-3.2.1c0-.9.7-1.4 1-1.9.2.4.5.6.6.6z' fill='%23ffe08a'/%3E%3C/svg%3E");
+  animation: flicker 0.5s ease-in-out infinite alternate;
+}
+
+.ebar.torn .fx .t {
+  display: block;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 2h10l-1 5.2-2.2-1 .4 2.6L8 7.6 7 10.4 5.4 8.6 4 11.8 3 14z' fill='%23d6efff'/%3E%3Cpath d='M2.5 1.5h11' stroke='%239fb8c8' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+.ebar.crew .fx .c {
+  display: block;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='4.6' r='2.6' fill='%23e4d8ff'/%3E%3Cpath d='M3.2 14c.4-3.4 2.2-5 4.8-5s4.4 1.6 4.8 5z' fill='%23e4d8ff'/%3E%3Cpath d='M2 2.5l12 11' stroke='%23ff7563' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
+}
+
+@keyframes flicker {
+  to {
+    transform: scale(1.15) translateY(-1px);
+    filter: drop-shadow(0 0 4px rgba(255, 120, 40, 0.9));
+  }
+}
+
 .ebar span {
+  display: none;
   position: absolute;
   bottom: 10px;
   left: 50%;
@@ -3401,16 +3701,6 @@ body[data-hud='large'] #hud {
 }
 
 /* gunnery: a foe sits in this side's loaded arc on the water */
-.broadside.hot {
-  color: var(--ink);
-  background: rgba(244, 199, 101, 0.16);
-  box-shadow: 0 0 0 1px rgba(244, 199, 101, 0.35);
-}
-
-.broadside.hot .ring .ti {
-  color: var(--gold);
-}
-
 .fbtn.side.aim {
   border-color: rgba(244, 199, 101, 0.8);
   color: var(--ink);
@@ -3426,7 +3716,6 @@ body[data-hud='large'] #hud {
 }
 
 /* the guns have just been run out again */
-.broadside.ping,
 .fbtn.side.ping {
   animation: gun-ping 0.6s ease-out;
 }
@@ -3438,6 +3727,136 @@ body[data-hud='large'] #hud {
   100% {
     box-shadow: 0 0 0 16px rgba(255, 220, 140, 0);
   }
+}
+
+/* touch: the shot button sits over Fire; tapped, the kinds of shot fan out around it */
+.fbtn.ammo {
+  --ac: #d9e2e6;
+  position: absolute;
+  left: calc(70px * var(--kt) + 42px * var(--kt) - 23px * var(--kt));
+  bottom: calc(84px * var(--kt) + 12px * var(--kt));
+  width: calc(46px * var(--kt));
+  height: calc(46px * var(--kt));
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ac) 45%, transparent);
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--ac) 22%, rgba(16, 40, 54, 0.8)), rgba(6, 20, 30, 0.9) 75%);
+}
+
+.fbtn.ammo .ab {
+  display: grid;
+  place-items: center;
+  width: 74%;
+  height: 74%;
+}
+
+.fbtn.ammo .ab .ammo-ico {
+  width: 100%;
+  height: 100%;
+}
+
+.fbtn.ammo .ac {
+  position: absolute;
+  right: calc(-4px * var(--kt));
+  bottom: calc(-3px * var(--kt));
+  min-width: calc(17px * var(--kt));
+  padding: 0 calc(4px * var(--kt));
+  border-radius: 99px;
+  background: var(--ac);
+  color: #06141e;
+  font: 800 max(9px, calc(10px * var(--kt))) / 1.55 var(--sans);
+  text-align: center;
+}
+
+.fbtn.ammo .ac:empty {
+  display: none;
+}
+
+.fbtn.ammo.open {
+  box-shadow: var(--focus);
+}
+
+.ammo-fan {
+  position: absolute;
+  left: calc(70px * var(--kt) + 42px * var(--kt));
+  bottom: calc(84px * var(--kt) + 12px * var(--kt) + 23px * var(--kt));
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+/* five chips on a quarter arc, from straight up round to due left */
+.chip-a {
+  --ac: #d9e2e6;
+  --r: calc(140px * var(--kt));
+  --ang: calc(-90deg - var(--i) * 22.5deg);
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: calc(46px * var(--kt));
+  height: calc(46px * var(--kt));
+  margin: calc(-23px * var(--kt)) 0 0 calc(-23px * var(--kt));
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--stroke);
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--ac) 18%, rgba(16, 40, 54, 0.86)), rgba(6, 20, 30, 0.94) 75%);
+  box-shadow: var(--hi), 0 8px 22px rgba(0, 8, 14, 0.35);
+  color: var(--ink-2);
+  opacity: 0;
+  transform: rotate(var(--ang)) translateX(calc(var(--r) * 0.4)) rotate(calc(-1 * var(--ang))) scale(0.4);
+  transition: transform 0.32s var(--spring), opacity 0.18s;
+  transition-delay: calc(var(--i) * 25ms);
+  touch-action: manipulation;
+}
+
+.chip-a .ammo-ico {
+  width: 62%;
+  height: 62%;
+  margin-top: -6%;
+}
+
+.chip-a small {
+  position: absolute;
+  bottom: calc(4px * var(--kt));
+  font: 800 max(7px, calc(7.5px * var(--kt))) var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chip-a .n {
+  position: absolute;
+  top: calc(-3px * var(--kt));
+  right: calc(-3px * var(--kt));
+  min-width: calc(16px * var(--kt));
+  padding: 0 calc(3px * var(--kt));
+  border-radius: 99px;
+  background: rgba(4, 16, 24, 0.92);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14);
+  color: var(--ink);
+  font: 800 max(8.5px, calc(9px * var(--kt))) / 1.55 var(--sans);
+  text-align: center;
+}
+
+.ammo-fan.open .chip-a {
+  opacity: 1;
+  pointer-events: auto;
+  transform: rotate(var(--ang)) translateX(var(--r)) rotate(calc(-1 * var(--ang)));
+}
+
+.chip-a.on {
+  color: var(--ink);
+  border-color: transparent;
+  box-shadow: 0 0 0 2px #fff, 0 0 18px color-mix(in srgb, var(--ac) 55%, transparent);
+}
+
+.chip-a.empty {
+  opacity: 0.42 !important;
+}
+
+.is-touch #hud.fpv .fbtn.ammo,
+.is-touch #hud.fpv .ammo-fan {
+  display: none;
 }
 
 /* ------------------------------------------------------------------ captain's view */
@@ -3840,13 +4259,13 @@ body[data-hud='large'] #hud {
   box-sizing: border-box;
   padding: 12px 14px 10px;
   border-radius: 14px;
-  background: rgba(9, 22, 32, 0.78);
-  -webkit-backdrop-filter: blur(14px) saturate(1.3);
-  backdrop-filter: blur(14px) saturate(1.3);
+  /* no backdrop blur: it would re-blur the whole game view under the panel every frame */
+  background: rgba(9, 22, 32, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
   color: #e8f1f6;
   font: 500 11px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+  contain: content;
   animation: pf-in 0.18s ease-out;
 }
 
@@ -4020,6 +4439,19 @@ body[data-hud='large'] #hud {
   font-style: normal;
   font-size: 9px;
   color: #ff9c7a;
+}
+
+.pf-row em:empty {
+  display: none;
+}
+
+.pf-rest > i,
+.pf-rest .pf-bar {
+  visibility: hidden;
+}
+
+.pf-rest .pf-name {
+  flex: 1 1 auto;
 }
 
 .pf-bar {

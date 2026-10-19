@@ -7,6 +7,8 @@ export interface Controls {
   fireStarboard: boolean;
   fireAuto: boolean;
   fireAim: boolean; // mouse click: the side the pointer is in
+  ammoPick: number; // pulse: 0..4 load that kind of shot (keys 1-5), -1 none
+  ammoNext: boolean; // pulse: the next kind of shot (R)
   zoom: number; // accumulated wheel / pinch delta
   steerHeading: number | null; // touch joystick: desired world heading
   steerThrottle: number; // 0..1 from joystick magnitude
@@ -32,6 +34,8 @@ export class Input {
     fireStarboard: false,
     fireAuto: false,
     fireAim: false,
+    ammoPick: -1,
+    ammoNext: false,
     zoom: 0,
     steerHeading: null,
     steerThrottle: 0,
@@ -85,6 +89,8 @@ export class Input {
       if (k === 'q') this.state.firePort = true;
       if (k === 'e') this.state.fireStarboard = true;
       if (k === ' ') this.state.fireAuto = true;
+      if (k >= '1' && k <= '5') this.state.ammoPick = +k - 1;
+      if (k === 'r') this.state.ammoNext = true;
       if (k === 'escape' || k === 'p') this.state.pause = true;
       if (k === 'm') this.state.map = true;
     });
@@ -336,6 +342,8 @@ export class Input {
     this.state.fireStarboard = false;
     this.state.fireAuto = false;
     this.state.fireAim = false;
+    this.state.ammoPick = -1;
+    this.state.ammoNext = false;
     this.state.zoom = 0;
     this.state.pause = false;
     this.state.map = false;

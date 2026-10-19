@@ -90,13 +90,13 @@
         </div>
       </div>
       <div class="bottom">
-        <div class="broadside" id="bs-port"><kbd class="kd">Q</kbd><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg><span class="ti" data-icon="cannon"></span></div><span>Port</span></div>
         <div class="helm">
           <div class="sails" id="hud-sails"><i></i><i></i><i></i></div>
           <div class="speed"><b id="hud-speed">0</b><small>knots</small></div>
-          <div class="hint kd">W / S sails · A / D helm</div>
+          <div class="hint kd">W / S sails · A / D helm · Q / E fire</div>
         </div>
-        <div class="broadside" id="bs-star"><span>Starboard</span><div class="ring"><svg viewBox="0 0 40 40"><circle cx="20" cy="20" r="17"></circle><circle class="p" cx="20" cy="20" r="17"></circle></svg><span class="ti" data-icon="cannon"></span></div><kbd class="kd">E</kbd></div>
+        <div class="rack" id="ammo-rack" role="radiogroup" aria-label="Shot"></div>
+        <div class="ammo-tag" id="ammo-tag"><b></b><span></span></div>
       </div>
       <div class="spyglass" id="spyglass"></div>
       <div class="reticle" id="reticle"><i></i><span id="reticle-side"></span></div>
@@ -112,6 +112,8 @@
           <button class="fbtn main" id="t-fire"><span class="ti" data-icon="cannon"></span><small>Fire</small></button>
           <button class="fbtn side" id="t-star"><i class="rl"></i><span class="ti" data-icon="chev"></span><small>Stbd</small></button>
           <button class="fbtn glass" id="t-spy"><span class="ti" data-icon="spyglass"></span></button>
+          <button class="fbtn ammo" id="t-ammo" aria-label="Choose shot"><span class="ab"></span><b class="ac"></b><em class="gain"></em></button>
+          <div class="ammo-fan" id="ammo-fan"></div>
         </div>
       </div>
     </div>
@@ -246,6 +248,7 @@
             <div class="ctl"><span class="gesture">Drag left side</span><span>Steer &amp; trim, like a tiller</span></div>
             <div class="ctl"><span class="gesture">Fire</span><span>Fire the outlined side, at the foe off that beam</span></div>
             <div class="ctl"><span class="gesture">◀ Port · Stbd ▶</span><span>Fire one side</span></div>
+            <div class="ctl"><span class="gesture">Shot button</span><span>Pick the shot your guns load, above Fire</span></div>
             <div class="ctl"><span class="gesture">Pinch</span><span>Zoom</span></div>
             <div class="ctl"><span class="gesture">Tap minimap</span><span>Open the sea chart</span></div>
             <div class="ctl"><span class="gesture">Eye button</span><span>Captain's view: stick walks, drag the right side to look</span></div>
@@ -261,6 +264,8 @@
             <div class="ctl"><span><kbd>E</kbd></span><span>Starboard broadside</span></div>
             <div class="ctl"><span><kbd>Click</kbd></span><span>Fire the side you point into, where you point</span></div>
             <div class="ctl"><span><kbd>Space</kbd></span><span>Fire at the foe off your beam</span></div>
+            <div class="ctl"><span><kbd>1</kbd>–<kbd>5</kbd></span><span>Load round, shell, fire, chain or grape shot</span></div>
+            <div class="ctl"><span><kbd>R</kbd></span><span>Next kind of shot</span></div>
           </section>
           <section class="ctl-group">
             <h4>Navigation</h4>

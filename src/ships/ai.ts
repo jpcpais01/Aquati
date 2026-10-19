@@ -1,6 +1,15 @@
 import { angleDelta, clamp, mulberry32 } from '../core/noise';
 import { World } from '../game/world';
-import { Ship } from './ship';
+import { Ship, gunRange } from './ship';
+import { AMMO, AmmoId } from '../game/ammo';
+import { ShipClassId } from './shipTypes';
+
+// How often each class of pirate loads something nastier than round shot.
+const PIRATE_AMMO: Record<ShipClassId, [AmmoId, number][]> = {
+  sloop: [['chain', 0.18], ['grape', 0.16]],
+  brig: [['chain', 0.12], ['fire', 0.12], ['grape', 0.1]],
+  galleon: [['shell', 0.2], ['fire', 0.1], ['grape', 0.14]],
+};
 
 // Pirate captains: patrol between open-water waypoints, hunt the player when
 // spotted, jockey for a broadside at their preferred range, avoid reefs and
@@ -158,13 +167,33 @@ export class PirateAI {
       this.aimDelay -= dt;
       if (this.aimDelay <= 0) {
         if (Math.abs(rel - Math.PI / 2) < arc && s.canFire('port')) {
+          s.ammo = this.pickAmmo(dist, target);
           s.fire('port', world, target);
           this.aimDelay = 0.6 + this.rnd() * 1.2 / this.aggression;
         } else if (Math.abs(rel + Math.PI / 2) < arc && s.canFire('starboard')) {
+          s.ammo = this.pickAmmo(dist, target);
           s.fire('starboard', world, target);
           this.aimDelay = 0.6 + this.rnd() * 1.2 / this.aggression;
         }
       }
     }
+  }
+
+  /** Now and then a pirate crew rams home something nastier, if it will reach and isn't wasted. */
+  private pickAmmo(dist: number, target: Ship): AmmoId {
+    const s = this.ship;
+    let r = this.rnd();
+    for (const [id, p] of PIRATE_AMMO[s.cls.id]) {
+      if (r < p) {
+        const reach = gunRange(s.cls.muzzleSpeed * AMMO[id].speed) * 0.9;
+        if (dist > reach) return 'round';
+        if (id === 'chain' && target.torn > 4) return 'round';
+        if (id === 'fire' && target.afire > 4) return 'round';
+        if (id === 'grape' && target.crewHit > 4) return 'round';
+        return id;
+      }
+      r -= p;
+    }
+    return 'round';
   }
 }

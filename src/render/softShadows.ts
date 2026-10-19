@@ -64,6 +64,24 @@ export function installSoftShadows() {
 			float shadow = 1.0;
 			shadowCoord.xyz /= shadowCoord.w;
 			shadowCoord.z += shadowBias;
+
+			// Receiver plane: how this pixel's depth runs across the shadow map, so
+			// every filter tap compares against the sloping surface itself, not a
+			// flat disc that half-buries itself in the slope (blotchy self-shadow
+			// on hillsides and sails that boils as you move).
+			vec3 sdx = dFdx( shadowCoord.xyz );
+			vec3 sdy = dFdy( shadowCoord.xyz );
+			float det = sdx.x * sdy.y - sdx.y * sdy.x;
+			vec2 dzUv = abs( det ) > 1e-14 ? vec2( sdy.y * sdx.z - sdx.y * sdy.z, sdx.x * sdy.z - sdy.x * sdx.z ) / det : vec2( 0.0 );
+
+			// The filter's rotation noise is pinned to the shadow map (which is
+			// itself pinned to the world), in cells about a screen pixel big. Noise
+			// pinned to the screen instead crawls over everything whenever the view
+			// moves, and with no temporal filter to settle it that reads as flicker.
+			vec2 tc = shadowCoord.xy * shadowMapSize;
+			float px = max( max( length( sdx.xy ), length( sdy.xy ) ) * shadowMapSize.x, 1e-3 );
+			float phi = interleavedGradientNoise( floor( tc / exp2( floor( log2( px ) + 0.5 ) ) ) ) * PI2;
+
 			bool inFrustum = shadowCoord.x >= 0.0 && shadowCoord.x <= 1.0 && shadowCoord.y >= 0.0 && shadowCoord.y <= 1.0;
 			bool frustumTest = inFrustum && shadowCoord.z <= 1.0;
 
@@ -71,7 +89,6 @@ export function installSoftShadows() {
 
 				vec2 texelSize = vec2( 1.0 ) / shadowMapSize;
 				float radius = shadowRadius * texelSize.x;
-				float phi = interleavedGradientNoise( gl_FragCoord.xy ) * PI2;
 
 				#ifdef AQ_PCSS
 				if ( uAqPcss.x > 0.5 ) {
@@ -81,10 +98,11 @@ export function installSoftShadows() {
 					float sum = 0.0;
 					float count = 0.0;
 					for ( int i = 0; i < 10; i ++ ) {
-						vec2 uv = shadowCoord.xy + vogelDiskSample( i, 10, phi ) * uAqPcss.y;
-						ivec2 px = clamp( ivec2( uv * shadowMapSize ), ivec2( 0 ), size - 1 );
-						float d = aqUnpackDepth( texelFetch( uAqShadowDepth, px, 0 ) );
-						if ( d < shadowCoord.z ) { sum += d; count += 1.0; }
+						vec2 o = vogelDiskSample( i, 10, phi ) * uAqPcss.y;
+						ivec2 tp = clamp( ivec2( ( shadowCoord.xy + o ) * shadowMapSize ), ivec2( 0 ), size - 1 );
+						float d = aqUnpackDepth( texelFetch( uAqShadowDepth, tp, 0 ) );
+						float z = shadowCoord.z + clamp( dot( o, dzUv ), - 0.003, 0.003 );
+						if ( d < z ) { sum += d; count += 1.0; }
 					}
 					if ( count < 0.5 ) return 1.0;
 
@@ -95,20 +113,20 @@ export function installSoftShadows() {
 					// 3. hardware-filtered PCF over that disc
 					float s = 0.0;
 					for ( int i = 0; i < 16; i ++ ) {
-						s += texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( i, 16, phi ) * radius, shadowCoord.z ) );
+						vec2 o = vogelDiskSample( i, 16, phi ) * radius;
+						s += texture( shadowMap, vec3( shadowCoord.xy + o, shadowCoord.z + clamp( dot( o, dzUv ), - 0.003, 0.003 ) ) );
 					}
 					return mix( 1.0, s / 16.0, shadowIntensity );
 
 				}
 				#endif
 
-				shadow = (
-					texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( 0, 5, phi ) * radius, shadowCoord.z ) ) +
-					texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( 1, 5, phi ) * radius, shadowCoord.z ) ) +
-					texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( 2, 5, phi ) * radius, shadowCoord.z ) ) +
-					texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( 3, 5, phi ) * radius, shadowCoord.z ) ) +
-					texture( shadowMap, vec3( shadowCoord.xy + vogelDiskSample( 4, 5, phi ) * radius, shadowCoord.z ) )
-				) * 0.2;
+				shadow = 0.0;
+				for ( int i = 0; i < 5; i ++ ) {
+					vec2 o = vogelDiskSample( i, 5, phi ) * radius;
+					shadow += texture( shadowMap, vec3( shadowCoord.xy + o, shadowCoord.z + clamp( dot( o, dzUv ), - 0.003, 0.003 ) ) );
+				}
+				shadow *= 0.2;
 
 			}
 
@@ -122,9 +140,10 @@ export function installSoftShadows() {
 
 /**
  * Per-frame update: the shadow frustum follows the camera zoom, so penumbra
- * sizes in shadow-map uv change with it.
+ * sizes in shadow-map uv change with it. `slant` is metres along the sun's ray
+ * per unit of shadow depth (1 / sun height when depth is measured vertically).
  */
-export function updateSoftShadows(light: THREE.DirectionalLight, enabled: boolean) {
+export function updateSoftShadows(light: THREE.DirectionalLight, enabled: boolean, slant = 1) {
   const sh = light.shadow;
   const u = shadowUniforms.uAqPcss.value;
   const tex = sh.map?.texture ?? null;
@@ -137,5 +156,5 @@ export function updateSoftShadows(light: THREE.DirectionalLight, enabled: boolea
   const width = cam.right - cam.left;
   const depthRange = cam.far - cam.near;
   const maxUv = Math.min(MAX_PENUMBRA / width, MAX_TEXELS / sh.mapSize.x);
-  u.set(1, maxUv, (depthRange * SUN_SPREAD) / width, 1.2 / sh.mapSize.x);
+  u.set(1, maxUv, (depthRange * SUN_SPREAD * slant) / width, 1.2 / sh.mapSize.x);
 }

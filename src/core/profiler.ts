@@ -93,6 +93,7 @@ export class Profiler {
   private gpuTotalAvg = 0;
   private cpuTotalAvg = 0;
   private refreshT = 0;
+  private graphT = 0;
   private showAll = false;
 
   private el: HTMLDivElement;
@@ -250,7 +251,11 @@ export class Profiler {
     }
     this.cpuTotalAvg += (total - this.cpuTotalAvg) * EMA;
 
-    this.drawGraph();
+    // the graph keeps up at ~30 Hz whatever the display's refresh rate
+    if (t0 - this.graphT > 30) {
+      this.graphT = t0;
+      this.drawGraph();
+    }
     if (t0 - this.refreshT > 250) {
       this.refreshT = t0;
       if (document.body.classList.contains('no-fps')) this.toggle(false);
@@ -377,19 +382,51 @@ export class Profiler {
       .trim();
   }
 
+  /**
+   * Rows are built once and then only their text and bar widths change, so a
+   * refresh never re-parses HTML or rebuilds the panel's layout from scratch.
+   */
   private rows(el: HTMLElement, key: 'cpuAvg' | 'gpuAvg', total: number) {
     const sorted = this.list.filter((s) => (key === 'gpuAvg' ? s.gpuSeen : true) && s[key] > 0.005).sort((a, b) => b[key] - a[key]);
     const shown = this.showAll ? sorted : sorted.slice(0, 7);
     const top = sorted[0]?.[key] || 1;
-    let html = '';
-    for (const s of shown) {
-      const v = s[key];
-      const pct = total > 0 ? Math.round((v / total) * 100) : 0;
-      const peak = key === 'cpuAvg' && s.cpuPeak > v * 2.5 && s.cpuPeak > 0.5 ? `<em title="Recent spike">▲${s.cpuPeak.toFixed(1)}</em>` : '';
-      html += `<div class="pf-row"><i style="background:${GROUPS[GROUP_IX[s.group]].color}"></i><span class="pf-name">${s.name}</span>${peak}<span class="pf-bar"><u style="width:${((v / top) * 100).toFixed(1)}%;background:${GROUPS[GROUP_IX[s.group]].color}"></u></span><span class="pf-pct">${pct}%</span><b>${fmt(v)}</b></div>`;
+    const rest = sorted.length - shown.length;
+    const want = shown.length + (rest > 0 ? 1 : 0);
+    const kids = el.children;
+    if (el.firstElementChild?.classList.contains('pf-none')) el.textContent = '';
+    while (kids.length < want) {
+      const row = el.appendChild(document.createElement('div'));
+      row.className = 'pf-row';
+      row.innerHTML = '<i></i><span class="pf-name"></span><em title="Recent spike"></em><span class="pf-bar"><u></u></span><span class="pf-pct"></span><b></b>';
     }
-    if (sorted.length > shown.length) html += `<div class="pf-row pf-rest">+${sorted.length - shown.length} more · ${fmt(sorted.slice(shown.length).reduce((a, s) => a + s[key], 0))}</div>`;
-    el.innerHTML = html;
+    while (kids.length > want) el.lastElementChild!.remove();
+    for (let i = 0; i < shown.length; i++) {
+      const s = shown[i];
+      const v = s[key];
+      const row = kids[i] as HTMLElement;
+      row.classList.remove('pf-rest');
+      const [dot, name, peak, bar, pct, val] = row.children as unknown as HTMLElement[];
+      const color = GROUPS[GROUP_IX[s.group]].color;
+      set(dot, 'background', color);
+      setText(name, s.name);
+      setText(peak, key === 'cpuAvg' && s.cpuPeak > v * 2.5 && s.cpuPeak > 0.5 ? `▲${s.cpuPeak.toFixed(1)}` : '');
+      const u = bar.firstElementChild as HTMLElement;
+      set(u, 'width', `${((v / top) * 100).toFixed(1)}%`);
+      set(u, 'background', color);
+      setText(pct, `${total > 0 ? Math.round((v / total) * 100) : 0}%`);
+      setText(val, fmt(v));
+    }
+    if (rest > 0) {
+      const row = kids[shown.length] as HTMLElement;
+      row.classList.add('pf-rest');
+      const [dot, name, peak, bar, pct, val] = row.children as unknown as HTMLElement[];
+      set(dot, 'background', 'transparent');
+      setText(name, `+${rest} more · ${fmt(sorted.slice(shown.length).reduce((a, s) => a + s[key], 0))}`);
+      setText(peak, '');
+      set(bar.firstElementChild as HTMLElement, 'width', '0%');
+      setText(pct, '');
+      setText(val, '');
+    }
   }
 
   private stackBar(el: HTMLElement, key: 'cpuAvg' | 'gpuAvg', total: number) {
@@ -397,7 +434,19 @@ export class Profiler {
     for (const s of this.list) if (key === 'cpuAvg' || s.gpuSeen) sums[GROUP_IX[s.group]] += s[key];
     // scaled against the frame budget, so a full bar means "this alone sets the frame rate"
     const budget = Math.max(this.frameAvg, total, 1);
-    el.innerHTML = sums.map((v, g) => (v > 0.01 ? `<u style="width:${((v / budget) * 100).toFixed(2)}%;background:${GROUPS[g].color}" title="${GROUPS[g].name} ${fmt(v)}"></u>` : '')).join('');
+    if (el.children.length !== 6) {
+      el.textContent = '';
+      for (const g of GROUPS) {
+        const u = el.appendChild(document.createElement('u'));
+        u.style.background = g.color;
+      }
+    }
+    for (let g = 0; g < 6; g++) {
+      const u = el.children[g] as HTMLElement;
+      const v = sums[g];
+      set(u, 'width', v > 0.01 ? `${((v / budget) * 100).toFixed(2)}%` : '0%');
+      if (u.title !== `${GROUPS[g].name} ${fmt(v)}`) u.title = `${GROUPS[g].name} ${fmt(v)}`;
+    }
   }
 
   private refresh() {
@@ -523,6 +572,17 @@ export class Profiler {
       g.fillText(label, 2, y(ms) - 2);
     }
   }
+}
+
+/** Writes a style property only when it changes (an unchanged write still costs a style pass). */
+function set(el: HTMLElement, prop: 'width' | 'background', v: string) {
+  if (el.dataset[prop] === v) return;
+  el.dataset[prop] = v;
+  el.style[prop] = v;
+}
+
+function setText(el: HTMLElement, v: string) {
+  if (el.textContent !== v) el.textContent = v;
 }
 
 function fmt(ms: number) {

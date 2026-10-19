@@ -675,7 +675,149 @@ export function hullCrunch(sr: number, seed: number): Float32Array {
   return peakNorm(out, 0.92);
 }
 
-export type BankKind = 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast' | 'crunch';
+// ------------------------------------------------------------------ shot types
+
+/**
+ * An explosive shell bursting: a needle-sharp detonation crack (much harder
+ * than a gun's push of powder), a short chesty boom, shrapnel whining away
+ * and iron fragments pinging off timber.
+ */
+export function shellBurst(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 2.6);
+  const out = new Float32Array(n);
+  mix(out, cannonBlast(sr, 1.05, seed * 3 + 7), 0.85);
+  // the detonation itself: a brittle, bright crack on top of the boom
+  snap(out, sr, r, 0, 1.4, 2500, 7000, 0.006);
+  snap(out, sr, r, 0.004, 0.9, 1200, 3500, 0.012);
+  // shrapnel: thin whines, each falling in pitch as it flies off
+  for (let k = 0; k < 6; k++) {
+    const t0 = 0.02 + r() * 0.12;
+    const start = Math.floor(t0 * sr);
+    const f0 = 2600 + r() * 2600;
+    const dur = 0.18 + r() * 0.25;
+    const len = Math.floor(dur * sr);
+    const a = 0.05 + r() * 0.05;
+    let ph = 0;
+    for (let i = 0; i < len && start + i < n; i++) {
+      const t = i / sr;
+      ph += (TAU * f0 * (1 - 0.45 * t / dur)) / sr;
+      out[start + i] += Math.sin(ph) * a * Math.sin((Math.PI * t) / dur) * (0.7 + 0.3 * r());
+    }
+  }
+  // fragments rattling into wood and water
+  noiseGrains(out, sr, r, { count: 140, t0: 0.03, spread: 0.9, skew: 1.6, fLo: 1400, fHi: 8000, q: 1.4, durLo: 0.0008, durHi: 0.005, amp: 0.7, env: (t) => Math.exp(-t / 0.4) });
+  modal(out, sr, r, [3100, 4700, 6900], [0.03, 0.02, 0.012], [0.08, 0.05, 0.03], Math.floor(0.09 * sr));
+  saturate(out, 1.4);
+  fadeTail(out, sr, 0.2);
+  return peakNorm(out, 0.95);
+}
+
+/** Fire shot catching: a soft, deep "fwoomp" of flame sucking in air, then the crackle of it taking hold. */
+export function igniteWhoomp(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.5);
+  const out = new Float32Array(n);
+  const lp = new SVF(sr, 200, 0.9);
+  const body = new SVF(sr, 120, 0.7);
+  const fl = flutter(r, sr, n, 0.03, 0.5);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    if ((i & 15) === 0) lp.set(180 + 1900 * (t < 0.09 ? t / 0.09 : Math.exp(-(t - 0.09) / 0.18)), 0.9);
+    const w = r() * 2 - 1;
+    lp.run(w);
+    body.run(w);
+    const env = t < 0.07 ? Math.pow(t / 0.07, 1.6) : Math.exp(-(t - 0.07) / 0.32);
+    out[i] = (lp.lp * 2.2 + body.lp * 3.5) * env * fl[i];
+  }
+  crackle(out, sr, r, 160, 0.06, 1.2, 900, 4200, 0.35);
+  saturate(out, 1.8);
+  fadeTail(out, sr, 0.2);
+  return peakNorm(out, 0.9);
+}
+
+/** Red-hot iron into the sea: a fierce hiss of steam that fades into fizzing. */
+export function steamHiss(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.3);
+  const out = new Float32Array(n);
+  const hp = new SVF(sr, 3200, 0.6);
+  const bp = new SVF(sr, 6500, 1.2);
+  const fl = flutter(r, sr, n, 0.008, 0.6);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const w = r() * 2 - 1;
+    hp.run(w);
+    bp.run(w);
+    const env = (1 - Math.exp(-t / 0.012)) * Math.exp(-t / 0.42);
+    out[i] = (hp.hp * 0.8 + bp.bp * 1.2) * env * fl[i];
+  }
+  noiseGrains(out, sr, r, { count: 220, t0: 0.05, spread: 1.1, skew: 1.3, fLo: 2000, fHi: 9000, q: 1.6, durLo: 0.0005, durHi: 0.003, amp: 0.35, env: (t) => Math.exp(-t / 0.5) });
+  fadeTail(out, sr, 0.15);
+  return peakNorm(out, 0.8);
+}
+
+/** Grape shot raking a deck: a hard hail of small balls into planking, rails and iron. */
+export function grapeHail(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 0.9);
+  const out = new Float32Array(n);
+  for (let k = 0; k < 16; k++) snap(out, sr, r, Math.pow(r(), 1.6) * 0.28, 0.35 + r() * 0.4, 900, 4200, 0.008 + r() * 0.01);
+  noiseGrains(out, sr, r, { count: 90, t0: 0, spread: 0.45, skew: 1.5, fLo: 1500, fHi: 7000, q: 1.3, durLo: 0.0008, durHi: 0.004, amp: 1.2, env: (t) => Math.exp(-t / 0.25) });
+  // a few balls ringing off iron fittings
+  for (let k = 0; k < 3; k++) modal(out, sr, r, [2400 + r() * 1800, 5200 + r() * 1500], [0.04, 0.02], [0.05, 0.03], Math.floor(r() * 0.25 * sr));
+  // the timbers answering with a dull knock
+  modal(out, sr, r, [160, 240], [0.05, 0.035], [0.25, 0.15], Math.floor(0.01 * sr));
+  saturate(out, 1.3);
+  fadeTail(out, sr, 0.12);
+  return peakNorm(out, 0.88);
+}
+
+/** Chain shot through the rigging: canvas ripping, the chain clattering and cordage snapping. */
+export function chainRip(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.0);
+  const out = new Float32Array(n);
+  const bp = new SVF(sr, 1800, 1.1);
+  const lo = new SVF(sr, 500, 0.8);
+  const rip = flutter(r, sr, n, 0.0035, 0.95);
+  const len = 0.42;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const w = r() * 2 - 1;
+    bp.run(w);
+    lo.run(w);
+    const env = t < len ? (1 - Math.exp(-t / 0.006)) * (1 - 0.6 * t / len) : Math.exp(-(t - len) / 0.05) * 0.4;
+    out[i] = (bp.bp * 1.4 + lo.lp * 0.8) * env * rip[i] * rip[i];
+  }
+  // iron links clashing as the chain whips round
+  for (let k = 0; k < 7; k++) modal(out, sr, r, [1900 + r() * 900, 3300 + r() * 1200, 5600 + r() * 1400], [0.05, 0.03, 0.015], [0.09, 0.06, 0.03], Math.floor(Math.pow(r(), 1.3) * 0.5 * sr));
+  // a line parting
+  snap(out, sr, r, 0.12 + r() * 0.15, 0.7, 700, 2400, 0.015);
+  fadeTail(out, sr, 0.1);
+  return peakNorm(out, 0.85);
+}
+
+/** Timber burning: the roar of the flames and a spit of crackles. */
+export function fireCrackle(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.8);
+  const out = new Float32Array(n);
+  const lp = new SVF(sr, 260, 0.7);
+  const fl = flutter(r, sr, n, 0.06, 0.55);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    lp.run(r() * 2 - 1);
+    const env = Math.min(1, t / 0.25) * Math.min(1, (n / sr - t) / 0.4);
+    out[i] = lp.lp * 3 * env * fl[i];
+  }
+  crackle(out, sr, r, 120, 0, 1.7, 700, 3600, 0.4);
+  for (let k = 0; k < 4; k++) snap(out, sr, r, 0.1 + r() * 1.4, 0.35 + r() * 0.3, 600, 2600, 0.01);
+  saturate(out, 1.5);
+  return peakNorm(out, 0.8);
+}
+
+export type BankKind = 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast' | 'crunch' | 'shell' | 'ignite' | 'steam' | 'grape' | 'chain' | 'flames';
 export const CALIBERS = 3;
 
 /** Everything the game plays, cheapest/most needed first. Cannon index = caliber * 2 + variant. */
@@ -691,5 +833,11 @@ export function bankJobs(sr: number): { kind: BankKind; index: number; render: (
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'whoosh', index: v, render: () => [shotWhoosh(sr, 701 + v)] });
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'crunch', index: v, render: () => [hullCrunch(sr, 901 + v)] });
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'blast', index: v, render: () => [magazineBlast(sr, 801 + v)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'shell', index: v, render: () => [shellBurst(sr, 1001 + v)] });
+  jobs.push({ kind: 'ignite', index: 0, render: () => [igniteWhoomp(sr, 1101)] });
+  jobs.push({ kind: 'steam', index: 0, render: () => [steamHiss(sr, 1201)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'grape', index: v, render: () => [grapeHail(sr, 1301 + v)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'chain', index: v, render: () => [chainRip(sr, 1401 + v)] });
+  jobs.push({ kind: 'flames', index: 0, render: () => [fireCrackle(sr, 1501)] });
   return jobs;
 }

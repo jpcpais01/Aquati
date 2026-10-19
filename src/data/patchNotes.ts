@@ -13,8 +13,72 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T17:00Z',
+    entries: [
+      {
+        title: 'Smoother sailing, same view',
+        notes: [
+          'A big performance pass with nothing taken away from how the game looks. Out at sea the game now draws around a third of the triangles it used to, so frame rates climb noticeably, most of all on high resolution screens.',
+          'Island trees, palms, shrubs and flowers are now hidden one by one when they are out of view, instead of a whole island at a time. Plants off screen still cast their shadows into view, so nothing about the light changes.',
+          'Ocean reflections of ships and islands are traced at half resolution and then rippled at full detail, and water hidden behind hulls and islands is no longer shaded at all. The sea looks the same and costs far less.',
+          'The sky lighting, which refreshes a few times a second as the day turns, now takes a quarter of the work.',
+          'The frame profiler is much cheaper to keep open, so the numbers it shows are closer to the real thing.',
+        ],
+      },
+      {
+        title: 'Shadows that sweep with the sun',
+        notes: [
+          'As the day passes, shadows now glide smoothly round with the sun instead of creeping along in tiny steps, from long morning shadows to short noon ones and back out at dusk.',
+          'They stay perfectly still and crisp while you sail, zoom and pan, so the extra smoothness costs no shimmer.',
+        ],
+      },
+      {
+        title: 'Refresh always brings the newest build',
+        notes: [
+          'A normal refresh could load an older copy of the game saved on your device, sometimes from before the rename. The game now always fetches the latest version when you are online, and only falls back to the saved copy when you are offline.',
+          'Already installed? Open the game once more and it switches over by itself.',
+        ],
+      },
+      {
+        title: 'No more shimmering in motion',
+        notes: [
+          'Shadows no longer crawl and sparkle while you sail or pan the camera. The soft edges of every shadow are now fixed to the world instead of the screen, so islands, decks and sails stay calm and solid in motion, most of all when zoomed out.',
+          'Hillsides, cliffs and billowing sails no longer catch blotchy patches of their own shadow, so slopes read cleanly in the sun.',
+          'Sails lost the pale little repair patches and a fine weave pattern that could show up as stray light dashes and horizontal lines.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T16:20Z',
     entries: [
+      {
+        title: 'Five kinds of shot',
+        notes: [
+          'Your guns can now load five kinds of shot. Round shot is the reliable all-rounder and never runs out. Explosive shells burst on impact and hurt everything close by, even on a near miss. Fire shot sets a ship ablaze so she burns on, though rain beats the flames down. Chain shot scythes through the rigging, shredding sails and slowing her to a crawl. Grape shot sprays the deck at close range and cuts down gun crews so they reload slowly.',
+          'Each has its own look and sound in flight and on impact: fizzing fuses, red-hot iron trailing flame, two half-balls cartwheeling on their chain, a hail of musket balls.',
+          'On PC the Port and Starboard pills are gone. In their place is a rack of shot: press 1 to 5 (or R to cycle, or click) to load. The loaded shot sits in a ring whose left half fills as your port guns reload and right half as the starboard ones do. Q and E still fire each side.',
+          'On phones, tap the new shot button above Fire and pick from the fan.',
+          'Special shot is carried in short supply. Salvage, chests and every newly charted isle restock the magazine, and pirates load some nasty shot of their own now and then. Burning, shredded or short-handed ships show it on their health bar.',
+        ],
+      },
+      {
+        title: 'Your helmsman makes way',
+        notes: [
+          "When you take the wheel in the captain's view, your helmsman no longer hovers at your elbow blocking the view. He heads down the companion stairs to the main deck and pitches in with the other hands, then climbs back up and takes the wheel again once you let go.",
+        ],
+      },
+      {
+        title: 'A whole new crew',
+        notes: [
+          'Every sailor has been rebuilt from scratch: smooth sculpted bodies with real shoulders, waists and calves, hands with fingers and thumbs, and proper faces with noses, ears, lidded eyes in a dozen colours, eyebrows and mouths.',
+          'Faces come alive: crewmates blink, glance about, smile, frown in battle, bellow orders, chatter with their mates, grin through a jig, cheer with mouths wide open and look plain terrified when the ship goes down. Hands clench round rammers, ropes and tankards, and fall open in a panic.',
+          'Far more variety in dress: striped, rolled or short sleeves, bare legs, stockings or long trousers, bare feet, boots, garters, vests, belts, kerchiefs, earrings, beards, moustaches, ponytails, long hair and bald pates, under tricorns, spotted bandanas, knit caps and straw hats. Captains wear lapelled coats with epaulettes, cuffs and a lace jabot, with a parrot on the shoulder.',
+          'Cheering sailors now throw their arms up in a V, and a captain going down with the ship gives a proper salute.',
+          'The pirates of Puerto Marea in the Shipwright harbour got the same makeover, from the accordion player to the lookout with a spyglass.',
+          'Crewmates far from the camera use a lighter version of the model, so the extra detail costs little.',
+        ],
+      },
       {
         title: 'Version number on the menu',
         notes: [
