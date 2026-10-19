@@ -14,7 +14,7 @@ const NOTES_SEEN_KEY = 'aquati.notesSeen';
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
-  'Your guns fire to the sides: a gold glint means fire',
+  'Your guns fire to the sides: warm light around a foe means fire',
   'Salvage floats to you: sail close to collect it',
   'Every isle you chart pays a bounty',
   'Gusts darken the water: chase them for a burst of speed',

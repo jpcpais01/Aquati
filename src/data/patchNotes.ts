@@ -25,6 +25,20 @@ export const PATCH_NOTES: PatchGroup[] = [
           'A ship\'s log lists the moments that mattered: isles charted, prizes sunk and rare chests opened, ending with how she was lost. Sail again (Enter) puts you straight back at sea in the same ship, and Choose a new ship (Esc) takes you to the harbour. Running aground or being rammed to the bottom now ends the voyage properly too, where before it could leave you stuck.',
         ],
       },
+      {
+        title: 'Aiming without the clutter',
+        notes: [
+          'All aiming marks are gone from the sea. Out of a fight, nothing is drawn at all.',
+          'In a fight, the only sign is warm lantern light that gathers and shimmers on the water around an enemy when she sits off one of your loaded broadsides. When you see it, fire. It fades the moment you do and returns when the guns are run out again.',
+        ],
+      },
+      {
+        title: 'Save your own ship designs',
+        notes: [
+          'The Shipwright\'s Presets tab has a new Your designs shelf. Tap Save this design to keep the flag, sails, hull and ship\'s name you are wearing, and tap a saved design any time to put it straight back on your ship.',
+          'Keep up to twelve. Saving another design for the same ship numbers it for you (Sea Biscuit II), and the × on a card deletes it after a second tap, so nothing goes by accident. Your designs stay saved on this device between visits.',
+        ],
+      },
     ],
   },
   {
