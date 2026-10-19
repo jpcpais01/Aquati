@@ -24,6 +24,20 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Smoke that looks like smoke',
+        notes: [
+          'Gun smoke, wreck smoke and the volcano plume no longer look like round puffs. Each cloud is torn and swirled from the inside, dense and billowing as it leaves the gun, then fraying into thin curling strands as it thins out.',
+          'Smoke now stretches and shears along the way it moves: a broadside throws long streaming jets, and the drifting bank smears out downwind, so a stiff breeze drags it into ragged streamers.',
+        ],
+      },
+      {
+        title: 'Hull hits with real weight',
+        notes: [
+          'Cannonballs now strike a ship like a blow against a great oak structure. The whole hull booms like a vast wooden drum, the crack is heavier and splits deeper, and the planking rips apart in a longer, thicker tear.',
+          'After every hit the frames and timbers give a slow, deep creak as the hull flexes under the impact, and heavy chunks thud onto the deck.',
+        ],
+      },
+      {
         title: 'Hull hits that splinter and boom',
         notes: [
           'A cannonball striking a ship now sounds like heavy oak giving way, not a dull thump: a sharp crack, the crackling rip of planking tearing through, a hollow boom from inside the hull and a shower of splinters.',
