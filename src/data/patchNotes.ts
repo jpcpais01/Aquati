@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T12:00Z',
     entries: [
       {
+        title: 'Cannons fire on mobile',
+        notes: [
+          'The Fire, Port and Starboard buttons on touch screens now actually fire your broadsides, instantly on contact, with a little buzz on phones that support it.',
+          'Touch controls now appear the moment you touch the screen, even on devices that didn\'t announce themselves as touch, and mouse clicks fire again on touchscreen laptops.',
+        ],
+      },
+      {
         title: 'Shipwrights\' overhaul: rounder, richer ships',
         notes: [
           'Every hull has been reshaped with a fuller, softer bow, a rounder belly and castles that sweep gracefully up out of the deck line, finished with a chunky rounded wale, a keel and stem, and a thicker gilded rail.',

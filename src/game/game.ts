@@ -82,6 +82,8 @@ export class Game {
     this.input = new Input(canvas);
     this.ui.setTouch(this.input.isTouch);
     this.input.bindJoystick(document.getElementById('joy')!, document.getElementById('joy-knob')!);
+    this.input.bindFireButtons(document.getElementById('t-port')!, document.getElementById('t-fire')!, document.getElementById('t-star')!);
+    this.input.onTouchDetected = () => this.ui.setTouch(true);
 
     this.sun = new THREE.DirectionalLight(new THREE.Color(SUN_COLOR).multiplyScalar(1 / 3.1), 3.1);
     this.sun.castShadow = true;
