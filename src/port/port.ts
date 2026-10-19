@@ -921,7 +921,7 @@ export class Port {
     this.rollBarrel.add(this.rollSpin);
     this.group.add(this.rollBarrel);
     // crate overhead
-    this.prop(PropGeo.crate(0.62).translate(0, 1.62, 0.05), f[1].hips);
+    this.prop(PropGeo.crate(0.62).translate(0, 1.43, 0.05), f[1].hips);
     // fisherman's rod & line
     this.prop(PropGeo.rod(), this.rod);
     this.rod.position.set(0, 0.36, 0.38);
