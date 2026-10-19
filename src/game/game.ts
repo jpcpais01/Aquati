@@ -3,8 +3,10 @@ import { angleDelta, clamp } from '../core/noise';
 import { Input } from '../core/input';
 import { Audio } from '../core/audio';
 import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality';
+import { GraphicsSettings, Settings } from '../core/settings';
 import { createEnvironment, FOG_COLOR, globalUniforms, SUN_COLOR, SUN_DIR } from '../render/environment';
 import { Pipeline } from '../render/pipeline';
+import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
 import { Debris, Pusher } from '../fx/debris';
@@ -19,6 +21,7 @@ import { PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
+import { GraphicsPanel } from '../ui/graphics';
 import { CameraRig } from './cameraRig';
 import { Projectiles } from './projectiles';
 import { Loot, RARITY } from './loot';
@@ -74,8 +77,12 @@ export class Game {
   private windField!: WindField;
   private wisps!: WindWisps;
   private crew!: CrewSystem;
+  private settings: Settings;
+  private softShadows = false;
+  private fps = 60;
 
   constructor(canvas: HTMLCanvasElement) {
+    installSoftShadows();
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', stencil: false, depth: false, alpha: false });
     this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace; // the final pass encodes sRGB itself
     this.renderer.toneMapping = THREE.NoToneMapping;
@@ -83,6 +90,7 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
     this.quality = detectQuality(this.renderer);
+    this.settings = new Settings(this.quality.tier);
     this.pipeline = new Pipeline(this.renderer, { msaa: this.quality.msaa, bloomLevels: this.quality.bloomLevels, tiltShift: this.quality.tiltShift });
     this.rig = new CameraRig(innerWidth / innerHeight);
     this.input = new Input(canvas);
@@ -101,6 +109,16 @@ export class Game {
     sc.near = 1;
     sc.far = 900;
     this.opaque.add(this.sun, this.sun.target);
+    this.pipeline.sun = this.sun;
+    // shared with every shader, so a moving sun moves the traced shadows too
+    this.pipeline.sunDir = globalUniforms.uSunDir.value;
+    this.settings.onChange((s) => this.applySettings(s));
+    new GraphicsPanel(this.settings, () => this.ui.onClick(), () => ({
+      fps: this.fps,
+      scale: this.scaler.scale,
+      maxShadow: Math.min(4096, this.renderer.capabilities.maxTextureSize),
+    }));
+    this.applySettings(this.settings.value);
     this.opaque.fog = new THREE.Fog(FOG_COLOR.clone(), 380, 1500);
     this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group);
 
@@ -175,6 +193,7 @@ export class Game {
     ui.progress(0.88);
     await nextFrame();
 
+    this.applySettings(this.settings.value);
     this.resize();
     this.enterMenu();
     // warm up every shader before the first visible frame
@@ -234,6 +253,31 @@ export class Game {
       this.enterMenu();
     };
     ui.onSound = (on) => this.audio.setMuted(!on);
+  }
+
+  /** Pushes graphics settings into the renderer; safe to call any time. */
+  private applySettings(s: GraphicsSettings) {
+    const b = this.settings.budget;
+    const maxSamples = this.renderer.capabilities.maxSamples || 0;
+    this.pipeline.configure(
+      { msaa: s.antialias ? Math.min(4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift },
+      { ao: s.rtAO, gi: s.rtGI, shadows: s.rtShadows, aoSamples: b.aoSamples, shadowSteps: b.shadowSteps },
+    );
+    this.ocean?.setReflections(s.rtReflections ? b.ssrSteps : 0);
+    const size = Math.min(s.shadowRes, this.renderer.capabilities.maxTextureSize);
+    const sh = this.sun.shadow;
+    if (sh.mapSize.x !== size) {
+      sh.mapSize.set(size, size);
+      // three rebuilds the map at the new size on the next shadow pass
+      sh.map?.dispose();
+      sh.map = null;
+    }
+    this.softShadows = s.softShadows;
+    this.scaler.fixed = s.resolution;
+    if (s.resolution && this.scaler.scale !== s.resolution) {
+      this.scaler.scale = s.resolution;
+      this.resize();
+    }
   }
 
   private resize() {
@@ -527,12 +571,18 @@ export class Game {
     this.last = now;
     this.fpsFrames++;
     if (now - this.fpsT >= 500) {
-      this.fpsEl.textContent = `${Math.round((this.fpsFrames * 1000) / (now - this.fpsT))} FPS`;
+      this.fps = (this.fpsFrames * 1000) / (now - this.fpsT);
+      this.fpsEl.textContent = `${Math.round(this.fps)} FPS`;
       this.fpsFrames = 0;
       this.fpsT = now;
     }
     dt = Math.min(dt, 0.05);
     if (this.scaler.sample(dt)) this.resize();
+    // Auto's last resort: still slow at the lowest resolution, so shed effects
+    if (this.scaler.pressure >= 2) {
+      this.scaler.pressure = 0;
+      this.settings.stepDown();
+    }
     const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt;
     this.update(simDt, dt);
     this.render(simDt);
@@ -741,6 +791,7 @@ export class Game {
     this.sun.target.position.set(cx, 0, cz);
     this.sun.position.set(cx + SUN_DIR.x * 400, SUN_DIR.y * 400, cz + SUN_DIR.z * 400);
     this.sun.target.updateMatrixWorld();
+    updateSoftShadows(this.sun, this.softShadows);
 
     this.wake.update(this.renderer, target.x, target.z, dt);
     this.ocean.follow(target.x, target.z);

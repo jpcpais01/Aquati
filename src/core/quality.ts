@@ -1,3 +1,5 @@
+import { savedTier } from './settings';
+
 // Device tiering + runtime dynamic resolution. The tier picks feature
 // levels once; the resolution scaler reacts to real frame times on the
 // player's device and trades pixels for a steady frame.
@@ -24,6 +26,8 @@ export function detectQuality(renderer: { capabilities: { maxSamples: number } }
   const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 8;
   const url = new URLSearchParams(location.search).get('q');
   let tier: 0 | 1 | 2 = mobile ? (cores >= 6 && mem >= 4 ? 1 : 0) : cores >= 4 ? 2 : 1;
+  // a preset picked in Graphics settings decides world detail from the next launch
+  tier = savedTier() ?? tier;
   if (url === 'low') tier = 0;
   if (url === 'med') tier = 1;
   if (url === 'high') tier = 2;
@@ -38,6 +42,10 @@ export function detectQuality(renderer: { capabilities: { maxSamples: number } }
 
 export class ResolutionScaler {
   scale = 1;
+  /** A fixed render scale from settings; 0 lets the scaler drive it. */
+  fixed = 0;
+  /** Windows spent at the lowest scale and still too slow. */
+  pressure = 0;
   private acc = 0;
   private frames = 0;
   private cooldown = 2;
@@ -53,6 +61,12 @@ export class ResolutionScaler {
     const ms = (this.acc / this.frames) * 1000;
     this.acc = 0;
     this.frames = 0;
+    if (this.fixed) {
+      const changed = this.scale !== this.fixed;
+      this.scale = this.fixed;
+      return changed;
+    }
+    this.pressure = ms > 22 && this.scale <= 0.56 ? this.pressure + 1 : 0;
     let next = this.scale;
     if (ms > 21) next = Math.max(0.55, this.scale - 0.1);
     else if (ms < 14.5 && this.scale < 1) next = Math.min(1, this.scale + 0.05);
