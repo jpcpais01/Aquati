@@ -212,6 +212,34 @@ export function filterLines(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cu
   return g;
 }
 
+/**
+ * The laid-rope twin of filterLines: a rope (all the triangles sharing an
+ * aRope id) goes as a whole when any part of it is caught by the cut.
+ */
+export function filterRopes(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): THREE.BufferGeometry | null {
+  const p = src.getAttribute('position') as THREE.BufferAttribute;
+  const id = src.getAttribute('aRope') as THREE.BufferAttribute | undefined;
+  const index = src.index;
+  if (!id || !index) return null;
+  const inCut = (v: THREE.Vector3) => (cut.plane.distanceToPoint(v) > -0.05 && cut.lateral(v)) || (!!cut.rigging && cut.rigging(v));
+  const dead = new Set<number>();
+  for (let i = 0; i < p.count; i++) {
+    const r = id.getX(i);
+    if (dead.has(r)) continue;
+    if (inCut(_a.fromBufferAttribute(p, i).applyMatrix4(toRoot))) dead.add(r);
+  }
+  if (!dead.size) return null;
+  const keep: number[] = [];
+  for (let t = 0; t < index.count; t += 3) {
+    const a = index.getX(t);
+    if (!dead.has(id.getX(a))) keep.push(a, index.getX(t + 1), index.getX(t + 2));
+  }
+  const g = new THREE.BufferGeometry();
+  for (const [name, attr] of Object.entries(src.attributes)) g.setAttribute(name, (attr as THREE.BufferAttribute).clone());
+  g.setIndex(keep);
+  return g;
+}
+
 /** A ring of jagged splinters, raw timber, for both faces of a snapped spar. */
 export function breakSplinters(center: THREE.Vector3, radius: number, dir: number, seed: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];

@@ -561,14 +561,16 @@ const torsoProf = curve([
   // y, half-width, half-depth, forward offset
   [0.79, 0.08, 0.07, 0.0],
   [0.81, 0.12, 0.096, 0.0],
-  [0.86, 0.15, 0.11, 0.0],
-  [0.93, 0.157, 0.108, 0.004],
-  [1.0, 0.15, 0.104, 0.008],
-  [1.08, 0.153, 0.107, 0.012],
-  [1.18, 0.166, 0.116, 0.016],
-  [1.27, 0.174, 0.12, 0.016],
-  [1.34, 0.173, 0.114, 0.01],
-  [1.4, 0.16, 0.098, 0.0],
+  [0.86, 0.154, 0.108, 0.0],
+  [0.93, 0.153, 0.104, 0.004],
+  // a waist under the sash, the shirt bloused out over it, then a deep chest and square shoulders
+  [0.99, 0.144, 0.1, 0.008],
+  [1.06, 0.153, 0.108, 0.014],
+  [1.13, 0.159, 0.112, 0.016],
+  [1.2, 0.172, 0.119, 0.018],
+  [1.27, 0.183, 0.124, 0.018],
+  [1.34, 0.181, 0.116, 0.01],
+  [1.4, 0.165, 0.098, 0.0],
   [1.445, 0.128, 0.084, -0.008],
   [1.485, 0.078, 0.064, -0.01],
   [1.505, 0.03, 0.03, -0.01],
@@ -602,19 +604,19 @@ function torsoAt(u: number, y: number, out: V3, off = 0): V3 {
 }
 
 const armProf = curve([
-  // y (down the arm), radius across, radius front-back
+  // y (down the arm), radius across, radius front-back: a capped shoulder, a bit of biceps, a sailor's forearm
   [1.468, 0.0, 0.0],
-  [1.458, 0.036, 0.036],
-  [1.435, 0.059, 0.06],
-  [1.4, 0.067, 0.067],
-  [1.35, 0.065, 0.064],
-  [1.28, 0.06, 0.06],
-  [1.2, 0.054, 0.055],
-  [1.15, 0.05, 0.051],
-  [1.125, 0.049, 0.05],
-  [1.09, 0.05, 0.053],
-  [1.04, 0.049, 0.053],
-  [0.98, 0.043, 0.046],
+  [1.458, 0.038, 0.038],
+  [1.435, 0.062, 0.062],
+  [1.4, 0.071, 0.069],
+  [1.35, 0.067, 0.065],
+  [1.28, 0.061, 0.063],
+  [1.2, 0.056, 0.059],
+  [1.15, 0.051, 0.053],
+  [1.125, 0.05, 0.051],
+  [1.09, 0.053, 0.056],
+  [1.04, 0.053, 0.056],
+  [0.98, 0.045, 0.047],
   [0.93, 0.036, 0.039],
   [0.905, 0.033, 0.036],
   [0.893, 0.026, 0.029],
@@ -626,18 +628,18 @@ const legProf = curve([
   // y, radius across, radius front-back, z offset
   [0.958, 0.0, 0.0, 0],
   [0.945, 0.06, 0.06, 0],
-  [0.91, 0.094, 0.098, 0],
-  [0.85, 0.1, 0.104, -0.004],
-  [0.75, 0.092, 0.095, 0.0],
-  [0.65, 0.082, 0.084, 0.004],
-  [0.56, 0.07, 0.072, 0.006],
-  [0.5, 0.064, 0.066, 0.006],
-  [0.44, 0.064, 0.068, -0.002],
-  [0.37, 0.066, 0.072, -0.008],
-  [0.29, 0.059, 0.063, -0.006],
-  [0.2, 0.05, 0.052, -0.002],
-  [0.13, 0.044, 0.046, 0],
-  [0.1, 0.04, 0.042, 0],
+  [0.91, 0.086, 0.094, 0],
+  [0.85, 0.092, 0.1, -0.004],
+  [0.75, 0.088, 0.093, 0.0],
+  [0.65, 0.08, 0.084, 0.004],
+  [0.56, 0.071, 0.074, 0.006],
+  [0.5, 0.066, 0.069, 0.006],
+  [0.44, 0.067, 0.072, -0.002],
+  [0.37, 0.07, 0.077, -0.009],
+  [0.29, 0.063, 0.068, -0.007],
+  [0.2, 0.054, 0.056, -0.002],
+  [0.13, 0.047, 0.049, 0],
+  [0.1, 0.042, 0.044, 0],
   [0.085, 0.0, 0.0, 0],
 ]);
 const LEG_ROWS = [0.958, 0.953, 0.945, 0.93, 0.91, 0.88, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.56, 0.53, 0.5, 0.47, 0.44, 0.4, 0.37, 0.33, 0.29, 0.25, 0.2, 0.16, 0.13, 0.11, 0.1, 0.085];
@@ -709,7 +711,7 @@ export function buildSailorGeometry(res = 1): THREE.BufferGeometry {
     orient(g, (p, out) => out.set(s * mix(HX, SH_X, sm(0.9, 1.4, p.y)), p.y, 0));
     add(g, { bone: blendY(up, lo, EL_Y - 0.035, EL_Y + 0.035), tint: TINT.sleeve, part: PART.arm, ao: (p) => 0.74 + 0.26 * sm(0.9, 1.4, p.y) });
     // a rolled sleeve at the elbow, buttoned cuffs at the wrist
-    const roll = ring([[0.05, -0.012], [0.058, -0.004], [0.06, 0.008], [0.054, 0.016], [0.046, 0.01]], seg(14));
+    const roll = ring([[0.054, -0.012], [0.062, -0.004], [0.064, 0.008], [0.058, 0.016], [0.05, 0.01]], seg(14));
     roll.translate(s * mix(HX, SH_X, sm(0.9, 1.4, EL_Y - 0.03)), EL_Y - 0.03, 0.003);
     add(roll, { bone: lo, tint: TINT.sleeve, group: SHOWN(BIT.rolled), ao: 0.95 });
     const cuff = ring([[0.034, -0.02], [0.042, -0.016], [0.043, 0.012], [0.036, 0.016]], seg(14));
@@ -765,7 +767,7 @@ export function buildSailorGeometry(res = 1): THREE.BufferGeometry {
     orient(g, (p, out) => out.set(legX(p.y), p.y, 0));
     add(g, { bone: blendY(th, sh, KNEE_Y - 0.035, KNEE_Y + 0.04), tint: TINT.trousers, part: PART.leg, group: s > 0 ? 0 : HIDDEN(BIT.peg), ao: bodyAO });
     // breeches gathered below the knee
-    const garter = ring([[0.058, -0.014], [0.067, -0.01], [0.07, 0.004], [0.066, 0.016], [0.058, 0.018]], seg(16));
+    const garter = ring([[0.061, -0.014], [0.07, -0.01], [0.073, 0.004], [0.069, 0.016], [0.061, 0.018]], seg(16));
     garter.translate(legX(KNEE_Y - 0.04), KNEE_Y - 0.045, 0.004);
     add(garter, { bone: sh, tint: TINT.trousers, group: s > 0 ? SHOWN(BIT.garters) : ONLY(BIT.garters, BIT.peg), ao: 0.85 });
 
@@ -817,7 +819,7 @@ export function buildSailorGeometry(res = 1): THREE.BufferGeometry {
     }, { wrap: true });
     orient(shaft, (p, out) => out.set(legX(p.y), p.y, 0));
     add(shaft, { bone: sh, tint: TINT.boots, group: bootGroup, ao: (p) => 0.7 + 0.25 * sm(0.07, 0.4, p.y) });
-    const bc = ring([[0.064, 0.0], [0.074, 0.006], [0.081, 0.05], [0.083, 0.07], [0.075, 0.074], [0.068, 0.04]], seg(16), (p, a) => {
+    const bc = ring([[0.07, 0.0], [0.08, 0.006], [0.087, 0.05], [0.089, 0.07], [0.081, 0.074], [0.074, 0.04]], seg(16), (p, a) => {
       p.z += 0.01 * Math.max(0, Math.cos(a)) * (p.y / 0.07);
       p.y += 0.012 * Math.max(0, Math.cos(a));
     });
@@ -1747,7 +1749,8 @@ varying vec3 vCrewB;
 varying vec3 vCrewC;
 varying vec3 vCrewStripe;
 varying vec3 vCrewRest;
-varying vec4 vCrewInfo;`,
+varying vec4 vCrewInfo;
+varying vec3 vCrewCloth;`,
       )
       .replace(
         '#include <beginnormal_vertex>',
@@ -1778,6 +1781,12 @@ varying vec4 vCrewInfo;`,
     vCrewRest = position;
     float cPat = part == ${PART.arm} ? max(-texelFetch(uCrewPalette, ivec2(${TINT.shirt}, row), 0).a, 0.0) : 0.0;
     vCrewInfo = vec4(float(part), max(-pal.a, 0.0), max(pal.a, 0.0), float(tint) + 64.0 * floor(cPat + 0.5));
+    // which stretches of the limbs are cloth (and crease) rather than bare skin
+    vec3 sk = texelFetch(uCrewPalette, ivec2(${TINT.skin}, row), 0).rgb;
+    vCrewCloth = vec3(
+      step(0.002, distance(texelFetch(uCrewPalette, ivec2(${TINT.sleeve}, row), 0).rgb, sk)),
+      step(0.002, distance(texelFetch(uCrewPalette, ivec2(${TINT.forearm}, row), 0).rgb, sk)),
+      step(0.002, distance(texelFetch(uCrewPalette, ivec2(${TINT.shin}, row), 0).rgb, sk)));
   }`,
       );
     shader.fragmentShader = shader.fragmentShader
@@ -1789,7 +1798,63 @@ varying vec3 vCrewC;
 varying vec3 vCrewStripe;
 varying vec3 vCrewRest;
 varying vec4 vCrewInfo;
-float crewEdge(float d) { float w = fwidth(d) * 0.75 + 1e-4; return smoothstep(-w, w, d); }`,
+varying vec3 vCrewCloth;
+float crewEdge(float d) { float w = fwidth(d) * 0.75 + 1e-4; return smoothstep(-w, w, d); }
+float crewNoise(vec3 p) { return sin(p.x * 1.7 + sin(p.y * 2.3 + p.z * 1.1)) * sin(p.y * 1.3 + sin(p.z * 2.9 + p.x * 0.7)); }
+// Folds in the cloth, as a height (metres) over the rest pose: the shirt bloused over the sash,
+// pull lines from the armpits, creases at the elbows and behind the knees, the drape of the
+// trousers and their gathered hems, pleats in a captain's coat skirts.
+float crewFolds(vec3 p, int part, int tint) {
+  float h = 0.0;
+  float ang = atan(p.x, p.z);
+  float wob = crewNoise(p * 31.0);
+  if (part == ${PART.torso}) {
+    if (p.y > 0.955) {
+      float blouse = smoothstep(0.955, 1.0, p.y) * smoothstep(1.2, 1.03, p.y);
+      h += blouse * 0.0042 * sin(ang * 9.0 + wob * 1.4);
+      float pit = exp(-pow((p.y - 1.29) / 0.075, 2.0)) * smoothstep(0.07, 0.15, abs(p.x));
+      h += pit * 0.0026 * sin((abs(p.x) * 0.8 - p.y) * 85.0 + wob);
+    } else {
+      h += 0.0022 * sin(ang * 13.0 + wob) * smoothstep(0.86, 0.94, p.y);
+    }
+  } else if (part == ${PART.arm}) {
+    float ax = sign(p.x) * mix(${f(HX)}, ${f(SH_X)}, smoothstep(0.9, 1.4, p.y));
+    float a = atan(p.z, p.x - ax);
+    float cloth = p.y > 1.3 ? 1.0 : p.y > ${f(EL_Y - 0.03)} ? vCrewCloth.x : vCrewCloth.y;
+    float elb = exp(-pow((p.y - ${f(EL_Y)}) / 0.065, 2.0));
+    h += elb * 0.0042 * sin(p.y * 150.0 + sin(a * 2.0 + wob) * 1.6);
+    h += 0.0022 * sin(a * 3.0 + p.y * 28.0 + wob) * smoothstep(1.42, 1.22, p.y) * smoothstep(1.13, 1.2, p.y);
+    h += 0.002 * smoothstep(1.0, 0.94, p.y) * sin(p.y * 190.0 + a) * vCrewCloth.y;
+    h *= cloth;
+  } else if (part == ${PART.leg}) {
+    float lx = sign(p.x) * ${f(HIP_X)};
+    float a = atan(p.z, p.x - lx);
+    float cloth = p.y > ${f(KNEE_Y - 0.045)} ? 1.0 : vCrewCloth.z;
+    float knee = exp(-pow((p.y - ${f(KNEE_Y)}) / 0.075, 2.0));
+    h += knee * 0.0038 * sin(p.y * 115.0 + sin(a * 1.5) * 2.0 + wob);
+    h += 0.0028 * sin(a * 4.0 + p.y * 7.0 + wob * 0.8) * smoothstep(0.95, 0.55, p.y);
+    h += 0.0024 * smoothstep(0.26, 0.12, p.y) * sin(a * 7.0 + p.y * 40.0);
+    // the crotch pulls into a few short diagonals
+    h += 0.002 * exp(-pow((p.y - 0.84) / 0.05, 2.0)) * sin((p.y + abs(p.x - lx)) * 120.0);
+    h *= cloth;
+  } else if (tint == ${TINT.coat} && p.y < 0.99) {
+    h += 0.0055 * sin(ang * 11.0 + wob * 0.5) * smoothstep(0.98, 0.7, p.y);
+  } else if (tint == ${TINT.vest} || tint == ${TINT.coat}) {
+    h += 0.0018 * sin(ang * 7.0 + p.y * 30.0 + wob);
+  }
+  return h;
+}
+// screen-space bump: tilts the normal by the slope of a height field, given its change over one
+// pixel across and one down (taken per pixel, not per 2x2 quad, so the folds don't come out blocky)
+vec3 crewBump(vec3 pos, vec3 n, float hx, float hy) {
+  vec3 sx = dFdx(pos);
+  vec3 sy = dFdy(pos);
+  vec3 r1 = cross(sy, n);
+  vec3 r2 = cross(n, sx);
+  float det = dot(sx, r1);
+  vec3 g = sign(det) * (hx * r1 + hy * r2);
+  return normalize(abs(det) * n - g);
+}`,
       )
       .replace(
         '#include <color_fragment>',
@@ -1840,6 +1905,34 @@ float crewEdge(float d) { float w = fwidth(d) * 0.75 + 1e-4; return smoothstep(-
     diffuseColor.rgb *= 0.86 + 0.16 * step(0.5, fract(q.x + step(0.5, fract(q.y)) * 0.5));
   } else if (crPart == ${PART.sole}) {
     diffuseColor.rgb *= 0.9;
+  }
+  // cloth: folds that fade out once they're finer than a pixel, a little cavity shade in
+  // their valleys (that holds on a bit further out), stitched seams and a slightly uneven dye
+  float crPx = length(fwidth(crP));
+  float crFold = crewFolds(crP, crPart, crTint);
+  float crFoldK = 1.0 - smoothstep(0.004, 0.016, crPx);
+  diffuseColor.rgb *= 1.0 - clamp(-crFold * 55.0, 0.0, 0.16) * (1.0 - smoothstep(0.01, 0.035, crPx));
+  if (crPart == ${PART.leg} && (crP.y > ${f(KNEE_Y - 0.045)} || vCrewCloth.z > 0.5)) {
+    // the outside leg seam
+    float lx = sign(crP.x) * ${f(HIP_X)};
+    float seam = (1.0 - crewEdge(abs(crP.z + 0.002) - 0.0025)) * step(0.0, (crP.x - lx) * sign(crP.x));
+    diffuseColor.rgb *= 1.0 - 0.28 * seam;
+  }
+  if (crPart == ${PART.torso} && crP.y > 0.955 && crP.y < 1.33) {
+    // a placket down the shirt front
+    diffuseColor.rgb *= 1.0 - 0.18 * (1.0 - crewEdge(abs(crP.x) - 0.003)) * step(0.0, crP.z);
+  }
+  if (crPart == ${PART.torso} || crPart == ${PART.arm} || crPart == ${PART.leg} || crTint == ${TINT.coat} || crTint == ${TINT.vest} || crTint == ${TINT.sash}) {
+    diffuseColor.rgb *= 1.0 + 0.045 * crewNoise(crP * 9.0);
+  }`,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+  if (crFoldK > 0.001) {
+    float crHx = crewFolds(crP + dFdx(crP), crPart, crTint) - crFold;
+    float crHy = crewFolds(crP + dFdy(crP), crPart, crTint) - crFold;
+    normal = crewBump(-vViewPosition, normal, crHx * crFoldK, crHy * crFoldK);
   }`,
       )
       .replace(
@@ -1877,7 +1970,7 @@ float crewEdge(float d) { float w = fwidth(d) * 0.75 + 1e-4; return smoothstep(-
       );
   };
   const prevKey = material.customProgramCacheKey;
-  material.customProgramCacheKey = () => prevKey.call(material) + '|crew2';
+  material.customProgramCacheKey = () => prevKey.call(material) + '|crew4';
 
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   depth.onBeforeCompile = (shader) => {

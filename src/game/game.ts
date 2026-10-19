@@ -2273,6 +2273,10 @@ export class Game {
     P.begin('Crew', 'ships');
     this.crew.setView(this.rig.camera, this.toSun);
     this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
+    // laid rope, blocks and deck clutter only on ships big enough on screen to show them
+    const cam = this.rig.camera;
+    const pxK = innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) / cam.zoom);
+    for (const s of this.ships) s.model.updateDetail(pxK / Math.max(1, cam.position.distanceTo(s.root.position)));
     P.end();
 
     // gusts roll across whatever the camera is looking at

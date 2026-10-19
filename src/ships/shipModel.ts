@@ -16,6 +16,13 @@ import { deckTextures, FLAG_ASPECT, flagTexture, hullTextures, sailNormalTexture
 // carved figurehead, quarter pieces, rudder and a stern ensign. Everything is
 // softly rounded for a crafted, toy-like feel, and merged into a handful of
 // indexed meshes. Local frame: +Z bow, +Y up, +X port, waterline at y = 0.
+//
+// Detail comes in three tiers. The core meshes cast shadows; small parts
+// (bolts, bands, pins, coils) draw in their own buckets without a shadow
+// pass; and a near-only "fine" layer (laid rope tubes in place of hairlines,
+// lanyards, wooldings, gun-carriage ironwork, swivel guns, buckets, a chest
+// and the ship's cat) is switched on by updateDetail() only once the ship is
+// big enough on screen, when the hairline rigging is hidden in its place.
 
 /** Fraction of the sheer height where the painted wale tops out. */
 const WALE_TOP = (0.705 - 0.3) / 0.7;
@@ -397,6 +404,83 @@ function sailGeometry(tl: THREE.Vector2, tr: THREE.Vector2, bl: THREE.Vector2, b
   return g;
 }
 
+/** One length of rope for the close-range rigging: end to end, how thick, its colour and how much it sags. */
+interface RopeSpec {
+  a: THREE.Vector3;
+  b: THREE.Vector3;
+  r: number;
+  col: THREE.Color;
+  sag: number;
+  radial: number;
+}
+
+const TAR = hexL(0x2a1f16);
+const HEMP = hexL(0x8c7150);
+
+/**
+ * Every rope as its own little tube, all in one indexed geometry. Each vertex
+ * carries the rope it belongs to (aRope), so a falling mast can take whole
+ * ropes away with it rather than slicing them (see filterRopes).
+ */
+function ropeGeometry(specs: RopeSpec[]): THREE.BufferGeometry | null {
+  if (!specs.length) return null;
+  const pos: number[] = [];
+  const nrm: number[] = [];
+  const col: number[] = [];
+  const rid: number[] = [];
+  const idx: number[] = [];
+  const d = new THREE.Vector3();
+  const u = new THREE.Vector3();
+  const v = new THREE.Vector3();
+  const p = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  specs.forEach((s, k) => {
+    const len = s.a.distanceTo(s.b);
+    if (len < 1e-3) return;
+    d.subVectors(s.b, s.a).divideScalar(len);
+    u.set(0, 1, 0).cross(d);
+    if (u.lengthSq() < 1e-4) u.set(1, 0, 0).cross(d);
+    u.normalize();
+    v.crossVectors(d, u);
+    const segs = s.sag > 0 && len > 4 ? 4 : 1;
+    const R = s.radial;
+    const base = pos.length / 3;
+    const jit = 0.9 + Math.random() * 0.2;
+    for (let i = 0; i <= segs; i++) {
+      const f = i / segs;
+      p.lerpVectors(s.a, s.b, f);
+      p.y -= 4 * f * (1 - f) * s.sag;
+      for (let j = 0; j < R; j++) {
+        const a = (j / R) * Math.PI * 2;
+        n.copy(u).multiplyScalar(Math.cos(a)).addScaledVector(v, Math.sin(a));
+        pos.push(p.x + n.x * s.r, p.y + n.y * s.r, p.z + n.z * s.r);
+        nrm.push(n.x, n.y, n.z);
+        col.push(s.col.r * jit, s.col.g * jit, s.col.b * jit);
+        rid.push(k);
+      }
+    }
+    for (let i = 0; i < segs; i++) {
+      for (let j = 0; j < R; j++) {
+        const a = base + i * R + j;
+        const b = base + i * R + ((j + 1) % R);
+        idx.push(a, a + R, b, b, a + R, b + R);
+      }
+    }
+  });
+  if (!idx.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute('aRope', new THREE.Float32BufferAttribute(rid, 1));
+  g.setIndex(idx);
+  return g;
+}
+
+/** Pixels per metre (at 1x zoom) above which a ship shows its close-range detail, and below which it drops it again. */
+const FINE_ON = 21;
+const FINE_OFF = 17;
+
 export class ShipModel {
   readonly root = new THREE.Group();
   readonly shape: HullShape;
@@ -422,9 +506,22 @@ export class ShipModel {
   private ironParts: THREE.BufferGeometry[] = [];
   private trimParts: THREE.BufferGeometry[] = [];
   private glowParts: THREE.BufferGeometry[] = [];
+  /** Close-range detail: drawn only when the ship is big on screen, and never into the shadow map. */
+  /** Small parts that always show but are too fine for the shadow map to resolve: no shadow pass. */
+  private smallWood: THREE.BufferGeometry[] = [];
+  private smallIron: THREE.BufferGeometry[] = [];
+  private smallTrim: THREE.BufferGeometry[] = [];
+  private fineWood: THREE.BufferGeometry[] = [];
+  private fineIron: THREE.BufferGeometry[] = [];
+  private fineTrim: THREE.BufferGeometry[] = [];
   private mats: MaterialSet;
   private ropes: number[] = [];
   private ratlines: number[] = [];
+  /** The same rigging again as laid rope with real thickness, for close views. */
+  private ropeTubes: RopeSpec[] = [];
+  private readonly fineMeshes: THREE.Mesh[] = [];
+  private readonly lineMeshes: THREE.LineSegments[] = [];
+  private fineOn = true;
   private readonly detail: boolean;
   /** Custom liveries own their materials (no cache) and must be disposed. */
   private readonly owned: boolean;
@@ -466,6 +563,8 @@ export class ShipModel {
     this.buildBow();
     yield;
     this.buildDetails();
+    yield;
+    this.buildDeckLife();
     yield;
     this.finish();
   }
@@ -686,7 +785,7 @@ export class ShipModel {
         const x0 = s.halfWidthAtY(t, y0) - 0.13;
         const x1 = s.halfWidthAtY(t, y1) - 0.13;
         const st = spar(new THREE.Vector3(side * (x0 - 0.06), y0, z), new THREE.Vector3(side * (x1 - 0.06), y1, z), 0.07, 0.06, 4);
-        this.woodParts.push(colorize(st, frameCol));
+        this.smallWood.push(colorize(st, frameCol));
       }
     }
 
@@ -726,12 +825,12 @@ export class ShipModel {
     const waleR = 0.13 + L * 0.0035;
     const waleCol = hexL(this.livery.wale).lerp(hexL(this.livery.hull), 0.4);
     const wale = this.girdle((t) => s.waleY(t), waleR * 0.45);
-    this.woodParts.push(colorize(tube(wale, waleR, false, this.detail ? 7 : 5, 5), waleCol));
+    this.woodParts.push(colorize(tube(wale, waleR, false, this.detail ? 7 : 5, 3), waleCol));
     for (const end of [wale[0], wale[wale.length - 1]]) this.woodParts.push(colorize(ball(waleR, end), waleCol));
     // a slim gilded moulding picks out the painted band under the rail
     const mR = 0.045 + L * 0.0012;
     const band = this.girdle((t) => s.yAtV(t, 0.945), mR * 0.4);
-    this.trimParts.push(tube(band, mR, false, this.detail ? 5 : 4, 5));
+    this.trimParts.push(tube(band, mR, false, this.detail ? 5 : 4, 3));
     for (const end of [band[0], band[band.length - 1]]) this.trimParts.push(ball(mR * 1.3, end, 6, 4));
 
     // keel and stem: one rounded bar from the sternpost, under the hull and up the cutwater
@@ -854,12 +953,12 @@ export class ShipModel {
         // hand rope rail on turned posts
         const r0 = foot.clone().add(new THREE.Vector3(0, 0.9, 0));
         const r1 = head.clone().add(new THREE.Vector3(0, 0.82, -Math.sign(run) * 0.02));
-        this.woodParts.push(colorize(spar(r0, r1, 0.035, 0.035, 5), dark));
+        this.smallWood.push(colorize(spar(r0, r1, 0.035, 0.035, 5), dark));
         for (const p of [0.08, 0.92]) {
           const b = foot.clone().lerp(head, p);
-          this.woodParts.push(colorize(spar(b, b.clone().lerp(r0.clone().lerp(r1, p), 1), 0.03, 0.03, 5), dark));
+          this.smallWood.push(colorize(spar(b, b.clone().lerp(r0.clone().lerp(r1, p), 1), 0.03, 0.03, 5), dark));
         }
-        this.trimParts.push(ball(0.06, r0.clone().add(new THREE.Vector3(0, 0.02, 0)), 6, 4));
+        this.smallTrim.push(ball(0.06, r0.clone().add(new THREE.Vector3(0, 0.02, 0)), 6, 4));
       }
     }
   }
@@ -943,7 +1042,7 @@ export class ShipModel {
       }
       this.trimParts.push(tube(arc, 0.05, false, 5, 3));
       const post = new THREE.CylinderGeometry(0.035, 0.045, 0.5, 5);
-      for (let i = 1; i < N; i += this.detail ? 1 : 2) this.trimParts.push(post.clone().translate(arc[i].x, y + 0.27, arc[i].z));
+      for (let i = 1; i < N; i += this.detail ? 1 : 2) this.smallTrim.push(post.clone().translate(arc[i].x, y + 0.27, arc[i].z));
     }
     // quarter galleries: rounded bay windows bulging from each stern quarter
     const qt = 0.075;
@@ -1109,24 +1208,59 @@ export class ShipModel {
         const deck = s.mainDeckY(t);
         const cx = side * (x - 0.13 - 0.42 * k);
         const ch = y - deck - 0.05;
-        const car = rbox(0.85 * k, ch, 0.5 * k, 0.07);
-        car.translate(cx, deck + ch / 2 + 0.03, z);
-        this.woodParts.push(colorize(car, carriageCol));
-        for (const ax of [-0.28, 0.28]) {
-          const wheel = new THREE.CylinderGeometry(0.15 * k, 0.15 * k, 0.66 * k, 8);
-          wheel.rotateX(Math.PI / 2);
-          wheel.translate(cx + ax * k, deck + 0.15 * k, z);
-          this.woodParts.push(colorize(wheel, wheelCol));
+        // stepped cheeks bolted across a bed, the trunnions riding in the high front step
+        const cl = 0.85 * k;
+        const base = deck + 0.09 * k;
+        for (const dz of [-0.19 * k, 0.19 * k]) {
+          const front = rbox(cl * 0.56, y - base + 0.02, 0.08 * k, 0.03, 1);
+          front.translate(cx + side * cl * 0.22, (base + y + 0.02) / 2, z + dz);
+          const rear = rbox(cl * 0.48, (y - base) * 0.62, 0.08 * k, 0.03, 1);
+          rear.translate(cx - side * cl * 0.25, base + (y - base) * 0.31, z + dz);
+          this.woodParts.push(colorize(front, carriageCol), colorize(rear, carriageCol));
+          if (this.detail) {
+            // iron cap-squares over the trunnions and bolt heads down the cheeks
+            this.fineIron.push(new THREE.BoxGeometry(0.16 * k, 0.05, 0.1 * k).translate(cx + side * cl * 0.3, y + 0.03, z + dz));
+            for (const bx of [0.05, 0.38]) this.fineIron.push(ball(0.022, new THREE.Vector3(cx + side * cl * bx, base + 0.06, z + dz + Math.sign(dz) * 0.045 * k), 4, 3));
+          }
+        }
+        this.smallWood.push(colorize(new THREE.BoxGeometry(cl * 0.92, 0.06 * k, 0.34 * k).translate(cx, base + 0.03 * k, z), carriageCol.clone().multiplyScalar(0.85)));
+        // axletrees on four trucks, bigger in front, with iron tyres
+        for (const [ax, tr] of [
+          [0.3, 0.13],
+          [-0.3, 0.115],
+        ]) {
+          const axle = new THREE.CylinderGeometry(0.05 * k, 0.05 * k, 0.6 * k, 6);
+          axle.rotateX(Math.PI / 2);
+          this.smallWood.push(colorize(axle.translate(cx + side * ax * k, deck + tr * k, z), wheelCol));
+          for (const tz of [-0.27 * k, 0.27 * k]) {
+            const truck = new THREE.CylinderGeometry(tr * k, tr * k, 0.07 * k, 10);
+            truck.rotateX(Math.PI / 2);
+            this.woodParts.push(colorize(truck.translate(cx + side * ax * k, deck + tr * k, z + tz), wheelCol));
+            if (this.detail) this.fineIron.push(new THREE.TorusGeometry(tr * k, 0.014, 3, 8).translate(cx + side * ax * k, deck + tr * k, z + tz));
+          }
+        }
+        if (this.detail) {
+          // the quoin wedged under the breech, its handle sticking out aft
+          const q = new THREE.BoxGeometry(0.34 * k, 0.07 * k, 0.2 * k);
+          q.rotateZ(side * 0.12);
+          this.fineWood.push(colorize(q.translate(cx - side * cl * 0.18, y - 0.2 * k, z), wheelCol.clone().multiplyScalar(1.3)));
+          this.fineWood.push(colorize(ball(0.03 * k, new THREE.Vector3(cx - side * cl * 0.38, y - 0.19 * k, z), 5, 4), wheelCol));
         }
         // breeching rope round the cascabel and the run-out tackles, all set up on eyebolts in the bulwark
         const xi = side * (x - 0.16);
         const casc = new THREE.Vector3(side * (x - 0.74 * k), y + 0.02, z);
         for (const dz of [-1, 1]) {
           const eye = new THREE.Vector3(xi, y + 0.06, z + dz * 0.55);
-          this.rope(eye, casc);
+          this.rope(eye, casc, 0.032, HEMP, 0.05);
           const low = new THREE.Vector3(xi, deck + 0.28, z + dz * 0.42);
-          this.rope(low, new THREE.Vector3(cx - side * 0.36 * k, deck + ch * 0.7, z + dz * 0.25 * k));
-          if (this.detail) for (const e of [eye, low]) this.ironParts.push(ball(0.035, e, 5, 3));
+          this.rope(low, new THREE.Vector3(cx - side * 0.36 * k, deck + ch * 0.7, z + dz * 0.25 * k), 0.018, HEMP);
+          if (this.detail) {
+            for (const e of [eye, low]) this.smallIron.push(ball(0.035, e, 5, 3));
+            // a double block at each end of the run-out tackle
+            for (const bp of [low.clone().lerp(new THREE.Vector3(cx - side * 0.36 * k, deck + ch * 0.7, z + dz * 0.25 * k), 0.18), new THREE.Vector3(cx - side * 0.36 * k, deck + ch * 0.7, z + dz * 0.25 * k)]) {
+              this.fineWood.push(colorize(new THREE.SphereGeometry(0.055, 5, 3).scale(1.3, 0.8, 0.9).translate(bp.x, bp.y, bp.z), wheelCol.clone().multiplyScalar(1.4)));
+            }
+          }
         }
 
         // framed gunport with its lid hinged open above it, where the side is tall enough
@@ -1146,6 +1280,16 @@ export class ShipModel {
           g.translate(0, 0.4, 0.03);
           this.woodParts.push(colorize(g.applyMatrix4(m), col));
         }
+        if (this.detail) {
+          // the port lanyards holding the lid up, led in over the rail
+          const top = s.top(t) - y;
+          for (const lx of [-0.28, 0.28]) {
+            const a = new THREE.Vector3(lx, 0.72, 0.55).applyMatrix4(m);
+            const b = new THREE.Vector3(lx * 0.8, top + 0.02, 0.04).applyMatrix4(m);
+            this.ropeTubes.push({ a, b, r: 0.011, col: HEMP, sag: 0, radial: 3 });
+            this.fineIron.push(ball(0.02, a, 4, 3));
+          }
+        }
       }
     }
     // shot garlands between the guns: round shot racked along the waterway
@@ -1163,7 +1307,23 @@ export class ShipModel {
         const board = rbox(0.2, 0.12, 0.95, 0.04, 1);
         board.translate(x, deck + 0.06, z);
         this.woodParts.push(colorize(board, lining.clone().multiplyScalar(0.7)));
-        for (let b = -2; b <= 2; b++) this.ironParts.push(ball(0.085 * k2, new THREE.Vector3(x, deck + 0.13 + 0.06 * k2, z + b * 0.19), 6, 5));
+        if (this.detail) {
+          // rammer and sponge racked on hooks along the bulwark above the shot
+          const hx = side * (s.halfWidthAtY(t, deck + 0.95) - 0.13 - 0.07);
+          for (const [dy, head] of [
+            [0.92, 0],
+            [1.06, 1],
+          ]) {
+            const a = new THREE.Vector3(hx, deck + dy, z - 1.0);
+            const b = new THREE.Vector3(hx, deck + dy, z + 1.0);
+            this.fineWood.push(colorize(spar(a, b, 0.022, 0.022, 5), hexL(0xa07a4e)));
+            const hd = new THREE.CylinderGeometry(head ? 0.075 : 0.065, head ? 0.075 : 0.065, head ? 0.3 : 0.16, 7);
+            hd.rotateX(Math.PI / 2);
+            this.fineWood.push(colorize(hd.translate(hx, deck + dy, z + 1.0 + (head ? 0.12 : 0.05)), head ? hexL(0x3a3028) : hexL(0x7a5634)));
+            for (const hz of [-0.6, 0.6]) this.fineIron.push(spar(new THREE.Vector3(hx + side * 0.06, deck + dy - 0.06, z + hz), new THREE.Vector3(hx - side * 0.01, deck + dy - 0.04, z + hz), 0.012, 0.012, 3));
+          }
+        }
+        for (let b = -2; b <= 2; b++) this.smallIron.push(ball(0.085 * k2, new THREE.Vector3(x, deck + 0.13 + 0.06 * k2, z + b * 0.19), 6, 5));
       }
     }
     // stern chasers through the transom
@@ -1179,6 +1339,15 @@ export class ShipModel {
   }
 
   // ---------------------------------------------------------------- rig
+
+  /** Which side of a mast its fife rail stands: abaft (-1) unless a hatch is in the way there, then before it (+1). */
+  private fifeSide(mt: number) {
+    const s = this.shape;
+    const c = this.cls;
+    const hatches = [0.46, 0.6].filter((t) => !c.masts.some((mm) => Math.abs(mm.t - t) < 0.05)).map((t) => [s.z(t), c.length * 0.035 + 0.3]);
+    const blocked = (zz: number) => hatches.some(([hz, hl]) => Math.abs(zz - hz) < hl + 0.2);
+    return blocked(s.z(mt) - 0.78) ? 1 : -1;
+  }
 
   private buildRig() {
     const s = this.shape;
@@ -1206,7 +1375,7 @@ export class ShipModel {
         const ring = new THREE.TorusGeometry(rUp + 0.03, 0.03, 4, 10);
         ring.rotateX(Math.PI / 2);
         ring.translate(0, y + 0.16 + rLow * 0.2, z);
-        this.ironParts.push(ring);
+        this.smallIron.push(ring);
       };
       if (m.rig === 'lateen') pole(y0, y0 + H, r0, r0 * 0.45);
       else {
@@ -1234,7 +1403,17 @@ export class ShipModel {
         const band = new THREE.TorusGeometry(r0 * (1 - lowTaper * Math.min(1, (f * H) / lowLen)) + 0.012, 0.035, 4, 12);
         band.rotateX(Math.PI / 2);
         band.translate(0, y0 + H * f, z);
-        this.ironParts.push(band);
+        this.smallIron.push(band);
+      }
+      // rope wooldings bound round the lower mast between the iron hoops
+      if (this.detail) {
+        for (const f of [0.15, 0.25, 0.35]) {
+          for (let k = -1; k <= 1; k++) {
+            const yy = y0 + H * f + k * 0.075;
+            const w = new THREE.TorusGeometry(r0 * (1 - lowTaper * Math.min(1, (yy - y0) / lowLen)) + 0.014, 0.026, 4, 12);
+            this.fineWood.push(colorize(w.rotateX(Math.PI / 2).translate(0, yy, z), HEMP.clone().multiplyScalar(0.8)));
+          }
+        }
       }
       // mast cap + truck
       const cap = new THREE.SphereGeometry(r0 * 0.5, 10, 6);
@@ -1268,7 +1447,19 @@ export class ShipModel {
           const a = (i / 8) * Math.PI * 2;
           const post = new THREE.CylinderGeometry(0.03, 0.03, 0.58, 4);
           post.translate(Math.cos(a) * B * 0.155, ty + 0.33, z + Math.sin(a) * B * 0.155);
-          this.trimParts.push(post);
+          this.smallTrim.push(post);
+        }
+        // futtock shrouds from the rim of the top in to a band round the mast below it
+        if (this.detail) {
+          for (const side of [1, -1]) {
+            for (const dz of [-0.2, 0, 0.2]) this.rope(new THREE.Vector3(side * B * 0.145, ty - 0.02, z + dz), new THREE.Vector3(side * r0 * 0.85, ty - 1.05, z + dz * 0.3), 0.02);
+          }
+          this.fineIron.push(new THREE.TorusGeometry(r0 * 0.86, 0.03, 4, 12).rotateX(Math.PI / 2).translate(0, ty - 1.05, z));
+          // halyard blocks hung under the top
+          for (const side of [1, -1]) {
+            const blk = new THREE.SphereGeometry(0.09, 7, 5).scale(0.7, 1.25, 0.8);
+            this.fineWood.push(colorize(blk.translate(side * (r0 + 0.12), ty - 0.32, z - 0.05), darkWood));
+          }
         }
         // crosstrees higher up
         const cy = y0 + H * 0.87;
@@ -1302,10 +1493,23 @@ export class ShipModel {
           const dEye = new THREE.SphereGeometry(0.1, 7, 5);
           dEye.scale(1, 1, 0.6);
           dEye.translate(eye.x, eye.y, eye.z);
-          this.woodParts.push(colorize(dEye, darkWood));
-          this.rope(eye, head);
+          this.smallWood.push(colorize(dEye, darkWood));
+          if (this.detail) {
+            // the shroud ends in an upper deadeye, set up to the lower one with a three-part lanyard
+            const up = head.clone().sub(eye).normalize();
+            const upper = eye.clone().addScaledVector(up, 0.42);
+            const uEye = new THREE.SphereGeometry(0.085, 7, 5);
+            uEye.scale(1, 1, 0.6);
+            this.fineWood.push(colorize(uEye.translate(upper.x, upper.y, upper.z), darkWood));
+            const across = new THREE.Vector3(0, 0, 1);
+            for (const o of [-0.045, 0, 0.045]) {
+              this.ropeTubes.push({ a: eye.clone().addScaledVector(across, o), b: upper.clone().addScaledVector(across, o * 0.9), r: 0.011, col: HEMP, sag: 0, radial: 3 });
+            }
+            this.ropes.push(eye.x, eye.y, eye.z, head.x, head.y, head.z);
+            this.ropeTubes.push({ a: upper, b: head.clone(), r: 0.034, col: TAR, sag: 0, radial: 5 });
+          } else this.rope(eye, head, 0.034);
           // chainplate: an iron strap bolted down the side below the channel
-          this.ironParts.push(spar(base.clone().add(new THREE.Vector3(0, 0.12, 0)), base.clone().addScaledVector(nH, -0.3).add(new THREE.Vector3(0, -0.75, 0)), 0.028, 0.028, 4));
+          this.smallIron.push(spar(base.clone().add(new THREE.Vector3(0, 0.12, 0)), base.clone().addScaledVector(nH, -0.3).add(new THREE.Vector3(0, -0.75, 0)), 0.028, 0.028, 4));
           feet.push(eye);
         }
         if (this.detail) {
@@ -1317,10 +1521,11 @@ export class ShipModel {
               const a = feet[i].clone().lerp(head, f);
               const b = feet[i + 1].clone().lerp(head, f);
               this.ratlines.push(a.x, a.y, a.z, b.x, b.y, b.z);
+              this.ropeTubes.push({ a, b, r: 0.014, col: TAR, sag: 0, radial: 3 });
             }
           }
         }
-        this.rope(new THREE.Vector3(0, y0 + H * 0.93, z), new THREE.Vector3(side * B * 0.16, y0 + H * 0.6, z));
+        this.rope(new THREE.Vector3(0, y0 + H * 0.93, z), new THREE.Vector3(side * B * 0.16, y0 + H * 0.6, z), 0.028);
       }
 
       if (m.rig === 'square') {
@@ -1333,7 +1538,11 @@ export class ShipModel {
         const yards: { y: number; half: number }[] = [];
         const yardParts: THREE.BufferGeometry[] = [];
         const lines: number[] = [];
-        const seg = (a: THREE.Vector3, b: THREE.Vector3) => lines.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        const tubes: RopeSpec[] = [];
+        const seg = (a: THREE.Vector3, b: THREE.Vector3, r = 0.02, col = TAR) => {
+          lines.push(a.x, a.y, a.z, b.x, b.y, b.z);
+          tubes.push({ a: a.clone(), b: b.clone(), r, col, sag: 0, radial: 4 });
+        };
         fr.forEach((f, i) => {
           const y = y0 + H * f;
           const half = (B * widths[i]) / 2;
@@ -1355,7 +1564,9 @@ export class ShipModel {
             const blk = ball(0.1, arm.clone().add(new THREE.Vector3(0, -0.12, -0.05)), 6, 4);
             yardParts.push(blk);
             // lift from the yardarm up to the mast, braces' pendants hanging off the arm
-            seg(arm, new THREE.Vector3(sx * 0.2, liftTop, 0));
+            seg(arm, new THREE.Vector3(sx * 0.2, liftTop, 0), 0.026);
+            // clewlines and buntlines leading down abaft the canvas to the pin rails at the mast's foot
+            if (m.rig === 'square') for (const f of [0.38, 0.78]) seg(new THREE.Vector3(sx * half * f, y - 0.06, -0.14), new THREE.Vector3(sx * (0.1 + f * 0.25), y0 + 0.86, -0.72), 0.016, HEMP);
             // footrope sagging under the yard, held up by stirrups
             const pts: THREE.Vector3[] = [];
             for (let k = 0; k <= 6; k++) {
@@ -1363,8 +1574,8 @@ export class ShipModel {
               const fx = lerp(0.35, half * 0.98, u);
               pts.push(new THREE.Vector3(sx * fx, y - 0.25 - Math.sin(u * Math.PI) * 0.5, -0.3));
             }
-            for (let k = 0; k < pts.length - 1; k++) seg(pts[k], pts[k + 1]);
-            for (const k of [2, 4]) seg(pts[k], new THREE.Vector3(pts[k].x, y, -0.06));
+            for (let k = 0; k < pts.length - 1; k++) seg(pts[k], pts[k + 1], 0.022, HEMP);
+            for (const k of [2, 4]) seg(pts[k], new THREE.Vector3(pts[k].x, y, -0.06), 0.014, HEMP);
           }
         });
         const yardMesh = new THREE.Mesh(colorize(mergeParts(yardParts, false)!, darkWood, 0), this.mats.wood);
@@ -1373,7 +1584,11 @@ export class ShipModel {
         if (lines.length) {
           const lg = new THREE.BufferGeometry();
           lg.setAttribute('position', new THREE.Float32BufferAttribute(lines, 3));
-          pivot.add(new THREE.LineSegments(lg, this.mats.rope));
+          const ls = new THREE.LineSegments(lg, this.mats.rope);
+          ls.userData.lod = true;
+          pivot.add(ls);
+          this.lineMeshes.push(ls);
+          if (this.detail) this.addRopeMesh(pivot, tubes);
         }
         yards.forEach((yd, i) => {
           const bottomY = i === 0 ? Math.max(y0 + 2.1, yd.y - H * 0.38) : yards[i - 1].y + 0.2;
@@ -1426,14 +1641,22 @@ export class ShipModel {
         gseg(new THREE.Vector3(0, footY, -boomLen * 0.98), new THREE.Vector3(0, y0 + H * 0.97, 0));
         const glg = new THREE.BufferGeometry();
         glg.setAttribute('position', new THREE.Float32BufferAttribute(gl, 3));
-        pivot.add(new THREE.LineSegments(glg, this.mats.rope));
+        const gls = new THREE.LineSegments(glg, this.mats.rope);
+        gls.userData.lod = true;
+        pivot.add(gls);
+        this.lineMeshes.push(gls);
+        if (this.detail) {
+          const gt: RopeSpec[] = [];
+          for (let i = 0; i < gl.length; i += 6) gt.push({ a: new THREE.Vector3(gl[i], gl[i + 1], gl[i + 2]), b: new THREE.Vector3(gl[i + 3], gl[i + 4], gl[i + 5]), r: 0.026, col: HEMP, sag: 0.06, radial: 4 });
+          this.addRopeMesh(pivot, gt);
+        }
         // mast hoops hold the luff of the mainsail to the mast
         const r1 = r0 * (1 - 0.22 * ((footY - y0) / (H * 0.8)));
         for (let hy = footY + 0.7; hy < throatY - 0.3; hy += this.detail ? 0.85 : 1.4) {
           const hoop = new THREE.TorusGeometry(r1 + 0.06, 0.045, 4, 12);
           hoop.rotateX(Math.PI / 2);
           hoop.translate(0, hy, z);
-          this.woodParts.push(colorize(hoop, woodCol.clone().multiplyScalar(1.15)));
+          this.smallWood.push(colorize(hoop, woodCol.clone().multiplyScalar(1.15)));
         }
         // plane coords: x = aft distance, y = up from foot
         const geo = sailGeometry(
@@ -1515,13 +1738,13 @@ export class ShipModel {
     for (const f of [0.45, 0.75]) {
       const band = new THREE.TorusGeometry(lerp(0.2, 0.11, f) + 0.012, 0.035, 4, 12);
       band.applyMatrix4(new THREE.Matrix4().compose(bsHeel.clone().lerp(tip, f), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), heelDir), new THREE.Vector3(1, 1, 1)));
-      this.ironParts.push(band);
+      this.smallIron.push(band);
     }
-    this.rope(jbEnd.clone().add(new THREE.Vector3(0, 0.12, 0)), mastTops[mastTops.length - 1]);
+    this.rope(jbEnd.clone().add(new THREE.Vector3(0, 0.12, 0)), mastTops[mastTops.length - 1], 0.03, TAR, 0.12);
     const fore = c.masts[c.masts.length - 1];
     const foreTop = mastTops[mastTops.length - 1];
-    this.rope(foreTop, tip);
-    this.rope(tip, new THREE.Vector3(0, -0.2, s.z(1) - 0.1)); // bobstay
+    this.rope(foreTop, tip, 0.038, TAR, 0.1);
+    this.rope(tip, new THREE.Vector3(0, -0.2, s.z(1) - 0.1), 0.05); // bobstay
     // dolphin striker under the cap spreading the martingale, gammoning lashed round the heel,
     // and footropes slung under the jib-boom
     const strikerTop = tip.clone().add(new THREE.Vector3(0, -0.12, -0.05));
@@ -1529,23 +1752,23 @@ export class ShipModel {
     this.woodParts.push(colorize(spar(strikerTop, strikerEnd, 0.065, 0.045, 5), darkWood));
     this.ironParts.push(ball(0.06, strikerEnd, 5, 4));
     const jbTip = jbEnd.clone().add(new THREE.Vector3(0, 0.12, 0));
-    this.rope(jbTip, strikerEnd);
+    this.rope(jbTip, strikerEnd, 0.03);
     for (const side of [1, -1]) {
       const bowY = s.top(0.95) - 0.9;
-      this.rope(strikerEnd, s.skinPoint(0.95, bowY, side, 0.05));
+      this.rope(strikerEnd, s.skinPoint(0.95, bowY, side, 0.05), 0.03);
       const capP = tip.clone().add(new THREE.Vector3(0, 0.1, 0));
       let prev: THREE.Vector3 | null = null;
       for (let k = 0; k <= 5; k++) {
         const u = k / 5;
         const p = capP.clone().lerp(jbTip, u).add(new THREE.Vector3(side * 0.32, -0.25 - Math.sin(u * Math.PI) * 0.45, 0));
-        if (prev) this.rope(prev, p);
+        if (prev) this.rope(prev, p, 0.02, HEMP);
         prev = p;
       }
     }
     for (const f of [0.1, 0.15, 0.2]) {
       const g = new THREE.TorusGeometry(lerp(0.2, 0.11, f) + 0.035, 0.03, 4, 10);
       g.applyMatrix4(new THREE.Matrix4().compose(bsHeel.clone().lerp(tip, f), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), heelDir), new THREE.Vector3(1, 1, 1)));
-      this.woodParts.push(colorize(g, hexL(0x9a7a50)));
+      this.smallWood.push(colorize(g, hexL(0x9a7a50)));
     }
     if (c.jib) {
       const pivot = new THREE.Group();
@@ -1572,8 +1795,8 @@ export class ShipModel {
       this.sails.push({ mesh: sail, tier: 0 });
     }
     // stays between mastheads and to the stern
-    for (let i = 0; i < mastTops.length - 1; i++) this.rope(mastTops[i], mastTops[i + 1].clone().add(new THREE.Vector3(0, -c.masts[i + 1].height * 0.35, 0)));
-    for (const side of [1, -1]) this.rope(mastTops[0], s.skinPoint(0.05, s.top(0.05) + 0.05, side, -0.12));
+    for (let i = 0; i < mastTops.length - 1; i++) this.rope(mastTops[i], mastTops[i + 1].clone().add(new THREE.Vector3(0, -c.masts[i + 1].height * 0.35, 0)), 0.038, TAR, 0.12);
+    for (const side of [1, -1]) this.rope(mastTops[0], s.skinPoint(0.05, s.top(0.05) + 0.05, side, -0.12), 0.03, TAR, 0.1);
 
     // the ship's flag on the tallest mast (so no gull sits on that cap)
     const flagCap = this.perches.findIndex((p) => p.pos.x === 0 && Math.abs(p.pos.z - maxMastTop.z) < 1e-4);
@@ -1608,8 +1831,10 @@ export class ShipModel {
     return g;
   }
 
-  private rope(a: THREE.Vector3, b: THREE.Vector3) {
+  /** A line of rigging: a 1-pixel line from afar, laid rope of radius `r` up close. */
+  private rope(a: THREE.Vector3, b: THREE.Vector3, r = 0.03, col = TAR, sag = 0) {
     this.ropes.push(a.x, a.y, a.z, b.x, b.y, b.z);
+    if (this.detail) this.ropeTubes.push({ a: a.clone(), b: b.clone(), r, col, sag, radial: r > 0.025 ? 5 : 4 });
   }
 
   // ---------------------------------------------------------------- bow
@@ -1726,7 +1951,7 @@ export class ShipModel {
       const hm = surfaceMatrix(s.skinPoint(ht, hy, side, -0.02), hn);
       this.ironParts.push(new THREE.TorusGeometry(0.15, 0.045, 5, 12).applyMatrix4(hm));
       this.ironParts.push(new THREE.CircleGeometry(0.14, 10).applyMatrix4(hm));
-      this.rope(s.skinPoint(ht, hy - 0.05, side, 0.04), end.clone().add(new THREE.Vector3(0, -0.15 - 0.12 * ak, 0)));
+      this.rope(s.skinPoint(ht, hy - 0.05, side, 0.04), end.clone().add(new THREE.Vector3(0, -0.15 - 0.12 * ak, 0)), 0.05, HEMP, 0.06);
     }
   }
 
@@ -1785,7 +2010,7 @@ export class ShipModel {
         const h = new THREE.TorusGeometry(r, 0.025, 3, 12);
         h.rotateX(Math.PI / 2);
         h.translate(x, y + hy, z);
-        this.woodParts.push(colorize(h, hoop));
+        this.smallWood.push(colorize(h, hoop));
       }
     };
     const crateAt = (x: number, z: number, sz: number, rot: number) => {
@@ -1808,7 +2033,7 @@ export class ShipModel {
         const g = new THREE.TorusGeometry(r, 0.06, 4, 12);
         g.rotateX(Math.PI / 2);
         g.translate(x, y + dy, z);
-        this.woodParts.push(colorize(g, coilCol));
+        this.smallWood.push(colorize(g, coilCol));
       }
     };
 
@@ -1829,8 +2054,8 @@ export class ShipModel {
       const nx = Math.max(2, Math.floor((w - 0.28) / pitch));
       const nz = Math.max(2, Math.floor((l - 0.28) / pitch));
       const barCol = grate.clone().multiplyScalar(1.25);
-      for (let i = 1; i < nx; i++) this.woodParts.push(colorize(new THREE.BoxGeometry(0.05, 0.07, l - 0.24).translate(-w / 2 + 0.14 + ((w - 0.28) * i) / nx, y + ch - 0.06, z), barCol, 0.02));
-      for (let i = 1; i < nz; i++) this.woodParts.push(colorize(new THREE.BoxGeometry(w - 0.24, 0.05, 0.05).translate(0, y + ch - 0.05, z - l / 2 + 0.14 + ((l - 0.28) * i) / nz), barCol, 0.02));
+      for (let i = 1; i < nx; i++) this.smallWood.push(colorize(new THREE.BoxGeometry(0.05, 0.07, l - 0.24).translate(-w / 2 + 0.14 + ((w - 0.28) * i) / nx, y + ch - 0.06, z), barCol, 0.02));
+      for (let i = 1; i < nz; i++) this.smallWood.push(colorize(new THREE.BoxGeometry(w - 0.24, 0.05, 0.05).translate(0, y + ch - 0.05, z - l / 2 + 0.14 + ((l - 0.28) * i) / nz), barCol, 0.02));
     }
     // barrels, crates and coiled lines by the masts
     const B = c.beam;
@@ -1882,7 +2107,7 @@ export class ShipModel {
       const st = rbox(0.22, 1.12, 0.12, 0.05, 1);
       this.woodParts.push(colorize(st.translate(0, s.deckY(wt) + 0.56, wz + dz), grate));
     }
-    for (const sx of [-1, 1]) this.rope(new THREE.Vector3(sx * 0.1, wy - 0.12, wz + 0.42), new THREE.Vector3(sx * 0.35, s.deckY(wt) + 0.02, wz + 0.42));
+    for (const sx of [-1, 1]) this.rope(new THREE.Vector3(sx * 0.1, wy - 0.12, wz + 0.42), new THREE.Vector3(sx * 0.35, s.deckY(wt) + 0.02, wz + 0.42), 0.018, HEMP);
     this.deckProps.push({ x: 0, z: wz + 0.48, r: 0.4 });
     // binnacle: a turned pedestal with a brass hood over the compass
     const bz = wz + 1.25;
@@ -1904,7 +2129,7 @@ export class ShipModel {
     const hood = new THREE.SphereGeometry(0.24, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     this.trimParts.push(hood.translate(0, by + 0.82, bz));
     this.trimParts.push(ball(0.05, new THREE.Vector3(0, by + 1.08, bz), 5, 4));
-    for (const sx of [-1, 1]) this.ironParts.push(ball(0.09, new THREE.Vector3(sx * 0.34, by + 0.75, bz), 7, 5));
+    for (const sx of [-1, 1]) this.smallIron.push(ball(0.09, new THREE.Vector3(sx * 0.34, by + 0.75, bz), 7, 5));
     this.deckProps.push({ x: 0, z: bz, r: 0.34 });
 
     // skylight over the great cabin, where the quarterdeck has room for it
@@ -1921,7 +2146,7 @@ export class ShipModel {
           for (const dz of [-0.26, 0, 0.26]) {
             const bar = new THREE.BoxGeometry(0.52, 0.035, 0.035);
             bar.rotateZ(sx * 0.42);
-            this.trimParts.push(bar.translate(sx * 0.25, ky + 0.56, zz + dz));
+            this.smallTrim.push(bar.translate(sx * 0.25, ky + 0.56, zz + dz));
           }
         }
         this.trimParts.push(spar(new THREE.Vector3(0, ky + 0.64, zz - 0.42), new THREE.Vector3(0, ky + 0.64, zz + 0.42), 0.035, 0.035, 5));
@@ -1971,7 +2196,7 @@ export class ShipModel {
       const g = new THREE.TorusGeometry(0.15, 0.035, 4, 10);
       if (along === 'z') g.rotateY(Math.PI / 2);
       g.scale(1, 1.5, 1);
-      this.woodParts.push(colorize(g.translate(x, y - 0.24, z), coilCol));
+      this.smallWood.push(colorize(g.translate(x, y - 0.24, z), coilCol));
     };
     for (const m of c.masts) {
       const t = m.t + 0.55 / c.length;
@@ -1985,15 +2210,12 @@ export class ShipModel {
         const z0 = zs[0] - 0.15;
         const z1 = zs[zs.length - 1] + 0.15;
         this.woodParts.push(colorize(rbox(0.2, 0.09, z1 - z0, 0.035, 1).translate(x, ry, (z0 + z1) / 2), grate));
-        for (const zz of zs) this.woodParts.push(colorize(pin.clone().translate(x, ry, zz), pinCol, 0.08));
+        for (const zz of zs) this.smallWood.push(colorize(pin.clone().translate(x, ry, zz), pinCol, 0.08));
         for (const zz of [zs[0], zs[zs.length - 1]]) hangCoil(x - side * 0.02, ry, zz, 'z');
       }
       // a fife rail by the foot of the mast
       if (m.rig === 'lateen') continue;
-      // abaft the mast unless a hatch is in the way there, then before it
-      const hatches = [0.46, 0.6].filter((t) => !c.masts.some((mm) => Math.abs(mm.t - t) < 0.05)).map((t) => [s.z(t), c.length * 0.035 + 0.3]);
-      const blocked = (zz: number) => hatches.some(([hz, hl]) => Math.abs(zz - hz) < hl + 0.2);
-      const fz = blocked(s.z(m.t) - 0.78) ? s.z(m.t) + 0.78 : s.z(m.t) - 0.78;
+      const fz = s.z(m.t) + this.fifeSide(m.t) * 0.78;
       const fy = s.deckY(m.t);
       for (const sx of [-1, 1]) {
         const postG = lathe(
@@ -2013,8 +2235,21 @@ export class ShipModel {
         hangCoil(sx * 0.52, fy + 0.66, fz - 0.09, 'x');
       }
       this.woodParts.push(colorize(rbox(1.25, 0.1, 0.18, 0.04, 1).translate(0, fy + 0.8, fz), grate));
-      for (const px of [-0.3, -0.1, 0.1, 0.3]) this.woodParts.push(colorize(pin.clone().translate(px, fy + 0.8, fz), pinCol, 0.08));
+      for (const px of [-0.3, -0.1, 0.1, 0.3]) this.smallWood.push(colorize(pin.clone().translate(px, fy + 0.8, fz), pinCol, 0.08));
       this.deckProps.push({ x: 0, z: fz, r: 0.6 });
+      // halyards and lifts led down from aloft and belayed round the pins
+      const mr = 0.12 + m.height * 0.0085;
+      const upY = m.top ? fy + m.height * 0.6 - 0.36 : fy + m.height * 0.5;
+      for (const px of [-0.3, -0.1, 0.1, 0.3]) {
+        const sx = Math.sign(px);
+        this.rope(new THREE.Vector3(px, fy + 0.95, fz), new THREE.Vector3(sx * (mr + 0.12 + Math.abs(px) * 0.15), upY, s.z(m.t) - 0.05), 0.017, HEMP);
+      }
+      if (this.detail && this.fifeSide(m.t) > 0 && m.rig === 'square') {
+        // the clewlines abaft the mast belay to a pair of bitts there
+        const bz = s.z(m.t) - 0.72;
+        for (const sx of [-1, 1]) this.fineWood.push(colorize(rbox(0.12, 0.9, 0.12, 0.03, 1).translate(sx * 0.4, fy + 0.45, bz), barrelCol));
+        this.fineWood.push(colorize(rbox(0.95, 0.1, 0.14, 0.03, 1).translate(0, fy + 0.84, bz), grate));
+      }
     }
 
     // galley stovepipe forward of the foremast, smoking when the cook is busy
@@ -2055,7 +2290,7 @@ export class ShipModel {
     this.woodParts.push(colorize(cap, barrelCol));
     for (let k = 0; k < 4; k++) {
       const a = (k / 4) * Math.PI * 2 + 0.4;
-      this.woodParts.push(colorize(spar(new THREE.Vector3(0, capY + 0.68, capZ), new THREE.Vector3(Math.cos(a) * 0.8, capY + 0.68, capZ + Math.sin(a) * 0.8), 0.04, 0.035, 4), grate));
+      this.smallWood.push(colorize(spar(new THREE.Vector3(0, capY + 0.68, capZ), new THREE.Vector3(Math.cos(a) * 0.8, capY + 0.68, capZ + Math.sin(a) * 0.8), 0.04, 0.035, 4), grate));
     }
 
     // ship's boat stowed on skids amidships
@@ -2082,6 +2317,165 @@ export class ShipModel {
       base.translate(x, ty + 0.58 * k, z);
       this.ironParts.push(base);
       this.trimParts.push(ball(0.07 * k, new THREE.Vector3(x, ty + 1.3 * k, z), 6, 4));
+    }
+  }
+
+  /**
+   * The lived-in layer: bronze swivel guns on the rails, entry battens and man
+   * ropes up the side, scuppers, fire buckets and a sea chest by the break of
+   * the deck, and the ship's cat keeping an eye on things from a crate.
+   */
+  private buildDeckLife() {
+    const s = this.shape;
+    const c = this.cls;
+    const L = c.length;
+    const darkWood = hexL(0x3e2a1a);
+
+    // swivel guns on their iron crutches along the rail aft (and forward, if she has a forecastle)
+    const swivelTs = [c.sternCastle ? c.sternCastle.t * 0.45 : 0.13, c.foreCastle ? (c.foreCastle.t + 0.96) / 2 : 0.8];
+    const sw = lathe(
+      [
+        [0, -0.36],
+        [0.04, -0.35],
+        [0.05, -0.3],
+        [0.035, -0.27],
+        [0.06, -0.24],
+        [0.055, 0.0],
+        [0.045, 0.3],
+        [0.055, 0.34],
+        [0.035, 0.36],
+        [0.035, 0.3],
+        [0, 0.3],
+      ],
+      this.detail ? 8 : 6,
+    );
+    for (const t of swivelTs) {
+      if (c.masts.some((m) => Math.abs(m.t - t) * L < 1.6)) continue;
+      for (const side of [1, -1]) {
+        const ry = s.top(t) + 0.03;
+        const rx = side * (s.halfWidthAtY(t, s.top(t)) - 0.065);
+        const z = s.z(t);
+        const y = ry + 0.2;
+        // the crutch: a post dropped into the rail, a fork cradling the trunnions
+        this.ironParts.push(spar(new THREE.Vector3(rx, ry - 0.05, z), new THREE.Vector3(rx, y - 0.05, z), 0.025, 0.025, 5));
+        const fork = new THREE.TorusGeometry(0.07, 0.016, 4, 8, Math.PI);
+        fork.rotateY(Math.PI / 2);
+        fork.rotateX(Math.PI);
+        this.ironParts.push(fork.translate(rx, y + 0.02, z));
+        const g = sw.clone();
+        g.rotateZ((-side * Math.PI) / 2 + side * 0.08);
+        this.trimParts.push(g.translate(rx + side * 0.06, y + 0.02, z));
+        // the tiller to train it by, angled down and inboard
+        this.ironParts.push(spar(new THREE.Vector3(rx - side * 0.29, y + 0.01, z), new THREE.Vector3(rx - side * 0.62, y - 0.1, z), 0.014, 0.012, 4));
+        this.ironParts.push(ball(0.025, new THREE.Vector3(rx - side * 0.63, y - 0.1, z), 5, 3));
+      }
+    }
+
+    // entry battens and man ropes up the side amidships, between two guns
+    const ts = this.cannonTs();
+    const gaps = ts.slice(1).map((t, i) => (t + ts[i]) / 2);
+    // between two guns, clear of the channels and chainplates
+    const entry = gaps.filter((t) => c.masts.every((m) => Math.abs(m.t - t) > 0.075)).sort((a, b) => Math.abs(a - 0.5) - Math.abs(b - 0.5))[0];
+    const et = entry ?? -1;
+    for (const side of et > 0 ? [1, -1] : []) {
+      const top = s.top(et);
+      for (let y = 0.35; y < top - 0.25; y += 0.36) {
+        const n = s.skinNormal(et, y, side);
+        const m = surfaceMatrix(s.skinPoint(et, y, side, 0.02), n);
+        this.smallWood.push(colorize(new THREE.BoxGeometry(0.46, 0.07, 0.1).translate(0, 0, 0.04).applyMatrix4(m), darkWood.clone().multiplyScalar(1.3)));
+      }
+      if (this.detail) {
+        for (const dz of [-0.36, 0.36]) {
+          const tt = et + dz / L;
+          const a = s.skinPoint(tt, top + 0.5, side, -0.08);
+          const b = s.skinPoint(tt, 0.45, side, 0.12);
+          this.ropeTubes.push({ a, b, r: 0.016, col: HEMP, sag: 0.04, radial: 4 });
+          this.fineIron.push(spar(s.skinPoint(tt, top - 0.1, side, -0.08), a, 0.016, 0.016, 4));
+          this.fineTrim.push(ball(0.03, a, 5, 4));
+        }
+        // scuppers: lead-lined drains through the side at the waterway
+        for (const tt of gaps) {
+          if (Math.abs(tt - et) < 0.02) continue;
+          const y = s.mainDeckY(tt) + 0.06;
+          const m = surfaceMatrix(s.skinPoint(tt, y, side, 0.014), s.skinNormal(tt, y, side));
+          this.fineIron.push(new THREE.CircleGeometry(0.06, 8).scale(1.3, 0.8, 1).applyMatrix4(m));
+        }
+      }
+    }
+
+    if (!this.detail) return;
+
+    // fire buckets in a row and a sailor's sea chest at the break of the quarterdeck
+    const bt = c.sternCastle ? c.sternCastle.t : 0.3;
+    const bz = s.z(bt) + (c.sternCastle ? 0.42 : 0);
+    const by = s.mainDeckY(bt + 0.42 / L);
+    const bx = Math.min(c.beam * 0.26, s.halfWidthAtY(bt, by) - 1.2);
+    const bucket = lathe(
+      [
+        [0, 0],
+        [0.1, 0],
+        [0.13, 0.26],
+        [0.115, 0.27],
+        [0.105, 0.04],
+        [0, 0.04],
+      ],
+      9,
+    );
+    const leather = hexL(0x3a2418);
+    for (let i = 0; i < 3; i++) {
+      const x = bx + (i - 1) * 0.3;
+      this.fineWood.push(colorize(bucket.clone().translate(x, by, bz), leather));
+      // a painted band and a rope bail
+      this.fineWood.push(colorize(new THREE.TorusGeometry(0.122, 0.012, 3, 10).rotateX(Math.PI / 2).translate(x, by + 0.18, bz), hexL(this.livery.trim)));
+      this.fineWood.push(colorize(new THREE.TorusGeometry(0.12, 0.01, 3, 8, Math.PI).translate(x, by + 0.27, bz), HEMP));
+    }
+    this.deckProps.push({ x: bx, z: bz, r: 0.55 });
+    {
+      const x = -bx;
+      const z = bz + 0.05;
+      const chest = rbox(0.8, 0.38, 0.46, 0.04, 1).translate(x, by + 0.19, z);
+      this.fineWood.push(colorize(chest, hexL(0x6b4a2c)));
+      // a rounded lid and iron straps
+      const lid = new THREE.CylinderGeometry(0.23, 0.23, 0.8, 10, 1, false, -Math.PI / 2, Math.PI);
+      lid.rotateZ(Math.PI / 2);
+      this.fineWood.push(colorize(lid.scale(1, 0.45, 1).translate(x, by + 0.38, z), hexL(0x5a3c22)));
+      for (const sx of [-0.27, 0.27]) {
+        const strap = new THREE.TorusGeometry(0.235, 0.014, 3, 10, Math.PI);
+        strap.rotateY(Math.PI / 2);
+        this.fineIron.push(strap.scale(1, 0.47, 1).translate(x + sx, by + 0.38, z));
+        this.fineIron.push(new THREE.BoxGeometry(0.03, 0.38, 0.48).translate(x + sx, by + 0.19, z));
+      }
+      this.fineTrim.push(rbox(0.09, 0.1, 0.03, 0.01, 1).translate(x, by + 0.33, z + 0.24));
+      this.deckProps.push({ x, z, r: 0.55 });
+    }
+
+    // the ship's cat, sat on the crate in the bows with her tail curled round her paws
+    {
+      const sz = 0.5;
+      const zc = s.z(0.86);
+      const x0 = c.beam * 0.2;
+      const y0 = s.deckY(0.86) + sz + 0.04;
+      const fur = [hexL(0xd9853b), hexL(0x2a2622), hexL(0x8a8580), hexL(0xe8e0d0)][Math.floor(Math.random() * 4)];
+      const k = 1.0;
+      const face = Math.random() * Math.PI * 2;
+      const rot = new THREE.Matrix4().makeRotationY(face);
+      const at = new THREE.Matrix4().makeTranslation(x0, y0, zc).multiply(rot);
+      const parts: THREE.BufferGeometry[] = [];
+      parts.push(new THREE.SphereGeometry(0.1 * k, 9, 7).scale(0.85, 1.05, 1.2).translate(0, 0.1, -0.02)); // haunches
+      parts.push(new THREE.SphereGeometry(0.07 * k, 8, 6).scale(0.8, 1.2, 0.9).translate(0, 0.17, 0.05)); // chest
+      parts.push(new THREE.SphereGeometry(0.058 * k, 9, 7).scale(1.05, 0.95, 1).translate(0, 0.27, 0.07)); // head
+      parts.push(new THREE.SphereGeometry(0.024, 6, 4).scale(1.1, 0.8, 1).translate(0, 0.255, 0.122)); // muzzle
+      for (const ex of [-1, 1]) {
+        const ear = new THREE.ConeGeometry(0.022, 0.05, 4);
+        ear.rotateZ(-ex * 0.25);
+        parts.push(ear.translate(ex * 0.034, 0.325, 0.065));
+        parts.push(new THREE.SphereGeometry(0.022, 6, 4).scale(0.8, 0.6, 1.4).translate(ex * 0.03, 0.012, 0.1)); // front paws
+      }
+      parts.push(sweep([new THREE.Vector3(0, 0.04, -0.12), new THREE.Vector3(0.09, 0.02, -0.09), new THREE.Vector3(0.11, 0.015, 0.02), new THREE.Vector3(0.06, 0.015, 0.1)], (u) => lerp(0.022, 0.014, u), 5, 10));
+      for (const g of parts) this.fineWood.push(colorize(g.applyMatrix4(at), fur, 0.03));
+      // glossy dark eyes and a pink nose
+      for (const ex of [-1, 1]) this.fineIron.push(new THREE.SphereGeometry(0.011, 5, 4).translate(ex * 0.023, 0.282, 0.118).applyMatrix4(at));
+      this.fineWood.push(colorize(new THREE.SphereGeometry(0.008, 4, 3).translate(0, 0.27, 0.147).applyMatrix4(at), hexL(0xd27a82)));
     }
   }
 
@@ -2135,19 +2529,75 @@ export class ShipModel {
     mk(this.ironParts, this.mats.iron, false);
     mk(this.trimParts, this.mats.trim, false);
     mk(this.glowParts, this.mats.glow, false, false);
+    mk(this.smallWood, this.mats.wood, true, false);
+    mk(this.smallIron, this.mats.iron, false, false);
+    mk(this.smallTrim, this.mats.trim, false, false);
+    // close-range detail rides the same materials (no new shaders), but stays out of the shadow pass
+    const fine = (parts: THREE.BufferGeometry[], mat: THREE.Material, keepColor: boolean) => {
+      const merged = mergeParts(parts, keepColor);
+      if (!merged) return;
+      const mesh = new THREE.Mesh(merged, mat);
+      mesh.receiveShadow = true;
+      mesh.userData.fine = true;
+      mesh.userData.lod = true;
+      this.root.add(mesh);
+      this.fineMeshes.push(mesh);
+    };
+    fine(this.fineWood, this.mats.wood, true);
+    fine(this.fineIron, this.mats.iron, false);
+    fine(this.fineTrim, this.mats.trim, false);
+    this.addRopeMesh(this.root, this.ropeTubes);
     if (this.ropes.length) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(this.ropes, 3));
-      this.root.add(new THREE.LineSegments(g, this.mats.rope));
+      const ls = new THREE.LineSegments(g, this.mats.rope);
+      ls.userData.lod = true;
+      this.root.add(ls);
+      this.lineMeshes.push(ls);
     }
     if (this.ratlines.length) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(this.ratlines, 3));
-      this.root.add(new THREE.LineSegments(g, this.mats.ratline));
+      const ls = new THREE.LineSegments(g, this.mats.ratline);
+      ls.userData.lod = true;
+      this.root.add(ls);
+      this.lineMeshes.push(ls);
     }
+    this.fineWood = [];
+    this.fineIron = [];
+    this.fineTrim = [];
+    this.ropeTubes = [];
     this.root.traverse((o) => {
       o.matrixAutoUpdate = true;
     });
+  }
+
+  /** Laid rope for one assembly (the hull, or a yard that braces round): close range only. */
+  private addRopeMesh(parent: THREE.Object3D, specs: RopeSpec[]) {
+    const g = ropeGeometry(specs);
+    if (!g) return;
+    const mesh = new THREE.Mesh(g, this.mats.wood);
+    mesh.receiveShadow = true;
+    mesh.userData.fine = true;
+    mesh.userData.lod = true;
+    mesh.userData.rope = true;
+    parent.add(mesh);
+    this.fineMeshes.push(mesh);
+  }
+
+  /**
+   * Level of detail by how big the ship sits on screen (pixels per metre at
+   * her distance). Close up she shows her laid rope, blocks, lanyards and deck
+   * clutter; further out those drop away and hairline rigging takes over.
+   * Both sets carry userData.lod, so a breaking mast still cuts them while
+   * they're hidden.
+   */
+  updateDetail(pxPerM: number) {
+    if (this.fineOn ? pxPerM < FINE_OFF : pxPerM > FINE_ON) this.fineOn = !this.fineOn;
+    const near = this.fineOn && this.fineMeshes.length > 0;
+    // anything the damage model has taken down (dmgOff) stays down
+    for (const m of this.fineMeshes) if (!m.userData.dmgOff) m.visible = near;
+    for (const l of this.lineMeshes) if (!l.userData.dmgOff) l.visible = !near;
   }
 
   /** Visual sailing state: furl/brace/billow/flag. */

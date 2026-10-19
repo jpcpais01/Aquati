@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/noise';
 import { patchInfo, patchMaterial } from '../render/environment';
 import type { World } from '../game/world';
-import { breakSplinters, Cut, filterLines, splitGeometry } from './breakApart';
+import { breakSplinters, Cut, filterLines, filterRopes, splitGeometry } from './breakApart';
 import { DAMAGE_MAX_HOLES } from './damageGlsl';
 import type { Ship } from './ship';
 import type { MastDef } from './shipTypes';
@@ -504,7 +504,8 @@ export class ShipDamage {
     let capMat: THREE.Material | null = null;
     root.updateMatrixWorld(true);
     for (const child of [...root.children]) {
-      if (child.userData.dmgSkip || !child.visible) continue;
+      // level-of-detail sets (laid rope / hairline rigging) are cut even while hidden
+      if (child.userData.dmgSkip || child.userData.dmgOff || (!child.visible && !child.userData.lod)) continue;
       const mesh = child as THREE.Mesh;
       const line = child as THREE.LineSegments;
       if (!mesh.isMesh && !line.isLineSegments) {
@@ -528,6 +529,12 @@ export class ShipDamage {
         if (g) this.swapGeometry(line, g);
         continue;
       }
+      // laid rope goes slack with whatever it was made fast to, like the hairline rigging
+      if (mesh.userData.rope) {
+        const g = filterRopes(mesh.geometry, mesh.matrix, cut);
+        if (g) this.swapGeometry(mesh, g);
+        continue;
+      }
       // small loose parts (a topsail on its own) move whole
       this.rootBox(child, _box);
       const c = _box.getCenter(_v);
@@ -537,6 +544,7 @@ export class ShipDamage {
         skin.apply(copy);
         piece.add(copy);
         mesh.visible = false;
+        mesh.userData.dmgOff = true;
         this.hidden.push(mesh);
         continue;
       }
@@ -806,7 +814,10 @@ export class ShipDamage {
       obj.geometry = g;
     });
     this.originals.clear();
-    for (const o of this.hidden) o.visible = true;
+    for (const o of this.hidden) {
+      o.visible = true;
+      o.userData.dmgOff = false;
+    }
     this.hidden.length = 0;
     for (const c of this.caps) {
       c.removeFromParent();
@@ -998,7 +1009,7 @@ export class ShipDamage {
     const bow = root.clone();
     for (const p of parts) root.add(p);
     bow.traverse((o) => {
-      if ((o as THREE.LineSegments).isLineSegments) o.visible = false;
+      if ((o as THREE.LineSegments).isLineSegments || o.userData.rope) o.visible = false;
     });
     this.bowSkin = new DamageSkin(this.holeVecs, this.infoVecs, this.count, this.state);
     this.bowSkin.apply(bow);
@@ -1007,7 +1018,11 @@ export class ShipDamage {
     root.parent!.add(this.bowRoot);
     // the bow keeps hinged spars forward of the break
     for (const p of parts) if (p.position.z > this.splitZ) this.bowRoot.attach(p);
-    for (const o of root.children) if ((o as THREE.LineSegments).isLineSegments) o.visible = false;
+    for (const o of root.children) {
+      if (!(o as THREE.LineSegments).isLineSegments && !o.userData.rope) continue;
+      o.visible = false;
+      o.userData.dmgOff = true;
+    }
     const jag = 1.6 + this.ship.cls.beam * 0.12;
     this.skin.uniforms.uDmgSplit.value.set(this.splitZ, -1, jag, 1);
     this.bowSkin.uniforms.uDmgSplit.value.set(this.splitZ, 1, jag, 1);
