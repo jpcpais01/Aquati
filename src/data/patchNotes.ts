@@ -13,6 +13,15 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
+        title: 'Frame rate counter',
+        notes: ['A tiny FPS counter now sits at the top of the screen, refreshed twice a second.'],
+      },
+    ],
+  },
+  {
     // the next 12:00 group is full (five entries), so this hour continues in a second group
     hour: '2026-10-19T12:00Z',
     entries: [
