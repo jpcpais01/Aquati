@@ -2628,7 +2628,7 @@ body[data-hud='large'] #hud {
   position: absolute;
   left: calc(var(--g) + var(--safe-l));
   top: calc(var(--g) + var(--safe-t));
-  width: calc(228px * var(--k));
+  width: calc(272px * var(--k));
   display: flex;
   flex-direction: column;
   gap: calc(7px * var(--k));
@@ -2776,7 +2776,7 @@ body[data-hud='large'] #hud {
 
 .stats-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: calc(6px * var(--k));
 }
 
@@ -3506,7 +3506,7 @@ body[data-hud='large'] #hud {
   }
 
   .status {
-    width: calc(210px * var(--k));
+    width: calc(252px * var(--k));
   }
 }
 
