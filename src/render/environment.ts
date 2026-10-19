@@ -103,6 +103,16 @@ vec3 aqHash32(vec2 p) {
   return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
+// a sparse field of stars, only through gaps in the cloud
+vec3 starField(vec3 d) {
+  if (uNight < 0.01 || d.y <= 0.0) return vec3(0.0);
+  vec3 q = d * 150.0;
+  vec3 c = floor(q);
+  vec3 r = aqHash32(c.xy + c.z * 17.13);
+  float star = smoothstep(0.42, 0.0, length(fract(q) - 0.2 - r * 0.6)) * step(0.93, r.z);
+  return vec3(0.8, 0.88, 1.0) * star * (r.x * 1.2 + 0.3) * uNight * (1.0 - uCloudCover) * smoothstep(0.0, 0.25, d.y);
+}
+
 // The open sky along a direction. The keyframed zenith and horizon colours
 // are shaped the way real air scatters light: deep blue overhead paling into a
 // bright band of thick air at the horizon (optical depth), a touch richer
@@ -124,14 +134,7 @@ vec3 skyColor(vec3 d) {
   // multiple-scattering wash, the aureole, and a tight hot corona
   col += uHaze * (pow(sd, 5.0) * 0.32 + pow(sd, 48.0) * 0.9 + pow(sd, 700.0) * 2.4);
   #ifndef AQ_NO_STARS
-  if (uNight > 0.01 && h > 0.0) {
-    // a sparse field of stars, only through gaps in the cloud
-    vec3 q = d * 150.0;
-    vec3 c = floor(q);
-    vec3 r = aqHash32(c.xy + c.z * 17.13);
-    float star = smoothstep(0.42, 0.0, length(fract(q) - 0.2 - r * 0.6)) * step(0.93, r.z);
-    col += vec3(0.8, 0.88, 1.0) * star * (r.x * 1.2 + 0.3) * uNight * (1.0 - uCloudCover) * smoothstep(0.0, 0.25, h);
-  }
+  col += starField(d);
   #endif
   // lightning lights the whole cloud deck from inside
   col += vec3(0.62, 0.7, 0.95) * uFlash * (0.5 + 0.5 * hp);
@@ -194,7 +197,8 @@ vec3 cloudColor(vec3 c, vec3 d) {
   vec3 amb = sky * (1.05 - c.y * (0.5 + uStorm * 0.25));
   float tr = c.z * exp(-c.y * 2.0);
   vec3 sun = uSunColor * tr * (0.3 + 0.22 * max(mu, 0.0) + fwd * 1.1);
-  return amb + sun + vec3(0.62, 0.7, 0.95) * uFlash * 0.6;
+  // moonlit cloud is a dim silver-grey against the night, never a glowing sheet
+  return (amb + sun) * (1.0 - uNight * 0.55) + vec3(0.62, 0.7, 0.95) * uFlash * 0.6;
 }
 float cloudShadow(vec2 xz) {
   vec2 uv = xz * 0.0011 + uCloudOffset;

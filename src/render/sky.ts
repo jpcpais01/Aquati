@@ -17,6 +17,8 @@ export function createSkyDome(): THREE.Mesh {
     depthTest: false,
     fog: false,
     uniforms: globalUniforms,
+    // stars go on after the clouds, so they only shine through the gaps
+    defines: { AQ_NO_STARS: 1 },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
       void main() {
@@ -62,12 +64,13 @@ export function createSkyDome(): THREE.Mesh {
           colT = mix(colT, hz, 1.0 - exp(-dt * 0.00006));
           colB = mix(colB, hz, 1.0 - exp(-db * 0.00006));
           float fade = smoothstep(0.0, 0.12, h);
-          float aT = cT.x * fade * 0.9;
-          float aB = cB.x * fade * 0.95;
+          float aT = cT.x * fade;
+          float aB = cB.x * fade;
           col = mix(col, colT, aT);
           col = mix(col, colB, aB);
           cover = 1.0 - (1.0 - aT) * (1.0 - aB);
         }
+        col += starField(d) * (1.0 - cover) * (1.0 - cover);
         // the key light itself (the sun by day, the moon by night): a hot disc
         // with a darkened limb, hidden behind any cloud
         float disc = smoothstep(0.99955, 0.99975, sd);

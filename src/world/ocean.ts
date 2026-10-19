@@ -462,7 +462,7 @@ export class Ocean {
             float cd;
             vec3 cc = cloudSampleLite(cloudUv(vWorld, R, AQ_CLOUD_ALT, cd));
             vec3 ccol = mix(cloudColor(cc, R), hazeColor(R), 1.0 - exp(-cd * 0.00011));
-            refl = mix(refl, ccol, cc.x * smoothstep(0.0, 0.1, R.y) * 0.9);
+            refl = mix(refl, ccol, cc.x * smoothstep(0.0, 0.1, R.y));
           }
           refl *= (1.0 - gust * 0.22) * (1.0 - uRain * 0.18);
           #if SSR_STEPS > 0

@@ -32,7 +32,7 @@ interface WeatherDef {
 
 export const WEATHER: Record<WeatherKind, WeatherDef> = {
   clear: {
-    name: 'Clear', cover: 0.16, rain: 0, storm: 0, fog: 0, wind: 0.72, dur: [150, 280],
+    name: 'Clear', cover: 0.2, rain: 0, storm: 0, fog: 0, wind: 0.72, dur: [150, 280],
     next: [['fair', 0.55], ['cloudy', 0.3], ['mist', 0.15]],
     arrive: ['Clear skies', 'The clouds break apart'],
   },
