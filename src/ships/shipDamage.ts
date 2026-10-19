@@ -273,6 +273,12 @@ export class ShipDamage {
     return found;
   }
 
+  /** Whether a spar (mast index, or -1 for the bowsprit) is standing, so a gull can sit on it. */
+  sparStanding(i: number) {
+    if (this.raising) return false;
+    return i < 0 ? !this.bowsprit : !this.masts[i]?.broken;
+  }
+
   get brokenMasts() {
     return this.masts.reduce((n, m) => n + (m.broken ? 1 : 0), 0);
   }

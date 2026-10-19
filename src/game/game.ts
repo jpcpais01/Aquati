@@ -21,7 +21,7 @@ import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, Wave } from '../world/waves';
-import { Atmosphere, WEATHER } from '../world/atmosphere';
+import { Atmosphere, TIMES, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
@@ -229,11 +229,19 @@ export class Game {
     this.skyEnv = new SkyEnvironment(this.renderer);
     this.applyAtmosphere();
     const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm'] as const;
+    const times = ['auto', 'dawn', 'noon', 'golden', 'dusk', 'night'] as const;
+    // the icon picks the weather, the clock picks the hour
     document.getElementById('hud-sky')!.addEventListener('click', (e) => {
       e.stopPropagation();
+      if ((e.target as HTMLElement).closest('#hud-clock')) {
+        const t = times[(times.indexOf(this.atmos.timeMode) + 1) % times.length];
+        this.atmos.setTimeMode(t);
+        this.ui.skyTag(t === 'auto' ? 'Time · Auto' : TIMES[t].name);
+        return;
+      }
       const m = modes[(modes.indexOf(this.atmos.mode) + 1) % modes.length];
       this.atmos.setMode(m);
-      this.ui.skyTag(m === 'auto' ? 'Auto' : WEATHER[m].name);
+      this.ui.skyTag(m === 'auto' ? 'Weather · Auto' : WEATHER[m].name);
     });
     this.atmos.onChange = (_k, title, line) => {
       if (this.state === 'playing') this.ui.toast(title, line, 3.4);
@@ -287,7 +295,7 @@ export class Game {
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
-    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36);
+    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.birds.mesh);
     ui.progress(0.75);
     await nextFrame();
@@ -1638,7 +1646,7 @@ export class Game {
     this.particles.update(dt);
     P.end();
     P.begin('Birds', 'fx');
-    this.birds.update(dt, w.time);
+    this.birds.update(dt, w, this.ships);
     P.end();
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');
