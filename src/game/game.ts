@@ -49,7 +49,10 @@ import { World } from './world';
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
 const _a = new THREE.Vector3();
-const _b = new THREE.Vector3();
+const _shear = new THREE.Matrix4();
+/** Heights the sun's shadow map spans: masts, peaks and birds down to the seabed. */
+const SHADOW_TOP = 320;
+const SHADOW_FLOOR = -140;
 import { ShipCollisions } from './collisions';
 
 type State = 'loading' | 'menu' | 'port' | 'playing' | 'paused' | 'dead';
@@ -135,12 +138,11 @@ export class Game {
   private crew!: CrewSystem;
   private settings: Settings;
   private softShadows = false;
-  // the shadow frustum's settled state: half-size, key-light direction and
-  // its light-space basis, held still between deliberate steps (see render)
+  // the sun's shadow map: half-size (stepped), ground centre (texel-snapped)
+  // and the sun's slant as a shear per metre of height (see render, fitShadow)
   private shadowR = 0;
-  private shadowDir = new THREE.Vector3();
-  private shadowX = new THREE.Vector3();
-  private shadowY = new THREE.Vector3();
+  private shadowC = new THREE.Vector2();
+  private shadowK = new THREE.Vector2();
   private fps = 60;
   private prof!: Profiler;
   // the shipwright's harbour
@@ -199,8 +201,9 @@ export class Game {
     this.sun.shadow.normalBias = 0.05;
     this.sun.shadow.radius = 2.5;
     const sc = this.sun.shadow.camera;
-    sc.near = 1;
-    sc.far = 900;
+    sc.near = 0;
+    sc.far = SHADOW_TOP - SHADOW_FLOOR;
+    this.sun.shadow.updateMatrices = () => this.fitShadow();
     this.opaque.add(this.sun, this.sun.target);
     this.pipeline.sun = this.sun;
     // shared with every shader, so a moving sun moves the traced shadows too
@@ -1662,29 +1665,50 @@ export class Game {
     }
   }
 
+  /**
+   * The sun's shadow camera, built by hand in place of three's: it looks
+   * straight down over the snapped centre, and the sun's slant is a shear, so
+   * a point h metres up lands k*h along the ground from its foot, exactly where
+   * its shadow falls. Depth is height, which only grows toward the sun along
+   * every ray, so the shadow test still holds.
+   */
+  private fitShadow() {
+    const sh = this.sun.shadow;
+    const cam = sh.camera;
+    cam.position.set(this.shadowC.x, SHADOW_TOP, this.shadowC.y);
+    cam.rotation.set(-Math.PI / 2, 0, 0); // looking down, x east, y north
+    cam.updateMatrixWorld(true);
+    cam.updateProjectionMatrix();
+    // view space: x = east, y = -z, z = height - SHADOW_TOP
+    const kx = this.shadowK.x;
+    const kz = this.shadowK.y;
+    _shear.set(1, 0, -kx, -kx * SHADOW_TOP, 0, 1, kz, kz * SHADOW_TOP, 0, 0, 1, 0, 0, 0, 0, 1);
+    cam.projectionMatrix.multiply(_shear);
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+    (sh as unknown as { _updateMatrix(c: THREE.Camera, m: THREE.Matrix4, f: THREE.Frustum): void })._updateMatrix(cam, sh.matrix, sh.getFrustum());
+  }
+
   private render(dt: number) {
     if (!this.ocean) return;
     const P = this.prof;
     P.begin('Shadow & scene setup', 'render');
     const cam = this.rig.camera;
     const target = this.rig.target;
-    // Fit the sun's shadow frustum around the view and hold it still. A shadow
-    // map only stays steady while its texel grid stays put in the world: any
-    // sub-texel slide re-rasterises every shadow edge, and on a zoomed-out view
-    // (texels several times larger) that reads as the whole island shimmering.
-    // So the size moves in steps, the direction only in tiny ticks as the sun
-    // arcs, and the centre snaps to whole texels along the light's own axes.
+    // Fit the sun's shadow map around the view. It only stays steady while its
+    // texel grid stays put in the world: any sub-texel slide re-rasterises every
+    // shadow edge, and zoomed out (texels several times larger) that reads as
+    // the whole island shimmering. So the map looks straight down with its grid
+    // fixed to the ground, the centre snaps to whole texels and the size moves
+    // in steps. The sun's angle is a shear of that projection (see fitShadow),
+    // so shadows glide smoothly round with the day while the grid never moves.
     const want = this.rig.groundRadius();
     if (want > this.shadowR || want < this.shadowR - 36 || this.rig.mode === 'port') this.shadowR = Math.min(260, Math.ceil(want / 16) * 16);
     const R = this.shadowR;
     const sc = this.sun.shadow.camera;
-    if (sc.right !== R) {
-      sc.left = -R;
-      sc.right = R;
-      sc.top = R;
-      sc.bottom = -R;
-      sc.updateProjectionMatrix();
-    }
+    sc.left = -R;
+    sc.right = R;
+    sc.top = R;
+    sc.bottom = -R;
     const texel = (2 * R) / this.sun.shadow.mapSize.x;
     // wide texels need a wider normal offset or slopes speckle with self-shadow
     this.sun.shadow.normalBias = Math.max(0.05, texel * 0.8);
@@ -1694,20 +1718,12 @@ export class Game {
     const kh = Math.hypot(kd.x, kd.z) || 1;
     const kk = Math.sqrt(1 - ky * ky) / kh;
     const sd = _a.set(kd.x * kk, ky, kd.z * kk);
-    // ~0.15 degrees per tick: a mast's shadow tip moves a few centimetres
-    if (sd.dot(this.shadowDir) < 0.9999966) {
-      this.shadowDir.copy(sd);
-      this.shadowX.set(sd.z, 0, -sd.x).normalize(); // up x dir, as the shadow camera's lookAt builds it
-      this.shadowY.crossVectors(sd, this.shadowX);
-    }
-    const t = _b.set(target.x, 0, target.z);
-    const lx = t.dot(this.shadowX);
-    const ly = t.dot(this.shadowY);
-    t.addScaledVector(this.shadowX, Math.round(lx / texel) * texel - lx).addScaledVector(this.shadowY, Math.round(ly / texel) * texel - ly);
-    this.sun.target.position.copy(t);
-    this.sun.position.copy(t).addScaledVector(this.shadowDir, 400);
+    this.shadowK.set(sd.x / sd.y, sd.z / sd.y);
+    this.shadowC.set(Math.round(target.x / texel) * texel, Math.round(target.z / texel) * texel);
+    this.sun.target.position.set(this.shadowC.x, 0, this.shadowC.y);
+    this.sun.position.copy(this.sun.target.position).addScaledVector(sd, 400);
     this.sun.target.updateMatrixWorld();
-    updateSoftShadows(this.sun, this.softShadows);
+    updateSoftShadows(this.sun, this.softShadows, 1 / sd.y);
     P.end();
     // the sky's light changes slowly: refresh the image-based lighting a few times a second
     this.envT -= dt > 0 ? dt : 0;

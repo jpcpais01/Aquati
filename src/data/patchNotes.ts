@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T17:00Z',
     entries: [
       {
+        title: 'Shadows that sweep with the sun',
+        notes: [
+          'As the day passes, shadows now glide smoothly round with the sun instead of creeping along in tiny steps, from long morning shadows to short noon ones and back out at dusk.',
+          'They stay perfectly still and crisp while you sail, zoom and pan, so the extra smoothness costs no shimmer.',
+        ],
+      },
+      {
         title: 'Refresh always brings the newest build',
         notes: [
           'A normal refresh could load an older copy of the game saved on your device, sometimes from before the rename. The game now always fetches the latest version when you are online, and only falls back to the saved copy when you are offline.',
