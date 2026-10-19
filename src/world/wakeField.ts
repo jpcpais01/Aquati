@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getSharedTextures } from '../render/textures';
 import { WORLD_SIZE } from './terrain';
 
 // A camera-centred, world-aligned water-disturbance canvas that scrolls with
@@ -66,10 +67,12 @@ export class WakeField {
         uRect: this.uniforms.uWakeRect,
         uHeightTex: { value: deep as THREE.Texture },
         uWorldRect: { value: new THREE.Vector4(-WORLD_SIZE / 2, -WORLD_SIZE / 2, WORLD_SIZE, 1 / WORLD_SIZE) },
+        uNoise: { value: getSharedTextures().noise as THREE.Texture },
+        uSimTime: { value: 0 },
       },
       vertexShader: /* glsl */ `varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy * 2.0, 0.0, 1.0); }`,
       fragmentShader: /* glsl */ `
-        uniform sampler2D uPrev; uniform sampler2D uHeightTex;
+        uniform sampler2D uPrev; uniform sampler2D uHeightTex; uniform sampler2D uNoise; uniform float uSimTime;
         uniform vec2 uShift; uniform float uTexel;
         uniform float uFoamDecay; uniform float uFoamGain;
         uniform float uDt; uniform float uK; uniform float uVelDamp;
@@ -93,6 +96,11 @@ export class WakeField {
           vec2 world = uRect.xy + (vUv - 0.5) * uRect.z;
           float depth = -texture2D(uHeightTex, (world - uWorldRect.xy) * uWorldRect.w).r;
           float speed2 = clamp(depth / 6.0, 0.04, 1.0);
+          // turbulence: wave speed wanders patch to patch, so crests bend and kink
+          // instead of running dead straight, and foam drifts with slow eddies
+          vec4 tn = texture2D(uNoise, world * 0.021 + vec2(uSimTime * 0.011, -uSimTime * 0.008));
+          vec4 tn2 = texture2D(uNoise, world * 0.067 - vec2(uSimTime * 0.019, uSimTime * 0.014) + 0.53);
+          speed2 *= 0.62 + 0.62 * (tn.g * 0.6 + tn2.a * 0.4);
           float wet = smoothstep(0.05, 0.7, depth);
 
           float h = c.g;
@@ -107,8 +115,11 @@ export class WakeField {
           float hn = (h + v * uDt) * keep;
 
           // foam: gentle spread, fade, and fresh foam where wake crests break
-          float f = (c.r * 0.6 + (e.r + w.r + n.r + s.r) * 0.1) * uFoamDecay;
-          f += smoothstep(0.08, 0.3, hn) * uFoamGain;
+          vec2 drift = (tn2.rb - 0.5) * t * 1.6;
+          float fc = tap(uv + drift).r;
+          float f = (fc * 0.6 + (e.r + w.r + n.r + s.r) * 0.1) * uFoamDecay;
+          // only some stretches of a crest break into white
+          f += smoothstep(0.08, 0.3, hn) * uFoamGain * smoothstep(0.3, 0.7, tn.b * 0.6 + tn2.g * 0.6);
           f = min(f, 3.0);
 
           gl_FragColor = vec4(f, hn, v, 0.0);
@@ -215,6 +226,7 @@ export class WakeField {
     u.uFoamDecay.value = Math.pow(0.5, h / FOAM_HALF_LIFE);
     u.uFoamGain.value = h * 2.2;
     u.uPrev.value = this.rtA.texture;
+    u.uSimTime.value += h;
 
     const prevAutoClear = renderer.autoClear;
     renderer.autoClear = false;
