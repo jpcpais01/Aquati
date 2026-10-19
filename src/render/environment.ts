@@ -103,12 +103,26 @@ vec3 aqHash32(vec2 p) {
   return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
+// The open sky along a direction. The keyframed zenith and horizon colours
+// are shaped the way real air scatters light: deep blue overhead paling into a
+// bright band of thick air at the horizon (optical depth), a touch richer
+// toward and away from the sun than at right angles to it (Rayleigh phase),
+// and a warm forward-scattering glow around the sun itself (Mie).
 vec3 skyColor(vec3 d) {
   float h = clamp(d.y, -1.0, 1.0);
-  vec3 col = mix(uSkyHorizon, uSkyZenith, pow(max(h, 0.0), 0.55));
-  // warm haze toward the sun (cool glow around the moon at night)
-  float sd = max(dot(d, uSunDir), 0.0);
-  col += uHaze * (pow(sd, 6.0) * 0.35 + pow(sd, 64.0) * 1.2);
+  float hp = max(h, 0.0);
+  float mu = dot(d, uSunDir);
+  float sd = max(mu, 0.0);
+  vec3 col = mix(uSkyHorizon, uSkyZenith, pow(hp, 0.4));
+  // overhead the blue deepens and saturates; the cloudier, the less of it
+  float clear = 1.0 - uCloudCover * 0.75;
+  col = mix(col, col * vec3(0.82, 0.92, 1.08), smoothstep(0.25, 0.9, hp) * clear * (1.0 - uNight));
+  col *= 0.93 + 0.11 * mu * mu;
+  // the thick-air band hugging the horizon
+  col += uSkyHorizon * exp(-hp * 18.0) * 0.1;
+  // warm haze toward the sun (cool glow around the moon at night): a broad
+  // multiple-scattering wash, the aureole, and a tight hot corona
+  col += uHaze * (pow(sd, 5.0) * 0.32 + pow(sd, 48.0) * 0.9 + pow(sd, 700.0) * 2.4);
   #ifndef AQ_NO_STARS
   if (uNight > 0.01 && h > 0.0) {
     // a sparse field of stars, only through gaps in the cloud
@@ -120,17 +134,70 @@ vec3 skyColor(vec3 d) {
   }
   #endif
   // lightning lights the whole cloud deck from inside
-  col += vec3(0.62, 0.7, 0.95) * uFlash * (0.5 + 0.5 * max(h, 0.0));
+  col += vec3(0.62, 0.7, 0.95) * uFlash * (0.5 + 0.5 * hp);
   // below the horizon: blend into a deep sea tint so reflections stay grounded
   col = mix(col, vec3(0.06, 0.2, 0.3) * uLight, smoothstep(0.0, -0.25, h));
   return col;
 }
 
+// ---- the cloud deck: one noise field shared by the sky, its reflection in
+// the sea and the shadows drifting across water and islands
+const float AQ_CLOUD_ALT = 700.0;
+// the weather's cloud cover as a threshold on the cloud field
+float cloudLo() {
+  return 0.76 - uCloudCover * 0.58;
+}
+float cloudN(vec2 uv) {
+  return texture(uNoiseTex, uv).r * 0.62 + texture(uNoiseTex, uv * 2.7 + vec2(0.37, 0.71)).r * 0.38;
+}
+// cloud-texture coordinates where a ray from p along d meets the deck at
+// altitude alt; every slice of a column maps to the patch of sea it shades
+vec2 cloudUv(vec3 p, vec3 d, float alt, out float dist) {
+  dist = (alt - p.y) / max(d.y, 0.012);
+  vec2 xz = p.xz + d.xz * dist;
+  vec2 ground = xz - uSunDir.xz / max(uSunDir.y, 0.2) * AQ_CLOUD_ALT;
+  return ground * 0.0011 + uCloudOffset;
+}
+// Cloud at a point of the deck: x coverage, y thickness, z sunlight that
+// reaches it through the cloud toward the sun. The broad field is the same
+// one that casts the shadows; inverted Worley cells heap it into billows.
+vec3 cloudSample(vec2 uv) {
+  float lo = cloudLo();
+  float b1 = 1.0 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b;
+  float b2 = 1.0 - texture(uNoiseTex, uv * 0.95 + vec2(0.71, 0.29)).b;
+  float dn = cloudN(uv) + (b1 * 0.7 + b2 * 0.3 - 0.55) * 0.2;
+  float body = smoothstep(lo - 0.02, lo + 0.1, dn);
+  float thick = smoothstep(lo, lo + 0.25 + uCloudCover * 0.2, dn);
+  vec2 ts = normalize(uSunDir.xz + vec2(1e-4)) * 0.05;
+  float ns = cloudN(uv + ts) + (0.45 - texture(uNoiseTex, (uv + ts) * 0.38 + vec2(0.13, 0.57)).b) * 0.14;
+  float sunlit = exp(-max(ns - lo, 0.0) * 4.0);
+  return vec3(body, thick, sunlit);
+}
+// two taps: enough for the cloud deck's reflection in a moving sea
+vec3 cloudSampleLite(vec2 uv) {
+  float lo = cloudLo();
+  float b1 = 1.0 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b;
+  float dn = texture(uNoiseTex, uv).r + (b1 - 0.55) * 0.16;
+  return vec3(smoothstep(lo - 0.02, lo + 0.12, dn), smoothstep(lo, lo + 0.25 + uCloudCover * 0.2, dn), 0.6);
+}
+// Lit cloud seen along d. Seen from below, thin edges glow with the sun
+// passing through them while dense cores sink to a blue-grey lit only by the
+// sky; toward the sun the whole deck takes a silver forward-scattered rim.
+vec3 cloudColor(vec3 c, vec3 d) {
+  float mu = dot(d, uSunDir);
+  float fwd = pow(max(mu, 0.0), 8.0);
+  vec3 sky = mix(uSkyHorizon, uSkyZenith, 0.4) * 0.55 + uLight * 0.32;
+  vec3 amb = sky * (1.05 - c.y * (0.48 + uStorm * 0.25));
+  float tr = c.z * (1.0 - c.y * 0.72);
+  vec3 sun = uSunColor * tr * (0.3 + 0.22 * max(mu, 0.0) + fwd * 1.1);
+  return amb + sun + vec3(0.62, 0.7, 0.95) * uFlash * 0.6;
+}
 float cloudShadow(vec2 xz) {
   vec2 uv = xz * 0.0011 + uCloudOffset;
-  float n = texture(uNoiseTex, uv).r * 0.62 + texture(uNoiseTex, uv * 2.7 + vec2(0.37, 0.71)).r * 0.38;
+  // the same billowed field the sky draws, so shadows match the clouds above
+  float n = cloudN(uv) + (0.45 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b) * 0.14;
   // coverage slides the threshold: a few puffs on a clear day, a solid deck in a storm
-  float lo = 0.8 - uCloudCover;
+  float lo = cloudLo();
   return mix(1.0, 0.5, smoothstep(lo, lo + 0.18, n));
 }
 
@@ -143,6 +210,27 @@ float causticsAt(vec3 wp, float depth) {
   float c = min(c1, c2) * 1.6 + c1 * c2 * 1.2;
   float fade = smoothstep(0.05, 0.9, depth) * exp(-depth * 0.16);
   return c * fade;
+}
+`;
+
+/**
+ * Aerial perspective. Needs uFogColor and uFogRange declared and GLSL_ATMOS
+ * included first. Distant things don't turn grey, they sink into the colour
+ * of the air in front of them: the horizon sky, warm toward the sun and cool
+ * blue away from it, thickest low over the sea so peaks stand out crisply.
+ */
+export const GLSL_AERIAL = /* glsl */ `
+vec3 hazeColor(vec3 d) {
+  float mu = dot(normalize(vec3(d.x, max(d.y, 0.0) * 0.4, d.z) + vec3(0.0, 1e-4, 0.0)), uSunDir);
+  float sd = max(mu, 0.0);
+  return uFogColor * (0.94 + 0.08 * mu * mu) + uHaze * (pow(sd, 5.0) * 0.26 + pow(sd, 40.0) * 0.3);
+}
+float aerialAt(float dist, float y) {
+  float near = uFogRange.x * 0.8;
+  float r = max(dist - near, 0.0) / max(uFogRange.y - near, 1.0);
+  float a = 1.0 - exp(-r * r * 2.2 - r * 0.5);
+  a *= mix(1.0, 0.72, smoothstep(12.0, 170.0, y));
+  return max(a, mistAt(dist));
 }
 `;
 
@@ -275,13 +363,17 @@ ${GLSL_DAMAGE_VERTEX}
         `${head}#include <common>
 varying vec3 vAqWorld;
 uniform vec3 uFogColor;
+uniform vec2 uFogRange;
 ${GLSL_ATMOS}
+${GLSL_AERIAL}
 ${GLSL_DAMAGE_FRAGMENT_PARS}`,
       )
       .replace(
         '#include <fog_fragment>',
-        `#include <fog_fragment>
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, uFogColor, mistAt(length(vAqWorld - cameraPosition)));`,
+        `{
+    vec3 aqView = vAqWorld - cameraPosition;
+    gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), aerialAt(length(aqView), vAqWorld.y));
+  }`,
       )
       .replace(
         '#include <color_fragment>',
@@ -371,7 +463,11 @@ export class SkyEnvironment {
         void main() {
           vec3 d = normalize(vDir);
           vec3 c = skyColor(d);
-          gl_FragColor = vec4(c * 1.15, 1.0);
+          // the cloud deck, on average: sunny crowns and grey bellies by how much sky it hides
+          float cf = smoothstep(0.08, 0.95, uCloudCover) * smoothstep(-0.02, 0.25, d.y);
+          vec3 cl = cloudColor(vec3(1.0, 0.3 + 0.6 * uCloudCover, 0.8 - 0.6 * uCloudCover), d);
+          c = mix(c, cl, cf * 0.85);
+          gl_FragColor = vec4(c * 1.08, 1.0);
         }`,
     });
     this.scene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), mat));

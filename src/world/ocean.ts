@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLSL_ATMOS, globalUniforms } from '../render/environment';
+import { GLSL_AERIAL, GLSL_ATMOS, globalUniforms } from '../render/environment';
 import { getSharedTextures } from '../render/textures';
 import { GLSL_WAVES, packWaves, Wave } from './waves';
 import { WORLD_SIZE } from './terrain';
@@ -185,6 +185,7 @@ export class Ocean {
         uniform vec2 uCamNearFar;
         uniform vec3 uFogColor;
         uniform vec2 uFogRange;
+        ${GLSL_AERIAL}
         varying vec3 vWorld;
         varying vec3 vNormal;
         varying float vCrest;
@@ -449,9 +450,21 @@ export class Ocean {
           // ---- reflection
           vec3 R = reflect(-V, N);
           R.y = abs(R.y);
-          vec3 refl = skyColor(R) * (1.0 - gust * 0.22) * (1.0 - uRain * 0.18);
+          // far off, the sub-pixel facets of the chop tilt toward the viewer and
+          // mirror a little higher, bluer sky than the glassy maths alone would,
+          // so the sea darkens toward the horizon instead of turning milky
+          R = normalize(R + vec3(0.0, 0.07 * smoothstep(30.0, 500.0, vViewDist), 0.0));
+          vec3 refl = skyColor(R);
           float F = 0.02 + 0.98 * pow(max(1.0 - NdV, 0.0), 5.0);
           F = min(F * 1.1, 1.0);
+          if (F > 0.04) {
+            // the clouds overhead mirrored in the sea, the same ones whose shadows drift across it
+            float cd;
+            vec3 cc = cloudSampleLite(cloudUv(vWorld, R, AQ_CLOUD_ALT, cd));
+            vec3 ccol = mix(cloudColor(cc, R), hazeColor(R), 1.0 - exp(-cd * 0.00011));
+            refl = mix(refl, ccol, cc.x * smoothstep(0.0, 0.1, R.y) * 0.9);
+          }
+          refl *= (1.0 - gust * 0.22) * (1.0 - uRain * 0.18);
           #if SSR_STEPS > 0
           {
             // trace along the smooth swell so neighbouring pixels agree, then
@@ -531,8 +544,7 @@ export class Ocean {
           }
 
           // ---- atmospheric haze
-          float fog = max(smoothstep(uFogRange.x, uFogRange.y, vViewDist), mistAt(vViewDist));
-          col = mix(col, uFogColor, fog * 0.85);
+          col = mix(col, hazeColor(-V), aerialAt(vViewDist, 0.0) * 0.88);
 
           gl_FragColor = vec4(col, 1.0);
         }`,

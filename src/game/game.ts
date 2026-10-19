@@ -40,6 +40,9 @@ import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
 import { Loot, RARITY } from './loot';
 import { World } from './world';
+
+/** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
+const SKY_LIGHT = 0.72;
 import { ShipCollisions } from './collisions';
 
 type State = 'loading' | 'menu' | 'port' | 'playing' | 'paused' | 'dead';
@@ -254,7 +257,7 @@ export class Game {
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = this.skyEnv.update();
-    this.opaque.environmentIntensity = 0.8;
+    this.opaque.environmentIntensity = SKY_LIGHT;
     this.ui.buildMap(this.terrain);
     this.ui.setWind(windAngle);
     this.gunnery = new Gunnery(this.ocean.material.uniforms);
@@ -1186,7 +1189,7 @@ export class Game {
     const flash = this.lightning.flash;
     globalUniforms.uFlash.value = flash;
     this.pipeline.lightning = Math.min(flash, 1.5) * 0.55;
-    this.opaque.environmentIntensity = 0.8 * (1 + flash * 5);
+    this.opaque.environmentIntensity = SKY_LIGHT * (1 + flash * 5);
 
     // spindrift: gusts tear spray off the crests in a blow
     if (a.storm > 0.35 && dt > 0) {

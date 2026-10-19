@@ -41,7 +41,7 @@ export const WEATHER: Record<WeatherKind, WeatherDef> = {
     next: [['clear', 0.35], ['cloudy', 0.45], ['rain', 0.15], ['mist', 0.05]],
   },
   cloudy: {
-    name: 'Cloudy', cover: 0.78, rain: 0, storm: 0.05, fog: 0.12, wind: 0.88, dur: [100, 190],
+    name: 'Cloudy', cover: 0.66, rain: 0, storm: 0.05, fog: 0.12, wind: 0.88, dur: [100, 190],
     next: [['fair', 0.35], ['rain', 0.42], ['storm', 0.13], ['clear', 0.1]],
     arrive: ['Clouds gathering', 'The sky turns grey'],
   },
@@ -98,6 +98,9 @@ function samplePalette(s: number, zen: THREE.Vector3, hor: THREE.Vector3, fog: T
   hor.set(a.hor[0] + (b.hor[0] - a.hor[0]) * t, a.hor[1] + (b.hor[1] - a.hor[1]) * t, a.hor[2] + (b.hor[2] - a.hor[2]) * t);
   fog.set(a.fog[0] + (b.fog[0] - a.fog[0]) * t, a.fog[1] + (b.fog[1] - a.fog[1]) * t, a.fog[2] + (b.fog[2] - a.fog[2]) * t);
 }
+
+/** Clear-noon sun intensity. */
+const SUN_I = 3.45;
 
 const PEAK = (40 * Math.PI) / 180; // sun's highest elevation
 const YAW = 0.5; // swings noon toward the north-west, the way the islands were lit before
@@ -177,7 +180,7 @@ export class Atmosphere {
     const z = new THREE.Vector3();
     const h = new THREE.Vector3();
     samplePalette(0.85, z, h, this.tmp);
-    this.dayRef = lum(h) * 0.55 + lum(z) * 0.45 + 3.1 * 0.85 * 0.22 * 0.93;
+    this.dayRef = lum(h) * 0.55 + lum(z) * 0.45 + SUN_I * 0.85 * 0.22 * 0.93;
 
     const q = new URLSearchParams(location.search);
     const hr = parseFloat(q.get('hour') ?? '');
@@ -265,7 +268,7 @@ export class Atmosphere {
       const r = 1.0;
       const gg = 0.42 + g * 0.3 + w * 0.18;
       const b = 0.16 + g * 0.29 + w * 0.31;
-      const I = 3.1 * sunVis * clouded;
+      const I = SUN_I * sunVis * clouded;
       this.keyColor.set(r * I, gg * I, b * I);
     } else {
       this.keyDir.copy(this.moonDir);
@@ -275,7 +278,9 @@ export class Atmosphere {
 
     // ---------------------------------------------------------- sky & fog
     samplePalette(sy, this.zenith, this.horizon, this.fogColor);
-    const c = Math.pow(this.cover, 1.25) * 0.94;
+    // the open sky between the clouds stays blue: the dome draws the clouds
+    // themselves, so only a closing deck greys the whole sky over
+    const c = smooth(0.45, 1.0, this.cover) * 0.94;
     if (c > 0.001) {
       const L = lum(this.horizon);
       const dim = 1 - 0.55 * this.storm;
