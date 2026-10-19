@@ -8,7 +8,11 @@ import { WakeField } from './wakeField';
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
 // reflection, sun glitter, crest sub-surface glow, and three kinds of foam
-// (shoreline surf bands, hull contact, and painted ship wakes).
+// (shoreline surf bands, hull contact, and ship wakes). Ship wakes come from
+// a live wave simulation (see WakeField): its height lifts the surface and
+// bends the normals, and its foam breaks up into lace as it ages. Open water
+// layers anti-tiled ripples, wind slicks and gust cat's paws over the swell,
+// with slow macro noise drifting its colour so it never reads as a pattern.
 
 function buildGrid(segments: number, half: number): THREE.BufferGeometry {
   const n = segments + 1;
@@ -91,6 +95,8 @@ export class Ocean {
         uniform float uTime;
         uniform sampler2D uHeightTex;
         uniform vec4 uWorldRect;
+        uniform sampler2D uWakeTex;
+        uniform vec4 uWakeRect;
         varying vec3 vWorld;
         varying vec3 vNormal;
         varying float vCrest;
@@ -105,6 +111,11 @@ export class Ocean {
           vec3 n; float crest;
           vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
           wp.xyz += off;
+          // wake waves ride on top of the swell
+          vec2 wuv = (wp.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
+          vec2 wb = min(wuv, 1.0 - wuv);
+          float wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
+          wp.y += clamp(texture(uWakeTex, wuv).g, -0.9, 0.9) * wIn;
           vWorld = wp.xyz;
           vNormal = n;
           vCrest = crest;
@@ -120,6 +131,7 @@ export class Ocean {
         uniform sampler2D uWakeTex;
         uniform sampler2D uHeightTex;
         uniform vec4 uWakeRect;
+        uniform float uWakeTexel;
         uniform vec4 uWorldRect;
         uniform vec2 uResolution;
         uniform vec2 uCamNearFar;
@@ -215,6 +227,20 @@ export class Ocean {
           // shading normal: swell + ripples. Glint normal adds the gust chop so
           // gusts sparkle without tilting the reflection toward the pale horizon.
           vec3 N = normalize(Ns + vec3(rip.x, 0.0, rip.y) * 0.36 * calm);
+
+          // ---- ship wakes: height-field normals so every V-arm and ring catches the light
+          vec2 wuv = (vWorld.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
+          vec4 wk = texture(uWakeTex, wuv);
+          float wtx = uWakeTexel;
+          vec2 wGrad = vec2(
+            texture(uWakeTex, wuv + vec2(wtx, 0.0)).g - texture(uWakeTex, wuv - vec2(wtx, 0.0)).g,
+            texture(uWakeTex, wuv + vec2(0.0, wtx)).g - texture(uWakeTex, wuv - vec2(0.0, wtx)).g
+          ) / (2.0 * wtx * uWakeRect.z);
+          vec2 wb = min(wuv, 1.0 - wuv);
+          float wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
+          wGrad *= wIn;
+          float wakeH = wk.g * wIn;
+          N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 2.3);
           vec3 Ng = normalize(N + vec3(gustRip.x, 0.0, gustRip.y) * 0.5);
 
           // ---- depth through the water column
@@ -263,6 +289,8 @@ export class Ocean {
           float sssView = pow(max(dot(V, -L + vec3(0.0, 0.6, 0.0)), 0.0), 2.0);
           float sss = hgt * hgt * (0.3 + sssView) * (0.35 + 0.65 * mac2.r);
           body += vec3(0.02, 0.19, 0.22) * sss * 0.11 * light * (1.0 - T);
+          // wake crests glow translucent turquoise, troughs sink a touch deeper
+          body += vec3(0.04, 0.36, 0.34) * clamp(wakeH * 1.6, -0.25, 1.0) * (0.45 + sssView) * light * 0.5;
           // ruffled water under a gust scatters less light back up: darker, matte
           body *= 1.0 - gust * 0.18;
 
@@ -300,13 +328,18 @@ export class Ocean {
           float edge = 1.0 - smoothstep(0.02, 0.4, colDepth);
           float contact = (1.0 - smoothstep(0.0, 0.9, thick)) * step(-1.0, vTerrain) ;
           contact = max(contact, (1.0 - smoothstep(0.0, 0.6, thick)) * 0.8);
-          vec2 wuv = (vWorld.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
-          float wake = texture(uWakeTex, wuv).r;
+          // wake foam: a dense churned core that breaks up into lacy cells as it thins out
+          float wf = clamp(wk.r * wIn, 0.0, 2.5);
+          float pat = lace * 0.55 + lace2 * 0.45 + (nz2.r - 0.5) * 0.3;
+          float thr = 0.9 - wf * 0.62;
+          float wakeFoam = smoothstep(thr - 0.09, thr + 0.07, pat) * smoothstep(0.015, 0.1, wf);
+          wakeFoam = max(wakeFoam, smoothstep(0.9, 1.7, wf));
+          wakeFoam *= 0.55 + 0.45 * smoothstep(0.0, 0.7, wf);
           // whitecaps break only here and there, and more often where a gust blows
           float breaking = smoothstep(0.54, 0.8, texture(uNoiseTex, p * 0.0093 - wdir * t * 0.017).g + gust * 0.35);
           float crestFoam = smoothstep(0.5, 0.95, vCrest + nz2.g * 0.35) * breaking * 0.6;
           float foam = clamp(shore + contact * 0.85, 0.0, 1.0) * bubbles + edge * (0.55 + 0.45 * bubbles);
-          foam += clamp(wake, 0.0, 1.6) * (0.35 + bubbles * 0.75);
+          foam += wakeFoam * (0.8 + 0.2 * bubbles);
           foam += crestFoam * bubbles;
           foam = clamp(foam, 0.0, 1.0);
           vec3 foamCol = vec3(0.96, 0.98, 1.0) * (uSunColor * (0.25 + 0.75 * ndl) * cloud * 0.42 + uSkyZenith * 0.55);

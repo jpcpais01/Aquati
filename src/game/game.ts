@@ -82,6 +82,8 @@ export class Game {
     this.input = new Input(canvas);
     this.ui.setTouch(this.input.isTouch);
     this.input.bindJoystick(document.getElementById('joy')!, document.getElementById('joy-knob')!);
+    this.input.bindFireButtons(document.getElementById('t-port')!, document.getElementById('t-fire')!, document.getElementById('t-star')!);
+    this.input.onTouchDetected = () => this.ui.setTouch(true);
 
     this.sun = new THREE.DirectionalLight(new THREE.Color(SUN_COLOR).multiplyScalar(1 / 3.1), 3.1);
     this.sun.castShadow = true;
@@ -132,7 +134,9 @@ export class Game {
     const windAngle = 1.25;
     const waves = buildWaves(windAngle, 1);
     this.wake = new WakeField(q.wakeRes, 300);
-    this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: this.terrain.createHeightTexture(512), wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
+    const seaFloor = this.terrain.createHeightTexture(512);
+    this.wake.setTerrain(seaFloor);
+    this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
     this.particles = new Particles(q.particles);
     this.water.add(this.ocean.mesh, this.particles.group);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
@@ -141,7 +145,7 @@ export class Game {
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
     this.windField = new WindField(this.world.wind.dirX, this.world.wind.dirZ, q.tier === 0 ? 6 : 8);
     this.world.gustAt = (x, z) => this.windField.at(x, z);
-    this.wisps = new WindWisps(this.windField, q.tier === 0 ? 8 : 16, (x, z) => this.terrain.heightAt(x, z));
+    this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 

@@ -123,8 +123,8 @@ export class WindField {
 
 // ----------------------------------------------------------------- wisps
 
-const SEGS = 22; // points along each ribbon
-const TRAIL = 0.85; // seconds of path the ribbon covers
+const SEGS = 40; // points along each ribbon
+const TRAIL = 1.5; // seconds of path the ribbon covers
 
 interface Wisp {
   ox: number;
@@ -204,7 +204,7 @@ export class WindWisps {
         void main() {
           // soft core across the ribbon, brighter toward the leading end
           float x = abs(vRib.y);
-          float a = (1.0 - x * x) * vRib.z;
+          float a = (1.0 - x) * (1.0 - x) * vRib.z;
           vec2 suv = gl_FragCoord.xy / uResolution;
           float sz = linearDepth(texture(uSceneDepth, suv).r);
           a *= clamp((sz - vViewZ) * 0.5, 0.0, 1.0);
@@ -222,24 +222,24 @@ export class WindWisps {
     const g = this.field.pickInside(cx, cz, reach, this.tmp);
     if (!g) return;
     const ground = this.heightAt(this.tmp.x, this.tmp.z);
-    const life = rand(2.2, 3.6);
-    const loops = Math.random() < 0.45;
+    const life = rand(1.6, 2.6);
+    const loops = Math.random() < 0.35;
     this.wisps.push({
       ox: this.tmp.x,
       oy: Math.max(ground, 0) + rand(1.5, 5),
       oz: this.tmp.z,
       t: 0,
       life,
-      speed: g.speed * rand(0.9, 1.2),
-      wig: rand(0.4, 1.4),
-      wigF: rand(2.2, 4.2),
+      speed: g.speed * rand(1.7, 2.3),
+      wig: rand(0.6, 1.8),
+      wigF: rand(0.9, 1.7),
       wigP: rand(0, Math.PI * 2),
       bob: rand(0.2, 0.6),
-      loopAt: loops ? rand(0.5, life - 1.4) : 1e9,
-      loopDur: rand(0.55, 0.85),
-      loopR: rand(1.6, 3),
+      loopAt: loops ? rand(0.4, life - 0.9) : 1e9,
+      loopDur: rand(0.5, 0.75),
+      loopR: rand(2.4, 4.2),
       loopTilt: rand(0.2, 0.7) * (Math.random() < 0.5 ? -1 : 1),
-      width: rand(0.85, 1.25),
+      width: rand(0.8, 1.15),
       alpha: rand(0.4, 0.6) * Math.min(1, g.amp * 1.4),
     });
   }
@@ -268,7 +268,7 @@ export class WindWisps {
 
   update(dt: number, cx: number, cz: number, reach: number, cam: THREE.Camera, wx: number, wz: number) {
     this.spawnT += dt;
-    const rate = 1.6;
+    const rate = 2.6;
     while (this.spawnT > 1 / rate) {
       this.spawnT -= 1 / rate;
       if (this.wisps.length < this.max) this.spawn(cx, cz, reach);
@@ -292,11 +292,11 @@ export class WindWisps {
       const span = head - tail;
       if (span < 0.02) continue;
       for (let i = 0; i < SEGS; i++) this.path(w, tail + (span * i) / (SEGS - 1), wx, wz, pts, i * 3);
-      const fin = smooth(0, 0.35, w.t);
+      const fin = smooth(0, 0.25, w.t);
       const fout = 1 - smooth(w.life - 0.4, w.life + TRAIL, w.t);
       const dist = Math.hypot(pts[(SEGS - 1) * 3] - cp.x, pts[(SEGS - 1) * 3 + 1] - cp.y, pts[(SEGS - 1) * 3 + 2] - cp.z);
       // stay a couple of pixels wide whatever the zoom
-      const hw = Math.max(0.12, dist * 0.0021) * w.width;
+      const hw = Math.max(0.05, dist * 0.0009) * w.width;
       const base = n * SEGS * 2;
       for (let i = 0; i < SEGS; i++) {
         const o = i * 3;
@@ -315,11 +315,11 @@ export class WindWisps {
         const sl = Math.hypot(sx, sy, sz) || 1;
         const s = i / (SEGS - 1); // 0 tail .. 1 head
         const taper = Math.sin(Math.PI * Math.pow(s, 0.75));
-        const width = hw * (0.25 + 0.75 * taper);
+        const width = hw * (0.1 + 0.9 * taper);
         sx = (sx / sl) * width;
         sy = (sy / sl) * width;
         sz = (sz / sl) * width;
-        const a = w.alpha * fin * fout * Math.pow(s, 1.3) * smooth(1, 0.82, s);
+        const a = w.alpha * fin * fout * Math.pow(s, 0.8) * smooth(1, 0.9, s);
         const v = (base + i * 2) * 3;
         P[v] = pts[o] - sx;
         P[v + 1] = pts[o + 1] - sy;
