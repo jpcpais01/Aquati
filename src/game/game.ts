@@ -16,6 +16,7 @@ import { ReefLife } from '../fx/fish';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Rain } from '../fx/rain';
+import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
@@ -152,6 +153,7 @@ export class Game {
   private skyEnv: SkyEnvironment;
   private envT = 0;
   private rain!: Rain;
+  private clouds!: LowClouds;
   private lightning!: Lightning;
   private baseWaves: Wave[] = [];
   /** Heading the swell has turned to; it follows the wind round, but lags it. */
@@ -414,6 +416,8 @@ export class Game {
     this.rain = new Rain([2400, 4800, 7200][q.tier]);
     this.lightning = new Lightning();
     this.water.add(this.rain.mesh, this.lightning.mesh);
+    this.clouds = new LowClouds(this.terrain.islands, q.tier);
+    this.water.add(this.clouds.mesh);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
@@ -444,18 +448,21 @@ export class Game {
     await this.renderer.compileAsync(this.opaque, this.rig.camera);
     await this.renderer.compileAsync(this.water, this.rig.camera);
     await this.renderer.compileAsync(this.ocean.reflScene, this.rig.camera);
+    await this.renderer.compileAsync(this.clouds.shadowScene, this.rig.camera);
     ui.progress(0.96);
     await nextFrame();
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
     // twice: the first pass makes the shadow map, which the water then switches on.
     // Plants stay unculled so every one of their batches is drawn too.
     veg.hold = true;
+    this.clouds.warm = true;
     this.tradePorts.warm();
-    warmDraw([this.opaque, this.water, this.ocean.reflScene], () => {
+    warmDraw([this.opaque, this.water, this.ocean.reflScene, this.clouds.shadowScene], () => {
       this.render(0);
       this.render(0);
     });
     veg.hold = false;
+    this.clouds.warm = false;
     await fonts;
     ui.progress(1);
     await nextFrame();
@@ -2592,6 +2599,16 @@ export class Game {
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    P.end();
+    // the low puffs (seen only from high up) and the shadows they drift over the sea
+    P.begin('Low clouds', 'fx', true);
+    const cl = this.clouds;
+    cl.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    const keep = this.player && this.player.alive && this.state === 'playing' && !this.photo.active ? this.player.pos : null;
+    cl.update(dt, cam, target, this.toSun, this.atmos, this.world.wind.dirX, this.world.wind.dirZ, keep);
+    cl.renderShadow(this.renderer);
+    P.end(true);
+    P.begin('Camera & sky binding', 'render');
     const eb = this.rig.eyeBlend;
     const port = this.rig.mode === 'port';
     this.pipeline.tilt = port ? 0.25 : (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
@@ -2608,7 +2625,10 @@ export class Game {
     if (under || this.isUnder) this.setUnder(under);
     this.isUnder = under;
     // no rain or wind wisps down here
-    if (under) this.rain.mesh.visible = false;
+    if (under) {
+      this.rain.mesh.visible = false;
+      this.clouds.mesh.visible = false;
+    }
     this.wisps.mesh.visible = !under;
     this.sky.visible = !under && (eb > 0.001 || port || cine > 0);
     this.sky.position.copy(cam.position);

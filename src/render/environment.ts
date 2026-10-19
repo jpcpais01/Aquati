@@ -26,6 +26,8 @@ export const MAX_GUSTS = 8;
 export const GUST_STRETCH = 1.8;
 
 const tex = getSharedTextures();
+const BLANK = new THREE.DataTexture(new Uint8Array(4), 1, 1);
+BLANK.needsUpdate = true;
 
 export const globalUniforms = {
   uTime: { value: 0 },
@@ -57,6 +59,10 @@ export const globalUniforms = {
   uWet: { value: 0 }, // surface wetness, lags the rain
   uFlash: { value: 0 }, // lightning
   uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
+  // shadows of the low fair-weather puffs (see world/clouds.ts): a small
+  // top-down map around the view; xy its centre, z 1 / its width (m), w strength
+  uLowCloudTex: { value: BLANK as THREE.Texture },
+  uLowCloudXf: { value: new THREE.Vector4(0, 0, 1 / 680, 0) },
   // beneath the waves (the farewell follows your ship down): x amount 0/1,
   // z how far you can see (m); uUnderColor is the water's own glow
   uUnder: { value: new THREE.Vector4(0, 0, 60, 0) },
@@ -104,6 +110,8 @@ uniform float uStorm;
 uniform float uWet;
 uniform float uFlash;
 uniform float uMist;
+uniform sampler2D uLowCloudTex;
+uniform vec4 uLowCloudXf;
 
 // how much low mist lies between the eye and a point d metres away
 float mistAt(float d) {
@@ -219,7 +227,15 @@ float cloudShadow(vec2 xz) {
   float n = cloudField(uv);
   // coverage slides the threshold: a few puffs on a clear day, a solid deck in a storm
   float lo = cloudLo();
-  return mix(1.0, 0.5, smoothstep(lo, lo + 0.18, n));
+  float s = mix(1.0, 0.5, smoothstep(lo, lo + 0.18, n));
+  // the little low puffs drifting between you and the sun
+  if (uLowCloudXf.w > 0.0) {
+    vec2 q = (xz - uLowCloudXf.xy) * uLowCloudXf.z;
+    float e = max(abs(q.x), abs(q.y));
+    float lc = texture(uLowCloudTex, q + 0.5).r * (1.0 - smoothstep(0.42, 0.5, e));
+    s *= 1.0 - lc * uLowCloudXf.w;
+  }
+  return s;
 }
 
 float causticsAt(vec3 wp, float depth) {
