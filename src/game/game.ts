@@ -34,7 +34,8 @@ import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
-import { fxItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { FxItem, fxItem, Item, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, portClearings } from '../port/site';
 import { CameraRig } from './cameraRig';
@@ -147,6 +148,14 @@ export class Game {
   // the treasure vault: purse, collection and the chest itself
   private vaultStore = new VaultStore();
   private vault = new Vault(this.vaultStore);
+  // the chest out on the water, and what the vault is showing
+  private vstage!: VaultStage;
+  private vaultOn = false;
+  private vShot: StageShot = 'home';
+  private vShow: Item | null = null;
+  private vFireT = 0;
+  private vTime = 0;
+  private vSide: 1 | -1 = 1;
   private veil = Object.assign(document.body.appendChild(document.createElement('div')), { id: 'sw-veil' });
   private swFocus: PortFocus = 'overview';
   private swAz = 0;
@@ -285,6 +294,20 @@ export class Game {
     this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
     this.particles = new Particles(q.particles);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
+    // the vault's chest and its light: built now so the warm-up draws them
+    this.vstage = new VaultStage(this.particles.uniforms);
+    this.opaque.add(this.vstage.group);
+    this.water.add(this.vstage.fx);
+    const st = this.vstage;
+    st.onShake = (amt) => this.rig.shake(amt);
+    st.onSplash = (p, big) => {
+      const [vol, pan, d] = this.world.soundAt(p);
+      this.audio.splash(Math.min(1, vol * big), pan, d);
+    };
+    st.onFirework = (p) => {
+      const [vol, pan] = this.world.soundAt(p);
+      this.audio.explosion(vol * 0.18, pan, 160);
+    };
     this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
     this.world.debris = this.debris;
@@ -508,22 +531,128 @@ export class Game {
       flip: (t) => a.cardFlip(t),
       coin: () => a.coin(),
     };
-    v.onEquip = () => this.applyCosmetics();
+    v.onEquip = () => {
+      // the showcase keeps dressing the ship; just remember the choice
+      if (this.vShow) this.vaultPreview(this.vShow);
+      else this.applyCosmetics();
+    };
     v.onClose = () => this.closeVault();
+    v.stage = {
+      charge: (t) => this.vstage.charge(t),
+      burst: (t) => this.vstage.burst(t),
+      pulse: (t) => this.vstage.pulse(t),
+      settle: () => this.vstage.settle(),
+      focus: (shot) => {
+        this.vShot = shot;
+        // the opening is a quick cut-in; everything else glides
+        this.rig.shotPace = shot === 'charge' ? 1.1 : shot === 'burst' ? 0.9 : 0.75;
+      },
+      preview: (it) => this.vaultPreview(it),
+      chestPoint: () => {
+        const p = this.vstage.screenPoint(this.rig.camera, innerWidth, innerHeight);
+        return p.front ? p : { x: innerWidth / 2, y: innerHeight * 0.55 };
+      },
+    };
+  }
+
+  /** Which side of the ship has the open water (the chest surfaces there): +1 port, -1 starboard. */
+  private seaSide(s: Ship): 1 | -1 {
+    const l = s.portDir(new THREE.Vector3());
+    const back = new THREE.Vector3(-Math.sin(s.heading), 0, -Math.cos(s.heading)).multiplyScalar(s.cls.length * 0.5);
+    let hp = 0;
+    let hs = 0;
+    for (const r of [14, 30, 55]) {
+      hp += this.terrain.heightAt(s.pos.x + l.x * r + back.x, s.pos.z + l.z * r + back.z);
+      hs += this.terrain.heightAt(s.pos.x - l.x * r + back.x, s.pos.z - l.z * r + back.z);
+    }
+    return hp <= hs ? 1 : -1;
+  }
+
+  /** The showcase: your ship tries on an item (or goes back to what she wears). */
+  private vaultPreview(it: Item | null) {
+    const s = this.preview;
+    this.vShow = it;
+    this.vstage.hushed = !!it;
+    if (!s) return;
+    this.applyCosmetics(s);
+    if (!it) return;
+    if (it.kind === 'skin') {
+      s.model.setSkin(it as SkinItem);
+      this.vShot = 'ship';
+    } else {
+      s.cannonFx[it.kind] = (it as FxItem).style;
+      this.vShot = 'guns';
+      this.vFireT = Math.min(this.vFireT, 1.1);
+    }
+    this.rig.shotPace = 0.7;
+  }
+
+  /** Frames the vault's camera each frame and keeps the showcase broadsides coming. */
+  private frameVault(dt: number) {
+    const st = this.vstage;
+    if (!this.preview || !st.active) return;
+    this.vTime += dt;
+    const W = innerWidth;
+    const H = innerHeight;
+    const r = this.vault.freeRect();
+    const vs = this.rig.viewShift;
+    vs.x = W / 2 - (r.left + r.right) / 2;
+    vs.y = H / 2 - (r.top + r.bottom) / 2;
+    const fw = Math.max(1, r.right - r.left);
+    const fh = Math.max(1, r.bottom - r.top);
+    const fit = clamp(Math.max(1.3 / (fw / H), H / fh) ** 0.85, 1, 2.4);
+    const shot = st.shot(this.vShot, fit, this.vTime);
+    this.rig.shotPos.copy(shot.pos);
+    this.rig.shotLook.copy(shot.look);
+    this.rig.shotFov = shot.fov;
+    if (this.vShot === 'guns' && this.vShow && this.vShow.kind !== 'skin') {
+      this.vFireT -= dt;
+      if (this.vFireT <= 0) {
+        this.vFireT = 3.4;
+        const at = new THREE.Vector3();
+        const side = st.gunSide(at);
+        const p = this.preview;
+        p.reload[side] = 0;
+        this.audio.start();
+        p.fire(side, this.world, null, at);
+      }
+    }
+    this.vault.placeChest(this.vShot === 'home' ? st.screenRect(this.rig.camera, W, H) : null);
   }
 
   /** The vault opens over the home screen or over the Shipwright's harbour. */
   private openVault() {
-    if (this.vault.isOpen || this.swBusy || (this.state !== 'menu' && this.state !== 'port')) return;
+    if (this.vault.isOpen || this.swBusy || (this.state !== 'menu' && this.state !== 'port') || !this.preview) return;
     this.audio.start();
-    if (this.state === 'menu') this.ui.showMenu(false);
-    else this.shipwright.root.classList.add('sw-away');
+    if (this.state === 'menu') {
+      this.ui.showMenu(false);
+      // glide from the menu's orbit down to the water beside the ship
+      this.rig.shotFromHere();
+      this.rig.easeIn(0.8);
+      this.rig.mode = 'port';
+    } else this.shipwright.root.classList.add('sw-away');
+    this.vaultOn = true;
+    this.vShot = 'home';
+    this.vShow = null;
+    this.vTime = 0;
+    this.rig.shotPace = 0.55;
+    this.vSide = this.seaSide(this.preview);
+    this.vstage.show(this.preview, this.vSide);
     this.vault.open();
   }
 
   private closeVault() {
     this.vault.close();
+    this.vaultOn = false;
+    this.vShow = null;
+    this.vstage.hide();
+    this.applyCosmetics();
+    this.rig.shotPace = 1;
+    this.rig.shotFov = 38;
+    this.rig.viewShift.x = this.rig.viewShift.y = 0;
     if (this.state === 'menu') {
+      this.rig.easeIn(1.4);
+      this.rig.mode = 'orbit';
       this.ui.showMenu(true);
       this.frameMenu();
     } else if (this.state === 'port') {
@@ -1285,7 +1414,13 @@ export class Game {
       P.begin('Harbour', 'sim');
       this.port.update(dt, w);
       this.shipwright.tick(realDt);
-      this.framePort(realDt);
+      if (!this.vaultOn) this.framePort(realDt);
+      P.end();
+    }
+    if (this.vstage.active) {
+      P.begin('Treasure vault', 'sim');
+      this.vstage.update(dt, w, this.particles);
+      if (this.vaultOn) this.frameVault(realDt);
       P.end();
     }
 
