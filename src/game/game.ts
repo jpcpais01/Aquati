@@ -654,6 +654,8 @@ export class Game {
     this.rig.resetEye();
     for (const s of this.ships.slice()) this.removeShip(s);
     this.projectiles.clear();
+    this.particles.streaks.begin();
+    this.particles.streaks.end();
     this.loot.clear();
     this.debris.clear();
     this.crew.clear();
@@ -953,7 +955,7 @@ export class Game {
       const top = this.terrain.heightAt(v.x, v.z);
       this.particles.emit({
         x: v.x + (Math.random() - 0.5) * 8, y: top + 4, z: v.z + (Math.random() - 0.5) * 8,
-        vx: w.wind.dirX * 2.2, vy: 3 + Math.random() * 2, vz: w.wind.dirZ * 2.2,
+        vx: w.wind.dirX * 0.6, vy: 3 + Math.random() * 2, vz: w.wind.dirZ * 0.6,
         life: 16 + Math.random() * 6, size: 8, sizeEnd: 34, color: [1.05, 1.03, 1.0], colorEnd: [0.95, 0.95, 0.97], alpha: 0.3, drag: 0.08, kind: 1, spin: (Math.random() - 0.5) * 0.1, fadeIn: 2,
       });
     }
