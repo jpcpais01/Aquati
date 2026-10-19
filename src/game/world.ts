@@ -50,13 +50,13 @@ export class World {
     return waveHeight(this.waves, x, z, this.time, this.waterDamp(x, z));
   }
 
-  /** Volume + pan for a sound at a world position relative to the camera. */
-  soundAt(p: THREE.Vector3): [number, number] {
+  /** Volume, pan and distance (m) for a sound at a world position relative to the camera. */
+  soundAt(p: THREE.Vector3): [number, number, number] {
     const dx = p.x - this.listener.x;
     const dz = p.z - this.listener.z;
     const d = Math.hypot(dx, dz);
     const ref = this.listenerZoom * 0.9;
     const vol = Math.min(1, ref / (ref + d * 1.4));
-    return [vol, dx / (ref * 0.8)];
+    return [vol, dx / (ref * 0.8), d];
   }
 }
