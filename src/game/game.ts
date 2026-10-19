@@ -17,11 +17,12 @@ import { Rain } from '../fx/rain';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
+import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { buildShore, setSurf } from '../world/shore';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, Wave } from '../world/waves';
-import { Atmosphere, WEATHER } from '../world/atmosphere';
+import { Atmosphere, AtmosSnapshot, TIMES, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
@@ -35,6 +36,7 @@ import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
+import { PhotoMode } from '../ui/photo';
 import { fxItem, skinItem, VaultStore } from '../ships/cosmetics';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, portClearings } from '../port/site';
@@ -65,6 +67,8 @@ const PIRATE_NAMES = [
 
 /** Seconds into the farewell when the camera follows her under. */
 const DIVE = 8.6;
+
+const _cineV = new THREE.Vector3();
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
@@ -109,7 +113,11 @@ export class Game {
   /** The voyage's tally for the farewell screen. */
   private log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] as VoyageEvent[] };
   /** The farewell: real seconds since she was lost (-1 afloat), and its beats. */
-  private wreck = { t: -1, hud: true, plunged: false, dived: false, shown: false, az: 0, elev: 0, dist: 0 };
+  private wreck = { t: -1, hud: true, plunged: false, dived: false, shown: false, skip: false, deep: -1, under: -1, rest: -1, camSet: false, az: 0, elev: 0, dist: 0 };
+  /** Where the camera hangs beneath the waves beside the sinking wreck (eased). */
+  private underCam = new THREE.Vector3();
+  private bubbleT = 0;
+  private isUnder = false;
   private report: WreckReport | null = null;
   /** Sim-time scale: the killing blow plays out in slow motion. */
   private timeScale = 1;
@@ -163,6 +171,13 @@ export class Game {
   private swBusy = false;
   private saveTimer = 0;
   private captain = new Captain();
+  /** Photo mode: the voyage frozen, the HUD gone and a free camera; see ui/photo.ts. */
+  private photo: PhotoMode;
+  private photoSnap: AtmosSnapshot | null = null;
+  private photoSky = false;
+  private photoSkyT = 0;
+  /** Pixel ratio forced for one high-resolution capture (0 in play). */
+  private captureDpr = 0;
   private fpv = false;
   private sky = createSkyDome();
 
@@ -174,6 +189,7 @@ export class Game {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
+    installPassCulling(this.renderer);
     this.quality = detectQuality(this.renderer);
     this.prof = new Profiler(this.renderer, () => ({
       scale: this.scaler.scale,
@@ -195,6 +211,16 @@ export class Game {
     this.input.bindViewButtons(document.getElementById('btn-view')!, document.getElementById('btn-helm')!, document.getElementById('t-spy')!);
     this.captain.onStep = (k) => this.audio.footstep(k);
     this.input.onTouchDetected = () => this.ui.setTouch(true);
+    this.photo = new PhotoMode(canvas);
+    this.photo.onClick = () => this.ui.onClick();
+    this.photo.onClose = () => this.closePhoto();
+    this.photo.onCapture = () => void this.capturePhoto();
+    this.photo.onScene = (hour, kind) => {
+      if (!this.photoSnap) return;
+      this.atmos.preview(this.photoSnap, hour, kind);
+      this.photoSky = true;
+    };
+    this.photo.pickAt = (x, y) => this.pickDepth(x, y);
 
     // the key light: the sun by day, the moon by night (see world/atmosphere.ts)
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
@@ -222,11 +248,19 @@ export class Game {
     this.skyEnv = new SkyEnvironment(this.renderer);
     this.applyAtmosphere();
     const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm'] as const;
+    const times = ['auto', 'dawn', 'noon', 'golden', 'dusk', 'night'] as const;
+    // the icon picks the weather, the clock picks the hour
     document.getElementById('hud-sky')!.addEventListener('click', (e) => {
       e.stopPropagation();
+      if ((e.target as HTMLElement).closest('#hud-clock')) {
+        const t = times[(times.indexOf(this.atmos.timeMode) + 1) % times.length];
+        this.atmos.setTimeMode(t);
+        this.ui.skyTag(t === 'auto' ? 'Time · Auto' : TIMES[t].name);
+        return;
+      }
       const m = modes[(modes.indexOf(this.atmos.mode) + 1) % modes.length];
       this.atmos.setMode(m);
-      this.ui.skyTag(m === 'auto' ? 'Auto' : WEATHER[m].name);
+      this.ui.skyTag(m === 'auto' ? 'Weather · Auto' : WEATHER[m].name);
     });
     this.atmos.onChange = (_k, title, line) => {
       if (this.state === 'playing') this.ui.toast(title, line, 3.4);
@@ -280,7 +314,7 @@ export class Game {
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
-    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36);
+    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.birds.mesh);
     ui.progress(0.75);
     await nextFrame();
@@ -296,6 +330,9 @@ export class Game {
     this.particles = new Particles(q.particles);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
+    // the sea from beneath: hidden until the farewell follows a wreck under (the warm-up still draws it)
+    this.opaque.add(this.ocean.underside);
+    this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
     this.world.debris = this.debris;
     this.world.onShot = (s) => this.projectiles.add(s);
@@ -371,6 +408,7 @@ export class Game {
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
     ui.onMap = (on) => this.setChart(on);
+    ui.onPhoto = () => this.openPhoto();
     ui.onQuit = () => {
       this.ui.showPause(false);
       this.resetWorld();
@@ -380,8 +418,11 @@ export class Game {
     ui.onRetry = () => this.leaveWreck(true);
     ui.onTally = (i, best) => this.audio.tally(i, best);
     ui.onSkip = () => {
-      // straight to the plunge
-      if (this.wreck.t >= 0 && this.wreck.t < DIVE - 0.4) this.wreck.t = DIVE - 0.4;
+      // straight to the plunge; once under, straight to the farewell
+      const k = this.wreck;
+      if (k.t < 0) return;
+      if (k.t < DIVE - 0.4) k.t = DIVE - 0.4;
+      else k.skip = true;
     };
     ui.onSound = (on) => this.audio.setMuted(!on);
     ui.onSettings = (st) => {
@@ -686,7 +727,7 @@ export class Game {
   private resize() {
     const w = innerWidth;
     const h = innerHeight;
-    this.dpr = Math.min(devicePixelRatio || 1, this.quality.maxDpr) * this.scaler.scale;
+    this.dpr = this.captureDpr || Math.min(devicePixelRatio || 1, this.quality.maxDpr) * this.scaler.scale;
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.setSize(w, h, false);
     this.pipeline.setSize(w * this.dpr, h * this.dpr);
@@ -857,9 +898,8 @@ export class Game {
     this.frameMenu();
     // a couple of pirates on the horizon for life
     if (!this.ships.some((s) => s.team === 'pirate')) {
-      this.spawnPirate(this.spawnPoint, 160, 260);
-      this.spawnPirate(this.spawnPoint, 220, 340);
-      this.spawnFlotilla(this.spawnPoint, 300, 420, 3);
+      this.spawnPirate(this.spawnPoint, 180, 300);
+      this.spawnFlotilla(this.spawnPoint, 300, 420, 2);
     }
   }
 
@@ -934,6 +974,159 @@ export class Game {
       this.ui.showPause(false);
       this.last = performance.now();
     }
+  }
+
+  // ------------------------------------------------------------------ photo mode
+
+  /** Freezes the voyage, clears the HUD away and hands the camera to photo mode. */
+  private openPhoto() {
+    const p = this.player;
+    if (this.photo.active || !p || this.wreck.t >= 0) return;
+    let fromPause: boolean;
+    if (this.state === 'playing') {
+      this.setChart(false);
+      this.input.releaseLook();
+      this.state = 'paused';
+      fromPause = false;
+    } else if (this.state === 'paused') {
+      this.ui.showPause(false);
+      fromPause = true;
+    } else return;
+    this.input.enabled = false;
+    this.photoSnap = this.atmos.snapshot();
+    document.body.classList.add('photo');
+    this.photo.open(this.rig.camera, p.pos, this.atmos.hour, fromPause);
+  }
+
+  /** Puts the sky back as it was and returns to the pause menu or the helm. */
+  private closePhoto() {
+    if (!this.photo.active) return;
+    this.photo.close();
+    if (this.photoSnap) this.atmos.restore(this.photoSnap);
+    this.photoSnap = null;
+    this.envT = 0;
+    this.rig.photoDist = 0;
+    this.pipeline.photo = null;
+    document.body.classList.remove('photo');
+    this.input.enabled = true;
+    if (this.photo.fromPause) {
+      const p = this.player;
+      this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime, ship: p.name, cls: p.cls.id } : undefined);
+    } else {
+      this.state = 'playing';
+      this.last = performance.now();
+    }
+  }
+
+  /** View depth (m) of the first thing under a screen point: a hull, an island or the sea. */
+  private pickDepth(x: number, y: number): number | null {
+    const cam = this.rig.camera;
+    const dir = PhotoMode.ray(cam, x, y, _a);
+    const o = cam.position;
+    let best = Infinity;
+    for (const s of this.ships) {
+      if (s.removed) continue;
+      // a sphere round the hull and lower rig
+      const r = s.cls.length * 0.55;
+      const cx = s.pos.x - o.x;
+      const cy = s.root.position.y + 6 - o.y;
+      const cz = s.pos.z - o.z;
+      const t = cx * dir.x + cy * dir.y + cz * dir.z;
+      const d2 = cx * cx + cy * cy + cz * cz - t * t;
+      if (t > 0 && d2 < r * r) best = Math.min(best, t - Math.sqrt(r * r - d2) * 0.5);
+    }
+    const w = this.world;
+    const ground = (px: number, pz: number) => Math.max(this.terrain.heightAt(px, pz), w.waterHeight(px, pz));
+    let prev = 0;
+    for (let t = 1; t < Math.min(best, 2400); t += Math.max(0.6, t * 0.025)) {
+      const px = o.x + dir.x * t;
+      const py = o.y + dir.y * t;
+      const pz = o.z + dir.z * t;
+      if (py < ground(px, pz)) {
+        // home in on the surface
+        let lo = prev;
+        let hi = t;
+        for (let i = 0; i < 6; i++) {
+          const m = (lo + hi) / 2;
+          if (o.y + dir.y * m < ground(o.x + dir.x * m, o.z + dir.z * m)) hi = m;
+          else lo = m;
+        }
+        best = Math.min(best, hi);
+        break;
+      }
+      prev = t;
+    }
+    if (!Number.isFinite(best)) return null;
+    // distance along the ray to depth along the view
+    return best * dir.dot(cam.getWorldDirection(new THREE.Vector3()));
+  }
+
+  /**
+   * The shutter: one frame redrawn at the screen's full pixel density (higher
+   * than play renders at), cropped to the chosen frame and saved as a PNG, or
+   * handed to the share sheet on a phone.
+   */
+  private async capturePhoto() {
+    if (!this.photo.active) return;
+    const w = innerWidth;
+    const h = innerHeight;
+    const maxTex = this.renderer.capabilities.maxTextureSize;
+    let dpr = Math.max(this.dpr, Math.min(devicePixelRatio || 1, 2.5));
+    // stay within a 4K-class frame and what the GPU can allocate
+    dpr = Math.min(dpr, Math.sqrt(8.3e6 / (w * h)), maxTex / Math.max(w, h));
+    const crop = this.photo.crop();
+    const out = document.createElement('canvas');
+    try {
+      if (Math.abs(dpr - this.dpr) > 0.01) {
+        this.captureDpr = dpr;
+        this.resize();
+      }
+      this.render(0);
+      const cw = this.canvas.width;
+      const ch = this.canvas.height;
+      out.width = Math.round(cw * crop.w);
+      out.height = Math.round(ch * crop.h);
+      out.getContext('2d')!.drawImage(this.canvas, Math.round(cw * crop.x), Math.round(ch * crop.y), out.width, out.height, 0, 0, out.width, out.height);
+    } finally {
+      if (this.captureDpr) {
+        this.captureDpr = 0;
+        this.resize();
+        this.render(0);
+      }
+    }
+    this.photo.flash();
+    this.audio.shutter();
+    const blob = await new Promise<Blob | null>((r) => out.toBlob(r, 'image/png'));
+    if (!blob) return;
+    const d = new Date();
+    const stamp = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`;
+    const name = `shores-of-fortune-${stamp}.png`;
+    const size = `${out.width} × ${out.height}`;
+    if (this.input.isTouch && navigator.canShare) {
+      const file = new File([blob], name, { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: 'Shores of Fortune' });
+          this.photo.saved(blob, 'Photo shared', size);
+          return;
+        } catch (e) {
+          if ((e as Error).name === 'AbortError') {
+            this.photo.saved(blob, 'Photo taken', 'Sharing cancelled');
+            return;
+          }
+          // no share sheet after all: fall through to a download
+        }
+      }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    this.photo.saved(blob, 'Photo saved', `${size} · Downloads`);
   }
 
   /** The sea chart overlays live play: the world keeps sailing underneath. */
@@ -1018,7 +1211,7 @@ export class Game {
 
   private onSunk(ship: Ship, attacker: Ship) {
     // the replacement waits until the wreck has settled
-    this.spawnTimer = Math.max(this.spawnTimer, 5);
+    this.spawnTimer = Math.max(this.spawnTimer, 10);
     const bounty = { sloop: 60, brig: 110, galleon: 220 }[ship.cls.id];
     const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
@@ -1086,7 +1279,7 @@ export class Game {
     const dz = cam.z - p.pos.z;
     const dist = Math.hypot(dx, cam.y, dz);
     this.wreck = {
-      t: 0, hud: true, plunged: false, dived: false, shown: false,
+      t: 0, hud: true, plunged: false, dived: false, shown: false, skip: false, deep: -1, under: -1, rest: -1, camSet: false,
       az: Math.atan2(dx, dz), elev: Math.asin(clamp(cam.y / Math.max(dist, 1), 0.1, 0.99)), dist: clamp(dist, 40, 320),
     };
     this.timeScale = 0.22;
@@ -1109,6 +1302,11 @@ export class Game {
       this.ui.showHud(false);
     }
     const w = this.world;
+    const c = p.pos;
+    const L = p.cls.length;
+    const bed = this.terrain.heightAt(c.x, c.z);
+    // deep enough to follow her down? on a reef the camera stays above and the water closes in instead
+    if (k.deep < 0) k.deep = w.waterHeight(c.x, c.z) - bed > 7 ? 1 : 0;
     // the final plunge: her timbers groan and she goes by the stern
     if (!k.plunged && p.sinkT > p.wreckLife) {
       k.plunged = true;
@@ -1118,26 +1316,41 @@ export class Game {
     if (!k.dived && T > DIVE) {
       // her last breath of air bursts up as she slips under
       k.dived = true;
-      const y = w.waterHeight(p.pos.x, p.pos.z);
+      const y = w.waterHeight(c.x, c.z);
       for (let i = 0; i < 3; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = Math.random() * p.cls.beam;
-        w.particles.splash(new THREE.Vector3(p.pos.x + Math.cos(a) * r, y, p.pos.z + Math.sin(a) * r), 1.1 + Math.random() * 0.6);
+        w.particles.splash(new THREE.Vector3(c.x + Math.cos(a) * r, y, c.z + Math.sin(a) * r), 1.1 + Math.random() * 0.6);
       }
-      w.wake.stamp(p.pos.x, p.pos.z, p.cls.length * 0.5, 1, true);
-      w.wake.push(p.pos.x, p.pos.z, p.cls.length * 0.4, -1);
-      this.audio.submerge(true);
+      w.wake.stamp(c.x, c.z, L * 0.5, 1, true);
+      w.wake.push(c.x, c.z, L * 0.4, -1);
+      if (!k.deep) this.audio.submerge(true);
     }
-    const depth = smoothstep(DIVE + 0.4, DIVE + 2.1, T);
-    this.pipeline.depth = depth;
-    this.pipeline.desat = 0.55 * smoothstep(0, 0.6, T) * (1 - depth);
-    if (!k.shown && T > DIVE + 2.0) {
+    // she comes to rest on the seabed in a cloud of sand
+    const rested = p.dmg.restT >= 0;
+    if (rested && k.rest < 0) {
+      k.rest = T;
+      this.wreckLanding(p, bed);
+    }
+    if (k.deep && T > DIVE - 1) this.wreckBubbles(p, realDt * this.timeScale, rested ? T - k.rest : -1);
+
+    // the post-grade: grey for the blow; underwater, a light swim and the sun shafts (heavy gloom on a reef)
+    const shallowDepth = k.deep ? 0 : smoothstep(DIVE + 0.4, DIVE + 2.1, T);
+    let post = shallowDepth;
+    if (k.under >= 0) {
+      // the instant the camera breaks the surface the picture swims and blurs, then clears
+      const since = T - k.under;
+      post = 0.24 + 0.7 * Math.exp(-since * since * 9);
+    }
+    this.pipeline.depth = post;
+    this.pipeline.desat = 0.55 * smoothstep(0, 0.6, T) * (1 - Math.max(shallowDepth, k.under >= 0 ? 1 : 0));
+    const showAt = k.deep ? Math.min(DIVE + 11, Math.max(DIVE + 5.5, k.rest >= 0 ? k.rest + 2.6 : Infinity)) : DIVE + 2;
+    if (!k.shown && (T > showAt || (k.skip && T > DIVE))) {
       k.shown = true;
       this.ui.showDead(true, this.report!);
     }
 
     // the camera: a slow, lowering orbit around the wreck, then a dive to the water where she went down
-    const L = p.cls.length;
     const settle = smoothstep(0, 7.5, T);
     const dive = smoothstep(DIVE - 0.4, DIVE + 2.2, T);
     let dist = lerp(k.dist, L * 1.25 + 30, settle);
@@ -1145,11 +1358,116 @@ export class Game {
     let elev = lerp(k.elev, 0.3, settle);
     elev = lerp(elev, 0.07, dive);
     const az = k.az + T * 0.07 * smoothstep(0, 2.5, T);
-    const c = p.pos;
     const cp = this.cinePos.set(c.x + Math.sin(az) * Math.cos(elev) * dist, Math.sin(elev) * dist + 1.5, c.z + Math.cos(az) * Math.cos(elev) * dist);
     cp.y = Math.max(cp.y, w.waterHeight(cp.x, cp.z) + 1.6);
     this.cineLook.set(c.x, lerp(lerp(4, L * 0.3, settle), -6, dive), c.z);
-    this.rig.cine = { pos: cp, look: this.cineLook, fov: lerp(lerp(34, 29, settle), 44, dive), w: smoothstep(0, 2.6, T) };
+    let fov = lerp(lerp(34, 29, settle), 44, dive);
+    if (k.deep) {
+      // ...and on down through the surface: alongside and a little below her as
+      // she sinks, her hull dark against the bright window of the sky, then up
+      // and back once she lies on the sand
+      const sink = smoothstep(DIVE, DIVE + 2.4, T);
+      const sy = p.root.position.y;
+      const after = k.rest >= 0 ? smoothstep(k.rest, k.rest + 5, T) : 0;
+      const ud = L * 0.55 + 12 + after * (L * 0.4 + 6);
+      // swing round to her keel side as she heels, so her hull, not her sails, is what looms over you
+      const up = _cineV.set(0, 1, 0).applyQuaternion(p.root.quaternion);
+      const lean = Math.hypot(up.x, up.z);
+      let ua = az + Math.sin(T * 0.11) * 0.05;
+      if (lean > 0.05) {
+        const keel = Math.atan2(-up.x, -up.z);
+        ua += Math.atan2(Math.sin(keel - ua), Math.cos(keel - ua)) * smoothstep(0.1, 0.5, lean) * 0.8;
+      }
+      // low enough to look up past her keel into Snell's window
+      const uy = lerp(clamp(sy - 9, bed + 2, -4), bed + L * 0.2 + 5, after);
+      const tx = c.x + Math.sin(ua) * ud;
+      const tz = c.z + Math.cos(ua) * ud;
+      const ty = Math.min(Math.max(uy, this.terrain.heightAt(tx, tz) + 1.6), w.waterHeight(tx, tz) - 2.5);
+      const u = this.underCam;
+      if (sink <= 0 || !k.camSet) {
+        u.set(tx, ty, tz);
+        k.camSet = true;
+      }
+      else u.lerp(_cineV.set(tx, ty, tz), 1 - Math.exp(-realDt * 2.4));
+      cp.lerp(u, sink);
+      this.cineLook.lerp(_cineV.set(c.x, sy + lerp(5, 0.5, after), c.z), sink);
+      fov = lerp(fov, 48, sink);
+    }
+    this.rig.cine = { pos: cp, look: this.cineLook, fov, w: smoothstep(0, 2.6, T) };
+  }
+
+  /** Air streaming out of her as she goes down, and splinters drifting after her. */
+  private wreckBubbles(p: Ship, dt: number, sinceRest: number) {
+    const w = this.world;
+    const L = p.cls.length;
+    const rate = sinceRest < 0 ? 46 : 30 * Math.exp(-sinceRest * 0.25);
+    this.bubbleT += dt * rate;
+    const hx = Math.sin(p.heading);
+    const hz = Math.cos(p.heading);
+    const top = w.waterHeight(p.pos.x, p.pos.z);
+    while (this.bubbleT > 1) {
+      this.bubbleT -= 1;
+      const a = (Math.random() - 0.5) * L * 0.85;
+      const x = p.pos.x + hx * a + (Math.random() - 0.5) * p.cls.beam;
+      const z = p.pos.z + hz * a + (Math.random() - 0.5) * p.cls.beam;
+      const y = p.root.position.y + Math.random() * 2.5;
+      if (y > top - 0.5) continue;
+      const big = Math.random() < 0.12;
+      const vy = 1 + Math.random() * 1.6;
+      w.particles.emit({
+        x, y, z, vx: (Math.random() - 0.5) * 0.5, vy, vz: (Math.random() - 0.5) * 0.5,
+        life: Math.min(7, (top - y) / (vy + 1.2) + 0.4), size: big ? 0.5 + Math.random() * 0.5 : 0.1 + Math.random() * 0.25,
+        color: [1.5, 1.75, 1.85], alpha: 0.75, grav: -1.4, drag: 0.35, kind: 4, fadeIn: 0.08,
+      });
+      if (sinceRest < 0 && Math.random() < 0.12) {
+        // a splinter of her timbers, tumbling slowly down after her
+        w.particles.emit({
+          x, y: y + 1.5, z, vx: (Math.random() - 0.5) * 0.4, vy: 0.4, vz: (Math.random() - 0.5) * 0.4,
+          life: 5 + Math.random() * 3, size: 0.18 + Math.random() * 0.25, color: [0.32, 0.22, 0.14], alpha: 1, grav: 0.35, drag: 1.4, spin: (Math.random() - 0.5) * 3, kind: 3, fadeIn: 0.2,
+        });
+      }
+    }
+  }
+
+  /** She settles onto the sand: a slow billow of it, a muffled thud through the hull. */
+  private wreckLanding(p: Ship, bed: number) {
+    const w = this.world;
+    const L = p.cls.length;
+    const hx = Math.sin(p.heading);
+    const hz = Math.cos(p.heading);
+    for (let i = 0; i < 16; i++) {
+      const a = (Math.random() - 0.5) * L;
+      const side = (Math.random() - 0.5) * p.cls.beam * 1.6;
+      const x = p.pos.x + hx * a + hz * side;
+      const z = p.pos.z + hz * a - hx * side;
+      const out = 0.6 + Math.random() * 1.2;
+      w.particles.emit({
+        x, y: bed + 0.6, z, vx: hz * side * 0.2 * out, vy: 0.25 + Math.random() * 0.4, vz: -hx * side * 0.2 * out,
+        life: 6 + Math.random() * 4, size: 2.5, sizeEnd: 9 + Math.random() * 6, color: [0.62, 0.58, 0.46], colorEnd: [0.5, 0.52, 0.46],
+        alpha: 0.42, drag: 0.9, grav: -0.03, spin: (Math.random() - 0.5) * 0.4, kind: 1, fadeIn: 0.6,
+      });
+    }
+    this.audio.thud(0.9, 0, 0);
+    this.rig.shake(0.25);
+  }
+
+  /** Beneath the waves: the sea from below, the water's own glow and gloom in place of the air. */
+  private setUnder(on: boolean) {
+    this.ocean.setUnder(on);
+    const u = globalUniforms.uUnder.value;
+    u.x = on ? 1 : 0;
+    if (on) {
+      // the water glows with the light of the day above it, and the further she is from the light, the less you see
+      const l = globalUniforms.uLight.value;
+      const k = this.wreck;
+      const deep = k.rest >= 0 ? smoothstep(k.rest + 2, k.rest + 16, k.t) : 0;
+      globalUniforms.uUnderColor.value.set(0.03 * l.x, 0.19 * l.y, 0.23 * l.z).multiplyScalar(1 - deep * 0.35);
+      u.z = lerp(60, 34, deep) * (1 - this.atmos.storm * 0.35);
+      const uc = globalUniforms.uUnderColor.value;
+      this.pipeline.clearColor.setRGB(uc.x, uc.y, uc.z, THREE.LinearSRGBColorSpace);
+    } else {
+      this.pipeline.clearColor.set(0x0b2a3a);
+    }
   }
 
   /** Back to the surface: sail the same ship again, or pick another in the harbour. */
@@ -1164,6 +1482,8 @@ export class Game {
       this.pipeline.depth = 0;
       this.pipeline.desat = 0;
       this.audio.submerge(false);
+      this.isUnder = false;
+      this.setUnder(false);
       this.ui.showDead(false);
       this.ui.endWreck();
       this.resetWorld();
@@ -1318,6 +1638,7 @@ export class Game {
       if (this.chartOpen) this.setChart(false);
       else this.setPaused(true);
     } else if (st.map) this.setChart(!this.chartOpen);
+    else if (st.photo) this.openPhoto();
   }
 
   // ------------------------------------------------------------------ frame
@@ -1362,8 +1683,9 @@ export class Game {
       this.voyageTime += dt;
       const pl = this.player;
       if (pl) this.log.metres += Math.abs(pl.speed) * dt;
-    } else if (this.state === 'paused') {
+    } else if (this.state === 'paused' && !this.photo.active) {
       if (this.input.state.pause) this.setPaused(false);
+      else if (this.input.state.photo) this.openPhoto();
     }
 
     // the shipwright's ship stays tied up at the quay
@@ -1461,7 +1783,20 @@ export class Game {
     const fvel = focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
     this.updateCaptain(dt);
-    this.rig.update(realDt, fpos, fvel, w.time, this.state === 'playing' || this.state === 'paused' ? this.battleFoe() : null);
+    if (this.photo.active) {
+      const ph = this.photo;
+      ph.cam.ground = (x, z) => Math.max(this.terrain.heightAt(x, z) + 1.4, w.waterHeight(x, z) + 0.9);
+      ph.update(realDt, this.rig.camera);
+      // shadows, the sea and the crews gather round what the lens looks at
+      const fp = ph.cam.focusPoint;
+      this.rig.target.set(fp.x, 0, fp.z);
+      this.rig.photoDist = Math.min(ph.cam.shownDist, 320);
+      // auto-focus settles on whatever sits mid-frame
+      const af = this.pickDepth(0, 0) ?? ph.cam.shownDist;
+      ph.autoFocus += (af - ph.autoFocus) * Math.min(1, realDt * 8);
+      // the captain stands at the helm in the shot, even seen from their own eyes
+      if (this.captain.ship) this.captain.pilot.hidden = false;
+    } else this.rig.update(realDt, fpos, fvel, w.time, this.state === 'playing' || this.state === 'paused' ? this.battleFoe() : null);
     const eb = this.rig.eyeBlend;
     if (eb > 0) {
       // hear the sea from where you stand, panned to where you face
@@ -1477,6 +1812,7 @@ export class Game {
     P.end();
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
+    this.crew.setView(this.rig.camera, this.toSun);
     this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
     P.end();
 
@@ -1498,18 +1834,19 @@ export class Game {
     this.particles.update(dt);
     P.end();
     P.begin('Birds', 'fx');
-    this.birds.update(dt, w.time);
+    this.birds.update(dt, w, this.ships);
     P.end();
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');
     this.gunnery.setPointer(this.fpv ? null : this.input.state.pointer, this.rig.camera);
-    this.gunnery.update(dt, p, this.ships, w, this.state === 'playing');
+    // the lock-on glow fades out of a photo even though the world is frozen
+    this.gunnery.update(this.photo.active ? realDt : dt, p, this.ships, w, this.state === 'playing');
     if (this.state === 'playing') this.gunTip();
     P.end();
 
     // HUD
     P.begin('HUD, minimap & chart', 'ui');
-    if (p && (this.state === 'playing' || this.state === 'paused')) {
+    if (p && (this.state === 'playing' || this.state === 'paused') && !this.photo.active) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.ui.updateAmmo(p.ammo, this.ammoStock);
@@ -1665,13 +2002,13 @@ export class Game {
       if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
     }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive).length;
-    const want = Math.min(11, 6 + Math.floor(p.kills / 2));
+    const want = Math.min(4, 2 + Math.floor(p.kills / 4));
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
       const room = want - alivePirates;
-      if (room >= 3 && this.voyageTime > 40 && Math.random() < 0.4) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, p.kills >= 6 ? 4 : 3));
+      if (room >= 2 && this.voyageTime > 60 && Math.random() < 0.25) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, 3));
       else this.spawnPirate(p.pos, 280, 480);
-      this.spawnTimer = 5 + Math.random() * 5;
+      this.spawnTimer = 12 + Math.random() * 8;
     }
   }
 
@@ -1736,6 +2073,12 @@ export class Game {
     this.sun.target.updateMatrixWorld();
     updateSoftShadows(this.sun, this.softShadows, 1 / sd.y);
     P.end();
+    // photo mode's sky sliders relight the frozen scene, a few times a second at most
+    if (this.photoSky && performance.now() - this.photoSkyT > 120) {
+      this.photoSky = false;
+      this.photoSkyT = performance.now();
+      this.envT = 0;
+    }
     // the sky's light changes slowly: refresh the image-based lighting a few times a second
     this.envT -= dt > 0 ? dt : 0;
     if (this.envT <= 0) {
@@ -1763,13 +2106,34 @@ export class Game {
     // the horizon only exists from the deck (and in the shipwright's harbour)
     const cine = this.rig.cine ? this.rig.cine.w : 0;
     if (cine > 0) this.pipeline.tilt *= 1 - cine * 0.7;
-    this.sky.visible = eb > 0.001 || port || cine > 0;
+    // only the farewell ever takes the camera below the waves
+    const k = this.wreck;
+    const under = k.t >= 0 && cam.position.y < this.world.waterHeight(cam.position.x, cam.position.z) - 0.2;
+    if (under && k.under < 0) {
+      k.under = k.t;
+      this.audio.submerge(true);
+    }
+    if (under || this.isUnder) this.setUnder(under);
+    this.isUnder = under;
+    // no rain or wind wisps down here
+    if (under) this.rain.mesh.visible = false;
+    this.wisps.mesh.visible = !under;
+    this.sky.visible = !under && (eb > 0.001 || port || cine > 0);
     this.sky.position.copy(cam.position);
-    this.ocean.apron.visible = eb > 0.001 || port || cine > 0;
+    this.ocean.apron.visible = !under && (eb > 0.001 || port || cine > 0);
     const rr = this.pipeline.rtRefl;
     this.ocean.setReflectionTarget(rr.texture, rr.width, rr.height);
     this.pipeline.refl = this.ocean.reflecting ? this.ocean.reflScene : null;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
+    if (this.photo.active) {
+      // a free camera can look out to the horizon: the sky and the far sea come in,
+      // the diorama blur gives way to the lens's own depth of field
+      this.pipeline.tilt = 0;
+      this.sky.visible = true;
+      this.ocean.apron.visible = true;
+      this.pipeline.photo = this.photo.look(0);
+      this.pipeline.exposure = this.atmos.exposure * Math.pow(2, this.photo.exposure);
+    }
     P.end();
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);

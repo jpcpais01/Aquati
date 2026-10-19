@@ -229,12 +229,13 @@ function sawFrond(
  * of comb-toothed fronds (young ones bright and upright, old ones dark and
  * drooping, now and then a dried one hanging) and a cluster of nuts.
  */
-export function palmGeometry(height: number, lean: number, seed: number, lod = 0): Geo {
+export function palmGeometry(height: number, lean: number, seed: number, lod = 0, shadow = false): Geo {
   const rnd = mulberry32(seed);
   const parts: Geo[] = [];
   const sway = (rnd() - 0.5) * 0.9;
   const curve = (t: number) => new THREE.Vector3(lean * t * t, height * t, sway * Math.sin(t * Math.PI) * 0.5);
-  const rings = lod ? 5 : 18;
+  // the shadow caster keeps every frond (they draw the shadow) on a plain trunk
+  const rings = lod ? 5 : shadow ? 6 : 18;
   const path: THREE.Vector3[] = [];
   for (let i = 0; i <= rings; i++) path.push(curve(i / rings));
   const trunkLight = lin(0x9c7c58);
@@ -243,8 +244,8 @@ export function palmGeometry(height: number, lean: number, seed: number, lod = 0
   parts.push(
     tube(
       path,
-      (t) => 0.34 * (1 - t * 0.42) * (1 + 0.6 * Math.pow(1 - t, 9)) * (lod ? 1 : 1 + 0.06 * Math.cos(t * rings * Math.PI)),
-      lod ? 5 : 8,
+      (t) => 0.34 * (1 - t * 0.42) * (1 + 0.6 * Math.pow(1 - t, 9)) * (lod || shadow ? 1 : 1 + 0.06 * Math.cos(t * rings * Math.PI)),
+      lod || shadow ? 5 : 8,
       (t, _a2, out) => {
         const band = lod ? 1 : Math.cos(t * rings * Math.PI) > 0 ? 1 : 0.8;
         out.copy(trunkDark).lerp(trunkLight, (0.3 + t * 0.7) * band);
@@ -278,7 +279,7 @@ export function palmGeometry(height: number, lean: number, seed: number, lod = 0
   bendNormals(crown, top.clone().addScaledVector(UP, -1.4), 0.6, 0.35);
   parts.push(crown);
 
-  if (!lod) {
+  if (!lod && !shadow) {
     const nutA = lin(0x4f6a22);
     const nutB = lin(0x7a5428);
     const n = 3 + Math.floor(rnd() * 3);
@@ -311,7 +312,7 @@ interface PuffSpec {
  * umbrella of a flame tree, a lilac/pink blossom tree and a tall two-tiered
  * jungle emergent. Visible limbs fork from the trunk into the canopy puffs.
  */
-export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0): Geo {
+export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shadow = false): Geo {
   const rnd = mulberry32(seed * 31 + 7);
   const s = new Simplex2(seed + 3);
   const parts: Geo[] = [];
@@ -358,13 +359,13 @@ export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0): Geo 
   const trunkTop = new THREE.Vector3((rnd() - 0.5) * 0.4, H + 0.3, (rnd() - 0.5) * 0.4);
   const tr = style === 'tall' ? 0.42 : 0.34;
   const tp: THREE.Vector3[] = [];
-  const tn = lod ? 2 : 5;
+  const tn = lod || shadow ? 2 : 5;
   for (let i = 0; i <= tn; i++) {
     const t = i / tn;
     tp.push(new THREE.Vector3(trunkTop.x * t * t, H * 0.92 * t, trunkTop.z * t * t));
   }
-  parts.push(tube(tp, (t) => tr * (1 - t * 0.45) * (1 + 0.7 * Math.pow(1 - t, 7)), lod ? 5 : 7, bark));
-  if (!lod) {
+  parts.push(tube(tp, (t) => tr * (1 - t * 0.45) * (1 + 0.7 * Math.pow(1 - t, 7)), lod || shadow ? 5 : 7, bark));
+  if (!lod && !shadow) {
     // limbs fork out to the outer puffs (only the ones you can glimpse)
     const limbs = puffs.filter((p) => Math.hypot(p.x, p.z) > 0.8).slice(0, style === 'flame' ? 5 : 3);
     for (const p of limbs) {
@@ -380,8 +381,9 @@ export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0): Geo 
   let cy = 0;
   let R = 0;
   puffs.forEach((p, i) => {
-    // hi canopies are finely tessellated so the crowns stay round and smooth up close
-    const g = puff(p.r, lod ? 1 : 2, seed * 13 + i, p.sq);
+    // hi canopies are finely tessellated so the crowns stay round and smooth up
+    // close; the shadow caster keeps every puff, just more coarsely cut
+    const g = puff(p.r, lod || shadow ? 1 : 2, seed * 13 + i, p.sq);
     g.translate(p.x, p.y, p.z);
     canopyParts.push(finish(g));
     cy += p.y;

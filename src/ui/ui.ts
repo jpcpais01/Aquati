@@ -68,6 +68,8 @@ export class UI {
   onSound: (on: boolean) => void = () => {};
   onPause: () => void = () => {};
   onMap: (open: boolean) => void = () => {};
+  /** Photo mode, from the pause menu or the HUD's camera button. */
+  onPhoto: () => void = () => {};
   onClick: () => void = () => {};
   /** Live settings changed (sound, music, shake…); the game applies what it owns. */
   onSettings: (s: Settings) => void = () => {};
@@ -191,6 +193,15 @@ export class UI {
       // drop focus so Space (fire) can't press it again
       (e.currentTarget as HTMLElement).blur();
       this.onPause();
+    });
+    $('btn-photo').addEventListener('click', (e) => {
+      (e.currentTarget as HTMLElement).blur();
+      this.onClick();
+      this.onPhoto();
+    });
+    $('btn-photo2').addEventListener('click', () => {
+      this.onClick();
+      this.onPhoto();
     });
     this.mapCanvas.addEventListener('click', () => this.onMap(true));
     $('chart-close').addEventListener('click', () => this.onMap(false));

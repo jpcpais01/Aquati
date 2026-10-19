@@ -18,7 +18,7 @@ interface P {
   drag: number;
   grav: number;
   rot: number; spin: number;
-  kind: number; // 0 soft, 1 smoke, 2 spark/streak, 3 chunk
+  kind: number; // 0 soft, 1 smoke, 2 spark/streak, 3 chunk, 4 air bubble
   fadeIn: number;
 }
 
@@ -119,6 +119,7 @@ class Pool {
         uniform sampler2D uNoiseTex; uniform sampler2D uSceneDepth; uniform vec2 uResolution; uniform vec2 uCamNearFar;
         uniform vec3 uLight; uniform float uFlash; uniform vec3 uSunColor; uniform vec3 uHaze; uniform float uCloudCover;
         uniform vec3 uFogColor; uniform vec2 uFogRange; uniform float uMist; uniform float uRain; uniform float uTime;
+        uniform vec4 uUnder; uniform vec3 uUnderColor;
         varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying vec2 vNuv; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
         varying vec3 vSunV; varying vec3 vViewDir;
         float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
@@ -163,6 +164,10 @@ class Pool {
             lit = lit * (0.68 * shade * sky) + sun + rim;
           } else if (vKind < 2.5) {
             a = pow(max(1.0 - r, 0.0), 3.0) * 1.6;
+          } else if (vKind > 3.5) {
+            // an air bubble: a bright silvery rim, a clear middle and a glint up top
+            a = smoothstep(0.62, 0.86, r) * (1.0 - smoothstep(0.88, 1.0, r)) + 0.12;
+            a += smoothstep(0.32, 0.0, length(vUv - vec2(-0.32, 0.36))) * 0.9;
           } else {
             a = 1.0 - smoothstep(0.55, 0.8, r);
           }
@@ -178,6 +183,7 @@ class Pool {
             vec3 col = vCol.rgb * lit;
             float fog = max(smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.85, (1.0 - exp(-vViewZ * 0.0045)) * (uMist * 0.7 + uRain * 0.15));
             col = mix(col, uFogColor, fog);
+            if (uUnder.x > 0.5) col = mix(col * vec3(0.55, 0.9, 1.0), uUnderColor, 1.0 - exp(-vViewZ / uUnder.z));
             gl_FragColor = vec4(col * a, a);
           #endif
         }`,
@@ -456,6 +462,8 @@ export class Particles {
     uCloudCover: globalUniforms.uCloudCover,
     uFogColor: globalUniforms.uFogColor,
     uFogRange: globalUniforms.uFogRange,
+    uUnder: globalUniforms.uUnder,
+    uUnderColor: globalUniforms.uUnderColor,
     uMist: globalUniforms.uMist,
     uRain: globalUniforms.uRain,
     uTime: globalUniforms.uTime,
