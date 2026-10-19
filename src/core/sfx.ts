@@ -272,7 +272,7 @@ export function magazineBlast(sr: number, seed: number): Float32Array {
     mix(out, cannonBlast(sr, 0.35 + r() * 0.4, seed * 13 + k), 0.28 + r() * 0.2, at);
   }
   // splintering timbers and flying debris
-  crackle(out, sr, r, 170, 0.03, 1.9, 900, 5200, 0.22);
+  noiseGrains(out, sr, r, { count: 260, t0: 0.03, spread: 1.9, skew: 2.2, fLo: 700, fHi: 6000, q: 1.2, durLo: 0.001, durHi: 0.008, amp: 0.9, env: (t) => Math.exp(-t / 0.8) });
   // wreckage splashing back down
   const bp = new SVF(sr, 1400, 0.9);
   for (let k = 0; k < 10; k++) {
@@ -313,74 +313,142 @@ export function shotWhoosh(sr: number, seed: number): Float32Array {
   return peakNorm(out, 0.9);
 }
 
-/** Heavy ball into the sea: slap, deep cavity "thoomp", plume roar, bubbles, then water raining back. */
+/**
+ * Granular noise: many tiny bursts of band-limited noise. Unlike sine clicks
+ * these have no pitch, so en masse they read as spray, fizz or splinters.
+ */
+function noiseGrains(
+  dst: Float32Array,
+  sr: number,
+  r: Rand,
+  o: { count: number; t0: number; spread: number; skew: number; fLo: number; fHi: number; q: number; durLo: number; durHi: number; amp: number; env?: (t: number) => number },
+) {
+  const f = new SVF(sr);
+  for (let k = 0; k < o.count; k++) {
+    const t = o.t0 + Math.pow(r(), o.skew) * o.spread;
+    const start = Math.floor(t * sr);
+    f.set(o.fLo * Math.pow(o.fHi / o.fLo, r()), o.q);
+    const dur = o.durLo + (o.durHi - o.durLo) * r() * r();
+    const a = o.amp * (0.2 + 0.8 * r()) * (o.env ? o.env(t) : 1);
+    const len = Math.floor(dur * 5 * sr);
+    for (let i = 0; i < len && start + i < dst.length; i++) {
+      const tt = i / sr;
+      f.run(r() * 2 - 1);
+      dst[start + i] += f.bp * (1 - Math.exp(-tt / 0.00025)) * Math.exp(-tt / dur) * a;
+    }
+  }
+}
+
+/** Smooth random amplitude flutter (values ~0.4..1.6), changing every `step` seconds. */
+function flutter(r: Rand, sr: number, n: number, step: number, depth: number) {
+  const out = new Float32Array(n);
+  const hop = Math.max(1, Math.floor(step * sr));
+  let a = 1 + (r() * 2 - 1) * depth;
+  let b = 1 + (r() * 2 - 1) * depth;
+  for (let i = 0; i < n; i++) {
+    const k = i % hop;
+    if (k === 0 && i) {
+      a = b;
+      b = 1 + (r() * 2 - 1) * depth;
+    }
+    const u = k / hop;
+    out[i] = a + (b - a) * u * u * (3 - 2 * u);
+  }
+  return out;
+}
+
+/**
+ * Heavy ball into the sea, built only from shaped noise (no tones, so it never
+ * sounds synthetic): a hard slap on the surface, a dull underwater "whump",
+ * the hiss of the column of water bursting up, then a long shower of spray
+ * and droplets pattering back down onto the swell.
+ */
 export function waterImpact(sr: number, seed: number): Float32Array {
   const r = rng(seed);
-  const n = Math.floor(sr * 1.5);
+  const n = Math.floor(sr * 1.7);
   const out = new Float32Array(n);
-  const hp = new SVF(sr, 700, 0.7);
-  const plume = new SVF(sr, 2500, 0.75);
-  let ph = 0;
+  const slapHp = new SVF(sr, 900, 0.6);
+  const plop = new SVF(sr, 420, 0.7);
+  const whump = new SVF(sr, 150, 0.6);
+  const column = new SVF(sr, 6000, 0.6);
+  const hiss = new SVF(sr, 2600, 0.6);
+  const fl = flutter(r, sr, n, 0.012, 0.45);
+  const fall = 0.32 + r() * 0.08; // when the column starts collapsing
+  const rain = (t: number) => (t < fall ? Math.pow(t / fall, 2) : Math.exp(-(t - fall) / 0.38));
   for (let i = 0; i < n; i++) {
     const t = i / sr;
     const w = r() * 2 - 1;
-    hp.run(w);
-    if ((i & 15) === 0) plume.set(900 + 1800 * Math.exp(-t / 0.14), 0.75);
-    plume.run(w);
-    ph += (TAU * (55 + 135 * Math.exp(-t / 0.035))) / sr;
+    slapHp.run(w);
+    plop.run(w);
+    whump.run(w);
+    if ((i & 15) === 0) column.set(1300 + 6000 * Math.exp(-t / 0.22), 0.6);
+    column.run(w);
+    hiss.run(w);
+    const att = 1 - Math.exp(-t / 0.0003);
     out[i] =
-      hp.hp * (1 - Math.exp(-t / 0.0004)) * Math.exp(-t / 0.006) * 0.9 +
-      Math.sin(ph) * (1 - Math.exp(-t / 0.004)) * Math.exp(-t / 0.085) * 0.85 +
-      plume.bp * (1 - Math.exp(-t / 0.018)) * Math.exp(-t / 0.24) * 2.4;
+      // the slap: hard, short, bright
+      slapHp.hp * att * Math.exp(-t / 0.0045) * 1.3 +
+      plop.lp * att * Math.exp(-t / 0.014) * 2.2 +
+      // the whump of the cavity collapsing under the surface
+      whump.lp * (1 - Math.exp(-t / 0.004)) * Math.exp(-t / 0.075) * 6 +
+      // the column bursting upward
+      column.lp * (1 - Math.exp(-t / 0.02)) * Math.exp(-t / 0.3) * fl[i] * 0.9 +
+      // steady hiss of the shower coming back down
+      hiss.hp * rain(t) * 0.22;
   }
-  // bubbles: little rising chirps
-  for (let k = 0; k < 7; k++) {
-    const at = Math.floor((0.04 + r() * 0.4) * sr);
-    const f0 = 350 + r() * 500;
-    let bph = 0;
-    for (let i = 0; i < Math.floor(0.05 * sr) && at + i < n; i++) {
-      const t = i / sr;
-      bph += (TAU * f0 * (1 + t * 14)) / sr;
-      out[at + i] += Math.sin(bph) * Math.exp(-t / 0.012) * 0.12 * (0.4 + r() * 0.6);
-    }
-  }
-  // the column of water falling back
-  const rain = new Float32Array(n);
-  crackle(rain, sr, r, 110, 0.18, 1.1, 1400, 5200, 1);
-  mix(out, rain, 0.28);
-  fadeTail(out, sr);
+  // individual droplets and gouts slapping the water as the column falls
+  noiseGrains(out, sr, r, { count: 520, t0: 0.08, spread: 1.4, skew: 1.5, fLo: 900, fHi: 7500, q: 1.1, durLo: 0.0015, durHi: 0.012, amp: 0.55, env: rain });
+  noiseGrains(out, sr, r, { count: 26, t0: 0.25, spread: 0.9, skew: 1.3, fLo: 300, fHi: 1200, q: 0.9, durLo: 0.008, durHi: 0.03, amp: 0.6, env: rain });
+  fadeTail(out, sr, 0.15);
   return peakNorm(out, 0.92);
 }
 
-/** Shot smashing into a hull: crack, deep timber knock, splinters and a groan of strained wood. */
+/**
+ * Round shot smashing into a hull: the crack of planking giving way, a heavy
+ * dull "thunk" of oak taking the blow (noise through wide, heavily damped
+ * resonances, so it reads as wood, not as a struck bell), a burst of
+ * splinters snapping, then loose debris clattering onto the deck.
+ */
 export function woodImpact(sr: number, seed: number): Float32Array {
   const r = rng(seed);
-  const n = Math.floor(sr * 0.95);
+  const n = Math.floor(sr * 1.0);
   const out = new Float32Array(n);
-  const hp = new SVF(sr, 1300, 0.7);
-  for (let i = 0; i < Math.floor(0.05 * sr); i++) {
+  const crackHp = new SVF(sr, 1100, 0.6);
+  const crackBp = new SVF(sr, 1700 + r() * 800, 0.9);
+  const body = new SVF(sr, 230, 0.6);
+  const res = [150, 270, 470, 820].map((f) => new SVF(sr, f * (0.85 + r() * 0.3), 3.2));
+  const resAmp = [1, 0.8, 0.55, 0.35];
+  for (let i = 0; i < Math.floor(0.4 * sr); i++) {
     const t = i / sr;
-    hp.run(r() * 2 - 1);
-    out[i] += hp.hp * (1 - Math.exp(-t / 0.0003)) * Math.exp(-t / 0.0055) * 1.6;
+    const w = r() * 2 - 1;
+    const att = 1 - Math.exp(-t / 0.0002);
+    crackHp.run(w);
+    crackBp.run(w);
+    body.run(w);
+    // timbers: a short noise blow through damped resonances
+    const hitEnv = att * Math.exp(-t / 0.018);
+    let wood = 0;
+    for (let m = 0; m < res.length; m++) {
+      res[m].run(w * hitEnv);
+      wood += res[m].bp * resAmp[m];
+    }
+    out[i] +=
+      crackHp.hp * att * Math.exp(-t / 0.005) * 1.4 +
+      crackBp.bp * att * Math.exp(-t / 0.016) * 1.6 +
+      wood * 3.2 +
+      body.lp * (1 - Math.exp(-t / 0.002)) * Math.exp(-t / 0.05) * 3.5;
   }
-  modal(out, sr, r, [104, 182, 271, 418, 655, 980], [0.09, 0.06, 0.045, 0.03, 0.02, 0.012], [1, 0.75, 0.55, 0.4, 0.3, 0.2]);
-  crackle(out, sr, r, 55, 0.006, 0.38, 1500, 7000, 0.45);
-  // a groan of strained timbers
-  const bp = new SVF(sr, 420, 4);
-  let ph = 0;
-  const f = 62 + r() * 18;
-  for (let i = Math.floor(0.04 * sr); i < Math.floor(0.6 * sr); i++) {
-    const t = i / sr;
-    ph += (TAU * f * (1 + 0.04 * Math.sin(t * 17))) / sr;
-    bp.run(((ph / TAU) % 1) * 2 - 1);
-    const u = (t - 0.22) / 0.14;
-    out[i] += bp.bp * Math.exp(-u * u) * 0.5;
-  }
-  // loose debris clattering on deck
-  for (let k = 0; k < 4; k++) {
-    const at = Math.floor((0.25 + r() * 0.5) * sr);
-    modal(out, sr, r, [240 + r() * 300, 520 + r() * 500, 1300 + r() * 900], [0.009, 0.006, 0.004], [0.1, 0.07, 0.05], at);
-    crackle(out, sr, r, 4, at / sr, 0.02, 1500, 4000, 0.06);
+  // splinters: a dense, irregular crackle of fibres snapping
+  noiseGrains(out, sr, r, { count: 140, t0: 0.004, spread: 0.32, skew: 2.2, fLo: 1100, fHi: 7000, q: 1.3, durLo: 0.0007, durHi: 0.005, amp: 2.4, env: (t) => Math.exp(-t / 0.13) });
+  // a few bigger boards cracking
+  noiseGrains(out, sr, r, { count: 7, t0: 0.02, spread: 0.22, skew: 1.6, fLo: 500, fHi: 1800, q: 1.2, durLo: 0.006, durHi: 0.018, amp: 1.8 });
+  // chunks clattering down on deck
+  const knocks = 3 + Math.floor(r() * 3);
+  for (let k = 0; k < knocks; k++) {
+    const t0 = 0.16 + ((k + r()) / knocks) * 0.6;
+    const a = (0.7 + r() * 0.8) * Math.exp(-(t0 - 0.16) / 0.45);
+    noiseGrains(out, sr, r, { count: 1, t0, spread: 0, skew: 1, fLo: 380, fHi: 1300, q: 2.2, durLo: 0.008, durHi: 0.02, amp: a * 1.6 });
+    noiseGrains(out, sr, r, { count: 3, t0, spread: 0.03, skew: 1, fLo: 1500, fHi: 5000, q: 1.2, durLo: 0.0008, durHi: 0.003, amp: a });
   }
   fadeTail(out, sr);
   return peakNorm(out, 0.92);
@@ -392,16 +460,18 @@ export function earthImpact(sr: number, seed: number): Float32Array {
   const n = Math.floor(sr * 0.8);
   const out = new Float32Array(n);
   const lp = new SVF(sr, 650, 0.7);
-  let ph = 0;
+  const low = new SVF(sr, 120, 0.6);
   for (let i = 0; i < n; i++) {
     const t = i / sr;
-    lp.run(r() * 2 - 1);
-    ph += (TAU * (42 + 48 * Math.exp(-t / 0.05))) / sr;
+    const w = r() * 2 - 1;
+    lp.run(w);
+    low.run(w);
     out[i] =
-      Math.sin(ph) * (1 - Math.exp(-t / 0.003)) * Math.exp(-t / 0.11) +
+      low.lp * (1 - Math.exp(-t / 0.003)) * Math.exp(-t / 0.1) * 9 +
       lp.lp * (1 - Math.exp(-t / 0.001)) * Math.exp(-t / 0.05) * 7;
   }
-  crackle(out, sr, r, 70, 0.03, 0.55, 1200, 4500, 0.2);
+  // sand and pebbles thrown up, pattering back down
+  noiseGrains(out, sr, r, { count: 120, t0: 0.03, spread: 0.6, skew: 1.6, fLo: 900, fHi: 5000, q: 1.1, durLo: 0.0008, durHi: 0.005, amp: 0.5, env: (t) => Math.exp(-t / 0.3) });
   fadeTail(out, sr);
   return peakNorm(out, 0.9);
 }
@@ -446,7 +516,59 @@ export function seaReverb(sr: number, seed: number): [Float32Array, Float32Array
   return [chans[0], chans[1]];
 }
 
-export type BankKind = 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast';
+/**
+ * Two hulls grinding together: a deep hollow boom as the timbers meet, the
+ * long groan of planking dragging past planking (stick-slip pulses driving
+ * the hull's wide resonances, sagging in pitch as the ships part), and a
+ * spray of strakes and rail splintering along the seam.
+ */
+export function hullCrunch(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.7);
+  const out = new Float32Array(n);
+  const boom = new SVF(sr, 95, 0.7);
+  const knock = new SVF(sr, 320, 0.8);
+  for (let i = 0; i < Math.floor(0.6 * sr); i++) {
+    const t = i / sr;
+    const w = r() * 2 - 1;
+    boom.run(w);
+    knock.run(w);
+    const att = 1 - Math.exp(-t / 0.0015);
+    out[i] += boom.lp * att * Math.exp(-t / 0.16) * 11 + knock.bp * att * Math.exp(-t / 0.035) * 5;
+  }
+  // the groan: friction catching and releasing, ringing the hull like a cello body
+  const res = [210, 380, 610, 980].map((f) => new SVF(sr, f * (0.9 + r() * 0.2), 4.5));
+  const resAmp = [1, 0.75, 0.5, 0.3];
+  const len = Math.floor(1.45 * sr);
+  const start = Math.floor(0.03 * sr);
+  let ph = 0;
+  for (let i = 0; i < len && start + i < n; i++) {
+    const t = i / sr;
+    const rate = 46 - 30 * Math.min(1, t / 1.1) + Math.sin(t * 9 + seed) * 4;
+    ph += rate / sr;
+    let x = 0;
+    if (ph >= 1) {
+      ph -= 1;
+      x = (r() * 0.6 + 0.7) * (r() < 0.15 ? 2.2 : 1);
+    }
+    x += (r() * 2 - 1) * 0.05;
+    const env = Math.min(1, t / 0.06) * Math.exp(-t / 0.5);
+    let y = 0;
+    for (let m = 0; m < res.length; m++) {
+      res[m].run(x * env);
+      y += res[m].bp * resAmp[m];
+    }
+    out[start + i] += y * 2.6;
+  }
+  // splinters and cracking strakes along the seam
+  noiseGrains(out, sr, r, { count: 180, t0: 0.01, spread: 0.9, skew: 1.8, fLo: 1000, fHi: 6500, q: 1.3, durLo: 0.0007, durHi: 0.005, amp: 1.8, env: (t) => Math.exp(-t / 0.35) });
+  noiseGrains(out, sr, r, { count: 9, t0: 0.03, spread: 0.6, skew: 1.4, fLo: 420, fHi: 1600, q: 1.2, durLo: 0.008, durHi: 0.024, amp: 2.2 });
+  saturate(out, 1.6);
+  fadeTail(out, sr, 0.2);
+  return peakNorm(out, 0.92);
+}
+
+export type BankKind = 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast' | 'crunch';
 export const CALIBERS = 3;
 
 /** Everything the game plays, cheapest/most needed first. Cannon index = caliber * 2 + variant. */
@@ -456,10 +578,11 @@ export function bankJobs(sr: number): { kind: BankKind; index: number; render: (
     for (let v = 0; v < 2; v++) jobs.push({ kind: 'cannon', index: c * 2 + v, render: () => [cannonBlast(sr, c / (CALIBERS - 1), 101 + c * 17 + v * 5)] });
   jobs.push({ kind: 'reverb', index: 0, render: () => seaReverb(sr, 11) });
   for (let v = 0; v < 3; v++) jobs.push({ kind: 'recoil', index: v, render: () => [gunRecoil(sr, 301 + v)] });
-  for (let v = 0; v < 2; v++) jobs.push({ kind: 'wood', index: v, render: () => [woodImpact(sr, 401 + v)] });
-  for (let v = 0; v < 2; v++) jobs.push({ kind: 'water', index: v, render: () => [waterImpact(sr, 501 + v)] });
+  for (let v = 0; v < 3; v++) jobs.push({ kind: 'wood', index: v, render: () => [woodImpact(sr, 401 + v)] });
+  for (let v = 0; v < 3; v++) jobs.push({ kind: 'water', index: v, render: () => [waterImpact(sr, 501 + v)] });
   jobs.push({ kind: 'earth', index: 0, render: () => [earthImpact(sr, 601)] });
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'whoosh', index: v, render: () => [shotWhoosh(sr, 701 + v)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'crunch', index: v, render: () => [hullCrunch(sr, 901 + v)] });
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'blast', index: v, render: () => [magazineBlast(sr, 801 + v)] });
   return jobs;
 }

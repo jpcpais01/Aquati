@@ -400,3 +400,16 @@ body.gfx-open #hud {
     display: none;
   }
 }
+
+/* short landscape screens tuck the tools under the dock's shoulder: stay compact */
+@media (max-height: 560px) and (min-width: 761px) {
+  #btn-graphics {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  #btn-graphics .tl {
+    display: none;
+  }
+}

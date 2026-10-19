@@ -9,7 +9,7 @@ import { GLSL_SS_APPLY, ScreenSpaceLighting, TraceConfig } from './screenSpace';
 //      (the ocean reads rtOpaque colour/depth for refraction, thickness and
 //      ray-traced reflections)
 //   4. combine at half res -> dual-filter bloom chain
-//   5. final: combine + bloom + tilt-shift + grade + ACES -> screen
+//   5. final: combine + traced light + adaptive sharpen + bloom + edge tilt-shift + grade + ACES -> screen
 
 const FS_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -51,7 +51,7 @@ export class Pipeline {
   height = 1;
   readonly settings: PipelineSettings;
   exposure = 1.0;
-  /** Screen-space ray tracing; null input sun means it is off. */
+  /** Screen-space ray tracing (AO, bounce light, contact shadows). */
   readonly ss = new ScreenSpaceLighting();
   private ssOn = false;
   sun: THREE.DirectionalLight | null = null;
@@ -138,7 +138,8 @@ export class Pipeline {
       /* glsl */ `
       uniform sampler2D uOpaque; uniform sampler2D uWater; uniform sampler2D uHalf; uniform sampler2D uBloom;
       uniform vec2 uHalfTexel; uniform float uExposure; uniform float uBloomStrength; uniform float uTilt;
-      uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor;
+      uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor; uniform float uLightning;
+      uniform vec2 uTexel; uniform float uSharpen;
       varying vec2 vUv;
       #if SS
       ${GLSL_SS_APPLY}
@@ -154,29 +155,55 @@ export class Pipeline {
       }
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
+      vec3 comb(vec2 uv) {
+        vec4 w = texture2D(uWater, uv);
+        return texture2D(uOpaque, uv).rgb * (1.0 - w.a) + w.rgb;
+      }
+
       void main() {
-        vec4 w = texture2D(uWater, vUv);
-        vec3 col = texture2D(uOpaque, vUv).rgb;
+        vec3 col = comb(vUv);
+
+        // contrast-adaptive sharpen: restores crisp texture after MSAA resolve
+        // and dynamic-resolution upscaling; clamped to the neighbourhood so it
+        // never rings or halos.
+        if (uSharpen > 0.0) {
+          vec3 n = comb(vUv + vec2(0.0, uTexel.y));
+          vec3 s = comb(vUv - vec2(0.0, uTexel.y));
+          vec3 e = comb(vUv + vec2(uTexel.x, 0.0));
+          vec3 wv = comb(vUv - vec2(uTexel.x, 0.0));
+          vec3 mn = min(col, min(min(n, s), min(e, wv)));
+          vec3 mx = max(col, max(max(n, s), max(e, wv)));
+          float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+          float contrast = dot(mx - mn, vec3(0.2126, 0.7152, 0.0722)) / (l + 0.25);
+          float k = uSharpen * (1.0 - smoothstep(0.4, 1.2, contrast));
+          col = clamp(col + (col * 4.0 - n - s - e - wv) * k, mn, mx);
+        }
+
         #if SS
-          // only where the opaque world shows through: under open water it's moot
-          #if defined(SS_DEBUG) && SS_DEBUG == 4
-            if (vUv.x > 0.5 && w.a < 0.999) col = applySS(col, vUv);
-          #else
-            if (w.a < 0.999) col = applySS(col, vUv);
-          #endif
+        {
+          // traced light goes on after sharpening (whose clamp would undo
+          // it) and only where the opaque world shows through the water
+          float wa = texture2D(uWater, vUv).a;
+          if (wa < 0.999) {
+            vec3 o = texture2D(uOpaque, vUv).rgb;
+            #if defined(SS_DEBUG) && SS_DEBUG == 4
+              if (vUv.x > 0.5)
+            #endif
+            col += (applySS(o, vUv) - o) * (1.0 - wa);
+          }
+        }
         #endif
         #if defined(SS_DEBUG) && SS_DEBUG < 4
           // ?ssdebug=1 ao, 2 bounce, 3 sun loss: raw half-res buffers; 4: split before/after
           { vec4 da = texture2D(uSSA, vUv); vec4 db = texture2D(uSSB, vUv);
             gl_FragColor = vec4(SS_DEBUG == 1 ? vec3(da.a) : SS_DEBUG == 2 ? da.rgb : vec3(1.0 - db.r), 1.0); return; }
         #endif
-        col = col * (1.0 - w.a) + w.rgb;
 
-        // diorama tilt-shift: blur toward the top & bottom of the frame
+        // whisper of diorama tilt-shift, only at the very top & bottom edges
         if (uTilt > 0.0) {
-          float band = smoothstep(0.18, 0.5, abs(vUv.y - 0.47)) * uTilt;
+          float band = smoothstep(0.3, 0.56, abs(vUv.y - 0.48)) * uTilt;
           if (band > 0.001) {
-            vec2 o = uHalfTexel * 1.5;
+            vec2 o = uHalfTexel;
             vec3 b = texture2D(uHalf, vUv).rgb * 0.36
               + (texture2D(uHalf, vUv + vec2(o.x, o.y)).rgb + texture2D(uHalf, vUv + vec2(-o.x, o.y)).rgb
               +  texture2D(uHalf, vUv + vec2(o.x, -o.y)).rgb + texture2D(uHalf, vUv + vec2(-o.x, -o.y)).rgb) * 0.16;
@@ -187,6 +214,8 @@ export class Pipeline {
         vec3 bloom = texture2D(uBloom, vUv).rgb;
         col += bloom * uBloomStrength;
         col += uFlashColor * uFlash;
+        // lightning: the whole world blinks cold and bright
+        col = col * (1.0 + uLightning * 1.6) + vec3(0.55, 0.62, 0.85) * uLightning * 0.06;
         col *= uExposure;
 
         // gentle split-tone grade: teal shadows, warm highlights
@@ -212,6 +241,8 @@ export class Pipeline {
         uHalf: { value: null },
         uBloom: { value: null },
         uHalfTexel: { value: new THREE.Vector2() },
+        uTexel: { value: new THREE.Vector2() },
+        uSharpen: { value: 0.12 },
         uExposure: { value: 1 },
         uBloomStrength: { value: 0.32 },
         uTilt: { value: 1 },
@@ -219,6 +250,7 @@ export class Pipeline {
         uVignette: { value: 0.55 },
         uFlash: { value: 0 },
         uFlashColor: { value: new THREE.Color(1, 0.6, 0.3) },
+        uLightning: { value: 0 },
         ...SS_UNIFORMS(),
       },
     );
@@ -246,7 +278,6 @@ export class Pipeline {
         m.needsUpdate = true;
       }
     }
-    // with no bounce light the strength term just zeroes out
     for (const m of [this.combineMat, this.finalMat]) {
       const st = m.uniforms.uSSStrength.value as THREE.Vector3;
       st.set(trace.ao ? 1 : 0, trace.gi ? 0.9 : 0, trace.shadows ? 0.62 : 0);
@@ -352,6 +383,8 @@ export class Pipeline {
     fu.uBloom.value = this.bloomRTs[0]?.texture ?? this.rtHalf.texture;
     fu.uBloomStrength.value = this.bloomRTs.length ? 0.3 : 0;
     fu.uHalfTexel.value.set(1 / this.rtHalf.width, 1 / this.rtHalf.height);
+    fu.uTexel.value.set(1 / this.width, 1 / this.height);
+    fu.uSharpen.value = this.sharpen;
     fu.uExposure.value = this.exposure;
     fu.uTilt.value = this.settings.tiltShift ? this.tilt : 0;
     fu.uTime.value = time % 100;
@@ -359,6 +392,12 @@ export class Pipeline {
   }
 
   tilt = 1;
+  /** Lightning brightness this frame (0 none). */
+  set lightning(v: number) {
+    this.finalMat.uniforms.uLightning.value = v;
+  }
+  /** Sharpen strength; raised by the caller when rendering below native resolution. */
+  sharpen = 0.12;
   flash(strength: number) {
     this.finalMat.uniforms.uFlash.value = Math.max(this.finalMat.uniforms.uFlash.value, strength);
   }

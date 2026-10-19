@@ -5,7 +5,7 @@ import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import { SeaChart, ChartScene } from './chart';
-import { crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
+import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
 /** Cards that sit over the menus and close on Esc or a tap outside. */
@@ -58,6 +58,7 @@ export class UI {
   private soundOn = true;
 
   private tipTimer = 0;
+  private hudCache = new Map<string, string>();
   private menuKeys = (e: KeyboardEvent) => this.onMenuKey(e);
 
   constructor() {
@@ -65,6 +66,7 @@ export class UI {
       el.innerHTML = icon(ICONS[el.dataset.icon as keyof typeof ICONS]);
     });
     document.querySelectorAll('.crest-slot').forEach((el) => (el.innerHTML = crest()));
+    $('map-bezel').innerHTML = compassBezel();
     this.startTips();
     this.buildShipPicker();
     this.syncSound();
@@ -317,19 +319,23 @@ export class UI {
    * Where the 3D preview ship should sit: the middle of whatever screen area
    * the menu leaves free, as a fraction of the viewport from its centre.
    */
-  menuFraming(): { x: number; y: number } {
+  menuFraming(): { x: number; y: number; w: number; h: number } {
     const W = innerWidth;
     const H = innerHeight;
     const dock = $('dock').getBoundingClientRect();
-    if (!dock.width) return { x: 0, y: 0 };
-    if (dock.right < W * 0.6) {
-      // side dock: centre the ship in the space to its right
-      return { x: (dock.right + W) / 2 / W - 0.5, y: 0.04 };
-    }
-    // bottom dock: lift the ship into the gap between the title and the dock
+    if (!dock.width) return { x: 0, y: 0, w: 1, h: 1 };
     const head = document.querySelector('.menu-head')!.getBoundingClientRect();
-    return { x: 0, y: (head.bottom + dock.top) / 2 / H - 0.5 };
+    if (dock.right < W * 0.6) {
+      // side dock: the ship gets the space to its right, below the tool buttons
+      const left = dock.right + 16;
+      const top = Math.min(document.querySelector('.menu-tools')!.getBoundingClientRect().bottom + 8, H * 0.15);
+      return { x: (left + W) / 2 / W - 0.5, y: (top + H) / 2 / H - 0.5, w: (W - left) / W, h: (H - top) / H };
+    }
+    // bottom dock: the ship gets the gap between the title and the dock
+    const top = (head.top + head.bottom) / 2;
+    return { x: 0, y: (top + dock.top) / 2 / H - 0.5, w: 1, h: (dock.top - top) / H };
   }
+
 
   private renderNotes() {
     const body = $('notes-body');
@@ -351,6 +357,7 @@ export class UI {
 
   showHud(on: boolean) {
     this.hud.classList.toggle('hidden', !on);
+    if (on) this.hudCache.clear();
     if (!on) {
       this.barEls.forEach((el) => el.remove());
       this.barEls.clear();
@@ -412,6 +419,63 @@ export class UI {
     setTimeout(() => el.remove(), (life + 0.7) * 1000);
   }
 
+  /** Captain's view chrome: the toggle, walk hints, reticle and the touch spyglass. */
+  setFpv(on: boolean) {
+    this.hud.classList.toggle('fpv', on);
+    const b = $('btn-view');
+    b.classList.toggle('on', on);
+    b.title = on ? "Bird's-eye view (V)" : "Captain's view (V)";
+    b.innerHTML = icon(ICONS[on ? 'bird' : 'eye']);
+    this.setHelmPrompt('none');
+    this.setLook(false, 0, false);
+    this.setSpy(0);
+    this.fpvHint = '';
+  }
+
+  private helmState = '';
+  private fpvHint = '';
+  private reticleSide = 9;
+  private spyLevel = -1;
+
+  /** 'take' when the wheel is in reach, 'leave' while holding it. */
+  setHelmPrompt(state: 'none' | 'take' | 'leave') {
+    if (state === this.helmState) return;
+    this.helmState = state;
+    const el = $('btn-helm');
+    el.classList.toggle('on', state !== 'none');
+    el.classList.toggle('held', state === 'leave');
+    if (state !== 'none') $('helm-text').textContent = state === 'take' ? 'Take the helm' : 'Leave the helm';
+    const hint = this.hud.querySelector('.helm .hint');
+    if (hint) hint.textContent = this.hud.classList.contains('fpv') && state !== 'leave' ? 'WASD walk · arrows sail & helm' : 'W / S sails · A / D helm';
+  }
+
+  /** Reticle and the "click to look" nudge while walking the deck. */
+  setLook(locked: boolean, side: number, ready: boolean) {
+    const hint = locked ? 'locked' : 'free';
+    if (hint !== this.fpvHint) {
+      this.fpvHint = hint;
+      $('fpv-hint').classList.toggle('on', !locked);
+    }
+    const key = side * 2 + (ready ? 1 : 0);
+    if (key !== this.reticleSide) {
+      this.reticleSide = key;
+      const r = $('reticle');
+      r.classList.toggle('side', side !== 0);
+      r.classList.toggle('ready', side !== 0 && ready);
+      $('reticle-side').textContent = side > 0 ? 'Port battery' : side < 0 ? 'Starboard battery' : '';
+    }
+  }
+
+  setSpy(k: number) {
+    const q = Math.round(k * 50) / 50;
+    if (q === this.spyLevel) return;
+    this.spyLevel = q;
+    const el = $('spyglass');
+    el.style.opacity = `${q}`;
+    el.style.transform = `scale(${1.35 - q * 0.35})`;
+    $('t-spy').classList.toggle('on', q > 0.5);
+  }
+
   floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' = '') {
     const f = this.floaterPool.find((p) => p.t >= p.life) ?? this.floaterPool[0];
     f.el.textContent = text;
@@ -438,36 +502,80 @@ export class UI {
     }
   }
 
+  /** Writes a HUD value only when it changes; `bump` pops the chip when a count goes up. */
+  private hudSet(id: string, v: string, bump = false) {
+    if (this.hudCache.get(id) === v) return;
+    const prev = this.hudCache.get(id);
+    this.hudCache.set(id, v);
+    const el = $(id);
+    el.textContent = v;
+    if (bump && prev !== undefined && parseInt(v) > parseInt(prev)) {
+      const chip = el.parentElement!;
+      chip.classList.remove('bump');
+      void chip.offsetWidth;
+      chip.classList.add('bump');
+    }
+  }
+
   updateHud(p: Ship, isles: number, totalIsles: number) {
-    $('hud-title').textContent = p.name;
-    $('hud-class').textContent = p.cls.name;
-    const frac = p.hp / p.maxHp;
-    const fill = $('hud-hull');
-    fill.style.transform = `scaleX(${frac})`;
-    fill.classList.toggle('low', frac < 0.35);
-    $('hud-hull-text').textContent = `${Math.ceil(p.hp)} / ${p.maxHp}`;
-    $('hud-gold').textContent = `${p.gold}`;
-    $('hud-kills').textContent = `${p.kills}`;
-    $('hud-isles').textContent = `${isles}/${totalIsles}`;
-    $('hud-speed').textContent = `${Math.round(Math.abs(p.speed) * 1.94)}`;
-    const pips = $('hud-sails').children;
+    if (this.hudCache.get('cls') !== p.cls.id) {
+      this.hudCache.clear();
+      this.hudCache.set('cls', p.cls.id);
+      $('hud-art').innerHTML = shipSilhouette(p.cls);
+    }
+    this.hudSet('hud-title', p.name);
+    this.hudSet('hud-class', p.cls.name);
+    const frac = Math.max(0, p.hp / p.maxHp);
+    const f = frac.toFixed(3);
+    if (this.hudCache.get('hull') !== f) {
+      const prev = parseFloat(this.hudCache.get('hull') ?? '1');
+      this.hudCache.set('hull', f);
+      const fill = $('hud-hull');
+      fill.style.transform = `scaleX(${f})`;
+      fill.classList.toggle('low', frac < 0.35);
+      $('hud-hull-ghost').style.transform = `scaleX(${f})`;
+      if (frac < prev - 0.001) {
+        const panel = fill.closest('.ship-panel')!;
+        panel.classList.remove('hit');
+        void (panel as HTMLElement).offsetWidth;
+        panel.classList.add('hit');
+      }
+    }
+    this.hudSet('hud-hull-text', `${Math.ceil(Math.max(0, p.hp))} / ${p.maxHp}`);
+    this.hudSet('hud-gold', `${p.gold}`, true);
+    this.hudSet('hud-kills', `${p.kills}`, true);
+    this.hudSet('hud-isles', `${isles}/${totalIsles}`, true);
+    this.hudSet('hud-speed', `${Math.round(Math.abs(p.speed) * 1.94)}`);
     const lvl = Math.round(p.sailTarget * 3);
-    for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lvl);
-    const ring = (id: string, reload: number) => {
+    if (this.hudCache.get('sails') !== `${lvl}`) {
+      this.hudCache.set('sails', `${lvl}`);
+      const pips = $('hud-sails').children;
+      for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lvl);
+    }
+    const ring = (id: string, touchId: string, reload: number) => {
+      const k = Math.min(1, Math.max(0, 1 - reload / p.cls.reload));
+      const ks = k.toFixed(2);
+      const ready = reload <= 0;
+      if (this.hudCache.get(id) === ks + ready) return;
+      this.hudCache.set(id, ks + ready);
       const el = $(id);
-      const k = 1 - reload / p.cls.reload;
-      (el.querySelector('circle.p') as SVGCircleElement).style.strokeDashoffset = `${106.8 * (1 - k)}`;
-      el.classList.toggle('ready', reload <= 0);
+      (el.querySelector('circle.p') as SVGCircleElement).style.strokeDashoffset = `${(106.8 * (1 - k)).toFixed(1)}`;
+      el.classList.toggle('ready', ready);
+      const t = $(touchId);
+      t.style.setProperty('--rl', ks);
+      t.classList.toggle('ready', ready);
     };
-    ring('bs-port', p.reload.port);
-    ring('bs-star', p.reload.starboard);
+    ring('bs-port', 't-port', p.reload.port);
+    ring('bs-star', 't-star', p.reload.starboard);
   }
 
   flashBroadside(side: 'port' | 'starboard') {
-    const el = $(side === 'port' ? 'bs-port' : 'bs-star');
-    el.classList.remove('flash');
-    void el.offsetWidth;
-    el.classList.add('flash');
+    for (const id of side === 'port' ? ['bs-port', 't-port'] : ['bs-star', 't-star']) {
+      const el = $(id);
+      el.classList.remove('flash');
+      void el.offsetWidth;
+      el.classList.add('flash');
+    }
   }
 
   setWind(angle: number) {
@@ -483,6 +591,20 @@ export class UI {
     if (Math.abs(s - this.windScale) < 0.01) return;
     this.windScale = s;
     ($('hud-wind').firstElementChild as HTMLElement).style.transform = `rotate(${this.windDeg}deg) scale(${s.toFixed(3)})`;
+  }
+
+  private skyKey = '';
+  /** Clock & weather badge beside the minimap. */
+  setSky(hour: number, icon: string, label: string) {
+    const m = Math.floor(((hour % 24) * 60) / 5) * 5;
+    const text = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    const key = text + icon + label;
+    if (key === this.skyKey) return;
+    this.skyKey = key;
+    const el = $('hud-sky');
+    el.className = `sky ${icon}${hour < 5.5 || hour > 19.5 ? ' night' : ''}`;
+    el.title = `${label} · ${text}`;
+    $('hud-clock').textContent = text;
   }
 
   /** Floating health bars over enemies. */

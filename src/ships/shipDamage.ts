@@ -116,6 +116,29 @@ interface Hinge {
   started: boolean;
 }
 
+/** Everything needed to raise a snapped spar again, captured as it breaks. */
+interface Spar {
+  pivot: THREE.Vector3;
+  axis: THREE.Vector3;
+  long: THREE.Vector3;
+  len: number;
+  lean: number; // how far over it starts as the crew hauls it back up
+  tpl: THREE.Group; // an intact copy of the broken-off piece, in hull-root space
+  cap: THREE.Mesh | null; // splintered stump it grows out of
+}
+
+interface Raise {
+  spar: Spar;
+  group: THREE.Group;
+  t: number; // < 0 while waiting its turn
+  dust: number;
+  landed: boolean;
+}
+
+/** Hoist duration of one spar, and the stagger between spars. */
+const RAISE_T = 1.9;
+const RAISE_GAP = 0.6;
+
 type WreckMode = 'split' | 'capsize';
 
 const _v = new THREE.Vector3();
@@ -150,6 +173,8 @@ export class ShipDamage {
   private originals = new Map<THREE.Mesh | THREE.LineSegments, THREE.BufferGeometry>();
   private hidden: THREE.Object3D[] = [];
   private caps: THREE.Mesh[] = [];
+  private spars: Spar[] = [];
+  private raising: Raise[] | null = null;
   /** How far the flooding hull has settled (m) and its list (rad). */
   lowered = 0;
   list = 0;
@@ -396,8 +421,8 @@ export class ShipDamage {
     const m = this.masts[mast];
     m.hp -= 0.36;
     world.particles.woodHit(at, _v.copy(ballVel).setY(0).normalize());
-    const [vol, pan] = world.soundAt(at);
-    world.audio.hit(vol, pan);
+    const [vol, pan, d] = world.soundAt(at);
+    world.audio.hit(vol, pan, d);
     if (m.hp <= 0) {
       const s = this.ship;
       const lv = ballVel.clone().applyQuaternion(s.model.root.getWorldQuaternion(_q).invert());
@@ -500,6 +525,13 @@ export class ShipDamage {
       if (!capMat && (mat.vertexColors || (cloneBase.get(mat) as THREE.MeshStandardMaterial | undefined)?.vertexColors)) capMat = mesh.material as THREE.Material;
     }
     if (!piece.children.length) return false;
+    // an intact copy, before the splintered end goes on, for the crew to raise later
+    const tpl = piece.clone();
+    tpl.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.userData.dmgOwnGeo) m.geometry = m.geometry.clone();
+    });
+    let cap: THREE.Mesh | null = null;
 
     // jagged splinters on the stump and on the broken end
     if (rim.length > 2) {
@@ -521,6 +553,7 @@ export class ShipDamage {
       stump.userData.dmgSkip = true;
       root.add(stump);
       this.caps.push(stump);
+      cap = stump;
       const end = new THREE.Mesh(brokenGeo, skin.material(cloneBase.get(mat) ?? mat));
       end.position.copy(cen);
       end.quaternion.copy(orient);
@@ -536,6 +569,7 @@ export class ShipDamage {
     hinge.userData.dmgPart = true;
     root.add(hinge);
     this.hinges.push({ group: hinge, axis: axis.clone(), long: long.clone(), len, angle: 0, vel: rand(0.12, 0.3), delay, max, gravity: (1.5 * 9.8) / Math.max(4, len), started: false });
+    this.spars.push({ pivot: pivot.clone(), axis: axis.clone(), long: long.clone(), len, lean: Math.min(max * 0.62, 0.8), tpl, cap });
     if (delay <= 0) this.crack(hinge, world);
     return true;
   }
@@ -543,8 +577,8 @@ export class ShipDamage {
   private crack(hinge: THREE.Group, world: World) {
     const wp = hinge.getWorldPosition(new THREE.Vector3());
     world.particles.woodHit(wp, _v.set(rand(-1, 1), 0.5, rand(-1, 1)).normalize());
-    const [vol, pan] = world.soundAt(wp);
-    world.audio.hit(Math.min(1, vol * 1.4), pan);
+    const [vol, pan, d] = world.soundAt(wp);
+    world.audio.hit(Math.min(1, vol * 1.4), pan, d);
   }
 
   private swapGeometry(obj: THREE.Mesh | THREE.LineSegments, g: THREE.BufferGeometry) {
@@ -555,7 +589,7 @@ export class ShipDamage {
 
   private breakMast(i: number, fall: THREE.Vector3, world: World, delay: number) {
     const m = this.masts[i];
-    if (m.broken) return;
+    if (m.broken || (this.raising && this.ship.alive)) return;
     m.broken = true;
     m.hp = 0;
     const H = m.def.height;
@@ -581,7 +615,7 @@ export class ShipDamage {
   }
 
   private breakBowsprit(world: World, delay: number) {
-    if (this.bowsprit) return;
+    if (this.bowsprit || (this.raising && this.ship.alive)) return;
     this.bowsprit = true;
     const s = this.ship.model.shape;
     const c = this.ship.cls;
@@ -627,10 +661,104 @@ export class ShipDamage {
     }
   }
 
-  /** The crew re-rigs: broken spars come back once the hull is sound. */
+  /**
+   * The crew re-rigs once the hull is sound: the wreckage is cut away and each
+   * lost spar is hauled back up from its stump in turn, fore to aft. It swings
+   * up off the rail, overshoots, and settles into its step with a knock and a
+   * shower of sawdust before the rigging is made fast.
+   */
   private repairRig(world: World) {
     for (const h of this.hinges) this.releaseHinge(h, world);
     this.hinges.length = 0;
+    if (!this.spars.length) {
+      this.finishRig(world);
+      return;
+    }
+    const root = this.ship.model.root;
+    this.ensurePieceSkin();
+    const order = [...this.spars].sort((a, b) => b.pivot.z - a.pivot.z);
+    this.raising = order.map((spar, i) => {
+      const group = new THREE.Group();
+      group.position.copy(spar.pivot);
+      spar.tpl.position.copy(spar.pivot).negate();
+      group.add(spar.tpl);
+      group.quaternion.setFromAxisAngle(spar.axis, spar.lean);
+      group.scale.setScalar(0.001);
+      group.userData.dmgSkip = true;
+      group.userData.dmgPart = true;
+      root.add(group);
+      return { spar, group, t: -i * RAISE_GAP, dust: 0, landed: false };
+    });
+  }
+
+  private updateRaise(dt: number, world: World) {
+    const list = this.raising;
+    if (!list) return;
+    const root = this.ship.model.root;
+    let done = true;
+    for (const r of list) {
+      r.t += dt;
+      if (r.t < RAISE_T) done = false;
+      if (r.t < 0) continue;
+      const sp = r.spar;
+      if (sp.cap) sp.cap.visible = false;
+      const u = Math.min(1, r.t / RAISE_T);
+      // grows out of the stump fast, then the hoist: up past plumb and back
+      const grow = 1 - Math.pow(1 - Math.min(1, u / 0.38), 3);
+      const k = smoothstep(0.08, 1, u);
+      const swing = sp.lean * (1 - k) * (1 - k) - Math.sin(k * Math.PI * 2.2) * Math.pow(1 - k, 1.4) * 0.09;
+      r.group.quaternion.setFromAxisAngle(sp.axis, swing);
+      const sq = 1 + Math.sin(Math.min(1, u / 0.38) * Math.PI) * 0.06;
+      r.group.scale.set(grow / Math.sqrt(sq), grow * sq, grow / Math.sqrt(sq));
+      root.updateMatrixWorld();
+      // sawdust and shavings fly off the step while the spar goes up
+      r.dust -= dt;
+      if (u < 0.85 && r.dust <= 0) {
+        r.dust = 0.16;
+        const wp = sp.pivot.clone().applyMatrix4(root.matrixWorld);
+        world.particles.woodHit(wp, _v.set(rand(-1, 1), 0.8, rand(-1, 1)).normalize());
+      }
+      // a glint running up the new timber
+      if (u < 0.9 && Math.random() < dt * 14) {
+        const along = _v2.copy(sp.long).applyAxisAngle(sp.axis, swing).multiplyScalar(sp.len * grow * Math.min(1, u * 1.6));
+        const wp = sp.pivot.clone().add(along).applyMatrix4(root.matrixWorld);
+        world.particles.sparkle(wp, [1, 0.86, 0.55], 0.8);
+      }
+      if (!r.landed && u > 0.62) {
+        r.landed = true;
+        const wp = sp.pivot.clone().applyMatrix4(root.matrixWorld);
+        const [vol, pan, d] = world.soundAt(wp);
+        world.audio.hit(Math.min(1, vol * 0.8), pan, d);
+        for (let k2 = 0; k2 < 3; k2++) world.particles.woodHit(wp, _v.set(rand(-1, 1), 0.6, rand(-1, 1)).normalize());
+        for (let k2 = 0; k2 < 7; k2++) {
+          const p = sp.pivot.clone().addScaledVector(sp.long, sp.len * (k2 / 6)).applyMatrix4(root.matrixWorld);
+          world.particles.sparkle(p.add(_v.set(rand(-0.6, 0.6), rand(-0.4, 0.4), rand(-0.6, 0.6))), [1, 0.9, 0.62]);
+        }
+      }
+    }
+    if (done) this.finishRig(world);
+  }
+
+  /** Swaps the hoisted copies for the real, whole rig and makes the rigging fast. */
+  private finishRig(world: World | null) {
+    if (this.raising) {
+      for (const r of this.raising) {
+        r.group.removeFromParent();
+        r.group.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.isMesh && m.userData.dmgOwnGeo) m.geometry.dispose();
+        });
+      }
+      this.raising = null;
+    } else {
+      for (const sp of this.spars) {
+        sp.tpl.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.isMesh && m.userData.dmgOwnGeo) m.geometry.dispose();
+        });
+      }
+    }
+    this.spars.length = 0;
     this.originals.forEach((g, obj) => {
       obj.geometry.dispose();
       obj.geometry = g;
@@ -646,13 +774,16 @@ export class ShipDamage {
     for (const m of this.masts) {
       m.broken = false;
       m.hp = 1;
-      const p = new THREE.Vector3(0, m.y0 + m.def.height * 0.5, m.z).applyMatrix4(this.ship.model.root.matrixWorld);
-      for (let k = 0; k < 6; k++) {
-        world.particles.sparkle(p.clone().add(_v.set(rand(-1, 1), rand(-4, 4), rand(-1, 1))));
-      }
     }
     this.bowsprit = false;
     this.events = 0;
+    if (world) {
+      const root = this.ship.model.root;
+      for (const m of this.masts) {
+        const p = new THREE.Vector3(0, m.y0 + m.def.height * 0.75, m.z).applyMatrix4(root.matrixWorld);
+        for (let k = 0; k < 3; k++) world.particles.sparkle(p.clone().add(_v.set(rand(-1.2, 1.2), rand(-2, 3), rand(-1.2, 1.2))), [1, 0.92, 0.7], 0.7);
+      }
+    }
   }
 
   // ---------------------------------------------------------------- per frame (afloat)
@@ -694,7 +825,8 @@ export class ShipDamage {
       const wp = oldest.c.clone().applyMatrix4(s.model.root.matrixWorld);
       for (let k = 0; k < 4; k++) world.particles.sparkle(wp);
     }
-    if (s.alive && f > 0.97 && (this.brokenMasts > 0 || this.bowsprit)) this.repairRig(world);
+    if (s.alive && f > 0.97 && !this.raising && (this.brokenMasts > 0 || this.bowsprit)) this.repairRig(world);
+    this.updateRaise(dt, world);
 
     // smoke curling out of the breaches
     if (dmg > 0.35 && open.length) {
@@ -745,6 +877,8 @@ export class ShipDamage {
     const c = s.cls;
     const model = s.model;
     const shape = model.shape;
+    // a spar still going up is whole enough to come down again with the rest
+    if (this.raising) this.finishRig(null);
     this.mode = Math.random() < (c.id === 'sloop' ? 0.3 : 0.65) ? 'split' : 'capsize';
     const fallSide = this.list !== 0 ? -Math.sign(this.list) : Math.random() < 0.5 ? 1 : -1;
     const k = this.wreckK;

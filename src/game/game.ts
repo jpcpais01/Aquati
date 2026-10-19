@@ -4,28 +4,34 @@ import { Input } from '../core/input';
 import { Audio } from '../core/audio';
 import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality';
 import { GraphicsSettings, Settings } from '../core/settings';
-import { createEnvironment, FOG_COLOR, globalUniforms, SUN_COLOR, SUN_DIR } from '../render/environment';
+import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { Pipeline } from '../render/pipeline';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
+import { Rain } from '../fx/rain';
+import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
 import { Ocean } from '../world/ocean';
 import { WakeField } from '../world/wakeField';
-import { buildWaves } from '../world/waves';
+import { buildWaves, setSeaState, Wave } from '../world/waves';
+import { Atmosphere, WEATHER } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
-import { PirateAI } from '../ships/ai';
+import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { PIRATE_LIVERIES, PLAYER_LIVERY, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { UI } from '../ui/ui';
 import { GraphicsPanel } from '../ui/graphics';
 import { CameraRig } from './cameraRig';
+import { Captain } from './captain';
+import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
 import { Loot, RARITY } from './loot';
 import { World } from './world';
+import { ShipCollisions } from './collisions';
 
 type State = 'loading' | 'menu' | 'playing' | 'paused' | 'dead';
 
@@ -56,9 +62,11 @@ export class Game {
   private projectiles = new Projectiles();
   private loot = new Loot();
   private debris = new Debris();
+  private collisions = new ShipCollisions(() => this.player);
   private pushers: Pusher[] = [];
   private ships: Ship[] = [];
   private ais = new Map<Ship, PirateAI>();
+  private lastFoe: Ship | null = null;
   private player: Ship | null = null;
   private preview: Ship | null = null;
   private state: State = 'loading';
@@ -76,10 +84,21 @@ export class Game {
   private birds!: Birds;
   private windField!: WindField;
   private wisps!: WindWisps;
+  private atmos = new Atmosphere();
+  private skyEnv: SkyEnvironment;
+  private envT = 0;
+  private rain!: Rain;
+  private lightning!: Lightning;
+  private baseWaves: Wave[] = [];
+  private cloudOff = new THREE.Vector2();
+  private sprayT = 0;
   private crew!: CrewSystem;
   private settings: Settings;
   private softShadows = false;
   private fps = 60;
+  private captain = new Captain();
+  private fpv = false;
+  private sky = createSkyDome();
 
   constructor(canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -97,9 +116,12 @@ export class Game {
     this.ui.setTouch(this.input.isTouch);
     this.input.bindJoystick(document.getElementById('joy')!, document.getElementById('joy-knob')!);
     this.input.bindFireButtons(document.getElementById('t-port')!, document.getElementById('t-fire')!, document.getElementById('t-star')!);
+    this.input.bindViewButtons(document.getElementById('btn-view')!, document.getElementById('btn-helm')!, document.getElementById('t-spy')!);
+    this.captain.onStep = (k) => this.audio.footstep(k);
     this.input.onTouchDetected = () => this.ui.setTouch(true);
 
-    this.sun = new THREE.DirectionalLight(new THREE.Color(SUN_COLOR).multiplyScalar(1 / 3.1), 3.1);
+    // the key light: the sun by day, the moon by night (see world/atmosphere.ts)
+    this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.quality.shadowSize, this.quality.shadowSize);
     this.sun.shadow.bias = -0.0005;
@@ -119,8 +141,13 @@ export class Game {
       maxShadow: Math.min(4096, this.renderer.capabilities.maxTextureSize),
     }));
     this.applySettings(this.settings.value);
-    this.opaque.fog = new THREE.Fog(FOG_COLOR.clone(), 380, 1500);
-    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group);
+    this.opaque.fog = new THREE.Fog(new THREE.Color(), 380, 1500);
+    this.skyEnv = new SkyEnvironment(this.renderer);
+    this.applyAtmosphere();
+    this.atmos.onChange = (_k, title, line) => {
+      if (this.state === 'playing') this.ui.toast(title, line, 3.4);
+    };
+    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group, this.sky);
 
     this.wireUI();
     // browsers only let sound start from a gesture (and on phones a touch only
@@ -156,7 +183,7 @@ export class Game {
     const veg = new Vegetation(this.terrain, q.vegetation);
     ui.progress(0.62);
     await nextFrame();
-    this.opaque.add(this.terrain.buildMeshes(q.terrainLod));
+    this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
     this.opaque.add(veg.build());
     this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36);
     this.opaque.add(this.birds.mesh);
@@ -165,6 +192,7 @@ export class Game {
 
     const windAngle = 1.25;
     const waves = buildWaves(windAngle, 1);
+    this.baseWaves = waves.map((w) => ({ ...w }));
     this.wake = new WakeField(q.wakeRes, 300);
     const seaFloor = this.terrain.createHeightTexture(512);
     this.wake.setTerrain(seaFloor);
@@ -181,11 +209,14 @@ export class Game {
     this.world.gustAt = (x, z) => this.windField.at(x, z);
     this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
+    this.rain = new Rain([2400, 4800, 7200][q.tier]);
+    this.lightning = new Lightning();
+    this.water.add(this.rain.mesh, this.lightning.mesh);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
-    this.opaque.environment = createEnvironment(this.renderer);
+    this.opaque.environment = this.skyEnv.update();
     this.opaque.environmentIntensity = 0.8;
     this.ui.buildMap(this.terrain);
     this.ui.setWind(windAngle);
@@ -295,7 +326,7 @@ export class Game {
   }
 
   private frameMenu() {
-    this.rig.menuShift = this.state === 'menu' || this.state === 'loading' ? this.ui.menuFraming() : { x: 0, y: 0 };
+    this.rig.menuShift = this.state === 'menu' || this.state === 'loading' ? this.ui.menuFraming() : { x: 0, y: 0, w: 1, h: 1 };
   }
 
   // ------------------------------------------------------------------ ships
@@ -335,7 +366,19 @@ export class Game {
     if (old) this.removeShip(old);
     this.preview = s;
     this.rig.orbitCenter.set(s.pos.x, 0, s.pos.z);
-    this.rig.orbitRadius = s.cls.length * 1.25 + 10;
+    // the real bounds of hull + rig (bowsprit to transom, keel to the tallest truck), in the ship's own frame
+    const pos = s.root.position.clone();
+    const rot = s.root.quaternion.clone();
+    s.root.position.set(0, 0, 0);
+    s.root.quaternion.identity();
+    s.root.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(s.root);
+    box.min.y = Math.max(box.min.y, -1.5);
+    s.root.position.copy(pos);
+    s.root.quaternion.copy(rot);
+    s.root.updateMatrixWorld(true);
+    this.rig.orbitBox = box;
+    this.rig.orbitQuat = rot;
   }
 
   private findOpenWater(cx: number, cz: number, rMin: number, rMax: number): THREE.Vector3 {
@@ -351,18 +394,54 @@ export class Game {
     return new THREE.Vector3(cx + rMax, 0, cz);
   }
 
-  private spawnPirate(near: THREE.Vector3, rMin: number, rMax: number) {
+  private spawnPirate(near: THREE.Vector3, rMin: number, rMax: number, forceId?: ShipClassId) {
     const kills = this.player?.kills ?? 0;
     const roll = Math.random();
-    let id: ShipClassId = roll < 0.48 ? 'sloop' : roll < 0.82 ? 'brig' : 'galleon';
-    if (kills < 2 && id === 'galleon') id = 'brig';
-    const s = this.makeShip(id, 'pirate');
+    let id: ShipClassId = forceId ?? (roll < 0.48 ? 'sloop' : roll < 0.82 ? 'brig' : 'galleon');
+    if (!forceId && kills < 2 && id === 'galleon') id = 'brig';
     const p = this.findOpenWater(near.x, near.z, rMin, rMax);
-    s.place(p.x, p.z, Math.random() * Math.PI * 2);
+    return this.launchPirate(id, p.x, p.z, Math.random() * Math.PI * 2);
+  }
+
+  private launchPirate(id: ShipClassId, x: number, z: number, heading: number) {
+    const kills = this.player?.kills ?? 0;
+    const s = this.makeShip(id, 'pirate');
+    s.place(x, z, heading);
     s.sailTarget = 0.5;
     s.sailLevel = 0.5;
     s.speed = s.cls.maxSpeed * 0.4;
-    this.ais.set(s, new PirateAI(s, kills / 4));
+    const ai = new PirateAI(s, kills / 4);
+    this.ais.set(s, ai);
+    return ai;
+  }
+
+  /** A flotilla: a flagship with two or three escorts in a loose vee. */
+  private spawnFlotilla(near: THREE.Vector3, rMin: number, rMax: number, size: number) {
+    const kills = this.player?.kills ?? 0;
+    const flagId: ShipClassId = kills >= 4 && Math.random() < 0.6 ? 'galleon' : 'brig';
+    const flag = this.spawnPirate(near, rMin, rMax, flagId);
+    const pack = new Pack();
+    pack.leader = flag;
+    flag.pack = pack;
+    const fs = flag.ship;
+    const h = fs.heading;
+    const sh = Math.sin(h);
+    const ch = Math.cos(h);
+    for (let i = 0; i < size - 1; i++) {
+      const side = i % 2 === 0 ? 1 : -1;
+      const rank = 1 + Math.floor(i / 2);
+      const slot = { x: side * 34 * rank, z: 30 * rank };
+      let x = fs.pos.x + ch * slot.x - sh * slot.z;
+      let z = fs.pos.z - sh * slot.x - ch * slot.z;
+      if (this.terrain.heightAt(x, z) > -9) {
+        const o = this.findOpenWater(fs.pos.x, fs.pos.z, 50, 110);
+        x = o.x;
+        z = o.z;
+      }
+      const ai = this.launchPirate(Math.random() < 0.65 ? 'sloop' : 'brig', x, z, h);
+      ai.pack = pack;
+      ai.slot = slot;
+    }
   }
 
   private enterMenu() {
@@ -380,6 +459,7 @@ export class Game {
     if (!this.ships.some((s) => s.team === 'pirate')) {
       this.spawnPirate(this.spawnPoint, 160, 260);
       this.spawnPirate(this.spawnPoint, 220, 340);
+      this.spawnFlotilla(this.spawnPoint, 300, 420, 3);
     }
   }
 
@@ -399,15 +479,19 @@ export class Game {
     this.ui.showMenu(false);
     this.ui.showHud(true);
     this.rig.mode = 'follow';
-    this.rig.menuShift = { x: 0, y: 0 };
+    this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
-    this.spawnTimer = 6;
+    this.spawnTimer = 4;
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
   }
 
   private resetWorld() {
+    this.setView(false);
+    this.rig.resetEye();
     for (const s of this.ships.slice()) this.removeShip(s);
     this.projectiles.clear();
+    this.particles.streaks.begin();
+    this.particles.streaks.end();
     this.loot.clear();
     this.debris.clear();
     this.crew.clear();
@@ -415,8 +499,28 @@ export class Game {
     this.preview = null;
   }
 
+  /** Bird's-eye or the captain's own eyes on deck. */
+  private setView(on: boolean) {
+    const p = this.player;
+    if (on && (!p || !p.alive || this.state !== 'playing')) return;
+    if (on === this.fpv) return;
+    this.fpv = on;
+    this.rig.firstPerson = on;
+    this.input.fpv = on;
+    this.input.helmMode = false;
+    if (on && p) {
+      this.captain.board(p, this.crew.deckView(p), this.crew.captainAt(p));
+      this.crew.setPilot(p, this.captain.pilot);
+    } else {
+      this.captain.leave();
+      this.input.releaseLook();
+    }
+    this.ui.setFpv(on);
+  }
+
   private setPaused(on: boolean) {
     if (on && this.state === 'playing') {
+      this.input.releaseLook();
       this.state = 'paused';
       const p = this.player;
       this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime } : undefined);
@@ -430,12 +534,35 @@ export class Game {
   /** The sea chart overlays live play: the world keeps sailing underneath. */
   private setChart(on: boolean) {
     if (on && !this.chartOpen && this.state === 'playing' && this.player) {
+      this.input.releaseLook();
       this.chartOpen = true;
       this.ui.showChart(true, this.player);
     } else if (!on && this.chartOpen) {
       this.chartOpen = false;
       this.ui.showChart(false);
     }
+  }
+
+  /** The pirate the player is duelling, so the camera can frame the two of them:
+   *  the nearest ship hunting her (or that she has just traded shot with) inside gun range. */
+  private battleFoe(): THREE.Vector3 | null {
+    const p = this.player;
+    if (!p || !p.alive) return null;
+    const t = this.world.time;
+    let best: Ship | null = null;
+    let bd = Infinity;
+    for (const [s, ai] of this.ais) {
+      if (!s.alive || s.removed) continue;
+      const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
+      const fighting = ai.mode === 'engage' || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
+      // a little hysteresis so the frame doesn't flicker at the edge of range
+      if (fighting && d < (s === this.lastFoe ? 320 : 270) && d < bd) {
+        bd = d;
+        best = s;
+      }
+    }
+    this.lastFoe = best;
+    return best ? best.pos : null;
   }
 
   // ------------------------------------------------------------------ combat events
@@ -470,6 +597,8 @@ export class Game {
 
   private onPlayerSunk() {
     this.input.enabled = false;
+    // rise out of the captain's eyes to watch her go down
+    this.setView(false);
     setTimeout(() => {
       if (!this.player) return;
       this.setChart(false);
@@ -536,15 +665,23 @@ export class Game {
     const p = this.player;
     const st = this.input.state;
     if (!p || !p.alive) return;
+    if (st.view) this.setView(!this.fpv);
+    if (this.fpv) {
+      if (st.helm) this.captain.toggleHelm();
+      this.input.helmMode = this.captain.atHelm;
+      this.captain.spyWanted = st.spy;
+    }
     if (st.sailDelta) p.sailTarget = clamp(Math.round(p.sailTarget * 3 + st.sailDelta) / 3, 0, 1);
-    if (st.steerHeading !== null) {
+    if (st.steerHeading !== null && !this.fpv) {
       p.rudder = clamp(angleDelta(p.heading, st.steerHeading) * 2.4, -1, 1);
       p.sailTarget = st.steerThrottle < 0.2 ? p.sailTarget : Math.ceil(st.steerThrottle * 3 - 0.05) / 3;
     } else p.rudder = st.rudder;
     if (st.firePort) this.tryFire('port');
     if (st.fireStarboard) this.tryFire('starboard');
     if (st.fireAuto) {
-      const ps = this.input.isTouch ? null : this.pointerSide();
+      // from the deck you fire the beam you're facing
+      const ls = this.fpv ? this.captain.lookSide() : 0;
+      const ps = this.fpv ? (ls > 0 ? 'port' : ls < 0 ? 'starboard' : null) : this.input.isTouch ? null : this.pointerSide();
       if (ps) this.tryFire(ps);
       else {
         const t = this.bestTarget(null);
@@ -552,7 +689,7 @@ export class Game {
         else this.tryFire(p.canFire('port') ? 'port' : 'starboard');
       }
     }
-    if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.zoom && !this.fpv) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) {
       if (this.chartOpen) this.setChart(false);
       else this.setPaused(true);
@@ -593,7 +730,7 @@ export class Game {
     const w = this.world;
     w.time += dt;
     globalUniforms.uTime.value = w.time;
-    globalUniforms.uCloudOffset.value.set(w.time * 0.0035 * w.wind.dirX, w.time * 0.0035 * w.wind.dirZ);
+    this.updateWeather(dt);
 
     this.input.poll();
     if (this.state === 'playing') {
@@ -606,7 +743,7 @@ export class Game {
     // AI & ships
     for (const ai of this.ais.values()) ai.update(dt, w, this.player && this.player.alive ? this.player : null, this.ships);
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
-    this.resolveShipCollisions();
+    this.collisions.resolve(this.ships, w);
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
     this.projectiles.update(dt, w, this.ships);
     this.pushers.length = 0;
@@ -651,7 +788,7 @@ export class Game {
       const top = this.terrain.heightAt(v.x, v.z);
       this.particles.emit({
         x: v.x + (Math.random() - 0.5) * 8, y: top + 4, z: v.z + (Math.random() - 0.5) * 8,
-        vx: w.wind.dirX * 2.2, vy: 3 + Math.random() * 2, vz: w.wind.dirZ * 2.2,
+        vx: w.wind.dirX * 0.6, vy: 3 + Math.random() * 2, vz: w.wind.dirZ * 0.6,
         life: 16 + Math.random() * 6, size: 8, sizeEnd: 34, color: [1.05, 1.03, 1.0], colorEnd: [0.95, 0.95, 0.97], alpha: 0.3, drag: 0.08, kind: 1, spin: (Math.random() - 0.5) * 0.1, fadeIn: 2,
       });
     }
@@ -661,10 +798,22 @@ export class Game {
     const fpos = focusShip ? focusShip.pos : this.spawnPoint;
     const fvel = focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
-    this.rig.update(realDt, fpos, fvel, w.time);
-    w.listener.copy(this.rig.target);
+    this.updateCaptain(dt);
+    this.rig.update(realDt, fpos, fvel, w.time, this.state === 'playing' || this.state === 'paused' ? this.battleFoe() : null);
+    const eb = this.rig.eyeBlend;
+    if (eb > 0) {
+      // hear the sea from where you stand, panned to where you face
+      w.listener.lerpVectors(this.rig.target, this.rig.camera.position, eb);
+      const e = this.rig.camera.matrixWorld.elements;
+      const rl = Math.hypot(e[0], e[2]) || 1;
+      w.listenerRight.set(1 + (e[0] / rl - 1) * eb, (e[2] / rl) * eb).normalize();
+    } else {
+      w.listener.copy(this.rig.target);
+      w.listenerRight.set(1, 0);
+    }
     w.listenerZoom = this.rig.distance;
-    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5);
+    // the spyglass can pick out a crew at the far side of a battle
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260);
 
     // gusts roll across whatever the camera is looking at
     const reach = clamp(this.rig.distance * 0.9, 70, 260);
@@ -675,6 +824,7 @@ export class Game {
     this.audio.setGust(gustHere);
     this.ui.setGust(gustHere);
 
+    this.updateSkyFx(dt);
     this.particles.update(dt);
     this.birds.update(dt, w.time);
     this.pipeline.decayFlash(realDt);
@@ -693,6 +843,118 @@ export class Game {
       });
     }
     this.ui.tickFloaters(realDt);
+  }
+
+  /** Walks the captain, aims their eyes, and keeps the deck chrome in step. */
+  private updateCaptain(dt: number) {
+    const cap = this.captain;
+    const p = this.player;
+    if (this.fpv && p && cap.ship === p) {
+      const st = this.input.state;
+      cap.update(dt, { x: st.walkX, y: st.walkY, run: st.run, lookX: st.lookX, lookY: st.lookY });
+      const near = cap.atHelm ? 'leave' : cap.canTakeHelm ? 'take' : 'none';
+      this.ui.setHelmPrompt(near);
+      const side = cap.lookSide();
+      this.ui.setLook(this.input.mouseLocked || this.input.isTouch, side, side !== 0 && p.canFire(side > 0 ? 'port' : 'starboard'));
+      this.ui.setSpy(cap.spy);
+    }
+    cap.pilot.hidden = cap.ship === p && this.rig.eyeBlend > 0.5;
+    if (cap.ship && this.rig.eyeBlend > 0 && !cap.ship.removed) {
+      cap.eye(this.rig.eyePos, this.rig.eyeQuat, this.world.time);
+      // a broad, natural field of view, narrowing to a sliver through the glass
+      const a = this.rig.camera.aspect;
+      const base = clamp((2 * Math.atan(Math.tan((42 * Math.PI) / 180) / a) * 180) / Math.PI, 55, 84);
+      this.rig.eyeFov = base / (1 + cap.spy * 4.5);
+    }
+  }
+
+  // ------------------------------------------------------------------ sky & weather
+
+  /** Day cycle, weather and sea state: everything the world simulation reads. */
+  private updateWeather(dt: number) {
+    const a = this.atmos;
+    a.update(dt);
+    const w = this.world;
+    if (!w) return;
+    // the weather sets the breeze: ships, plants, gusts and cloud drift all follow
+    w.wind.strength = a.wind;
+    globalUniforms.uWind.value.z = a.wind;
+    this.windField.intensity = 0.55 + a.wind * 0.6;
+    this.cloudOff.x += dt * w.wind.dirX * (0.002 + a.wind * 0.002 + a.storm * 0.004);
+    this.cloudOff.y += dt * w.wind.dirZ * (0.002 + a.wind * 0.002 + a.storm * 0.004);
+    globalUniforms.uCloudOffset.value.copy(this.cloudOff);
+    // bigger seas: CPU buoyancy and the GPU swell share the very same waves
+    setSeaState(w.waves, this.baseWaves, a.sea);
+    this.ocean.setWaves(w.waves);
+    this.applyAtmosphere();
+  }
+
+  /** Pushes the atmosphere into lights, fog and the grade. */
+  private applyAtmosphere() {
+    const a = this.atmos;
+    this.sun.color.setRGB(a.keyColor.x, a.keyColor.y, a.keyColor.z);
+    this.sun.intensity = 1;
+    const fog = this.opaque.fog as THREE.Fog;
+    fog.color.setRGB(a.fogColor.x, a.fogColor.y, a.fogColor.z);
+    fog.near = a.fogRange.x;
+    fog.far = a.fogRange.y;
+    this.pipeline.exposure = a.exposure;
+  }
+
+  /** Rain, lightning, thunder, spindrift and the clock badge. */
+  private updateSkyFx(dt: number) {
+    const a = this.atmos;
+    const w = this.world;
+    const tgt = this.rig.target;
+    const cam = this.rig.camera;
+    this.rain.update(a.rain, tgt.x, tgt.z, this.rig.distance, w.wind.dirX, w.wind.dirZ, a.wind);
+    const strike = this.lightning.update(dt, a.storm, tgt.x, tgt.z, cam);
+    if (strike) {
+      const p = new THREE.Vector3(strike.x, 0, strike.z);
+      const [vol, pan, dist] = w.soundAt(p);
+      this.audio.thunder(Math.min(1, (strike.bolt ? 0.95 : 0.55) * strike.power * Math.max(vol, 0.35)), pan * 0.6, dist);
+      if (strike.bolt) {
+        // the strike point boils with light and steam
+        p.y = w.waterHeight(p.x, p.z) + 1;
+        w.particles.emit({ x: p.x, y: p.y + 2, z: p.z, life: 0.5, size: 40, sizeEnd: 70, color: [6, 7, 10], colorEnd: [0.5, 0.6, 1], fadeIn: 0.001 }, true);
+        for (let i = 0; i < 6; i++) {
+          w.particles.emit({
+            x: p.x + (Math.random() - 0.5) * 8, y: p.y, z: p.z + (Math.random() - 0.5) * 8, vx: (Math.random() - 0.5) * 3, vy: 2 + Math.random() * 3, vz: (Math.random() - 0.5) * 3,
+            life: 3 + Math.random() * 2, size: 6, sizeEnd: 22, color: [0.9, 0.92, 0.95], alpha: 0.35, drag: 0.6, kind: 1, fadeIn: 0.2,
+          });
+        }
+      }
+    }
+    const flash = this.lightning.flash;
+    globalUniforms.uFlash.value = flash;
+    this.pipeline.lightning = Math.min(flash, 1.5) * 0.55;
+    this.opaque.environmentIntensity = 0.8 * (1 + flash * 5);
+
+    // spindrift: gusts tear spray off the crests in a blow
+    if (a.storm > 0.35 && dt > 0) {
+      this.sprayT += dt * a.storm * 14;
+      const reach = this.rig.distance * 0.7;
+      while (this.sprayT > 1) {
+        this.sprayT -= 1;
+        const x = tgt.x + (Math.random() - 0.5) * reach * 2;
+        const z = tgt.z + (Math.random() - 0.5) * reach * 1.4;
+        if (this.terrain.heightAt(x, z) > -2) continue;
+        const sp = 7 + a.wind * 6;
+        w.particles.emit({
+          x, y: w.waterHeight(x, z) + 0.4, z,
+          vx: w.wind.dirX * sp, vy: 1 + Math.random() * 1.5, vz: w.wind.dirZ * sp,
+          life: 1.4 + Math.random() * 1.2, size: 1.2, sizeEnd: 5 + Math.random() * 3, color: [1.2, 1.26, 1.3], alpha: 0.32, drag: 0.9, grav: 1.2, kind: 1, fadeIn: 0.15,
+        });
+      }
+    }
+
+    this.audio.setWeather(a.rain, a.storm, a.wind);
+    this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
+    const k = a.kind;
+    const dark = a.sunDir.y < -0.03;
+    const icon = k === 'storm' ? 'storm' : k === 'rain' ? 'rain' : k === 'mist' ? 'mist' : k === 'cloudy' ? 'cloud'
+      : k === 'fair' ? (dark ? 'partly-moon' : 'partly-sun') : dark ? 'moon' : 'sun';
+    this.ui.setSky(a.hour, icon, WEATHER[k].name);
   }
 
   private updateTargetRing() {
@@ -717,36 +979,6 @@ export class Game {
     ring.scale.setScalar(t.ship.cls.length * 0.62);
   }
 
-  private resolveShipCollisions() {
-    const ships = this.ships;
-    for (let i = 0; i < ships.length; i++) {
-      for (let j = i + 1; j < ships.length; j++) {
-        const a = ships[i];
-        const b = ships[j];
-        if (a.removed || b.removed) continue;
-        // wrecks settle below the keels of passing ships
-        if ((!a.alive && a.sinkT > 3) || (!b.alive && b.sinkT > 3)) continue;
-        const dx = b.pos.x - a.pos.x;
-        const dz = b.pos.z - a.pos.z;
-        const d = Math.hypot(dx, dz);
-        const minD = (a.cls.beam + b.cls.beam) * 0.5 + Math.min(a.cls.length, b.cls.length) * 0.25;
-        if (d < minD && d > 1e-3) {
-          const push = (minD - d) * 0.5;
-          const nx = dx / d;
-          const nz = dz / d;
-          const ma = a.cls.mass;
-          const mb = b.cls.mass;
-          a.pos.x -= nx * push * (mb / (ma + mb)) * 2;
-          a.pos.z -= nz * push * (mb / (ma + mb)) * 2;
-          b.pos.x += nx * push * (ma / (ma + mb)) * 2;
-          b.pos.z += nz * push * (ma / (ma + mb)) * 2;
-          a.speed *= 0.97;
-          b.speed *= 0.97;
-        }
-      }
-    }
-  }
-
   private checkDiscoveries(p: Ship) {
     for (const isl of this.terrain.islands) {
       if (this.discovered.has(isl.name)) continue;
@@ -762,12 +994,20 @@ export class Game {
 
   private directSpawns(dt: number) {
     const p = this.player!;
+    // pirates left far astern while cruising are recycled so the seas around you stay busy
+    for (const s of this.ships.slice()) {
+      if (s.team !== 'pirate' || !s.alive) continue;
+      const ai = this.ais.get(s);
+      if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
+    }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive).length;
-    const want = Math.min(6, 3 + Math.floor(p.kills / 3));
+    const want = Math.min(11, 6 + Math.floor(p.kills / 2));
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
-      this.spawnPirate(p.pos, 300, 460);
-      this.spawnTimer = 9 + Math.random() * 6;
+      const room = want - alivePirates;
+      if (room >= 3 && this.voyageTime > 40 && Math.random() < 0.4) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, p.kills >= 6 ? 4 : 3));
+      else this.spawnPirate(p.pos, 280, 480);
+      this.spawnTimer = 5 + Math.random() * 5;
     }
   }
 
@@ -789,16 +1029,33 @@ export class Game {
     const cx = Math.round(target.x / texel) * texel;
     const cz = Math.round(target.z / texel) * texel;
     this.sun.target.position.set(cx, 0, cz);
-    this.sun.position.set(cx + SUN_DIR.x * 400, SUN_DIR.y * 400, cz + SUN_DIR.z * 400);
+    // low sun / moon: keep the shadow caster a little higher so shadows stay crisp, not smeared
+    const kd = this.atmos.keyDir;
+    const ky = Math.max(kd.y, 0.22);
+    const kh = Math.hypot(kd.x, kd.z) || 1;
+    const kk = Math.sqrt(1 - ky * ky) / kh;
+    this.sun.position.set(cx + kd.x * kk * 400, ky * 400, cz + kd.z * kk * 400);
     this.sun.target.updateMatrixWorld();
     updateSoftShadows(this.sun, this.softShadows);
+    // the sky's light changes slowly: refresh the image-based lighting a few times a second
+    this.envT -= dt > 0 ? dt : 0;
+    if (this.envT <= 0) {
+      this.envT = 0.35;
+      this.skyEnv.update();
+    }
 
     this.wake.update(this.renderer, target.x, target.z, dt);
     this.ocean.follow(target.x, target.z);
     this.ocean.setSceneTextures(this.pipeline.rtOpaque.texture, this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
-    this.pipeline.tilt = this.rig.mode === 'orbit' ? 0.6 : 0.8;
+    const eb = this.rig.eyeBlend;
+    this.pipeline.tilt = (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
+    // the horizon only exists from the deck
+    this.sky.visible = eb > 0.001;
+    this.sky.position.copy(cam.position);
+    this.ocean.apron.visible = eb > 0.001;
+    this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);
   }

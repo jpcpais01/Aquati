@@ -34,6 +34,8 @@ export class WindField {
   private reach = 160;
   private wx: number;
   private wz: number;
+  /** Weather scale on gust strength (1 = a normal breezy day). */
+  intensity = 1;
 
   constructor(dirX: number, dirZ: number, count: number) {
     this.wx = dirX;
@@ -78,7 +80,7 @@ export class WindField {
       if (g.age > g.life || dx * dx + dz * dz > reach * reach * 4) g = this.gusts[i] = this.spawn(false);
       // swell in, hold, die away; plus a slow internal pulse
       const env = smooth(0, 2.2, g.age) * (1 - smooth(g.life - 3, g.life, g.age));
-      g.amp = g.str * env * (0.8 + 0.2 * Math.sin(g.age * 1.7 + i));
+      g.amp = g.str * this.intensity * env * (0.8 + 0.2 * Math.sin(g.age * 1.7 + i));
       u[i].set(g.x, g.z, g.radius, g.amp);
     }
     for (let i = this.gusts.length; i < MAX_GUSTS; i++) u[i].w = 0;
@@ -181,7 +183,7 @@ export class WindWisps {
     this.geo.setIndex(idx);
     this.geo.setDrawRange(0, 0);
     const mat = new THREE.ShaderMaterial({
-      uniforms: { ...this.uniforms, uFogColor: globalUniforms.uFogColor, uFogRange: globalUniforms.uFogRange },
+      uniforms: { ...this.uniforms, uFogColor: globalUniforms.uFogColor, uFogRange: globalUniforms.uFogRange, uLight: globalUniforms.uLight },
       transparent: true,
       depthWrite: false,
       depthTest: true,
@@ -198,7 +200,7 @@ export class WindWisps {
         }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D uSceneDepth; uniform vec2 uResolution; uniform vec2 uCamNearFar;
-        uniform vec3 uFogColor; uniform vec2 uFogRange;
+        uniform vec3 uFogColor; uniform vec2 uFogRange; uniform vec3 uLight;
         varying vec3 vRib; varying float vViewZ;
         float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
         void main() {
@@ -209,7 +211,7 @@ export class WindWisps {
           float sz = linearDepth(texture(uSceneDepth, suv).r);
           a *= clamp((sz - vViewZ) * 0.5, 0.0, 1.0);
           if (a < 0.004) discard;
-          vec3 col = mix(vec3(1.25, 1.3, 1.34), uFogColor, smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.8);
+          vec3 col = mix(vec3(1.25, 1.3, 1.34) * uLight, uFogColor, smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.8);
           gl_FragColor = vec4(col * a, a);
         }`,
     });

@@ -40,6 +40,16 @@ export const globalUniforms = {
   uWind: { value: new THREE.Vector3(0, 1, 1) }, // dir.xz, strength
   // travelling gust puffs (see fx/wind.ts): xz centre, radius, amplitude
   uGusts: { value: Array.from({ length: MAX_GUSTS }, () => new THREE.Vector4(0, 0, 1, 0)) },
+  // day cycle & weather (see world/atmosphere.ts)
+  uHaze: { value: new THREE.Vector3(1, 0.8, 0.55) }, // glow around the sun / moon
+  uLight: { value: new THREE.Vector3(1, 1, 1) }, // ambient light tint for unlit fx (1 = clear noon)
+  uNight: { value: 0 }, // 0 day .. 1 deep night
+  uCloudCover: { value: 0.3 }, // 0 clear .. 1 overcast
+  uRain: { value: 0 },
+  uStorm: { value: 0 },
+  uWet: { value: 0 }, // surface wetness, lags the rain
+  uFlash: { value: 0 }, // lightning
+  uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
 };
 
 export const GLSL_GUST = /* glsl */ `
@@ -72,22 +82,56 @@ uniform sampler2D uNoiseTex;
 uniform sampler2D uCausticTex;
 uniform vec2 uCloudOffset;
 ${GLSL_GUST}
+uniform vec3 uHaze;
+uniform vec3 uLight;
+uniform float uNight;
+uniform float uCloudCover;
+uniform float uRain;
+uniform float uStorm;
+uniform float uWet;
+uniform float uFlash;
+uniform float uMist;
+
+// how much low mist lies between the eye and a point d metres away
+float mistAt(float d) {
+  return (1.0 - exp(-d * 0.0045)) * uMist * 0.7;
+}
+
+vec3 aqHash32(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  p3 += dot(p3, p3.yxz + 33.33);
+  return fract((p3.xxy + p3.yzz) * p3.zyx);
+}
+
 vec3 skyColor(vec3 d) {
   float h = clamp(d.y, -1.0, 1.0);
   vec3 col = mix(uSkyHorizon, uSkyZenith, pow(max(h, 0.0), 0.55));
-  // warm haze toward the sun
+  // warm haze toward the sun (cool glow around the moon at night)
   float sd = max(dot(d, uSunDir), 0.0);
-  col += vec3(1.0, 0.78, 0.5) * pow(sd, 6.0) * 0.35;
-  col += vec3(1.0, 0.85, 0.65) * pow(sd, 64.0) * 1.2;
+  col += uHaze * (pow(sd, 6.0) * 0.35 + pow(sd, 64.0) * 1.2);
+  #ifndef AQ_NO_STARS
+  if (uNight > 0.01 && h > 0.0) {
+    // a sparse field of stars, only through gaps in the cloud
+    vec3 q = d * 150.0;
+    vec3 c = floor(q);
+    vec3 r = aqHash32(c.xy + c.z * 17.13);
+    float star = smoothstep(0.42, 0.0, length(fract(q) - 0.2 - r * 0.6)) * step(0.93, r.z);
+    col += vec3(0.8, 0.88, 1.0) * star * (r.x * 1.2 + 0.3) * uNight * (1.0 - uCloudCover) * smoothstep(0.0, 0.25, h);
+  }
+  #endif
+  // lightning lights the whole cloud deck from inside
+  col += vec3(0.62, 0.7, 0.95) * uFlash * (0.5 + 0.5 * max(h, 0.0));
   // below the horizon: blend into a deep sea tint so reflections stay grounded
-  col = mix(col, vec3(0.06, 0.2, 0.3), smoothstep(0.0, -0.25, h));
+  col = mix(col, vec3(0.06, 0.2, 0.3) * uLight, smoothstep(0.0, -0.25, h));
   return col;
 }
 
 float cloudShadow(vec2 xz) {
   vec2 uv = xz * 0.0011 + uCloudOffset;
   float n = texture(uNoiseTex, uv).r * 0.62 + texture(uNoiseTex, uv * 2.7 + vec2(0.37, 0.71)).r * 0.38;
-  return mix(1.0, 0.5, smoothstep(0.5, 0.68, n));
+  // coverage slides the threshold: a few puffs on a clear day, a solid deck in a storm
+  float lo = 0.8 - uCloudCover;
+  return mix(1.0, 0.5, smoothstep(lo, lo + 0.18, n));
 }
 
 float causticsAt(vec3 wp, float depth) {
@@ -230,8 +274,14 @@ ${GLSL_DAMAGE_VERTEX}
         '#include <common>',
         `${head}#include <common>
 varying vec3 vAqWorld;
+uniform vec3 uFogColor;
 ${GLSL_ATMOS}
 ${GLSL_DAMAGE_FRAGMENT_PARS}`,
+      )
+      .replace(
+        '#include <fog_fragment>',
+        `#include <fog_fragment>
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, uFogColor, mistAt(length(vAqWorld - cameraPosition)));`,
       )
       .replace(
         '#include <color_fragment>',
@@ -244,6 +294,8 @@ ${GLSL_DAMAGE_FRAGMENT}
     diffuseColor.rgb *= 0.86 + nz.g * 0.22 + (nz2.a - 0.5) * 0.12;
   }
 #endif
+  // rain-soaked surfaces darken (and turn glossy below)
+  diffuseColor.rgb *= 1.0 - uWet * 0.26;
 #ifdef AQ_WET
   float aqWet = 1.0 - smoothstep(0.05, 1.1 + sin(uTime * 0.6 + vAqWorld.x * 0.05) * 0.25, vAqWorld.y);
   diffuseColor.rgb *= mix(1.0, 0.64, aqWet);
@@ -252,6 +304,7 @@ ${GLSL_DAMAGE_FRAGMENT}
       .replace(
         '#include <roughnessmap_fragment>',
         `#include <roughnessmap_fragment>
+  roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.42, uWet);
 #ifdef AQ_WET
   roughnessFactor = mix(roughnessFactor, 0.3, aqWet * step(0.0, vAqWorld.y));
 #endif`,
@@ -287,33 +340,51 @@ ${GLSL_DAMAGE_FRAGMENT}
   return mat;
 }
 
-/** Bakes a small PMREM environment from the analytic sky for IBL. */
-export function createEnvironment(renderer: THREE.WebGLRenderer): THREE.Texture {
-  const scene = new THREE.Scene();
-  const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    depthWrite: false,
-    uniforms: globalUniforms,
-    vertexShader: /* glsl */ `
-      varying vec3 vDir;
-      void main() {
-        vDir = normalize(position);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }`,
-    fragmentShader: /* glsl */ `
-      varying vec3 vDir;
-      ${GLSL_ATMOS}
-      void main() {
-        vec3 d = normalize(vDir);
-        vec3 c = skyColor(d);
-        // soft sun lobe without the hot disk (direct light handles that)
-        gl_FragColor = vec4(c * 1.15, 1.0);
-      }`,
-  });
-  scene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), mat));
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const rt = pmrem.fromScene(scene, 0, 0.1, 100);
-  pmrem.dispose();
-  mat.dispose();
-  return rt.texture;
+/**
+ * Bakes a small PMREM environment from the analytic sky for IBL. The sky
+ * changes with the day and the weather, so the bake is cheap (a 64px cube) and
+ * reuses the same targets every time: the texture object never changes, so no
+ * material ever recompiles.
+ */
+export class SkyEnvironment {
+  private scene = new THREE.Scene();
+  private cubeRT = new THREE.WebGLCubeRenderTarget(64, { type: THREE.HalfFloatType });
+  private cubeCam = new THREE.CubeCamera(0.1, 100, this.cubeRT);
+  private pmrem: THREE.PMREMGenerator;
+  private rt: THREE.WebGLRenderTarget | null = null;
+
+  constructor(private renderer: THREE.WebGLRenderer) {
+    const mat = new THREE.ShaderMaterial({
+      side: THREE.BackSide,
+      depthWrite: false,
+      uniforms: globalUniforms,
+      defines: { AQ_NO_STARS: 1 },
+      vertexShader: /* glsl */ `
+        varying vec3 vDir;
+        void main() {
+          vDir = normalize(position);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: /* glsl */ `
+        varying vec3 vDir;
+        ${GLSL_ATMOS}
+        void main() {
+          vec3 d = normalize(vDir);
+          vec3 c = skyColor(d);
+          gl_FragColor = vec4(c * 1.15, 1.0);
+        }`,
+    });
+    this.scene.add(new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), mat));
+    this.pmrem = new THREE.PMREMGenerator(renderer);
+  }
+
+  /** Re-renders the sky into the environment map. Returns the (stable) texture. */
+  update(): THREE.Texture {
+    const r = this.renderer;
+    const prev = r.getRenderTarget();
+    this.cubeCam.update(r, this.scene);
+    this.rt = this.pmrem.fromCubemap(this.cubeRT.texture, this.rt);
+    r.setRenderTarget(prev);
+    return this.rt.texture;
+  }
 }
