@@ -19,7 +19,7 @@ export class CameraRig {
   zoom = 0.45; // 0 close .. 1 far
   private zoomSmooth = 0.45;
   private trauma = 0;
-  mode: 'follow' | 'orbit' = 'orbit';
+  mode: 'follow' | 'orbit' | 'port' = 'orbit';
   private orbitAngle = 0.6;
   private blend = 0; // 0 orbit .. 1 follow
   orbitCenter = new THREE.Vector3();
@@ -30,6 +30,14 @@ export class CameraRig {
   private orbitDist = 0;
   /** Menu framing: where the orbited ship sits (fraction of the screen from centre) and how much of the screen is free for it. */
   menuShift = { x: 0, y: 0, w: 1, h: 1 };
+  /** Harbour framing: the camera glides to these. */
+  readonly shotPos = new THREE.Vector3();
+  readonly shotLook = new THREE.Vector3();
+  private curPos = new THREE.Vector3();
+  private curLook = new THREE.Vector3();
+  /** Screen-space shift (px) that keeps the subject clear of side panels. */
+  readonly viewShift = { x: 0, y: 0 };
+  private portShift = { x: 0, y: 0 };
   private shift = { x: 0, y: 0 };
   /** First-person: wanted (0/1) and the eased swoop between them. */
   firstPerson = false;
@@ -78,8 +86,38 @@ export class CameraRig {
     this.target.copy(p);
   }
 
+  /** Jump straight to the current harbour shot (behind a fade). */
+  snapShot() {
+    this.curPos.copy(this.shotPos);
+    this.curLook.copy(this.shotLook);
+    this.portShift.x = this.viewShift.x;
+    this.portShift.y = this.viewShift.y;
+  }
+
+  private updatePort(dt: number) {
+    this.curPos.lerp(this.shotPos, damp(2.4, dt));
+    this.curLook.lerp(this.shotLook, damp(3.0, dt));
+    const ps = this.portShift;
+    ps.x += (this.viewShift.x - ps.x) * damp(6, dt);
+    ps.y += (this.viewShift.y - ps.y) * damp(6, dt);
+    this.camera.position.copy(this.curPos);
+    this.camera.lookAt(this.curLook);
+    this.target.set(this.curLook.x, 0, this.curLook.z);
+    this.focus.copy(this.target);
+    this.camera.fov = 38;
+    const w = innerWidth;
+    const h = innerHeight;
+    if (Math.abs(ps.x) > 0.5 || Math.abs(ps.y) > 0.5) this.camera.setViewOffset(w, h, ps.x, ps.y, w, h);
+    else if (this.camera.view) this.camera.clearViewOffset();
+    this.camera.updateProjectionMatrix();
+  }
+
   /** `foe` is the enemy ship the player is fighting, or null out of battle. */
   update(dt: number, follow: THREE.Vector3, vel: THREE.Vector3, time: number, foe: THREE.Vector3 | null = null) {
+    if (this.mode === 'port') {
+      this.updatePort(dt);
+      return;
+    }
     this.zoomSmooth += (this.zoom - this.zoomSmooth) * damp(5, dt);
     this.blend += ((this.mode === 'follow' ? 1 : 0) - this.blend) * damp(this.mode === 'follow' ? 1.4 : 3, dt);
     const inBattle = !!foe && this.mode === 'follow';
@@ -194,6 +232,7 @@ export class CameraRig {
 
   /** Visible ground half-extent, used to fit the shadow frustum. */
   groundRadius() {
+    if (this.mode === 'port') return 62;
     return clamp(this.distance * 0.75, 70, 260);
   }
 }
