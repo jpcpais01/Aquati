@@ -11,8 +11,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'icons/icon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
-        name: 'Aquati',
-        short_name: 'Aquati',
+        name: 'Shores of Fortune',
+        short_name: 'Fortune',
         description: 'Sail, explore and battle across a sun-drenched pirate archipelago.',
         theme_color: '#0b3a4a',
         background_color: '#0b2a3a',

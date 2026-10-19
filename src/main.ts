@@ -27,5 +27,5 @@ try {
   });
 } catch (e) {
   console.error(e);
-  fail('Aquati needs WebGL 2 to sail. Try a recent Chrome, Safari, Edge or Firefox.');
+  fail('Shores of Fortune needs WebGL 2 to sail. Try a recent Chrome, Safari, Edge or Firefox.');
 }
