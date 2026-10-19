@@ -249,14 +249,16 @@ function beaconMaterial(uniforms: Record<string, THREE.IUniform>, beam: boolean)
         float core = exp(-x * x * 18.0);
         float soft = exp(-x * x * 3.5) * 0.35;
         float rise = 0.75 + 0.25 * sin(y * 14.0 - uTime * 3.2 + vSeed * 20.0);
-        float fall = pow(1.0 - y, 1.7) * smoothstep(0.0, 0.06, y);
+        float fall = pow(max(1.0 - y, 0.0), 1.7) * smoothstep(0.0, 0.06, y);
         float a = (core + soft) * fall * rise * 0.55;` : `
         vec2 q = vUv * 2.0 - 1.0;
         float r = length(q);
         if (r > 1.0) discard;
-        float ring = exp(-pow((r - 0.62 - 0.05 * sin(uTime * 2.0 + vSeed * 9.0)) * 9.0, 2.0)) * 0.7;
+        // pow() of a negative base is undefined (NaN on ANGLE/D3D), so square by hand
+        float rd = (r - 0.62 - 0.05 * sin(uTime * 2.0 + vSeed * 9.0)) * 9.0;
+        float ring = exp(-rd * rd) * 0.7;
         float pool = pow(1.0 - r, 3.0) * 0.6;
-        float ang = atan(q.y, q.x);
+        float ang = atan(q.y, q.x + 1e-5);
         float rays = pow(max(0.0, sin(ang * 6.0 + uTime * 0.7 + vSeed * 6.0)), 6.0) * (1.0 - r) * 0.7 * smoothstep(2.5, 3.8, vSize);
         float a = (ring + pool + rays) * (1.0 - smoothstep(0.85, 1.0, r));`}
         a *= sceneFade(vViewZ);

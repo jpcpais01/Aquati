@@ -307,7 +307,7 @@ export class Ocean {
           vec3 R = reflect(-V, N);
           R.y = abs(R.y);
           vec3 refl = skyColor(R) * (1.0 - gust * 0.22);
-          float F = 0.02 + 0.98 * pow(1.0 - NdV, 5.0);
+          float F = 0.02 + 0.98 * pow(max(1.0 - NdV, 0.0), 5.0);
           F = min(F * 1.1, 1.0);
 
           // sun glitter: twinkling pinpoints, a tight sheen, and a broad soft

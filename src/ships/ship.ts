@@ -171,8 +171,8 @@ export class Ship {
     vel.add(this.vel);
     world.onShot({ pos, vel, owner: this, damage: this.cls.damage });
     world.particles.muzzle(pos, dir, this.vel);
-    const [vol, pan] = world.soundAt(pos);
-    world.audio.cannon(vol * 0.55, pan);
+    const [vol, pan, d] = world.soundAt(pos);
+    world.audio.cannon(vol, pan, d, clamp((this.cls.length - 15) / 14, 0, 1));
     world.onShake(this.team === 'player' ? 0.35 : 0.12 * vol, pos);
   }
 
@@ -189,8 +189,8 @@ export class Ship {
       this.sinkT = 0;
       if (attacker) attacker.kills++;
       world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
-      const [vol, pan] = world.soundAt(this.pos);
-      world.audio.cannon(vol, pan);
+      const [vol, pan, d] = world.soundAt(this.pos);
+      world.audio.explosion(vol, pan, d);
       world.onShake(this.team === 'player' ? 1.2 : 0.5 * vol, this.pos);
     }
     return dmg;

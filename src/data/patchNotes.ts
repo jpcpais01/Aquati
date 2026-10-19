@@ -23,6 +23,22 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'No more black square after a sinking',
+        notes: [
+          'Sinking a ship could leave a huge pitch-black square floating on the water in front of the wreck. It was the glowing halo around the treasure it dropped, which broke on some graphics cards. Treasure halos and beacons now glow properly everywhere, and the image pipeline now filters out any bad pixel before it can spread into a dark block.',
+        ],
+      },
+      {
+        title: 'Cannons that really thunder',
+        notes: [
+          'Every gun has been recast in sound. A broadside now opens with a sharp supersonic crack, then a deep chest-thumping boom and a roaring fireball, with burning powder sputtering as it fades. Sloops bark, galleons rumble.',
+          'Shots roll across the archipelago: the blast echoes back off distant islands and cliffs, so a broadside thunders and grumbles on for seconds after the last gun.',
+          'Sound now travels at its real speed. Watch a pirate fire far off and you will see the flash first and hear the boom a heartbeat later, dulled and softened by the distance.',
+          'On your own deck you hear the gun carriages slam back on their trucks and the breeching ropes snap taut, and the sea and wind dip for a moment under the roar.',
+          'New impacts too: splintering, groaning timbers when a ball smashes a hull, a deep thoomp and falling spray when one plunges into the sea, dull thuds on beaches, enemy shot tearing past your ears, and ships going up with a magazine blast and raining wreckage.',
+        ],
+      },
+      {
         title: 'Frame rate counter',
         notes: ['A tiny FPS counter now sits at the top of the screen, refreshed twice a second.'],
       },
@@ -32,6 +48,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     // the next 12:00 group is full (five entries), so this hour continues in a second group
     hour: '2026-10-19T12:00Z',
     entries: [
+      {
+        title: 'The sea chart no longer stops the world',
+        notes: [
+          'Opening the big chart no longer pauses the game. Your ship keeps sailing, pirates keep hunting and everything moves live on the chart, so you can plot a course on the fly. On a keyboard you can keep steering and firing while it is open.',
+        ],
+      },
       {
         title: 'Treasure rarities: common, rare, epic, legendary',
         notes: [

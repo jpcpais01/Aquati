@@ -13,6 +13,7 @@ interface Ball {
   damage: number;
   age: number;
   trail: number;
+  heard: boolean;
 }
 
 export interface HitEvent {
@@ -42,7 +43,7 @@ export class Projectiles {
 
   add(s: Shot) {
     if (this.balls.length >= MAX) this.balls.shift();
-    this.balls.push({ pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0 });
+    this.balls.push({ pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0, heard: false });
   }
 
   update(dt: number, world: World, ships: Ship[]) {
@@ -77,8 +78,8 @@ export class Projectiles {
             const dmg = s.damage(b.damage, b.owner, world);
             const n = new THREE.Vector3(Math.sign(_local.x) || 1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.heading);
             world.particles.woodHit(b.pos.clone(), n);
-            const [vol, pan] = world.soundAt(b.pos);
-            world.audio.hit(vol * 0.8, pan);
+            const [vol, pan, d] = world.soundAt(b.pos);
+            world.audio.hit(vol, pan, d);
             this.onHit({ ship: s, attacker: b.owner, damage: dmg, pos: b.pos.clone() });
           } else {
             world.particles.woodHit(b.pos.clone(), new THREE.Vector3(0, 1, 0));
@@ -89,6 +90,8 @@ export class Projectiles {
         const ground = world.terrain.heightAt(b.pos.x, b.pos.z);
         if (ground > 0 && b.pos.y < ground) {
           world.particles.sandHit(b.pos.clone().setY(ground + 0.3));
+          const [vol, pan, d] = world.soundAt(b.pos);
+          world.audio.thud(vol, pan, d);
           dead = true;
           break;
         }
@@ -99,10 +102,25 @@ export class Projectiles {
           world.wake.stamp(p.x, p.z, 2.2, 1.4);
           world.wake.stamp(p.x, p.z, 4.5, 0.8, true);
           world.wake.push(p.x, p.z, 1.8, -0.35); // crater that rings outward
-          const [vol, pan] = world.soundAt(p);
-          world.audio.splash(vol * 0.5, pan);
+          const [vol, pan, d] = world.soundAt(p);
+          world.audio.splash(vol, pan, d);
           dead = true;
           break;
+        }
+      }
+      if (!dead && !b.heard) {
+        // enemy shot tearing close past the listener
+        const lx = b.pos.x - world.listener.x;
+        const lz = b.pos.z - world.listener.z;
+        if (lx * lx + lz * lz < 15 * 15) {
+          b.heard = true;
+          const ox = b.owner.pos.x - world.listener.x;
+          const oz = b.owner.pos.z - world.listener.z;
+          if (ox * ox + oz * oz > 35 * 35) {
+            const [vol, pan] = world.soundAt(b.pos);
+            const pan2 = world.soundAt(_local.copy(b.vel).multiplyScalar(0.5).add(b.pos))[1];
+            world.audio.whoosh(vol, pan * 3, pan2 * 3);
+          }
         }
       }
       if (!dead) {
