@@ -264,7 +264,7 @@ export class Ocean {
             vec3 rr = rainRipples(p, t, uRain);
             float rf = detailFade * detailFade;
             N = normalize(N + vec3(rr.x, 0.0, rr.y) * 0.5 * rf);
-            rainSplash = rr.z * rf * uRain;
+            rainSplash = rr.z * rf * uRain * (1.0 - 0.6 * uNight);
           }
 
           // ---- ship wakes: height-field normals so every V-arm and ring catches the light.

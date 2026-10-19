@@ -5,7 +5,7 @@ import * as THREE from 'three';
 //   2. water + fx    -> rtWater  (premultiplied HDR over transparent, own depth)
 //      (the ocean reads rtOpaque colour/depth for refraction and thickness)
 //   3. combine at half res -> dual-filter bloom chain
-//   4. final: combine + bloom + tilt-shift + grade + ACES -> screen
+//   4. final: combine + adaptive sharpen + bloom + edge tilt-shift + grade + ACES -> screen
 
 const FS_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -114,6 +114,7 @@ export class Pipeline {
       uniform sampler2D uOpaque; uniform sampler2D uWater; uniform sampler2D uHalf; uniform sampler2D uBloom;
       uniform vec2 uHalfTexel; uniform float uExposure; uniform float uBloomStrength; uniform float uTilt;
       uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor; uniform float uLightning;
+      uniform vec2 uTexel; uniform float uSharpen;
       varying vec2 vUv;
 
       vec3 aces(vec3 x) {
@@ -126,15 +127,35 @@ export class Pipeline {
       }
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
-      void main() {
-        vec4 w = texture2D(uWater, vUv);
-        vec3 col = texture2D(uOpaque, vUv).rgb * (1.0 - w.a) + w.rgb;
+      vec3 comb(vec2 uv) {
+        vec4 w = texture2D(uWater, uv);
+        return texture2D(uOpaque, uv).rgb * (1.0 - w.a) + w.rgb;
+      }
 
-        // diorama tilt-shift: blur toward the top & bottom of the frame
+      void main() {
+        vec3 col = comb(vUv);
+
+        // contrast-adaptive sharpen: restores crisp texture after MSAA resolve
+        // and dynamic-resolution upscaling; clamped to the neighbourhood so it
+        // never rings or halos.
+        if (uSharpen > 0.0) {
+          vec3 n = comb(vUv + vec2(0.0, uTexel.y));
+          vec3 s = comb(vUv - vec2(0.0, uTexel.y));
+          vec3 e = comb(vUv + vec2(uTexel.x, 0.0));
+          vec3 wv = comb(vUv - vec2(uTexel.x, 0.0));
+          vec3 mn = min(col, min(min(n, s), min(e, wv)));
+          vec3 mx = max(col, max(max(n, s), max(e, wv)));
+          float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+          float contrast = dot(mx - mn, vec3(0.2126, 0.7152, 0.0722)) / (l + 0.25);
+          float k = uSharpen * (1.0 - smoothstep(0.4, 1.2, contrast));
+          col = clamp(col + (col * 4.0 - n - s - e - wv) * k, mn, mx);
+        }
+
+        // whisper of diorama tilt-shift, only at the very top & bottom edges
         if (uTilt > 0.0) {
-          float band = smoothstep(0.18, 0.5, abs(vUv.y - 0.47)) * uTilt;
+          float band = smoothstep(0.3, 0.56, abs(vUv.y - 0.48)) * uTilt;
           if (band > 0.001) {
-            vec2 o = uHalfTexel * 1.5;
+            vec2 o = uHalfTexel;
             vec3 b = texture2D(uHalf, vUv).rgb * 0.36
               + (texture2D(uHalf, vUv + vec2(o.x, o.y)).rgb + texture2D(uHalf, vUv + vec2(-o.x, o.y)).rgb
               +  texture2D(uHalf, vUv + vec2(o.x, -o.y)).rgb + texture2D(uHalf, vUv + vec2(-o.x, -o.y)).rgb) * 0.16;
@@ -172,6 +193,8 @@ export class Pipeline {
         uHalf: { value: null },
         uBloom: { value: null },
         uHalfTexel: { value: new THREE.Vector2() },
+        uTexel: { value: new THREE.Vector2() },
+        uSharpen: { value: 0.12 },
         uExposure: { value: 1 },
         uBloomStrength: { value: 0.32 },
         uTilt: { value: 1 },
@@ -269,6 +292,8 @@ export class Pipeline {
     fu.uBloom.value = this.bloomRTs[0]?.texture ?? this.rtHalf.texture;
     fu.uBloomStrength.value = this.bloomRTs.length ? 0.3 : 0;
     fu.uHalfTexel.value.set(1 / this.rtHalf.width, 1 / this.rtHalf.height);
+    fu.uTexel.value.set(1 / this.width, 1 / this.height);
+    fu.uSharpen.value = this.sharpen;
     fu.uExposure.value = this.exposure;
     fu.uTilt.value = this.settings.tiltShift ? this.tilt : 0;
     fu.uTime.value = time % 100;
@@ -280,6 +305,8 @@ export class Pipeline {
   set lightning(v: number) {
     this.finalMat.uniforms.uLightning.value = v;
   }
+  /** Sharpen strength; raised by the caller when rendering below native resolution. */
+  sharpen = 0.12;
   flash(strength: number) {
     this.finalMat.uniforms.uFlash.value = Math.max(this.finalMat.uniforms.uFlash.value, strength);
   }

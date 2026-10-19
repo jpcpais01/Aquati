@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { angleDelta, clamp, damp, lerp } from '../core/noise';
 import { World } from '../game/world';
 import { ShipModel } from './shipModel';
+import { ShipDamage } from './shipDamage';
 import { Livery, ShipClass } from './shipTypes';
 
 export type Team = 'player' | 'pirate';
@@ -51,12 +52,14 @@ const HULL_PRESSURE: [number, number, number][] = [
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _g = new THREE.Vector2();
+const _fp = new THREE.Vector3();
 let SHIP_ID = 0;
 
 export class Ship {
   readonly id = ++SHIP_ID;
   readonly root = new THREE.Group();
   readonly model: ShipModel;
+  readonly dmg: ShipDamage;
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
   heading = 0;
@@ -93,13 +96,13 @@ export class Ship {
   private rigLeeV = 0;
   private leeTarget = 1;
   private fireT = 0;
-  private sinkSide = Math.random() < 0.5 ? -1 : 1;
   name: string;
 
   constructor(readonly cls: ShipClass, readonly livery: Livery, readonly team: Team, quality = 1) {
     this.model = new ShipModel(cls, livery, quality);
     this.root.add(this.model.root);
     this.root.rotation.order = 'YXZ';
+    this.dmg = new ShipDamage(this);
     this.hp = cls.hp;
     this.name = cls.title;
     this.gunFiredAt = this.model.muzzles.map(() => -100);
@@ -190,10 +193,12 @@ export class Ship {
     world.onShake(this.team === 'player' ? 0.35 : 0.12 * vol, pos);
   }
 
-  damage(amount: number, attacker: Ship | null, world: World) {
+  /** `at` is the world impact point; `hull` false for shots that only hit the rig. */
+  damage(amount: number, attacker: Ship | null, world: World, at: THREE.Vector3 | null = null, hull = true) {
     if (!this.alive) return 0;
     const dmg = amount * (1 - this.cls.armor) * (0.85 + Math.random() * 0.3);
     this.hp -= dmg;
+    if (hull) this.dmg.onHit(at, dmg, world);
     this.lastHit = world.time;
     if (attacker) this.lastAttacker = attacker;
     this.rollKick += (Math.random() - 0.5) * 0.04;
@@ -206,6 +211,7 @@ export class Ship {
       const [vol, pan, d] = world.soundAt(this.pos);
       world.audio.explosion(vol, pan, d);
       world.onShake(this.team === 'player' ? 1.2 : 0.5 * vol, this.pos);
+      this.dmg.onDeath(world);
     }
     return dmg;
   }
@@ -234,7 +240,7 @@ export class Ship {
     const gust = world.gustAt(this.pos.x, this.pos.z);
     if (this.alive) {
       this.sailLevel += clamp(this.sailTarget - this.sailLevel, -dt * 0.6, dt * 0.6);
-      const hpF = 0.72 + 0.28 * (this.hp / this.maxHp);
+      const hpF = (0.72 + 0.28 * (this.hp / this.maxHp)) * this.dmg.speedFactor;
       const target = c.maxSpeed * this.sailLevel * windFactor(relDeg) * (0.75 + 0.25 * w.strength) * hpF * (1 + gust * 0.08);
       const rate = target > this.speed ? c.accel : c.accel * 1.4;
       this.speed += (target - this.speed) * damp(rate, dt);
@@ -277,7 +283,7 @@ export class Ship {
         this.pos.x -= (_g.x / gl) * push;
         this.pos.z -= (_g.y / gl) * push;
         if (this.speed > 3.5 && this.groundCooldown <= 0 && this.alive) {
-          this.damage(this.speed * 1.8, null, world);
+          this.damage(this.speed * 1.8, null, world, _fp.set(px, 0.2, pz));
           this.groundCooldown = 1.2;
           world.particles.sandHit(new THREE.Vector3(px, 0.5, pz));
           world.onShake(this.team === 'player' ? 0.5 : 0, this.pos);
@@ -308,21 +314,30 @@ export class Ship {
     this.rollKick *= 1 - damp(2.2, dt);
     targetRoll += this.rollKick;
     let sinkY = 0;
+    let pitchTarget = targetPitch;
     if (!this.alive) {
+      // the wreck settles into its final pose and lingers before slipping under
       this.sinkT += dt;
-      const s = this.sinkT;
-      sinkY = -s * s * 0.12 - s * 0.25;
-      targetRoll += this.sinkSide * Math.min(0.65, s * 0.09);
-      if (s > 9) this.removed = true;
+      const wr = this.dmg.wreckPose(this.sinkT, dt, world);
+      sinkY = wr.y;
+      pitchTarget = targetPitch * 0.3 + wr.pitch;
+      targetRoll = targetRoll * 0.3 + wr.roll;
+      if (wr.done) this.removed = true;
+    } else {
+      // flooding: she rides lower and lists toward her holes
+      this.dmg.update(dt, world);
+      sinkY = -this.dmg.lowered;
+      targetRoll += this.dmg.list;
     }
     this.heave += (targetHeave - this.heave) * resp;
-    this.pitch += ((targetPitch + (this.alive ? 0 : Math.min(0.35, this.sinkT * 0.05))) - this.pitch) * resp;
+    this.pitch += (pitchTarget - this.pitch) * resp;
     this.roll += (targetRoll - this.roll) * resp;
 
     this.root.position.set(this.pos.x, this.heave + sinkY - c.draft * 0.06, this.pos.z);
     this.root.rotation.set(this.pitch, this.heading, this.roll);
     // hit tests and fx read the world matrix before the next render
     this.root.updateMatrixWorld();
+    this.dmg.syncFrames();
 
     // ------------------------------------------------ rig visuals
     const braceTarget = clamp(rel * 0.45, -0.75, 0.75) * Math.min(1, Math.abs(relDeg) / 30);
@@ -437,18 +452,17 @@ export class Ship {
     }
     // fires when badly damaged or sinking
     const hpFrac = this.hp / this.maxHp;
-    this.burning = this.alive ? (hpFrac < 0.4 ? (0.4 - hpFrac) / 0.4 : 0) : this.sinkT < 6 ? 1 : 0;
+    this.burning = this.alive ? (hpFrac < 0.4 ? (0.4 - hpFrac) / 0.4 : 0) : this.sinkT < 22 ? 1 - this.sinkT / 26 : 0;
     if (this.burning > 0) {
       this.fireT += dt * (2 + this.burning * 10);
       while (this.fireT > 1) {
         this.fireT -= 1;
-        const pts = this.model.deckPoints;
-        const p = pts[Math.floor(Math.random() * pts.length)];
-        if (p) {
-          const wp = p.clone().applyMatrix4(this.model.root.matrixWorld);
-          world.particles.flame(wp, 0.7 + this.burning * 0.6);
-        }
+        if (this.dmg.firePoint(world, _fp)) world.particles.flame(_fp, 0.7 + this.burning * 0.6);
       }
     }
+  }
+
+  dispose() {
+    this.dmg.dispose();
   }
 }

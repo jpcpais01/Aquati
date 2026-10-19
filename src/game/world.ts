@@ -4,6 +4,7 @@ import { Wave, waveHeight } from '../world/waves';
 import { Particles } from '../fx/particles';
 import { WakeField } from '../world/wakeField';
 import { Audio } from '../core/audio';
+import type { Debris } from '../fx/debris';
 
 export interface Wind {
   angle: number; // direction the wind blows toward
@@ -29,6 +30,7 @@ export class World {
   gustAt: (x: number, z: number) => number = () => 0;
   onShot: (s: Shot) => void = () => {};
   onShake: (amount: number, at: THREE.Vector3) => void = () => {};
+  debris!: Debris;
 
   constructor(
     readonly terrain: Terrain,
