@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    // the next 12:00 group is full (five entries), so this hour continues in a second group
+    hour: '2026-10-19T12:00Z',
+    entries: [
+      {
+        title: 'Wakes that ripple and roll',
+        notes: [
+          'Every hull now carves real waves: a curling bow wave, the classic V of wake arms fanning out behind, and gentle rolling swell in between. The waves move, catch the sunlight and fade as they spread.',
+          'The wake is a living simulation. Waves slow down in the shallows, bend around islands and die on the beach, and crossing another ship\'s wake looks just as it should.',
+          'Richer foam: a churning white wash off the stern, foam sheets peeling off both bows and along the hull, and a fan of spray when you put the helm hard over. Old foam breaks up into delicate lace as it fades.',
+          'Bow spray flies off the bows at speed, with bigger bursts when she buries her nose in a swell. Cannonball splashes now send rings of ripples across the water.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T12:00Z',
     entries: [
       {

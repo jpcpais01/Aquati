@@ -98,6 +98,7 @@ export class Projectiles {
           world.particles.splash(p, 1);
           world.wake.stamp(p.x, p.z, 2.2, 1.4);
           world.wake.stamp(p.x, p.z, 4.5, 0.8, true);
+          world.wake.push(p.x, p.z, 1.8, -0.35); // crater that rings outward
           const [vol, pan] = world.soundAt(p);
           world.audio.splash(vol * 0.5, pan);
           dead = true;
