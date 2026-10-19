@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T19:00Z',
+    entries: [
+      {
+        title: 'Roomier ship card',
+        notes: [
+          'The ship card in the top left is wider, so longer ship names fit without being cut off. Gold, hold, crew and isles now sit together on one row beneath it.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T18:00Z',
     entries: [
       {
