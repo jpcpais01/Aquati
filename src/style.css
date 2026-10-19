@@ -2873,6 +2873,22 @@ body[data-hud='large'] #hud {
   flex: none;
 }
 
+.wind.shift::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid #5ee3d4;
+  animation: wind-shift 1.6s ease-out 3;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@keyframes wind-shift {
+  0% { transform: scale(0.6); opacity: 0.9; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
 .wind i {
   position: absolute;
   inset: 0;

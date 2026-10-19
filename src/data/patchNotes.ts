@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T18:00Z',
     entries: [
       {
+        title: 'The wind changes',
+        notes: [
+          'The wind no longer blows the same way forever. Every few minutes it veers or backs, and a change in the weather can bring it right round. A storm can swing it halfway across the compass.',
+          'Each shift comes round gradually over half a minute or so. Your sails, flags, smoke, the palms and grass, the gusts, the clouds and the HUD arrow all turn with it. The swell follows more slowly, the way real seas do.',
+          'A course that was a fast broad reach may soon be close-hauled, so watch the wind arrow. A small notice tells you when the wind veers or backs and where it now blows from.',
+        ],
+      },
+      {
         title: 'No more slowdown in long battles',
         notes: [
           'Long sessions used to get slower and slower until the game stuttered, sound included. The cause was every ship you sank: each wreck stayed afloat for over three minutes, still a whole ship to draw and simulate, so a good fight left a growing graveyard around you.',

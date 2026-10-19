@@ -43,6 +43,12 @@ export class WindField {
     for (let i = 0; i < count; i++) this.gusts.push(this.spawn(true));
   }
 
+  /** Turns the field with the wind: puffs already out there bend onto the new heading. */
+  setDir(dirX: number, dirZ: number) {
+    this.wx = dirX;
+    this.wz = dirZ;
+  }
+
   private spawn(scatter: boolean): Gust {
     const radius = rand(16, 34);
     const speed = rand(9, 15);
