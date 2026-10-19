@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-19T15:00Z',
+    entries: [
+      {
+        title: 'A new app icon',
+        notes: [
+          'Aquati has a brand new icon: a three-masted galleon under full sail, gun ports glinting and stern lanterns lit, cutting a bow wave across a turquoise lagoon with a palm-crowned isle and the golden sun behind her.',
+          'It looks sharp everywhere, from your home screen and app drawer (including Android\'s round and squircle shapes) to iPhone home screens and the little browser tab icon. If you installed Aquati already, your phone may take a day or a reinstall to pick it up.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T14:00Z',
     entries: [
       {
