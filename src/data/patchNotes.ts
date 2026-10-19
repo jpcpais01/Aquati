@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T17:00Z',
     entries: [
       {
+        title: 'Smoother sailing, same view',
+        notes: [
+          'A big performance pass with nothing taken away from how the game looks. Out at sea the game now draws around a third of the triangles it used to, so frame rates climb noticeably, most of all on high resolution screens.',
+          'Island trees, palms, shrubs and flowers are now hidden one by one when they are out of view, instead of a whole island at a time. Plants off screen still cast their shadows into view, so nothing about the light changes.',
+          'Ocean reflections of ships and islands are traced at half resolution and then rippled at full detail, and water hidden behind hulls and islands is no longer shaded at all. The sea looks the same and costs far less.',
+          'The sky lighting, which refreshes a few times a second as the day turns, now takes a quarter of the work.',
+          'The frame profiler is much cheaper to keep open, so the numbers it shows are closer to the real thing.',
+        ],
+      },
+      {
         title: 'Shadows that sweep with the sun',
         notes: [
           'As the day passes, shadows now glide smoothly round with the sun instead of creeping along in tiny steps, from long morning shadows to short noon ones and back out at dusk.',

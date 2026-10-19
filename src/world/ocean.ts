@@ -16,6 +16,9 @@ import { WakeField } from './wakeField';
 // Reflections are ray traced in screen space: each pixel marches its
 // reflected ray through the opaque depth buffer, so hulls, sails and island
 // cliffs mirror in the water, rippling with the surface, over a sky fallback.
+// The march runs in its own half-resolution pass (a second draw of the same
+// surface, see `reflScene`); the full-resolution shading reads it back,
+// wobbled by the fine ripples, so tracing costs a quarter of what it would.
 // Weather reaches in too: rain pocks the surface with rings and splashes,
 // storms darken and steepen the sea and streak it with wind-blown spume, and
 // at night ship wakes and breaking surf glow with bioluminescence.
@@ -95,6 +98,134 @@ function buildApron(inner: number, outer: number): THREE.BufferGeometry {
   return g;
 }
 
+const OCEAN_VERT = /* glsl */ `
+  ${GLSL_WAVES}
+  uniform float uTime;
+  uniform sampler2D uHeightTex;
+  uniform vec4 uWorldRect;
+  uniform sampler2D uWakeTex;
+  uniform vec4 uWakeRect;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+  varying float vCrest;
+  varying float vTerrain;
+  varying float vViewDist;
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vec2 huv = (wp.xz - uWorldRect.xy) * uWorldRect.w;
+    float th = texture(uHeightTex, huv).r;
+    vTerrain = th;
+    float damp = clamp(-th / 8.0, 0.12, 1.0);
+    vec3 n; float crest;
+    vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
+    wp.xyz += off;
+    // wake waves ride on top of the swell
+    vec2 wuv = (wp.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
+    vec2 wb = min(wuv, 1.0 - wuv);
+    float wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
+    wp.y += clamp(texture(uWakeTex, wuv).g, -0.9, 0.9) * wIn;
+    vWorld = wp.xyz;
+    vNormal = n;
+    vCrest = crest;
+    vec4 mv = viewMatrix * wp;
+    vViewDist = -mv.z;
+    gl_Position = projectionMatrix * mv;
+  }`;
+
+const GLSL_SCENE = /* glsl */ `
+  uniform sampler2D uSceneColor;
+  uniform sampler2D uSceneDepth;
+  uniform vec2 uResolution;
+  uniform vec2 uCamNearFar;
+  float linearDepth(float d) {
+    float n = uCamNearFar.x, f = uCamNearFar.y;
+    return (n * f) / (f - d * (f - n));
+  }`;
+
+// The half-resolution reflection pass. It marches each reflected ray through
+// the opaque depth buffer: steps bunch up near the surface, where reflections
+// touch their objects, then a short bisection pins the hit down. Out comes
+// the hit colour, premultiplied by its strength.
+const REFL_FRAG = /* glsl */ `
+  ${GLSL_ATMOS}
+  ${GLSL_SCENE}
+  uniform sampler2D uNormalTex;
+  uniform mat4 uSSRProj;
+  uniform vec4 uSSR;
+  uniform vec2 uReflRes;
+  varying vec3 vWorld;
+  varying vec3 vNormal;
+  varying float vViewDist;
+
+  vec4 traceReflection(vec3 wp, vec3 R) {
+    vec3 vp = (viewMatrix * vec4(wp, 1.0)).xyz;
+    vec3 vr = (viewMatrix * vec4(R, 0.0)).xyz;
+    float prev = 0.0;
+    for (int i = 0; i < SSR_STEPS; i++) {
+      float s = (float(i) + 0.5) / float(SSR_STEPS);
+      float dist = uSSR.x * s * s;
+      vec3 q = vp + vr * dist;
+      vec4 c = uSSRProj * vec4(q, 1.0);
+      if (c.w <= 0.0) break;
+      vec2 uv = c.xy / c.w * 0.5 + 0.5;
+      if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
+      float sz = linearDepth(texture(uSceneDepth, uv).r);
+      float dz = -q.z - sz;
+      // the opaque buffer also holds what lies under the sea (keels,
+      // the seabed); a ray above the water can't see those
+      float wy = cameraPosition.y + (wp.y + R.y * dist - cameraPosition.y) * sz / max(-q.z, 1e-3);
+      // never thinner than the step, or rays skip clean through sails
+      float thick = max(uSSR.y + (-q.z) * uSSR.z, (dist - prev) * 1.5);
+      if (dz > 0.0 && dz < thick && wy > -0.35) {
+        float a = prev, b = dist;
+        for (int k = 0; k < 4; k++) {
+          float m = 0.5 * (a + b);
+          vec3 qm = vp + vr * m;
+          vec4 cm = uSSRProj * vec4(qm, 1.0);
+          vec2 um = cm.xy / cm.w * 0.5 + 0.5;
+          if (-qm.z - linearDepth(texture(uSceneDepth, um).r) > 0.0) { b = m; uv = um; } else a = m;
+        }
+        vec2 e = min(uv, 1.0 - uv);
+        float fade = smoothstep(0.0, 0.06, min(e.x, e.y)) * (1.0 - smoothstep(0.5, 1.0, b / uSSR.x));
+        // ropes and stays are a pixel wide: rays hit them only here and
+        // there, which reads as dotted noise. Keep hits on solid surfaces.
+        float hz = linearDepth(texture(uSceneDepth, uv).r);
+        vec2 px = 2.0 / uResolution;
+        float tol = 0.6 + hz * 0.01;
+        float solid = step(abs(linearDepth(texture(uSceneDepth, uv + vec2(px.x, 0.0)).r) - hz), tol)
+          + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(px.x, 0.0)).r) - hz), tol)
+          + step(abs(linearDepth(texture(uSceneDepth, uv + vec2(0.0, px.y)).r) - hz), tol)
+          + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(0.0, px.y)).r) - hz), tol);
+        fade *= smoothstep(1.5, 3.5, solid);
+        return vec4(texture(uSceneColor, uv).rgb, fade);
+      }
+      prev = dist;
+    }
+    return vec4(0.0);
+  }
+
+  void main() {
+    // water hidden well behind an island or hull needs no reflection; a
+    // little slack keeps the waterline valid for the full-res upsample
+    vec2 suv = gl_FragCoord.xy / uReflRes;
+    if (linearDepth(texture(uSceneDepth, suv).r) < linearDepth(gl_FragCoord.z) - 1.5) discard;
+    // trace along the smooth swell so neighbouring pixels agree; the main
+    // pass lets the fine ripples wobble the image instead of scattering rays
+    float t = uTime;
+    vec2 p = vWorld.xz;
+    vec2 wdir = uWind.xy;
+    vec2 wperp = vec2(-wdir.y, wdir.x);
+    vec2 r1 = texture(uNormalTex, mat2(0.825, -0.565, 0.565, 0.825) * p * 0.031 + wdir * t * 0.021).xy * 2.0 - 1.0;
+    vec2 r2 = texture(uNormalTex, mat2(-0.416, -0.909, 0.909, -0.416) * p * 0.067 + wperp * t * 0.017 + 0.37).xy * 2.0 - 1.0;
+    vec2 rip = (r1 * mat2(0.825, -0.565, 0.565, 0.825)) * 0.8 + (r2 * mat2(-0.416, -0.909, 0.909, -0.416)) * 0.7;
+    rip *= (0.6 + 0.4 * (1.0 - smoothstep(140.0, 520.0, vViewDist))) * (1.0 + uStorm * 0.9);
+    vec3 V = normalize(cameraPosition - vWorld);
+    vec3 Rs = reflect(-V, normalize(normalize(vNormal) + vec3(rip.x, 0.0, rip.y) * 0.08));
+    Rs.y = abs(Rs.y);
+    vec4 hit = traceReflection(vWorld, Rs);
+    gl_FragColor = vec4(hit.rgb * hit.a, hit.a);
+  }`;
+
 export interface OceanOptions {
   segments: number;
   half: number;
@@ -108,6 +239,11 @@ export class Ocean {
   readonly material: THREE.ShaderMaterial;
   /** Far sea out to the horizon; only worth drawing when the horizon is in view. */
   readonly apron: THREE.Mesh;
+  /** The same surface again, tracing reflections into a half-resolution buffer. */
+  readonly reflScene = new THREE.Scene();
+  private readonly reflMaterial: THREE.ShaderMaterial;
+  private readonly reflMesh: THREE.Mesh;
+  private readonly reflApron: THREE.Mesh;
   private snap: number;
 
   constructor(waves: Wave[], opts: OceanOptions) {
@@ -134,55 +270,21 @@ export class Ocean {
       uSSRProj: { value: new THREE.Matrix4() },
       // max ray length (m), hit thickness base, thickness per metre of depth, mirror strength on calm water
       uSSR: { value: new THREE.Vector4(70, 1.6, 0.012, 0.16) },
+      uRefl: { value: null as THREE.Texture | null },
     };
     this.material = new THREE.ShaderMaterial({
       uniforms,
       defines: { HQ: opts.quality > 0 ? 1 : 0, SSR_STEPS: 0 },
-      vertexShader: /* glsl */ `
-        ${GLSL_WAVES}
-        uniform float uTime;
-        uniform sampler2D uHeightTex;
-        uniform vec4 uWorldRect;
-        uniform sampler2D uWakeTex;
-        uniform vec4 uWakeRect;
-        varying vec3 vWorld;
-        varying vec3 vNormal;
-        varying float vCrest;
-        varying float vTerrain;
-        varying float vViewDist;
-        void main() {
-          vec4 wp = modelMatrix * vec4(position, 1.0);
-          vec2 huv = (wp.xz - uWorldRect.xy) * uWorldRect.w;
-          float th = texture(uHeightTex, huv).r;
-          vTerrain = th;
-          float damp = clamp(-th / 8.0, 0.12, 1.0);
-          vec3 n; float crest;
-          vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
-          wp.xyz += off;
-          // wake waves ride on top of the swell
-          vec2 wuv = (wp.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
-          vec2 wb = min(wuv, 1.0 - wuv);
-          float wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
-          wp.y += clamp(texture(uWakeTex, wuv).g, -0.9, 0.9) * wIn;
-          vWorld = wp.xyz;
-          vNormal = n;
-          vCrest = crest;
-          vec4 mv = viewMatrix * wp;
-          vViewDist = -mv.z;
-          gl_Position = projectionMatrix * mv;
-        }`,
+      vertexShader: OCEAN_VERT,
       fragmentShader: /* glsl */ `
         ${GLSL_ATMOS}
+        ${GLSL_SCENE}
         uniform sampler2D uNormalTex;
-        uniform sampler2D uSceneColor;
-        uniform sampler2D uSceneDepth;
         uniform sampler2D uWakeTex;
         uniform sampler2D uHeightTex;
         uniform vec4 uWakeRect;
         uniform float uWakeTexel;
         uniform vec4 uWorldRect;
-        uniform vec2 uResolution;
-        uniform vec2 uCamNearFar;
         uniform vec3 uFogColor;
         uniform vec2 uFogRange;
         ${GLSL_AERIAL}
@@ -208,65 +310,11 @@ export class Ocean {
             return s * 0.25;
           }
         #endif
-
-        float linearDepth(float d) {
-          float n = uCamNearFar.x, f = uCamNearFar.y;
-          return (n * f) / (f - d * (f - n));
-        }
-
         #if SSR_STEPS > 0
-          uniform mat4 uSSRProj;
+          uniform sampler2D uRefl;
           uniform vec4 uSSR;
-          // March the reflected ray through the opaque depth buffer. Steps
-          // bunch up near the surface, where reflections touch their objects,
-          // then a short bisection pins the hit down.
-          vec4 traceReflection(vec3 wp, vec3 R, float jitter, vec2 wobble) {
-            vec3 vp = (viewMatrix * vec4(wp, 1.0)).xyz;
-            vec3 vr = (viewMatrix * vec4(R, 0.0)).xyz;
-            float prev = 0.0;
-            for (int i = 0; i < SSR_STEPS; i++) {
-              float s = (float(i) + jitter) / float(SSR_STEPS);
-              float dist = uSSR.x * s * s;
-              vec3 q = vp + vr * dist;
-              vec4 c = uSSRProj * vec4(q, 1.0);
-              if (c.w <= 0.0) break;
-              vec2 uv = c.xy / c.w * 0.5 + 0.5;
-              if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
-              float sz = linearDepth(texture(uSceneDepth, uv).r);
-              float dz = -q.z - sz;
-              // the opaque buffer also holds what lies under the sea (keels,
-              // the seabed); a ray above the water can't see those
-              float wy = cameraPosition.y + (wp.y + R.y * dist - cameraPosition.y) * sz / max(-q.z, 1e-3);
-              // never thinner than the step, or rays skip clean through sails
-              float thick = max(uSSR.y + (-q.z) * uSSR.z, (dist - prev) * 1.5);
-              if (dz > 0.0 && dz < thick && wy > -0.35) {
-                float a = prev, b = dist;
-                for (int k = 0; k < 4; k++) {
-                  float m = 0.5 * (a + b);
-                  vec3 qm = vp + vr * m;
-                  vec4 cm = uSSRProj * vec4(qm, 1.0);
-                  vec2 um = cm.xy / cm.w * 0.5 + 0.5;
-                  if (-qm.z - linearDepth(texture(uSceneDepth, um).r) > 0.0) { b = m; uv = um; } else a = m;
-                }
-                vec2 e = min(uv, 1.0 - uv);
-                float fade = smoothstep(0.0, 0.06, min(e.x, e.y)) * (1.0 - smoothstep(0.5, 1.0, b / uSSR.x));
-                // ropes and stays are a pixel wide: rays hit them only here and
-                // there, which reads as dotted noise. Keep hits on solid surfaces.
-                float hz = linearDepth(texture(uSceneDepth, uv).r);
-                vec2 px = 2.0 / uResolution;
-                float tol = 0.6 + hz * 0.01;
-                float solid = step(abs(linearDepth(texture(uSceneDepth, uv + vec2(px.x, 0.0)).r) - hz), tol)
-                  + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(px.x, 0.0)).r) - hz), tol)
-                  + step(abs(linearDepth(texture(uSceneDepth, uv + vec2(0.0, px.y)).r) - hz), tol)
-                  + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(0.0, px.y)).r) - hz), tol);
-                fade *= smoothstep(1.5, 3.5, solid);
-                return vec4(texture(uSceneColor, clamp(uv + wobble, 0.0, 1.0)).rgb, fade);
-              }
-              prev = dist;
-            }
-            return vec4(0.0);
-          }
         #endif
+
         // Raindrops: each cell of a jittered grid takes a drop now and then,
         // which throws a ring outward. Returns the surface slope (xy) and a
         // splash brightness (z). Two offset grids keep it from looking tiled.
@@ -296,6 +344,12 @@ export class Ocean {
 
         void main() {
           vec2 suv = gl_FragCoord.xy / uResolution;
+          // manual depth test against the opaque pass (hulls, islands above the
+          // surface), first thing, so hidden water costs next to nothing
+          float sceneZ = linearDepth(texture(uSceneDepth, suv).r);
+          float waterZ = linearDepth(gl_FragCoord.z);
+          if (sceneZ < waterZ - 0.02) discard;
+          float thick = max(sceneZ - waterZ, 0.0);
           float t = uTime;
           vec3 V = normalize(cameraPosition - vWorld);
           vec3 L = uSunDir;
@@ -390,14 +444,7 @@ export class Ocean {
           N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 1.9 + vec3(wRip.x, 0.0, wRip.y) * 0.22 * wChop);
           vec3 Ng = normalize(N + vec3(gustRip.x, 0.0, gustRip.y) * 0.5);
 
-          // ---- depth through the water column
-          float sceneZ = linearDepth(texture(uSceneDepth, suv).r);
-          float waterZ = linearDepth(gl_FragCoord.z);
-          // manual depth test against the opaque pass (hulls, islands above the surface)
-          if (sceneZ < waterZ - 0.02) discard;
-          float thick = max(sceneZ - waterZ, 0.0);
-
-          // refraction with leak protection
+          // ---- refraction with leak protection
           vec2 roff = N.xz * 0.045 * clamp(thick * 0.25, 0.0, 1.0) * (1.0 - smoothstep(200.0, 500.0, vViewDist));
           vec2 ruv = suv + roff;
           float sceneZr = linearDepth(texture(uSceneDepth, ruv).r);
@@ -467,12 +514,10 @@ export class Ocean {
           refl *= (1.0 - gust * 0.22) * (1.0 - uRain * 0.18);
           #if SSR_STEPS > 0
           {
-            // trace along the smooth swell so neighbouring pixels agree, then
-            // let the ripples wobble the image instead of scattering the rays
-            vec3 Rs = reflect(-V, normalize(Ns + vec3(rip.x, 0.0, rip.y) * 0.08));
-            Rs.y = abs(Rs.y);
-            vec4 hit = traceReflection(vWorld, Rs, 0.5, (N.xz - Ns.xz) * 0.02);
-            refl = mix(refl, hit.rgb, hit.a);
+            // the traced reflection (half res, premultiplied), wobbled by the
+            // ripples the trace leaves out
+            vec4 hit = texture(uRefl, suv + (N.xz - Ns.xz) * 0.02);
+            refl = refl * (1.0 - hit.a) + hit.rgb;
             // calm water near a hull mirrors it more than the bare Fresnel term
             // would let a top-down camera see
             F = mix(F, max(F, uSSR.w * (1.0 - gust * 0.6)), hit.a);
@@ -557,6 +602,23 @@ export class Ocean {
     this.apron.renderOrder = -10;
     this.apron.visible = false;
     this.mesh.add(this.apron);
+
+    // the reflection pass shares every uniform, so one update feeds both
+    this.reflMaterial = new THREE.ShaderMaterial({
+      uniforms: { ...uniforms, uReflRes: { value: new THREE.Vector2(1, 1) } },
+      defines: { SSR_STEPS: 0 },
+      vertexShader: OCEAN_VERT,
+      fragmentShader: REFL_FRAG,
+    });
+    // at half the resolution it needs half the grid: the trace starts a few
+    // centimetres off the true crest at most, well under the ripple wobble
+    this.reflMesh = new THREE.Mesh(buildGrid(opts.segments >> 1, opts.half), this.reflMaterial);
+    this.reflMesh.frustumCulled = false;
+    this.reflApron = new THREE.Mesh(this.apron.geometry, this.reflMaterial);
+    this.reflApron.frustumCulled = false;
+    this.reflApron.visible = false;
+    this.reflMesh.add(this.reflApron);
+    this.reflScene.add(this.reflMesh);
   }
 
   /** Pushes changed wave amplitudes / steepness (sea state) to the GPU. */
@@ -573,6 +635,8 @@ export class Ocean {
     const s = this.snap * 4;
     this.mesh.position.set(Math.round(x / s) * s, 0, Math.round(z / s) * s);
     this.mesh.updateMatrixWorld();
+    this.reflMesh.position.copy(this.mesh.position);
+    this.reflMesh.updateMatrixWorld();
   }
 
   enableShadows(light: THREE.DirectionalLight) {
@@ -592,8 +656,22 @@ export class Ocean {
   /** Ray-traced reflection quality: 0 turns them off (sky only). */
   setReflections(steps: number) {
     if (this.material.defines.SSR_STEPS === steps) return;
-    this.material.defines.SSR_STEPS = steps;
-    this.material.needsUpdate = true;
+    for (const m of [this.material, this.reflMaterial]) {
+      m.defines.SSR_STEPS = steps;
+      m.needsUpdate = true;
+    }
+  }
+
+  /** Whether the half-resolution reflection pass has anything to do. */
+  get reflecting() {
+    return (this.material.defines.SSR_STEPS as number) > 0;
+  }
+
+  /** Binds this frame's reflection buffer (and keeps the far sea in step with it). */
+  setReflectionTarget(tex: THREE.Texture, w: number, h: number) {
+    this.material.uniforms.uRefl.value = tex;
+    this.reflMaterial.uniforms.uReflRes.value.set(w, h);
+    this.reflApron.visible = this.apron.visible;
   }
 
   setSceneTextures(color: THREE.Texture, depth: THREE.Texture, w: number, h: number, cam: THREE.PerspectiveCamera) {

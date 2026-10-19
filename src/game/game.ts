@@ -143,6 +143,8 @@ export class Game {
   private shadowR = 0;
   private shadowC = new THREE.Vector2();
   private shadowK = new THREE.Vector2();
+  /** Toward the shadow-casting light (the slant the shadow map uses). */
+  private toSun = new THREE.Vector3(0, 1, 0);
   private fps = 60;
   private prof!: Profiler;
   // the shipwright's harbour
@@ -335,14 +337,18 @@ export class Game {
     ui.progress(0.92);
     await this.renderer.compileAsync(this.opaque, this.rig.camera);
     await this.renderer.compileAsync(this.water, this.rig.camera);
+    await this.renderer.compileAsync(this.ocean.reflScene, this.rig.camera);
     ui.progress(0.96);
     await nextFrame();
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
-    // twice: the first pass makes the shadow map, which the water then switches on
-    warmDraw([this.opaque, this.water], () => {
+    // twice: the first pass makes the shadow map, which the water then switches on.
+    // Plants stay unculled so every one of their batches is drawn too.
+    veg.hold = true;
+    warmDraw([this.opaque, this.water, this.ocean.reflScene], () => {
       this.render(0);
       this.render(0);
     });
+    veg.hold = false;
     await fonts;
     ui.progress(1);
     await nextFrame();
@@ -1719,6 +1725,7 @@ export class Game {
     const kk = Math.sqrt(1 - ky * ky) / kh;
     const sd = _a.set(kd.x * kk, ky, kd.z * kk);
     this.shadowK.set(sd.x / sd.y, sd.z / sd.y);
+    this.toSun.copy(sd);
     this.shadowC.set(Math.round(target.x / texel) * texel, Math.round(target.z / texel) * texel);
     this.sun.target.position.set(this.shadowC.x, 0, this.shadowC.y);
     this.sun.position.copy(this.sun.target.position).addScaledVector(sd, 400);
@@ -1735,7 +1742,7 @@ export class Game {
     }
 
     P.begin('Vegetation culling', 'sim');
-    this.veg?.update(cam.position);
+    this.veg?.update(cam, this.toSun);
     P.end();
     P.begin('Wake simulation', 'ocean', true);
     this.wake.update(this.renderer, target.x, target.z, dt);
@@ -1755,6 +1762,9 @@ export class Game {
     this.sky.visible = eb > 0.001 || port || cine > 0;
     this.sky.position.copy(cam.position);
     this.ocean.apron.visible = eb > 0.001 || port || cine > 0;
+    const rr = this.pipeline.rtRefl;
+    this.ocean.setReflectionTarget(rr.texture, rr.width, rr.height);
+    this.pipeline.refl = this.ocean.reflecting ? this.ocean.reflScene : null;
     this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
     P.end();
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
