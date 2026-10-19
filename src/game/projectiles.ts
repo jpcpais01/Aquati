@@ -13,6 +13,7 @@ interface Ball {
   damage: number;
   age: number;
   trail: number;
+  tore: number; // last ship whose canvas this ball tore through
 }
 
 export interface HitEvent {
@@ -42,7 +43,7 @@ export class Projectiles {
 
   add(s: Shot) {
     if (this.balls.length >= MAX) this.balls.shift();
-    this.balls.push({ pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0 });
+    this.balls.push({ pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0, tore: -1 });
   }
 
   update(dt: number, world: World, ships: Ship[]) {
@@ -57,7 +58,8 @@ export class Projectiles {
         b.age += h;
         // ships: test in each hull's local frame (oriented box)
         for (const s of ships) {
-          if (s === b.owner || s.removed) continue;
+          // settled wrecks sit too low and twisted to stop a ball
+          if (s === b.owner || s.removed || (!s.alive && s.sinkT > 2)) continue;
           const dx = b.pos.x - s.pos.x;
           const dz = b.pos.z - s.pos.z;
           const R = s.cls.length * 0.55;
@@ -69,12 +71,29 @@ export class Projectiles {
           if (t < 0 || t > 1.02) continue;
           const tc = Math.min(1, Math.max(0, t));
           const top = shape.top(tc) + 0.6;
-          if (_local.y > top || _local.y < shape.bottom(tc) - 0.2) continue;
+          if (_local.y > top) {
+            // high shots fly through the rigging: tear canvas, smash masts
+            if (!s.alive) continue;
+            const rig = s.dmg.rigTest(_local);
+            if (rig.kind === 2) {
+              dead = true;
+              const dmg = s.damage(b.damage * 0.4, b.owner, world, null, false);
+              s.dmg.onRigHit(2, rig.mast, b.pos.clone(), b.vel, world);
+              this.onHit({ ship: s, attacker: b.owner, damage: dmg, pos: b.pos.clone() });
+              break;
+            }
+            if (rig.kind === 1 && b.tore !== s.id) {
+              b.tore = s.id;
+              s.dmg.onRigHit(1, rig.mast, b.pos.clone(), b.vel, world);
+            }
+            continue;
+          }
+          if (_local.y < shape.bottom(tc) - 0.2) continue;
           const hw = shape.halfWidthAtY(tc, Math.max(_local.y, 0)) + 0.15;
           if (Math.abs(_local.x) > hw) continue;
           dead = true;
           if (s.alive) {
-            const dmg = s.damage(b.damage, b.owner, world);
+            const dmg = s.damage(b.damage, b.owner, world, b.pos);
             const n = new THREE.Vector3(Math.sign(_local.x) || 1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.heading);
             world.particles.woodHit(b.pos.clone(), n);
             const [vol, pan] = world.soundAt(b.pos);

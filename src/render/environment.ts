@@ -1,5 +1,13 @@
 import * as THREE from 'three';
 import { getSharedTextures } from './textures';
+import {
+  GLSL_DAMAGE_EMISSIVE,
+  GLSL_DAMAGE_FRAGMENT,
+  GLSL_DAMAGE_FRAGMENT_PARS,
+  GLSL_DAMAGE_SURFACE,
+  GLSL_DAMAGE_VERTEX,
+  GLSL_DAMAGE_VERTEX_PARS,
+} from '../ships/damageGlsl';
 
 // One global set of lighting / atmosphere uniforms. Every custom or patched
 // material references the very same uniform objects, so updating them once a
@@ -76,11 +84,17 @@ export interface PatchOptions {
   sway?: number; // vegetation sway amplitude (instanced)
   sail?: boolean; // billowing sails
   flag?: boolean; // waving flags (uv.x along length)
+  damage?: boolean; // battle damage (holes, scorch, torn canvas, wreck split)
+  cut?: boolean; // damage holes cut clean through this surface
 }
+
+/** How each material was patched, so ships can re-patch per-hull damage clones. */
+export const patchInfo = new WeakMap<THREE.Material, { opts: PatchOptions; extra: Record<string, THREE.IUniform> }>();
 
 /** Injects the shared atmosphere into a three.js standard / physical material. */
 export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts: PatchOptions, extraUniforms: Record<string, THREE.IUniform> = {}): T {
   const key = JSON.stringify(opts) + Object.keys(extraUniforms).join(',');
+  patchInfo.set(mat, { opts, extra: extraUniforms });
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, globalUniforms, extraUniforms);
@@ -92,6 +106,8 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
     if (opts.sway) defs.push(`#define AQ_SWAY ${opts.sway.toFixed(3)}`);
     if (opts.sail) defs.push('#define AQ_SAIL');
     if (opts.flag) defs.push('#define AQ_FLAG');
+    if (opts.damage) defs.push('#define AQ_DAMAGE');
+    if (opts.cut) defs.push('#define AQ_DMG_CUT');
     const head = defs.join('\n') + '\n';
 
     shader.vertexShader = shader.vertexShader
@@ -105,7 +121,8 @@ uniform float uSailFill;
 uniform float uSailPhase;
 uniform float uSailDepth;
 attribute float aBillow;
-#endif`,
+#endif
+${GLSL_DAMAGE_VERTEX_PARS}`,
       )
       .replace(
         '#include <beginnormal_vertex>',
@@ -144,6 +161,7 @@ attribute float aBillow;
     transformed.z += (bx * by * (0.25 + uSailFill * 1.0) + flutter) * uSailDepth * aBillow;
   }
 #endif
+${GLSL_DAMAGE_VERTEX}
 #ifdef AQ_FLAG
   {
     float a = uv.x;
@@ -169,11 +187,13 @@ attribute float aBillow;
         '#include <common>',
         `${head}#include <common>
 varying vec3 vAqWorld;
-${GLSL_ATMOS}`,
+${GLSL_ATMOS}
+${GLSL_DAMAGE_FRAGMENT_PARS}`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
+${GLSL_DAMAGE_FRAGMENT}
 #ifdef AQ_DETAIL
   {
     vec4 nz = texture(uNoiseTex, vAqWorld.xz * 0.021);
@@ -193,6 +213,8 @@ ${GLSL_ATMOS}`,
   roughnessFactor = mix(roughnessFactor, 0.3, aqWet * step(0.0, vAqWorld.y));
 #endif`,
       )
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>\n${GLSL_DAMAGE_SURFACE}`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${GLSL_DAMAGE_EMISSIVE}`)
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
