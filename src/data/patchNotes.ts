@@ -26,6 +26,12 @@ export const PATCH_NOTES: PatchGroup[] = [
           'From the deck you finally see the horizon: an open sky with drifting clouds that cast the very shadows you see sliding over the sea, a blazing sun, stars and the moon at night, and water that runs all the way out to a hazy horizon. Step back into your view later and you pick up exactly where your captain is standing.',
         ],
       },
+      {
+        title: 'A quieter wheel',
+        notes: [
+          'Once you take the helm in the captain\'s view, the "Leave the helm" prompt shrinks to a small tag just above the helm console, so it no longer sits in the middle of your view.',
+        ],
+      },
     ],
   },
   {
