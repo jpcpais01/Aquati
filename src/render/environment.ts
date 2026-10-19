@@ -51,6 +51,10 @@ export const globalUniforms = {
   uWet: { value: 0 }, // surface wetness, lags the rain
   uFlash: { value: 0 }, // lightning
   uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
+  // beneath the waves (the farewell follows your ship down): x amount 0/1,
+  // z how far you can see (m); uUnderColor is the water's own glow
+  uUnder: { value: new THREE.Vector4(0, 0, 60, 0) },
+  uUnderColor: { value: new THREE.Vector3(0.03, 0.2, 0.24) },
 };
 
 export const GLSL_GUST = /* glsl */ `
@@ -462,6 +466,8 @@ ${GLSL_DAMAGE_VERTEX}
 varying vec3 vAqWorld;
 uniform vec3 uFogColor;
 uniform vec2 uFogRange;
+uniform vec4 uUnder;
+uniform vec3 uUnderColor;
 ${GLSL_ATMOS}
 ${GLSL_AERIAL}
 ${GLSL_DAMAGE_FRAGMENT_PARS}
@@ -481,7 +487,17 @@ varying float vSkinW;
         '#include <fog_fragment>',
         `{
     vec3 aqView = vAqWorld - cameraPosition;
-    gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), aerialAt(length(aqView), vAqWorld.y));
+    if (uUnder.x > 0.5) {
+      // beneath the surface: reds drown first along the way to the eye, then
+      // everything sinks into the blue-green glow of the water around it,
+      // darker the deeper it lies
+      float aqD = length(aqView);
+      vec3 aqCol = gl_FragColor.rgb * exp(-aqD * vec3(0.16, 0.05, 0.035) * 0.55);
+      vec3 aqWater = uUnderColor * (1.0 - clamp(-vAqWorld.y / 22.0, 0.0, 1.0) * 0.5);
+      gl_FragColor.rgb = mix(aqCol, aqWater, 1.0 - exp(-aqD / uUnder.z));
+    } else {
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), aerialAt(length(aqView), vAqWorld.y));
+    }
   }`,
       )
       .replace(

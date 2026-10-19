@@ -190,6 +190,10 @@ export class ShipDamage {
   private splitZ = 0;
   private bowRoot: THREE.Group | null = null;
   private wreckK = { sternA: 0, bowA: 0, sternR: 0, bowR: 0, sep: 0, roll: 0, pitch: 0, depth: 0, pivotY: 0 };
+  /** A quick founder (your own ship): metres she has sunk, and when she settled on the seabed (-1 not yet). */
+  private fall = 0;
+  private fallV = 0;
+  restT = -1;
 
   constructor(private readonly ship: Ship) {
     const model = ship.model;
@@ -1017,7 +1021,7 @@ export class ShipDamage {
   }
 
   /** Wreck pose at `t` seconds after sinking: ship-root offsets, plus the two halves. */
-  wreckPose(t: number, dt: number, world: World): { y: number; pitch: number; roll: number; done: boolean } {
+  wreckPose(t: number, dt: number, world: World): { y: number; pitch: number; roll: number; done: boolean; afloat: number } {
     const s = this.ship;
     const k = this.wreckK;
     const e = smoothstep(0, this.mode === 'split' ? 9 : 7, t);
@@ -1028,12 +1032,30 @@ export class ShipDamage {
     const life = s.wreckLife;
     const founder = life < WRECK_LIFE;
     let plunge = 0;
+    let heel = 0;
+    let afloat = 1;
     if (t < life) y = Math.max(y, bed + s.cls.draft * 0.55);
-    if (t > life) {
+    if (t > life && !founder) {
       const u = t - life;
-      // a quick founder goes down by the stern, bow reaching for the sky
-      y -= founder ? u * u * 0.16 + u * 0.5 : u * u * 0.07 + u * 0.15;
-      if (founder) plunge = Math.min(0.42, u * 0.07);
+      y -= u * u * 0.07 + u * 0.15;
+    } else if (t > life) {
+      // a quick founder goes down by the stern, bow reaching for the sky, and
+      // heels over as she sinks; she glides down at a stately pace and comes
+      // to rest on her side on the seabed
+      const u = t - life;
+      const rest = bed + Math.max(s.cls.draft * 0.9, s.cls.beam * 0.38);
+      if (this.restT < 0) {
+        // gathers way, then eases the last couple of metres onto the sand
+        const left = y - this.fall - rest;
+        this.fallV = Math.min(1.9, this.fallV + dt * 0.55, 0.2 + Math.max(left, 0) * 0.7);
+        this.fall += this.fallV * dt;
+        if (left < 0.12) this.restT = t;
+      }
+      const settled = this.restT < 0 ? 0 : smoothstep(0, 3.5, t - this.restT);
+      y = Math.max(y - this.fall, rest);
+      plunge = Math.min(0.42, u * 0.07) * (1 - settled * 0.75);
+      heel = Math.sign(k.roll || 1) * Math.min(1.2, this.fall * 0.065 + settled * 0.15);
+      afloat = 1 - smoothstep(0, s.cls.draft * 2.5, this.fall);
     }
     // a slow, heavy sway on the swell
     const sway = Math.sin(t * 0.37 + this.state.z) * 0.02;
@@ -1071,8 +1093,8 @@ export class ShipDamage {
     this.drainBreaks(world);
     this.updateHinges(dt, world);
     this.state.y = this.ship.burning;
-    for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40);
-    return { y, pitch: k.pitch * e - plunge, roll: k.roll * e, done: t > life + WRECK_FINAL };
+    for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40) * afloat * afloat;
+    return { y, pitch: k.pitch * e - plunge, roll: k.roll * e + heel, done: !founder && t > life + WRECK_FINAL, afloat };
   }
 
   dispose() {
