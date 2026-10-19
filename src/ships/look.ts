@@ -243,6 +243,51 @@ export function saveLook(look: ShipLook) {
   }
 }
 
+// ------------------------------------------------------------------ your own presets
+
+export interface SavedDesign {
+  id: string;
+  name: string;
+  look: ShipLook;
+}
+
+const SAVED_KEY = 'aquati.designs.v1';
+export const MAX_SAVED = 12;
+
+export function loadDesigns(): SavedDesign[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SAVED_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((d) => d && typeof d === 'object' && typeof d.id === 'string')
+      .slice(0, MAX_SAVED)
+      .map((d) => ({ id: d.id, name: String(d.name ?? '').replace(/[<>]/g, '').slice(0, 24), look: sanitize(d.look) }));
+  } catch {
+    return [];
+  }
+}
+
+/** Returns false when the browser refuses (private mode or out of space). */
+export function saveDesigns(list: SavedDesign[]): boolean {
+  try {
+    localStorage.setItem(SAVED_KEY, JSON.stringify(list.slice(0, MAX_SAVED)));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Same flag, sails and paintwork (names aside). */
+export function sameStyle(a: Omit<ShipLook, 'name'>, b: Omit<ShipLook, 'name'>) {
+  const k = (l: Omit<ShipLook, 'name'>) => JSON.stringify([l.flag, l.sail, l.hull]);
+  return k(a) === k(b);
+}
+
+/** Same style and name: saving it again would just make a twin. */
+export function sameDesign(a: ShipLook, b: ShipLook) {
+  return a.name === b.name && sameStyle(a, b);
+}
+
 // ------------------------------------------------------------------ livery
 
 function hash(s: string) {

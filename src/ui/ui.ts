@@ -7,12 +7,14 @@ import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import { SeaChart, ChartScene } from './chart';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings } from './settings';
+import { WreckReport, WreckScreen } from './wreck';
+export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
 const TIPS = [
   'Charting the archipelago…',
   'Sail across the wind for the best speed',
-  'Your guns fire to the sides: a gold glint means fire',
+  'Your guns fire to the sides: warm light around a foe means fire',
   'Salvage floats to you: sail close to collect it',
   'Every isle you chart pays a bounty',
   'Gusts darken the water: chase them for a burst of speed',
@@ -55,6 +57,11 @@ export class UI {
   onResume: () => void = () => {};
   onQuit: () => void = () => {};
   onAgain: () => void = () => {};
+  /** Farewell screen: sail the same ship again, or skip the sinking cinematic. */
+  onRetry: () => void = () => {};
+  onSkip: () => void = () => {};
+  onTally: (i: number, best: boolean) => void = () => {};
+  private wreck = new WreckScreen();
   onSound: (on: boolean) => void = () => {};
   onPause: () => void = () => {};
   onMap: (open: boolean) => void = () => {};
@@ -157,10 +164,16 @@ export class UI {
       this.disarmQuit();
       this.onQuit();
     });
-    $('btn-again').addEventListener('click', () => {
+    this.wreck.onRetry = () => {
+      this.onClick();
+      this.onRetry();
+    };
+    this.wreck.onAgain = () => {
       this.onClick();
       this.onAgain();
-    });
+    };
+    this.wreck.onSkip = () => this.onSkip();
+    this.wreck.onTally = (i, best) => this.onTally(i, best);
     $('btn-pause').addEventListener('click', (e) => {
       // drop focus so Space (fire) can't press it again
       (e.currentTarget as HTMLElement).blur();
@@ -501,6 +514,7 @@ export class UI {
 
   showHud(on: boolean) {
     this.hud.classList.toggle('hidden', !on);
+    if (on) this.hud.classList.remove('sunk');
     if (on) this.hudCache.clear();
     if (!on) {
       this.barEls.forEach((el) => el.remove());
@@ -548,20 +562,19 @@ export class UI {
     this.chart.draw(sc);
   }
 
-  showDead(on: boolean, info?: VoyageInfo & { ship: string; cls: ShipClassId }) {
-    $('dead').classList.toggle('hidden', !on);
-    if (on && info) {
-      const m = Math.floor(info.time / 60);
-      const s = Math.floor(info.time % 60);
-      $('dead-sub').textContent = `The ${info.ship} slipped beneath the waves after ${m}m ${s.toString().padStart(2, '0')}s at sea.`;
-      $('dead-summary').innerHTML = this.summary(info);
-      $('wreck-ship').innerHTML = shipSilhouette(SHIP_CLASSES[info.cls]);
-      // restart the sinking animation
-      const scene = $('wreck-scene');
-      scene.classList.remove('go');
-      void scene.offsetWidth;
-      scene.classList.add('go');
-    }
+  /** She's lost: fade the HUD and letterbox the view while the camera follows her down. */
+  beginWreck(r: WreckReport) {
+    this.hud.classList.add('sunk');
+    this.wreck.begin(r);
+  }
+
+  showDead(on: boolean, r?: WreckReport) {
+    if (on && r) this.wreck.show(r);
+    else if (!on) $('dead').classList.add('hidden');
+  }
+
+  endWreck() {
+    this.wreck.end();
   }
 
   toast(kicker: string, title: string, life = 3.4) {

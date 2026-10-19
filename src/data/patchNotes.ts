@@ -16,6 +16,35 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-19T14:00Z',
     entries: [
       {
+        title: 'Lost to the Depths: a proper farewell when your ship goes down',
+        notes: [
+          'The killing blow now lands in slow motion. The colour drains from the sea, the edges of the screen flush red, black bars slide in and your ship\'s name and who sank her appear like the end of a film. Press Space or tap to skip ahead.',
+          'The camera leaves the battle and circles low around your ship as she founders. Her timbers groan, she goes down by the stern with her bow lifting, and a last burst of air boils up as she slips under. Then the camera follows her down: the sound closes in, the light turns green-blue and sun shafts sway through the water.',
+          'The new farewell screen tells the story of the voyage. It has an epitaph for where and how she was lost, a parting line that fits how you played, and the full tally rolling in: time at sea, gold, ships sunk, isles charted, your accuracy, damage dealt, treasure and the sea miles you sailed.',
+          'Every voyage now earns renown, which ranks you from Bilge Rat all the way to Legend of the Archipelago, with a ring showing how close you are to the next rank. Your best voyage is remembered on this device, and any stat that beats it gets a gold New best tag.',
+          'A ship\'s log lists the moments that mattered: isles charted, prizes sunk and rare chests opened, ending with how she was lost. Sail again (Enter) puts you straight back at sea in the same ship, and Choose a new ship (Esc) takes you to the harbour. Running aground or being rammed to the bottom now ends the voyage properly too, where before it could leave you stuck.',
+        ],
+      },
+      {
+        title: 'Aiming without the clutter',
+        notes: [
+          'All aiming marks are gone from the sea. Out of a fight, nothing is drawn at all.',
+          'In a fight, the only sign is warm lantern light that gathers and shimmers on the water around an enemy when she sits off one of your loaded broadsides. When you see it, fire. It fades the moment you do and returns when the guns are run out again.',
+        ],
+      },
+      {
+        title: 'Save your own ship designs',
+        notes: [
+          'The Shipwright\'s Presets tab has a new Your designs shelf. Tap Save this design to keep the flag, sails, hull and ship\'s name you are wearing, and tap a saved design any time to put it straight back on your ship.',
+          'Keep up to twelve. Saving another design for the same ship numbers it for you (Sea Biscuit II), and the × on a card deletes it after a second tap, so nothing goes by accident. Your designs stay saved on this device between visits.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-19T14:00Z',
+    entries: [
+      {
         title: 'A brand new look for every screen, and a HUD that fits your phone',
         notes: [
           'On phones the sailing HUD is far smaller and tidier: a slim ship card with your hull bar, gold, kills and isles; a neater minimap with the wind and the time in a strip underneath; and pause and captain\'s view buttons that sit beside the map instead of on top of your guns. The speed readout now sits low in the middle, out from under your thumb.',

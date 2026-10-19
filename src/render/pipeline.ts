@@ -139,7 +139,7 @@ export class Pipeline {
       uniform sampler2D uOpaque; uniform sampler2D uWater; uniform sampler2D uHalf; uniform sampler2D uBloom;
       uniform vec2 uHalfTexel; uniform float uExposure; uniform float uBloomStrength; uniform float uTilt;
       uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor; uniform float uLightning;
-      uniform vec2 uTexel; uniform float uSharpen;
+      uniform vec2 uTexel; uniform float uSharpen; uniform float uDepth; uniform float uDesat;
       varying vec2 vUv;
       #if SS
       ${GLSL_SS_APPLY}
@@ -161,16 +161,22 @@ export class Pipeline {
       }
 
       void main() {
-        vec3 col = comb(vUv);
+        // beneath the waves the whole picture swims
+        vec2 uv = vUv;
+        if (uDepth > 0.0) {
+          uv += vec2(sin(vUv.y * 17.0 + uTime * 1.3) + sin(vUv.y * 31.0 - uTime * 0.9) * 0.5,
+                     cos(vUv.x * 13.0 + uTime * 1.1)) * 0.0028 * uDepth;
+        }
+        vec3 col = comb(uv);
 
         // contrast-adaptive sharpen: restores crisp texture after MSAA resolve
         // and dynamic-resolution upscaling; clamped to the neighbourhood so it
         // never rings or halos.
         if (uSharpen > 0.0) {
-          vec3 n = comb(vUv + vec2(0.0, uTexel.y));
-          vec3 s = comb(vUv - vec2(0.0, uTexel.y));
-          vec3 e = comb(vUv + vec2(uTexel.x, 0.0));
-          vec3 wv = comb(vUv - vec2(uTexel.x, 0.0));
+          vec3 n = comb(uv + vec2(0.0, uTexel.y));
+          vec3 s = comb(uv - vec2(0.0, uTexel.y));
+          vec3 e = comb(uv + vec2(uTexel.x, 0.0));
+          vec3 wv = comb(uv - vec2(uTexel.x, 0.0));
           vec3 mn = min(col, min(min(n, s), min(e, wv)));
           vec3 mx = max(col, max(max(n, s), max(e, wv)));
           float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
@@ -200,13 +206,15 @@ export class Pipeline {
         #endif
 
         // whisper of diorama tilt-shift, only at the very top & bottom edges
-        if (uTilt > 0.0) {
-          float band = smoothstep(0.3, 0.56, abs(vUv.y - 0.48)) * uTilt;
+        // (and the soft focus of deep water once the camera follows a wreck down)
+        {
+          float band = uTilt > 0.0 ? smoothstep(0.3, 0.56, abs(vUv.y - 0.48)) * uTilt : 0.0;
+          band = max(band, uDepth * 0.85);
           if (band > 0.001) {
-            vec2 o = uHalfTexel;
-            vec3 b = texture2D(uHalf, vUv).rgb * 0.36
-              + (texture2D(uHalf, vUv + vec2(o.x, o.y)).rgb + texture2D(uHalf, vUv + vec2(-o.x, o.y)).rgb
-              +  texture2D(uHalf, vUv + vec2(o.x, -o.y)).rgb + texture2D(uHalf, vUv + vec2(-o.x, -o.y)).rgb) * 0.16;
+            vec2 o = uHalfTexel * (1.0 + uDepth * 2.0);
+            vec3 b = texture2D(uHalf, uv).rgb * 0.36
+              + (texture2D(uHalf, uv + vec2(o.x, o.y)).rgb + texture2D(uHalf, uv + vec2(-o.x, o.y)).rgb
+              +  texture2D(uHalf, uv + vec2(o.x, -o.y)).rgb + texture2D(uHalf, uv + vec2(-o.x, -o.y)).rgb) * 0.16;
             col = mix(col, b, band);
           }
         }
@@ -218,6 +226,22 @@ export class Pipeline {
         col = col * (1.0 + uLightning * 1.6) + vec3(0.55, 0.62, 0.85) * uLightning * 0.06;
         col *= uExposure;
 
+        // lost to the depths: reds drown first, the light thins to a green-blue
+        // gloom brightening toward the surface, and sun shafts sway down through it
+        if (uDepth > 0.0) {
+          float yUp = vUv.y;
+          vec3 abyss = mix(vec3(0.004, 0.03, 0.05), vec3(0.05, 0.3, 0.34), yUp * yUp);
+          vec3 seen = col * vec3(0.18, 0.62, 0.74) + abyss;
+          float sx = vUv.x + (1.0 - yUp) * 0.22;
+          float rays = sin(sx * 21.0 + uTime * 0.35) * sin(sx * 34.0 - uTime * 0.27) * sin(sx * 9.0 + uTime * 0.13);
+          rays = max(rays, 0.0);
+          rays *= rays * smoothstep(0.05, 1.0, yUp);
+          // dancing caustic light where the surface sits overhead
+          float cz = sin(vUv.x * 40.0 + sin(vUv.y * 23.0 + uTime) * 2.0 + uTime * 0.8) * sin(vUv.y * 37.0 - uTime * 0.6);
+          vec3 lit = seen * 0.55 + vec3(0.32, 0.72, 0.68) * (rays * 0.42 + max(cz, 0.0) * smoothstep(0.6, 1.0, yUp) * 0.12);
+          col = mix(col, lit, uDepth);
+        }
+
         // gentle split-tone grade: teal shadows, warm highlights
         float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
         col = mix(col, col * vec3(0.94, 1.02, 1.06), (1.0 - smoothstep(0.0, 0.6, lum)) * 0.35);
@@ -226,10 +250,10 @@ export class Pipeline {
         col = aces(col);
         // saturation lift for that sun-drenched toy palette
         float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
-        col = mix(vec3(l2), col, 1.12);
+        col = mix(vec3(l2), col, 1.12 - uDesat);
 
         vec2 vc = vUv - 0.5;
-        col *= 1.0 - dot(vc, vc) * uVignette;
+        col *= 1.0 - dot(vc, vc) * (uVignette + uDesat * 1.1 + uDepth * 0.9);
 
         col = toSRGB(clamp(col, 0.0, 1.0));
         col += (hash(vUv * 1000.0 + uTime) - 0.5) / 255.0; // dither
@@ -251,6 +275,8 @@ export class Pipeline {
         uFlash: { value: 0 },
         uFlashColor: { value: new THREE.Color(1, 0.6, 0.3) },
         uLightning: { value: 0 },
+        uDepth: { value: 0 },
+        uDesat: { value: 0 },
         ...SS_UNIFORMS(),
       },
     );
@@ -392,6 +418,18 @@ export class Pipeline {
   }
 
   tilt = 1;
+  /**
+   * How far beneath the waves the picture is (0 above .. 1 drowned): drowns the
+   * reds, swims the image, blurs it and lets sun shafts through. A uniform only,
+   * so the same compiled program draws it: no new shader mid-game.
+   */
+  set depth(v: number) {
+    this.finalMat.uniforms.uDepth.value = v;
+  }
+  /** Drains colour and deepens the vignette for a sombre beat (0 none .. 1 grey). */
+  set desat(v: number) {
+    this.finalMat.uniforms.uDesat.value = v;
+  }
   /** Lightning brightness this frame (0 none). */
   set lightning(v: number) {
     this.finalMat.uniforms.uLightning.value = v;

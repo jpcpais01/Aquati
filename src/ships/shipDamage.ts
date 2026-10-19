@@ -1003,10 +1003,15 @@ export class ShipDamage {
     let y = -k.depth * e - lurch;
     // run aground on the shallows instead of sinking through the reef
     const bed = world.terrain.heightAt(s.pos.x, s.pos.z);
-    if (t < WRECK_LIFE) y = Math.max(y, bed + s.cls.draft * 0.55);
-    if (t > WRECK_LIFE) {
-      const u = t - WRECK_LIFE;
-      y -= u * u * 0.07 + u * 0.15;
+    const life = s.wreckLife;
+    const founder = life < WRECK_LIFE;
+    let plunge = 0;
+    if (t < life) y = Math.max(y, bed + s.cls.draft * 0.55);
+    if (t > life) {
+      const u = t - life;
+      // a quick founder goes down by the stern, bow reaching for the sky
+      y -= founder ? u * u * 0.16 + u * 0.5 : u * u * 0.07 + u * 0.15;
+      if (founder) plunge = Math.min(0.42, u * 0.07);
     }
     // a slow, heavy sway on the swell
     const sway = Math.sin(t * 0.37 + this.state.z) * 0.02;
@@ -1022,7 +1027,7 @@ export class ShipDamage {
       this.bowRoot.position.z += k.sep * e;
     }
     // bubbles and foam as she goes
-    if ((t < 7 || (t > WRECK_LIFE && t < WRECK_LIFE + WRECK_FINAL)) && Math.random() < 0.12) {
+    if ((t < 7 || (t > life && t < life + WRECK_FINAL)) && Math.random() < (t > life ? 0.3 : 0.12)) {
       const L = s.cls.length;
       const a = rand(-0.45, 0.45) * L;
       const px = s.pos.x + Math.sin(s.heading) * a + rand(-1, 1) * s.cls.beam * 0.5;
@@ -1045,7 +1050,7 @@ export class ShipDamage {
     this.updateHinges(dt, world);
     this.state.y = this.ship.burning;
     for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40);
-    return { y, pitch: k.pitch * e, roll: k.roll * e, done: t > WRECK_LIFE + WRECK_FINAL };
+    return { y, pitch: k.pitch * e - plunge, roll: k.roll * e, done: t > life + WRECK_FINAL };
   }
 
   dispose() {
