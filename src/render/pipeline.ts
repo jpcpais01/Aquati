@@ -1,11 +1,15 @@
 import * as THREE from 'three';
+import { GLSL_SS_APPLY, ScreenSpaceLighting, TraceConfig } from './screenSpace';
 
 // Frame graph:
 //   1. opaque scene  -> rtOpaque (HDR colour + depth texture, MSAA)
-//   2. water + fx    -> rtWater  (premultiplied HDR over transparent, own depth)
-//      (the ocean reads rtOpaque colour/depth for refraction and thickness)
-//   3. combine at half res -> dual-filter bloom chain
-//   4. final: combine + adaptive sharpen + bloom + edge tilt-shift + grade + ACES -> screen
+//   2. screen-space ray tracing over rtOpaque -> AO, bounce light, contact
+//      shadows (half res, see screenSpace.ts), lit into the opaque colour below
+//   3. water + fx    -> rtWater  (premultiplied HDR over transparent, own depth)
+//      (the ocean reads rtOpaque colour/depth for refraction, thickness and
+//      ray-traced reflections)
+//   4. combine at half res -> dual-filter bloom chain
+//   5. final: combine + traced light + adaptive sharpen + bloom + edge tilt-shift + grade + ACES -> screen
 
 const FS_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -20,6 +24,16 @@ export interface PipelineSettings {
   bloomLevels: number;
   tiltShift: boolean;
 }
+
+const SS_UNIFORMS = () => ({
+  uSSA: { value: null as THREE.Texture | null },
+  uSSB: { value: null as THREE.Texture | null },
+  uSSTexel: { value: new THREE.Vector2() },
+  uSSStrength: { value: new THREE.Vector3(1, 0.9, 0.62) },
+  uShadowTint: { value: new THREE.Vector3(0.3, 0.38, 0.52) },
+  uSceneDepth: { value: null as THREE.Texture | null },
+  uSSNearFar: { value: new THREE.Vector2(1, 1000) },
+});
 
 export class Pipeline {
   rtOpaque!: THREE.WebGLRenderTarget;
@@ -37,6 +51,11 @@ export class Pipeline {
   height = 1;
   readonly settings: PipelineSettings;
   exposure = 1.0;
+  /** Screen-space ray tracing (AO, bounce light, contact shadows). */
+  readonly ss = new ScreenSpaceLighting();
+  private ssOn = false;
+  sun: THREE.DirectionalLight | null = null;
+  sunDir = new THREE.Vector3(0, 1, 0);
 
   constructor(private renderer: THREE.WebGLRenderer, settings: PipelineSettings) {
     this.settings = settings;
@@ -48,21 +67,27 @@ export class Pipeline {
       /* glsl */ `
       uniform sampler2D uOpaque; uniform sampler2D uWater; uniform vec2 uTexel;
       varying vec2 vUv;
-      vec3 comb(vec2 uv) {
-        vec4 w = texture2D(uWater, uv);
-        return texture2D(uOpaque, uv).rgb * (1.0 - w.a) + w.rgb;
-      }
+      #if SS
+      ${GLSL_SS_APPLY}
+      #endif
       void main() {
         // 4-tap box at half res (each tap bilinear over 2x2)
         vec2 o = uTexel * 0.5;
-        vec3 c = comb(vUv + vec2(-o.x, -o.y)) + comb(vUv + vec2(o.x, -o.y)) + comb(vUv + vec2(-o.x, o.y)) + comb(vUv + vec2(o.x, o.y));
-        c *= 0.25;
+        vec2 t0 = vUv + vec2(-o.x, -o.y), t1 = vUv + vec2(o.x, -o.y), t2 = vUv + vec2(-o.x, o.y), t3 = vUv + vec2(o.x, o.y);
+        vec3 op = (texture2D(uOpaque, t0).rgb + texture2D(uOpaque, t1).rgb + texture2D(uOpaque, t2).rgb + texture2D(uOpaque, t3).rgb) * 0.25;
+        vec4 w = (texture2D(uWater, t0) + texture2D(uWater, t1) + texture2D(uWater, t2) + texture2D(uWater, t3)) * 0.25;
+        #if SS
+          // bloom only needs the gist: light the averaged opaque colour once
+          if (w.a < 0.999) op = applySS(op, vUv);
+        #endif
+        vec3 c = op * (1.0 - w.a) + w.rgb;
         // scrub NaN/Inf so one bad pixel can't get smeared into a black block by the bloom chain
         c = (c.r + c.g + c.b) < 1e4 ? max(c, 0.0) : vec3(0.0);
         gl_FragColor = vec4(c, 1.0);
       }`,
-      { uOpaque: { value: null }, uWater: { value: null }, uTexel: { value: new THREE.Vector2() } },
+      { uOpaque: { value: null }, uWater: { value: null }, uTexel: { value: new THREE.Vector2() }, ...SS_UNIFORMS() },
     );
+    this.combineMat.defines.SS = 0;
 
     this.downMat = fsMaterial(
       /* glsl */ `
@@ -116,6 +141,9 @@ export class Pipeline {
       uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor; uniform float uLightning;
       uniform vec2 uTexel; uniform float uSharpen;
       varying vec2 vUv;
+      #if SS
+      ${GLSL_SS_APPLY}
+      #endif
 
       vec3 aces(vec3 x) {
         // Narkowicz fit, slightly toe-lifted for a soft, bright palette
@@ -150,6 +178,26 @@ export class Pipeline {
           float k = uSharpen * (1.0 - smoothstep(0.4, 1.2, contrast));
           col = clamp(col + (col * 4.0 - n - s - e - wv) * k, mn, mx);
         }
+
+        #if SS
+        {
+          // traced light goes on after sharpening (whose clamp would undo
+          // it) and only where the opaque world shows through the water
+          float wa = texture2D(uWater, vUv).a;
+          if (wa < 0.999) {
+            vec3 o = texture2D(uOpaque, vUv).rgb;
+            #if defined(SS_DEBUG) && SS_DEBUG == 4
+              if (vUv.x > 0.5)
+            #endif
+            col += (applySS(o, vUv) - o) * (1.0 - wa);
+          }
+        }
+        #endif
+        #if defined(SS_DEBUG) && SS_DEBUG < 4
+          // ?ssdebug=1 ao, 2 bounce, 3 sun loss: raw half-res buffers; 4: split before/after
+          { vec4 da = texture2D(uSSA, vUv); vec4 db = texture2D(uSSB, vUv);
+            gl_FragColor = vec4(SS_DEBUG == 1 ? vec3(da.a) : SS_DEBUG == 2 ? da.rgb : vec3(1.0 - db.r), 1.0); return; }
+        #endif
 
         // whisper of diorama tilt-shift, only at the very top & bottom edges
         if (uTilt > 0.0) {
@@ -203,8 +251,37 @@ export class Pipeline {
         uFlash: { value: 0 },
         uFlashColor: { value: new THREE.Color(1, 0.6, 0.3) },
         uLightning: { value: 0 },
+        ...SS_UNIFORMS(),
       },
     );
+    this.finalMat.defines.SS = 0;
+    const dbg = Number(new URLSearchParams(location.search).get('ssdebug'));
+    if (dbg) this.finalMat.defines.SS_DEBUG = dbg;
+  }
+
+  /** Live graphics changes. Targets are rebuilt only when MSAA or bloom depth change. */
+  configure(next: PipelineSettings, trace: TraceConfig) {
+    const rebuild = next.msaa !== this.settings.msaa || next.bloomLevels !== this.settings.bloomLevels;
+    Object.assign(this.settings, next);
+    if (rebuild && this.rtOpaque) {
+      const w = this.width;
+      const h = this.height;
+      this.width = 0;
+      this.setSize(w, h);
+    }
+    this.ss.configure(trace);
+    const on = this.ss.enabled;
+    if (on !== this.ssOn) {
+      this.ssOn = on;
+      for (const m of [this.combineMat, this.finalMat]) {
+        m.defines.SS = on ? 1 : 0;
+        m.needsUpdate = true;
+      }
+    }
+    for (const m of [this.combineMat, this.finalMat]) {
+      const st = m.uniforms.uSSStrength.value as THREE.Vector3;
+      st.set(trace.ao ? 1 : 0, trace.gi ? 0.9 : 0, trace.shadows ? 0.62 : 0);
+    }
   }
 
   setSize(w: number, h: number) {
@@ -252,6 +329,20 @@ export class Pipeline {
     r.setRenderTarget(this.rtOpaque);
     r.clear(true, true, false);
     r.render(opaque, camera);
+
+    if (this.ssOn && this.sun) {
+      const cam = camera as THREE.PerspectiveCamera;
+      this.ss.render(r, this.rtOpaque.texture, this.rtOpaque.depthTexture!, this.width, this.height, cam, this.sun, this.sunDir);
+      const [a, b] = this.ss.textures!;
+      for (const m of [this.combineMat, this.finalMat]) {
+        const u = m.uniforms;
+        u.uSSA.value = a;
+        u.uSSB.value = b;
+        u.uSSTexel.value.set(1 / this.ss.width, 1 / this.ss.height);
+        u.uSceneDepth.value = this.rtOpaque.depthTexture;
+        u.uSSNearFar.value.set(cam.near, cam.far);
+      }
+    }
 
     r.setRenderTarget(this.rtWater);
     r.setClearColor(0x000000, 0);

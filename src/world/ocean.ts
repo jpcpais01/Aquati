@@ -13,6 +13,9 @@ import { WakeField } from './wakeField';
 // bends the normals, and its foam breaks up into lace as it ages. Open water
 // layers anti-tiled ripples, wind slicks and gust cat's paws over the swell,
 // with slow macro noise drifting its colour so it never reads as a pattern.
+// Reflections are ray traced in screen space: each pixel marches its
+// reflected ray through the opaque depth buffer, so hulls, sails and island
+// cliffs mirror in the water, rippling with the surface, over a sky fallback.
 // Weather reaches in too: rain pocks the surface with rings and splashes,
 // storms darken and steepen the sea and streak it with wind-blown spume, and
 // at night ship wakes and breaking surf glow with bioluminescence.
@@ -128,10 +131,13 @@ export class Ocean {
       uShadowMap: { value: null as THREE.Texture | null },
       uShadowMatrix: { value: new THREE.Matrix4() },
       uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
+      uSSRProj: { value: new THREE.Matrix4() },
+      // max ray length (m), hit thickness base, thickness per metre of depth, mirror strength on calm water
+      uSSR: { value: new THREE.Vector4(70, 1.6, 0.012, 0.16) },
     };
     this.material = new THREE.ShaderMaterial({
       uniforms,
-      defines: { HQ: opts.quality > 0 ? 1 : 0 },
+      defines: { HQ: opts.quality > 0 ? 1 : 0, SSR_STEPS: 0 },
       vertexShader: /* glsl */ `
         ${GLSL_WAVES}
         uniform float uTime;
@@ -207,6 +213,59 @@ export class Ocean {
           return (n * f) / (f - d * (f - n));
         }
 
+        #if SSR_STEPS > 0
+          uniform mat4 uSSRProj;
+          uniform vec4 uSSR;
+          // March the reflected ray through the opaque depth buffer. Steps
+          // bunch up near the surface, where reflections touch their objects,
+          // then a short bisection pins the hit down.
+          vec4 traceReflection(vec3 wp, vec3 R, float jitter, vec2 wobble) {
+            vec3 vp = (viewMatrix * vec4(wp, 1.0)).xyz;
+            vec3 vr = (viewMatrix * vec4(R, 0.0)).xyz;
+            float prev = 0.0;
+            for (int i = 0; i < SSR_STEPS; i++) {
+              float s = (float(i) + jitter) / float(SSR_STEPS);
+              float dist = uSSR.x * s * s;
+              vec3 q = vp + vr * dist;
+              vec4 c = uSSRProj * vec4(q, 1.0);
+              if (c.w <= 0.0) break;
+              vec2 uv = c.xy / c.w * 0.5 + 0.5;
+              if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) break;
+              float sz = linearDepth(texture(uSceneDepth, uv).r);
+              float dz = -q.z - sz;
+              // the opaque buffer also holds what lies under the sea (keels,
+              // the seabed); a ray above the water can't see those
+              float wy = cameraPosition.y + (wp.y + R.y * dist - cameraPosition.y) * sz / max(-q.z, 1e-3);
+              // never thinner than the step, or rays skip clean through sails
+              float thick = max(uSSR.y + (-q.z) * uSSR.z, (dist - prev) * 1.5);
+              if (dz > 0.0 && dz < thick && wy > -0.35) {
+                float a = prev, b = dist;
+                for (int k = 0; k < 4; k++) {
+                  float m = 0.5 * (a + b);
+                  vec3 qm = vp + vr * m;
+                  vec4 cm = uSSRProj * vec4(qm, 1.0);
+                  vec2 um = cm.xy / cm.w * 0.5 + 0.5;
+                  if (-qm.z - linearDepth(texture(uSceneDepth, um).r) > 0.0) { b = m; uv = um; } else a = m;
+                }
+                vec2 e = min(uv, 1.0 - uv);
+                float fade = smoothstep(0.0, 0.06, min(e.x, e.y)) * (1.0 - smoothstep(0.5, 1.0, b / uSSR.x));
+                // ropes and stays are a pixel wide: rays hit them only here and
+                // there, which reads as dotted noise. Keep hits on solid surfaces.
+                float hz = linearDepth(texture(uSceneDepth, uv).r);
+                vec2 px = 2.0 / uResolution;
+                float tol = 0.6 + hz * 0.01;
+                float solid = step(abs(linearDepth(texture(uSceneDepth, uv + vec2(px.x, 0.0)).r) - hz), tol)
+                  + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(px.x, 0.0)).r) - hz), tol)
+                  + step(abs(linearDepth(texture(uSceneDepth, uv + vec2(0.0, px.y)).r) - hz), tol)
+                  + step(abs(linearDepth(texture(uSceneDepth, uv - vec2(0.0, px.y)).r) - hz), tol);
+                fade *= smoothstep(1.5, 3.5, solid);
+                return vec4(texture(uSceneColor, clamp(uv + wobble, 0.0, 1.0)).rgb, fade);
+              }
+              prev = dist;
+            }
+            return vec4(0.0);
+          }
+        #endif
         // Raindrops: each cell of a jittered grid takes a drop now and then,
         // which throws a ring outward. Returns the surface slope (xy) and a
         // splash brightness (z). Two offset grids keep it from looking tiled.
@@ -393,6 +452,19 @@ export class Ocean {
           vec3 refl = skyColor(R) * (1.0 - gust * 0.22) * (1.0 - uRain * 0.18);
           float F = 0.02 + 0.98 * pow(max(1.0 - NdV, 0.0), 5.0);
           F = min(F * 1.1, 1.0);
+          #if SSR_STEPS > 0
+          {
+            // trace along the smooth swell so neighbouring pixels agree, then
+            // let the ripples wobble the image instead of scattering the rays
+            vec3 Rs = reflect(-V, normalize(Ns + vec3(rip.x, 0.0, rip.y) * 0.08));
+            Rs.y = abs(Rs.y);
+            vec4 hit = traceReflection(vWorld, Rs, 0.5, (N.xz - Ns.xz) * 0.02);
+            refl = mix(refl, hit.rgb, hit.a);
+            // calm water near a hull mirrors it more than the bare Fresnel term
+            // would let a top-down camera see
+            F = mix(F, max(F, uSSR.w * (1.0 - gust * 0.6)), hit.a);
+          }
+          #endif
 
           // sun glitter: twinkling pinpoints, a tight sheen, and a broad soft
           // path of light that widens where the water is rougher.
@@ -493,17 +565,28 @@ export class Ocean {
 
   enableShadows(light: THREE.DirectionalLight) {
     const sh = light.shadow;
-    if (!sh.map || !sh.map.depthTexture || this.material.defines.WATER_SHADOW) return;
+    // shadow resolution can change in settings: rebind when the map is new
+    if (!sh.map || !sh.map.depthTexture || this.material.uniforms.uShadowMap.value === sh.map.depthTexture) return;
     const u = this.material.uniforms;
     u.uShadowMap.value = sh.map.depthTexture;
     u.uShadowMatrix.value = sh.matrix;
     u.uShadowTexel.value.set(1 / sh.mapSize.x, 1 / sh.mapSize.y);
-    this.material.defines.WATER_SHADOW = 1;
+    if (!this.material.defines.WATER_SHADOW) {
+      this.material.defines.WATER_SHADOW = 1;
+      this.material.needsUpdate = true;
+    }
+  }
+
+  /** Ray-traced reflection quality: 0 turns them off (sky only). */
+  setReflections(steps: number) {
+    if (this.material.defines.SSR_STEPS === steps) return;
+    this.material.defines.SSR_STEPS = steps;
     this.material.needsUpdate = true;
   }
 
   setSceneTextures(color: THREE.Texture, depth: THREE.Texture, w: number, h: number, cam: THREE.PerspectiveCamera) {
     const u = this.material.uniforms;
+    u.uSSRProj.value.copy(cam.projectionMatrix);
     u.uSceneColor.value = color;
     u.uSceneDepth.value = depth;
     u.uResolution.value.set(w, h);
