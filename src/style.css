@@ -2842,6 +2842,10 @@ body[data-hud='large'] #hud {
   -webkit-tap-highlight-color: transparent;
 }
 
+.sky b:active {
+  opacity: 0.6;
+}
+
 .sky:active i {
   transform: scale(0.88);
 }
