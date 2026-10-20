@@ -53,6 +53,7 @@ export class ShoreHud {
   private prizeCard: HTMLElement;
   readonly strike: HTMLButtonElement;
   readonly pistol: HTMLButtonElement;
+  readonly jump: HTMLButtonElement;
   private hud = $('hud');
   private panel: HTMLElement;
   private rows: { el: HTMLElement; bar: HTMLElement; key: string }[] = [];
@@ -116,10 +117,12 @@ export class ShoreHud {
     pad.className = 'shore-pad';
     pad.innerHTML =
       `<button class="fbtn side" id="t-pistol"><i class="rl"></i><span class="ti">${icon(ICONS.pistol)}</span><small>Pistol</small></button>` +
-      `<button class="fbtn main" id="t-strike"><span class="ti">${icon(ICONS.cutlass)}</span><small>Strike</small></button>`;
+      `<div class="sp-col"><button class="fbtn side jump" id="t-jump"><span class="ti">${icon(ICONS.jump)}</span><small>Jump</small></button>` +
+      `<button class="fbtn main" id="t-strike"><span class="ti">${icon(ICONS.cutlass)}</span><small>Strike</small></button></div>`;
     $('touch').appendChild(pad);
     this.strike = pad.querySelector('#t-strike')!;
     this.pistol = pad.querySelector('#t-pistol')!;
+    this.jump = pad.querySelector('#t-jump')!;
   }
 
   show(on: boolean, isle = '', head = 'Landing party') {
@@ -140,8 +143,8 @@ export class ShoreHud {
 
   private setHintText(eye: boolean) {
     this.hint.innerHTML = eye
-      ? '<kbd>Mouse</kbd> look · <kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Click</kbd> cutlass · <kbd>Right-click</kbd> pistol · <kbd>F</kbd> act · <kbd>V</kbd> view'
-      : '<kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> or click: cutlass · <kbd>Q</kbd> pistol · <kbd>F</kbd> act · <kbd>V</kbd> view';
+      ? '<kbd>Mouse</kbd> look · <kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>Click</kbd> cutlass · <kbd>Right-click</kbd> pistol · <kbd>F</kbd> act · <kbd>V</kbd> view'
+      : '<kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · <kbd>Click</kbd> cutlass · <kbd>Q</kbd> pistol · <kbd>F</kbd> act · <kbd>V</kbd> view';
   }
 
   /**

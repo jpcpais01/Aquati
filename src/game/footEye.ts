@@ -5,9 +5,9 @@ import { CUT_END, CUT_HIT, CUT_WIND, RUN, WALK, Walker } from '../shore/walker';
 // The captain's own eyes ashore. You look with the mouse (or a drag on the
 // right of a touch screen) and walk where you look; the head rides the gait
 // (a dip at each heel strike, a sway from foot to foot, a breath when still),
-// the ground under it is smoothed so rocks and steps don't jolt, cuts and the
-// pistol tug the view, a blow snaps it aside and a knock-down drops it to the
-// sand. It only writes a pose: the rig swoops in and out of it.
+// the ground under it is smoothed so rocks and steps don't jolt, a jump lifts
+// it and the landing sinks it through the knees, cuts and the pistol tug the
+// view, a blow snaps it aside and a knock-down drops it to the sand. It only writes a pose: the rig swoops in and out of it.
 
 /** Eye height over the feet for a walker of height 1 (m). */
 const EYE = 1.64;
@@ -33,6 +33,10 @@ export class FootEye {
   private glanceRate = 0;
   private lastCut = -1;
   private lastFlinch = 0;
+  /** The knees taking a landing: how far the eye has sunk (m, + down), and how fast. */
+  private sink = 0;
+  private sinkV = 0;
+  private wasAir = false;
   /** 0..1 how far the run widens the view (the rig adds a few degrees of field). */
   get sprint() {
     return this.run;
@@ -48,6 +52,8 @@ export class FootEye {
     this.glanceT = 0;
     this.idle = 9;
     this.lastCut = -1;
+    this.sink = this.sinkV = 0;
+    this.wasAir = false;
   }
 
   /** Mouse / drag look this frame (radians: + turns right, + looks down). */
@@ -103,20 +109,36 @@ export class FootEye {
   pose(dt: number, w: Walker, time: number, digAt: THREE.Vector3 | null, pos: THREE.Vector3, quat: THREE.Quaternion) {
     this.idle += dt;
     const h = w.height;
-    // the ground under the eye, smoothed over steps and stones (a big drop snaps)
-    const want = w.y + EYE * h;
+    // the ground under the eye, smoothed over steps and stones (a big drop snaps); a jump rides on top
+    const air = w.air;
+    const want = w.y - air + EYE * h;
     if (Number.isNaN(this.eyeY) || Math.abs(want - this.eyeY) > 0.8) this.eyeY = want;
     this.eyeY += (want - this.eyeY) * damp(want > this.eyeY ? 18 : 11, dt);
 
     // the gait: a dip at each heel strike, a sway from foot to foot
     const sp = Math.hypot(w.vx, w.vz);
-    const walkK = clamp(w.stride / WALK, 0, 1);
+    // aloft the stride stops: no bob
+    const walkK = w.airborne ? 0 : clamp(w.stride / WALK, 0, 1);
     this.run += ((sp > WALK + 0.4 ? 1 : 0) - this.run) * damp(3, dt);
     this.bob += (walkK - this.bob) * damp(6, dt);
     const ph = w.phase;
     const amp = lerp(0.032, 0.058, this.run) * this.bob;
     const dip = Math.abs(Math.sin(ph)) - 0.64;
-    let y = this.eyeY + dip * amp;
+    let y = this.eyeY + air + dip * amp;
+
+    // a jump: the head tips up a touch as you spring, and the landing goes down through the knees
+    const aloft = w.airborne;
+    if (aloft && !this.wasAir) this.jolt(0.35, 0, (Math.random() - 0.5) * 0.12);
+    if (!aloft && this.wasAir) {
+      const k = clamp(w.landV / 6, 0.3, 1.2);
+      this.sinkV += 2.4 * k;
+      this.jolt(-0.9 * k, (Math.random() - 0.5) * 0.2, (Math.random() - 0.5) * 0.35 * k);
+    }
+    this.wasAir = aloft;
+    const sa = -this.sink * 150 - this.sinkV * 15;
+    this.sinkV += sa * Math.min(dt, 0.05);
+    this.sink += this.sinkV * Math.min(dt, 0.05);
+    y -= this.sink;
     // a breath when standing still
     y += Math.sin(time * 1.25) * 0.007 * (1 - this.bob);
     const sway = Math.sin(ph) * lerp(0.022, 0.035, this.run) * this.bob;

@@ -370,7 +370,7 @@ export class Game {
   private landT = 0;
   /** The zoom you had at sea, given back when you row out again. */
   private seaZoom = 0.42;
-  private shoreIn: ShoreInput = { mx: 0, mz: 0, run: false, strike: false, pistol: false, interact: false, aim: null, face: null };
+  private shoreIn: ShoreInput = { mx: 0, mz: 0, run: false, strike: false, pistol: false, interact: false, aim: null, face: null, jump: false };
   /** Ashore, the captain's own eyes: the look, the gait in the head, the kicks. */
   private footEye = new FootEye();
   /** Walking islands through the captain's eyes (V switches to the bird's-eye view; remembered). */
@@ -859,6 +859,12 @@ export class Game {
         this.audio.footstep(1);
         if (cap) this.rig.shake(0.1);
       },
+      hop: (up, k, wet, deck) => {
+        const cap = this.shore.captain;
+        const hard = deck || (cap && this.ground.lifted(cap.x, cap.z) !== null);
+        this.audio.hop(up, k, wet, !!hard);
+        if (!up && k > 0.5) this.rig.shake(0.04 * k);
+      },
       step: (k, wet, deck) => (deck || this.ground.lifted(this.shore.captain?.x ?? 0, this.shore.captain?.z ?? 0) !== null ? this.audio.footstep(k) : this.audio.sandStep(k, wet)),
     }, this.forts.garrisons());
     this.opaque.add(this.shore.group);
@@ -898,7 +904,7 @@ export class Game {
       else this.goAshore();
     };
     this.shoreHud.onPrize = (k) => this.choosePrize(k);
-    this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol);
+    this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol, this.shoreHud.jump);
     this.mapUi.onOpen = () => this.setMapView(true);
     this.mapUi.onClose = () => this.setMapView(false);
     this.mapUi.onCoin = () => this.audio.coin(0, 0.22);
@@ -1877,10 +1883,10 @@ export class Game {
         this.shoreTipShown = true;
         const eye = this.shoreEyePref;
         const how = this.input.isTouch
-          ? `${eye ? 'Drag on the right to look · ' : ''}Tap Strike to swing, chain three for a lunge · Pistol fires once, then reloads`
+          ? `${eye ? 'Drag on the right to look · ' : ''}Tap Strike to swing, chain three for a lunge · Pistol fires once, then reloads · Jump to hop`
           : eye
-            ? 'Click to grab the mouse and look around · Click swings, chain three for a lunge · Right-click fires your pistol · V for the bird\'s-eye view'
-            : 'Space or click swings, chain three for a lunge · Q fires your pistol · Shift runs';
+            ? 'Click to grab the mouse and look around · Click swings, chain three for a lunge · Right-click fires your pistol · Space jumps · V for the bird\'s-eye view'
+            : 'Click swings, chain three for a lunge · Q fires your pistol · Space jumps · Shift runs';
         setTimeout(() => {
           if (this.shore.active) this.ui.toast('Cutlass and pistol', how, 6);
         }, 3800);
@@ -2393,7 +2399,7 @@ export class Game {
     this.ui.toast('Over the side!', named ? `Cut down ${named.epithet} and her crew will strike` : 'Cut down her captain and her crew will strike', 3.2);
     if (!this.boardTipShown) {
       this.boardTipShown = true;
-      const how = this.input.isTouch ? 'Strike to swing, Pistol to fire · back to your own rail to fall back' : 'Space or click swings · Q fires your pistol · F at your own rail falls back';
+      const how = this.input.isTouch ? 'Strike to swing, Pistol to fire · back to your own rail to fall back' : 'Click swings · Q fires your pistol · Space jumps · F at your own rail falls back';
       setTimeout(() => {
         if (this.shore.deck) this.ui.toast('Fight for her deck', how, 5.5);
       }, 3600);
@@ -2915,7 +2921,7 @@ export class Game {
     return { x: r.origin.x + r.direction.x * t, z: r.origin.z + r.direction.z * t };
   }
 
-  /** Ashore: up the screen is north, the cutlass on Space or a click, the pistol on Q / E, F acts. */
+  /** Ashore: up the screen is north, Space jumps, the cutlass on a click, the pistol on Q / E, F acts. */
   private controlShore() {
     const st = this.input.state;
     const si = this.shoreIn;
@@ -2923,6 +2929,7 @@ export class Game {
     si.run = st.run;
     si.strike = st.fireAuto || st.fireAim;
     si.pistol = st.firePort || st.fireStarboard;
+    si.jump = st.jump;
     if (this.input.eye && cap) {
       // through their eyes: walk where you look, cut and shoot at whatever's under the sight
       const fe = this.footEye;

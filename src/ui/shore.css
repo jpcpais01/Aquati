@@ -236,6 +236,19 @@
   margin-bottom: calc(30px * var(--kt));
 }
 
+/* the jump sits over the cutlass, under the thumb's reach */
+.shore-pad .sp-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(12px * var(--kt));
+}
+
+.shore-pad .fbtn.side.jump {
+  margin-bottom: 0;
+  color: var(--ink);
+}
+
 /* boarding: the offer to grapple a crippled pirate pulses like a call to arms */
 .shore-prompt.board.ok {
   border-color: rgba(255, 170, 110, 0.7);

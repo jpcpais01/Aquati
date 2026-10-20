@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T21:00Z',
     entries: [
       {
+        title: 'Jump!',
+        notes: [
+          'On foot, Space now jumps instead of swinging your cutlass. Hop over the surf, leap down off a dune or spring up onto the beach from the shallows. On touch screens there is a new Jump button just above Strike.',
+          'Through your own eyes the jump feels like one: the view springs up and tips back a touch, floats at the top, then sinks through your knees as you land, with your hands lagging the lift and dipping on the landing. A running jump carries you a good way.',
+          'You hear it, too: a breath as you push off, then a thud and a crunch of sand, a slap of water in the shallows, or a knock of boots on a deck or rock. Sand puffs up round your boots, and the shallows splash.',
+          'From the bird\'s-eye view your captain tucks their knees on the way up and reaches for the ground on the way down. The cutlass is still on a click (and the Strike button), and Space still fires your broadside at sea.',
+        ],
+      },
+      {
         title: 'Storms worth sailing into, and every weather reworked',
         notes: [
           'Storms look like storms now. The sea turns a deep bottle-green slate, the troughs fall into shadow and the steep crests glow a cold green where the light comes through them. The flat grey haze and the hard white hatching that used to cover the water are gone.',

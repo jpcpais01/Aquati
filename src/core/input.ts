@@ -26,6 +26,7 @@ export interface Controls {
   lookY: number; // + looks down
   view: boolean; // pulse: toggle the captain's view
   helm: boolean; // pulse: take or leave the wheel
+  jump: boolean; // pulse: ashore, jump
   spy: boolean; // spyglass raised
 }
 
@@ -55,6 +56,7 @@ export class Input {
     lookY: 0,
     view: false,
     helm: false,
+    jump: false,
     spy: false,
   };
   /** Captain's view: WASD and the stick walk the deck, mouse and right-hand drags look. */
@@ -63,7 +65,7 @@ export class Input {
   helmMode = false;
   /**
    * Ashore: WASD, the arrows and the stick walk the captain (relative to the
-   * screen), Space or a click swings the cutlass, Q / E fire the pistol, F acts.
+   * screen), Space jumps, a click swings the cutlass, Q / E fire the pistol, F acts.
    */
   foot = false;
   /**
@@ -106,7 +108,11 @@ export class Input {
       if (k === 'f') this.state.helm = true;
       if (k === 'q') this.state.firePort = true;
       if (k === 'e') this.state.fireStarboard = true;
-      if (k === ' ') this.state.fireAuto = true;
+      // ashore Space jumps; afloat it fires
+      if (k === ' ') {
+        if (this.foot) this.state.jump = true;
+        else this.state.fireAuto = true;
+      }
       if (k >= '1' && k <= '6') this.state.ammoPick = +k - 1;
       if (k === 'r') this.state.ammoNext = true;
       if (k === 'escape') this.state.pause = true;
@@ -364,9 +370,9 @@ export class Input {
     tap(spy, () => (this.spyToggle = !this.spyToggle));
   }
 
-  /** Ashore on touch: the cutlass (a tap swings, the next tap chains the combo) and the pistol. */
-  bindShoreButtons(strike: HTMLElement, pistol: HTMLElement) {
-    const bind = (el: HTMLElement, key: 'fireAuto' | 'firePort') => {
+  /** Ashore on touch: the cutlass (a tap swings, the next tap chains the combo), the pistol and the jump. */
+  bindShoreButtons(strike: HTMLElement, pistol: HTMLElement, jump: HTMLElement) {
+    const bind = (el: HTMLElement, key: 'fireAuto' | 'firePort' | 'jump') => {
       el.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -378,6 +384,7 @@ export class Input {
     };
     bind(strike, 'fireAuto');
     bind(pistol, 'firePort');
+    bind(jump, 'jump');
   }
 
   /** Lets go of the mouse and lowers the glass when leaving the captain's view or pausing. */
@@ -473,6 +480,7 @@ export class Input {
     this.state.fleet = false;
     this.state.view = false;
     this.state.helm = false;
+    this.state.jump = false;
     this.state.lookX = 0;
     this.state.lookY = 0;
   }

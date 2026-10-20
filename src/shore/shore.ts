@@ -78,6 +78,8 @@ export interface ShoreInput {
   aim: { x: number; z: number } | null;
   /** Seen through the captain's own eyes: they face where they look (null: they face where they walk). */
   face: number | null;
+  /** Pulse: jump. */
+  jump: boolean;
 }
 
 export interface ShoreHooks {
@@ -100,6 +102,8 @@ export interface ShoreHooks {
   /** A boarder lands on her deck. */
   landed(w: Walker, captain: boolean): void;
   step(k: number, wet: boolean, deck: boolean): void;
+  /** The captain springs up (k = 0) or comes down from a jump (k: how hard, 0..1). */
+  hop(up: boolean, k: number, wet: boolean, deck: boolean): void;
 }
 
 /** A boarder on the way across: perched on your rail, then out over the gap on a line. */
@@ -874,22 +878,55 @@ export class Shore {
     for (const w of all) {
       const run = clamp((w.stride - WALK) / (RUN - WALK), 0, 1);
       w.animate(dt, world.time, run);
-      this.stand(w, air);
+      this.stand(w, air, dt, world);
       this.bladeTrail(w, world);
     }
     this.gather();
   }
 
   /** Poses a walker onto whatever is under its feet (or in the air on a line). */
-  private stand(w: Walker, air: Set<Walker> | null) {
+  private stand(w: Walker, air: Set<Walker> | null, dt: number, world: World) {
     const d = this.deck;
     const sw = air?.has(w) ? this.swings.get(w) : undefined;
-    if (sw) w.place3(sw.y);
-    else if (d) {
+    if (sw) {
+      w.place3(sw.y);
+      return;
+    }
+    let g: number;
+    if (d) {
       const l = d.toLocal(w.x, w.z, _o);
-      w.place3(d.localY(l.x, l.z));
-      d.ride(w);
-    } else w.place3(this.ground.height(w.x, w.z));
+      g = d.localY(l.x, l.z);
+    } else g = this.ground.height(w.x, w.z);
+    const hit = w.fly(dt, g);
+    w.place3(g);
+    if (d) d.ride(w);
+    if (hit > 0) this.touchDown(w, hit, world);
+  }
+
+  /** Feet back on the ground after a jump: a thud, a puff of sand or a splash. */
+  private touchDown(w: Walker, hit: number, world: World) {
+    const k = clamp((hit - 2) / 4, 0, 1);
+    const wet = w.wade > 0.08;
+    if (w === this.captain) this.hooks.hop(false, k, wet, !!this.deck);
+    if (this.deck) return;
+    const p = world.particles;
+    const y = wet ? world.waterHeight(w.x, w.z) : w.y + 0.05;
+    const n = wet ? 10 : 7;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+      const sp = (wet ? 1.6 : 1.1) + Math.random() * 1.2;
+      p.emit(
+        wet
+          ? {
+              x: w.x, y, z: w.z, vx: Math.sin(a) * sp + w.vx * 0.2, vy: 1.8 + Math.random() * 1.8, vz: Math.cos(a) * sp + w.vz * 0.2,
+              life: 0.5 + Math.random() * 0.3, size: 0.1 + Math.random() * 0.08, sizeEnd: 0.05, color: [1.3, 1.4, 1.45], alpha: 0.85, grav: 11, drag: 0.8, kind: 0, fadeIn: 0.01,
+            }
+          : {
+              x: w.x + Math.sin(a) * 0.2, y, z: w.z + Math.cos(a) * 0.2, vx: Math.sin(a) * sp, vy: 0.4 + Math.random() * 0.5, vz: Math.cos(a) * sp,
+              life: 0.45 + Math.random() * 0.3, size: 0.12 + Math.random() * 0.1, sizeEnd: 0.32, color: [0.95, 0.86, 0.68], alpha: 0.35, grav: 1.5, drag: 3.5, kind: 0, fadeIn: 0.02,
+            },
+      );
+    }
   }
 
   /** The alert foes near the party, nearest first (for bars and the battle check). */
@@ -921,11 +958,14 @@ export class Shore {
       return;
     }
     const len = Math.min(1, Math.hypot(inp.mx, inp.mz));
-    // on the spade: walking off, or reaching for a weapon, puts it down (the hole stays dug)
+    // a jump: not mid-cut, not with the pistol up, not from deep water
+    const hop = inp.jump && !cap.airborne && cap.ready && !cap.cutting && cap.aim <= 0 && cap.wade < 0.5;
+    // on the spade: walking off, jumping, or reaching for a weapon puts it down (the hole stays dug)
     if (this.digging) {
-      if (len > 0.3 || inp.strike || inp.pistol) this.stopDig();
+      if (len > 0.3 || inp.strike || inp.pistol || hop) this.stopDig();
       else return;
     }
+    if (hop && cap.jump()) this.hooks.hop(true, 0, cap.wade > 0.08, !!this.deck);
     const fighting = this.fighting;
     // a fighting stance is a shuffle; out of a fight you can run
     const top = inp.run && !cap.cutting ? RUN : WALK;
@@ -933,7 +973,8 @@ export class Shore {
     const busy = cap.cutting ? 0.25 : cap.aim > 0 ? 0.35 : 1;
     const wx = (len > 0.02 ? inp.mx : 0) * top * wade * busy;
     const wz = (len > 0.02 ? inp.mz : 0) * top * wade * busy;
-    const k = damp(len > 0.02 ? 10 : 14, dt);
+    // aloft there's little to push against: the jump carries the run-up
+    const k = damp(len > 0.02 ? 10 : 14, dt) * (cap.airborne ? 0.12 : 1);
     cap.vx += (wx - cap.vx) * k;
     cap.vz += (wz - cap.vz) * k;
     if (inp.face !== null) {
@@ -1523,7 +1564,8 @@ export class Shore {
       const moved = Math.hypot(w.x - px, w.z - pz) / Math.max(dt, 1e-4);
       w.stride += ((w.down ? 0 : moved) - w.stride) * damp(12, dt);
       w.wade = this.deck ? 0 : Math.max(0, -g.height(w.x, w.z));
-      if (w.stride < 0.08) continue;
+      // no footfalls in mid-air
+      if (w.stride < 0.08 || w.airborne) continue;
       // footfalls twice a stride: ~1.4 m walking, longer at a run
       const before = w.phase;
       w.phase += ((moved * dt) / w.stepLen()) * Math.PI;

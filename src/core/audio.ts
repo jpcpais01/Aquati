@@ -1742,6 +1742,64 @@ export class Audio {
     src.stop(t + 0.32);
   }
 
+  /**
+   * A jump. Up: the push-off scuffs the ground and a short breath goes out.
+   * Down (k: how hard, 0..1): a dull thump through the legs, then the ground
+   * answers: a crunch of sand, a slap of water, or a knock on planks or stone.
+   */
+  hop(up: boolean, k: number, wet: boolean, hard: boolean) {
+    const v = this.voice(up ? 0.12 : 0.2 + k * 0.14, (Math.random() - 0.5) * 0.12);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const burst = (at: number, type: BiquadFilterType, f0: number, f1: number, q: number, len: number, gain: number) => {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.setValueAtTime(f0, at);
+      f.frequency.exponentialRampToValueAtTime(f1, at + len);
+      f.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(gain, at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.001, at + len);
+      src.connect(f).connect(g).connect(out);
+      src.start(at, Math.random() * 1.5);
+      src.stop(at + len + 0.02);
+    };
+    if (up) {
+      // the push-off, and a breath: a short, breathy "hup"
+      burst(t, 'bandpass', hard ? 500 : 1900, hard ? 300 : 900, 1, 0.09, 0.8);
+      burst(t + 0.02, 'bandpass', 1300, 700, 2.5, 0.16, 0.35);
+      return;
+    }
+    // the body's weight: a low thump, deeper the harder you come down
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(95 + Math.random() * 15 - k * 20, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.14);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.9, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.16 + k * 0.06);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.24);
+    if (wet) {
+      // a slap and a fall of drops
+      burst(t, 'lowpass', 1800, 450, 0.8, 0.32, 1.1);
+      burst(t + 0.09, 'bandpass', 2600, 1500, 1.4, 0.22, 0.35);
+    } else if (hard) {
+      // boots on planks or rock: a knock, then a short creak or scrape
+      burst(t, 'bandpass', 420 + Math.random() * 120, 220, 2.2, 0.11, 1);
+      burst(t + 0.035, 'bandpass', 900, 500, 1.6, 0.08, 0.4);
+    } else {
+      // both feet into the sand, a beat apart, and the grains settling
+      burst(t, 'bandpass', 1900 + Math.random() * 600, 1100, 0.9, 0.15 + k * 0.05, 1);
+      burst(t + 0.04, 'bandpass', 1600 + Math.random() * 600, 900, 0.9, 0.13, 0.7);
+      burst(t + 0.08, 'highpass', 3200, 2400, 0.7, 0.25, 0.18);
+    }
+  }
+
   /** A spade biting into sand: a crunching scrape, then the hiss of the spadeful thrown aside. */
   dig(vol: number, pan: number, dist = 0) {
     const v = this.voice(Math.min(0.4, vol * 0.3) * Math.exp(-dist / 120), pan);
