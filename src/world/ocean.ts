@@ -1119,7 +1119,7 @@ export class Ocean {
           // ---- bioluminescence: on dark nights churned water glows blue-green
           if (uNight > 0.05) {
             float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5 + krSpiral * 0.45 + vxFoam * 0.5 + reefFoam * 0.4
-              + (crestFoam * 0.18 * capBreak + spume * 0.08 + caps * 0.25) * (1.0 - 0.5 * uStorm);
+              + (crestFoam * 0.18 * capBreak + spume * 0.08 + caps * 0.12) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;
           }

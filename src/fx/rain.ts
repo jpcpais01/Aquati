@@ -72,6 +72,8 @@ export class Rain {
       depthWrite: false,
       depthTest: true,
       premultipliedAlpha: true,
+      // the quads face whichever way the maths turns them: draw both sides
+      side: THREE.DoubleSide,
       vertexShader: /* glsl */ `
         uniform vec3 uCenter; uniform vec2 uBox; uniform vec3 uFall; uniform float uScale; uniform float uTime;
         uniform float uAmount;
@@ -107,12 +109,12 @@ export class Rain {
             vec3 dir = vel / speed;
             float dist = length(cameraPosition - head);
             // the smear of a fast shutter, never shorter than a few pixels
-            float len = max(speed * 0.036, dist * 0.006) * (0.8 + aSeed.w * 0.5) * uScale;
+            float len = max(speed * 0.03, dist * 0.005) * (0.8 + aSeed.w * 0.5) * uScale;
             p = head - dir * len * aCorner.y;
             // (straight down the view a drop is end-on: any side will do)
             vec3 side = cross(dir, normalize(cameraPosition - p));
             side = dot(side, side) > 1e-6 ? normalize(side) : vec3(1.0, 0.0, 0.0);
-            p += side * aCorner.x * max(0.02, dist * 0.0013);
+            p += side * aCorner.x * max(0.016, dist * 0.0009);
             vR = vec3(aCorner.x, aCorner.y, -1.0);
             vA = edge * smoothstep(0.0, 0.08, kf) * (0.5 + aSeed.w * 0.5) * curtain;
           } else {
@@ -124,7 +126,7 @@ export class Rain {
             vec3 o = gerstner(xz, uTime, 1.0, dist0, nrm, crest);
             vec3 c = vec3(xz.x + o.x, o.y + 0.12, xz.y + o.z);
             float dist = length(cameraPosition - c);
-            float r = (0.2 + 0.55 * s) * (0.7 + aSeed.x * 0.6) * max(1.0, dist * 0.0075) * uScale;
+            float r = (0.18 + 0.45 * s) * (0.7 + aSeed.x * 0.6) * max(1.0, dist * 0.0052) * uScale;
             // laid flat on the water, as the ring is
             vec2 q = vec2(aCorner.x, aCorner.y * 2.0 - 1.0);
             p = c + vec3(q.x, 0.0, q.y) * r;
@@ -149,7 +151,7 @@ export class Rain {
           if (vR.z < 0.0) {
             // a fine streak, brightest just behind the drop
             float x = vR.x;
-            a = vA * (1.0 - x * x) * (0.5 + 0.5 * (1.0 - vR.y)) * (0.34 + 0.18 * uAmount);
+            a = vA * (1.0 - x * x) * (0.5 + 0.5 * (1.0 - vR.y)) * (0.22 + 0.12 * uAmount);
             col = vec3(0.8, 0.86, 0.94) * lit;
           } else {
             // the ring spreads and thins; the crown is a few bright flecks at the start
@@ -157,7 +159,7 @@ export class Rain {
             float r = length(vR.xy);
             float ring = exp(-pow((r - (0.3 + 0.62 * s)) / (0.09 + 0.06 * s), 2.0));
             float crown = smoothstep(0.42, 0.0, r) * smoothstep(0.45, 0.0, s);
-            a = vA * (ring * 0.6 + crown) * (1.0 - s) * (1.0 - s);
+            a = vA * (ring * 0.4 + crown * 0.9) * (1.0 - s) * (1.0 - s);
             col = vec3(0.92, 0.96, 1.0) * lit;
           }
           vec2 suv = gl_FragCoord.xy / uResolution;

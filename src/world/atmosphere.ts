@@ -562,7 +562,7 @@ export class Atmosphere {
     const lowK = 0.1 * smooth(0.45, 1, this.cover);
     const veilSum = mistK + rainK + lowK + 1e-4;
     this.veil.set(
-      mistK * 0.015 + rainK * 0.0026 + this.storm * 0.0012 + lowK * 0.004,
+      mistK * 0.012 + rainK * 0.0026 + this.storm * 0.0012 + lowK * 0.004,
       (mistK * 15 + rainK * 58 + lowK * 40) / veilSum,
       0.4 + 0.58 * (mistK / veilSum),
       1.2 + this.wind * 2.5 + this.storm * 7,
