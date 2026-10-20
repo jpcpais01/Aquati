@@ -8,12 +8,15 @@ import {
 } from '../ships/look';
 import { ALL, CosmeticKind, Item, KIND_NAMES, RARITIES, VaultStore } from '../ships/cosmetics';
 import { itemCanvas } from './swatch';
+import { Part, PART_RARITIES, PARTS, PartSlot, PartStore, refitBars, SLOT_NAMES, SLOTS, statLines } from '../ships/parts';
+import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { partIcon, standardIcon } from './partArt';
 
 // The shipwright's panel: flag, sails, hull and presets, with a living flag
 // preview you can paint on. Changes stream out through onChange so the ship
 // moored in the harbour updates as you go.
 
-export type SwTab = 'flag' | 'sails' | 'hull' | 'skins' | 'cannons' | 'presets';
+export type SwTab = 'flag' | 'sails' | 'hull' | 'refit' | 'skins' | 'cannons' | 'presets';
 export type SwChange = 'flag' | 'paint' | 'sail' | 'hull' | 'name' | 'all';
 
 const LIVE = 'live';
@@ -27,9 +30,10 @@ const ICONS: Record<SwTab, string> = {
   skins: '<svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 2-2 0-1.5-1.2-1.6-1.2-2.8 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4c0-4.2-4-7.5-9-7.5z" /><circle cx="7.5" cy="11" r="1.2" /><circle cx="10" cy="7" r="1.2" /><circle cx="15" cy="7.5" r="1.2" /></svg>',
   cannons: '<svg viewBox="0 0 24 24"><path d="M3 12.5l13-4 1.5 4.5-13 4z" /><circle cx="8" cy="18" r="2.5" /><path d="M18.5 9.5l2.5-1M19 12.5l2.5.5M17.5 7l1-2.5" /></svg>',
   presets: '<svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z" /></svg>',
+  refit: '<svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.6-.6-.6-2.6z" /></svg>',
 };
 
-const TAB_NAMES: Record<SwTab, string> = { flag: 'Flag', sails: 'Sails', hull: 'Hull', skins: 'Skins', cannons: 'Guns', presets: 'Presets' };
+const TAB_NAMES: Record<SwTab, string> = { flag: 'Flag', sails: 'Sails', hull: 'Hull', refit: 'Refit', skins: 'Skins', cannons: 'Guns', presets: 'Presets' };
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', html = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -103,7 +107,15 @@ export class Customizer {
   onEquip: (it: Item) => void = () => {};
   onVault: () => void = () => {};
   onTestFire: () => void = () => {};
+  /** A part bolted on (or, with null, the standard fit put back) on the ship at the berth. */
+  onFit: (slot: PartSlot, id: string | null) => void = () => {};
+  /** Where a part can be bought today, if anywhere. */
+  whereSold: (id: string) => string | null = () => null;
   private vault: VaultStore | null = null;
+  private parts: PartStore | null = null;
+  private cls: ShipClassId = 'sloop';
+  /** The part the refit tab is showing details for, per slot. */
+  private picked: Partial<Record<PartSlot, string>> = {};
   private look: ShipLook = structuredClone(DEFAULT_LOOK);
   private tab: SwTab = 'flag';
   private hullPart: keyof HullLook = 'topsides';
@@ -136,7 +148,7 @@ export class Customizer {
     head.append(back, titles);
 
     const tabs = el('nav', 'sw-tabs');
-    (['flag', 'sails', 'hull', 'skins', 'cannons', 'presets'] as SwTab[]).forEach((id) => {
+    (['flag', 'sails', 'hull', 'refit', 'skins', 'cannons', 'presets'] as SwTab[]).forEach((id) => {
       const b = el('button', 'sw-tab', `${ICONS[id]}<span>${TAB_NAMES[id]}</span><i class="sw-new"></i>`);
       b.dataset.tab = id;
       b.addEventListener('click', () => {
@@ -202,13 +214,21 @@ export class Customizer {
     this.markNew();
   }
 
+  /** Hooks up the parts locker for the Refit tab. */
+  setParts(p: PartStore) {
+    this.parts = p;
+    p.subscribe(() => this.markNew());
+    this.markNew();
+  }
+
   /** Re-renders the cosmetics tabs (after the vault adds something). */
   refresh() {
-    if (this.isOpen && (this.tab === 'skins' || this.tab === 'cannons')) this.rerender();
+    if (this.isOpen && (this.tab === 'skins' || this.tab === 'cannons' || this.tab === 'refit')) this.rerender();
     this.markNew();
   }
 
   private markNew() {
+    this.root.querySelector('.sw-tab[data-tab="refit"]')?.classList.toggle('has-new', !!this.parts?.unseen.length);
     const u = this.vault?.unseen ?? [];
     const has = (k: CosmeticKind[]) => u.some((id) => k.includes(ALL.find((i) => i.id === id)?.kind as CosmeticKind));
     this.root.querySelector('.sw-tab[data-tab="skins"]')?.classList.toggle('has-new', has(['skin']));
@@ -220,7 +240,8 @@ export class Customizer {
     return this.panel.getBoundingClientRect();
   }
 
-  open(look: ShipLook, place: string) {
+  open(look: ShipLook, place: string, cls: ShipClassId = this.cls) {
+    this.cls = cls;
     this.look = structuredClone(look);
     this.place.textContent = place;
     this.root.classList.remove('hidden');
@@ -350,6 +371,7 @@ export class Customizer {
     if (this.tab === 'flag') this.renderFlag();
     else if (this.tab === 'sails') this.renderSails();
     else if (this.tab === 'hull') this.renderHull();
+    else if (this.tab === 'refit') this.renderRefit();
     else if (this.tab === 'skins') this.renderCosmetics(['skin']);
     else if (this.tab === 'cannons') this.renderCosmetics(['blast', 'trail']);
     else this.renderPresets();
@@ -496,6 +518,122 @@ export class Customizer {
     }
     // what you came to look at is no longer new
     for (const k of kinds) v.markSeen(k);
+  }
+
+  /**
+   * The refit: what each ship has bolted on, slot by slot, as a track from
+   * the standard fitting up through the five rarities. Tap a part you own to
+   * fit it (the ship at the berth is rebuilt with it); tap one you don't to
+   * see what it does and where to find it.
+   */
+  private renderRefit() {
+    const ps = this.parts;
+    if (!ps) return;
+    const cls = SHIP_CLASSES[this.cls];
+    const fit = ps.loadout(this.cls);
+    // her figures, the refit's share picked out in gold
+    const head = this.section(`The ${cls.name}'s refit`, el('small', 'sw-count', `${ps.collected()}/${PARTS.length} parts found`));
+    const base = cls.stats;
+    const now = refitBars(cls, fit);
+    const bars = el('div', 'sw-rbars');
+    for (const [k, label] of [['speed', 'Speed'], ['agility', 'Agility'], ['armour', 'Armour'], ['hull', 'Hull'], ['firepower', 'Firepower']] as const) {
+      const b0 = Math.min(1, base[k]);
+      const b1 = Math.min(1.25, now[k]);
+      const row = el('div', 'sw-rbar' + (b1 > b0 + 0.004 ? ' up' : b1 < b0 - 0.004 ? ' down' : ''));
+      row.innerHTML = `<span>${label}</span><i><b style="width:${(Math.min(b0, b1) / 1.25) * 100}%"></b><em style="left:${(Math.min(b0, b1) / 1.25) * 100}%;width:${(Math.abs(b1 - b0) / 1.25) * 100}%"></em></i>`;
+      bars.appendChild(row);
+    }
+    head.appendChild(bars);
+    for (const slot of SLOTS) {
+      const parts = PARTS.filter((p) => p.slot === slot).sort((a, b) => a.tier - b.tier);
+      const own = parts.filter((p) => ps.owns(p.id)).length;
+      const on = fit[slot];
+      const sec = this.section(SLOT_NAMES[slot], el('small', 'sw-count', `${own}/${parts.length}`));
+      const track = el('div', 'sw-track');
+      const info = el('div', 'sw-pinfo');
+      const show = (p: Part | null) => {
+        info.innerHTML = '';
+        info.style.setProperty('--rc', p ? PART_RARITIES[p.tier].css : 'rgba(234,242,245,0.5)');
+        if (!p) {
+          info.innerHTML = `<small>Standard fit</small><b>Shipwright's ${SLOT_NAMES[slot].toLowerCase()}</b><p>What she was built with. Find upgrades in chests and wrecks at sea, or buy them from the shipwright at a trading port.</p>`;
+          return;
+        }
+        const owned = ps.owns(p.id);
+        const where = owned ? null : this.whereSold(p.id);
+        const lines = statLines(p.stats)
+          .map((l) => `<span class="${l.bad ? 'bad' : ''}">${l.text}</span>`)
+          .join('');
+        info.innerHTML = `<small>${PART_RARITIES[p.tier].name} · ${SLOT_NAMES[slot]}</small><b>${p.name}</b><p>${p.blurb}</p><div class="sw-pstats">${lines}</div>${
+          owned ? (fit[slot] === p.id ? '<em class="on">Fitted</em>' : '') : `<em class="find">${where ? `For sale today at ${where}` : 'Not found yet · chests, wrecks and port shipwrights'}</em>`
+        }`;
+      };
+      const nodes: HTMLButtonElement[] = [];
+      const select = (b: HTMLButtonElement) => nodes.forEach((x) => x.classList.toggle('sel', x === b));
+      const std = el('button', 'sw-node std' + (!on ? ' sel' : ''), `${standardIcon(slot)}<span>Standard</span>`);
+      std.style.setProperty('--rc', 'rgba(234,242,245,0.55)');
+      std.addEventListener('click', () => {
+        this.onClick();
+        this.picked[slot] = '';
+        show(null);
+        this.onTab('refit', slot);
+        if (!ps.equipped(this.cls, slot)) return;
+        ps.equip(this.cls, slot, null);
+        select(std);
+        this.onFit(slot, null);
+        this.refreshBars();
+      });
+      nodes.push(std);
+      track.appendChild(std);
+      for (const p of parts) {
+        const owned = ps.owns(p.id);
+        const R = PART_RARITIES[p.tier];
+        const b = el('button', `sw-node t${p.tier}` + (on === p.id ? ' sel' : '') + (owned ? ' owned' : ' locked') + (ps.unseen.includes(p.id) ? ' new' : ''));
+        b.style.setProperty('--rc', R.css);
+        b.style.setProperty('--rd', R.deep);
+        b.title = p.name;
+        b.innerHTML = `<i class="sw-node-art">${partIcon(p)}</i><span>${R.name}</span>${owned ? '' : '<i class="sw-node-lock"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></i>'}`;
+        b.addEventListener('click', () => {
+          this.onClick();
+          this.picked[slot] = p.id;
+          b.classList.remove('new');
+          this.onTab('refit', slot);
+          if (owned && ps.equipped(this.cls, slot) !== p.id) {
+            ps.equip(this.cls, slot, p.id);
+            select(b);
+            this.onFit(slot, p.id);
+            this.refreshBars();
+            b.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.14)' }, { transform: 'scale(1)' }], { duration: 380, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+          }
+          show(p);
+          info.animate([{ opacity: 0.4, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'ease-out' });
+        });
+        nodes.push(b);
+        track.appendChild(b);
+      }
+      sec.append(track, info);
+      const pick = this.picked[slot];
+      show(pick === '' ? null : PARTS.find((p) => p.id === (pick ?? on)) ?? null);
+    }
+    // what you came to look at is no longer new
+    ps.markSeen();
+  }
+
+  /** Redraws the refit's stat bars after a change. */
+  private refreshBars() {
+    const ps = this.parts;
+    if (!ps || this.tab !== 'refit') return;
+    const cls = SHIP_CLASSES[this.cls];
+    const now = refitBars(cls, ps.loadout(this.cls));
+    const keys = ['speed', 'agility', 'armour', 'hull', 'firepower'] as const;
+    this.body.querySelectorAll<HTMLElement>('.sw-rbar').forEach((row, i) => {
+      const b0 = Math.min(1, cls.stats[keys[i]]);
+      const b1 = Math.min(1.25, now[keys[i]]);
+      row.className = 'sw-rbar' + (b1 > b0 + 0.004 ? ' up' : b1 < b0 - 0.004 ? ' down' : '');
+      (row.querySelector('b') as HTMLElement).style.width = `${(Math.min(b0, b1) / 1.25) * 100}%`;
+      const em = row.querySelector('em') as HTMLElement;
+      em.style.left = `${(Math.min(b0, b1) / 1.25) * 100}%`;
+      em.style.width = `${(Math.abs(b1 - b0) / 1.25) * 100}%`;
+    });
   }
 
   private renderPresets() {

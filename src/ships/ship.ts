@@ -562,6 +562,7 @@ export class Ship {
       ? 0.95 + 0.25 * Math.sin(world.time * 0.7 + this.id)
       : clamp(windFactor(relDeg) * w.strength * (1.1 + gust * 0.45), 0.25, 1.25) * (0.3 + 0.7 * Math.min(1, Math.abs(leeSide)));
     this.model.updateRig(this.sailLevel, -brace, leeSide, flagAng, fill);
+    this.model.tick(world.time);
 
     // ------------------------------------------------ wake & fx
     // a ghost barely troubles the water

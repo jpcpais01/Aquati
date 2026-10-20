@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T03:00Z',
     entries: [
       {
+        title: 'Ship parts: from Common to Mythic',
+        notes: [
+          'Your ships can now be refitted with upgrade parts in four slots: hull plating, sails, guns and a figurehead. Each part changes how your ship looks and gives real bonuses to hull, armour, speed, turning, reload, damage, range or luck.',
+          'Every slot has five rarities. Common and Rare parts are sturdy fittings of the age, like oak strakes, iron strapping, storm canvas, bronze guns and a carved lion. Epic parts get bold, with bronze shields along the rail, batwing sails, wide-mouthed bombards and a kraken on the bow.',
+          'Legendary and Mythic parts go beyond the ordinary. Legendary brings gold dragon scales, phoenix sails and dragon-head cannons with glowing eyes. Mythic brings obsidian plating veined with light and floating wards, star-filled aether sails with turning crystal crowns, starfire guns ringed in light, and a seraph figurehead with a halo.',
+          'Parts drop from treasure chests, cutthroat camps and sunk pirates (some pirates sail with parts of their own). You also get a bonus part with every ten-pull in the Treasure Vault, and each port sells three different parts a day for vault gold. A duplicate part pays out gold instead.',
+          'Fit parts in the Shipwright\'s new Refit tab. Each slot shows its rarity track and the stat bars show exactly what a part adds. The camera swings to the part you pick, and a new gun test-fires. Your parts are saved to the cloud along with the rest of your progress.',
+        ],
+      },
+      {
         title: 'Ghost ships',
         notes: [
           'Something else sails these waters now. Ghost ships are rare phantom pirates, half see-through and glowing a cold green, with rotting holes drifting across their planks and sails. You are most likely to meet one at night, in thick mist or in a storm, and she rises out of the haze rather than sailing over the horizon.',

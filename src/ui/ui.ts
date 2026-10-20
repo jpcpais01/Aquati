@@ -16,6 +16,7 @@ import type { ShipStatus } from '../game/world';
 import { ammoIcon } from './ammoArt';
 import { progressSaved } from '../core/progress';
 import { CAPTAIN } from '../game/bounty';
+import { Loadout, loadoutParts, refit, refitBars } from '../ships/parts';
 export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
@@ -526,6 +527,14 @@ export class UI {
   }
 
   /** Takes up the ship the save names (after a cloud sync); the caller rebuilds the preview. */
+  /** Each ship's refit, for the card's figures (the game hooks this up). */
+  loadout: (id: ShipClassId) => Loadout = () => ({});
+
+  /** Redraws the ship card (after a refit changed her figures). */
+  refreshShip() {
+    this.renderDetail(false);
+  }
+
   adoptSavedShip() {
     const id = savedShip();
     if (id === this.selected) return false;
@@ -535,7 +544,11 @@ export class UI {
   }
 
   private renderDetail(animate: boolean) {
-    const c = SHIP_CLASSES[this.selected];
+    const base = SHIP_CLASSES[this.selected];
+    const fit = this.loadout(this.selected);
+    const c = refit(base, fit);
+    const bars = refitBars(base, fit);
+    const nParts = Object.keys(loadoutParts(fit)).length;
     $('ship-tabs')
       .querySelectorAll<HTMLElement>('.ship-tab')
       .forEach((el) => {
@@ -543,21 +556,23 @@ export class UI {
         el.classList.toggle('sel', on);
         el.setAttribute('aria-selected', String(on));
       });
-    const pips = (v: number) => {
-      const n = Math.max(1, Math.round(v * 10));
-      return Array.from({ length: 10 }, (_, k) => `<i class="${k < n ? 'on' : ''}" style="--k:${k}"></i>`).join('');
+    // pips the refit adds glow gold
+    const pips = (v: number, was: number) => {
+      const n = Math.max(1, Math.min(10, Math.round(v * 10)));
+      const n0 = Math.max(1, Math.round(was * 10));
+      return Array.from({ length: 10 }, (_, k) => `<i class="${k < n ? 'on' : ''}${k < n && k >= n0 ? ' up' : ''}" style="--k:${k}"></i>`).join('');
     };
     const ids = Object.keys(SHIP_CLASSES);
     $('dock-count').textContent = `${String(ids.indexOf(this.selected) + 1).padStart(2, '0')} / ${String(ids.length).padStart(2, '0')}`;
     const detail = $('ship-detail');
     detail.innerHTML = `
       <div class="detail-head">
-        <div><small>The ${c.title}</small><h3>${c.name}</h3></div>
+        <div><small>The ${c.title}${nParts ? ` · <em class="refit-tag">${nParts} part${nParts > 1 ? 's' : ''} fitted</em>` : ''}</small><h3>${c.name}</h3></div>
         <div class="facts"><span><b>${c.cannonsPerSide * 2}</b>guns</span><span><b>${c.hp}</b>hull</span><span><b>${c.reload.toFixed(1)}s</b>reload</span><span><b>${HOLD_ROOM[c.id] ?? 12}</b>hold</span></div>
       </div>
       <p class="blurb">${c.blurb}</p>
       <div class="stats">${STAT_LABELS.map(
-        ([k, label]) => `<div class="stat" title="${label}">${icon(STAT_ICONS[k])}<span>${label}</span><div class="pips">${pips(c.stats[k as keyof typeof c.stats])}</div></div>`,
+        ([k, label]) => `<div class="stat" title="${label}">${icon(STAT_ICONS[k])}<span>${label}</span><div class="pips">${pips(bars[k as keyof typeof bars], base.stats[k as keyof typeof base.stats])}</div></div>`,
       ).join('')}</div>`;
     if (animate) {
       detail.classList.remove('swap');

@@ -1,5 +1,6 @@
 import type { BackingId, EmblemId, FlagDesign } from './heraldry';
 import type { SailPattern } from './look';
+import type { Loadout } from './parts';
 
 export type ShipClassId = 'sloop' | 'brig' | 'galleon';
 
@@ -180,6 +181,8 @@ export interface Livery {
   skin?: string;
   /** A phantom: her materials take the spectral ghost look (see ghostGlsl). */
   ghost?: boolean;
+  /** Upgrade parts the ship is built with. */
+  parts?: Loadout;
 }
 
 export const PLAYER_LIVERY: Livery = {

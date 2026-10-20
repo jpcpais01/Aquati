@@ -262,7 +262,7 @@ function loop(pts: [number, number][]): Loop {
 
 // ------------------------------------------------------------------ port
 
-export type PortFocus = 'overview' | 'flag' | 'sails' | 'hull';
+export type PortFocus = 'overview' | 'flag' | 'sails' | 'hull' | 'bow' | 'guns';
 
 export class Port {
   /** Everything (static town in the local frame + world-space crowd). */
@@ -1471,6 +1471,21 @@ export class Port {
         dist = L * 0.78 + 10;
         elev = 0.1;
         a0 = 0.42;
+        break;
+      case 'bow': {
+        // the figurehead: from ahead and a little off to the side
+        const s = ship.model.shape;
+        look = ship.root.localToWorld(new THREE.Vector3(0, s.top(1) - 0.2, s.z(1) + 0.4));
+        dist = 6.5 + L * 0.2;
+        elev = 0.1;
+        a0 = 0.62 * Math.sign(ship.forward.dot(this.along) || 1);
+        break;
+      }
+      case 'guns':
+        look = c.clone().addScaledVector(up, ship.model.shape.mainDeckY(0.5) + 0.4);
+        dist = L * 0.6 + 8;
+        elev = 0.16;
+        a0 = 0.18;
         break;
       default:
         look = c.clone().addScaledVector(up, mastH * 0.3).addScaledVector(this.along, 4);

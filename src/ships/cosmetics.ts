@@ -292,6 +292,17 @@ export class VaultStore {
     this.save();
   }
 
+  /** Pays out of the purse; false (and nothing spent) if it doesn't stretch that far. */
+  spend(gold: number) {
+    if (gold <= 0 || this.s.purse < gold) return false;
+    this.s.purse -= Math.round(gold);
+    this.save();
+    return true;
+  }
+
+  /** Told after every opening (the game adds its bonus ship part to a full ten). */
+  onPull: (n: 1 | 10) => void = () => {};
+
   /** Fills the purse to at least `gold` and adds every vault item; true if anything changed. */
   grantAll(gold: number) {
     let changed = false;
@@ -355,6 +366,7 @@ export class VaultStore {
     const out = rarities.map((r) => this.grant(r));
     this.s.pulls += n;
     this.save();
+    this.onPull(n);
     return out;
   }
 

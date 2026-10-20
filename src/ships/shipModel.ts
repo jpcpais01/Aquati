@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { clamp, lerp, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import { Livery, ShipClass } from './shipTypes';
 import type { SkinItem } from './cosmetics';
+import { loadoutParts, type Part, type PartSlot } from './parts';
+import { buildFigure, buildHullPart, buildSailPart, GLOW, gunBarrel, METAL, type MastInfo, type PartKit, type Spinner } from './partModels';
+import { ball, colorize, hexL, lathe, rbox, spar, spiral, squareRing, surfaceMatrix, sweep, tube } from './geo';
 import { deckTextures, FLAG_ASPECT, flagTexture, hullTextures, sailNormalTexture, sailTexture, sternTexture } from './shipTextures';
 
 // Fully procedural ships: a lofted hull with real sheer, tumblehome, bilge
@@ -220,6 +222,8 @@ function makeSkinUniforms() {
     uSkinC: { value: new THREE.Color() },
     uSkinP: { value: new THREE.Vector4(1, 1, 0, 0) },
     uSkinCloth: { value: new THREE.Color(1, 1, 1) },
+    /** Upgrade sails: x the cloth's pattern (0 = standard canvas), w a seed. */
+    uPartSail: { value: new THREE.Vector4(0, 0, 0, 0) },
   };
 }
 
@@ -237,26 +241,6 @@ function skinned(g: THREE.BufferGeometry): THREE.BufferGeometry {
 }
 let sharedDeck: { map: THREE.Texture; normal: THREE.Texture } | null = null;
 
-function hexL(c: string | number) {
-  return new THREE.Color(c as THREE.ColorRepresentation);
-}
-
-/** Paints a part one colour, nudged a touch lighter or darker so no two timbers match exactly. */
-function colorize(geo: THREE.BufferGeometry, color: THREE.Color, jitter = 0.05): THREE.BufferGeometry {
-  const g = geo;
-  if (g.getAttribute('uv')) g.deleteAttribute('uv');
-  const n = g.getAttribute('position').count;
-  const arr = new Float32Array(n * 3);
-  const k = 1 + (Math.random() * 2 - 1) * jitter;
-  for (let i = 0; i < n; i++) {
-    arr[i * 3] = color.r * k;
-    arr[i * 3 + 1] = color.g * k;
-    arr[i * 3 + 2] = color.b * k;
-  }
-  g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-  return g;
-}
-
 /** Keeps only the attributes a merged bucket shares and makes sure it's indexed. */
 function prepPart(g: THREE.BufferGeometry, keepColor: boolean): THREE.BufferGeometry {
   for (const name of Object.keys(g.attributes)) {
@@ -270,100 +254,6 @@ function prepPart(g: THREE.BufferGeometry, keepColor: boolean): THREE.BufferGeom
 function mergeParts(parts: THREE.BufferGeometry[], keepColor: boolean): THREE.BufferGeometry | null {
   if (!parts.length) return null;
   return mergeGeometries(parts.map((p) => prepPart(p, keepColor)));
-}
-
-/** A tube swept along a smooth path with a varying radius (u: 0 start .. 1 end). */
-function sweep(pts: THREE.Vector3[], r: (u: number) => number, radial = 6, segs = 18): THREE.BufferGeometry {
-  const curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
-  const frames = curve.computeFrenetFrames(segs, false);
-  const pos: number[] = [];
-  const nrm: number[] = [];
-  const idx: number[] = [];
-  const n = new THREE.Vector3();
-  for (let i = 0; i <= segs; i++) {
-    const u = i / segs;
-    const p = curve.getPointAt(u);
-    const rr = r(u);
-    for (let j = 0; j <= radial; j++) {
-      const a = (j / radial) * Math.PI * 2;
-      n.copy(frames.normals[i]).multiplyScalar(Math.cos(a)).addScaledVector(frames.binormals[i], Math.sin(a));
-      pos.push(p.x + n.x * rr, p.y + n.y * rr, p.z + n.z * rr);
-      nrm.push(n.x, n.y, n.z);
-    }
-  }
-  for (let i = 0; i < segs; i++) {
-    for (let j = 0; j < radial; j++) {
-      const a = i * (radial + 1) + j;
-      const b = a + radial + 1;
-      idx.push(a, b, a + 1, b, b + 1, a + 1);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
-  g.setIndex(idx);
-  return g;
-}
-
-/** Points on a carved scroll: a spiral of `turns` winding in from radius R about `c`, in the plane (ax, ay). */
-function spiral(c: THREE.Vector3, ax: THREE.Vector3, ay: THREE.Vector3, R: number, turns: number, a0 = 0, n = 14): THREE.Vector3[] {
-  const pts: THREE.Vector3[] = [];
-  for (let k = 0; k <= n; k++) {
-    const f = k / n;
-    const a = a0 + f * turns * Math.PI * 2;
-    const r = R * (1 - 0.72 * f);
-    pts.push(c.clone().addScaledVector(ax, Math.cos(a) * r).addScaledVector(ay, Math.sin(a) * r));
-  }
-  return pts;
-}
-
-/** A cylinder spanning two points. */
-function spar(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, radial = 8): THREE.BufferGeometry {
-  const len = a.distanceTo(b);
-  const g = new THREE.CylinderGeometry(r1, r0, len, radial, 1);
-  g.translate(0, len / 2, 0);
-  const dir = b.clone().sub(a).normalize();
-  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-  g.applyMatrix4(new THREE.Matrix4().compose(a, q, new THREE.Vector3(1, 1, 1)));
-  return g;
-}
-
-/** A softly rounded box. */
-function rbox(w: number, h: number, d: number, r = Math.min(w, h, d) * 0.28, segs = 2): THREE.BufferGeometry {
-  return new RoundedBoxGeometry(w, h, d, segs, Math.min(r, Math.min(w, h, d) / 2 - 1e-3));
-}
-
-/** Turned profile, [radius, y] pairs from bottom to top. */
-function lathe(profile: [number, number][], segs = 10): THREE.BufferGeometry {
-  return new THREE.LatheGeometry(
-    profile.map(([r, y]) => new THREE.Vector2(r, y)),
-    segs,
-  );
-}
-
-function tube(pts: THREE.Vector3[], r: number, closed = false, radial = 6, perPoint = 4): THREE.BufferGeometry {
-  const curve = new THREE.CatmullRomCurve3(pts, closed, 'centripetal');
-  return new THREE.TubeGeometry(curve, Math.max(8, pts.length * perPoint), r, radial, closed);
-}
-
-function ball(r: number, at: THREE.Vector3, w = 8, h = 6): THREE.BufferGeometry {
-  const g = new THREE.SphereGeometry(r, w, h);
-  g.translate(at.x, at.y, at.z);
-  return g;
-}
-
-/** Local frame on a surface: x along the hull (horizontal), y up-ish, z = normal. */
-function surfaceMatrix(p: THREE.Vector3, n: THREE.Vector3): THREE.Matrix4 {
-  const xa = new THREE.Vector3(0, 1, 0).cross(n).normalize();
-  const ya = n.clone().cross(xa).normalize();
-  return new THREE.Matrix4().makeBasis(xa, ya, n).setPosition(p);
-}
-
-/** A square frame with a round section (a 4-segment torus turned square). */
-function squareRing(half: number, r: number): THREE.BufferGeometry {
-  const g = new THREE.TorusGeometry(half * Math.SQRT2, r, 5, 4);
-  g.rotateZ(Math.PI / 4);
-  return g;
 }
 
 function sailGeometry(tl: THREE.Vector2, tr: THREE.Vector2, bl: THREE.Vector2, br: THREE.Vector2, billow: number): THREE.BufferGeometry {
@@ -483,6 +373,7 @@ function ropeGeometry(specs: RopeSpec[]): THREE.BufferGeometry | null {
 /** Pixels per metre (at 1x zoom) above which a ship shows its close-range detail, and below which it drops it again. */
 const FINE_ON = 21;
 const FINE_OFF = 17;
+const _spinQ = new THREE.Quaternion();
 
 export class ShipModel {
   readonly root = new THREE.Group();
@@ -538,13 +429,21 @@ export class ShipModel {
   readonly skinUniforms: SkinUniforms;
 
   private readonly steps: Generator<void, void>;
+  /** Upgrade parts bolted on (player ships, and the odd pirate's prize fitting). */
+  readonly parts: Partial<Record<PartSlot, Part>>;
+  private masts: MastInfo[] = [];
+  private spinnerSpecs: Spinner[] = [];
+  /** The parts that move on their own: wards, crystal crowns, a halo. */
+  private readonly spinners: { mesh: THREE.Mesh; q0: THREE.Quaternion; p0: THREE.Vector3; axis: THREE.Vector3; spin: number; bob: number; rate: number; phase: number }[] = [];
 
   /** `deferred` leaves the geometry unbuilt: call step() (a little per frame) until it returns true. */
   constructor(readonly cls: ShipClass, readonly livery: Livery, quality = 1, deferred = false) {
     this.owned = livery.id.startsWith('custom');
+    this.parts = loadoutParts(livery.parts);
     this.dressed = !this.owned && !!livery.skin;
     this.skinUniforms = this.owned || this.dressed ? makeSkinUniforms() : NO_SKIN;
     this.skinUniforms.uSkinCloth.value.set(livery.sail);
+    if (this.owned) this.skinUniforms.uPartSail.value.set(this.parts.sails ? this.parts.sails.tier + 1 : 0, 0, 0, Math.random() * 10);
     this.detail = quality > 0;
     this.shape = new HullShape(cls);
     this.stairs = castleStairs(cls, this.shape);
@@ -577,6 +476,8 @@ export class ShipModel {
     yield* this.buildDetails();
     yield;
     this.buildDeckLife();
+    yield;
+    this.buildParts();
     yield;
     yield* this.finish();
   }
@@ -669,10 +570,11 @@ export class ShipModel {
     if (!sharedDeck) sharedDeck = deckTextures();
     const deck = patchMaterial(new THREE.MeshStandardMaterial({ map: sharedDeck.map, normalMap: sharedDeck.normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78 }), { clouds: true, ghost }, gx);
     const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2, ghost }, { ...su, ...gx });
-    const iron = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true, ghost }, gx);
-    const trim = patchMaterial(new THREE.MeshStandardMaterial({ color: hexL(this.livery.trim), roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true, ghost }, gx);
-    // lanterns and stern lights: warm lamplight, or a cold corpse-light on a phantom
-    const glow = new THREE.MeshBasicMaterial({ color: ghost ? new THREE.Color(0.7, 3.2, 1.9) : new THREE.Color(5.0, 3.2, 1.4) });
+    // metal and gilt carry their colour in the vertex paint, so bronze, gold and blued steel share one material
+    const iron = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true, ghost }, gx);
+    const trim = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true, ghost }, gx);
+    // lights carry their colour in the vertex paint (warm lamplight by default); a phantom tints it to a cold corpse-light
+    const glow = new THREE.MeshBasicMaterial({ vertexColors: true, color: ghost ? new THREE.Color(0.14, 1, 1.36) : 0xffffff });
     const flag = patchMaterial(new THREE.MeshStandardMaterial({ map: flagTexture(this.livery), side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.5 }), { flag: true, ghost }, gx);
     const rope = new THREE.LineBasicMaterial({ color: ghost ? 0x6fae94 : 0x2a1f16, transparent: true, opacity: ghost ? 0.5 : 0.75 });
     const ratline = new THREE.LineBasicMaterial({ color: ghost ? 0x6fae94 : 0x2a1f16, transparent: true, opacity: ghost ? 0.26 : 0.38 });
@@ -1238,6 +1140,14 @@ export class ShipModel {
       this.detail ? 12 : 8,
     );
     barrelG.scale(k, k, k);
+    // an upgrade swaps the standard barrel for its own (and moves the muzzle with it)
+    const fit = this.parts.guns ? gunBarrel(this.parts.guns, this.detail) : null;
+    for (const b of fit?.parts ?? []) b.g.scale(k, k, k);
+    const tip = fit ? fit.tip + 0.14 : 0.85;
+    const mount = (place: (g: THREE.BufferGeometry) => THREE.BufferGeometry) => {
+      if (!fit) return void this.ironParts.push(place(barrelG.clone()));
+      for (const b of fit.parts) (b.bucket === 'glow' ? this.glowParts : this.ironParts).push(place(b.g.clone()));
+    };
     const carriageCol = hexL(this.livery.bottom).multiplyScalar(0.8);
     const wheelCol = hexL(0x3e2a1a);
     const strake = hexL(this.livery.strake);
@@ -1247,11 +1157,8 @@ export class ShipModel {
         const y = this.cannonY(t);
         const z = s.z(t);
         const x = s.halfWidthAtY(t, y);
-        const barrel = barrelG.clone();
-        barrel.rotateZ((-side * Math.PI) / 2);
-        barrel.translate(side * (x + 0.12 * k), y, z);
-        this.ironParts.push(barrel);
-        this.muzzles.push({ pos: new THREE.Vector3(side * (x + 0.85 * k), y, z), dir: new THREE.Vector3(side, 0, 0), side });
+        mount((g) => g.rotateZ((-side * Math.PI) / 2).translate(side * (x + 0.12 * k), y, z));
+        this.muzzles.push({ pos: new THREE.Vector3(side * (x + tip * k), y, z), dir: new THREE.Vector3(side, 0, 0), side });
 
         // truck carriage on the deck behind the port
         const deck = s.mainDeckY(t);
@@ -1383,10 +1290,7 @@ export class ShipModel {
       const x = (i - (this.cls.chasers - 1) / 2) * 1.3;
       const y = this.shape.mainDeckY(0.05) + 0.4;
       const z = s.z(0.01);
-      const barrel = barrelG.clone().scale(0.8, 0.8, 0.8);
-      barrel.rotateX(-Math.PI / 2);
-      barrel.translate(x, y, z - 0.3);
-      this.ironParts.push(barrel);
+      mount((g) => g.scale(0.8, 0.8, 0.8).rotateX(-Math.PI / 2).translate(x, y, z - 0.3));
     }
   }
 
@@ -1474,6 +1378,7 @@ export class ShipModel {
       this.trimParts.push(cap);
       const top = new THREE.Vector3(0, y0 + H, z);
       mastTops.push(top);
+      this.masts.push({ z, y0, H, r0 });
       this.perches.push({ pos: new THREE.Vector3(0, y0 + H + 0.05 + r0 * 0.4, z), spar: mi });
       if (H > maxMast) {
         maxMast = H;
@@ -1949,7 +1854,8 @@ export class ShipModel {
     }
     const lean = 0.85;
     const figM = new THREE.Matrix4().compose(stemTop.clone().add(new THREE.Vector3(0, -0.12, -0.18)), new THREE.Quaternion().setFromEuler(new THREE.Euler(lean, 0, 0)), new THREE.Vector3(fs, fs, fs));
-    for (const g of fig) this.trimParts.push(g.applyMatrix4(figM));
+    if (this.parts.figure) buildFigure(this.partKit(), this.parts.figure, figM, lean);
+    else for (const g of fig) this.trimParts.push(g.applyMatrix4(figM));
     // gilded trailboards: carved scrolls down each side of the cutwater, laid on the planking
     const onBow = (y: number, zz: number, side: number) => {
       const t = clamp(zz / L + 0.5, 0, 1);
@@ -2569,9 +2475,70 @@ export class ShipModel {
     }
   }
 
+  // ---------------------------------------------------------------- upgrade parts
+
+  /** What the part builders may touch. */
+  private partKit(): PartKit {
+    return {
+      shape: this.shape,
+      cls: this.cls,
+      livery: this.livery,
+      detail: this.detail,
+      wood: this.woodParts,
+      iron: this.ironParts,
+      trim: this.trimParts,
+      glow: this.glowParts,
+      smallWood: this.smallWood,
+      smallIron: this.smallIron,
+      fineIron: this.fineIron,
+      spinners: this.spinnerSpecs,
+      cannonTs: this.cannonTs(),
+      masts: this.masts,
+      rope: (a, b, r, col, sag) => this.rope(a, b, r, col, sag),
+    };
+  }
+
+  /** Hull plating and the sails' mast dressing (guns and figureheads go on with the standard fittings they replace). */
+  private buildParts() {
+    const p = this.parts;
+    if (!p.hull && !p.sails) return;
+    const kit = this.partKit();
+    if (p.hull) buildHullPart(kit, p.hull);
+    if (p.sails) buildSailPart(kit, p.sails);
+  }
+
+  /** Floating parts drift and turn; call every frame with the world clock. */
+  tick(time: number) {
+    for (const s of this.spinners) {
+      s.mesh.quaternion.copy(s.q0).multiply(_spinQ.setFromAxisAngle(s.axis, time * s.spin + s.phase));
+      s.mesh.position.copy(s.p0);
+      s.mesh.position.y += Math.sin(time * s.rate + s.phase) * s.bob;
+    }
+  }
+
   // ---------------------------------------------------------------- merge
 
   private *finish(): Generator<void, void> {
+    // metal, gilt and lamps take their colour from the vertex paint; standard fittings get the usual one
+    const paint = (parts: THREE.BufferGeometry[], c: THREE.Color, jitter: number) => {
+      for (const g of parts) if (!g.getAttribute('color')) colorize(g, c, jitter);
+    };
+    const trimCol = hexL(this.livery.trim);
+    paint(this.ironParts, METAL.iron, 0.03);
+    paint(this.smallIron, METAL.iron, 0.03);
+    paint(this.fineIron, METAL.iron, 0.03);
+    paint(this.trimParts, trimCol, 0.02);
+    paint(this.smallTrim, trimCol, 0.02);
+    paint(this.fineTrim, trimCol, 0.02);
+    paint(this.glowParts, GLOW.window, 0);
+    for (const sp of this.spinnerSpecs) {
+      const mesh = new THREE.Mesh(sp.geo, sp.mat === 'glow' ? this.mats.glow : this.mats.iron);
+      mesh.position.copy(sp.pos);
+      mesh.quaternion.copy(sp.quat);
+      this.root.add(mesh);
+      this.spinners.push({ mesh, q0: sp.quat.clone(), p0: sp.pos.clone(), axis: sp.axis, spin: sp.spin, bob: sp.bob, rate: sp.rate, phase: sp.phase });
+    }
+    this.spinnerSpecs = [];
     const mk = (parts: THREE.BufferGeometry[], mat: THREE.Material, keepColor: boolean, shadow = true) => {
       const merged = mergeParts(parts, keepColor);
       if (!merged) return;
@@ -2582,17 +2549,17 @@ export class ShipModel {
     };
     mk(this.woodParts, this.mats.wood, true);
     yield;
-    mk(this.ironParts, this.mats.iron, false);
+    mk(this.ironParts, this.mats.iron, true);
     yield;
-    mk(this.trimParts, this.mats.trim, false);
+    mk(this.trimParts, this.mats.trim, true);
     yield;
-    mk(this.glowParts, this.mats.glow, false, false);
+    mk(this.glowParts, this.mats.glow, true, false);
     yield;
     mk(this.smallWood, this.mats.wood, true, false);
     yield;
-    mk(this.smallIron, this.mats.iron, false, false);
+    mk(this.smallIron, this.mats.iron, true, false);
     yield;
-    mk(this.smallTrim, this.mats.trim, false, false);
+    mk(this.smallTrim, this.mats.trim, true, false);
     yield;
     // close-range detail rides the same materials (no new shaders), but stays out of the shadow pass
     const fine = (parts: THREE.BufferGeometry[], mat: THREE.Material, keepColor: boolean) => {
@@ -2607,9 +2574,9 @@ export class ShipModel {
     };
     fine(this.fineWood, this.mats.wood, true);
     yield;
-    fine(this.fineIron, this.mats.iron, false);
+    fine(this.fineIron, this.mats.iron, true);
     yield;
-    fine(this.fineTrim, this.mats.trim, false);
+    fine(this.fineTrim, this.mats.trim, true);
     yield;
     this.addRopeMesh(this.root, this.ropeTubes);
     if (this.ropes.length) {
