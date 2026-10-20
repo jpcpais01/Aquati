@@ -29,30 +29,65 @@ import { GLSL_VORTEX, VORTEX_N, VORTEX_RIM, vortexDepth } from './vortex';
 // at night ship wakes and breaking surf glow with bioluminescence.
 
 /**
- * The sea grid, denser near the middle, cut into TILES x TILES patches that
- * share one vertex buffer. Each patch has its own bounds (padded for the
- * swell), so the ones behind the camera are skipped like any other mesh
- * instead of being transformed and clipped every frame. The vertices are the
- * same as one whole grid's, so the seams are exact.
+ * The sea grid: a uniform lattice that the vertex shader warps outward (see
+ * `gridWarp`), flat in a core round the ship and stretching ever wider toward
+ * the rim, cut into TILES x TILES patches that share one vertex buffer. Each
+ * patch has its own bounds (padded for the swell and the slide), so the ones
+ * behind the camera are skipped like any other mesh instead of being
+ * transformed and clipped every frame. The vertices are the same as one whole
+ * grid's, so the seams are exact.
+ *
+ * The lattice is pinned to the world in steps of two cells while the warp is
+ * centred on the ship itself: core vertices stand still on fixed world points
+ * (a step lands every one of them exactly on a neighbour's old spot), and the
+ * stretched outer ones glide smoothly with her. The sea never re-samples its
+ * swell in one jump, which a moving grid otherwise shows as a stutter.
  */
 const TILES = 8;
 const SWELL_PAD = 12;
-function buildGrid(segments: number, half: number): THREE.BufferGeometry[] {
+/** Centre cell size over the grid's half width, and how much of the lattice stays unstretched. */
+const GRID_A = 0.26;
+const GRID_CORE = 0.4;
+
+/** The warp's shape for a grid reaching `half` metres: (lattice half width, core half width, cubic gain). */
+export function gridWarpParams(half: number) {
+  const H = half * GRID_A;
+  const C = H * GRID_CORE;
+  return { H, C, k: (half - H) / (H - C) ** 3 };
+}
+
+/** CPU twin of the shader's warp along one axis. */
+function warp1(s: number, C: number, k: number) {
+  const e = Math.max(Math.abs(s) - C, 0);
+  return s + Math.sign(s) * e * e * e * k;
+}
+
+/**
+ * `pad`: how far (lattice metres) the shader may slide or morph a vertex.
+ * `morph`: the fine grid also carries, for each odd row and column, the step
+ * back onto its even neighbour. Fully morphed it lies exactly on the
+ * half-density grid (the dropped vertices collapse into zero-area triangles),
+ * so the two can be swapped without a seam or a flicker.
+ */
+function buildGrid(segments: number, half: number, morph: boolean, pad: number): THREE.BufferGeometry[] {
+  const { H, C, k } = gridWarpParams(half);
   const n = segments + 1;
+  const h = (2 * H) / segments;
   const pos = new Float32Array(n * n * 3);
-  const a = 0.26;
-  const map = (u: number) => half * (a * u + (1 - a) * u * u * u);
+  const mo = new Float32Array(n * n * 2);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {
-      const u = (i / segments) * 2 - 1;
-      const v = (j / segments) * 2 - 1;
-      const k = (j * n + i) * 3;
-      pos[k] = map(u);
-      pos[k + 1] = 0;
-      pos[k + 2] = map(v);
+      const v = j * n + i;
+      pos[v * 3] = i * h - H;
+      pos[v * 3 + 2] = j * h - H;
+      if (morph) {
+        mo[v * 2] = i & 1 ? -h : 0;
+        mo[v * 2 + 1] = j & 1 ? -h : 0;
+      }
     }
   }
   const position = new THREE.BufferAttribute(pos, 3);
+  const aMorph = new THREE.BufferAttribute(mo, 2);
   const cut = (t: number) => Math.round((t * segments) / TILES);
   const out: THREE.BufferGeometry[] = [];
   for (let tj = 0; tj < TILES; tj++) {
@@ -76,9 +111,11 @@ function buildGrid(segments: number, half: number): THREE.BufferGeometry[] {
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', position);
+      g.setAttribute('aMorph', aMorph);
       g.setIndex(new THREE.BufferAttribute(idx, 1));
-      const x0 = pos[(j0 * n + i0) * 3], x1 = pos[(j0 * n + i1) * 3];
-      const z0 = pos[(j0 * n + i0) * 3 + 2], z1 = pos[(j1 * n + i0) * 3 + 2];
+      // the lattice slides up to `pad` either way under the ship: bound the warp past it
+      const x0 = warp1(i0 * h - H - pad, C, k), x1 = warp1(i1 * h - H + pad, C, k);
+      const z0 = warp1(j0 * h - H - pad, C, k), z1 = warp1(j1 * h - H + pad, C, k);
       g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2), Math.hypot(x1 - x0, z1 - z0) / 2 + SWELL_PAD);
       out.push(g);
     }
@@ -138,7 +175,9 @@ function buildFunnel(slot: number, rings: number, segs: number): THREE.BufferGeo
 }
 
 /** A coarse square apron from just inside the grid's rim out toward the horizon,
- *  so the sea runs all the way to the sky from the captain's eyes. */
+ *  so the sea runs all the way to the sky from the captain's eyes. Its y says
+ *  "apron" to the vertex shader (below -0.5) and, on the inner ring, how far to
+ *  tuck under the grid's gliding rim (y + 1 metres) so the two never fight. */
 function buildApron(inner: number, outer: number): THREE.BufferGeometry {
   const P = 64;
   const R = 7;
@@ -151,7 +190,7 @@ function buildApron(inner: number, outer: number): THREE.BufferGeometry {
       const side = Math.floor(u);
       const f = (u - side) * 2 - 1;
       const [x, z] = side === 0 ? [f, -1] : side === 1 ? [1, f] : side === 2 ? [-f, 1] : [-1, -f];
-      pos.push(x * r, 0, z * r);
+      pos.push(x * r, j === 0 ? -2 : -1, z * r);
     }
   }
   const idx: number[] = [];
@@ -191,10 +230,24 @@ const OCEAN_VERT = /* glsl */ `
   varying float vViewDist;
   varying vec4 vShore;
   varying float vCut;
+  // the grid: a lattice pinned to the world in steps of two cells (uGridShift,
+  // its offset from the ship), warped outward from the ship: x, the half width
+  // of the flat core; y, the cubic stretch beyond it. uGridMorph slides the
+  // fine grid's odd rows onto the coarse one as the camera pulls back.
+  attribute vec2 aMorph;
+  uniform vec2 uGridShift;
+  uniform vec2 uGridWarp;
+  uniform float uGridMorph;
+  vec2 gridWarp(vec2 s) {
+    vec2 e = max(abs(s) - uGridWarp.x, 0.0);
+    return s + sign(s) * e * e * e * uGridWarp.y;
+  }
   void main() {
     // a maelstrom's ring mesh says which in y (slot + 1) and holds polar
-    // offsets in xz, in radii; the sea's own grid lies flat at y = 0
+    // offsets in xz, in radii; the sea's own grid lies flat at y = 0, the
+    // apron round it below (see buildApron)
     vec4 wp;
+    float dip = 0.0;
     bool funnel = position.y > 0.5;
     vCut = -1.0;
     if (funnel) {
@@ -206,7 +259,10 @@ const OCEAN_VERT = /* glsl */ `
       }
       wp = vec4(v.x + position.x * v.z, 0.0, v.y + position.z * v.z, 1.0);
     } else {
-      wp = modelMatrix * vec4(position, 1.0);
+      vec3 lp = vec3(position.x, 0.0, position.z);
+      if (position.y < -0.5) dip = position.y + 1.0;
+      else lp.xz = gridWarp(position.xz + aMorph * uGridMorph + uGridShift);
+      wp = modelMatrix * vec4(lp, 1.0);
       #ifndef VX_GRID_DIP
       // inside a maelstrom's rim the ring mesh draws the sea instead
       vCut = vortexCut(wp.xz);
@@ -230,7 +286,7 @@ const OCEAN_VERT = /* glsl */ `
     vec3 n; float crest;
     vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
     wp.xyz += off;
-    wp.y += vxH;
+    wp.y += vxH + dip;
     n.xz -= vxGrad * n.y;
     // wake waves ride on top of the swell
     vec2 wuv = (wp.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
@@ -441,7 +497,8 @@ export class Ocean {
   private readonly reflMaterial: THREE.ShaderMaterial;
   private readonly reflMesh: THREE.Group;
   private readonly reflApron: THREE.Mesh;
-  private snap: number;
+  /** The fine grid's lattice cell (m): the world pin steps two of these. */
+  private readonly cell: number;
   /**
    * Each maelstrom's funnel, drawn with the sea's own material (one program)
    * on a ring mesh of its own; the flat grid steps aside inside its rim.
@@ -457,7 +514,8 @@ export class Ocean {
   constructor(waves: Wave[], opts: OceanOptions) {
     const tex = getSharedTextures();
     const packed = packWaves(waves);
-    this.snap = (opts.half * 0.26 * 2) / opts.segments;
+    const gw = gridWarpParams(opts.half);
+    this.cell = (2 * gw.H) / opts.segments;
     const uniforms = {
       ...globalUniforms,
       ...opts.wake.uniforms,
@@ -482,6 +540,9 @@ export class Ocean {
       // max ray length (m), hit thickness base, thickness per metre of depth, mirror strength on calm water
       uSSR: { value: new THREE.Vector4(70, 1.6, 0.012, 0.16) },
       uRefl: { value: null as THREE.Texture | null },
+      uGridShift: { value: new THREE.Vector2() },
+      uGridWarp: { value: new THREE.Vector2(gw.C, gw.k) },
+      uGridMorph: { value: 0 },
     };
     this.material = new THREE.ShaderMaterial({
       uniforms,
@@ -1026,8 +1087,11 @@ export class Ocean {
           gl_FragColor = ghostSee > 0.0 ? vec4(col * ghostSee, ghostSee) : vec4(col, 1.0);
         }`,
     });
-    this.mesh = gridMesh(buildGrid(opts.segments, opts.half), this.material, -10);
-    this.apron = new THREE.Mesh(buildApron(opts.half * 0.985, 3400), this.material);
+    // a vertex slides at most a cell with the ship and morphs at most another
+    const pad = this.cell * 2;
+    this.mesh = gridMesh(buildGrid(opts.segments, opts.half, true, pad), this.material, -10);
+    // the rim glides in and out with the ship: start the apron well inside it
+    this.apron = new THREE.Mesh(buildApron(opts.half * 0.94, 3400), this.material);
     this.apron.frustumCulled = false;
     this.apron.renderOrder = -10;
     this.apron.visible = false;
@@ -1042,7 +1106,7 @@ export class Ocean {
     });
     // at half the resolution it needs half the grid: the trace starts a few
     // centimetres off the true crest at most, well under the ripple wobble
-    this.reflMesh = gridMesh(buildGrid(opts.segments >> 1, opts.half), this.reflMaterial);
+    this.reflMesh = gridMesh(buildGrid(opts.segments >> 1, opts.half, false, pad), this.reflMaterial);
     // the main sea's tiles in both densities, the coarse ones shared with the reflection
     for (const [i, t] of this.mesh.children.filter((o) => o !== this.apron).entries()) {
       this.gridLevels.push([(t as THREE.Mesh).geometry, (this.reflMesh.children[i] as THREE.Mesh).geometry]);
@@ -1160,9 +1224,16 @@ export class Ocean {
     (u.uWorldRect.value as THREE.Vector4).copy(rect);
   }
 
+  /**
+   * Centres the sea on (x, z), smoothly: the warp rides with the ship while the
+   * lattice under it stays pinned to the world two cells at a time (both grid
+   * densities share those points), so nothing ever jumps. The offset is taken
+   * here in double precision, far from home where floats run thin.
+   */
   follow(x: number, z: number) {
-    const s = this.snap * 4;
-    this.mesh.position.set(Math.round(x / s) * s, 0, Math.round(z / s) * s);
+    const s = this.cell * 2;
+    (this.material.uniforms.uGridShift.value as THREE.Vector2).set(Math.round(x / s) * s - x, Math.round(z / s) * s - z);
+    this.mesh.position.set(x, 0, z);
     this.mesh.updateMatrixWorld();
     this.underside.position.copy(this.mesh.position);
     this.underside.updateMatrixWorld();
@@ -1226,11 +1297,15 @@ export class Ocean {
   /**
    * The grid is densest under the ship the camera follows; pulled well back,
    * half the rows and columns put the same few dozen pixels between vertices
-   * as the full grid does at the closest zoom.
+   * as the full grid does up close. The fine grid's odd rows morph onto the
+   * coarse ones with the camera's height (steady while she sails and turns,
+   * unlike its distance to her, which the look-ahead swings), and only once
+   * they lie exactly on them does the coarse grid take over: no pop either way.
    */
   private fitGrid(cam: THREE.PerspectiveCamera) {
-    const d = cam.position.distanceTo(this.mesh.position) / cam.zoom;
-    const coarse = this.gridCoarse ? d > 120 : d > 135;
+    const m = THREE.MathUtils.smoothstep(cam.position.y / cam.zoom, 135, 175);
+    this.material.uniforms.uGridMorph.value = m;
+    const coarse = m > 0.999;
     if (coarse === this.gridCoarse) return;
     this.gridCoarse = coarse;
     const tiles = this.mesh.children.filter((o) => o !== this.apron) as THREE.Mesh[];
