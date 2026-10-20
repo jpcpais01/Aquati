@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T03:00Z',
     entries: [
       {
+        title: 'Treasure maps, digging, and a crew that moves like people',
+        notes: [
+          'Sea chests and cutthroat camps now hold torn pieces of treasure maps. Find all three pieces and the map comes together, showing an island and a red X. Press T, or tap the map chip by your gold, to unroll it. The X also appears on your sea chart and minimap.',
+          'Sail to that island, go ashore and look for two crossed driftwood sticks and a little cairn of stones. Stand on the spot and press F to dig. The captain takes up a spade, two hands join in, and sand flies until you hear a spade knock on wood. Then the chest rises out of the hole and the lid swings open: a big haul of gold, plunder for the hold and fresh shot. After that a new map can start.',
+          'Walking and running are completely new. Feet strike heel first, knees give as they take the weight, hips sway and turn with each step while the shoulders turn the other way, and arms swing a beat behind. Runners lean into turns and into speeding up, and leave the ground between strides. Standing about, people shift their weight from foot to foot and breathe.',
+          'Cutlass attacks are completely new as well. Every cut winds up with the body coiled and the weight back, whips through to the blow, carries on past it and settles back on guard, with a real step in behind the blade. A pale streak of light follows the edge through each swing.',
+          'Your hands now walk as a loose group instead of a tidy formation. Each keeps his own pace, drifts about, sets off a moment after you do, stops a few steps later, now and then pauses to look at something and jogs to catch up, chats with his mate as they go, and sometimes swaps sides.',
+        ],
+      },
+      {
         title: 'Ship parts: from Common to Mythic',
         notes: [
           'Your ships can now be refitted with upgrade parts in four slots: hull plating, sails, guns and a figurehead. Each part changes how your ship looks and gives real bonuses to hull, armour, speed, turning, reload, damage, range or luck.',

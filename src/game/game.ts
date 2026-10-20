@@ -65,12 +65,14 @@ import { Item, Loot, RARITY } from './loot';
 import { PIN_COLORS, Waypoints } from './waypoints';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
 import { ShipStatus, World } from './world';
-import { campClearings, findCampSites, Ground, Landing } from '../shore/ground';
+import { campClearings, digSite, Disc, findCampSites, Ground, Landing } from '../shore/ground';
 import { Camp, Shore, ShoreInput } from '../shore/shore';
 import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
 import { rollTier } from './loot';
 import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarned, KILL_INFAMY, NamedCaptain, REPUTE, wantedLevel } from './bounty';
 import { BountyBanner, BountyBoard, WantedHud } from '../ui/bounty';
+import { DigTarget, TreasureMaps } from './treasureMaps';
+import { TreasureMapUI } from '../ui/treasureMap';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
@@ -305,6 +307,11 @@ export class Game {
   private krWarn: THREE.Vector3[] = [];
   private krWarnPx = Array.from({ length: 8 }, () => ({ x: 0, y: 0 }));
   private krFocus = new THREE.Vector3();
+  // treasure maps: torn pieces from chests, an X on an island, and the dig
+  private maps = new TreasureMaps();
+  private mapUi = new TreasureMapUI();
+  /** Towns and camps a map's X keeps clear of. */
+  private digAvoid: Disc[] = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -440,6 +447,7 @@ export class Game {
     const towns = [site, ...tradeSites].flatMap(portClearings);
     // the cutthroats' camps: a glade a short walk in from the beach on most isles
     const camps = findCampSites(this.terrain, towns, site.island);
+    this.digAvoid = [...towns, ...campClearings(camps)];
     const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps)], q.tier === 0));
     ui.progress(0.62);
     await nextFrame();
@@ -531,6 +539,7 @@ export class Game {
       routed: (c) => this.onCampRouted(c),
       plunder: (c) => this.plunderCamp(c),
       defeat: () => this.onCaptainDown(),
+      unearthed: (at) => this.onUnearthed(at),
       step: (k, wet) => this.audio.sandStep(k, wet),
     });
     this.opaque.add(this.shore.group);
@@ -540,6 +549,9 @@ export class Game {
       else this.goAshore();
     };
     this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol);
+    this.mapUi.onOpen = () => this.setMapView(true);
+    this.mapUi.onClose = () => this.setMapView(false);
+    this.syncTreasure();
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = this.skyEnv.update();
@@ -617,6 +629,10 @@ export class Game {
   /** The cloud rewrote some saves (another device's progress, or a sign-out). */
   private applyCloud(parts: Set<Part>) {
     if (parts.has('bounty')) this.bounty.reload();
+    if (parts.has('maps')) {
+      this.maps.reload();
+      this.syncTreasure();
+    }
     if (parts.has('vault')) {
       this.vaultStore.reload();
       this.applyCosmetics();
@@ -1418,6 +1434,86 @@ export class Game {
     else this.ui.toast(`${R.name} chest · +${gold} gold`, kept.length ? kept.map((id) => LOOT[id].name).join(', ') : 'And fresh shot for the guns', 3.4);
     this.rig.shake(0.12);
     this.chestPart(Math.max(2, tier), at, 1200);
+    // cutthroats always carry a scrap of somebody's map
+    setTimeout(() => this.foundPiece(at), 1400);
+  }
+
+  // ------------------------------------------------------------------ treasure maps
+
+  /** Where a new map's X falls, from its seed. */
+  private digTarget(seed: number): DigTarget | null {
+    const t = digSite(this.ground, seed, this.digAvoid, this.port.site.island);
+    return t && { isle: t.island.name, x: t.x, z: t.z };
+  }
+
+  /** A torn piece of map: one more third, and the whole map once there are three. */
+  private foundPiece(at: THREE.Vector3 | null) {
+    if (this.state !== 'playing' && this.state !== 'paused') return;
+    const i = this.maps.addPiece((seed) => this.digTarget(seed));
+    if (i < 0) return;
+    const n = this.maps.count;
+    if (at) {
+      const [x, y, ok] = this.screenOf(at);
+      if (ok) this.ui.floater('Treasure map piece!', x, y - 30, 'rare');
+    }
+    const how = this.input.isTouch ? 'tap the map chip' : 'press T';
+    if (n < 3) {
+      this.ui.toast(`Treasure map · ${n} of 3 pieces`, `Torn and stained: ${how} to look`, 3.6);
+      this.audio.chime();
+    } else {
+      const t = this.maps.target!;
+      this.ui.toast('The map is whole!', `X marks the spot on ${t.isle}`, 5.5);
+      this.audio.treasure(3);
+      this.note('chest', 'Pieced together a treasure map', t.isle);
+      this.syncTreasure();
+    }
+  }
+
+  /** The X on the sand matches the map in hand. */
+  private syncTreasure() {
+    this.shore.setTreasure(this.maps.target);
+  }
+
+  /** Unrolls the map over the HUD (the world sails on beneath, as with the chart). */
+  private setMapView(on: boolean) {
+    if (on && (this.mapUi.isOpen || (this.state !== 'playing' && this.state !== 'paused'))) return;
+    if (!on && !this.mapUi.isOpen) return;
+    if (on) {
+      this.setChart(false);
+      this.input.releaseLook();
+      const m = this.maps.state;
+      const isl = this.terrain.islands.find((i) => i.name === m.isle) ?? null;
+      this.mapUi.show(true, m, isl, (x, z) => this.terrain.heightAt(x, z));
+      this.audio.click();
+    } else this.mapUi.show(false);
+  }
+
+  /** The chest is out of the ground: a hoard, the map spent. */
+  private onUnearthed(at: THREE.Vector3) {
+    const p = this.player;
+    if (!p) return;
+    const gold = 450 + Math.round(Math.random() * 450);
+    p.gold += gold;
+    this.vaultStore.earn(gold);
+    const tier = rollTier(0.9, 3);
+    const goods = [...rollContents(tier), ...rollContents(rollTier(0.6, 2))];
+    const res = this.hold.stow(goods);
+    if (res.tossed.length) this.nagHold(res.tossed.length);
+    this.stockAmmo({ shell: 3, fire: 2, chain: 2, grape: 3 }, null);
+    this.log.chests++;
+    this.log.best = Math.max(this.log.best, tier);
+    const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
+    const isle = this.maps.state.isle;
+    this.note('chest', `Dug up buried treasure on ${isle}`, `+${gold} gold${kept.length ? ' · ' + kept.map((id) => LOOT[id].name).join(', ') : ''}`);
+    const [x, y, ok] = this.screenOf(at);
+    if (ok) this.ui.floater(`+${gold} gold`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[tier]);
+    this.audio.treasure(tier);
+    this.rig.shake(0.2);
+    const best = kept[0];
+    if (best) this.ui.lootToast(lootIcon(best), LOOT[best].rarity, 'Buried treasure', LOOT[best].name, 4.2);
+    this.ui.toast(`Buried treasure · +${gold} gold`, kept.length > 1 ? `${kept.length} pieces of plunder for the hold` : 'And fresh shot for the guns', 4.2);
+    this.maps.consume();
+    this.syncTreasure();
   }
 
   /** The captain is down: the hands carry them back to the boat, and the camp keeps its chest. */
@@ -1463,9 +1559,11 @@ export class Game {
     if (st.helm) this.shoreAct();
     if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) {
-      if (this.chartOpen) this.setChart(false);
+      if (this.mapUi.isOpen) this.setMapView(false);
+      else if (this.chartOpen) this.setChart(false);
       else this.setPaused(true);
     } else if (st.map) this.setChart(!this.chartOpen);
+    else if (st.treasure) this.setMapView(!this.mapUi.isOpen);
     else if (st.photo) this.openPhoto();
   }
 
@@ -2197,6 +2295,7 @@ export class Game {
   /** The sea chart overlays live play: the world keeps sailing underneath. */
   private setChart(on: boolean) {
     if (on && !this.chartOpen && this.state === 'playing' && this.player) {
+      this.setMapView(false);
       this.input.releaseLook();
       this.chartOpen = true;
       this.ui.showChart(true, this.player);
@@ -2477,6 +2576,9 @@ export class Game {
       return;
     }
     const R = RARITY[it.tier];
+    // now and then a chest holds a torn piece of a treasure map (more often the finer the chest)
+    const fresh = this.maps.state.dug === 0 && this.maps.count === 0 ? 2 : 1;
+    if (!this.maps.complete && Math.random() < [0, 0.1, 0.25, 0.45, 0.7][it.tier] * fresh) setTimeout(() => this.foundPiece(at), 900);
     this.log.chests++;
     this.log.best = Math.max(this.log.best, it.tier);
     if (it.tier >= 2) this.note('chest', `${R.name} chest`, kept.map((id) => LOOT[id].name).join(', '));
@@ -3150,9 +3252,11 @@ export class Game {
     }
     if (st.zoom && !this.fpv) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) {
-      if (this.chartOpen) this.setChart(false);
+      if (this.mapUi.isOpen) this.setMapView(false);
+      else if (this.chartOpen) this.setChart(false);
       else this.setPaused(true);
     } else if (st.map) this.setChart(!this.chartOpen);
+    else if (st.treasure) this.setMapView(!this.mapUi.isOpen);
     else if (st.photo) this.openPhoto();
   }
 
@@ -3408,15 +3512,17 @@ export class Game {
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
       const cap = this.shore.captain;
       const camps = this.shore.camps.map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
-      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins);
+      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target);
       this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
+      this.mapUi.setChip(this.maps.state);
     }
     if (p && this.chartOpen) {
       this.ui.drawChart({
         player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
         ports: this.tradePorts.ports.map((tp) => ({ x: tp.x, z: tp.z, name: tp.name })),
         pins: this.waypoints.pins,
+        treasure: this.maps.target,
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });
     }

@@ -15,6 +15,7 @@ export interface Controls {
   pointer: { x: number; y: number; active: boolean };
   pause: boolean;
   map: boolean;
+  treasure: boolean; // pulse: the treasure map (T)
   photo: boolean; // pulse: photo mode (P)
   // captain's view
   walkX: number; // -1 left .. +1 right
@@ -43,6 +44,7 @@ export class Input {
     pointer: { x: 0, y: 0, active: false },
     pause: false,
     map: false,
+    treasure: false,
     photo: false,
     walkX: 0,
     walkY: 0,
@@ -103,6 +105,7 @@ export class Input {
       if (k === 'escape') this.state.pause = true;
       if (k === 'p') this.state.photo = true;
       if (k === 'm') this.state.map = true;
+      if (k === 't') this.state.treasure = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
@@ -387,6 +390,7 @@ export class Input {
     this.state.zoom = 0;
     this.state.pause = false;
     this.state.map = false;
+    this.state.treasure = false;
     this.state.photo = false;
     this.state.view = false;
     this.state.helm = false;

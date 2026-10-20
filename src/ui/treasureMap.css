@@ -1,0 +1,82 @@
+/* ------------------------------------------------------------------ the treasure map */
+
+#tmap {
+  z-index: 32;
+}
+
+.tm-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  animation: chart-in 0.4s var(--ease);
+}
+
+.tm-canvas {
+  width: min(560px, 88vw, calc(100vh - 170px));
+  height: auto;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.45));
+}
+
+.tm-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: min(560px, 88vw);
+  text-align: center;
+}
+
+.tm-title {
+  font: 700 20px var(--serif);
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+
+.tm-sub {
+  font: 500 13.5px var(--sans);
+  color: var(--ink-2);
+}
+
+.tm-close {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 1;
+}
+
+/* the HUD chip: hidden until the first piece, gold once the map is whole */
+.chip.map-chip {
+  display: none;
+  pointer-events: auto;
+  cursor: pointer;
+  color: inherit;
+  appearance: none;
+}
+
+.chip.map-chip.on {
+  display: flex;
+}
+
+.chip.map-chip .tm-ico {
+  display: flex;
+  width: max(12px, calc(15px * var(--k)));
+  height: max(12px, calc(15px * var(--k)));
+  color: #e9cf95;
+}
+
+.chip.map-chip .tm-ico .ico {
+  width: 100%;
+  height: 100%;
+}
+
+.chip.map-chip.whole {
+  border-color: rgba(244, 199, 101, 0.6);
+  box-shadow: 0 0 12px rgba(244, 180, 70, 0.35);
+}
+
+.chip.map-chip.whole b {
+  color: #ff8a6a;
+}

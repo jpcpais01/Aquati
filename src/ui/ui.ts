@@ -6,7 +6,7 @@ import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { HOLD_ROOM } from '../game/treasure';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
-import { SeaChart, ChartScene, portMark, pinMark, fmtDist } from './chart';
+import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark } from './chart';
 import { PIN_COLORS } from '../game/waypoints';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
@@ -1253,6 +1253,8 @@ export class UI {
     /** Ashore: the captain on foot, at the middle of a closer map. */
     walker: { x: number; z: number; yaw: number } | null = null,
     pins: { x: number; z: number; hue: number }[] = [],
+    /** A whole treasure map's X. */
+    treasure: { x: number; z: number } | null = null,
   ) {
     const g = this.map;
     const S = this.mapCanvas.width;
@@ -1349,6 +1351,14 @@ export class UI {
         g.stroke();
       }
       g.restore();
+    }
+    if (treasure) {
+      const [x, y] = toMap(treasure.x, treasure.z);
+      const r = S / 2 - 16;
+      const d = Math.hypot(x - S / 2, y - S / 2);
+      // off the edge: pinned to the rim, pointing the way
+      const k = d > r ? r / d : 1;
+      xMark(g, S / 2 + (x - S / 2) * k, S / 2 + (y - S / 2) * k, d > r ? 8 : 11);
     }
     for (const s of ships) {
       if (s === player || !s.alive) continue;

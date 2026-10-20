@@ -129,7 +129,7 @@ export class ShoreHud {
     d.classList.toggle('ok', p.ok);
     d.querySelector('b')!.textContent = p.title;
     d.querySelector('small')!.textContent = p.sub;
-    d.querySelector('.dp-ico')!.innerHTML = icon(ICONS[p.key === 'boat' || p.key === 'land' ? 'boat' : p.key === 'fight' ? 'cutlass' : 'anchor']);
+    d.querySelector('.dp-ico')!.innerHTML = icon(ICONS[p.key === 'boat' || p.key === 'land' ? 'boat' : p.key === 'fight' ? 'cutlass' : p.key === 'dig' ? 'spade' : 'anchor']);
   }
 
   /** The pistol's reload ring: 0 just fired .. 1 loaded. */

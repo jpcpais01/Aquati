@@ -61,7 +61,7 @@ export const TINT_SLOTS = 30;
 export const HAT = { none: 0, tricorn: 1, bandana: 2, knit: 3, straw: 4 } as const;
 // group ids: 1-9 hats, 10-29 shown with a flag bit, 30-49 hidden by a flag bit, 50+ held props,
 // 1000 + a*32 + b shown when neither bit is set, 3000 + a*32 + b shown when a is set and b is not
-export const PROP = { none: 0, rammer: 50, spyglass: 51, mop: 52, bucket: 53, cutlass: 54, linstock: 55, fiddle: 56, mug: 57, pipe: 58 } as const;
+export const PROP = { none: 0, rammer: 50, spyglass: 51, mop: 52, bucket: 53, cutlass: 54, linstock: 55, fiddle: 56, mug: 57, pipe: 58, spade: 59 } as const;
 const BIT = {
   beard: 0,
   coat: 1,
@@ -1394,6 +1394,23 @@ export function buildSailorGeometry(res = 1): THREE.BufferGeometry {
       const r = 0.03;
       add(strand([V(hx + Math.cos(a) * 0.01, hy - 1.08, 0.006 + Math.sin(a) * 0.01), V(hx + Math.cos(a) * r * 2, hy - 1.18, 0.006 + Math.sin(a) * r * 2), V(hx + Math.cos(a) * r * 3.4, hy - 1.24, 0.006 + Math.sin(a) * r * 3.2)], 0.014, 0.009, 4, 3), { bone: R, tint: TINT.cloth, group: PROP.mop, flex: 0.3, ao: 0.9 });
     }
+
+    // spade: an ash shaft with a crutch grip, the iron blade dished and worn bright at the edge
+    add(strand([V(hx, hy + 0.36, 0.006), V(hx, hy - 0.78, 0.006)], 0.016, 0.016, 7, 2), { bone: R, tint: TINT.wood, group: PROP.spade, ao: 1 });
+    add(strand([V(hx - 0.075, hy + 0.4, 0.006), V(hx, hy + 0.37, 0.006), V(hx + 0.075, hy + 0.4, 0.006)], 0.014, 0.014, 6, 3), { bone: R, tint: TINT.wood, group: PROP.spade, ao: 1 });
+    const sb = new THREE.BoxGeometry(0.19, 0.27, 0.012, 6, 5, 1);
+    const sp = sb.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < sp.count; i++) {
+      const x = sp.getX(i);
+      const y = sp.getY(i);
+      // taper to a rounded point, and dish the face
+      const t = (0.135 - y) / 0.27;
+      sp.setX(i, x * (1 - 0.35 * t * t));
+      sp.setZ(i, sp.getZ(i) - 0.035 * (1 - (x / 0.095) ** 2));
+    }
+    sb.computeVertexNormals();
+    add(sb.translate(hx, hy - 0.91, 0.006), { bone: R, tint: TINT.metal, group: PROP.spade, ao: 1 });
+    add(new THREE.CylinderGeometry(0.024, 0.02, 0.09, seg(10)).translate(hx, hy - 0.75, 0.006), { bone: R, tint: TINT.metal, group: PROP.spade, ao: 1 });
 
     // bucket hanging from its bail
     const bk = ring([[0.0, 0.0], [0.072, 0.0], [0.086, 0.004], [0.098, 0.17], [0.104, 0.172], [0.104, 0.18], [0.092, 0.18], [0.084, 0.02], [0.0, 0.02]], seg(14));
