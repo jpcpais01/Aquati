@@ -25,6 +25,20 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Prefer the old view? V or the eye button switches to the view from above and back again, and the game remembers your choice. Boarding fights keep their deck camera. From eye level, trees far across the island use their lighter models, so walking the islands stays smooth.',
         ],
       },
+    ],
+  },
+  {
+    hour: '2026-10-20T18:00Z',
+    entries: [
+      {
+        title: 'A night sky worth staying up for',
+        notes: [
+          'The stars no longer look like falling snow. Thousands of pin-sharp stars now fill the night, from a handful of bright ones down to a fine dust of faint ones, in their true colours: blue-white, golden and the odd orange giant. They twinkle, hardest low over the sea, and stay hidden behind the clouds.',
+          'On a clear night the Milky Way arches across the sky, its glowing star clouds split by dark lanes of dust. The whole sky turns slowly through the night, so the stars rise and set just as the sun does, and the sea mirrors the brightest of them.',
+          'The moon is a real moon now, with its dark seas, bright rayed craters and crater shadows along its edge. It goes through its phases, starting from tonight\'s real moon and moving on a little each night you sail. It rises pale in the dusk, and a thin moon lights the sea a little less, so dark nights show more stars.',
+          'Now and then a shooting star streaks across the sky. Clouds drifting past the moon are lined with silver, and the glow round the moon is a soft halo instead of a wide blaze.',
+        ],
+      },
       {
         title: 'Softer, slower clouds',
         notes: [
