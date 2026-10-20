@@ -2764,7 +2764,7 @@ export class Game {
     si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
     if (this.prizeOpen && st.ammoPick >= 0 && st.ammoPick <= 2) this.choosePrize((['prize', 'scuttle', 'fleet'] as const)[st.ammoPick]);
     else if (st.helm) this.shoreAct();
-    if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.zoom) this.rig.zoomBy(st.zoom, performance.now() / 1000);
     if (st.fleet) this.cycleOrder();
     if (st.pause) {
       if (this.mapUi.isOpen) this.setMapView(false);
@@ -3449,6 +3449,7 @@ export class Game {
     this.rig.mode = 'follow';
     this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
+    this.rig.resetTilt();
     if (SEA_TEST) {
       this.testSea(p);
       this.rig.snapTo(p.pos);
@@ -5180,7 +5181,7 @@ export class Game {
       if (hs) this.tryFire(hs);
       else this.fireAuto();
     }
-    if (st.zoom && !this.fpv) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.zoom && !this.fpv) this.rig.zoomBy(st.zoom, performance.now() / 1000);
     if (st.pause) {
       if (this.mapUi.isOpen) this.setMapView(false);
       else if (this.chartOpen) this.setChart(false);
@@ -5879,7 +5880,8 @@ export class Game {
     const port = this.rig.mode === 'port';
     this.pipeline.tilt = port ? 0.25 : (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
     // the horizon only exists from the deck (and in the shipwright's harbour)
-    const cine = this.rig.cine ? this.rig.cine.w : 0;
+    // (and when the player tips the camera down toward the skyline past the farthest zoom)
+    const cine = Math.max(this.rig.cine ? this.rig.cine.w : 0, this.rig.mode === 'follow' && this.rig.tiltBlend > 0.02 ? this.rig.tiltBlend : 0);
     if (cine > 0) this.pipeline.tilt *= 1 - cine * 0.7;
     // only the farewell ever takes the camera below the waves
     const k = this.wreck;
