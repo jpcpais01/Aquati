@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T18:00Z',
     entries: [
       {
+        title: 'Softer, slower clouds',
+        notes: [
+          'The little clouds you see from high above now change shape far more slowly. Their billows used to slide through them as the wind carried them along, so they seemed to boil; now each billow rides with its cloud and only gently swells and settles.',
+          'They also look fuller and fluffier: every lump casts a soft shade on the one behind it, the edges facing the sun glow with a silver lining, the hollows between billows sit in cooler shadow, and the billows shift with a hint of depth as your camera moves.',
+        ],
+      },
+      {
         title: 'A smooth sea under sail',
         notes: [
           'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
