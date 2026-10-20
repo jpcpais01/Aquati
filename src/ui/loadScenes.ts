@@ -1,7 +1,7 @@
 // Loading-screen backdrops: real moments from the game. Add a scene by
-// dropping `<name>-1280.webp` and `<name>-2560.webp` (16:9) in public/scenes/
+// dropping `<name>-1280.webp`, `<name>-1920.webp` and `<name>-2560.webp` (16:9) in public/scenes/
 // and listing its name here. The first one is preloaded in index.html.
-const SCENES = ['archipelago'];
+const SCENES = ['brumas'];
 
 const HOLD_MS = 7000;
 
@@ -13,8 +13,9 @@ export function startLoadScenes(): () => void {
     img.className = 'scene';
     img.alt = '';
     img.decoding = 'async';
-    img.sizes = '100vw';
-    img.srcset = `/scenes/${name}-1280.webp 1280w, /scenes/${name}-2560.webp 2560w`;
+    // cover-cropped: held upright, the 16:9 scene is drawn a full screen-height tall
+    img.sizes = '(orientation: portrait) 178vh, 100vw';
+    img.srcset = `/scenes/${name}-1280.webp 1280w, /scenes/${name}-1920.webp 1920w, /scenes/${name}-2560.webp 2560w`;
     img.src = `/scenes/${name}-1280.webp`;
     return img;
   };
