@@ -27,6 +27,7 @@ import { preloadPaint } from '../ships/heraldry';
 import { skinItem } from '../ships/cosmetics';
 import type { World } from '../game/world';
 import type { AmmoId } from '../game/ammo';
+import { isFirework } from '../game/fireworks';
 import type { WeatherKind } from '../world/atmosphere';
 import { Session, Wire } from './transport';
 
@@ -363,7 +364,7 @@ export class Coop implements NetRules {
   fired(ship: Ship, side: 'port' | 'starboard', target: Ship | null, point: THREE.Vector3 | null) {
     const m = this.mine.get(ship);
     if (!m || !this.live) return;
-    this.session!.send({ k: 'fi', id: m.id, s: side === 'port' ? 1 : 0, t: target ? this.idOf(target) : 0, p: point ? [point.x, point.y, point.z] : null, a: ship.ammo });
+    this.session!.send({ k: 'fi', id: m.id, s: side === 'port' ? 1 : 0, t: target ? this.idOf(target) : 0, p: point ? [point.x, point.y, point.z] : null, a: ship.ammo, fw: ship.ammo === 'firework' ? ship.firework : undefined });
   }
 
   // ---------------------------------------------------------------- every frame
@@ -650,6 +651,7 @@ export class Coop implements NetRules {
         if (!s || !s.alive) return;
         const side = m.s ? 'port' : 'starboard';
         s.ammo = (m.a as AmmoId) ?? 'round';
+        if (isFirework(m.fw)) s.firework = m.fw;
         s.reload[side] = 0;
         const pt = m.p as number[] | null;
         s.fire(side, w, m.t ? this.shipOf(m.t as number) : null, pt ? _p.set(pt[0], pt[1], pt[2]) : null);

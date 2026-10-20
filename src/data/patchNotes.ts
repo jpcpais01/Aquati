@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T19:00Z',
     entries: [
       {
+        title: 'Fireworks',
+        notes: [
+          'Your gun rack has a sixth slot: fireworks. Load them with 6 (or the rocket in the shot fan on touch) and fire a broadside, and the rockets climb away at a steep 70 degrees and burst high over the sea, lighting the water, your sails and every ship nearby in their colours.',
+          'Ten kinds to collect: Coral Peony, Gold Chrysanthemum, Weeping Willow, Island Palm, Halo Ring, Crossette, Lighthouse Strobe, Dragon\'s Eggs, Shoal of Fish and Saturn. Press 6 again, or tap the loaded slot, to open the locker and pick which goes up next.',
+          'Three showpieces are rare and worth the wait. Kraken\'s Bloom opens a sea-green maw with eight curling arms of fire, the Jolly Roger writes a skull and crossbones across the sky inside a crimson crown, and Fortune\'s Finale fills the night with a golden crown, rings of every colour and a rain of gold coins.',
+          'Every port now has a pyrotechnist on the market with a few kinds for sale, and sometimes a showpiece. Treasure hauls can turn up fireworks too, and the kraken always leaves a Kraken\'s Bloom behind. You start with a small welcome crate.',
+          'Fireworks are only for show: they do no damage. Your locker is saved to your profile, and in co-op your crew sees exactly which kind you fired.',
+        ],
+      },
+      {
         title: 'A compass that turns like clockwork while you load',
         notes: [
           'The compass on the loading screen now spins at a perfectly steady pace, with no speeding up, slowing down or hesitating, and its dotted inner dial slowly turns the other way.',

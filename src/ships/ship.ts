@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { angleDelta, clamp, damp, lerp, smoothstep } from '../core/noise';
 import { World } from '../game/world';
 import { AMMO, AmmoId, EFFECT } from '../game/ammo';
+import { FIREWORKS, FireworkId } from '../game/fireworks';
 import { globalUniforms } from '../render/environment';
 import { BowWave } from '../fx/bowWave';
 import { ShipModel } from './shipModel';
@@ -35,6 +36,10 @@ interface PendingShot {
   target: Ship | null;
   point: THREE.Vector3 | null;
   ammo: AmmoId;
+  /** Fireworks: which kind, and this rocket's place (k of n) in the volley. */
+  fw?: FireworkId;
+  k?: number;
+  n?: number;
 }
 
 /** How far a player's guns can train fore and aft of square, radians. The firing arcs on the water show exactly this. */
@@ -146,6 +151,8 @@ export class Ship {
   readonly reloadFull: { port: number; starboard: number };
   /** The shot the guns load for the next broadside. */
   ammo: AmmoId = 'round';
+  /** With fireworks loaded, which kind goes up. */
+  firework: FireworkId = 'peony';
   /** Seconds left burning (fire shot), and who lit her. */
   afire = 0;
   afireBy: Ship | null = null;
@@ -339,9 +346,18 @@ export class Ship {
     ms.sort((a, b) => Math.abs(a.m.pos.z) - Math.abs(b.m.pos.z));
     const pt = point ? point.clone() : null;
     const ammo = this.ammo;
-    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt, ammo }));
+    if (ammo === 'firework') {
+      // rockets: a showpiece goes up off the middle gun with a white salute either
+      // side; anything else, up to four guns spread along the side, one after another
+      const fw = this.firework;
+      const show = FIREWORKS[fw].tier === 2;
+      const n = Math.min(show ? 3 : 4, ms.length);
+      const along = ms.slice().sort((a, b) => a.m.pos.z - b.m.pos.z);
+      const picks = show ? ms.slice(0, n) : Array.from({ length: n }, (_, i) => along[Math.min(along.length - 1, Math.floor(((i + 0.5) * along.length) / n))]);
+      picks.forEach((e, k) => this.pending.push({ at: world.time + (show ? k * 0.4 : k * 0.22 + Math.random() * 0.06), muzzle: e.i, target: null, point: null, ammo, fw, k, n }));
+    } else ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt, ammo }));
     this.reload[side] = this.reloadFull[side] = this.cls.reload * AMMO[ammo].reload * this.boost.reload;
-    this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass;
+    this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass * (ammo === 'firework' ? 0.2 : 1);
     if (Ship.net && !this.remote) Ship.net.fired(this, side, target, pt);
     return true;
   }
@@ -352,6 +368,14 @@ export class Ship {
     this.root.updateMatrixWorld();
     const pos = m.pos.clone().applyMatrix4(this.model.root.matrixWorld);
     const dir = m.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
+    if (p.ammo === 'firework') {
+      dir.y = 0;
+      dir.normalize();
+      world.fireworks?.launch(p.fw ?? this.firework, pos, dir, this.vel, p.k ?? 0, p.n ?? 1);
+      world.particles.ammoMuzzle(pos, dir, this.vel, 'firework');
+      world.onShake(this.team === 'player' ? 0.08 : 0, pos);
+      return;
+    }
     const am = AMMO[p.ammo];
     const v = this.cls.muzzleSpeed * am.speed * (0.97 + Math.random() * 0.06);
     const g = GRAVITY;

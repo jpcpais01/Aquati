@@ -3,7 +3,7 @@
 // rounder you never run out of; the specials are powerful, carried in short
 // supply and topped up from salvage, chests and friendly isles.
 
-export type AmmoId = 'round' | 'shell' | 'fire' | 'chain' | 'grape' | 'wraith';
+export type AmmoId = 'round' | 'shell' | 'fire' | 'chain' | 'grape' | 'firework' | 'wraith';
 
 export interface AmmoType {
   id: AmmoId;
@@ -122,6 +122,25 @@ export const AMMO: Record<AmmoId, AmmoType> = {
     max: 12,
     start: 4,
   },
+  // not a weapon: every gun on the side sends a rocket up at seventy degrees
+  // (which kind comes from the firework locker, see fireworks.ts)
+  firework: {
+    id: 'firework',
+    name: 'Fireworks',
+    short: 'Fireworks',
+    blurb: 'Rockets in place of shot. Every gun on the side sends one up at seventy degrees to light up the night. Choose which from your firework locker.',
+    css: '#ff8ad8',
+    damage: 0,
+    reload: 0.65,
+    speed: 1,
+    balls: 0,
+    spread: 0,
+    size: 0,
+    color: 0xffffff,
+    trail: null,
+    max: Infinity,
+    start: 0,
+  },
   // only the dead load it: never in your racks, never in salvage
   wraith: {
     id: 'wraith',
@@ -143,7 +162,7 @@ export const AMMO: Record<AmmoId, AmmoType> = {
   },
 };
 
-export const AMMO_ORDER: AmmoId[] = ['round', 'shell', 'fire', 'chain', 'grape'];
+export const AMMO_ORDER: AmmoId[] = ['round', 'shell', 'fire', 'chain', 'grape', 'firework'];
 export const SPECIALS: AmmoId[] = ['shell', 'fire', 'chain', 'grape'];
 
 /** How long effects last, and how hard they bite. */

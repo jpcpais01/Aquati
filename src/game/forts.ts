@@ -654,7 +654,7 @@ export class Forts {
     }
     // only your guns (and your escorts') can hurt the Brethren's walls
     if (f.owner !== 'brethren' || b.owner.team !== 'player') return;
-    const mult = { round: 1, shell: 1.5, fire: 0.75, chain: 0.3, grape: 0.4, wraith: 1 }[b.ammo] ?? 1;
+    const mult = { round: 1, shell: 1.5, fire: 0.75, chain: 0.3, grape: 0.4, firework: 0, wraith: 1 }[b.ammo] ?? 1;
     let near: Gun | null = null;
     let nd = Infinity;
     for (const g of f.guns) {
