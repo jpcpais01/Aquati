@@ -8,6 +8,7 @@ import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { freezeStatic, skipWhenHidden } from '../render/staticScene';
+import { initLod } from '../render/lod';
 import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDrawSliced } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
@@ -536,6 +537,8 @@ export class Game {
   // ------------------------------------------------------------------ setup
 
   async init() {
+    // the mesh simplifier (WebAssembly) for the ships' levels of detail, before any ship is built
+    initLod();
     const ui = this.ui;
     const q = this.quality;
     // webfonts load on first use: fetch every weight now so a toast or banner
@@ -5243,7 +5246,7 @@ export class Game {
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
     this.crew.setView(this.rig.camera, this.toSun);
-    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position, this.rig.camera.fov / this.rig.camera.zoom);
     // laid rope, blocks and deck clutter only on ships big enough on screen to show them
     const cam = this.rig.camera;
     const pxK = innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) / cam.zoom);
@@ -5269,7 +5272,7 @@ export class Game {
     this.spirits.update(dt, w.time);
     P.end();
     P.begin('Birds', 'fx');
-    this.birds.update(dt, w, this.ships);
+    this.birds.update(dt, w, this.ships, this.rig.camera);
     P.end();
     P.begin('Reef fish', 'fx');
     this.reef.update(dt, w, this.ships, this.rig.camera);

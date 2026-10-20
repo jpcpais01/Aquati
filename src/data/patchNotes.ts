@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T17:00Z',
     entries: [
       {
+        title: 'Less than half the triangles, same view',
+        notes: [
+          'A ship alone at sea now draws around a third of the triangles it used to at every zoom. Nothing you can see was taken away: detail is spent only where it can show on screen.',
+          'Hulls, decks and ironwork now have lighter versions that swap in as a ship gets smaller on screen, and ships cast their shadows from simple stand-ins. All of it is worked out in the background, so new ships never cause a stutter.',
+          'Sailors seen from the sea use a lighter figure that is identical at that size. Seabirds out of view, maelstroms that are still, and splinters on undamaged hulls no longer cost anything, and the ocean surface uses fewer, larger cells when you zoom out.',
+        ],
+      },
+      {
         title: 'Sunbeams through the clouds',
         notes: [
           'The warm haze over the islands now catches the light. Where the sun slips between the clouds it lights the air in long slanting beams, and behind each cloud its shade hangs in the air as a dark column. Look down from high above and they lie across the sea as soft bands of light and shadow. The low sun of morning and evening stretches them longest, and misty mornings thicken them. By moonlight they turn faint and silver.',

@@ -448,6 +448,11 @@ export class Ocean {
    */
   readonly funnels = new THREE.Group();
   private readonly reflFunnels = new THREE.Group();
+  /** Each sea tile's grid, fine and coarse (see fitGrid). */
+  private readonly gridLevels: [THREE.BufferGeometry, THREE.BufferGeometry][] = [];
+  private gridCoarse = false;
+  /** Each slot's ring mesh, fine and coarse: the coarse one serves a maelstrom seen small. */
+  private readonly funnelLevels: [THREE.BufferGeometry, THREE.BufferGeometry][] = [];
 
   constructor(waves: Wave[], opts: OceanOptions) {
     const tex = getSharedTextures();
@@ -1038,13 +1043,19 @@ export class Ocean {
     // at half the resolution it needs half the grid: the trace starts a few
     // centimetres off the true crest at most, well under the ripple wobble
     this.reflMesh = gridMesh(buildGrid(opts.segments >> 1, opts.half), this.reflMaterial);
+    // the main sea's tiles in both densities, the coarse ones shared with the reflection
+    for (const [i, t] of this.mesh.children.filter((o) => o !== this.apron).entries()) {
+      this.gridLevels.push([(t as THREE.Mesh).geometry, (this.reflMesh.children[i] as THREE.Mesh).geometry]);
+    }
     this.reflApron = new THREE.Mesh(this.apron.geometry, this.reflMaterial);
     this.reflApron.frustumCulled = false;
     this.reflApron.visible = false;
     this.reflMesh.add(this.reflApron);
     this.reflScene.add(this.reflMesh);
     for (let i = 0; i < VORTEX_N; i++) {
-      const m = new THREE.Mesh(buildFunnel(i, 56, 144), this.material);
+      const fine = buildFunnel(i, 56, 144);
+      this.funnelLevels.push([fine, buildFunnel(i, 34, 88)]);
+      const m = new THREE.Mesh(fine, this.material);
       m.renderOrder = -10;
       m.frustumCulled = false;
       this.funnels.add(m);
@@ -1097,6 +1108,32 @@ export class Ocean {
         const R = v.r * 1.15 * VORTEX_RIM;
         m.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(v.x, -vortexDepth(R, 1.4) * 0.5, v.z), Math.hypot(R, vortexDepth(R, 1.4)) + SWELL_PAD);
       }
+      if (v) this.funnelLevels[i][1].boundingSphere = this.funnelLevels[i][0].boundingSphere!.clone();
+    }
+  }
+
+  /**
+   * A still slot's rings stay out of the draw list (the vertex shader would
+   * only throw them away), and a maelstrom whose rim spans less than about
+   * half the screen height takes the coarse rings: their 88 sides are still
+   * under a dozen pixels each at that size.
+   */
+  private fitFunnels(cam: THREE.PerspectiveCamera, h: number) {
+    const u = globalUniforms.uVortex.value;
+    const pxK = h / ((2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) * 0.5)) / cam.zoom);
+    for (let i = 0; i < VORTEX_N; i++) {
+      const v = u[i];
+      const on = Math.abs(v.w) >= 0.001;
+      const m = this.funnels.children[i] as THREE.Mesh;
+      m.visible = on;
+      this.reflFunnels.children[i].visible = on;
+      if (!on) continue;
+      const d = Math.max(1, Math.hypot(cam.position.x - v.x, cam.position.y, cam.position.z - v.y) - v.z * VORTEX_RIM);
+      const rimPx = (v.z * VORTEX_RIM * pxK) / d;
+      const [fine, coarse] = this.funnelLevels[i];
+      // the boundary leans toward the level on show, so it doesn't flick
+      const toFine = m.geometry === fine ? rimPx > h * 0.42 : rimPx > h * 0.5;
+      m.geometry = toFine ? fine : coarse;
     }
   }
 
@@ -1171,5 +1208,21 @@ export class Ocean {
     u.uSceneDepth.value = depth;
     u.uResolution.value.set(w, h);
     u.uCamNearFar.value.set(cam.near, cam.far);
+    this.fitFunnels(cam, h);
+    this.fitGrid(cam);
+  }
+
+  /**
+   * The grid is densest under the ship the camera follows; pulled well back,
+   * half the rows and columns put the same few dozen pixels between vertices
+   * as the full grid does at the closest zoom.
+   */
+  private fitGrid(cam: THREE.PerspectiveCamera) {
+    const d = cam.position.distanceTo(this.mesh.position) / cam.zoom;
+    const coarse = this.gridCoarse ? d > 120 : d > 135;
+    if (coarse === this.gridCoarse) return;
+    this.gridCoarse = coarse;
+    const tiles = this.mesh.children.filter((o) => o !== this.apron) as THREE.Mesh[];
+    tiles.forEach((t, i) => (t.geometry = this.gridLevels[i][coarse ? 1 : 0]));
   }
 }
