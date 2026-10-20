@@ -134,7 +134,7 @@ function pillarMaterial(uniforms: Record<string, THREE.IUniform>, beam: boolean)
         float sp = clamp((age - ${(DROP * 0.8).toFixed(2)}) / 1.2, 0.0, 1.0);
         float splash = exp(-sq((r - sp) * 12.0)) * (1.0 - sp) * step(0.001, sp) * 1.6;
         float grow = smoothstep(${(DROP * 0.7).toFixed(2)}, ${(DROP * 1.1).toFixed(2)}, age);
-        vec3 col = vCol * ((rip * 0.5 + ring * 0.6 + pool * 0.55) * grow + splash) * (1.0 - gone);
+        vec3 col = vCol * ((rip * 0.45 + ring * 0.5 + pool * 0.3) * grow + splash) * (1.0 - gone);
         col *= 1.0 - smoothstep(0.85, 1.0, r);`}
         col *= vFade * sceneFade(vViewZ);
         if (max(col.r, max(col.g, col.b)) < 0.002) discard;
