@@ -7,7 +7,7 @@ import { RARITY } from '../game/loot';
 import { Ship } from '../ships/ship';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
 import type { Seas } from '../world/seas';
-import { EDGE_R, HIGH_SEAS_R, nearestRegion, Region, REGIONS } from '../world/regions';
+import { EDGE_R, HIGH_SEAS_R, nearestRegion, Region, REGIONS, seaEdge } from '../world/regions';
 import { PIN_COLORS } from '../game/waypoints';
 
 const SPYGLASS = 650; // pirates are only charted within this range of you
@@ -30,6 +30,80 @@ function regionAt(x: number, z: number): Region | null {
   const { region, dist } = nearestRegion(x, z);
   return dist < HIGH_SEAS_R ? region : null;
 }
+
+/** The sailing lane across the high seas: start, bow and end of a quadratic curve (world metres). */
+function laneCurve(off = 0) {
+  const [a, b] = REGIONS;
+  const dx = b.x - a.x;
+  const dz = b.z - a.z;
+  const L = Math.hypot(dx, dz);
+  const ux = dx / L;
+  const uz = dz / L;
+  // the perpendicular, pointing south of the lane
+  const px = -uz;
+  const pz = ux;
+  return {
+    x0: a.x + ux * 1150 + px * off,
+    z0: a.z + uz * 1150 + pz * off,
+    qx: (a.x + b.x) / 2 + px * (520 + off * 1.15),
+    qz: (a.z + b.z) / 2 + pz * (520 + off * 1.15),
+    x1: b.x - ux * 1150 + px * off,
+    z1: b.z - uz * 1150 + pz * off,
+    ux,
+    uz,
+    px,
+    pz,
+  };
+}
+
+/** Where the open sea's great compass rose sits: in the empty water south of the lane. */
+const ROSE = (() => {
+  const l = laneCurve();
+  const mx = 0.25 * l.x0 + 0.5 * l.qx + 0.25 * l.x1;
+  const mz = 0.25 * l.z0 + 0.5 * l.qz + 0.25 * l.z1;
+  return { x: mx + l.px * 1050 + l.ux * 250, z: mz + l.pz * 1050 + l.uz * 250, r: 300 };
+})();
+
+/** A cheap smooth value noise on a unit lattice, 0..1. */
+function vnoise(x: number, z: number) {
+  const xi = Math.floor(x);
+  const zi = Math.floor(z);
+  const fx = x - xi;
+  const fz = z - zi;
+  const h = (i: number, j: number) => {
+    let n = (i * 374761393 + j * 668265263) | 0;
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967295;
+  };
+  const u = fx * fx * (3 - 2 * fx);
+  const v = fz * fz * (3 - 2 * fz);
+  const a = h(xi, zi) + (h(xi + 1, zi) - h(xi, zi)) * u;
+  const b = h(xi, zi + 1) + (h(xi + 1, zi + 1) - h(xi, zi + 1)) * u;
+  return a + (b - a) * v;
+}
+
+/**
+ * How deep the open sea runs at (x, z): 0 on an archipelago's shelf .. 1 in the
+ * abyss, with rolling banks and a long shoal, the Banco del Sereno, under the lane.
+ */
+function seaDepth(x: number, z: number) {
+  const d = nearestRegion(x, z).dist;
+  const shelf = Math.min(1, Math.max(0, (d - 1050) / 1500));
+  const sh = shelf * shelf * (3 - 2 * shelf);
+  const n = vnoise(x / 1500, z / 1500) * 0.6 + vnoise(x / 610 + 17, z / 610 - 9) * 0.28 + vnoise(x / 260 - 4, z / 260 + 31) * 0.12;
+  const bk = Math.hypot((x - BANK.x) / 520, (z - BANK.z) / 300);
+  const bank = Math.exp(-bk * bk) * 0.55;
+  return Math.min(1, Math.max(0, sh * (0.8 + (n - 0.5) * 0.8) - bank * sh + (1 - sh) * 0.02));
+}
+
+/** The shoal under the lane, a little east of half-way. */
+const BANK = (() => {
+  const l = laneCurve();
+  const t = 0.72;
+  const x = (1 - t) * (1 - t) * l.x0 + 2 * (1 - t) * t * l.qx + t * t * l.x1;
+  const z = (1 - t) * (1 - t) * l.z0 + 2 * (1 - t) * t * l.qz + t * t * l.z1;
+  return { x: x - l.px * 120, z: z - l.pz * 120 };
+})();
 
 /** A trading port on a map: a gilt disc with a pair of scales. */
 export function portMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
@@ -258,6 +332,11 @@ export class SeaChart {
   private g: CanvasRenderingContext2D;
   /** Each archipelago's engraved chart, keyed by its id. */
   private images = new Map<string, HTMLCanvasElement>();
+  /** The open sea round and between the archipelagos, engraved once. */
+  private openSea: HTMLCanvasElement | null = null;
+  private seaJob = this.buildOpenSea();
+  /** Depth soundings scattered over the open sea, in fathoms. */
+  private soundings: { x: number; z: number; f: number }[] = [];
   private dpr = 1;
   private W = 1;
   private H = 1;
@@ -276,6 +355,14 @@ export class SeaChart {
 
   constructor(private canvas: HTMLCanvasElement) {
     this.g = canvas.getContext('2d')!;
+    // engrave the open sea in the background, a slice per tick
+    const work = () => {
+      if (this.openSea) return;
+      const r = this.seaJob.next();
+      if (r.done) this.openSea = r.value;
+      else setTimeout(work, 16);
+    };
+    setTimeout(work, 1500);
     canvas.addEventListener('pointerdown', (e) => {
       canvas.setPointerCapture(e.pointerId);
       if (!this.pointers.size) this.multi = false;
@@ -493,6 +580,399 @@ export class SeaChart {
     return c;
   }
 
+  /**
+   * Engraves the open sea once: depth shading off each archipelago's shelf into
+   * the abyss, isobaths, a long swell, the Sereno current's ribbon down the lane
+   * and the hatched dark past the edge of the known sea. Cheap to draw after.
+   */
+  /**
+   * The engraving as a job, a few rows at a time: started behind the loading
+   * screen so the chart opens without a stall (finished at once if it's opened sooner).
+   */
+  private *buildOpenSea(): Generator<void, HTMLCanvasElement> {
+    const w = 1024;
+    const h = Math.round((w * SEA_H) / SEA_W);
+    const step = SEA_W / w;
+    // the smooth fields on a coarse grid (every Q pixels), smoothly sampled per pixel
+    const Q = 2;
+    const cw = Math.ceil(w / Q) + 2;
+    const ch = Math.ceil(h / Q) + 2;
+    const cD = new Float32Array(cw * ch);
+    const cE = new Float32Array(cw * ch);
+    const cL = new Float32Array(cw * ch);
+    const cW = new Float32Array(cw * ch);
+    const cP = new Float32Array(cw * ch);
+    // the lane as a polyline, for the current's ribbon
+    const l = laneCurve();
+    const lane: number[] = [];
+    for (let k = 0; k <= 12; k++) {
+      const t = k / 12;
+      lane.push((1 - t) * (1 - t) * l.x0 + 2 * (1 - t) * t * l.qx + t * t * l.x1, (1 - t) * (1 - t) * l.z0 + 2 * (1 - t) * t * l.qz + t * t * l.z1);
+    }
+    const laneDist = (x: number, z: number) => {
+      let best = Infinity;
+      for (let k = 0; k < lane.length - 2; k += 2) {
+        const ax = lane[k];
+        const az = lane[k + 1];
+        const dx = lane[k + 2] - ax;
+        const dz = lane[k + 3] - az;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+        const ex = x - ax - dx * t;
+        const ez = z - az - dz * t;
+        best = Math.min(best, ex * ex + ez * ez);
+      }
+      return Math.sqrt(best);
+    };
+    let t0 = performance.now();
+    const due = () => performance.now() - t0 > 5;
+    for (let j = 0; j < ch; j++) {
+      for (let i = 0; i < cw; i++) {
+        const x = SEA.x0 + (i * Q) * step;
+        const z = SEA.z0 + (j * Q) * step;
+        const o = j * cw + i;
+        cD[o] = seaDepth(x, z);
+        const e = (cE[o] = seaEdge(x, z));
+        cL[o] = e + EDGE_R < 1250 ? laneDist(x, z) : 5000;
+        cW[o] = vnoise(x / 190, z / 190) * 7;
+        cP[o] = Math.max(0, Math.min(1, (vnoise(x / 460 + 3, z / 460 - 7) - 0.4) * 3));
+      }
+      if (due()) {
+        yield;
+        t0 = performance.now();
+      }
+    }
+    const sample = (f: Float32Array, i: number, j: number) => {
+      const fx = (i + 0.5) / Q;
+      const fz = (j + 0.5) / Q;
+      const ix = Math.floor(fx);
+      const iz = Math.floor(fz);
+      const u = fx - ix;
+      const v = fz - iz;
+      const o = iz * cw + ix;
+      const a = f[o] + (f[o + 1] - f[o]) * u;
+      const b = f[o + cw] + (f[o + cw + 1] - f[o + cw]) * u;
+      return a + (b - a) * v;
+    };
+    const D = new Float32Array(w * h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) D[j * w + i] = sample(cD, i, j);
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d')!;
+    const img = g.createImageData(w, h);
+    const at = (i: number, j: number) => D[Math.min(h - 1, Math.max(0, j)) * w + Math.min(w - 1, Math.max(0, i))];
+    const ISO = 5; // isobaths per unit of depth
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const x = SEA.x0 + (i + 0.5) * step;
+        const z = SEA.z0 + (j + 0.5) * step;
+        const d = D[j * w + i];
+        // shelf teal (as the archipelagos' own deep edge) .. midnight abyss
+        const k1 = Math.min(1, d * 1.7);
+        const k2 = Math.max(0, (d - 0.55) / 0.45);
+        let r = 28 - k1 * 15 - k2 * 7;
+        let gg = 94 - k1 * 34 - k2 * 26;
+        let b = 132 - k1 * 42 - k2 * 34;
+        // the sea floor's relief, lit from the north-west
+        const gx = at(i + 1, j) - at(i - 1, j);
+        const gz = at(i, j + 1) - at(i, j - 1);
+        const shade = 1 + Math.max(-0.12, Math.min(0.12, (gx + gz) * 14));
+        r *= shade;
+        gg *= shade;
+        b *= shade;
+        // isobaths: fine pale lines of even width, wherever the depth crosses a step
+        const gm = Math.hypot(gx, gz) * 0.5 * ISO;
+        if (gm > 1e-5 && d > 0.04) {
+          const v = d * ISO;
+          const px = Math.abs(v - Math.round(v)) / gm;
+          if (px < 0.9) {
+            const ink = (1 - px / 0.9) * (Math.round(v) % 2 ? 0.08 : 0.16);
+            r += (150 - r) * ink;
+            gg += (214 - gg) * ink;
+            b += (224 - b) * ink;
+          }
+        }
+        // the long swell rolling in from the east-north-east, in patches
+        const sw = Math.sin((x * 0.83 + z * 0.55) / 21 + sample(cW, i, j));
+        if (sw > 0) {
+          const s2 = sw * sw;
+          const crest = s2 * s2 * s2 * sample(cP, i, j) * (0.05 + d * 0.06);
+          r += 120 * crest;
+          gg += 170 * crest;
+          b += 180 * crest;
+        }
+        // the Sereno current: a warmer teal ribbon down the lane, streaked with its set
+        const ld = sample(cL, i, j);
+        if (ld < 900) {
+          const rib = Math.exp(-((ld / 330) ** 2));
+          const st = Math.sin(ld / 15 + sample(cW, i, j) * 0.3) * 0.5 + 0.5;
+          const st2 = st * st;
+          const streak = st2 * st2 * st2 * st2 * st2 * rib * 0.25;
+          r += (34 - r) * rib * 0.38 + 30 * streak;
+          gg += (108 - gg) * rib * 0.38 + 60 * streak;
+          b += (122 - b) * rib * 0.38 + 60 * streak;
+        }
+        // past the edge of the known sea: darker water, hatched like unsurveyed parts
+        const e = sample(cE, i, j);
+        if (e > -160) {
+          const o = Math.min(1, (e + 160) / 420);
+          const oo = o * o * (3 - 2 * o);
+          r += (5 - r) * oo * 0.86;
+          gg += (24 - gg) * oo * 0.86;
+          b += (38 - b) * oo * 0.86;
+          const hatch = (((x - z) / 38) % 1 + 1) % 1;
+          if (hatch < 0.16) {
+            r += 5 * oo;
+            gg += 12 * oo;
+            b += 15 * oo;
+          }
+          // a fine double rule along the edge itself
+          const rule = Math.max(0, 1 - Math.abs(e) / (step * 0.7)) * 0.3 + Math.max(0, 1 - Math.abs(e - 34) / (step * 0.6)) * 0.16;
+          r += (210 - r) * rule;
+          gg += (226 - gg) * rule;
+          b += (214 - b) * rule;
+        }
+        // a whisper of paper grain
+        const grain = ((Math.imul(i * 7919 + j * 104729, 2654435761) >>> 24) / 255 - 0.5) * 3;
+        const o = (j * w + i) * 4;
+        img.data[o] = r + grain;
+        img.data[o + 1] = gg + grain;
+        img.data[o + 2] = b + grain;
+        img.data[o + 3] = 255;
+      }
+      if (due()) {
+        yield;
+        t0 = performance.now();
+      }
+    }
+    g.putImageData(img, 0, 0);
+    // soundings, in fathoms, where a leadsman might have dropped a line
+    this.soundings = [];
+    let seed = 90210;
+    const rnd = () => ((seed = Math.imul(seed ^ (seed >>> 15), 2246822507) + 0x9e3779b9) >>> 0) / 4294967296;
+    for (let n = 0; n < 900 && this.soundings.length < 110; n++) {
+      const x = SEA.x0 + rnd() * SEA_W;
+      const z = SEA.z0 + rnd() * SEA_H;
+      if (nearestRegion(x, z).dist < 1200 || seaEdge(x, z) > -90) continue;
+      if (this.soundings.some((p) => Math.hypot(p.x - x, p.z - z) < 520)) continue;
+      const d = seaDepth(x, z);
+      this.soundings.push({ x, z, f: Math.round(20 + d * d * 1500) });
+    }
+    return c;
+  }
+
+  /** The open sea's engraving, finishing the job at once if it isn't done yet. */
+  private seaImage() {
+    if (!this.openSea) {
+      let r = this.seaJob.next();
+      while (!r.done) r = this.seaJob.next();
+      this.openSea = r.value;
+    }
+    return this.openSea;
+  }
+
+  /** The open sea under the archipelagos: depths, the rhumb lines of the great rose, soundings, the current. */
+  private drawOpenSea(g: CanvasRenderingContext2D, toS: (x: number, z: number) => [number, number], s: number, sc: ChartScene) {
+    const [x0, y0] = toS(SEA.x0, SEA.z0);
+    g.drawImage(this.seaImage(), x0, y0, SEA_W * s, SEA_H * s);
+    const far = this.farness(s);
+    g.save();
+    g.beginPath();
+    g.rect(x0, y0, SEA_W * s, SEA_H * s);
+    g.clip();
+
+    // the rhumb lines: the 32 winds of the great rose, run out across the whole sea
+    const [rx, ry] = toS(ROSE.x, ROSE.z);
+    const reach = Math.hypot(SEA_W, SEA_H) * s;
+    const winds = ['rgba(255, 232, 178, 0.17)', 'rgba(140, 222, 196, 0.12)', 'rgba(242, 160, 136, 0.1)'];
+    for (const [tier, color] of winds.entries()) {
+      g.strokeStyle = color;
+      g.lineWidth = tier ? 0.8 : 1.1;
+      g.beginPath();
+      for (let k = 0; k < 32; k++) {
+        const kt = k % 4 === 0 ? 0 : k % 2 === 0 ? 1 : 2;
+        if (kt !== tier) continue;
+        const a = (k / 32) * Math.PI * 2;
+        g.moveTo(rx + Math.sin(a) * ROSE.r * s * 1.05, ry - Math.cos(a) * ROSE.r * s * 1.05);
+        g.lineTo(rx + Math.sin(a) * reach, ry - Math.cos(a) * reach);
+      }
+      g.stroke();
+    }
+    this.drawSeaRose(g, rx, ry, ROSE.r * s);
+
+    // the Sereno current and its counter-set, flowing either side of the lane
+    const flow = 0.4 + 0.6 * far;
+    g.lineCap = 'round';
+    for (const [off, dir] of [
+      [330, 1],
+      [-360, -1],
+    ] as const) {
+      const c = laneCurve(off);
+      const [ax, ay] = toS(c.x0, c.z0);
+      const [qx, qy] = toS(c.qx, c.qz);
+      const [bx, by] = toS(c.x1, c.z1);
+      g.setLineDash([2, 7]);
+      g.lineDashOffset = -sc.time * 6 * dir;
+      g.strokeStyle = `rgba(150, 232, 236, ${0.22 * flow})`;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(ax, ay);
+      g.quadraticCurveTo(qx, qy, bx, by);
+      g.stroke();
+      g.setLineDash([]);
+      // drifting chevrons showing the set
+      g.strokeStyle = `rgba(170, 240, 240, ${0.55 * flow})`;
+      g.lineWidth = 1.4;
+      const N = 7;
+      g.beginPath();
+      for (let n = 0; n < N; n++) {
+        const t0 = (((n + 0.5) / N + sc.time * 0.006 * dir) % 1 + 1) % 1;
+        const t = 0.06 + t0 * 0.88;
+        const px = (1 - t) * (1 - t) * ax + 2 * (1 - t) * t * qx + t * t * bx;
+        const py = (1 - t) * (1 - t) * ay + 2 * (1 - t) * t * qy + t * t * by;
+        let tx = 2 * (1 - t) * (qx - ax) + 2 * t * (bx - qx);
+        let ty = 2 * (1 - t) * (qy - ay) + 2 * t * (by - qy);
+        const tl = Math.hypot(tx, ty) || 1;
+        tx = (tx / tl) * dir;
+        ty = (ty / tl) * dir;
+        const a = 5;
+        g.moveTo(px - tx * a - ty * a * 0.8, py - ty * a + tx * a * 0.8);
+        g.lineTo(px, py);
+        g.lineTo(px - tx * a + ty * a * 0.8, py - ty * a - tx * a * 0.8);
+      }
+      g.stroke();
+    }
+
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    // soundings
+    g.font = 'italic 500 9px Georgia, serif';
+    g.fillStyle = 'rgba(200, 228, 232, 0.36)';
+    for (const p of this.soundings) {
+      const [x, y] = toS(p.x, p.z);
+      if (x < -20 || y < -20 || x > this.W + 20 || y > this.H + 20) continue;
+      g.fillText(String(p.f), x, y);
+    }
+    // the named waters of the open sea
+    const lane = laneCurve();
+    const ang = Math.atan2(lane.z1 - lane.z0, lane.x1 - lane.x0);
+    const label = (x: number, z: number, text: string, font: string, color: string, rot = ang) => {
+      const [sx, sy] = toS(x, z);
+      g.save();
+      g.translate(sx, sy);
+      g.rotate(rot);
+      g.font = font;
+      g.fillStyle = color;
+      g.fillText(text, 0, 0);
+      g.restore();
+    };
+    const [bx, by] = toS(BANK.x, BANK.z);
+    g.strokeStyle = 'rgba(200, 236, 236, 0.3)';
+    g.lineWidth = 1;
+    g.setLineDash([1.5, 3]);
+    g.beginPath();
+    g.ellipse(bx, by, 380 * s, 210 * s, ang, 0, Math.PI * 2);
+    g.stroke();
+    g.setLineDash([]);
+    label(BANK.x - lane.px * 290, BANK.z - lane.pz * 290, 'Banco del Sereno', 'italic 600 11px Georgia, serif', `rgba(205, 238, 238, ${0.35 + 0.4 * far})`);
+    const cs = laneCurve(330);
+    label(
+      0.25 * cs.x0 + 0.5 * cs.qx + 0.25 * cs.x1 + lane.px * 120,
+      0.25 * cs.z0 + 0.5 * cs.qz + 0.25 * cs.z1 + lane.pz * 120,
+      'Corriente del Sereno  ⟶',
+      'italic 500 10px Georgia, serif',
+      `rgba(170, 236, 238, ${0.3 + 0.4 * far})`,
+    );
+    const mx = (REGIONS[0].x + REGIONS[1].x) / 2;
+    const mz = (REGIONS[0].z + REGIONS[1].z) / 2;
+    for (const side of [-1, 1]) {
+      label(
+        mx + lane.px * side * (EDGE_R + 230),
+        mz + lane.pz * side * (EDGE_R + 230),
+        'Beyond, the swell turns every keel back',
+        'italic 500 12px Georgia, serif',
+        'rgba(170, 204, 214, 0.4)',
+      );
+    }
+    g.restore();
+  }
+
+  /** The open sea's great compass rose, inked in gilt and sea-green, an old portolan's flourish. */
+  private drawSeaRose(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
+    if (r < 6 || x < -r * 1.3 || y < -r * 1.3 || x > this.W + r * 1.3 || y > this.H + r * 1.3) return;
+    g.save();
+    g.translate(x, y);
+    // rings, with a tick for every one of the 32 winds
+    g.strokeStyle = 'rgba(255, 232, 178, 0.42)';
+    g.lineWidth = Math.max(0.8, r * 0.012);
+    g.beginPath();
+    g.arc(0, 0, r, 0, Math.PI * 2);
+    g.stroke();
+    g.lineWidth = Math.max(0.6, r * 0.006);
+    g.beginPath();
+    g.arc(0, 0, r * 0.9, 0, Math.PI * 2);
+    g.stroke();
+    g.beginPath();
+    for (let k = 0; k < 128; k++) {
+      const a = (k / 128) * Math.PI * 2;
+      const t = k % 4 === 0 ? 0.86 : 0.94;
+      g.moveTo(Math.sin(a) * r * t, -Math.cos(a) * r * t);
+      g.lineTo(Math.sin(a) * r * 0.99, -Math.cos(a) * r * 0.99);
+    }
+    g.stroke();
+    // the star: long cardinals, the half-winds behind, each point lit on one flank
+    const point = (a: number, len: number, wid: number, lit: string, dark: string) => {
+      const sx = Math.sin(a);
+      const cy = -Math.cos(a);
+      const nx = Math.cos(a);
+      const ny = Math.sin(a);
+      g.fillStyle = lit;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(sx * len, cy * len);
+      g.lineTo(nx * wid, ny * wid);
+      g.closePath();
+      g.fill();
+      g.fillStyle = dark;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.lineTo(sx * len, cy * len);
+      g.lineTo(-nx * wid, -ny * wid);
+      g.closePath();
+      g.fill();
+    };
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      point(a, r * 0.58, r * 0.07, 'rgba(140, 214, 190, 0.5)', 'rgba(30, 80, 84, 0.6)');
+    }
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2 + Math.PI / 4;
+      point(a, r * 0.66, r * 0.1, 'rgba(232, 236, 222, 0.55)', 'rgba(36, 66, 80, 0.65)');
+    }
+    for (let k = 0; k < 4; k++) {
+      const a = (k / 4) * Math.PI * 2;
+      point(a, k === 0 ? r * 0.9 : r * 0.84, r * 0.13, 'rgba(246, 206, 112, 0.75)', 'rgba(120, 82, 34, 0.75)');
+    }
+    g.fillStyle = 'rgba(246, 206, 112, 0.85)';
+    g.beginPath();
+    g.arc(0, 0, r * 0.04, 0, Math.PI * 2);
+    g.fill();
+    // a fleur-ish crown on north, and the cardinal letters
+    if (r > 22) {
+      g.font = `700 ${Math.round(Math.min(26, r * 0.13))}px Cinzel, Georgia, serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillStyle = 'rgba(255, 226, 150, 0.8)';
+      const L = r * 1.1;
+      g.fillText('N', 0, -L);
+      g.fillStyle = 'rgba(232, 236, 222, 0.55)';
+      g.fillText('S', 0, L);
+      g.fillText('E', L, 0);
+      g.fillText('W', -L, 0);
+    }
+    g.restore();
+  }
+
   // ------------------------------------------------------------------ draw
 
   draw(sc: ChartScene) {
@@ -505,11 +985,12 @@ export class SeaChart {
     // is a point somewhere the chart can show (not inside a rumoured archipelago)?
     const shown = (x: number, z: number) => charted(regionAt(x, z));
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    g.fillStyle = '#0a3446';
+    g.fillStyle = '#05182a';
     g.fillRect(0, 0, W, H);
 
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = 'high';
+    this.drawOpenSea(g, toS, s, sc);
     for (const t of this.seas?.regions ?? []) {
       const region = nearestRegion(t.ox, t.oz).region;
       const [x0, y0] = toS(t.x0, t.z0);
@@ -536,7 +1017,7 @@ export class SeaChart {
 
     // graticule: finer as you zoom in
     const grid = s * 1024 < 90 ? 2048 : s * 256 < 40 ? 1024 : 256;
-    g.strokeStyle = 'rgba(255, 244, 214, 0.13)';
+    g.strokeStyle = 'rgba(255, 244, 214, 0.07)';
     g.lineWidth = 1;
     g.beginPath();
     for (let v = Math.ceil(SEA.x0 / grid) * grid; v <= SEA.x1; v += grid) {
@@ -842,15 +1323,10 @@ export class SeaChart {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     // the lane: from the Fortunate Isles' edge to Las Brumas', bowed a little like a real course
-    const [a, b] = REGIONS;
-    const dx = b.x - a.x;
-    const dz = b.z - a.z;
-    const L = Math.hypot(dx, dz);
-    const ux = dx / L;
-    const uz = dz / L;
-    const [sx, sy] = toS(a.x + ux * 1150, a.z + uz * 1150);
-    const [ex, ey] = toS(b.x - ux * 1150, b.z - uz * 1150);
-    const [qx, qy] = toS((a.x + b.x) / 2 - uz * 520, (a.z + b.z) / 2 + ux * 520);
+    const lane = laneCurve();
+    const [sx, sy] = toS(lane.x0, lane.z0);
+    const [ex, ey] = toS(lane.x1, lane.z1);
+    const [qx, qy] = toS(lane.qx, lane.qz);
     g.setLineDash([3, 9]);
     g.lineDashOffset = -sc.time * 4;
     g.lineCap = 'round';
