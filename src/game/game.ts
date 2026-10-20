@@ -603,10 +603,11 @@ export class Game {
       ui.progress(p, ms);
       return nextFrame();
     };
-    await mark(0.12, 700);
+    await mark(0.08, 700);
     // the Fortunate Isles you sail from, and Las Brumas far out across the high seas
     const [homeR, mistR] = REGIONS;
     const home = new Terrain(homeR.seed);
+    await mark(0.13, 500);
     const mist = new Terrain(mistR.seed, { ox: mistR.x, oz: mistR.z, style: 'brumas' });
     this.terrain = new Seas([home, mist]);
     await mark(0.18, 300);
@@ -640,8 +641,8 @@ export class Game {
     const camps = [...findCampSites(home, [...towns, ...fortGround], site.island), ...findCampSites(mist, [...towns, ...fortGround], null)];
     this.digAvoid = [...towns, ...campClearings(camps), ...fortGround];
     const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps), ...fortGround], q.tier === 0));
-    await mark(0.31, 700);
     for (const t of [home, mist]) {
+      await mark(t === home ? 0.28 : 0.33, 700);
       const land = t.buildMeshes(q.terrainLod, q.tier === 0);
       // the seabeds reach out under the high seas to meet, so they're always drawn
       const bed = land.getObjectByName('seabed')!;
@@ -652,18 +653,20 @@ export class Game {
     }
     // the far archipelago's land goes up to the GPU during the loading screen, not as it comes over the horizon
     this.preload.add(this.regions[1].land);
+    await mark(0.36, 400);
     // the plants never move once placed (culling only repacks their instances)
     const plants = veg.build();
     this.opaque.add(plants);
     freezeStatic(plants);
-    await mark(0.37, 900);
+    await mark(0.4, 900);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
     skipWhenHidden(this.port.root);
-    await mark(0.45, 1200);
-    this.tradePorts = new TradePorts(tradeSites, (x, z) => this.terrain.heightAt(x, z));
+    // one town a frame, each nudging the bar along
+    let town = 0;
+    this.tradePorts = await TradePorts.build(tradeSites, (x, z) => this.terrain.heightAt(x, z), () => mark(0.41 + (0.1 * ++town) / tradeSites.length, 400));
     this.opaque.add(this.tradePorts.root);
     for (const tp of this.tradePorts.ports) {
       tp.onBell = () => this.audio.bell(2, tp === this.dockPort ? 0.22 : 0.08);
@@ -681,7 +684,7 @@ export class Game {
     this.opaque.add(this.dolphins.mesh);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
-    await mark(0.53, 900);
+    await mark(0.54, 900);
 
     const windAngle = this.atmos.windAngle;
     const waves = buildWaves(windAngle, 1);
@@ -855,11 +858,13 @@ export class Game {
     this.opaque.add(this.kraken.view.group);
     this.water.add(this.kraken.view.fx);
     this.wireKraken();
-    await mark(0.72, 1200);
+    await mark(0.72, 500);
 
     this.applySettings(this.settings.value);
     this.resize();
+    await mark(0.75, 900);
     this.enterMenu();
+    await mark(0.77, 400);
     // warm up before the first visible frame: compile every shader, upload every
     // ship texture, then draw the whole world once for real (see render/warmup)
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
@@ -876,7 +881,7 @@ export class Game {
     for (let i = 0; i < paints.length; i++) {
       const [id, liv] = paints[i];
       for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
-      await mark(0.74 + (0.06 * (i + 1)) / paints.length, 250);
+      await mark(0.78 + (0.04 * (i + 1)) / paints.length, 250);
     }
     // KHR_parallel_shader_compile: every program compiles on the driver's own threads while we wait
     await this.renderer.compileAsync(this.opaque, this.rig.camera);

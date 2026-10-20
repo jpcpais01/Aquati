@@ -1654,7 +1654,11 @@ export class TradePorts {
   readonly ports: TradePort[] = [];
   private crowd: Crowd;
 
-  constructor(sites: PortSite[], heightAt: (x: number, z: number) => number) {
+  /**
+   * Builds the towns all at once. During loading use `TradePorts.build`, which hands
+   * the browser a frame between towns instead of building all six in one go.
+   */
+  constructor(sites: PortSite[], heightAt: (x: number, z: number) => number, deferTowns = false) {
     this.root.name = 'trade-ports';
     const specs = TRADE_SPECS.slice(0, sites.length);
     const kit = makeKit(TRADE_SPECS);
@@ -1667,11 +1671,24 @@ export class TradePorts {
     this.crowd = new Crowd(styles, 0.62, 0.38, 10);
     this.crowd.group.name = 'townsfolk';
     this.root.add(this.crowd.group);
-    sites.forEach((site, i) => {
+    this.pending = sites.map((site, i) => () => {
       const port = new TradePort(site, specs[i], i, kit, this.crowd.figures.slice(i * FOLK, (i + 1) * FOLK), heightAt);
       this.ports.push(port);
       this.root.add(port.group);
     });
+    if (!deferTowns) for (const town of this.pending.splice(0)) town();
+  }
+
+  private pending: (() => void)[];
+
+  /** Builds the trade ports one town at a time, awaiting `rest` (a frame) between towns. */
+  static async build(sites: PortSite[], heightAt: (x: number, z: number) => number, rest: () => Promise<void>) {
+    const tp = new TradePorts(sites, heightAt, true);
+    for (const town of tp.pending.splice(0)) {
+      await rest();
+      town();
+    }
+    return tp;
   }
 
   /** The port whose quay is nearest a point. */

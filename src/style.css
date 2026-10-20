@@ -213,10 +213,11 @@ button:focus {
   width: 100%;
   height: 100%;
   display: block;
-  filter: drop-shadow(0 calc(4px * var(--u)) calc(14px * var(--u)) rgba(0, 0, 0, 0.35));
 }
 
-.crest > svg {
+.crest > svg,
+.crest > span,
+.crest > span > svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -224,24 +225,45 @@ button:focus {
   display: block;
 }
 
-.crest-slot.spin .crest-rose {
-  /* transform on the rose's own <svg> box: animated by the compositor, never the main thread */
-  will-change: transform;
-  animation: rose 6s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+/* the shadow lives on each still piece and as a centred glow on the turning ones (a
+   filter over the whole crest would sit above the spinning layers and re-filter them) */
+.crest-ring {
+  filter: drop-shadow(0 calc(4px * var(--u)) calc(14px * var(--u)) rgba(0, 0, 0, 0.35));
 }
 
-@keyframes rose {
-  0% {
-    transform: rotate(0deg);
+.crest-rose > svg {
+  filter: drop-shadow(0 0 calc(6px * var(--u)) rgba(0, 0, 0, 0.4));
+}
+
+/* Only the HTML spans turn, with transform alone, each on its own layer: the compositor
+   runs them, so nothing on the main thread (or the GPU's shader work) can hold them up.
+   Constant speed, no easing: a wheel that never hesitates. */
+.crest-slot.spin .crest-rose,
+.crest-slot.spin .crest-dial {
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  animation: crestTurn 9s linear infinite;
+}
+
+.crest-slot.spin .crest-dial {
+  animation-duration: 28s;
+  animation-direction: reverse;
+}
+
+@keyframes crestTurn {
+  from {
+    transform: translateZ(0) rotate(0deg);
   }
-  40% {
-    transform: rotate(200deg);
+  to {
+    transform: translateZ(0) rotate(360deg);
   }
-  55% {
-    transform: rotate(170deg);
-  }
-  100% {
-    transform: rotate(360deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crest-slot.spin .crest-rose,
+  .crest-slot.spin .crest-dial {
+    animation: none;
   }
 }
 
