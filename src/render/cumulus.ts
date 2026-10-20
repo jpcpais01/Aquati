@@ -150,7 +150,8 @@ export class SkyCumulus {
           float wor2 = texture(uNoiseTex, q * 2.6 + 0.61).b;
           float billow = smoothstep(0.18, 0.82, wor * 0.6 + wor2 * 0.4);
           float shape = (1.0 - sqrt(r2)) * 1.3 - (1.0 - billow) * 0.5 + 0.1;
-          float a = smoothstep(0.0, 0.4, shape) * (1.0 - exp(-zf * 5.0));
+          // (solid inside: even the brightest stars must not shine through a heap)
+          float a = min(smoothstep(0.0, 0.3, shape) * (1.0 - exp(-zf * 9.0)) * 1.12, 1.0);
           // every heap stands on the same flat base
           a *= smoothstep(-14.0, 34.0, D.y - ${CLOUD.base.toFixed(1)});
           vec3 V = P - cameraPosition;
@@ -185,7 +186,7 @@ export class SkyCumulus {
           vec3 sea = vec3(0.08, 0.2, 0.25) * (uLight * 0.85 + 0.03) + sky * 0.25;
           vec3 amb = mix(sea, sky, smoothstep(-0.7, 0.8, nrm.y)) * mix(0.5, 1.05, hf) * mix(0.7, 1.0, zf);
           float albedo = 1.0 - uStorm * 0.5 - uRain * 0.3;
-          vec3 col = (sun + amb) * albedo * (1.0 - uNight * 0.6);
+          vec3 col = (sun + amb) * albedo * (1.0 - uNight * 0.5);
           col += vec3(0.62, 0.7, 0.95) * uFlash * (0.4 + hf * 0.4);
           // far cloud sinks into the haze along the horizon
           col = mix(col, hazeColor(V), max(1.0 - exp(-dist * 0.000045), uMist * 0.65));
