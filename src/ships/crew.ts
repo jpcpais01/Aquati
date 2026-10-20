@@ -25,7 +25,7 @@ interface Spot {
   x: number;
   z: number;
 }
-interface Obstacle extends Spot {
+export interface Obstacle extends Spot {
   r: number;
   stair?: boolean; // keeps the crew off the companion stairs; the captain climbs them
 }
@@ -49,7 +49,7 @@ export interface DeckView {
   /** Everyone else standing on the deck, for bumping into. */
   others(out: Spot[]): Spot[];
 }
-interface Zone {
+export interface Zone {
   t0: number;
   t1: number;
   y: (t: number) => number;
@@ -60,6 +60,33 @@ interface Flight {
   castle: Zone;
   head: Spot;
   foot: Spot;
+}
+/**
+ * A ship's main deck as the crew know it (ship-local metres, +z to the bow,
+ * +x to port): where it runs, how wide it is, how high its planks sit and
+ * what stands on it. A boarding fight is walked on this.
+ */
+export interface DeckPlan {
+  readonly L: number;
+  readonly main: Zone;
+  readonly obstacles: readonly Obstacle[];
+  /** Ship-local "world up": people stand against the roll instead of with the deck. */
+  readonly upright: THREE.Quaternion;
+  tOf(z: number): number;
+  zAt(t: number): number;
+  halfWidth(zone: Zone, t: number): number;
+  deckY(zone: Zone, x: number, z: number): number;
+}
+/** A sailor called away from the deck (see ShipCrew.muster): who, and where they stood (ship-local). */
+export interface Mustered {
+  row: number;
+  look: Look;
+  girth: number;
+  height: number;
+  captain: boolean;
+  x: number;
+  z: number;
+  yaw: number;
 }
 interface GunPost {
   muzzle: number;
@@ -349,7 +376,7 @@ class Sailor {
 
 // ------------------------------------------------------------------ one ship's crew
 
-class ShipCrew {
+class ShipCrew implements DeckPlan {
   readonly sailors: Sailor[] = [];
   readonly shape: HullShape;
   readonly L: number;
@@ -504,6 +531,10 @@ class ShipCrew {
     return z / this.L + 0.5;
   }
 
+  zAt(t: number) {
+    return this.shape.z(t);
+  }
+
   zoneAt(t: number): Zone | null {
     for (const zn of [this.main, this.quarter, this.fore]) if (zn && t >= zn.t0 && t <= zn.t1) return zn;
     return null;
@@ -566,7 +597,7 @@ class ShipCrew {
     this.enemy = null;
     this.enemyDist = 1e9;
     for (const o of ships) {
-      if (o === sh || !o.alive || o.team === sh.team || o.removed) continue;
+      if (o === sh || !o.alive || o.team === sh.team || o.removed || o.prize) continue;
       const d = Math.hypot(o.pos.x - sh.pos.x, o.pos.z - sh.pos.z);
       if (d < this.enemyDist) {
         this.enemyDist = d;
@@ -1356,13 +1387,14 @@ class ShipCrew {
   /**
    * The captain and up to `n` hands climb down into the boat: they leave the
    * deck (the guns they served stand idle) and are walked ashore from outside.
-   * Hands go before gunners, and the helmsman always stays aboard.
+   * Hands go before gunners, and the helmsman stays aboard unless `helm`
+   * (a boarded ship's whole crew turns out to fight).
    */
-  muster(n: number): { row: number; look: Look; girth: number; height: number; captain: boolean }[] {
-    const out: { row: number; look: Look; girth: number; height: number; captain: boolean }[] = [];
+  muster(n: number, helm = false): Mustered[] {
+    const out: Mustered[] = [];
     const pool = this.sailors.filter((o) => o.mode === 'aboard');
     const pickRole = (r: Role) => pool.filter((o) => o.role === r);
-    const chosen = [...pickRole('captain').slice(0, 1), ...[...pickRole('hand'), ...pickRole('gunner')].slice(0, n)];
+    const chosen = [...pickRole('captain').slice(0, 1), ...[...pickRole('hand'), ...pickRole('gunner'), ...(helm ? pickRole('helm') : [])].slice(0, n)];
     for (const sl of chosen) {
       sl.mode = 'ashore';
       sl.goal = null;
@@ -1375,7 +1407,7 @@ class ShipCrew {
         }
       }
       sl.partner = null;
-      out.push({ row: sl.row, look: sl.look, girth: sl.girth, height: sl.height, captain: sl.role === 'captain' });
+      out.push({ row: sl.row, look: sl.look, girth: sl.girth, height: sl.height, captain: sl.role === 'captain', x: sl.x, z: sl.z, yaw: sl.yaw });
     }
     return out;
   }
@@ -2140,8 +2172,13 @@ export class CrewSystem {
   }
 
   /** The captain and `n` hands go over the side into the boat (see ShipCrew.muster). */
-  muster(ship: Ship, n: number) {
-    return this.crews.get(ship)?.muster(n) ?? [];
+  muster(ship: Ship, n: number, helm = false) {
+    return this.crews.get(ship)?.muster(n, helm) ?? [];
+  }
+
+  /** A ship's main deck, to fight on (null until her crew has come aboard). */
+  deckPlan(ship: Ship): DeckPlan | null {
+    return this.crews.get(ship) ?? null;
   }
 
   /** ...and come back aboard. */

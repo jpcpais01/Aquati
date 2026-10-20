@@ -125,6 +125,8 @@ export class Ship {
   /** The named captain aboard (see game/bounty.ts), if she is a hunter. */
   hunter: string | null = null;
   anchored = false;
+  /** Taken in a boarding action and sailing off under a prize crew: no longer anybody's enemy. */
+  prize = false;
   /** Held fast (0 free .. 1): the Kraken's coils round her hull stop her in the water. */
   held = 0;
   /** Sideways drift (x, z m/s) from being shoved by another hull; bleeds off against the water. */

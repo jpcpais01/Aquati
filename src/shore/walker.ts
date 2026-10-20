@@ -47,6 +47,8 @@ let serial = 0;
 
 export class Walker implements CrewFigure {
   readonly id = serial++;
+  /** What the HUD calls them over their bar ('' for the default). */
+  title = '';
   readonly pose = new Float32Array(POSE_SIZE);
   readonly matrix = new THREE.Matrix4();
   prop: number = PROP.none;
@@ -102,6 +104,10 @@ export class Walker implements CrewFigure {
   aim = 0; // pistol raised 0..1
   cheer = 0;
   shout = 0;
+  /** Swinging across on a boarding line (0..1, how much of the hanging pose). */
+  hang = 0;
+  /** Thrown down their blade and gone to their knees, hands up (0..1 eased in); out of the fight. */
+  yielded = 0;
   lastHurt = -100;
   target: Walker | null = null;
   // at ease
@@ -144,7 +150,12 @@ export class Walker implements CrewFigure {
 
   /** Can act: standing, not reeling. */
   get ready() {
-    return !this.down && this.stagger <= 0 && this.rise <= 0;
+    return !this.down && this.stagger <= 0 && this.rise <= 0 && this.yielded <= 0 && this.hang <= 0.3;
+  }
+
+  /** Fair game for a blade: on their feet and still fighting. */
+  get standing() {
+    return this.alive && !this.down && this.yielded <= 0;
   }
 
   place(x: number, z: number, yaw: number) {
@@ -208,6 +219,7 @@ export class Walker implements CrewFigure {
     this.stagger = Math.max(0, this.stagger - dt);
     this.flinch = Math.max(0, this.flinch - dt);
     this.cheer = Math.max(0, this.cheer - dt);
+    if (this.yielded > 0) this.yielded = Math.min(1, this.yielded + dt * 1.6);
     this.shout = Math.max(0, this.shout - dt);
     if (this.downT >= 0) {
       this.downT += dt;
@@ -306,13 +318,69 @@ export class Walker implements CrewFigure {
       K[P.rootY] = j * 0.2 - (1 - j) * 0.06;
       for (let i = 0; i < POSE_SIZE; i++) T[i] = lerp(T[i], K[i], w);
     }
+    if (this.hang > 0) this.hangPose(T, tt);
+    if (this.yielded > 0 && !this.down) this.yieldPose(T, tt);
     this.face(T, tt, moving);
+    if (this.hang > 0.3) {
+      // a roar on the way across
+      T[P.jaw] = 0.75;
+      T[P.brow] = -0.8;
+    }
     // cuts snap, blows jolt, strides keep their snap; everything else eases
     const k = damp(this.cutT >= 0 ? 55 : this.flinch > 0 || this.parry > 0 ? 34 : this.down ? 9 : stepping ? 26 : 13, dt);
     for (let i = 0; i < POSE_SIZE; i++) this.pose[i] += (T[i] - this.pose[i]) * k;
     if (this.down || this.fall > 0) B.fill(0);
     for (let i = 0; i < 5; i++) this.body[i] += (B[i] - this.body[i]) * k;
-    this.prop = digging ? PROP.spade : this.armed || this.cheer > 0 ? PROP.cutlass : PROP.none;
+    this.prop = digging ? PROP.spade : this.yielded > 0.3 ? PROP.none : this.armed || this.cheer > 0 || this.hang > 0 ? PROP.cutlass : PROP.none;
+  }
+
+  /** Swinging on a line: the left fist high on the rope, blade out, knees tucked to clear the rails. */
+  private hangPose(o: Float32Array, tt: number) {
+    const w = Math.min(1, this.hang);
+    const k = (i: number, v: number) => (o[i] = lerp(o[i], v, w));
+    k(P.armLX, 2.95);
+    k(P.armLZ, -0.12);
+    k(P.elbowL, 0.18);
+    k(P.handL, 1);
+    k(P.armRX, 1.05 + 0.15 * Math.sin(tt * 9));
+    k(P.armRZ, 0.85);
+    k(P.elbowR, 0.55);
+    k(P.handR, 1);
+    k(P.legLX, 1.05);
+    k(P.kneeL, 1.45);
+    k(P.legRX, 0.6);
+    k(P.kneeR, 0.95);
+    k(P.spineX, -0.16);
+    k(P.spineY, 0.2);
+    k(P.headX, -0.12);
+    k(P.rootY, 0);
+  }
+
+  /** On their knees, hands raised, head down: they've struck their colours. */
+  private yieldPose(o: Float32Array, tt: number) {
+    const w = smooth(this.yielded);
+    const shake = Math.sin(tt * 13) * 0.03;
+    const k = (i: number, v: number) => (o[i] = lerp(o[i], v, w));
+    k(P.armLX, 2.45 + shake);
+    k(P.armLZ, -0.22);
+    k(P.elbowL, 1.05);
+    k(P.handL, 0.05);
+    k(P.armRX, 2.45 - shake);
+    k(P.armRZ, -0.22);
+    k(P.elbowR, 1.05);
+    k(P.handR, 0.05);
+    k(P.legLX, 0.04);
+    k(P.kneeL, 1.62);
+    k(P.legRX, -0.02);
+    k(P.kneeR, 1.66);
+    k(P.rootY, -0.43);
+    k(P.spineX, 0.16);
+    k(P.spineY, 0);
+    k(P.headX, 0.3);
+    k(P.headY, 0.25 * Math.sin(this.seed));
+    k(P.brow, 0.75);
+    k(P.smile, -0.7);
+    k(P.jaw, 0.1);
   }
 
   /**

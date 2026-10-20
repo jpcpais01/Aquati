@@ -7,6 +7,7 @@ import type { Ship } from '../ships/ship';
 import type { World } from '../game/world';
 import { BOAT_L, buildBoat, buildCamp, buildDigMarks, campFlag, CampLayout, CHEST_D, CHEST_H, chestParts, holeGeometry, ShoreMats, shoreMats, spoilGeometry } from './kit';
 import { CampSite, Ground, Landing } from './ground';
+import { DeckFloor, Floor, Lines, railPoint } from './deck';
 import { Cut, CUT_HIT, CUT_WIND, RUN, WALK, Walker } from './walker';
 
 // Going ashore. The captain rows in with four hands, walks the islands on foot
@@ -15,6 +16,11 @@ import { Cut, CUT_HIT, CUT_WIND, RUN, WALK, Walker } from './walker';
 // cutthroats round a fire, who grab their blades and come running when you
 // get close; your hands pick a man each, and run to cover anyone who goes for
 // the captain. Rout the camp and its plunder chest is yours.
+//
+// The same blades serve at sea. Board a crippled pirate and the captain and
+// hands swing across on lines to fight her crew for her rolling deck (see
+// deck.ts); cut down her captain and enough of his men and the rest throw
+// down their blades and go to their knees.
 
 const CAP_HP = 120;
 const HAND_HP = 75;
@@ -34,6 +40,9 @@ const DIG_WORK = 16;
 const CAMP_ALARM = 19;
 /** ...and gives up the chase this far from home. */
 const LEASH = 42;
+/** A boarder's flight across on a line (s), and how high the leap carries over the rails. */
+const SWING_T = 1.15;
+const SWING_UP = 1.35;
 
 export const HAND_NAMES = ['Bones', 'Patch', 'Old Hobb', 'Sully', 'Barnaby', 'Nell', 'Red Jack', 'Iko', 'Dutch', 'Mags', 'Tam', 'Quill', 'Rook', 'Bess', 'Finch', 'Salty'];
 
@@ -69,7 +78,28 @@ export interface ShoreHooks {
   unearthed(at: THREE.Vector3): void;
   /** The captain is down. */
   defeat(): void;
-  step(k: number, wet: boolean): void;
+  /** A boarded ship's crew is beaten: the survivors throw down their blades. */
+  struck(prize: Ship): void;
+  /** A boarder lands on her deck. */
+  landed(w: Walker, captain: boolean): void;
+  step(k: number, wet: boolean, deck: boolean): void;
+}
+
+/** A boarder on the way across: perched on your rail, then out over the gap on a line. */
+interface Swing {
+  /** Seconds before he leaps, and into the flight. */
+  delay: number;
+  t: number;
+  /** Where he leaps from: a ship-local spot on the boarders' own rail (t along her, side). */
+  fromT: number;
+  /** Where he lands on her deck (ship-local to the prize). */
+  lx: number;
+  lz: number;
+  /** The rigging the line hangs from (world, set at the leap). */
+  pivot: THREE.Vector3;
+  hand: THREE.Vector3;
+  y: number;
+  done: boolean;
 }
 
 export interface Camp {
@@ -149,7 +179,7 @@ const newFollow = (i: number): Follow => ({
   aside: 0,
 });
 
-export type Prompt = { key: 'boat' | 'chest' | 'fight' | 'dig'; title: string; sub: string; ok: boolean } | null;
+export type Prompt = { key: 'boat' | 'chest' | 'fight' | 'dig' | 'retreat'; title: string; sub: string; ok: boolean } | null;
 
 export class Shore {
   readonly group = new THREE.Group();
@@ -196,6 +226,23 @@ export class Shore {
   private revealT = -1;
   private unearthedOnce = false;
   private diggers = new Map<Walker, { x: number; z: number; stroke: number }>();
+  /** What the party stands on: the island, or a boarded ship's deck. */
+  private floor: Floor;
+  /** The deck being fought over, and the ship it belongs to (null ashore). */
+  deck: DeckFloor | null = null;
+  prize: Ship | null = null;
+  /** Her crew, fighting for her deck. */
+  readonly crewFoes: Walker[] = [];
+  /** How many of them turned out (for morale), and whether they've struck. */
+  private crewAt = 0;
+  struck = false;
+  /** Which of her sides the boarders' ship lies against (+1 port). */
+  boardSide = 1;
+  private swings = new Map<Walker, Swing>();
+  /** Everyone the party may cut at right now (camps nearby, a boarded crew). */
+  private hostile: Walker[] = [];
+  /** The grappling lines and boarding ropes (drawn by whoever runs the boarding). */
+  readonly lines: Lines;
 
   constructor(
     readonly ground: Ground,
@@ -204,7 +251,10 @@ export class Shore {
     private hooks: ShoreHooks,
   ) {
     this.group.name = 'shore';
+    this.floor = ground;
     const mats = (this.mats = shoreMats());
+    this.lines = new Lines(mats);
+    this.group.add(this.lines.ropes, this.lines.hooks);
     // the ship's boat, hidden until it's pulled up on a beach
     const bb = new Builder();
     buildBoat(bb);
@@ -355,23 +405,8 @@ export class Shore {
     this.boatBlocks = [-1.5, 0, 1.5].map((k) => ({ x: mx + landing.dx * k, z: mz + landing.dz * k, r: 0.85 }));
     for (const b of this.boatBlocks) g.blocks.push(b);
     // the captain and four hands step out onto the sand
-    const crew = this.crew.muster(ship, 4);
-    const used = new Set<number>();
-    const names = HAND_NAMES.slice().sort(() => Math.random() - 0.5);
-    const mk = (m: { row: number; look: Look; girth: number; height: number } | null, captain: boolean) => {
-      if (m) return new Walker('party', m.row, m.look, captain ? CAP_HP : HAND_HP, m.girth, m.height, false);
-      const look = makeLook('player', captain ? 'captain' : 'hand');
-      const row = this.crew.takeRow(look);
-      return new Walker('party', row, look, captain ? CAP_HP : HAND_HP, 1, 1, true);
-    };
-    const capM = crew.find((m) => m.captain) ?? null;
-    if (capM) used.add(capM.row);
-    const cap = mk(capM, true);
-    this.captain = cap;
-    this.party.length = 0;
-    this.party.push({ walker: cap, name: 'Captain' });
-    const hands = crew.filter((m) => !used.has(m.row));
-    for (let i = 0; i < 4; i++) this.party.push({ walker: mk(hands[i] ?? null, false), name: names[i], follow: newFollow(i) });
+    this.raiseParty(ship, 4);
+    const cap = this.captain!;
     const sx = landing.sandX;
     const sz = landing.sandZ;
     const fx = landing.dx;
@@ -392,7 +427,31 @@ export class Shore {
     }
   }
 
-  /** Everyone back in the boat and aboard; the boat is hoisted in. */
+  /**
+   * The captain and up to `n` hands off `ship`'s deck as walkers (their own
+   * sailors, so faces and clothes match), named and with a place in the knot.
+   */
+  private raiseParty(ship: Ship, n: number) {
+    const crew = this.crew.muster(ship, n);
+    const used = new Set<number>();
+    const names = HAND_NAMES.slice().sort(() => Math.random() - 0.5);
+    const mk = (m: { row: number; look: Look; girth: number; height: number } | null, captain: boolean) => {
+      if (m) return new Walker('party', m.row, m.look, captain ? CAP_HP : HAND_HP, m.girth, m.height, false);
+      const look = makeLook('player', captain ? 'captain' : 'hand');
+      const row = this.crew.takeRow(look);
+      return new Walker('party', row, look, captain ? CAP_HP : HAND_HP, 1, 1, true);
+    };
+    const capM = crew.find((m) => m.captain) ?? null;
+    if (capM) used.add(capM.row);
+    const cap = mk(capM, true);
+    this.captain = cap;
+    this.party.length = 0;
+    this.party.push({ walker: cap, name: 'Captain' });
+    const hands = crew.filter((m) => !used.has(m.row));
+    for (let i = 0; i < n; i++) this.party.push({ walker: mk(hands[i] ?? null, false), name: names[i], follow: newFollow(Math.min(i, SLOTS.length - 1)) });
+  }
+
+  /** Everyone back in the boat (or over the rail) and aboard; the boat is hoisted in. */
   leave() {
     if (!this.active) return;
     this.active = false;
@@ -406,6 +465,7 @@ export class Shore {
     this.captain = null;
     if (this.ship) this.crew.welcomeBack(this.ship);
     this.ship = null;
+    this.endBoarding();
     const g = this.ground;
     for (const b of this.boatBlocks) g.blocks.splice(g.blocks.indexOf(b), 1);
     this.boatBlocks = [];
@@ -424,6 +484,256 @@ export class Shore {
     return this.boat.position;
   }
 
+  // ---------------------------------------------------------------- boarding
+
+  /**
+   * Over the side and onto `prize`: the captain and `hands` of `ship`'s crew
+   * perch on her rail and swing across one after another, while `foes` of the
+   * prize's crew (her captain first, `bossHp` strong) wait for them on her
+   * deck, blades out. The rest of her people have bolted below.
+   */
+  board(ship: Ship, prize: Ship, o: { hands: number; foes: number; bossHp: number; boss: string; hand: string }) {
+    const plan = this.crew.deckPlan(prize);
+    if (!plan) return false;
+    this.leave();
+    const deck = (this.deck = new DeckFloor(prize, plan));
+    this.floor = deck;
+    this.ship = ship;
+    this.prize = prize;
+    this.active = true;
+    this.defeated = false;
+    this.struck = false;
+    this.pistolT = 0;
+    this.combo = 0;
+    this.calmT = 0;
+    // which of her sides lies against ours, and which of ours against hers
+    const pl = deck.toLocal(ship.pos.x, ship.pos.z, _o);
+    this.boardSide = pl.x >= 0 ? 1 : -1;
+    const ourSide = (prize.pos.x - ship.pos.x) * Math.cos(ship.heading) - (prize.pos.z - ship.pos.z) * Math.sin(ship.heading) >= 0 ? 1 : -1;
+    this.raiseParty(ship, o.hands);
+    // spread along her near rail, the captain in the middle of them
+    const n = this.party.length;
+    const z0 = plan.zAt(plan.main.t0) + 1.2;
+    const z1 = plan.zAt(plan.main.t1) - 1.2;
+    // the captain lands mid-deck; the hands fan out fore and aft of him
+    const slots = this.party.map((_, i) => lerp(z0, z1, n > 1 ? (i + 0.5) / n : 0.5));
+    const mid = slots.slice().sort((a, b) => Math.abs(a - (z0 + z1) / 2) - Math.abs(b - (z0 + z1) / 2));
+    const Lp = ship.cls.length;
+    this.party.forEach((m, i) => {
+      const w = m.walker;
+      const lz = mid[i] + (Math.random() - 0.5) * 0.5;
+      const t = clamp(plan.tOf(lz), plan.main.t0, plan.main.t1);
+      const lx = this.boardSide * (plan.halfWidth(plan.main, t) - 1.6 - Math.random() * 0.7);
+      // straight across from our own rail
+      const at = deck.toWorld(lx, lz, { x: 0, z: 0 });
+      const ox = at.x - ship.pos.x;
+      const oz = at.z - ship.pos.z;
+      const fromT = clamp((ox * Math.sin(ship.heading) + oz * Math.cos(ship.heading)) / Lp + 0.5, 0.2, 0.8);
+      const sw: Swing = { delay: i === 0 ? 0.35 : 0.1 + i * 0.22 + Math.random() * 0.12, t: 0, fromT: fromT * ourSide, lx, lz, pivot: new THREE.Vector3(), hand: new THREE.Vector3(), y: 0, done: false };
+      this.swings.set(w, sw);
+      w.visible = true;
+      w.armed = true;
+      w.hang = 0.5;
+      w.idle = 'stand';
+      railPoint(ship, fromT, ourSide, _v, 0.2);
+      w.place(_v.x, _v.z, Math.atan2(at.x - _v.x, at.z - _v.z));
+      sw.y = _v.y;
+      this.crew.figures.add(w);
+    });
+    this.march = ship.heading;
+    // her crew: those who stand and fight, the captain at their head
+    const theirs = this.crew.muster(prize, 99, true).sort((a, b) => Number(b.captain) - Number(a.captain));
+    this.crewFoes.length = 0;
+    for (const m of theirs.slice(0, o.foes)) {
+      const boss = m.captain;
+      const w = new Walker('foe', m.row, m.look, boss ? o.bossHp : FOE_HP, m.girth * (boss ? 1.08 : 1), m.height * (boss ? 1.04 : 1), false);
+      w.title = boss ? o.boss : o.hand;
+      const l = deck.keep({ x: m.x, z: clamp(m.z, z0 - 0.8, z1 + 0.8) }, BODY + 0.1);
+      const wp = deck.toWorld(l.x, l.z, { x: 0, z: 0 });
+      w.place(wp.x, wp.z, m.yaw + prize.heading);
+      w.visible = true;
+      w.armed = true;
+      w.shout = 0.6 + Math.random() * 0.8;
+      w.idleT = Math.random() * 0.6;
+      this.crewFoes.push(w);
+      this.crew.figures.add(w);
+    }
+    this.crewAt = this.crewFoes.length;
+    return true;
+  }
+
+  /** Lets go of a boarded deck: her fighters go back to being her crew (or stay below, as a prize's do). */
+  private endBoarding(crewBack = true) {
+    if (!this.deck) return;
+    for (const w of this.crewFoes) this.crew.figures.delete(w);
+    this.crewFoes.length = 0;
+    this.swings.clear();
+    if (this.prize && crewBack) this.crew.welcomeBack(this.prize);
+    this.deck = null;
+    this.prize = null;
+    this.floor = this.ground;
+    this.struck = false;
+  }
+
+  /** Off the deck of a prize sent away with a prize crew: her own people stay battened below. */
+  leaveAsPrize() {
+    if (this.deck) this.endBoarding(false);
+    this.leave();
+  }
+
+  /** The boarders' flights across: perched, then out over the gap, then onto her planks. */
+  private updateSwings(dt: number, world: World) {
+    const air = new Set<Walker>();
+    const deck = this.deck;
+    const ship = this.ship;
+    if (!deck || !ship) {
+      this.swings.clear();
+      return air;
+    }
+    for (const [w, sw] of this.swings) {
+      sw.t += dt;
+      const side = Math.sign(sw.fromT) || 1;
+      railPoint(ship, Math.abs(sw.fromT), side, _v, 0.2);
+      const to = deck.toWorld(sw.lx, sw.lz, { x: 0, z: 0 });
+      const toY = deck.height(to.x, to.z);
+      const u = (sw.t - sw.delay) / SWING_T;
+      if (u < 0) {
+        // crouched on the rail, a hand on the line, waiting his turn
+        w.x = _v.x;
+        w.z = _v.z;
+        sw.y = _v.y;
+        w.hang = 0.55;
+        w.wantYaw = Math.atan2(to.x - w.x, to.z - w.z);
+        w.turn(dt, 8);
+        sw.pivot.set((_v.x + to.x) / 2, Math.max(_v.y, toY) + 7, (_v.z + to.z) / 2);
+        air.add(w);
+        continue;
+      }
+      if (u < 1) {
+        if (sw.t - dt < sw.delay) {
+          // the leap: a yell and a creak of the line taking the weight
+          w.shout = 0.7;
+          const [vol, pan, d] = world.soundAt(_v);
+          world.audio.swish(vol * 0.9, pan);
+          if (w === this.captain || Math.random() < 0.5) world.audio.shout(vol * 0.5, pan, d, true, 1);
+        }
+        const e = u * u * (3 - 2 * u);
+        w.x = lerp(_v.x, to.x, e);
+        w.z = lerp(_v.z, to.z, e);
+        sw.y = lerp(_v.y, toY, e) + SWING_UP * Math.sin(Math.PI * Math.min(1, u * 1.08));
+        w.hang = 1;
+        w.wantYaw = Math.atan2(to.x - _v.x, to.z - _v.z);
+        w.turn(dt, 10);
+        sw.hand.set(w.x + Math.sin(w.yaw) * 0.12, sw.y + 2.05 * w.height, w.z + Math.cos(w.yaw) * 0.12);
+        air.add(w);
+        continue;
+      }
+      // down on her planks with a thump, carried a step on by the swing
+      this.swings.delete(w);
+      w.place(to.x, to.z, w.yaw);
+      w.kx = Math.sin(w.yaw) * 2.2;
+      w.kz = Math.cos(w.yaw) * 2.2;
+      w.y = toY;
+      this.dust(_w.set(to.x, toY + 0.1, to.z), world, 0.9);
+      this.hooks.landed(w, w === this.captain);
+    }
+    // the hanging pose lets go as they find their feet
+    for (const p of this.party) if (!air.has(p.walker) && p.walker.hang > 0) p.walker.hang = Math.max(0, p.walker.hang - dt * 3.5);
+    return air;
+  }
+
+  /** The lines the boarders swing on, from the rigging overhead to each fist (for drawing). */
+  swingLines(out: { from: THREE.Vector3; to: THREE.Vector3; slack: number }[]) {
+    out.length = 0;
+    for (const [w, sw] of this.swings) {
+      if (sw.t < sw.delay) {
+        // a line held ready, hanging slack from the yard
+        sw.hand.set(w.x + Math.sin(w.yaw) * 0.25, sw.y + 1.55 * w.height, w.z + Math.cos(w.yaw) * 0.25);
+        out.push({ from: sw.pivot, to: sw.hand, slack: 0.4 });
+      } else out.push({ from: sw.pivot, to: sw.hand, slack: 0 });
+    }
+    return out;
+  }
+
+  /** Her crew fights for her deck: blades out to meet the boarders, every man for the nearest. */
+  private thinkDeck(dt: number, air: Set<Walker> | null) {
+    const deck = this.deck!;
+    const party = this.party.map((p) => p.walker).filter((w) => !w.down && !air?.has(w));
+    const cap = this.captain;
+    this.crewFoes.forEach((w, k) => {
+      if (w.down) return;
+      if (w.yielded > 0 || this.struck) {
+        w.vx *= 1 - damp(10, dt);
+        w.vz *= 1 - damp(10, dt);
+        return;
+      }
+      w.armed = true;
+      if (!party.length || this.defeated) {
+        // the boarders are still coming: face the rail they'll come over
+        w.vx *= 1 - damp(6, dt);
+        w.vz *= 1 - damp(6, dt);
+        const r = deck.toWorld(this.boardSide * 3, deck.toLocal(w.x, w.z, _o).z, { x: 0, z: 0 });
+        w.wantYaw = Math.atan2(r.x - w.x, r.z - w.z);
+        w.turn(dt, 6);
+        return;
+      }
+      if (!w.target || !w.target.standing || air?.has(w.target) || Math.random() < dt * 0.15) {
+        let best: Walker | null = null;
+        let bd = Infinity;
+        for (const p of party) {
+          const taken = this.crewFoes.filter((o) => o !== w && o.target === p).length;
+          const d = Math.hypot(p.x - w.x, p.z - w.z) + taken * 2.5 - (p === cap ? 2 : 0);
+          if (d < bd) {
+            bd = d;
+            best = p;
+          }
+        }
+        w.target = best;
+      }
+      if (w.target) this.duel(w, w.target, dt, k, w.maxHp > FOE_HP ? 0.38 : 0.22);
+    });
+  }
+
+  /** Her crew's nerve: with her captain down and most of them cut down too, the rest throw in. */
+  private morale(world: World) {
+    if (this.struck || !this.prize) return;
+    const up = this.crewFoes.filter((w) => w.standing).length;
+    const boss = this.crewFoes.find((w) => w.maxHp > FOE_HP);
+    const headless = !boss || boss.down;
+    if (up > 0 && !(headless && up <= Math.max(1, Math.round(this.crewAt * 0.34)))) return;
+    this.struck = true;
+    let cry = 0;
+    for (const w of this.crewFoes) {
+      w.target = null;
+      if (w.down) continue;
+      w.armed = false;
+      w.cutT = -1;
+      w.parry = 0;
+      w.yielded = 0.01;
+      w.shout = 0;
+      // "Quarter! Quarter!"
+      if (cry++ < 2) setTimeout(() => this.hooks.floater('Quarter!', _w.set(w.x, w.y + 2.3, w.z), 'loot'), 150 + cry * 450);
+    }
+    for (const p of this.party) {
+      const w = p.walker;
+      w.target = null;
+      if (!w.down && w !== this.captain) w.cheer = 2.6 + Math.random() * 0.6;
+    }
+    world.audio.shout(0.85, 0, 0, true, 5);
+    this.hooks.struck(this.prize);
+  }
+
+  /** The captain has backed up against the rail our own ship lies alongside. */
+  private atOwnRail() {
+    const d = this.deck;
+    const cap = this.captain;
+    if (!d || !cap) return false;
+    const l = d.toLocal(cap.x, cap.z, _o);
+    const P = d.plan;
+    const t = clamp(P.tOf(l.z), P.main.t0, P.main.t1);
+    return l.x * this.boardSide > P.halfWidth(P.main, t) - 0.95;
+  }
+
   // ---------------------------------------------------------------- per frame
 
   update(dt: number, world: World, inp: ShoreInput, focus: THREE.Vector3) {
@@ -437,7 +747,8 @@ export class Shore {
     all.length = 0;
     // camps come alive near the camera
     for (const c of this.camps) {
-      const live = Math.hypot(c.site.x - focus.x, c.site.z - focus.z) < CAMP_LIVE;
+      // (a fight on a ship's deck is no place to walk an island's cutthroats: they'd be walked on her planks)
+      const live = !this.deck && Math.hypot(c.site.x - focus.x, c.site.z - focus.z) < CAMP_LIVE;
       if (live !== c.live) {
         c.live = live;
         for (const w of c.gang) {
@@ -449,25 +760,49 @@ export class Shore {
       this.campFx(c, dt, world, focus);
       if (live) for (const w of c.gang) all.push(w);
     }
+    // a boarded ship's crew, and everyone the party may fight
+    const hostile = this.hostile;
+    hostile.length = 0;
+    for (const w of all) hostile.push(w);
+    for (const w of this.crewFoes) {
+      all.push(w);
+      hostile.push(w);
+    }
     if (this.active) for (const p of this.party) all.push(p.walker);
     for (const w of all) w.tick(dt);
+    // boarders still on their way across stay out of the scrum till they land
+    const air = this.swings.size ? this.updateSwings(dt, world) : null;
+    const feet = air ? all.filter((w) => !air.has(w)) : all;
 
     const cap = this.captain;
     if (this.active && cap) {
-      this.steerCaptain(dt, inp, world);
-      this.thinkParty(dt);
+      if (!air?.has(cap)) this.steerCaptain(dt, inp, world);
+      this.thinkParty(dt, air);
       this.updateDig(dt, world);
     }
     for (const c of this.camps) if (c.live) this.thinkCamp(c, dt, world);
-    this.move(all, dt, world);
-    this.resolve(all, world);
+    if (this.deck) this.thinkDeck(dt, air);
+    this.move(feet, dt, world);
+    this.resolve(feet, world);
     for (const w of all) {
       const run = clamp((w.stride - WALK) / (RUN - WALK), 0, 1);
       w.animate(dt, world.time, run);
-      w.place3(this.ground.height(w.x, w.z));
+      this.stand(w, air);
       this.bladeTrail(w, world);
     }
     this.gather();
+  }
+
+  /** Poses a walker onto whatever is under its feet (or in the air on a line). */
+  private stand(w: Walker, air: Set<Walker> | null) {
+    const d = this.deck;
+    const sw = air?.has(w) ? this.swings.get(w) : undefined;
+    if (sw) w.place3(sw.y);
+    else if (d) {
+      const l = d.toLocal(w.x, w.z, _o);
+      w.place3(d.localY(l.x, l.z));
+      d.ride(w);
+    } else w.place3(this.ground.height(w.x, w.z));
   }
 
   /** The alert foes near the party, nearest first (for bars and the battle check). */
@@ -480,6 +815,7 @@ export class Shore {
       if (!c.live || !c.alert) continue;
       for (const w of c.gang) if (w.alive && Math.hypot(w.x - cap.x, w.z - cap.z) < 40) f.push(w);
     }
+    for (const w of this.crewFoes) if (w.alive && w.yielded <= 0) f.push(w);
   }
 
   /** The pistol's reload: 0 just fired .. 1 loaded. */
@@ -563,18 +899,15 @@ export class Shore {
     let best: Walker | null = null;
     let bs = Infinity;
     const want = aim ? Math.atan2(aim.x - cap.x, aim.z - cap.z) : cap.wantYaw;
-    for (const c of this.camps) {
-      if (!c.live) continue;
-      for (const w of c.gang) {
-        if (!w.alive || w.down) continue;
-        const d = Math.hypot(w.x - cap.x, w.z - cap.z);
-        if (d > 3.6) continue;
-        const off = Math.abs(angleDelta(want, Math.atan2(w.x - cap.x, w.z - cap.z)));
-        const s = d + off * 1.6;
-        if (s < bs) {
-          bs = s;
-          best = w;
-        }
+    for (const w of this.hostile) {
+      if (!w.standing) continue;
+      const d = Math.hypot(w.x - cap.x, w.z - cap.z);
+      if (d > 3.6) continue;
+      const off = Math.abs(angleDelta(want, Math.atan2(w.x - cap.x, w.z - cap.z)));
+      const s = d + off * 1.6;
+      if (s < bs) {
+        bs = s;
+        best = w;
       }
     }
     if (best) cap.wantYaw = Math.atan2(best.x - cap.x, best.z - cap.z);
@@ -596,18 +929,15 @@ export class Shore {
     let best: Walker | null = null;
     let bs = Infinity;
     const face = aim ? Math.atan2(aim.x - cap.x, aim.z - cap.z) : cap.yaw;
-    for (const c of this.camps) {
-      if (!c.live) continue;
-      for (const w of c.gang) {
-        if (!w.alive || w.down) continue;
-        const d = Math.hypot(w.x - cap.x, w.z - cap.z);
-        if (d > PISTOL_RANGE) continue;
-        const off = Math.abs(angleDelta(face, Math.atan2(w.x - cap.x, w.z - cap.z)));
-        const s = d * 0.15 + off * (aim ? 3 : 1.2);
-        if (s < bs) {
-          bs = s;
-          best = w;
-        }
+    for (const w of this.hostile) {
+      if (!w.standing) continue;
+      const d = Math.hypot(w.x - cap.x, w.z - cap.z);
+      if (d > PISTOL_RANGE) continue;
+      const off = Math.abs(angleDelta(face, Math.atan2(w.x - cap.x, w.z - cap.z)));
+      const s = d * 0.15 + off * (aim ? 3 : 1.2);
+      if (s < bs) {
+        bs = s;
+        best = w;
       }
     }
     return best;
@@ -631,7 +961,7 @@ export class Shore {
     const [vol, pan, d] = world.soundAt(_hand);
     world.audio.pistol(vol, pan, d);
     this.hooks.shake(0.06);
-    if (!t || !t.alive || t.down) return;
+    if (!t || !t.standing) return;
     const dist = Math.hypot(t.x - cap.x, t.z - cap.z);
     if (Math.random() > 0.95 - dist * 0.012) {
       this.hooks.floater('Missed', _v.set(t.x, t.y + 2.2, t.z), '');
@@ -642,7 +972,7 @@ export class Shore {
 
   // ---------------------------------------------------------------- the landing party's hands
 
-  private thinkParty(dt: number) {
+  private thinkParty(dt: number, air: Set<Walker> | null) {
     const cap = this.captain!;
     const hands = this.party.slice(1).map((p) => p.walker);
     const foes = this.foes;
@@ -673,17 +1003,17 @@ export class Shore {
     }
     if (!fight) this.swapSides(dt);
     hands.forEach((w, i) => {
-      if (w.down) return;
+      if (w.down || air?.has(w)) return;
       // pick a fight
       if (fight) {
         w.armed = true;
         const cover = covering.get(w);
         if (cover) w.target = cover;
-        if (!w.target || !w.target.alive || w.target.down || Math.hypot(w.target.x - cap.x, w.target.z - cap.z) > 17) {
+        if (!w.target || !w.target.standing || Math.hypot(w.target.x - cap.x, w.target.z - cap.z) > 17) {
           w.target = null;
           let bd = Infinity;
           for (const f of foes) {
-            if (f.down) continue;
+            if (!f.standing) continue;
             // spread out: a man already taken counts as further away
             const taken = hands.filter((o) => o !== w && o.target === f).length;
             const d = Math.hypot(f.x - w.x, f.z - w.z) + taken * 4 + (f.target === cap ? -3 : 0);
@@ -1040,7 +1370,7 @@ export class Shore {
   // ---------------------------------------------------------------- movement
 
   private move(all: Walker[], dt: number, world: World) {
-    const g = this.ground;
+    const g = this.floor;
     // nobody stands inside anybody else
     for (let i = 0; i < all.length; i++) {
       const a = all[i];
@@ -1074,8 +1404,7 @@ export class Shore {
       w.z = _o.z;
       const moved = Math.hypot(w.x - px, w.z - pz) / Math.max(dt, 1e-4);
       w.stride += ((w.down ? 0 : moved) - w.stride) * damp(12, dt);
-      const h = g.height(w.x, w.z);
-      w.wade = Math.max(0, -h);
+      w.wade = this.deck ? 0 : Math.max(0, -g.height(w.x, w.z));
       if (w.stride < 0.08) continue;
       // footfalls twice a stride: ~1.4 m walking, longer at a run
       const before = w.phase;
@@ -1130,7 +1459,8 @@ export class Shore {
 
   private footfall(w: Walker, world: World) {
     const wet = w.wade > 0.08;
-    if (w === this.captain) this.hooks.step(clamp(w.stride / RUN, 0.3, 1), wet);
+    if (w === this.captain) this.hooks.step(clamp(w.stride / RUN, 0.3, 1), wet, !!this.deck);
+    if (this.deck) return;
     const p = world.particles;
     if (wet) {
       if (Math.random() < 0.7) {
@@ -1161,7 +1491,7 @@ export class Shore {
       const arc = a.cut === 1 ? 1.65 : 1.05;
       const hits: Walker[] = [];
       for (const b of all) {
-        if (b.team === a.team || !b.alive || b.down) continue;
+        if (b.team === a.team || !b.standing) continue;
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const d = Math.hypot(dx, dz);
@@ -1241,6 +1571,7 @@ export class Shore {
     if (b.team === 'foe') {
       const camp = this.camps.find((c) => c.gang.includes(b));
       if (camp && !camp.routed && camp.gang.every((w) => w.down)) this.rout(camp, world);
+      if (this.crewFoes.includes(b)) this.morale(world);
     }
   }
 
@@ -1269,10 +1600,12 @@ export class Shore {
   }
 
   private dust(at: THREE.Vector3, world: World, k: number) {
-    for (let i = 0; i < 3 + Math.round(k * 2); i++) {
+    // sand ashore; on a deck, a puff of old caulk and grime off the planks
+    const deck = !!this.deck;
+    for (let i = 0; i < (deck ? 2 : 3) + Math.round(k * 2); i++) {
       world.particles.emit({
         x: at.x + (Math.random() - 0.5) * 0.4, y: at.y, z: at.z + (Math.random() - 0.5) * 0.4, vx: (Math.random() - 0.5) * 2 * k, vy: 0.4 + Math.random() * k, vz: (Math.random() - 0.5) * 2 * k,
-        life: 0.7 + Math.random() * 0.5, size: 0.3 * k, sizeEnd: 1.1 * k, color: [0.98, 0.9, 0.74], alpha: 0.42, drag: 2.4, grav: 0.3, kind: 1, fadeIn: 0.02,
+        life: 0.7 + Math.random() * 0.5, size: 0.3 * k, sizeEnd: (deck ? 0.8 : 1.1) * k, color: deck ? [0.78, 0.74, 0.68] : [0.98, 0.9, 0.74], alpha: deck ? 0.3 : 0.42, drag: 2.4, grav: 0.3, kind: 1, fadeIn: 0.02,
       });
     }
   }
@@ -1316,6 +1649,11 @@ export class Shore {
   prompt(shipName: string): Prompt {
     const cap = this.captain;
     if (!this.active || !cap || cap.down || this.defeated) return null;
+    if (this.deck) {
+      // back over your own rail while the fight goes against you
+      if (this.struck || this.swings.size || !this.atOwnRail()) return null;
+      return { key: 'retreat', title: `Fall back to the ${shipName}`, sub: 'Cut the lines and leave her be', ok: true };
+    }
     const b = this.boat.position;
     if (Math.hypot(cap.x - b.x, cap.z - b.z) < 4.2) {
       if (this.fighting && this.foes.some((f) => !f.down && Math.hypot(f.x - cap.x, f.z - cap.z) < 12)) return { key: 'fight', title: 'Cutthroats on your heels', sub: 'Fight them off before you push off', ok: false };
@@ -1348,7 +1686,7 @@ export class Shore {
   interact(world: World): 'boat' | null {
     const p = this.prompt('');
     if (!p || !p.ok) return null;
-    if (p.key === 'boat') return 'boat';
+    if (p.key === 'boat' || p.key === 'retreat') return 'boat';
     if (p.key === 'dig') {
       this.startDig();
       return null;
@@ -1553,6 +1891,8 @@ const SLOTS: [number, number][] = [
   [1.5, -1.9],
   [-1.0, -3.7],
   [1.0, -3.7],
+  [-2.3, -0.4],
+  [2.3, -0.4],
 ];
 
 /** A cutthroat's rags: the pirate crews' looks, roughened, the boss in a long coat and tricorn. */

@@ -12,6 +12,9 @@ const _c = new THREE.Vector3();
 const _fq = new THREE.Quaternion();
 const _sq = new THREE.Euler();
 
+/** How steeply the camera looks down on a boarding fight (radians above the horizon). */
+const DECK_PITCH = 0.98;
+
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   readonly target = new THREE.Vector3();
@@ -60,6 +63,16 @@ export class CameraRig {
   /** Ashore: a close, lower third-person frame over the captain's shoulder (wanted, and the eased blend). */
   foot = false;
   private ft = 0;
+  /**
+   * On foot on a ship's deck (a boarding fight): the camera swings round
+   * abeam, out over the open water on her far side, looking across her deck
+   * toward your own ship, so her masts stand as thin poles in the frame and
+   * her tops and yards ride above the line of sight instead of across it.
+   * `deckYaw` is that bearing (0 = the usual view, from the south).
+   */
+  deck = false;
+  deckYaw = 0;
+  private dk = 0;
   /** Ground height under the camera, so it never dips into a hillside ashore. */
   ground: ((x: number, z: number) => number) | null = null;
   /** A cross-fade from a frozen camera pose into whatever the rig computes next (mode switches). */
@@ -74,7 +87,16 @@ export class CameraRig {
     const d = lerp(70, 300, z);
     // in battle, pull back just enough that both ships stay comfortably in frame
     const sea = Math.max(d, lerp(d, this.fitDist, this.battle));
-    return lerp(sea, lerp(13, 46, z), this.footBlend);
+    const foot = lerp(13, 46, z);
+    const k = this.dk * this.dk * (3 - 2 * this.dk);
+    return lerp(sea, lerp(foot, foot * 1.15 + 3, k), this.footBlend);
+  }
+
+  /** Which way the follow camera looks (0 = north): on a boarded deck, across her toward your ship. */
+  get azimuth() {
+    const k = this.dk * this.dk * (3 - 2 * this.dk);
+    const a = this.deckYaw;
+    return Math.atan2(Math.sin(a), Math.cos(a)) * k * this.footBlend;
   }
 
   /** 0 at sea .. 1 ashore, eased. */
@@ -86,6 +108,7 @@ export class CameraRig {
   /** Cut straight to (or away from) the on-foot frame, behind a fade. */
   snapFoot() {
     this.ft = this.foot ? 1 : 0;
+    this.dk = this.deck ? 1 : 0;
   }
 
   /** Effective viewing distance (drives shadow reach, sound and fx radii). */
@@ -198,6 +221,7 @@ export class CameraRig {
     }
     this.zoomSmooth += (this.zoom - this.zoomSmooth) * damp(5, dt);
     this.ft = clamp(this.ft + (this.foot ? dt : -dt) / 0.9, 0, 1);
+    this.dk = clamp(this.dk + (this.deck ? dt : -dt) / 1.1, 0, 1);
     const fb = this.footBlend;
     this.blend += ((this.mode === 'follow' ? 1 : 0) - this.blend) * damp(this.mode === 'follow' ? 1.4 : 3, dt);
     const inBattle = !!foe && this.mode === 'follow';
@@ -228,9 +252,12 @@ export class CameraRig {
 
     // follow pose: camera due south of the focus looking north & down
     // (ashore it sits lower, more over the shoulder than overhead)
-    const pitch = lerp(lerp(0.91, 1.1, this.zoomSmooth), lerp(0.62, 0.98, this.zoomSmooth), fb); // radians above the horizon
+    const dkb = this.dk * this.dk * (3 - 2 * this.dk);
+    const pitch = lerp(lerp(0.91, 1.1, this.zoomSmooth), lerp(lerp(0.62, 0.98, this.zoomSmooth), DECK_PITCH, dkb), fb); // radians above the horizon
     const dist = this.followDistance;
-    const followPos = new THREE.Vector3(this.focus.x, this.focus.y + Math.sin(pitch) * dist, this.focus.z + Math.cos(pitch) * dist);
+    const az = this.azimuth;
+    const flat = Math.cos(pitch) * dist;
+    const followPos = new THREE.Vector3(this.focus.x + Math.sin(az) * flat, this.focus.y + Math.sin(pitch) * dist, this.focus.z + Math.cos(az) * flat);
     if (this.ground && fb > 0) followPos.y = Math.max(followPos.y, this.ground(followPos.x, followPos.z) + 2.2);
 
     // orbit pose: low, slow, cinematic
