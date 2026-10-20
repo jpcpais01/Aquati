@@ -16,6 +16,20 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T18:00Z',
     entries: [
       {
+        title: 'A tidier sky badge',
+        notes: [
+          'Tapping the weather or the clock under the map no longer makes the whole badge jump down, fade and turn into spaced-out capitals. It stays exactly where it is.',
+          'The name of the weather or hour you picked now pops up in a matching pill to the left of the badge, instead of landing on top of the pause and camera buttons.',
+          'The weather icon and the clock each light up softly when you hover over them and dip when pressed, so it is clear they are two separate buttons.',
+          'A small gold dot marks a weather or hour you have pinned. Keep tapping until it is back on Auto and the dot goes away.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T18:00Z',
+    entries: [
+      {
         title: 'A night sky worth staying up for',
         notes: [
           'The stars no longer look like falling snow. Thousands of pin-sharp stars now fill the night, from a handful of bright ones down to a fine dust of faint ones, in their true colours: blue-white, golden and the odd orange giant. They twinkle, hardest low over the sea, and stay hidden behind the clouds.',
