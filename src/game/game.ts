@@ -17,6 +17,7 @@ import { Birds } from '../fx/birds';
 import { ReefLife } from '../fx/fish';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
+import { Spirits, SpiritFrom } from '../fx/spirits';
 import { Rain } from '../fx/rain';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
@@ -212,6 +213,9 @@ export class Game {
   private reef!: ReefLife;
   private windField!: WindField;
   private wisps!: WindWisps;
+  /** Fallen pirates' ghosts on their way up. */
+  private spirits!: Spirits;
+  private spiritSoundT = -1;
   private atmos = new Atmosphere();
   private skyEnv: SkyEnvironment;
   private envT = 0;
@@ -635,6 +639,16 @@ export class Game {
     await mark(0.6, 700);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
+    this.spirits = new Spirits(q.tier === 0 ? 14 : 28, this.particles);
+    this.water.add(this.spirits.mesh);
+    this.spirits.onRise = (at) => {
+      // a crew going up together is a little choir, not a wall of sound
+      if (this.world.time - this.spiritSoundT < 0.28) return;
+      this.spiritSoundT = this.world.time;
+      const [vol, pan, d] = this.world.soundAt(at);
+      this.audio.spirit(vol * 0.32, pan, d);
+    };
+    this.crew.onSoul = (f) => this.raiseSoul(f);
     this.ground = new Ground(this.terrain, veg, towns);
     this.forts = new Forts(fortSites, this.ground, shoreMats());
     this.opaque.add(this.forts.root);
@@ -655,6 +669,8 @@ export class Game {
       routed: (c) => this.onCampRouted(c),
       plunder: (c) => this.plunderCamp(c),
       defeat: () => this.onCaptainDown(),
+      // he rises once he has hit the ground
+      fallen: (w, boss) => this.raiseSoul({ x: w.x, y: w.y, z: w.z, hat: w.look.hat, girth: w.girth, height: w.height, boss, delay: 0.85 }),
       unearthed: (at) => this.onUnearthed(at),
       struck: (prize) => this.onStruck(prize),
       landed: (w, cap) => {
@@ -2955,6 +2971,13 @@ export class Game {
     return Math.random() < chance;
   }
 
+  /** A fallen pirate gives up the ghost (only where someone might see it). */
+  private raiseSoul(f: SpiritFrom) {
+    const t = this.rig.target;
+    if (Math.hypot(f.x - t.x, f.z - t.z) > Math.max(320, this.rig.distance * 2.2)) return;
+    this.spirits.release(f, this.world.time);
+  }
+
   /** A ghost takes shape out of the sea mist, and if she is near enough, you hear her. */
   private raiseGhost(s: Ship) {
     s.presence = 0;
@@ -3220,6 +3243,7 @@ export class Game {
     this.loot.clear();
     this.debris.clear();
     this.crew.clear();
+    this.spirits.clear();
     this.kraken.reset();
     this.krHud.clear();
     this.audio.krakenMusic(false);
@@ -5018,6 +5042,7 @@ export class Game {
     P.end();
     P.begin('Particles', 'fx');
     this.particles.update(dt);
+    this.spirits.update(dt, w.time);
     P.end();
     P.begin('Birds', 'fx');
     this.birds.update(dt, w, this.ships);
@@ -5382,6 +5407,7 @@ export class Game {
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.spirits.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.kraken.view.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     P.end();
@@ -5417,6 +5443,7 @@ export class Game {
       this.clouds.mesh.visible = false;
     }
     this.wisps.mesh.visible = !under;
+    if (under) this.spirits.mesh.visible = false;
     // (the loading screen's warm-up draws them all, so their shaders are ready for the deck)
     this.sky.visible = this.warming || (!under && (eb > 0.001 || port || cine > 0));
     this.sky.position.copy(cam.position);

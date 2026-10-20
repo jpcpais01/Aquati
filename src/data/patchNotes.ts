@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T16:00Z',
     entries: [
       {
+        title: 'Fallen pirates give up the ghost',
+        notes: [
+          'When an enemy pirate dies, his spirit now slips out of him: a little glowing green ghost in his own likeness, wearing the same tricorn, bandana, knit cap or straw hat he had on, with two hollow eyes, a tiny smile and a curling wisp of a tail.',
+          'He pops up out of the water or off the sand, bobs there a moment and looks up at you, then does one last thing before he goes: a cheery wave, a twirl, a tip of his hat or a wide-mouthed "boo!". Then he drifts away into the sky trailing green motes and vanishes in a soft puff of sparkles, with a small, hollow "woo-oo" of his own.',
+          'It happens wherever pirates fall: the crew of a ship you sink as they go under one by one (her captain goes down with her), the cutthroats of an island camp, a fort\'s garrison, and the crew you cut down when you board a ship. A ghost ship\'s crew is freed too when you lay her to rest.',
+          'They glow softly and fit the light, gentle by day and brighter against the dark at night, and they cost next to nothing to draw.',
+        ],
+      },
+      {
         title: 'Your escorts carry plunder too',
         notes: [
           'Every ship in your fleet now has her own hold, sized by her class: a sloop carries 10, a brig 16 and a galleon 26. Captured prizes and hired ships alike sweep up wreckage and chests as they sail through them.',
