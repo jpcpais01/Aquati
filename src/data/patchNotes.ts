@@ -16,9 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T18:00Z',
     entries: [
       {
-        title: 'Calm water at the edges of the screen',
+        title: 'A night sky worth staying up for',
         notes: [
-          'The far edges of the sea no longer seem to race past faster than the water round your ship while you sail or zoom. Out there the sea is built more coarsely and glides along with you, and the smallest waves used to flicker across it. Those waves now fade out wherever the sea can\'t show them cleanly, so the whole view moves together.',
+          'The stars no longer look like falling snow. Thousands of pin-sharp stars now fill the night, from a handful of bright ones down to a fine dust of faint ones, in their true colours: blue-white, golden and the odd orange giant. They twinkle, hardest low over the sea, and stay hidden behind the clouds.',
+          'On a clear night the Milky Way arches across the sky, its glowing star clouds split by dark lanes of dust. The whole sky turns slowly through the night, so the stars rise and set just as the sun does, and the sea mirrors the brightest of them.',
+          'The moon is a real moon now, with its dark seas, bright rayed craters and crater shadows along its edge. It goes through its phases, starting from tonight\'s real moon and moving on a little each night you sail. It rises pale in the dusk, and a thin moon lights the sea a little less, so dark nights show more stars.',
+          'Now and then a shooting star streaks across the sky. Clouds drifting past the moon are lined with silver, and the glow round the moon is a soft halo instead of a wide blaze.',
         ],
       },
       {
@@ -51,6 +54,7 @@ export const PATCH_NOTES: PatchGroup[] = [
         notes: [
           'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
           'Zooming out or sailing into battle no longer makes the waves flicker as the sea switches to a lighter level of detail. The finer waves now fade smoothly into the lighter version as the camera rises, and back again as it comes down.',
+          'The far edges of the sea no longer seem to race past faster than the water round your ship while you sail or zoom. Out there the sea is built more coarsely and glides along with you, and the smallest waves used to flicker across it. Those waves now fade out wherever the sea can\'t show them cleanly, so the whole view moves together.',
         ],
       },
     ],
