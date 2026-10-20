@@ -74,6 +74,7 @@ export class UI {
   private chartPlayer: Ship | null = null;
   private barEls = new Map<number, HTMLDivElement>();
   private pinEls = new Map<number, HTMLDivElement>();
+  private clearN = -1;
   private floaterPool: { el: HTMLDivElement; t: number; life: number; x: number; y: number; vy: number }[] = [];
   selected: ShipClassId = savedShip();
   onSelect: (id: ShipClassId) => void = () => {};
@@ -91,6 +92,7 @@ export class UI {
   onMap: (open: boolean) => void = () => {};
   /** A tap on the sea chart: drop a waypoint there, or lift the one within `pick` metres. */
   onPin: (x: number, z: number, pick: number) => void = () => {};
+  onClearPins: () => void = () => {};
   /** Photo mode, from the pause menu or the HUD's camera button. */
   onPhoto: () => void = () => {};
   onClick: () => void = () => {};
@@ -231,6 +233,7 @@ export class UI {
     $('chart-close').addEventListener('click', () => this.onMap(false));
     $('chart-center').addEventListener('click', () => this.chartPlayer && this.chart.recenter(this.chartPlayer));
     this.chart.onTap = (x, z, pick) => this.onPin(x, z, pick);
+    $('chart-clear').addEventListener('click', () => this.onClearPins());
     // tapping the dimmed sea around the chart closes it too
     $('chart').addEventListener('click', (e) => {
       if (e.target === e.currentTarget) this.onMap(false);
@@ -681,6 +684,12 @@ export class UI {
 
   drawChart(sc: ChartScene) {
     this.chartPlayer = sc.player;
+    const n = sc.pins?.length ?? 0;
+    if (this.clearN !== n) {
+      this.clearN = n;
+      $('chart-clear').classList.toggle('hidden', !n);
+      $('chart-clear-n').textContent = n > 1 ? `Clear ${n} pins` : 'Clear pin';
+    }
     $('chart-isles').textContent = `${sc.discovered.size} / ${sc.islands.length} isles charted`;
     this.chart.draw(sc);
   }

@@ -23,6 +23,23 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Ship paints and hull geometry are sent to the graphics card a little at a time instead of all at once, and the progress bar glides steadily through every long step instead of jumping.',
         ],
       },
+      {
+        title: 'The archipelago gets its own tongue',
+        notes: [
+          'Every island, port, fort, reef and maelstrom has a new name in the sea\'s own blended language: Spanish at heart, with Portuguese vowels, a French lilt, Dutch corners and old Taíno words underneath.',
+          'The islands are now Ilhéu Corazinha, Cayo Vliemar, Baía d\'Ambrela, Esmeraldijk, Guanaverde, Punta Belleau, Roca Corvão, Isla Marézia, Cayo Solenne, Perlabana, Azulhoek, Brisagüey and Ilha Nacaréu, and the great volcano in the north is Morro Huracão, after the old storm god.',
+          'The trading ports are Porto Cinabre, Aguadouro, Sainte-Corália and Ronvliet. The forts are Castillo São Felipe, Forte Sainte-Bárbara, Kasteel do Morro, Fuerte San Cristóvão and Bastión de Yaguana.',
+          'The reefs are the Rif do Diablo, La Ferradura, Os Dentelles and the Bajo de las Opías, and the maelstroms are La Gargantilha, Redemolino Noir and El Ojo de Juracán.',
+          'Your progress keeps up with the new names: forts you hold stay yours and a treasure map you are halfway through still leads to the same spot.',
+        ],
+      },
+      {
+        title: 'Clear your waypoints',
+        notes: [
+          'The sea chart now has a Clear pins button at the top whenever you have waypoints down. One tap removes them all, and each pillar of light fades away.',
+          'You can still tap or click a single pin on the chart to remove just that one. The chart legend now says so.',
+        ],
+      },
     ],
   },
   {

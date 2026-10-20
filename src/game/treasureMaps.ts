@@ -1,4 +1,5 @@
 import { progressSaved } from '../core/progress';
+import { currentIsle } from '../data/renamedIsles';
 
 // Treasure maps. A map comes torn in three pieces, found in sea chests and in
 // the cutthroats' camps. The first piece fixes where it leads (an X on one of
@@ -32,7 +33,7 @@ export function cleanMaps(r: unknown): MapState | null {
   return {
     pieces: Math.max(0, Math.min(ALL_PIECES, Math.floor(n(o.pieces)))),
     seed: Math.floor(n(o.seed)),
-    isle: typeof o.isle === 'string' ? o.isle : '',
+    isle: typeof o.isle === 'string' ? currentIsle(o.isle) : '',
     x: n(o.x),
     z: n(o.z),
     dug: Math.max(0, Math.floor(n(o.dug))),

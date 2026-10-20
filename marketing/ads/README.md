@@ -17,10 +17,10 @@ Click a **Download** link to save the full-resolution file.
 
 | Ad | Hook | Shows |
 |---|---|---|
-| 1 · Sail into paradise | Explore | A brigantine running past the Cayo Sol atoll at mid-afternoon: turquoise shallows, palms and the bow wave. |
+| 1 · Sail into paradise | Explore | A brigantine running past the Cayo Solenne atoll at mid-afternoon: turquoise shallows, palms and the bow wave. |
 | 2 · Choose your ship | Variety | The sloop, brigantine and galleon sailing in echelon. Each is tagged with its real gun count and its speed, armour and firepower from the game's ship stats. |
 | 3 · The deep is waking | Danger | The kraken surfacing in a storm, with its arms rising around your ship. |
-| Bonus · Fire at will! | Combat | A galleon's broadside tearing into a dismasted pirate brig off Rumbelow's quay, and the five kinds of shot. |
+| Bonus · Fire at will! | Combat | A galleon's broadside tearing into a dismasted pirate brig off Ronvliet's quay, and the five kinds of shot. |
 | 4 · Video ad | All of it | Your ship and your sea, then broadside battles, choose your ship and beware the deep, ending on the logo and the call to action. |
 
 ## The video ad

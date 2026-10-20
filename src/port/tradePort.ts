@@ -49,30 +49,30 @@ export interface TradeSpec {
 
 export const TRADE_SPECS: TradeSpec[] = [
   {
-    name: 'Port Cinnabar',
+    name: 'Porto Cinabre',
     signature: 'bazaar',
     house: 'Spice Bazaar',
     taste: { tagline: 'Spice merchants pay best for provisions and fine cloth.', mult: { provisions: 1.35, cloth: 1.25, spirits: 1.05, coin: 1, gems: 0.85, jewellery: 0.9, art: 0.8, relics: 0.9 } },
     wall: 0xe9a35c, wall2: 0xf2d5a2, roof: 0xb8402c, trim: 0xf7ecd2, awning: [0xc8352b, 0xf5c542], flag: [0xc8352b, 0xf5c542, 0xf7ecd2],
   },
   {
-    name: 'Goldwater',
+    name: 'Aguadouro',
     signature: 'bank',
     house: 'Counting House',
     taste: { tagline: 'The bankers here pay a fortune for gems, jewellery and coin.', mult: { coin: 1.12, gems: 1.35, jewellery: 1.3, relics: 1, art: 0.95, provisions: 0.8, cloth: 0.85, spirits: 0.85 } },
     wall: 0xf3ecdc, wall2: 0xb9d3dc, roof: 0x3d5f7a, trim: 0xe2b552, awning: [0x27407a, 0xf3ecdc], flag: [0x27407a, 0xe2b552, 0xf3ecdc],
   },
   {
-    name: 'Saint Coral',
+    name: 'Sainte-Corália',
     signature: 'gallery',
     house: 'Curio Gallery',
     taste: { tagline: 'Collectors here chase art and old relics above all.', mult: { art: 1.45, relics: 1.3, jewellery: 1.1, gems: 0.95, coin: 1, provisions: 0.85, cloth: 0.95, spirits: 0.75 } },
     wall: 0xf2a99a, wall2: 0xfbefe2, roof: 0x2f8f8a, trim: 0xfff7ea, awning: [0x2f8f8a, 0xfbefe2], flag: [0x2f8f8a, 0xf2a99a, 0xfff7ea],
   },
   {
-    name: 'Rumbelow',
+    name: 'Ronvliet',
     signature: 'distillery',
-    house: 'Rumbelow Distillery',
+    house: 'Ronvliet Distillery',
     taste: { tagline: 'A thirsty town: spirits and provisions fetch top coin.', mult: { spirits: 1.5, provisions: 1.15, cloth: 1, coin: 1, gems: 0.85, jewellery: 0.85, art: 0.8, relics: 0.9 } },
     wall: 0xf0cf5e, wall2: 0x8fbf7a, roof: 0x6b3a2a, trim: 0xf6efd8, awning: [0x2f7d3a, 0xf6efd8], flag: [0x2f7d3a, 0xf0cf5e, 0x6b3a2a],
   },

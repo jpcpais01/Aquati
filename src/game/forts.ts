@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { angleDelta, clamp, damp } from '../core/noise';
 import { progressSaved } from '../core/progress';
+import { currentIsle } from '../data/renamedIsles';
 import { Bucket, Builder } from '../port/port';
 import type { Ship } from '../ships/ship';
 import type { Camp, Garrison } from '../shore/shore';
@@ -59,7 +60,8 @@ export const freshForts = (): FortSave => ({ taken: {}, paid: {}, tribute: 0 });
 
 const numMap = (v: unknown) => {
   const out: Record<string, number> = {};
-  if (v && typeof v === 'object' && !Array.isArray(v)) for (const [k, n] of Object.entries(v)) if (Number.isFinite(Number(n))) out[k] = Number(n);
+  if (v && typeof v === 'object' && !Array.isArray(v))
+    for (const [k, n] of Object.entries(v)) if (Number.isFinite(Number(n))) out[k.startsWith('fort:') ? 'fort:' + currentIsle(k.slice(5)) : k] = Number(n);
   return out;
 };
 

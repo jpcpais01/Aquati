@@ -308,7 +308,7 @@ export class Port {
     readonly site: PortSite,
     private heightAt: (x: number, z: number) => number,
   ) {
-    this.name = 'Puerto ' + site.island.name.replace(/^(Isla|Cayo|Punta|Bahía|Roca del|Arrecife)\s+/, '');
+    this.name = 'Puerto ' + site.island.name.replace(/^(Isla|Ilha|Ilhéu|Cayo|Punta|Baía|Roca)\s+/, '');
     this.group.position.set(site.x, 0, site.z);
     this.group.rotation.y = Math.atan2(site.nx, site.nz);
     this.group.updateMatrixWorld(true);

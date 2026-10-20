@@ -54,10 +54,13 @@ export const GRID_N = WORLD_SIZE / CELL + 1;
 const HALF = WORLD_SIZE / 2;
 export const FLOOR_DEPTH = -17;
 
+// An invented island tongue: Spanish at heart, Portuguese in the vowels, a
+// French lilt, Dutch dikes and corners, and old Taíno words underneath.
 const NAMES = [
-  'Isla Serena', 'Cayo Coralina', 'Puerto Ámbar', 'Cayo Esmeralda', 'Isla Vela', 'Bahía Turquesa',
-  'Roca del Cuervo', 'Isla Marea', 'Cayo Sol', 'Isla Perla', 'Arrecife Azul', 'Punta Brisa', 'Isla Nácar',
+  'Ilhéu Corazinha', 'Cayo Vliemar', "Baía d'Ambrela", 'Esmeraldijk', 'Guanaverde', 'Punta Belleau',
+  'Roca Corvão', 'Isla Marézia', 'Cayo Solenne', 'Perlabana', 'Azulhoek', 'Brisagüey', 'Ilha Nacaréu',
 ];
+
 
 function smax(a: number, b: number, k: number): number {
   const h = Math.max(k - Math.abs(a - b), 0) / k;
@@ -102,10 +105,10 @@ export class Terrain {
   private placeIslands() {
     const rnd = mulberry32(this.seed * 7 + 3);
     const names = NAMES.slice();
-    const pickName = () => names.splice(Math.floor(rnd() * names.length), 1)[0] ?? 'Isla';
+    const pickName = () => names.splice(Math.floor(rnd() * names.length), 1)[0] ?? 'Ilhéu';
     // A hero volcano anchors the composition north of the spawn point.
     this.islands.push({
-      name: 'Monte Fortuna', kind: 'volcanic', x: -30, z: -170, r: 125, peak: 62, rot: 0.4, stretch: 1.18,
+      name: 'Morro Huracão', kind: 'volcanic', x: -30, z: -170, r: 125, peak: 62, rot: 0.4, stretch: 1.18,
       seed: rnd() * 100, tint: 0.2,
     });
     // A lagoon atoll near spawn so the first thing you see is turquoise water.
@@ -222,10 +225,10 @@ export class Terrain {
   private placeReefs() {
     const rnd = mulberry32(this.seed * 13 + 5);
     const plan: [string, ReefKind][] = [
-      ['Arrecife del Diablo', 'barrier'],
-      ['La Herradura', 'horseshoe'],
-      ['Los Dientes', 'teeth'],
-      ['Bajo de las Ánimas', 'teeth'],
+      ['Rif do Diablo', 'barrier'],
+      ['La Ferradura', 'horseshoe'],
+      ['Os Dentelles', 'teeth'],
+      ['Bajo de las Opías', 'teeth'],
     ];
     const TAU = Math.PI * 2;
     for (const [name, kind] of plan) {
