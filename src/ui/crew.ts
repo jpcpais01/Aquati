@@ -188,7 +188,7 @@ export class CrewPanel {
 
   private share() {
     const code = this.coop.session?.code ?? '';
-    void navigator.share?.({ title: 'Shores of Fortune', text: `Sail with me in Shores of Fortune! Code ${pretty(code)}`, url: this.link() }).catch(() => {});
+    void navigator.share?.({ title: 'Shores O’ Fortune', text: `Sail with me in Shores O’ Fortune! Code ${pretty(code)}`, url: this.link() }).catch(() => {});
   }
 
   /** The card and the HUD's crew button, redrawn whenever the crew changes. */
