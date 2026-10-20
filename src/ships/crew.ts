@@ -2268,7 +2268,7 @@ export class CrewSystem {
     this.view.end();
   }
 
-  update(dt: number, world: World, ships: Ship[], focus: THREE.Vector3, viewR: number, eye: THREE.Vector3 | null = null) {
+  update(dt: number, world: World, ships: Ship[], focus: THREE.Vector3, viewR: number, eye: THREE.Vector3 | null = null, fov = 30) {
     // crews come aboard new ships, and are cast adrift when a ship is gone
     for (const s of ships) {
       if (this.crews.has(s) || s.removed) continue;
@@ -2298,11 +2298,14 @@ export class CrewSystem {
     view.begin();
     // the full sculpt (fingers, lashes, laces) only for those close enough to see it
     const near2 = 26 * 26;
+    // and the lightest cut past 50 m (further through a long lens), where
+    // every sailor seen from the sea is
+    const distant2 = (50 * Math.tan(THREE.MathUtils.degToRad(15)) / Math.tan(THREE.MathUtils.degToRad(fov * 0.5))) ** 2;
     const emit = (sl: Sailor, m: THREE.Matrix4) => {
       const e = m.elements;
       if (this.culling && !this.inView(e[12], e[13], e[14])) return;
-      const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
-      view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, near);
+      const d2 = eye ? (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 : Infinity;
+      view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, d2 < near2, d2 > distant2 && !!eye);
     };
 
     const m = _mOut;
@@ -2336,8 +2339,8 @@ export class CrewSystem {
       if (!f.visible || f.row < 0) continue;
       const e = f.matrix.elements;
       if (this.culling && !this.inView(e[12], e[13], e[14])) continue;
-      const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
-      view.push(f.matrix, f.pose, f.row, f.look.hat, f.prop, f.look.flags, near);
+      const d2 = eye ? (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 : Infinity;
+      view.push(f.matrix, f.pose, f.row, f.look.hat, f.prop, f.look.flags, d2 < near2, d2 > distant2 && !!eye);
     }
     for (let i = this.orphans.length - 1; i >= 0; i--) {
       const sl = this.orphans[i];

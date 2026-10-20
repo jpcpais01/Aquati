@@ -370,6 +370,11 @@ const _v = new THREE.Vector3();
 const _t = new THREE.Vector3();
 const _dv = new THREE.Vector3();
 const _T = new THREE.Vector3();
+const _pm = new THREE.Matrix4();
+const _fr = new THREE.Frustum();
+const _sph = new THREE.Sphere();
+/** Past this (m) a gull is a pixel or two at most, and mostly fogged out. */
+const GULL_FAR = 520;
 
 export class Birds {
   readonly mesh: THREE.InstancedMesh;
@@ -628,8 +633,12 @@ export class Birds {
     if (g.mode === 'perch' || g.mode === 'float') g.call = 0.35 * notes + 0.3;
   }
 
-  update(dt: number, w: World, ships: Ship[]) {
-    if (dt <= 0) return;
+  update(dt: number, w: World, ships: Ship[], cam: THREE.Camera) {
+    if (dt <= 0) {
+      // time stands still (a paused photo), but the camera may still roam
+      this.pack(cam);
+      return;
+    }
     this.time += dt;
     const time = this.time;
 
@@ -660,7 +669,7 @@ export class Birds {
     const gusty = w.gustAt;
     const upwind = Math.atan2(-w.wind.dirX, -w.wind.dirZ);
 
-    this.gulls.forEach((g, i) => {
+    this.gulls.forEach((g) => {
       g.t -= dt;
       let ampT = 0;
       let foldT = 0;
@@ -895,13 +904,31 @@ export class Birds {
       // keep beating through the stroke while gliding settles the wings level
       g.phase = (g.phase + dt * rate * (0.3 + 0.7 * Math.min(1, g.amp * 2))) % TAU;
 
-      this.wingA.setXYZW(i, g.phase, g.amp, g.fold, g.legs);
-      this.wingB.setXYZW(i, g.dih, g.head, g.tail, g.nod);
+    });
+    this.pack(cam);
+  }
+
+  /**
+   * Only the gulls in view (or casting a shadow into it) go to the GPU,
+   * packed to the front; a speck past the fog's reach is left out too.
+   */
+  private pack(cam: THREE.Camera) {
+    _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    _fr.setFromProjectionMatrix(_pm);
+    let n = 0;
+    for (const g of this.gulls) {
+      // the shadow can land well to the side of a high gull: the sphere grows with height
+      _sph.center.copy(g.pos);
+      _sph.radius = 2 + Math.max(0, g.pos.y) * 1.6;
+      if (_sph.center.distanceToSquared(cam.position) > GULL_FAR * GULL_FAR || !_fr.intersectsSphere(_sph)) continue;
+      this.wingA.setXYZW(n, g.phase, g.amp, g.fold, g.legs);
+      this.wingB.setXYZW(n, g.dih, g.head, g.tail, g.nod);
       _e.set(g.pitch, g.yaw, g.bank);
       _q.setFromEuler(_e);
       _m.compose(g.pos, _q, _s);
-      this.mesh.setMatrixAt(i, _m);
-    });
+      this.mesh.setMatrixAt(n++, _m);
+    }
+    this.mesh.count = n;
     this.mesh.instanceMatrix.needsUpdate = true;
     this.wingA.needsUpdate = true;
     this.wingB.needsUpdate = true;
