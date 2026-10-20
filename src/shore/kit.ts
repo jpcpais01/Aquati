@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { patchMaterial } from '../render/environment';
 import { clamp, mulberry32 } from '../core/noise';
-import { Bucket, Builder, C, lin, shade } from '../port/port';
+import { Bucket, Builder, C, colorize, lin, shade } from '../port/port';
 import { PropGeo } from '../port/pirates';
 import type { CampSite, Disc } from './ground';
 
@@ -398,3 +398,66 @@ export function campFlag(mat: THREE.Material) {
   return pivot;
 }
 
+
+// ------------------------------------------------------------------ buried treasure
+
+/**
+ * What marks a treasure map's X on the ground: two driftwood sticks crossed on
+ * the sand and a little cairn of stones beside them. Local space, X at the origin.
+ */
+export function buildDigMarks(b: Builder, seed: number) {
+  const rnd = mulberry32(seed);
+  const drift = lin(0x9c8466);
+  for (const a of [Math.PI / 4, -Math.PI / 4]) {
+    const len = 1.5 + rnd() * 0.2;
+    const s = new THREE.Vector3(Math.sin(a), 0, Math.cos(a)).multiplyScalar(len / 2);
+    b.beam(new THREE.Vector3(-s.x, 0.05, -s.z), new THREE.Vector3(s.x, 0.09, s.z), 0.045, (p) => shade(drift, 0.85 + 0.25 * Math.abs(Math.sin(p.x * 13 + p.z * 11))));
+  }
+  // the cairn, a stride off the X
+  let y = 0;
+  for (let i = 0; i < 5; i++) {
+    const r = 0.26 - i * 0.04 + rnd() * 0.03;
+    const g = new THREE.IcosahedronGeometry(r, 0);
+    g.scale(1.1, 0.7, 1);
+    b.add(g, [1.55 + (rnd() - 0.5) * 0.08, y + r * 0.6, 0.35 + (rnd() - 0.5) * 0.08], shade(lin(0x8d8a84), 0.75 + rnd() * 0.4), { ry: rnd() * 3, flat: true });
+    y += r * 1.15;
+  }
+}
+
+/** The hole as it's dug: dark damp sand at the bottom, a lip of dry sand thrown up round it (grows by scale). */
+export function holeGeometry() {
+  const prof = [
+    [0, -0.42],
+    [0.35, -0.4],
+    [0.62, -0.25],
+    [0.8, -0.02],
+    [0.95, 0.1],
+    [1.15, 0.06],
+    [1.35, 0],
+  ].map(([r, y]) => new THREE.Vector2(r, y));
+  const g = new THREE.LatheGeometry(prof, 18);
+  const dry = lin(0xd8c49a);
+  const wet = lin(0x5a4630);
+  return colorize(g, (p) => {
+    const r = Math.hypot(p.x, p.z);
+    return shade(r < 0.8 ? wet.clone().lerp(dry, clamp((r - 0.35) / 0.5, 0, 1)) : dry, 0.9 + 0.1 * Math.sin(p.x * 17 + p.z * 13));
+  });
+}
+
+/** The heap of spoil beside the hole. */
+export function spoilGeometry() {
+  const g = new THREE.SphereGeometry(0.75, 14, 7, 0, Math.PI * 2, 0, Math.PI / 2);
+  g.scale(1.4, 0.36, 1.0);
+  const pos = g.attributes.position as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    // a loose, lumpy heap thrown off the spade, not a boulder
+    const r = 1 + 0.13 * Math.sin(Math.atan2(z, x) * 3 + 1) + 0.07 * Math.sin(Math.atan2(z, x) * 7);
+    pos.setX(i, x * r);
+    pos.setZ(i, z * r);
+    pos.setY(i, pos.getY(i) * (1 + 0.22 * Math.sin(x * 7 + z * 5) + 0.12 * Math.sin(x * 13 - z * 11)));
+  }
+  g.computeVertexNormals();
+  return colorize(g, (p) => shade(lin(0xc9b083), 0.88 + 0.14 * Math.sin(p.x * 23 + p.z * 19)));
+}

@@ -73,6 +73,13 @@ export class Ground {
     return true;
   }
 
+  /** Is there a trunk, boulder or camp furniture within `r` of a point? */
+  solidNear(x: number, z: number, r: number) {
+    const list = this.veg ? this.veg.solidsNear(x, z, _solids) : (_solids.length = 0, _solids);
+    for (const b of this.blocks) list.push(b);
+    return list.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r);
+  }
+
   /**
    * Moves a walker from (x, z) by (dx, dz), sliding along whatever stops it:
    * deep water, cliffs, towns. Returns the new position in `out`.
@@ -173,6 +180,45 @@ export class Ground {
     }
     return best;
   }
+}
+
+/**
+ * Where a treasure map's X falls: a patch of open ground a short walk in from
+ * a beach a boat can land on, clear of towns, camps and trees. `seed` picks
+ * the island and the spot, so every device draws the same map.
+ */
+export function digSite(ground: Ground, seed: number, avoid: Disc[], skip: Island | null): { island: Island; x: number; z: number } | null {
+  const t = ground.terrain;
+  const rnd = mulberry32(seed);
+  const isles = t.islands.filter((i) => i !== skip && i.r > 40);
+  for (let n = 0; n < 8 && isles.length; n++) {
+    const isl = isles.splice(Math.floor(rnd() * isles.length), 1)[0];
+    for (let k = 0; k < 60; k++) {
+      const a = rnd() * Math.PI * 2;
+      const f = isl.kind === 'atoll' ? 0.6 + rnd() * 0.2 : 0.3 + rnd() * 0.6;
+      const x = isl.x + Math.cos(a) * isl.r * f * isl.stretch;
+      const z = isl.z + Math.sin(a) * isl.r * f;
+      const h = t.heightAt(x, z);
+      if (h < 0.9 || h > 9 || ground.slope(x, z) > 0.4 || !ground.open(x, z, 2)) continue;
+      if (avoid.some((c) => Math.hypot(c.x - x, c.z - z) < c.r + 30)) continue;
+      if (ground.solidNear(x, z, 2.2)) continue;
+      // a beach within a short walk, straight out to sea
+      const ox = x - isl.x;
+      const oz = z - isl.z;
+      const ol = Math.hypot(ox, oz) || 1;
+      let sea = -1;
+      for (let d = 2; d < 70; d += 2) {
+        if (t.heightAt(x + (ox / ol) * d, z + (oz / ol) * d) < -0.5) {
+          sea = d;
+          break;
+        }
+      }
+      if (sea < 14 || sea > 60) continue;
+      if (!ground.landing(x + (ox / ol) * (sea + 40), z + (oz / ol) * (sea + 40), 85)) continue;
+      return { island: isl, x, z };
+    }
+  }
+  return null;
 }
 
 /**

@@ -51,6 +51,23 @@ export function portMark(g: CanvasRenderingContext2D, x: number, y: number, r: n
   g.restore();
 }
 
+/** A treasure map's X, in red ink with a dark outline. */
+export function xMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  g.save();
+  g.lineCap = 'round';
+  for (const [w, c] of [[r * 0.75, 'rgba(20, 8, 4, 0.7)'], [r * 0.42, '#e8432f']] as const) {
+    g.strokeStyle = c;
+    g.lineWidth = w;
+    g.beginPath();
+    g.moveTo(x - r, y - r);
+    g.lineTo(x + r, y + r);
+    g.moveTo(x + r, y - r);
+    g.lineTo(x - r, y + r);
+    g.stroke();
+  }
+  g.restore();
+}
+
 export interface ChartScene {
   player: Ship;
   ships: Ship[];
@@ -61,6 +78,8 @@ export interface ChartScene {
   ports?: { x: number; z: number; name: string }[];
   /** Waypoints dropped by the captain. */
   pins?: { x: number; z: number; hue: number; age: number }[];
+  /** A whole treasure map's X. */
+  treasure?: { x: number; z: number } | null;
   windX: number;
   windZ: number;
   time: number;
@@ -413,6 +432,17 @@ export class SeaChart {
       g.strokeText(pt.name, x, y - 18);
       g.fillStyle = '#ffd77a';
       g.fillText(pt.name, x, y - 18);
+    }
+
+    if (sc.treasure) {
+      const [x, y] = toS(sc.treasure.x, sc.treasure.z);
+      xMark(g, x, y, 10);
+      g.font = 'italic 600 13px Georgia, serif';
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+      g.strokeText('X marks the spot', x, y - 20);
+      g.fillStyle = '#ffb59f';
+      g.fillText('X marks the spot', x, y - 20);
     }
 
     const p = sc.player;

@@ -17,6 +17,7 @@ import { LOOK_KEY, MAX_SAVED, SAVED_KEY } from '../ships/look';
 import { Records, RECORDS_KEY } from '../ui/wreck';
 import { SHIP_KEY } from '../ui/ui';
 import { BOUNTY_KEY, cleanLedger, Ledger, mergeLedger, readLedger } from '../game/bounty';
+import { cleanMaps, freshMaps, MapState, MAPS_KEY, readMaps } from '../game/treasureMaps';
 
 type Json = Record<string, unknown>;
 
@@ -38,6 +39,8 @@ export interface Profile {
   ship: string | null;
   /** Infamy and the Wanted Board's stamped posters. */
   bounty: Ledger | null;
+  /** The treasure map in hand, and how many have been dug up. */
+  maps: MapState | null;
 }
 
 /** Gifts saved before amounts were recorded. */
@@ -101,6 +104,7 @@ export function readLocal(): Profile {
     gifts,
     ship,
     bounty: readLedger(),
+    maps: readMaps(),
   };
 }
 
@@ -119,6 +123,7 @@ export function writeLocal(p: Profile) {
     setOrRemove(RECORDS_KEY, p.records ? JSON.stringify(p.records) : null);
     setOrRemove(SHIP_KEY, p.ship);
     setOrRemove(BOUNTY_KEY, p.bounty ? JSON.stringify(p.bounty) : null);
+    setOrRemove(MAPS_KEY, p.maps ? JSON.stringify(p.maps) : null);
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -131,7 +136,7 @@ export function writeLocal(p: Profile) {
   }
 }
 
-export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null });
+export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null });
 
 /** Back to a brand-new guest: what a sign-out leaves behind. */
 export function resetLocal() {
@@ -148,6 +153,7 @@ export function hasProgress(p: Profile) {
     p.designs.length ||
     (p.records && p.records.voyages > 0) ||
     (p.bounty && p.bounty.infamy > 0) ||
+    (p.maps && (p.maps.pieces > 0 || p.maps.dug > 0)) ||
     Object.keys(p.gifts).length
   );
 }
@@ -309,6 +315,16 @@ function mergeDesigns(b: Design[] | null, l: Design[], r: Design[]): Design[] {
   return out.slice(0, MAX_SAVED);
 }
 
+/** The map is one thing (whoever last changed it wins); the dig count adds up. */
+function mergeMaps(b: MapState | null, l: MapState | null, r: MapState | null, first: boolean): MapState | null {
+  if (!l) return r;
+  if (!r) return l;
+  const B = b ?? freshMaps();
+  // the first time, an account with a map of its own keeps it; an empty one takes this device's
+  const map = latest({ ...B, dug: 0 }, { ...l, dug: 0 }, { ...r, dug: 0 }, first && r.pieces > 0);
+  return { ...map, dug: r.dug + Math.max(0, l.dug - B.dug) };
+}
+
 /** base: the cloud copy this device last agreed with (null the first time). */
 export function merge(base: Profile | null, local: Profile, remote: Profile): Profile {
   const first = !base;
@@ -327,6 +343,7 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
     gifts,
     ship: latest(B.ship, local.ship, remote.ship, first),
     bounty: mergeLedger(B.bounty ?? null, local.bounty ?? null, remote.bounty ?? null),
+    maps: mergeMaps(B.maps ?? null, local.maps ?? null, remote.maps ?? null, first),
   };
 }
 
@@ -335,7 +352,7 @@ export type Part = Exclude<keyof Profile, 'gifts'>;
 /** Which parts differ, so the game reloads only what it must. */
 export function changedParts(a: Profile, b: Profile): Set<Part> {
   const out = new Set<Part>();
-  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
+  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
   return out;
 }
 
@@ -355,6 +372,7 @@ export function parseProfile(raw: unknown): Profile | null {
       gifts: isObj(p.gifts) ? Object.fromEntries(Object.entries(p.gifts).filter(([, n]) => Number.isFinite(n)) as [string, number][]) : {},
       ship: typeof p.ship === 'string' ? p.ship : null,
       bounty: cleanLedger(p.bounty),
+      maps: cleanMaps(p.maps),
     };
   } catch {
     return null;

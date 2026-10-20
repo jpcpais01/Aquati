@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { angleDelta, clamp, damp, mulberry32 } from '../core/noise';
+import { angleDelta, clamp, damp, lerp, mulberry32, smoothstep } from '../core/noise';
 import { Builder, Bucket } from '../port/port';
 import { CrewSystem, Look, makeLook } from '../ships/crew';
 import { FLAG, HAT, TINT } from '../ships/crewModel';
 import type { Ship } from '../ships/ship';
 import type { World } from '../game/world';
-import { BOAT_L, buildBoat, buildCamp, campFlag, CampLayout, CHEST_D, CHEST_H, chestParts, ShoreMats, shoreMats } from './kit';
+import { BOAT_L, buildBoat, buildCamp, buildDigMarks, campFlag, CampLayout, CHEST_D, CHEST_H, chestParts, holeGeometry, ShoreMats, shoreMats, spoilGeometry } from './kit';
 import { CampSite, Ground, Landing } from './ground';
-import { Cut, CUT_HIT, CUT_WIND, Walker } from './walker';
+import { Cut, CUT_HIT, CUT_WIND, RUN, WALK, Walker } from './walker';
 
 // Going ashore. The captain rows in with four hands, walks the islands on foot
 // and the hands follow in a loose wedge, guard the captain's back and settle
@@ -24,12 +24,12 @@ const BOSS_HP = 115;
 const REACH = 2.0;
 const LUNGE = 2.5;
 const BODY = 0.3;
-const WALK = 3.0;
-const RUN = 5.3;
 const PISTOL_RELOAD = 7;
 const PISTOL_RANGE = 18;
 /** Camps nearer the camera than this are simulated and drawn. */
 const CAMP_LIVE = 270;
+/** Spade-seconds to dig a treasure up (three diggers share them). */
+const DIG_WORK = 16;
 /** A camp takes up arms when the landing party comes this close to its fire. */
 const CAMP_ALARM = 19;
 /** ...and gives up the chase this far from home. */
@@ -38,6 +38,8 @@ const LEASH = 42;
 export const HAND_NAMES = ['Bones', 'Patch', 'Old Hobb', 'Sully', 'Barnaby', 'Nell', 'Red Jack', 'Iko', 'Dutch', 'Mags', 'Tam', 'Quill', 'Rook', 'Bess', 'Finch', 'Salty'];
 
 const _v = new THREE.Vector3();
+const _tip = new THREE.Vector3();
+const _mid = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _o = { x: 0, z: 0 };
 const _hand = new THREE.Vector3();
@@ -63,6 +65,8 @@ export interface ShoreHooks {
   routed(c: Camp): void;
   /** You open its chest. */
   plunder(c: Camp): void;
+  /** The buried chest's lid comes up. */
+  unearthed(at: THREE.Vector3): void;
   /** The captain is down. */
   defeat(): void;
   step(k: number, wet: boolean): void;
@@ -92,9 +96,60 @@ export interface Camp {
 export interface PartyMember {
   walker: Walker;
   name: string;
+  /** How a hand keeps with the party between fights (not the captain). */
+  follow?: Follow;
 }
 
-export type Prompt = { key: 'boat' | 'chest' | 'fight'; title: string; sub: string; ok: boolean } | null;
+/** A hand on the march: his own place in a loose knot, drifting about it, his own pace and moments. */
+interface Follow {
+  /** His place: [to the captain's right, ahead] (m). Swapped with a mate's now and then. */
+  slot: [number, number];
+  /** Drifting about that place (m), and where to next. */
+  wx: number;
+  wz: number;
+  tx: number;
+  tz: number;
+  wT: number;
+  /** On the move, or stood (with some give before either changes). */
+  going: boolean;
+  /** A beat before he sets off after the captain. */
+  wait: number;
+  restT: number;
+  /** A touch quicker or slower than the rest. */
+  pace: number;
+  /** Stopped to look at something, and when he'll next do so. */
+  pauseT: number;
+  nextPause: number;
+  /** A glance about as he walks, and when he'll next look. */
+  glance: number;
+  glanceT: number;
+  talkT: number;
+  /** Walking into something without getting anywhere (s); then a few steps aside. */
+  stuck: number;
+  aside: number;
+}
+
+const newFollow = (i: number): Follow => ({
+  slot: [SLOTS[i][0] + (Math.random() - 0.5) * 0.5, SLOTS[i][1] + (Math.random() - 0.5) * 0.8],
+  wx: 0,
+  wz: 0,
+  tx: 0,
+  tz: 0,
+  wT: Math.random() * 2,
+  going: false,
+  wait: 0.15 + Math.random() * 0.5,
+  restT: 0,
+  pace: 0.92 + Math.random() * 0.16,
+  pauseT: 0,
+  nextPause: 8 + Math.random() * 20,
+  glance: 0,
+  glanceT: Math.random() * 3,
+  talkT: 2 + Math.random() * 6,
+  stuck: 0,
+  aside: 0,
+});
+
+export type Prompt = { key: 'boat' | 'chest' | 'fight' | 'dig'; title: string; sub: string; ok: boolean } | null;
 
 export class Shore {
   readonly group = new THREE.Group();
@@ -117,6 +172,8 @@ export class Shore {
   private shotAt = -1;
   private sheathT = 0;
   private calmT = 0;
+  /** Till two hands next swap sides on the march. */
+  private swapT = 20;
   /** Hit-stop: a few frames' pause when a heavy blow lands. */
   private stop = 0;
   defeated = false;
@@ -124,6 +181,21 @@ export class Shore {
   /** Foes the party is fighting right now (alert and near), for the HUD's bars. */
   readonly foes: Walker[] = [];
   private all: Walker[] = [];
+  // buried treasure: the X on the sand, the hole, the spoil heap and the chest
+  private site = new THREE.Group();
+  private hole: THREE.Mesh;
+  private spoil: THREE.Mesh;
+  private bChest = new THREE.Group();
+  private bLid = new THREE.Group();
+  /** Where the treasure map's X is (null without a whole map). */
+  treasure: THREE.Vector3 | null = null;
+  /** 0..1 dug. */
+  private digP = 0;
+  private digging = false;
+  /** Seconds since the spade struck the lid (-1 before). */
+  private revealT = -1;
+  private unearthedOnce = false;
+  private diggers = new Map<Walker, { x: number; z: number; stroke: number }>();
 
   constructor(
     readonly ground: Ground,
@@ -140,6 +212,22 @@ export class Shore {
     this.boat.visible = false;
     this.group.add(this.boat);
     const parts = chestParts();
+    // the X and its cairn, the hole and its heap, and the chest beneath (all hidden until a map is whole)
+    const db = new Builder();
+    buildDigMarks(db, 77);
+    db.finish(this.site, mats as unknown as Record<Bucket, THREE.Material>);
+    this.hole = this.mesh(holeGeometry(), 'wood');
+    this.spoil = this.mesh(spoilGeometry(), 'wood');
+    this.spoil.position.set(-1.45, 0, -0.7);
+    this.spoil.rotation.y = 0.5;
+    for (const [k, geo] of Object.entries(parts.body)) if (geo) this.bChest.add(this.mesh(geo, k as Bucket));
+    for (const [k, geo] of Object.entries(parts.lid)) if (geo) this.bLid.add(this.mesh(geo, k as Bucket));
+    this.bLid.position.set(0, CHEST_H, -CHEST_D / 2);
+    this.bChest.add(this.bLid);
+    this.bChest.rotation.set(0.12, 0.4, -0.08);
+    this.site.add(this.hole, this.spoil, this.bChest);
+    this.site.visible = false;
+    this.group.add(this.site);
     const ground1 = (x: number, z: number) => ground.height(x, z);
     sites.forEach((site, i) => {
       const b = new Builder();
@@ -283,7 +371,7 @@ export class Shore {
     this.party.length = 0;
     this.party.push({ walker: cap, name: 'Captain' });
     const hands = crew.filter((m) => !used.has(m.row));
-    for (let i = 0; i < 4; i++) this.party.push({ walker: mk(hands[i] ?? null, false), name: names[i] });
+    for (let i = 0; i < 4; i++) this.party.push({ walker: mk(hands[i] ?? null, false), name: names[i], follow: newFollow(i) });
     const sx = landing.sandX;
     const sz = landing.sandZ;
     const fx = landing.dx;
@@ -312,6 +400,8 @@ export class Shore {
       this.crew.figures.delete(p.walker);
       if (p.walker.ownsRow) this.crew.freeRow(p.walker.row);
     }
+    this.stopDig();
+    if (this.unearthedOnce) this.setTreasure(null);
     this.party.length = 0;
     this.captain = null;
     if (this.ship) this.crew.welcomeBack(this.ship);
@@ -366,6 +456,7 @@ export class Shore {
     if (this.active && cap) {
       this.steerCaptain(dt, inp, world);
       this.thinkParty(dt);
+      this.updateDig(dt, world);
     }
     for (const c of this.camps) if (c.live) this.thinkCamp(c, dt, world);
     this.move(all, dt, world);
@@ -374,6 +465,7 @@ export class Shore {
       const run = clamp((w.stride - WALK) / (RUN - WALK), 0, 1);
       w.animate(dt, world.time, run);
       w.place3(this.ground.height(w.x, w.z));
+      this.bladeTrail(w, world);
     }
     this.gather();
   }
@@ -406,6 +498,11 @@ export class Shore {
       return;
     }
     const len = Math.min(1, Math.hypot(inp.mx, inp.mz));
+    // on the spade: walking off, or reaching for a weapon, puts it down (the hole stays dug)
+    if (this.digging) {
+      if (len > 0.3 || inp.strike || inp.pistol) this.stopDig();
+      else return;
+    }
     const fighting = this.fighting;
     // a fighting stance is a shuffle; out of a fight you can run
     const top = inp.run && !cap.cutting ? RUN : WALK;
@@ -574,8 +671,7 @@ export class Shore {
       }
       if (best) covering.set(best, f);
     }
-    const sm = Math.sin(this.march);
-    const cm = Math.cos(this.march);
+    if (!fight) this.swapSides(dt);
     hands.forEach((w, i) => {
       if (w.down) return;
       // pick a fight
@@ -605,30 +701,166 @@ export class Shore {
         w.target = null;
         if (this.calmT > 3) w.armed = false;
       }
-      // in the wedge behind the captain
-      const slot = SLOTS[i];
-      const tx = cap.x + sm * slot[1] - cm * slot[0] + cap.vx * 0.35;
-      const tz = cap.z + cm * slot[1] + sm * slot[0] + cap.vz * 0.35;
-      const dx = tx - w.x;
-      const dz = tz - w.z;
-      const d = Math.hypot(dx, dz);
-      const capV = Math.hypot(cap.vx, cap.vz);
-      if (d > 0.5) {
-        const sp = clamp(d * 1.8 + capV * 0.6, 0, RUN * 1.08) * (1 - Math.min(0.45, w.wade * 0.6));
-        w.vx += ((dx / d) * sp - w.vx) * damp(6, dt);
-        w.vz += ((dz / d) * sp - w.vz) * damp(6, dt);
-        w.wantYaw = Math.atan2(w.vx, w.vz);
-        w.idle = 'stand';
-        w.idleT = 0;
-      } else {
-        w.vx *= 1 - damp(8, dt);
-        w.vz *= 1 - damp(8, dt);
-        this.atEase(w, i, dt);
-      }
-      // left far behind (a cliff between you): catch up out of sight
-      if (d > 45) w.place(tx, tz, this.march);
+      this.keepUp(w, this.party[i + 1].follow!, i, dt, hands);
       w.turn(dt, 7);
     });
+  }
+
+  /**
+   * On the march: each hand walks his own line in a loose knot behind the
+   * captain, drifting about it, slower or quicker than the next man, setting
+   * off a beat late and stopping a few steps on, now and then stopping to
+   * look at something and jogging to catch up, chatting with his mate, the
+   * knot strung out at a run and bunched at a stroll.
+   */
+  private keepUp(w: Walker, f: Follow, i: number, dt: number, hands: Walker[]) {
+    const cap = this.captain!;
+    const capV = Math.hypot(cap.vx, cap.vz);
+    const capRun = clamp((capV - WALK) / (RUN - WALK), 0, 1);
+    const marching = capV > 0.6;
+    const mate = hands[i ^ 1];
+    // drift about your place: a step out to the side, a little ahead, dropping back
+    f.wT -= dt;
+    if (f.wT <= 0) {
+      f.wT = 2.5 + Math.random() * 4;
+      f.tx = (Math.random() - 0.5) * 2;
+      f.tz = (Math.random() - 0.5) * 1.6;
+    }
+    const kw = damp(0.5, dt);
+    f.wx += (f.tx - f.wx) * kw;
+    f.wz += (f.tz - f.wz) * kw;
+    // a word with your mate as you go
+    if (marching && capRun < 0.5 && mate && !mate.down) {
+      f.talkT -= dt;
+      if (f.talkT <= 0) {
+        w.talking = !w.talking && !mate.talking && Math.random() < 0.55;
+        f.talkT = w.talking ? 3 + Math.random() * 5 : 4 + Math.random() * 9;
+      }
+    } else w.talking = false;
+    const chat = !!mate && !mate.down && (w.talking || mate.talking) && Math.hypot(mate.x - w.x, mate.z - w.z) < 4.5;
+    // strung out at a run, bunched up at a stroll; talkers drift together
+    const rx = (f.slot[0] + f.wx * (marching ? 1 : 0.5)) * (chat ? 0.75 : 1);
+    const rz = (f.slot[1] + f.wz) * (1 + capRun * 0.7);
+    const sm = Math.sin(this.march);
+    const cm = Math.cos(this.march);
+    const lead = marching ? 0.3 : 0;
+    const tx = cap.x + sm * rz - cm * rx + cap.vx * lead;
+    const tz = cap.z + cm * rz + sm * rx + cap.vz * lead;
+    const dx = tx - w.x;
+    const dz = tz - w.z;
+    const d = Math.hypot(dx, dz);
+    // set off a beat after you're left a few steps behind; stop once there and the captain has
+    if (!f.going) {
+      f.restT += dt;
+      if (d > 2.4 || (d > 1.4 && f.restT > 4)) {
+        f.wait -= dt;
+        if (f.wait <= 0) {
+          f.going = true;
+          f.wait = 0.15 + Math.random() * 0.55;
+          f.restT = 0;
+        }
+      }
+    } else if (!marching) {
+      // there, or stuck behind a rock or a mate: near enough
+      f.restT = Math.hypot(w.vx, w.vz) < 0.35 ? f.restT + dt : 0;
+      if (d < 0.75 || f.restT > 1.2) {
+        f.going = false;
+        f.restT = 0;
+      }
+    }
+    // something caught his eye
+    f.nextPause -= dt;
+    if (f.nextPause <= 0 && marching && capRun < 0.3 && d < 3 && f.pauseT <= 0) {
+      f.nextPause = 12 + Math.random() * 25;
+      f.pauseT = 0.8 + Math.random() * 1.4;
+      f.glance = (Math.random() < 0.5 ? -1 : 1) * (0.6 + Math.random() * 0.5);
+      f.glanceT = f.pauseT + 0.4;
+    }
+    f.glanceT -= dt;
+    if (f.glanceT <= 0) {
+      f.glanceT = 2 + Math.random() * 4;
+      f.glance = Math.random() < 0.4 ? (Math.random() - 0.5) * 1.5 : 0;
+    }
+    let sp = 0;
+    if (f.pauseT > 0) f.pauseT -= dt;
+    else if (f.going) {
+      // the captain's pace, a touch quicker to close a gap, a run to catch up when left behind
+      sp = capV * f.pace + clamp((d - 0.5) * 1.3, -1.2, RUN);
+      if (d > 7) sp = Math.max(sp, RUN * 0.95);
+      if (!marching) sp = Math.min(sp, clamp(d * 1.6, 0.9, WALK));
+      sp = clamp(sp, 0, RUN * 1.08) * (1 - Math.min(0.45, w.wade * 0.6));
+    }
+    let ux = d > 1e-3 ? dx / d : 0;
+    let uz = d > 1e-3 ? dz / d : 0;
+    if (marching) {
+      // near your place, walk the way the party walks rather than chasing the spot
+      const b = clamp(1 - d / 1.5, 0, 1) * 0.7;
+      ux = lerp(ux, cap.vx / capV, b);
+      uz = lerp(uz, cap.vz / capV, b);
+      const ul = Math.hypot(ux, uz) || 1;
+      ux /= ul;
+      uz /= ul;
+    }
+    // room to swing your arms
+    let ex = 0;
+    let ez = 0;
+    for (const o of this.party) {
+      const m = o.walker;
+      if (m === w || m.down) continue;
+      const ox = w.x - m.x;
+      const oz = w.z - m.z;
+      const e = Math.hypot(ox, oz);
+      const room = m === cap ? 1.25 : 1.05;
+      if (e < room && e > 1e-3) {
+        ex += (ox / e) * (room - e);
+        ez += (oz / e) * (room - e);
+      }
+    }
+    // hemmed in against a rock or a tent: a few steps aside, then on
+    f.stuck = sp > 1 && w.stride < 0.4 ? f.stuck + dt : Math.max(0, f.stuck - dt);
+    if (f.stuck > 1) {
+      f.stuck = 0;
+      f.aside = (w.seed % 2 < 1 ? 1 : -1) * 0.9;
+    }
+    if (f.aside !== 0) {
+      const a = Math.sign(f.aside);
+      f.aside -= a * Math.min(Math.abs(f.aside), dt);
+      const px = -uz * a;
+      const pz = ux * a;
+      ux = ux * 0.3 + px;
+      uz = uz * 0.3 + pz;
+    }
+    const wx = ux * sp + ex * 2;
+    const wz = uz * sp + ez * 2;
+    const k = damp(sp * sp > w.vx * w.vx + w.vz * w.vz ? 3.4 : 4.5, dt);
+    w.vx += (wx - w.vx) * k;
+    w.vz += (wz - w.vz) * k;
+    const v = Math.hypot(w.vx, w.vz);
+    if (f.going || f.pauseT > 0) {
+      if (v > 0.5) w.wantYaw = Math.atan2(w.vx, w.vz);
+      w.idle = 'stand';
+      w.idleT = 0;
+      const look = chat ? clamp(angleDelta(w.yaw, Math.atan2(mate.x - w.x, mate.z - w.z)), -1.1, 1.1) : f.glance;
+      w.lookYaw += (look - w.lookYaw) * damp(4, dt);
+    } else this.atEase(w, i, dt);
+    // left far behind (a cliff between you): catch up out of sight
+    if (d > 45) w.place(tx, tz, this.march);
+  }
+
+  /** Two hands swap sides on the march now and then. */
+  private swapSides(dt: number) {
+    const cap = this.captain!;
+    if (Math.hypot(cap.vx, cap.vz) < 0.6) return;
+    this.swapT -= dt;
+    if (this.swapT > 0) return;
+    this.swapT = 15 + Math.random() * 25;
+    const a = Math.random() < 0.5 ? 1 : 3;
+    const fa = this.party[a]?.follow;
+    const fb = this.party[a + 1]?.follow;
+    if (!fa || !fb) return;
+    const t = fa.slot;
+    fa.slot = fb.slot;
+    fb.slot = t;
   }
 
   /** Stood about while the captain looks around: watch the sea, chat, then sit down on the sand. */
@@ -847,10 +1079,53 @@ export class Shore {
       if (w.stride < 0.08) continue;
       // footfalls twice a stride: ~1.4 m walking, longer at a run
       const before = w.phase;
-      w.phase += ((moved * dt) / (w.stride > 4 ? 2 : 1.4)) * Math.PI;
+      w.phase += ((moved * dt) / w.stepLen()) * Math.PI;
       if (Math.floor(before / Math.PI) !== Math.floor(w.phase / Math.PI)) this.footfall(w, world);
       if (w.phase > 1e4) w.phase -= Math.PI * 2000;
     }
+  }
+
+  /** A pale smear of light along the cutlass's arc, from the wind-up through the blow. */
+  private bladeTrail(w: Walker, world: World) {
+    const c = w.cut;
+    const on = w.cutting && w.cutT > CUT_WIND[c] * 0.8 && w.cutT < CUT_HIT[c] + 0.09 && w.visible;
+    if (!on) {
+      w.tipLive = false;
+      return;
+    }
+    w.bladeAt(1, _tip);
+    w.bladeAt(0.45, _mid);
+    if (w.tipLive) {
+      const p = world.particles;
+      const n = Math.min(30, Math.ceil(_tip.distanceTo(w.tip) / 0.045));
+      // brightest through the blow itself
+      const hot = clamp(1.4 - Math.abs(w.cutT - CUT_HIT[c]) * 9, 0.45, 1);
+      for (let j = 1; j <= n; j++) {
+        const f = j / n;
+        // a band from mid-blade out to the tip, thickest and brightest at the edge
+        for (let e = 0; e < 3; e++) {
+          const along = e / 2;
+          const x0 = lerp(w.mid.x, w.tip.x, along);
+          const y0 = lerp(w.mid.y, w.tip.y, along);
+          const z0 = lerp(w.mid.z, w.tip.z, along);
+          const x1 = lerp(_mid.x, _tip.x, along);
+          const y1 = lerp(_mid.y, _tip.y, along);
+          const z1 = lerp(_mid.z, _tip.z, along);
+          const k = hot * (0.55 + 0.45 * along);
+          p.emit(
+            {
+              x: lerp(x0, x1, f), y: lerp(y0, y1, f), z: lerp(z0, z1, f),
+              life: 0.09 + 0.08 * f, size: 0.07 + 0.08 * along, sizeEnd: 0.03,
+              color: [1.6 * k, 1.68 * k, 1.85 * k], colorEnd: [0.35, 0.4, 0.5], alpha: 0.3 + 0.3 * along, kind: 0, fadeIn: 0.005,
+            },
+            true,
+          );
+        }
+      }
+    }
+    w.tip.copy(_tip);
+    w.mid.copy(_mid);
+    w.tipLive = true;
   }
 
   private footfall(w: Walker, world: World) {
@@ -1046,6 +1321,11 @@ export class Shore {
       if (this.fighting && this.foes.some((f) => !f.down && Math.hypot(f.x - cap.x, f.z - cap.z) < 12)) return { key: 'fight', title: 'Cutthroats on your heels', sub: 'Fight them off before you push off', ok: false };
       return { key: 'boat', title: `Row back to the ${shipName}`, sub: 'The hands climb in and pull for the ship', ok: true };
     }
+    if (this.digHere(2.6)) {
+      if (this.fighting) return { key: 'dig', title: 'X marks the spot', sub: 'See off the cutthroats first', ok: false };
+      if (this.digging) return null;
+      return { key: 'dig', title: this.digP > 0 ? 'Keep digging' : 'Dig here', sub: 'X marks the spot', ok: true };
+    }
     const c = this.chestNear();
     if (c) {
       if (!c.routed) return { key: 'chest', title: 'A locked chest', sub: 'Rout the camp to claim it', ok: false };
@@ -1069,6 +1349,10 @@ export class Shore {
     const p = this.prompt('');
     if (!p || !p.ok) return null;
     if (p.key === 'boat') return 'boat';
+    if (p.key === 'dig') {
+      this.startDig();
+      return null;
+    }
     const c = this.chestNear();
     if (c && c.routed && !c.opened) {
       c.opened = true;
@@ -1084,10 +1368,177 @@ export class Shore {
   /** The figures and props to keep in the scene while nothing is ashore (warm-up draws them all). */
   warm() {
     this.boat.visible = true;
+    this.site.visible = true;
   }
 
   unwarm() {
     if (!this.active) this.boat.visible = false;
+    this.setTreasure(this.treasure);
+  }
+
+  // ---------------------------------------------------------------- buried treasure
+
+  /** Puts the X on the sand where a whole map says (null clears it). */
+  setTreasure(at: { x: number; z: number } | null) {
+    // a chest just dug up stays in its hole until the party rows off
+    if (!at && this.active && this.unearthedOnce) return;
+    if (!at) {
+      this.treasure = null;
+      this.site.visible = false;
+      this.stopDig();
+      return;
+    }
+    const same = this.treasure && Math.hypot(this.treasure.x - at.x, this.treasure.z - at.z) < 0.01;
+    const y = this.ground.height(at.x, at.z);
+    this.treasure = new THREE.Vector3(at.x, y, at.z);
+    if (!same) {
+      this.digP = 0;
+      this.revealT = -1;
+      this.unearthedOnce = false;
+      this.stopDig();
+    }
+    this.site.position.copy(this.treasure);
+    this.site.rotation.y = (at.x * 0.37 + at.z * 0.11) % (Math.PI * 2);
+    this.site.visible = true;
+    this.site.updateMatrixWorld(true);
+    this.showDig();
+  }
+
+  /** The hole and heap as deep as the digging's gone, the chest as high as it's come up. */
+  private showDig() {
+    const k = this.digP;
+    const e = 1 - (1 - k) ** 2;
+    this.hole.visible = this.spoil.visible = k > 0;
+    this.hole.scale.set(0.35 + 0.65 * e, Math.max(0.02, e), 0.35 + 0.65 * e);
+    this.spoil.scale.set(0.3 + 0.7 * e, Math.max(0.02, e), 0.3 + 0.7 * e);
+    const r = this.revealT;
+    this.bChest.visible = r >= 0;
+    if (r < 0) return;
+    // up out of the sand, with a lurch as the hands heave it clear
+    const up = smoothstep(0.15, 1.5, r);
+    this.bChest.position.set(0.05, -0.62 + up * 0.5 + Math.sin(Math.min(1, r / 1.5) * Math.PI) * 0.06, 0);
+    this.bChest.rotation.x = 0.12 * (1 - up) + 0.04;
+    const open = smoothstep(1.7, 2.5, r);
+    this.bLid.rotation.x = -1.95 * open - Math.sin(open * Math.PI) * 0.12;
+  }
+
+  /** Where the X is, if it's near the captain and still buried. */
+  private digHere(r: number) {
+    const T = this.treasure;
+    const cap = this.captain;
+    if (!T || !cap || this.unearthedOnce || this.revealT >= 0) return false;
+    return Math.hypot(cap.x - T.x, cap.z - T.z) < r;
+  }
+
+  /** The captain takes up a spade, and the two nearest hands come to help. */
+  private startDig() {
+    const T = this.treasure!;
+    const cap = this.captain!;
+    this.digging = true;
+    this.diggers.clear();
+    const a = Math.atan2(cap.x - T.x, cap.z - T.z);
+    const at = (aa: number, r: number) => ({ x: T.x + Math.sin(aa) * r, z: T.z + Math.cos(aa) * r, stroke: -1 });
+    this.diggers.set(cap, at(a, 0.95));
+    const hands = this.party
+      .slice(1)
+      .map((p) => p.walker)
+      .filter((w) => w.ready)
+      .sort((p, q) => Math.hypot(p.x - T.x, p.z - T.z) - Math.hypot(q.x - T.x, q.z - T.z))
+      .slice(0, 2);
+    hands.forEach((w, i) => this.diggers.set(w, at(a + (i ? -2.1 : 2.1), 1.0)));
+    for (const w of this.diggers.keys()) {
+      w.armed = false;
+      w.digPhase = Math.random() * 0.3;
+    }
+  }
+
+  private stopDig() {
+    this.digging = false;
+    for (const w of this.diggers.keys()) w.digging = false;
+    this.diggers.clear();
+  }
+
+  private updateDig(dt: number, world: World) {
+    const T = this.treasure;
+    if (!T) return;
+    if (this.revealT >= 0) {
+      const was = this.revealT;
+      this.revealT += dt;
+      if (was < 1.75 && this.revealT >= 1.75 && !this.unearthedOnce) {
+        this.unearthedOnce = true;
+        for (const p of this.party) if (!p.walker.down && p.walker !== this.captain) p.walker.cheer = 2.4 + Math.random() * 0.5;
+        const top = _v.copy(this.bChest.position).applyMatrix4(this.site.matrixWorld).setY(T.y + 0.5);
+        world.particles.treasure(top, [1.5, 1.15, 0.45], 4);
+        this.hooks.unearthed(top);
+      }
+      this.showDig();
+      return;
+    }
+    if (!this.digging) return;
+    const cap = this.captain;
+    if (!cap || cap.down || this.fighting) {
+      this.stopDig();
+      return;
+    }
+    let n = 0;
+    for (const [w, s] of this.diggers) {
+      if (w.down) continue;
+      const dx = s.x - w.x;
+      const dz = s.z - w.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 0.3 && !w.digging) {
+        const sp = Math.min(WALK, d * 3 + 0.6);
+        w.vx = (dx / d) * sp;
+        w.vz = (dz / d) * sp;
+        w.wantYaw = Math.atan2(dx, dz);
+        w.idle = 'stand';
+      } else {
+        w.vx = w.vz = 0;
+        w.digging = true;
+        w.idle = 'stand';
+        w.wantYaw = Math.atan2(T.x - w.x, T.z - w.z);
+        n++;
+        // each stroke's spadeful flies off onto the heap
+        const k = Math.floor(w.digPhase - 0.8);
+        if (k !== s.stroke) {
+          s.stroke = k;
+          if (k >= 0) this.toss(w, world);
+        }
+      }
+      w.turn(dt, 8);
+    }
+    this.digP = Math.min(1, this.digP + (dt * n) / DIG_WORK);
+    this.showDig();
+    if (this.digP < 1) return;
+    // the spade rings on wood: heave it up
+    this.stopDig();
+    this.revealT = 0;
+    const [vol, pan] = world.soundAt(T);
+    world.audio.spadeKnock(vol, pan);
+    this.hooks.shake(0.1);
+    this.hooks.floater('Something wooden…', _w.set(T.x, T.y + 1.8, T.z), 'loot');
+  }
+
+  /** A spadeful of sand thrown over the shoulder onto the heap. */
+  private toss(w: Walker, world: World) {
+    const T = this.treasure!;
+    const heap = _w.copy(this.spoil.position).applyMatrix4(this.site.matrixWorld);
+    const p = world.particles;
+    const dx = heap.x - T.x;
+    const dz = heap.z - T.z;
+    for (let i = 0; i < 7; i++) {
+      p.emit({
+        x: T.x + (Math.random() - 0.5) * 0.5, y: T.y + 0.15, z: T.z + (Math.random() - 0.5) * 0.5,
+        vx: dx * (1.1 + Math.random() * 0.5) + (Math.random() - 0.5), vy: 3 + Math.random() * 1.5, vz: dz * (1.1 + Math.random() * 0.5) + (Math.random() - 0.5),
+        life: 0.7 + Math.random() * 0.3, size: 0.07 + Math.random() * 0.05, sizeEnd: 0.05, color: [0.9, 0.78, 0.55], alpha: 0.95, grav: 9, drag: 0.4, kind: 0, fadeIn: 0.01,
+      });
+    }
+    p.emit({
+      x: heap.x, y: T.y + 0.4, z: heap.z, vx: 0, vy: 0.3, vz: 0,
+      life: 1, size: 0.4, sizeEnd: 1.4, color: [0.96, 0.88, 0.7], alpha: 0.3, drag: 1.6, grav: 0.2, kind: 1, fadeIn: 0.05,
+    });
+    const [vol, pan, d] = world.soundAt(_v.set(w.x, w.y + 0.5, w.z));
+    world.audio.dig(vol * (w === this.captain ? 1 : 0.6), pan, d);
   }
 
   /** A fresh look at the camp nearest a point (for the chart and the HUD). */

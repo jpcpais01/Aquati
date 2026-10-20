@@ -1353,6 +1353,61 @@ export class Audio {
     src.stop(t + 0.32);
   }
 
+  /** A spade biting into sand: a crunching scrape, then the hiss of the spadeful thrown aside. */
+  dig(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(0.4, vol * 0.3) * Math.exp(-dist / 120), pan);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const bite = ctx.createBufferSource();
+    bite.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(900, t);
+    bp.frequency.exponentialRampToValueAtTime(2600, t + 0.16);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    bite.connect(bp).connect(g).connect(out);
+    bite.start(t, Math.random() * 1.5);
+    bite.stop(t + 0.22);
+    // the throw: a softer, longer spray a beat later
+    const spray = ctx.createBufferSource();
+    spray.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2400;
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0, t + 0.28);
+    sg.gain.linearRampToValueAtTime(0.45, t + 0.33);
+    sg.gain.exponentialRampToValueAtTime(0.001, t + 0.62);
+    spray.connect(hp).connect(sg).connect(out);
+    spray.start(t + 0.28, Math.random() * 1.5);
+    spray.stop(t + 0.66);
+  }
+
+  /** The spade strikes something under the sand: a hollow wooden knock with an iron ring to it. */
+  spadeKnock(vol: number, pan: number) {
+    const v = this.voice(Math.min(0.6, vol * 0.55), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    for (const [f, a, d] of [[190, 0.9, 0.22], [410, 0.45, 0.16], [1370, 0.2, 0.5], [2210, 0.12, 0.4]] as const) {
+      const o = ctx.createOscillator();
+      o.type = f > 1000 ? 'sine' : 'triangle';
+      o.frequency.setValueAtTime(f * 1.04, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + 0.05);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(a, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + d);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + d + 0.05);
+    }
+  }
+
   /** Steel on steel: a bright ring with a hard scrape at the front. */
   clash(vol: number, pan: number, dist = 0) {
     const v = this.voice(Math.min(0.5, vol * 0.42) * Math.exp(-dist / 160), pan);
