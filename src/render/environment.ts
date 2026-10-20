@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getSharedTextures } from './textures';
+import { createMoonTexture } from './nightSky';
 import { VORTEX_N } from '../world/vortex';
 import { shadowUniforms } from './softShadows';
 import {
@@ -85,6 +86,13 @@ export const globalUniforms = {
   uWet: { value: 0 }, // surface wetness, lags the rain
   uFlash: { value: 0 }, // lightning
   uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
+  // the night sky (see render/nightSky.ts): world directions into the slowly
+  // wheeling star sphere; the moon's place and visibility, and its phase as
+  // the sun's direction seen from it (w the lit share of the disc)
+  uStarRot: { value: new THREE.Matrix3() },
+  uMoon: { value: new THREE.Vector4(0, 0.5, 1, 0) },
+  uMoonLight: { value: new THREE.Vector4(0, 0, -1, 1) },
+  uMoonTex: { value: createMoonTexture() as THREE.Texture },
   // ashore: leaves between the camera and the captain thin away (xyz the captain, w the radius; 0 off)
   uSeeThru: { value: new THREE.Vector4() },
   // shadows of the low fair-weather puffs (see world/clouds.ts): a small
@@ -184,6 +192,7 @@ uniform float uStorm;
 uniform float uWet;
 uniform float uFlash;
 uniform float uMist;
+uniform mat3 uStarRot;
 uniform sampler2D uLowCloudTex;
 uniform vec4 uLowCloudXf;
 
@@ -198,14 +207,25 @@ vec3 aqHash32(vec2 p) {
   return fract((p3.xxy + p3.yzz) * p3.zyx);
 }
 
-// a sparse field of stars, only through gaps in the cloud
+vec3 aqHash33(vec3 p) {
+  p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+// the bright stars alone, as the sea mirrors them (the dome draws the full
+// night sky, see nightSky.ts): the same wheeling sphere, a fixed small point
 vec3 starField(vec3 d) {
   if (uNight < 0.01 || d.y <= 0.0) return vec3(0.0);
-  vec3 q = d * 150.0;
+  vec3 ds = uStarRot * d;
+  vec3 q = ds * 70.0;
   vec3 c = floor(q);
-  vec3 r = aqHash32(c.xy + c.z * 17.13);
-  float star = smoothstep(0.42, 0.0, length(fract(q) - 0.2 - r * 0.6)) * step(0.93, r.z);
-  return vec3(0.8, 0.88, 1.0) * star * (r.x * 1.2 + 0.3) * uNight * (1.0 - uCloudCover) * smoothstep(0.0, 0.25, d.y);
+  vec3 h = aqHash33(c);
+  if (h.x > 0.32) return vec3(0.0);
+  vec3 sd = normalize(c + 0.2 + 0.6 * aqHash33(c * 1.71 + 41.7));
+  float a = length(ds - sd) * 520.0;
+  float b = pow(h.y, 12.0) * 1.2 * exp(-a * a);
+  return vec3(0.85, 0.9, 1.0) * b * uNight * uNight * (1.0 - uCloudCover) * smoothstep(0.0, 0.25, d.y);
 }
 
 // The open sky along a direction. The keyframed zenith and horizon colours
@@ -228,7 +248,8 @@ vec3 skyColor(vec3 d) {
   col += uSkyHorizon * exp(-hp * 18.0) * 0.1;
   // warm haze toward the sun (cool glow around the moon at night): a broad
   // multiple-scattering wash, the aureole, and a tight hot corona
-  col += uHaze * (pow(sd, 5.0) * 0.17 + pow(sd, 48.0) * 0.8 + pow(sd, 700.0) * 2.4);
+  // (the moon's aureole is tighter: a small bright ring of glow, not a sunny blaze)
+  col += uHaze * (pow(sd, 5.0) * 0.17 + pow(sd, 48.0 + uNight * 90.0) * 0.8 + pow(sd, 700.0 + uNight * 1800.0) * (2.4 - uNight * 1.8));
   #ifndef AQ_NO_STARS
   col += starField(d);
   #endif

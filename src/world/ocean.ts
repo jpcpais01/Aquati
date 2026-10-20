@@ -238,6 +238,7 @@ const OCEAN_VERT = /* glsl */ `
   uniform vec2 uGridShift;
   uniform vec2 uGridWarp;
   uniform float uGridMorph;
+  uniform float uGridCell;
   vec2 gridWarp(vec2 s) {
     vec2 e = max(abs(s) - uGridWarp.x, 0.0);
     return s + sign(s) * e * e * e * uGridWarp.y;
@@ -261,7 +262,14 @@ const OCEAN_VERT = /* glsl */ `
     } else {
       vec3 lp = vec3(position.x, 0.0, position.z);
       if (position.y < -0.5) dip = position.y + 1.0;
-      else lp.xz = gridWarp(position.xz + aMorph * uGridMorph + uGridShift);
+      else {
+        vec2 s = position.xz + aMorph * uGridMorph + uGridShift;
+        lp.xz = gridWarp(s);
+        // vertex spacing here: the cell, doubled as it morphs onto the
+        // coarse grid, times the warp's stretch
+        vec2 e = max(abs(s) - uGridWarp.x, 0.0);
+        aqGridSpan = uGridCell * (1.0 + uGridMorph) * (1.0 + 3.0 * uGridWarp.y * e * e);
+      }
       wp = modelMatrix * vec4(lp, 1.0);
       #ifndef VX_GRID_DIP
       // inside a maelstrom's rim the ring mesh draws the sea instead
@@ -543,6 +551,7 @@ export class Ocean {
       uGridShift: { value: new THREE.Vector2() },
       uGridWarp: { value: new THREE.Vector2(gw.C, gw.k) },
       uGridMorph: { value: 0 },
+      uGridCell: { value: (2 * gw.H) / opts.segments },
     };
     this.material = new THREE.ShaderMaterial({
       uniforms,

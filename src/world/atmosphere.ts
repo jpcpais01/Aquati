@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { realMoonPhase } from '../render/nightSky';
 import { globalUniforms } from '../render/environment';
 
 // The sky over the archipelago: a full day/night cycle and a living weather
@@ -133,6 +134,14 @@ const PACE_NORM = (() => {
   return t;
 })();
 
+// the sky turns about the axis of the sun's daily circle: the stars wheel
+// round its pole through the night, rising and setting just as the sun does
+const POLE = new THREE.Vector3().crossVectors(celestial(0, new THREE.Vector3()), celestial(Math.PI / 2, new THREE.Vector3())).normalize();
+/** Due east on the horizon, where the sun comes up. */
+const EAST = celestial(0, new THREE.Vector3());
+const _rot = new THREE.Matrix4();
+const _t = new THREE.Vector3();
+
 const pick = <T>(opts: [T, number][]): T => {
   const sum = opts.reduce((a, o) => a + o[1], 0);
   let r = Math.random() * sum;
@@ -239,6 +248,11 @@ export class Atmosphere {
   onChange: (kind: WeatherKind, title: string, line: string) => void = () => {};
   /** Called as a marked wind shift gets under way, with a title and a line naming where it now blows from. */
   onWindShift: (title: string, line: string) => void = () => {};
+
+  /** The moon's phase, 0 new .. 0.5 full: tonight's real moon, then a step on every night of play. */
+  moonPhase = realMoonPhase();
+  /** How lit the moon's disc is, 0 new .. 1 full. */
+  moonLit = 1;
 
   private dayRef: number;
   private tmp = new THREE.Vector3();
@@ -418,6 +432,7 @@ export class Atmosphere {
 
   update(dt: number) {
     // ---------------------------------------------------------- clock
+    const was = this.day;
     if (this.following) {
       if (this.followRun) this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
     } else if (this.timeMode === 'auto') this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
@@ -427,6 +442,11 @@ export class Atmosphere {
       const left = (to - this.day + 1) % 1;
       if (left > 1e-4) this.day = (this.day + Math.min(left, Math.max(left * 0.9, 0.02) * dt)) % 1;
     }
+
+    // the moon waxes and wanes an eighth of its month each day that passes (any way the clock moves forward)
+    let dd = this.day - was;
+    if (dd < 0) dd += 1;
+    if (dt > 0 && dd < 0.5) this.moonPhase = (this.moonPhase + dd / 8) % 1;
 
     // ---------------------------------------------------------- weather
     this.stateT += dt;
@@ -484,7 +504,8 @@ export class Atmosphere {
       this.keyColor.set(r * I, gg * I, b * I);
     } else {
       this.keyDir.copy(this.moonDir);
-      const I = 0.62 * moonVis * clouded;
+      // a thin moon lights the sea less (never so little the night can't be sailed)
+      const I = 0.62 * moonVis * clouded * (0.72 + 0.28 * this.moonLit);
       this.keyColor.set(0.55 * I, 0.68 * I, 1.0 * I);
     }
 
@@ -550,8 +571,30 @@ export class Atmosphere {
       const g = smooth(0.0, 0.3, sy);
       u.uHaze.value.set(1, 0.55 + 0.25 * g, 0.25 + 0.3 * g).multiplyScalar(sunVis * hazeK);
     } else {
-      u.uHaze.value.set(0.3, 0.38, 0.55).multiplyScalar(0.35 * moonVis * hazeK);
+      u.uHaze.value.set(0.3, 0.38, 0.55).multiplyScalar(0.3 * moonVis * hazeK * (0.35 + 0.65 * this.moonLit));
     }
+    this.updateNightSky(sy, clouded);
+  }
+
+  /** The star sphere's turn, and the moon: where it stands, how much shows, its phase. */
+  private updateNightSky(sy: number, clouded: number) {
+    const u = globalUniforms;
+    // the stars keep pace with the sun, so the same stars rise at the same hour every night
+    const phi = (this.day - 0.25) * Math.PI * 2;
+    u.uStarRot.value.setFromMatrix4(_rot.makeRotationAxis(POLE, -phi));
+    // the phase as the angle sun-moon-us: 0 full, pi new
+    const a = Math.abs(1 - 2 * this.moonPhase) * Math.PI;
+    this.moonLit = (1 + Math.cos(a)) / 2;
+    // the lit limb faces the sun below the horizon: west of a waxing evening
+    // moon, east of a waning morning one
+    const m = this.moonDir;
+    _t.copy(EAST).multiplyScalar(this.moonPhase < 0.5 ? -1 : 1);
+    _t.y -= 0.6;
+    _t.addScaledVector(m, -_t.dot(m)).normalize();
+    u.uMoonLight.value.set(-m.x * Math.cos(a) + _t.x * Math.sin(a), -m.y * Math.cos(a) + _t.y * Math.sin(a), -m.z * Math.cos(a) + _t.z * Math.sin(a), this.moonLit);
+    // it comes out as the sun goes down, a pale ghost in the dusk, and hides behind a closing sky
+    const show = smooth(0.08, -0.08, sy) * smooth(-0.02, 0.08, m.y) * (0.25 + 0.75 * clouded);
+    u.uMoon.value.set(m.x, m.y, m.z, show);
   }
 
   /** Sun shafts and the grade, from the hour and the weather. */

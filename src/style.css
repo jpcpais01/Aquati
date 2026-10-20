@@ -213,10 +213,11 @@ button:focus {
   width: 100%;
   height: 100%;
   display: block;
-  filter: drop-shadow(0 calc(4px * var(--u)) calc(14px * var(--u)) rgba(0, 0, 0, 0.35));
 }
 
-.crest > svg {
+.crest > svg,
+.crest > span,
+.crest > span > svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -224,24 +225,45 @@ button:focus {
   display: block;
 }
 
-.crest-slot.spin .crest-rose {
-  /* transform on the rose's own <svg> box: animated by the compositor, never the main thread */
-  will-change: transform;
-  animation: rose 6s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+/* the shadow lives on each still piece and as a centred glow on the turning ones (a
+   filter over the whole crest would sit above the spinning layers and re-filter them) */
+.crest-ring {
+  filter: drop-shadow(0 calc(4px * var(--u)) calc(14px * var(--u)) rgba(0, 0, 0, 0.35));
 }
 
-@keyframes rose {
-  0% {
-    transform: rotate(0deg);
+.crest-rose > svg {
+  filter: drop-shadow(0 0 calc(6px * var(--u)) rgba(0, 0, 0, 0.4));
+}
+
+/* Only the HTML spans turn, with transform alone, each on its own layer: the compositor
+   runs them, so nothing on the main thread (or the GPU's shader work) can hold them up.
+   Constant speed, no easing: a wheel that never hesitates. */
+.crest-slot.spin .crest-rose,
+.crest-slot.spin .crest-dial {
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  animation: crestTurn 9s linear infinite;
+}
+
+.crest-slot.spin .crest-dial {
+  animation-duration: 28s;
+  animation-direction: reverse;
+}
+
+@keyframes crestTurn {
+  from {
+    transform: translateZ(0) rotate(0deg);
   }
-  40% {
-    transform: rotate(200deg);
+  to {
+    transform: translateZ(0) rotate(360deg);
   }
-  55% {
-    transform: rotate(170deg);
-  }
-  100% {
-    transform: rotate(360deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crest-slot.spin .crest-rose,
+  .crest-slot.spin .crest-dial {
+    animation: none;
   }
 }
 
@@ -3222,6 +3244,7 @@ body[data-hud='large'] #hud {
 }
 
 .nav-strip {
+  position: relative;
   display: flex;
   align-items: center;
   gap: calc(9px * var(--k));
@@ -3265,11 +3288,36 @@ body[data-hud='large'] #hud {
 }
 
 .sky {
+  position: relative;
+  align-self: stretch;
   display: flex;
   align-items: center;
   gap: calc(6px * var(--k));
   padding-left: calc(9px * var(--k));
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  pointer-events: auto;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* hairline between wind and sky, inset so it never touches the rim */
+.sky::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 22%;
+  bottom: 22%;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* the icon picks the weather, the clock picks the hour: each is its own soft
+   key that lights on hover and dips when pressed, painted with a box-shadow
+   halo so the pill never changes size */
+.sky i,
+.sky b {
+  position: relative;
+  border-radius: 99px;
+  transition: background-color 0.18s, box-shadow 0.18s, transform 0.18s var(--ease), opacity 0.6s;
 }
 
 .sky i {
@@ -3277,52 +3325,81 @@ body[data-hud='large'] #hud {
   height: max(15px, calc(19px * var(--k)));
   flex: none;
   background: no-repeat center/contain;
-  transition: opacity 0.6s;
 }
 
 .sky b {
   font: 700 max(10px, calc(12px * var(--k))) var(--sans);
+  line-height: 1;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.sky {
-  position: relative;
-  pointer-events: auto;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+@media (hover: hover) {
+  .sky i:hover,
+  .sky b:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 0 0 calc(4px * var(--k)) rgba(255, 255, 255, 0.12);
+  }
 }
 
+.sky i:active,
 .sky b:active {
-  opacity: 0.6;
+  background-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0 calc(4px * var(--k)) rgba(255, 255, 255, 0.2);
+  transform: scale(0.9);
+  transition-duration: 0.06s;
 }
 
-.sky:active i {
-  transform: scale(0.88);
-}
-
-.sky::after {
-  content: attr(data-tag);
+/* a small gold pip marks a weather or an hour the captain has pinned */
+.sky i::after,
+.sky b::after {
+  content: '';
   position: absolute;
-  top: calc(100% + 6px * var(--k));
-  right: 0;
-  padding: calc(3px * var(--k)) calc(8px * var(--k));
-  border-radius: 999px;
-  background: rgba(8, 20, 30, 0.72);
-  font: 600 max(10px, calc(11px * var(--k))) var(--sans);
-  letter-spacing: 0.03em;
+  top: calc(-2px * var(--k));
+  right: calc(-3px * var(--k));
+  width: max(4px, calc(5px * var(--k)));
+  height: max(4px, calc(5px * var(--k)));
+  border-radius: 50%;
+  background: var(--gold-grad, #f3c76a);
+  box-shadow: 0 0 0 1.5px rgba(8, 22, 32, 0.9);
+  opacity: 0;
+  transform: scale(0.4);
+  transition: opacity 0.25s, transform 0.3s var(--ease);
+}
+
+.sky[data-pin-wx] i::after,
+.sky[data-pin-hr] b::after {
+  opacity: 1;
+  transform: none;
+}
+
+/* what a tap chose, said once beside the pill (never over the buttons below) */
+.sky-say {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 8px * var(--k));
+  height: max(22px, calc(28px * var(--k)));
+  display: flex;
+  align-items: center;
+  padding: 0 calc(11px * var(--k));
+  border-radius: 99px;
+  background: rgba(8, 22, 32, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 6px 18px rgba(0, 8, 14, 0.25);
+  font: 600 max(10px, calc(12px * var(--k))) var(--sans);
+  letter-spacing: 0.02em;
   white-space: nowrap;
   color: #fff;
   opacity: 0;
-  transform: translateY(-3px);
-  transition: opacity 0.25s, transform 0.25s;
+  transform: translate(8px, -50%) scale(0.96);
+  transition: opacity 0.25s, transform 0.3s var(--ease);
   pointer-events: none;
 }
 
-.sky.tag::after {
+.sky-say.say {
   opacity: 1;
-  transform: none;
+  transform: translate(0, -50%);
 }
 
 .sky.night b {
@@ -3712,16 +3789,7 @@ body[data-hud='large'] #hud {
   color: var(--ink-3);
 }
 
-.hint {
-  font: 600 8.5px var(--sans);
-  letter-spacing: 0.12em;
-  color: var(--ink-4);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 /* on touch the console is just sails & speed, low and centred between the thumbs */
-.is-touch .hint,
 .is-touch .rack,
 .is-touch .ammo-tag {
   display: none;

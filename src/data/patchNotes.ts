@@ -13,13 +13,129 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'A compass that turns like clockwork while you load',
+        notes: [
+          'The compass on the loading screen now spins at a perfectly steady pace, with no speeding up, slowing down or hesitating, and its dotted inner dial slowly turns the other way.',
+          'It is drawn as its own layer that the browser animates on its own, so it keeps turning smoothly even while the islands, towns and ships are being built behind it.',
+          'Loading also now builds the two archipelagos, the six trading towns and your ship in the harbour in separate short steps instead of a few long ones, so the progress bar moves along steadily.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'Las Brumas, carved by the weather',
+        notes: [
+          'The limestone towers of Las Brumas have been reshaped to look like real karst, the kind you find in Ha Long Bay or El Nido. They are no longer straight stone drums: each one narrows as it rises and leans a little to one side, steps back in ledges and rounds over into a lumpy, wooded crown.',
+          'Their outlines are uneven, with bays and buttresses, and their heights vary a lot more, from squat stumps to tall pinnacles. Towers that stand close together now merge into one massif over a saddle.',
+          'The jungle clings to them: shrubs, ferns and stunted trees grow on the ledges and hang down the walls, with long green tongues of creepers between the grey, rain-streaked and ochre-stained stone.',
+          'The sea has gnawed a dark notch into the foot of every wall, and fallen blocks lie just under the water round the sea stacks. Every port, fort and island is still where it was.',
+        ],
+      },
+      {
+        title: 'A gentler cinematic angle',
+        notes: [
+          'The cinematic view past the farthest zoom no longer swoops down to the horizon. It now keeps exactly the same distance and framing as your farthest zoom and only leans the camera over a little more.',
+        ],
+      },
+      {
+        title: 'A cinematic view past the farthest zoom',
+        notes: [
+          'Zooming all the way out still stops where it always did, so a quick flick of the wheel never throws the camera somewhere unexpected.',
+          'But rest at the farthest zoom for a second and then keep zooming out, and the camera leans over a little further, for a more cinematic angle on your ship.',
+          'Each push leans it a touch more, in a slow, weighty glide. Zoom back in and the camera straightens up first, then closes in as usual.',
+          'Works with a mouse wheel, a trackpad and a two-finger pinch on phones and tablets.',
+        ],
+      },
+      {
+        title: 'A treasure map at the helm',
+        notes: [
+          'Your treasure map has moved from the top corner down to the helm console, right after your shot, and it is bigger and much easier to read and tap. It is a little parchment tile: a rolled chart with three torn slots that fill in as you find the pieces, and a count of how many you have.',
+          'Once the map is whole the chart turns into a small gilt compass sealed in red wax. Its needle points the way to the X across your screen, with the distance beside it. Reach the spot and it turns into a glowing red seal with a spade that says Dig here.',
+          'It stays at the bottom of the screen when you go ashore, and it fits on phones held either way without getting under your thumbs. Held upright, it sits on top of your speed.',
+          'The little line of key hints under your speed is gone, so the console is cleaner.',
+        ],
+      },
+      {
+        title: 'Clouds over the open ocean',
+        notes: [
+          'Out on the high seas, when no fight is on, the little clouds no longer thin out into a see-through hole over your ship. They drift right over you, shadow and all, and you sail on underneath. As soon as a battle starts, or the Kraken rises, the clouds clear around your ship again so you can see what you are doing. The change fades in and out over a couple of seconds.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T18:00Z',
     entries: [
+      {
+        title: 'Walk the islands through your own eyes',
+        notes: [
+          'Going ashore now brings the camera down out of the sky, round behind your captain and into their eyes. The palms tower over you, the surf runs up the sand at your feet and your ship rides at anchor out in the bay. Look around with the mouse (click once to grab it) or drag on the right of a touch screen, and walk where you look with WASD or the stick.',
+          'The view moves like a person walking: it dips at every footfall, sways from foot to foot, opens up a little when you run and breathes when you stand still. Steps and rocks are smoothed out instead of jolting you.',
+          'You can see your own hands. The cutlass comes up when you draw it and sweeps across the view in each of the three cuts, with the lunge driving you forward. The flintlock rises on right-click (or Q, or Pistol on touch), kicks when it fires and smokes from its own muzzle. At the X you dig with your own spade while your eyes stay on the hole. A blow knocks your head aside, and if you go down the world tips over onto the sand.',
+          'A small sight in the middle of the screen closes in when a cutthroat is within reach of your blade, and a ring around it shows the pistol reloading. Cuts and shots still lock onto the nearest foe in front of you, and your head turns to follow them.',
+          'Prefer the old view? V or the eye button switches to the view from above and back again, and the game remembers your choice. Boarding fights keep their deck camera. From eye level, trees far across the island use their lighter models, so walking the islands stays smooth.',
+        ],
+      },
+      {
+        title: 'A tidier sky badge',
+        notes: [
+          'Tapping the weather or the clock under the map no longer makes the whole badge jump down, fade and turn into spaced-out capitals. It stays exactly where it is.',
+          'The name of the weather or hour you picked now pops up in a matching pill to the left of the badge, instead of landing on top of the pause and camera buttons.',
+          'The weather icon and the clock each light up softly when you hover over them and dip when pressed, so it is clear they are two separate buttons.',
+          'A small gold dot marks a weather or hour you have pinned. Keep tapping until it is back on Auto and the dot goes away.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T18:00Z',
+    entries: [
+      {
+        title: 'A night sky worth staying up for',
+        notes: [
+          'The stars no longer look like falling snow. Thousands of pin-sharp stars now fill the night, from a handful of bright ones down to a fine dust of faint ones, in their true colours: blue-white, golden and the odd orange giant. They twinkle, hardest low over the sea, and stay hidden behind the clouds.',
+          'On a clear night the Milky Way arches across the sky, its glowing star clouds split by dark lanes of dust. The whole sky turns slowly through the night, so the stars rise and set just as the sun does, and the sea mirrors the brightest of them.',
+          'The moon is a real moon now, with its dark seas, bright rayed craters and crater shadows along its edge. It goes through its phases, starting from tonight\'s real moon and moving on a little each night you sail. It rises pale in the dusk, and a thin moon lights the sea a little less, so dark nights show more stars.',
+          'Now and then a shooting star streaks across the sky. Clouds drifting past the moon are lined with silver, and the glow round the moon is a soft halo instead of a wide blaze.',
+        ],
+      },
+      {
+        title: 'Softer, slower clouds',
+        notes: [
+          'The little clouds you see from high above now change shape far more slowly. Their billows used to slide through them as the wind carried them along, so they seemed to boil; now each billow rides with its cloud and only gently swells and settles.',
+          'They also look fuller and fluffier: every lump casts a soft shade on the one behind it, the edges facing the sun glow with a silver lining, the hollows between billows sit in cooler shadow, and the billows shift with a hint of depth as your camera moves.',
+        ],
+      },
+      {
+        title: 'Dolphins that swim like dolphins',
+        notes: [
+          'The dolphins of the high seas move far more naturally. They swim the way they point, sweeping round in curves and banking into their turns instead of snapping onto a new heading, and they drift about their place beside you each at their own pace.',
+          'They come up to breathe: a slow roll of the back and dorsal fin through the surface, with a little puff of spray from the blowhole, before sliding back down.',
+          'Leaps now start below the surface with a steepening climb, the flukes driving hard, and follow a long, low porpoising arc with the whole body bending along it. They re-enter nose first and carry the dive on under the water before levelling out. Often a friend leaps alongside.',
+          'The tail beat swells toward the flukes, which feather against each stroke, and the head nods gently in time. Bow riders glide in your pressure wave with barely a flick, and now and then one rolls onto its side to look up at you.',
+        ],
+      },
+      {
+        title: 'The high seas, properly charted',
+        notes: [
+          'The open water on the Sea Chart is no longer a flat blue square. Mar Sereno is now engraved like a fine old nautical chart: the sea darkens from each archipelago\'s shelf into the deep, with depth contours, scattered soundings in fathoms and a long swell rolling across it.',
+          'A great gilt compass rose sits in the open water south of the lane, with its 32 rhumb lines running out across the whole chart.',
+          'The Corriente del Sereno and its counter-current are marked either side of the sailing lane, with drifting arrows showing which way they set, and the shallow Banco del Sereno is outlined under the lane.',
+          'Past the edge of the known sea the water turns dark and hatched, with a warning that the swell turns every keel back.',
+        ],
+      },
       {
         title: 'A smooth sea under sail',
         notes: [
           'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
           'Zooming out or sailing into battle no longer makes the waves flicker as the sea switches to a lighter level of detail. The finer waves now fade smoothly into the lighter version as the camera rises, and back again as it comes down.',
+          'The far edges of the sea no longer seem to race past faster than the water round your ship while you sail or zoom. Out there the sea is built more coarsely and glides along with you, and the smallest waves used to flicker across it. Those waves now fade out wherever the sea can\'t show them cleanly, so the whole view moves together.',
         ],
       },
     ],

@@ -115,9 +115,10 @@ export class LowClouds {
     uSceneDepth: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCamNearFar: { value: new THREE.Vector2(1, 1000) },
-    uFocus: { value: new THREE.Vector3(0, 0, 0) }, // px x, y, and 1 when a ship is being kept clear
+    uFocus: { value: new THREE.Vector3(0, 0, 0) }, // px x, y, and how much (0..1) the ship there is kept clear
     uGrey: { value: 0 },
     uCloudTime: { value: 0 },
+    uDrift: { value: new THREE.Vector2() }, // how far the wind has carried the clouds (m)
   };
   private shUniforms = {
     uCentre: { value: new THREE.Vector3() }, // xz centre, 1 / half-width
@@ -130,6 +131,8 @@ export class LowClouds {
   private time = 0;
   private few: boolean;
   private shadowLive = false;
+  /** How far the clouds are thinning over the player's ship right now (eases toward `clear`). */
+  private focusW = 1;
   /** Set while the loading screen's warm-up draw runs: both batches draw (empty) so their shaders compile. */
   warm = false;
   private order: number[] = [];
@@ -213,6 +216,7 @@ export class LowClouds {
         uniform vec3 uFocus;
         uniform float uGrey;
         uniform float uCloudTime;
+        uniform vec2 uDrift;
         varying vec2 vUv;
         varying vec3 vC;
         varying vec3 vR;
@@ -232,22 +236,33 @@ export class LowClouds {
           vec3 nrm = vR * vUv.x + vU * vUv.y + vF * zf;
           vec3 P = vC + nrm * vRad;
           // billows: worley cells eroding the rim, finer ones and a wisp of fbm on
-          // top, boiling slowly. Read on the puff's own disc (not the ball's
-          // surface, which squeezes the noise into streaks round the rim)
-          vec3 D = vC + (vR * vUv.x + vU * vUv.y) * vRad;
+          // top, boiling slowly. Read on the puff's own disc, pushed a little
+          // toward us where the ball bulges (so the billows slide with parallax
+          // as the camera moves, yet never streak round the rim), and in the
+          // cloud's own frame: they ride the wind with it instead of the wind
+          // dragging the pattern through the cloud.
+          vec3 D = vC + (vR * vUv.x + vU * vUv.y + vF * zf * 0.4) * vRad;
+          D.xz -= uDrift;
           vec2 q = (D.xz + vec2(D.y * 0.6, -D.y * 0.4)) * 0.019 + vLight.z * 37.0;
           float t = uCloudTime;
-          float wor = texture(uNoiseTex, q + vec2(t * 0.0021, -t * 0.0013)).b;
-          float wor2 = texture(uNoiseTex, q * 2.1 + vec2(-t * 0.0032, t * 0.0024) + 0.61).b;
-          float fb = texture(uNoiseTex, q * 3.7 + vec2(t * 0.004, t * 0.003) + 0.37).g;
+          vec2 s1 = vec2(t * 0.0009, -t * 0.0006);
+          float wor = texture(uNoiseTex, q + s1).b;
+          float wor2 = texture(uNoiseTex, q * 2.1 + vec2(-t * 0.0014, t * 0.001) + 0.61).b;
+          float fb = texture(uNoiseTex, q * 3.7 + vec2(t * 0.0017, t * 0.0013) + 0.37).g;
           float billow = smoothstep(0.18, 0.82, wor * 0.5 + wor2 * 0.3 + fb * 0.2);
+          // the same big billows a step toward the sun: where that step climbs,
+          // this spot lies in the lee of a lump and falls into its shade
+          vec3 sd = vR * vL.x + vU * vL.y;
+          float worS = texture(uNoiseTex, q + s1 + normalize(sd.xz + 1e-4) * 0.045).b;
+          float selfSh = clamp(0.62 + (wor - worS) * 3.2, 0.25, 1.15);
           // the rim is eaten back by the billows: lumpy, never a clean circle
           float shape = (1.0 - sqrt(r2)) * 1.3 - (1.0 - billow) * 0.52 + 0.1;
-          float a = smoothstep(0.0, 0.42, shape) * (1.0 - exp(-zf * 5.0)) * vLight.y;
+          // a soft, feathered edge, and thinner vapour in the hollows between billows
+          float a = smoothstep(0.0, 0.5, shape) * (1.0 - exp(-zf * 4.0)) * mix(0.78, 1.0, billow) * vLight.y;
           // the ships stay in view: a cloud thins out where it would hide the one you sail
           if (uFocus.z > 0.0) {
             float fd = length(gl_FragCoord.xy - uFocus.xy) / uResolution.y;
-            a *= mix(0.22, 1.0, smoothstep(0.07, 0.2, fd));
+            a *= mix(1.0, mix(0.22, 1.0, smoothstep(0.07, 0.2, fd)), uFocus.z);
           }
           // soft where it meets a peak (or the photo camera tucks one behind an island)
           vec2 suv = gl_FragCoord.xy / uResolution;
@@ -275,12 +290,17 @@ export class LowClouds {
           float albedo = 1.0 - uGrey * 0.58;
           // and the plain fact of facing the sun or not
           float lam = 0.45 + 0.55 * smoothstep(-0.6, 0.9, dot(nrm, uSunDir));
-          vec3 sun = uSunColor * (Ts * powder + Tms) * lam * phase * 0.38;
+          vec3 sun = uSunColor * (Ts * powder * selfSh + Tms) * lam * phase * 0.38;
+          // a silver lining: the thin edge that faces the sun glows, more so against the light
+          float edge = (1.0 - zf) * (1.0 - zf);
+          float rim = edge * smoothstep(0.0, 0.8, dot(vUv, vL.xy)) * (0.35 + 0.65 * through) * (0.6 + 0.9 * max(mu, 0.0));
+          sun += uSunColor * rim * 0.32 * (1.0 - uGrey * 0.7);
           // sky from above, the sea's turquoise glow from below
           float hf = clamp((P.y - vCloud.x) / max(vCloud.y - vCloud.x, 1.0), 0.0, 1.0);
           vec3 sky = mix(uSkyHorizon, uSkyZenith, 0.65) * 0.4 + uLight * 0.1;
           vec3 sea = vec3(0.07, 0.26, 0.3) * (uLight * 0.85 + 0.03);
-          vec3 amb = mix(sea, sky, smoothstep(-0.7, 0.8, nrm.y)) * mix(0.5, 1.05, hf) * mix(0.6, 1.0, zf);
+          // and the crevices between billows see less of the sky
+          vec3 amb = mix(sea, sky, smoothstep(-0.7, 0.8, nrm.y)) * mix(0.5, 1.05, hf) * mix(0.6, 1.0, zf) * mix(0.72, 1.06, billow);
           vec3 col = (sun + amb) * albedo;
           col *= 1.0 - uNight * 0.68;
           col += vec3(0.62, 0.7, 0.95) * uFlash * (0.5 + hf * 0.5);
@@ -352,7 +372,7 @@ export class LowClouds {
 
   /** How strongly a cell grows a cloud right now (0 none .. 1 full). */
   private want(x: number, z: number, density: number): number {
-    const p = 0.5 + 0.5 * this.patch.noise(x / 1150 + this.time * 0.0035, z / 1150 - this.time * 0.0027);
+    const p = 0.5 + 0.5 * this.patch.noise(x / 1150 + this.time * 0.0017, z / 1150 - this.time * 0.0013);
     let isle = 0;
     for (const i of this.islands) {
       const d = Math.hypot(x - i.x, z - i.z);
@@ -394,7 +414,9 @@ export class LowClouds {
   /**
    * Drifts and grows the clouds, then gathers the ones in view (sorted for
    * blending) and every shadow that lands near the view.
-   * `focus` is the ship to keep clear of cloud, or null.
+   * `focus` is the ship to keep clear of cloud, or null; `clear` false lets
+   * the clouds sail over her as they would anything else (it eases over a
+   * couple of seconds, so the hole never pops in or out).
    */
   update(
     dt: number,
@@ -405,12 +427,14 @@ export class LowClouds {
     windX: number,
     windZ: number,
     focus: THREE.Vector3 | null,
+    clear = true,
   ) {
     this.time += dt;
     this.uniforms.uCloudTime.value = this.time;
     const sp = 2 + w.wind * 3.4;
     this.drift.x += windX * sp * dt;
     this.drift.y += windZ * sp * dt;
+    this.uniforms.uDrift.value.copy(this.drift);
 
     // how cloudy the low sky is: a few lonely puffs when clear, a fair-weather
     // field, a crowd in a grey sky; rain and mist thin them into the murk
@@ -480,7 +504,7 @@ export class LowClouds {
         for (const p of puffs) {
           const k = smoothstep(p.th, p.th + 0.32, g);
           if (k <= 0.01) continue;
-          const r = p.r * gs * (0.3 + 0.7 * k) * (1 + 0.05 * Math.sin(t * 0.16 + p.seed * 40));
+          const r = p.r * gs * (0.3 + 0.7 * k) * (1 + 0.04 * Math.sin(t * 0.07 + p.seed * 40));
           const px = wx + p.x * gs;
           const py = base + p.y * gs;
           const pz = wz + p.z * gs;
@@ -581,12 +605,13 @@ export class LowClouds {
 
     // keep the ship you sail in sight
     const fu = this.uniforms.uFocus.value;
+    this.focusW += ((clear ? 1 : 0) - this.focusW) * (1 - Math.exp(-dt * 1.6));
     fu.z = 0;
-    if (focus && nv > 0) {
+    if (focus && nv > 0 && this.focusW > 0.005) {
       _v.copy(focus).project(cam);
       if (_v.z < 1 && Math.abs(_v.x) < 1.2 && Math.abs(_v.y) < 1.2) {
         const res = this.uniforms.uResolution.value;
-        fu.set((_v.x * 0.5 + 0.5) * res.x, (_v.y * 0.5 + 0.5) * res.y, 1);
+        fu.set((_v.x * 0.5 + 0.5) * res.x, (_v.y * 0.5 + 0.5) * res.y, this.focusW);
       }
     }
 

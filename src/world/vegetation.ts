@@ -64,6 +64,8 @@ interface Batch {
   shown: Uint32Array;
   n: number;
   shadows: boolean;
+  /** How far out it is drawn up close, as a share of the detail radius (cover reaches further than its LOD'd plants). */
+  reach: number;
 }
 
 interface IslandFlora {
@@ -79,6 +81,8 @@ interface IslandFlora {
   ext: number;
   peak: number;
   isNear: boolean;
+  /** Near, and split at the detail radius: the far LOD draws everything beyond it. */
+  split: boolean;
 }
 
 const _frustum = new THREE.Frustum();
@@ -97,6 +101,15 @@ export class Vegetation {
   private flora: IslandFlora[] = [];
   /** While set (the loading screen's warm-up draw), nothing is culled or swapped. */
   hold = false;
+  /**
+   * From eye level (the captain's own eyes, ashore or on deck) a whole island
+   * stands in view at once: plants further than this (m) from the camera are
+   * drawn with the far LOD even on the island underfoot, and ground cover
+   * stops a little beyond it. Infinity (the bird's-eye views) keeps every
+   * plant of a near island detailed.
+   */
+  detail = Infinity;
+  private cullDetail = Infinity;
   /** Trunks and boulders people on foot walk round, bucketed on an 8 m grid (see solidsNear). */
   private solids = new Map<number, { x: number; z: number; r: number }[]>();
   // the view the batches were last culled for
@@ -276,6 +289,46 @@ export class Vegetation {
         if (!free(x, z, 1.4)) continue;
         take(x, z, 1.4);
         L.rock.push(pl(x, h - 0.25, z, 0.6 + Math.pow(rnd(), 2) * 2.2, Math.floor(rnd() * 2)));
+      }
+    }
+
+    // ---------------------------------------------------------------- karst creepers
+    // Shrubs, ferns and the odd stunted tree clinging to the towers' walls and
+    // ledges, too steep for the forest proper (their own stream, so the rest
+    // of the island's planting stays as it was)
+    if (karst) {
+      const kr = mulberry32(Math.floor(isl.seed * 613) + 77);
+      const kext = ext * 1.3;
+      const kTries = Math.floor(((kext * kext * 4) / 10) * this.density);
+      let placed = 0;
+      for (let n = 0; n < kTries && placed < 700; n++) {
+        const x = isl.x + (kr() * 2 - 1) * kext;
+        const z = isl.z + (kr() * 2 - 1) * kext;
+        const h = t.heightAt(x, z);
+        if (h < 5 || cleared(x, z)) continue;
+        t.gradientAt(x, z, grad);
+        const slope = grad.length();
+        if (slope < 0.5 || slope > 4.5) continue;
+        // in clumps and tongues, not sprinkled evenly
+        const clump = s.noise(x * 0.07 + 3.3, z * 0.07 - h * 0.05) * 0.5 + 0.5;
+        if (kr() > clump * clump * 0.9) continue;
+        const k = kr();
+        if (slope < 0.85 && k < 0.18) {
+          if (!free(x, z, 1.8)) continue;
+          take(x, z, 1.8);
+          L.tree.push(pl(x, h - 0.6, z, 0.5 + kr() * 0.3, T_ROUND + Math.floor(kr() * 2)));
+          t.stampCanopy(x, z, 2.4, 0.6);
+        } else if (k < 0.72 || slope > 2.4) {
+          if (!free(x, z, 0.9)) continue;
+          take(x, z, 0.9);
+          L.bush.push(pl(x, h - 0.3 - Math.min(slope, 3) * 0.3, z, 0.7 + kr() * 0.8, 1));
+        } else {
+          if (!free(x, z, 0.6)) continue;
+          take(x, z, 0.6);
+          L.fern.push(pl(x, h - 0.15, z, 0.9 + kr() * 0.7, Math.floor(kr() * 2)));
+        }
+        t.stampAO(x, z, 1.6, 0.22);
+        placed++;
       }
     }
 
@@ -473,7 +526,7 @@ export class Vegetation {
     this.terrain.islands.forEach((isl, i) => {
       const L = this.lists[i];
       const f: IslandFlora = {
-        near: new THREE.Group(), far: new THREE.Group(), always: new THREE.Group(), nearB: [], farB: [], alwaysB: [],
+        near: new THREE.Group(), far: new THREE.Group(), always: new THREE.Group(), nearB: [], farB: [], alwaysB: [], split: false,
         cx: isl.x, cy: isl.peak * 0.4, cz: isl.z, ext: isl.r * Math.max(isl.stretch, 1 / isl.stretch) * 1.15, peak: isl.peak, isNear: true,
       };
       f.near.name = `flora-near-${i}`;
@@ -498,7 +551,7 @@ export class Vegetation {
         mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
         const shown = new Uint32Array(n);
         for (let k = 0; k < n; k++) shown[k] = k;
-        return { mesh, mat: mats, col: (mesh.instanceColor!.array as Float32Array).slice(), sph, shown, n, shadows };
+        return { mesh, mat: mats, col: (mesh.instanceColor!.array as Float32Array).slice(), sph, shown, n, shadows, reach: 1 };
       };
 
       const add = (list: Placement[], geos: THREE.BufferGeometry[], mat: THREE.Material, tint: Tint, o: Opts = {}) => {
@@ -521,14 +574,20 @@ export class Vegetation {
           inst.computeBoundingSphere();
           const mats = (inst.instanceMatrix.array as Float32Array).slice();
           (o.always ? f.always : f.near).add(inst);
-          (o.always ? f.alwaysB : f.nearB).push(batch(inst, geos[v], mats, inst.castShadow));
+          const nb = batch(inst, geos[v], mats, inst.castShadow);
+          // ground cover has no far LOD to hand over to: it carries on a little further, then stops
+          if (!o.lo && !o.shadow) nb.reach = 1.6;
+          (o.always ? f.alwaysB : f.nearB).push(nb);
           if (o.shadow) {
             const sh = shadowOnly(new THREE.InstancedMesh(o.shadow[v], mat, sub.length));
             (sh.instanceMatrix.array as Float32Array).set(mats);
             sh.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
             sh.boundingSphere = inst.boundingSphere;
             f.near.add(sh);
-            f.nearB.push(batch(sh, o.shadow[v], mats, true));
+            // the far LOD casts no shadow of its own: the stand-in keeps casting out to the shadow map's edge
+            const sb = batch(sh, o.shadow[v], mats, true);
+            sb.reach = 1.5;
+            f.nearB.push(sb);
           }
           if (o.lo) {
             // the far LOD plants the very same instances, culled on their own
@@ -583,14 +642,18 @@ export class Vegetation {
     if (this.hold) return;
     const cam = camera.position;
     const reach = (this.lite ? 150 : 210) + Math.max(cam.y, 0) * 0.9;
-    let swapped = false;
+    const R = this.detail;
+    let swapped = R !== this.cullDetail;
+    this.cullDetail = R;
     for (const f of this.flora) {
       const d = Math.hypot(cam.x - f.cx, cam.y - f.cy, cam.z - f.cz) - f.ext;
       const near = d < reach + (f.isNear ? 30 : 0);
-      if (near === f.isNear) continue;
+      const split = near && Number.isFinite(R) && d + f.ext * 2 > R;
+      if (near === f.isNear && split === f.split) continue;
       f.isNear = near;
+      f.split = split;
       f.near.visible = near;
-      f.far.visible = !near;
+      f.far.visible = !near || split;
       swapped = true;
     }
 
@@ -624,8 +687,14 @@ export class Vegetation {
       // the whole island first: plants and shadows wholly out of view drop out at once
       const L = f.peak + 24;
       const island = this.inView(f.cx, f.cy, f.cz, f.ext * 1.42 + f.peak, sx * L, sy * L, sz * L);
-      this.cullBatches(f.alwaysB, island, sx, sy, sz);
-      this.cullBatches(f.isNear ? f.nearB : f.farB, island, sx, sy, sz);
+      this.cullBatches(f.alwaysB, island, sx, sy, sz, cam, 0, Infinity);
+      if (!f.isNear) this.cullBatches(f.farB, island, sx, sy, sz, cam, 0, Infinity);
+      else if (!f.split) this.cullBatches(f.nearB, island, sx, sy, sz, cam, 0, Infinity);
+      else {
+        // detailed up close, the far LOD from the detail radius out
+        this.cullBatches(f.nearB, island, sx, sy, sz, cam, 0, R);
+        this.cullBatches(f.farB, island, sx, sy, sz, cam, R, Infinity);
+      }
     }
   }
 
@@ -640,9 +709,12 @@ export class Vegetation {
     return true;
   }
 
-  private cullBatches(list: Batch[], island: boolean, sx: number, sy: number, sz: number) {
+  /** Packs the plants in view (and, for a split island, within or beyond `inner`..`outer` of the eye times each batch's reach) to the front. */
+  private cullBatches(list: Batch[], island: boolean, sx: number, sy: number, sz: number, eye: THREE.Vector3, inner: number, outer: number) {
     for (const b of list) {
       const { sph, shown, mat, col } = b;
+      const lo = inner * inner;
+      const hi = outer * b.reach * (outer * b.reach);
       const dst = b.mesh.instanceMatrix.array as Float32Array;
       const dcol = b.mesh.instanceColor!.array as Float32Array;
       let k = 0;
@@ -651,6 +723,10 @@ export class Vegetation {
       if (island) {
         for (let i = 0; i < b.n; i++) {
           const r = sph[i * 4 + 3];
+          if (inner > 0 || outer < Infinity) {
+            const d2 = (sph[i * 4] - eye.x) ** 2 + (sph[i * 4 + 1] - eye.y) ** 2 + (sph[i * 4 + 2] - eye.z) ** 2;
+            if (d2 < lo || d2 >= hi) continue;
+          }
           // the shadow can run on down the slope as far as the sea
           const L = b.shadows ? Math.max(2 * r, sph[i * 4 + 1] + r) + 1 : 0;
           if (!this.inView(sph[i * 4], sph[i * 4 + 1], sph[i * 4 + 2], r, sx * L, sy * L, sz * L)) continue;
