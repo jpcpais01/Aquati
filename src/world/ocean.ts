@@ -5,7 +5,7 @@ import { GLSL_WAVES, packWaves, Wave } from './waves';
 import { WORLD_SIZE } from './terrain';
 import { WakeField } from './wakeField';
 import { GLSL_SURF, shoreUniforms } from './shore';
-import { GLSL_VORTEX, VORTEX_N } from './vortex';
+import { GLSL_VORTEX, VORTEX_N, VORTEX_RIM, vortexDepth } from './vortex';
 
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
@@ -97,6 +97,46 @@ function gridMesh(tiles: THREE.BufferGeometry[], material: THREE.Material, order
   return g;
 }
 
+/**
+ * A maelstrom's own patch of sea: rings round its eye, packed tight toward the
+ * throat so the steep walls stay smooth at any range, and reaching a little
+ * past the rim to tuck under the flat sea. Positions are polar offsets in
+ * radii, with the uniform slot (+ 1) in y; the vertex shader places them.
+ */
+function buildFunnel(slot: number, rings: number, segs: number): THREE.BufferGeometry {
+  const pos = new Float32Array((rings + 1) * segs * 3);
+  for (let j = 0; j <= rings; j++) {
+    const s = VORTEX_RIM * Math.pow((j + 0.3) / (rings + 0.3), 1.7);
+    for (let i = 0; i < segs; i++) {
+      const a = (i / segs) * Math.PI * 2;
+      const k = (j * segs + i) * 3;
+      pos[k] = Math.cos(a) * s;
+      pos[k + 1] = slot + 1;
+      pos[k + 2] = Math.sin(a) * s;
+    }
+  }
+  const idx = new Uint16Array(rings * segs * 6);
+  let p = 0;
+  for (let j = 0; j < rings; j++) {
+    for (let i = 0; i < segs; i++) {
+      const a = j * segs + i;
+      const b = j * segs + ((i + 1) % segs);
+      const c = a + segs;
+      const d = b + segs;
+      idx[p++] = a;
+      idx[p++] = b;
+      idx[p++] = c;
+      idx[p++] = b;
+      idx[p++] = d;
+      idx[p++] = c;
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  return g;
+}
+
 /** A coarse square apron from just inside the grid's rim out toward the horizon,
  *  so the sea runs all the way to the sky from the captain's eyes. */
 function buildApron(inner: number, outer: number): THREE.BufferGeometry {
@@ -150,22 +190,48 @@ const OCEAN_VERT = /* glsl */ `
   varying float vTerrain;
   varying float vViewDist;
   varying vec4 vShore;
+  varying float vCut;
   void main() {
-    vec4 wp = modelMatrix * vec4(position, 1.0);
+    // a maelstrom's ring mesh says which in y (slot + 1) and holds polar
+    // offsets in xz, in radii; the sea's own grid lies flat at y = 0
+    vec4 wp;
+    bool funnel = position.y > 0.5;
+    vCut = -1.0;
+    if (funnel) {
+      vec4 v = uVortex[int(position.y - 0.5)];
+      if (abs(v.w) < 0.001) {
+        // a still slot: out of sight, out of the way
+        gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
+        return;
+      }
+      wp = vec4(v.x + position.x * v.z, 0.0, v.y + position.z * v.z, 1.0);
+    } else {
+      wp = modelMatrix * vec4(position, 1.0);
+      #ifndef VX_GRID_DIP
+      // inside a maelstrom's rim the ring mesh draws the sea instead
+      vCut = vortexCut(wp.xz);
+      #endif
+    }
     vec2 huv = (wp.xz - uWorldRect.xy) * uWorldRect.w;
     float th = texture(uHeightTex, huv).r;
     vTerrain = th;
     float damp = clamp(-th / 8.0, 0.12, 1.0);
     // a maelstrom smooths the swell as it spins the water round, and draws
-    // the surface down into its funnel (the CPU buoyancy reads the same shape)
-    vec2 vxGrad;
-    float vxDip = vortexDip(wp.xz, vxGrad);
+    // the surface down its walls into the throat (the CPU buoyancy reads the
+    // same funnel), the spiral ridges riding round and down it
     damp *= vortexCalm(wp.xz);
+    vec2 vxGrad = vec2(0.0);
+    float vxH = 0.0;
+    #ifdef VX_GRID_DIP
+    vxH = vortexHeight(wp.xz, uTime, false, vxGrad);
+    #else
+    if (funnel) vxH = vortexHeight(wp.xz, uTime, true, vxGrad);
+    #endif
     vec3 n; float crest;
     vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
     wp.xyz += off;
-    wp.y -= vxDip;
-    n.xz += vxGrad * n.y;
+    wp.y += vxH;
+    n.xz -= vxGrad * n.y;
     // wake waves ride on top of the swell
     vec2 wuv = (wp.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
     vec2 wb = min(wuv, 1.0 - wuv);
@@ -221,6 +287,7 @@ const REFL_FRAG = /* glsl */ `
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying float vViewDist;
+  varying float vCut;
 
   vec4 traceReflection(vec3 wp, vec3 R) {
     vec3 vp = (viewMatrix * vec4(wp, 1.0)).xyz;
@@ -272,6 +339,7 @@ const REFL_FRAG = /* glsl */ `
   void main() {
     // water hidden well behind an island or hull needs no reflection; a
     // little slack keeps the waterline valid for the full-res upsample
+    if (vCut > 0.0) discard;
     vec2 suv = gl_FragCoord.xy / uReflRes;
     if (linearDepth(texture(uSceneDepth, suv).r) < linearDepth(gl_FragCoord.z) - 1.5) discard;
     // trace along the smooth swell so neighbouring pixels agree; the main
@@ -374,6 +442,12 @@ export class Ocean {
   private readonly reflMesh: THREE.Group;
   private readonly reflApron: THREE.Mesh;
   private snap: number;
+  /**
+   * Each maelstrom's funnel, drawn with the sea's own material (one program)
+   * on a ring mesh of its own; the flat grid steps aside inside its rim.
+   */
+  readonly funnels = new THREE.Group();
+  private readonly reflFunnels = new THREE.Group();
 
   constructor(waves: Wave[], opts: OceanOptions) {
     const tex = getSharedTextures();
@@ -432,6 +506,7 @@ export class Ocean {
         varying float vTerrain;
         varying float vViewDist;
         varying vec4 vShore;
+        varying float vCut;
         #ifdef WATER_SHADOW
           uniform sampler2DShadow uShadowMap;
           uniform mat4 uShadowMatrix;
@@ -482,6 +557,8 @@ export class Ocean {
         }
 
         void main() {
+          // a maelstrom's own ring mesh draws the sea inside its rim
+          if (vCut > 0.0) discard;
           vec2 suv = gl_FragCoord.xy / uResolution;
           // manual depth test against the opaque pass (hulls, islands above the
           // surface), first thing, so hidden water costs next to nothing
@@ -641,7 +718,7 @@ export class Ocean {
           // flow; the walls ridge with the spin, and a ring of churn boils
           // round the black throat at its heart.
           float vxCover = 0.0;
-          float vxFoamSum = 0.0;
+          float vxWall = 0.0;
           float vxDark = 0.0;
           float vxEye = 0.0;
           float vxMilk = 0.0;
@@ -668,13 +745,14 @@ export class Ocean {
             vec2 qx = dFdx(q), qy = dFdy(q);
             float dd = max(d * d, 1e-3);
             vec2 gA = vec2(q.x * qx.y - q.y * qx.x, q.x * qy.y - q.y * qy.x) / dd * (4.0 / 6.2832);
-            vec2 gR = vec2(dot(q, qx), dot(q, qy)) / max(d * (d + 4.0), 1e-3) * 3.2;
+            vec2 gR = vec2(dot(q, qx), dot(q, qy)) / max(d * (d + 4.0), 1e-3) * 8.0;
             float PER = 7.0;
             float f0 = fract(t / PER);
             float f1 = fract(t / PER + 0.5);
             float c0 = floor(t / PER);
             float c1 = floor(t / PER + 0.5);
-            vec2 vuv = vec2(a / 6.2832 * 4.0, lr * 3.2);
+            // stretched along the flow: long thin streaks, not blotches
+            vec2 vuv = vec2(a / 6.2832 * 4.0, lr * 8.0);
             // explicit gradients: the angle jumps a whole tile at the seam, which
             // would otherwise drop that column of pixels to the coarsest mip
             vec2 gx = vec2(gA.x, gR.x), gy = vec2(gA.y, gR.y);
@@ -691,18 +769,20 @@ export class Ocean {
             float filPh = armPh * 3.0 + streak * 3.5;
             float filAA = 1.0 - smoothstep(0.7, 1.8, fwidth(filPh));
             float fil = smoothstep(0.5, 0.95, sin(filPh)) * smoothstep(0.42, 0.75, streak + inward * 0.25) * filAA;
-            float cov = band * k * (smoothstep(0.2 - inward * 0.45, 0.95, armS) * (0.28 + 0.62 * inward) + fil * (0.18 + 0.4 * inward) + smoothstep(0.62, 0.9, streak) * 0.2);
+            float cov = band * k * (smoothstep(0.38 - inward * 0.3, 0.97, armS) * (0.3 + 0.5 * inward) + fil * (0.16 + 0.34 * inward) + smoothstep(0.66, 0.9, streak) * 0.18);
             // the churning collar round the throat
             float ring = exp(-pow((u - 0.115) / 0.045, 2.0)) * k;
-            cov = max(cov, ring * (0.75 + 0.25 * streak));
+            cov = max(cov, ring * (0.3 + 0.4 * streak));
             vxCover = max(vxCover, clamp(cov, 0.0, 0.97));
+            // down the steep walls, white streaks drawn out along the flow
+            vxWall = max(vxWall, k * smoothstep(0.58, 0.85, streak + fil * 0.25) * smoothstep(0.02, 0.07, u) * (1.0 - smoothstep(0.3, 0.55, u)));
             // ridged walls: the arms stand up in low ridges, catching the light
             vec2 rdir = q / max(d, 1e-3);
             vec2 tdir = vec2(-rdir.y, rdir.x) * dir;
             float rel = cos(armPh) * band * k;
-            N = normalize(N + vec3(rdir.x, 0.0, rdir.y) * rel * 0.16 + vec3(tdir.x, 0.0, tdir.y) * (streak - 0.5) * band * k * 0.12);
-            vxDark = max(vxDark, k * (1.0 - smoothstep(0.0, 0.85, u)));
-            vxEye = max(vxEye, k * (1.0 - smoothstep(0.03, 0.105, u)));
+            N = normalize(N + vec3(rdir.x, 0.0, rdir.y) * rel * 0.05 + vec3(tdir.x, 0.0, tdir.y) * (streak - 0.5) * band * k * 0.12);
+            vxDark = max(vxDark, k * (1.0 - smoothstep(0.0, 0.6, u)));
+            vxEye = max(vxEye, k * (1.0 - smoothstep(0.0, 0.07, u)));
             // churned to milk where the walls steepen: water beaten full of air
             vxMilk = max(vxMilk, k * smoothstep(0.07, 0.14, u) * (1.0 - smoothstep(0.16, 0.5, u)) * (0.6 + 0.4 * streak));
           }
@@ -786,7 +866,7 @@ export class Ocean {
 
           // the funnel's walls fall away into shadow, its throat into black water
           if (vxDark > 0.001) {
-            body *= 1.0 - vxDark * 0.42;
+            body *= 1.0 - vxDark * 0.25;
             body = mix(body, vec3(0.13, 0.24, 0.25) * light, clamp(vxMilk * 0.5, 0.0, 0.45));
             body = mix(body, vec3(0.002, 0.018, 0.028) * light, clamp(vxEye, 0.0, 0.92));
           }
@@ -889,8 +969,11 @@ export class Ocean {
           foam += spume * (0.5 + 0.5 * bubbles) + rainSplash * 0.7;
           // a maelstrom's arms, cut from the bubble web swept round with them
           float vxFoam = 0.0;
-          if (vxCover > 0.002) {
-            vxFoam = foamCut(fv, vxCover, fp) * 0.95;
+          if (vxCover + vxWall > 0.002) {
+            // the bubble web lies flat on the sea; on the funnel's walls it would
+            // smear down the slope, so there the streaks take over
+            float steep = smoothstep(0.1, 0.35, 1.0 - normalize(vNormal).y);
+            vxFoam = mix(foamCut(fv, vxCover, fp) * 0.95, vxWall * 0.8, steep);
             foam += vxFoam;
           }
           // the swell trips over an open-sea reef: each crest stands up and spills
@@ -922,6 +1005,11 @@ export class Ocean {
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;
           }
+
+          // ---- down a maelstrom's throat the walls shut out the sky: the
+          // water darkens with depth into a black-green abyss
+          float vxOcc = smoothstep(3.5, 30.0, -vWorld.y);
+          col *= 1.0 - vxOcc * 0.85;
 
           // ---- atmospheric haze
           // the far sea lies under the haze a shade deeper and bluer than the
@@ -955,6 +1043,16 @@ export class Ocean {
     this.reflApron.visible = false;
     this.reflMesh.add(this.reflApron);
     this.reflScene.add(this.reflMesh);
+    for (let i = 0; i < VORTEX_N; i++) {
+      const m = new THREE.Mesh(buildFunnel(i, 56, 144), this.material);
+      m.renderOrder = -10;
+      m.frustumCulled = false;
+      this.funnels.add(m);
+      const r = new THREE.Mesh(buildFunnel(i, 28, 72), this.reflMaterial);
+      r.frustumCulled = false;
+      this.reflFunnels.add(r);
+    }
+    this.reflScene.add(this.reflFunnels);
 
     // the same patches as the sea above, so it is culled the same way
     const tiles = this.mesh.children.filter((o) => o !== this.apron).map((o) => (o as THREE.Mesh).geometry);
@@ -962,7 +1060,8 @@ export class Ocean {
       tiles,
       new THREE.ShaderMaterial({
         uniforms: { ...uniforms },
-        defines: { HQ: this.material.defines.HQ },
+        // too rare a view for ring meshes of its own: the coarse grid takes the funnel
+        defines: { HQ: this.material.defines.HQ, VX_GRID_DIP: 1 },
         side: THREE.BackSide,
         vertexShader: OCEAN_VERT,
         fragmentShader: UNDER_FRAG,
@@ -982,7 +1081,23 @@ export class Ocean {
     this.under = on;
     this.mesh.visible = !on;
     this.reflMesh.visible = !on;
+    this.funnels.visible = !on;
+    this.reflFunnels.visible = !on;
     this.underside.visible = on;
+  }
+
+  /** Bounds each maelstrom's funnel where it turns, so it is skipped out of view. */
+  placeVortices(list: { x: number; z: number; r: number }[]) {
+    for (let i = 0; i < VORTEX_N; i++) {
+      const v = list[i];
+      for (const m of [this.funnels.children[i], this.reflFunnels.children[i]] as THREE.Mesh[]) {
+        m.frustumCulled = !!v;
+        if (!v) continue;
+        // room for a storm's wider pull and the full depth of the throat
+        const R = v.r * 1.15 * VORTEX_RIM;
+        m.geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(v.x, -vortexDepth(R, 1.4) * 0.5, v.z), Math.hypot(R, vortexDepth(R, 1.4)) + SWELL_PAD);
+      }
+    }
   }
 
   /** Pushes changed wave amplitudes / steepness (sea state) to the GPU. */

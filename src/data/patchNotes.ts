@@ -26,6 +26,24 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'The maelstroms are real holes in the sea now',
+        notes: [
+          'The maelstroms have been rebuilt from the water up. The sea itself now sinks into a vast funnel: a wide bowl that falls away down steep walls into a throat over thirty metres deep, with an abyss opening in the seabed beneath it. Spiral ridges of water wind round and down the walls, and white streaks are drawn out along the flow as it pours toward the eye.',
+          'It is the same water as the rest of the ocean, with the same light, reflections and colour, so the walls catch the sun and the sky, and the deeper you look the darker it gets until the throat is black.',
+          'They are bigger too, pulling from 100 to 128 metres out, and wilder and deeper in a storm.',
+          'Ships ride right down the funnel: they sit on its wall, heel in toward the eye and spiral down. The strain on the hull now starts sooner and bites harder, so get out while you still can.',
+        ],
+      },
+      {
+        title: 'Reset the world',
+        notes: [
+          'Settings has a new World section with a Reset the world button, on the home screen and in the pause menu. It unfolds into a card that shows exactly what is swept away and what you keep, and asks you to confirm before anything happens.',
+          'A reset gives you a fresh sea: every fort you took goes back to the Brethren, your infamy and the Wanted Board start over, your treasure map and dig tally are torn up, prize ships go back to sea, and your waypoints are lifted. If you\'re out on a voyage, it ends and you sail home to harbour with every wreck and pirate cleared away.',
+          'Your account, every coin of gold, your ships, skins, effects, parts, liveries, saved designs, escorts you hired for gold and your records all stay yours.',
+          'It works with cloud saves: a reset on one device carries to your others the next time they sync, and old progress from before the reset never sneaks back in.',
+        ],
+      },
+      {
         title: 'Treasure maps you\'ll want to frame',
         notes: [
           'The treasure map is redrawn as a proper pirate chart: the island in ink and watercolour with its coast echoed out to sea, hills, palms, a compass rose with rhumb lines, the isle\'s name on a ribbon, a scale of paces, the odd sea serpent, coffee rings and scorched edges. The three torn pieces lie together on the table with ragged, fibrous tears, and a piece you haven\'t looked at yet swoops into place the first time you open the map.',

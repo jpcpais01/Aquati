@@ -53,6 +53,8 @@ export const CELL = 2;
 export const GRID_N = WORLD_SIZE / CELL + 1;
 const HALF = WORLD_SIZE / 2;
 export const FLOOR_DEPTH = -17;
+/** The floor of an abyss under a maelstrom's eye (m). */
+const ABYSS = -92;
 
 // An invented island tongue: Spanish at heart, Portuguese in the vowels, a
 // French lilt, Dutch dikes and corners, and old Taíno words underneath.
@@ -86,6 +88,8 @@ export class Terrain {
   private lastLagoon = 0;
   /** Open-sea coral reefs (see Reef). */
   readonly reefs: Reef[] = [];
+  /** Abysses carved under the maelstroms, so their throats have somewhere to go. */
+  readonly abysses: { x: number; z: number; r: number }[] = [];
   /** How much reef each cell is (0..1): living coral a keel can strike. */
   private reefMask = new Float32Array(GRID_N * GRID_N);
   private simplex: Simplex2;
@@ -452,6 +456,28 @@ export class Terrain {
     });
   }
 
+  /**
+   * Bores an abyss into the seabed under a maelstrom: the floor falls away from
+   * its rim to ABYSS deep under the eye, so its throat can drop tens of metres
+   * through open water. Call before buildMeshes and createHeightTexture.
+   */
+  carveAbyss(x: number, z: number, r: number) {
+    this.abysses.push({ x, z, r });
+    const H = this.heights;
+    const i0 = Math.max(0, Math.floor((x - r + HALF) / CELL));
+    const i1 = Math.min(GRID_N - 1, Math.ceil((x + r + HALF) / CELL));
+    const j0 = Math.max(0, Math.floor((z - r + HALF) / CELL));
+    const j1 = Math.min(GRID_N - 1, Math.ceil((z + r + HALF) / CELL));
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const u = Math.hypot(-HALF + i * CELL - x, -HALF + j * CELL - z) / r;
+        if (u >= 1) continue;
+        const k = j * GRID_N + i;
+        H[k] = Math.min(H[k], lerp(ABYSS, H[k], smoothstep(0.08, 1, u)));
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- queries
 
   heightAt(x: number, z: number): number {
@@ -645,8 +671,23 @@ export class Terrain {
     const mat = createTerrainMaterial(lite);
     const chunkCells = 32;
     const chunks = Math.floor((GRID_N - 1) / chunkCells);
+    const span = chunkCells * CELL;
+    // chunks over an abyss are built whole, and the seabed plane leaves them a hole
+    const pit = new Uint8Array(chunks * chunks);
+    for (const a of this.abysses) {
+      for (let cj = 0; cj < chunks; cj++) {
+        for (let ci = 0; ci < chunks; ci++) {
+          const x0 = -HALF + ci * span;
+          const z0 = -HALF + cj * span;
+          const dx = Math.max(x0 - a.x, 0, a.x - x0 - span);
+          const dz = Math.max(z0 - a.z, 0, a.z - z0 - span);
+          if (Math.hypot(dx, dz) < a.r) pit[cj * chunks + ci] = 1;
+        }
+      }
+    }
     for (let cj = 0; cj < chunks; cj++) {
       for (let ci = 0; ci < chunks; ci++) {
+        const inPit = pit[cj * chunks + ci] === 1;
         // skip chunks that are pure deep seafloor (the floor plane covers them)
         let maxH = -1e9;
         for (let j = cj * chunkCells; j <= (cj + 1) * chunkCells; j += 2) {
@@ -655,8 +696,10 @@ export class Terrain {
             if (h > maxH) maxH = h;
           }
         }
-        if (maxH < -14.2) continue;
-        const res = chunkCells / lod;
+        if (maxH < -14.2 && !inPit) continue;
+        // an abyss lies deep under the water: coarser cells do there
+        const step = inPit && maxH < -14.2 ? Math.max(lod, 2) : lod;
+        const res = chunkCells / step;
         const vn = res + 1;
         const pos = new Float32Array(vn * vn * 3);
         const nrm = new Float32Array(vn * vn * 3);
@@ -667,8 +710,8 @@ export class Terrain {
         const reefA = new Float32Array(vn * vn);
         for (let vj = 0; vj < vn; vj++) {
           for (let vi = 0; vi < vn; vi++) {
-            const i = ci * chunkCells + vi * lod;
-            const j = cj * chunkCells + vj * lod;
+            const i = ci * chunkCells + vi * step;
+            const j = cj * chunkCells + vj * step;
             const k = vj * vn + vi;
             const h = this.heights[j * GRID_N + i];
             pos[k * 3] = -HALF + i * CELL;
@@ -696,7 +739,7 @@ export class Terrain {
             const b = a + 1;
             const c = a + vn;
             const d = c + 1;
-            if (pos[a * 3 + 1] < -15.5 && pos[b * 3 + 1] < -15.5 && pos[c * 3 + 1] < -15.5 && pos[d * 3 + 1] < -15.5) continue;
+            if (!inPit && pos[a * 3 + 1] < -15.5 && pos[b * 3 + 1] < -15.5 && pos[c * 3 + 1] < -15.5 && pos[d * 3 + 1] < -15.5) continue;
             // alternate the diagonal for nicer silhouettes
             if ((vi + vj) & 1) idx.push(a, c, b, b, c, d);
             else idx.push(a, c, d, a, d, b);
@@ -723,6 +766,39 @@ export class Terrain {
     // the endless seabed under everything
     const floorGeo = new THREE.PlaneGeometry(WORLD_SIZE * 3, WORLD_SIZE * 3, 1, 1);
     floorGeo.rotateX(-Math.PI / 2);
+    if (this.abysses.length) {
+      // the plane in chunk-sized squares, leaving out those over an abyss
+      // (rows of squares merge into strips, so it stays a few hundred triangles)
+      const Q = Math.round((WORLD_SIZE * 3) / span);
+      const o = -(WORLD_SIZE * 3) / 2;
+      const off = Math.round((o + HALF) / span);
+      const fp: number[] = [];
+      const fi: number[] = [];
+      const strip = (x0: number, x1: number, z0: number, z1: number) => {
+        const b = fp.length / 3;
+        fp.push(x0, 0, z0, x1, 0, z0, x0, 0, z1, x1, 0, z1);
+        fi.push(b, b + 2, b + 1, b + 1, b + 2, b + 3);
+      };
+      for (let qj = 0; qj < Q; qj++) {
+        let start = -1;
+        for (let qi = 0; qi <= Q; qi++) {
+          const ci = qi + off;
+          const cj = qj + off;
+          const hole = qi < Q && ci >= 0 && cj >= 0 && ci < chunks && cj < chunks && pit[cj * chunks + ci] === 1;
+          const open = qi < Q && !hole;
+          if (open && start < 0) start = qi;
+          if (!open && start >= 0) {
+            strip(o + start * span, o + qi * span, o + qj * span, o + (qj + 1) * span);
+            start = -1;
+          }
+        }
+      }
+      floorGeo.setIndex(fi);
+      floorGeo.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3));
+      floorGeo.deleteAttribute('uv');
+      floorGeo.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(fp.length / 3).fill(0).flatMap(() => [0, 1, 0]), 3));
+      floorGeo.computeBoundingSphere();
+    }
     const floorMat = patchMaterial(new THREE.MeshStandardMaterial({ color: DEEP_SAND, roughness: 1 }), { caustics: true, detail: true });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.position.y = FLOOR_DEPTH - 1.2;

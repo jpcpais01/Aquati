@@ -81,6 +81,13 @@ export class World {
     return waveHeight(this.waves, x, z, this.time, this.waterDamp(x, z) * calm) - dip;
   }
 
+  /** How far the maelstroms draw the sea down at (x, z) (m, positive = lower). */
+  funnelAt(x: number, z: number) {
+    let dip = 0;
+    for (const v of this.vortices) dip += vortexDip(v, x, z);
+    return dip;
+  }
+
   /** Volume, pan and distance (m) for a sound at a world position relative to the camera. */
   soundAt(p: THREE.Vector3): [number, number, number] {
     const dx = p.x - this.listener.x;

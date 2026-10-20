@@ -65,6 +65,12 @@ export class TreasureMaps {
     this.state = readMaps() ?? freshMaps();
   }
 
+  /** A fresh sea: no map in hand, nothing dug. */
+  wipe() {
+    this.state = freshMaps();
+    this.save();
+  }
+
   get count() {
     return pieceCount(this.state.pieces);
   }
