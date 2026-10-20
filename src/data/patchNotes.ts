@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T18:00Z',
     entries: [
       {
+        title: 'Walk the islands through your own eyes',
+        notes: [
+          'Going ashore now brings the camera down out of the sky, round behind your captain and into their eyes. The palms tower over you, the surf runs up the sand at your feet and your ship rides at anchor out in the bay. Look around with the mouse (click once to grab it) or drag on the right of a touch screen, and walk where you look with WASD or the stick.',
+          'The view moves like a person walking: it dips at every footfall, sways from foot to foot, opens up a little when you run and breathes when you stand still. Steps and rocks are smoothed out instead of jolting you.',
+          'You can see your own hands. The cutlass comes up when you draw it and sweeps across the view in each of the three cuts, with the lunge driving you forward. The flintlock rises on right-click (or Q, or Pistol on touch), kicks when it fires and smokes from its own muzzle. At the X you dig with your own spade while your eyes stay on the hole. A blow knocks your head aside, and if you go down the world tips over onto the sand.',
+          'A small sight in the middle of the screen closes in when a cutthroat is within reach of your blade, and a ring around it shows the pistol reloading. Cuts and shots still lock onto the nearest foe in front of you, and your head turns to follow them.',
+          'Prefer the old view? V or the eye button switches to the view from above and back again, and the game remembers your choice. Boarding fights keep their deck camera. From eye level, trees far across the island use their lighter models, so walking the islands stays smooth.',
+        ],
+      },
+      {
         title: 'A tidier sky badge',
         notes: [
           'Tapping the weather or the clock under the map no longer makes the whole badge jump down, fade and turn into spaced-out capitals. It stays exactly where it is.',

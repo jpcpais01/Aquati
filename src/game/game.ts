@@ -81,6 +81,7 @@ import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } f
 import { ShipStatus, World } from './world';
 import { campClearings, digSite, Disc, findCampSites, Ground, Landing } from '../shore/ground';
 import { Camp, Shore, ShoreInput } from '../shore/shore';
+import type { Walker } from '../shore/walker';
 import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
 import { rollTier } from './loot';
 import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarned, KILL_INFAMY, NamedCaptain, REPUTE, wantedLevel } from './bounty';
@@ -105,6 +106,7 @@ const _shear = new THREE.Matrix4();
 const SHADOW_TOP = 320;
 const SHADOW_FLOOR = -140;
 import { ShipCollisions } from './collisions';
+import { FootEye } from './footEye';
 
 type State = 'loading' | 'menu' | 'port' | 'playing' | 'paused' | 'docked' | 'dead';
 
@@ -134,6 +136,15 @@ const _swayV = new THREE.Vector3();
 const WRECK_TIMBER = [new THREE.Color(0.42, 0.29, 0.18), new THREE.Color(0.55, 0.4, 0.26), new THREE.Color(0.33, 0.24, 0.16)];
 
 const BOARD_SEEN_KEY = 'aquati.boardSeen';
+/** Walking islands through the captain's eyes ('1', the default) or from above ('0'). */
+const SHORE_EYE_KEY = 'aquati.shoreEye';
+const loadShoreEye = () => {
+  try {
+    return localStorage.getItem(SHORE_EYE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+};
 /** `?maelstrom` / `?reef` set sail a little way off the first maelstrom / reef (for trying them out). */
 const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(location.search) ? 'maelstrom' : /[?&]reef\b/.test(location.search) ? 'reef' : null) : null;
 /** `?brumas` / `?highseas` set sail off Las Brumas / out on the high seas between the archipelagos (for a look). */
@@ -336,7 +347,18 @@ export class Game {
   private landT = 0;
   /** The zoom you had at sea, given back when you row out again. */
   private seaZoom = 0.42;
-  private shoreIn: ShoreInput = { mx: 0, mz: 0, run: false, strike: false, pistol: false, interact: false, aim: null };
+  private shoreIn: ShoreInput = { mx: 0, mz: 0, run: false, strike: false, pistol: false, interact: false, aim: null, face: null };
+  /** Ashore, the captain's own eyes: the look, the gait in the head, the kicks. */
+  private footEye = new FootEye();
+  /** Walking islands through the captain's eyes (V switches to the bird's-eye view; remembered). */
+  private shoreEyePref = loadShoreEye();
+  /** A beat after a landing before the camera drops into the captain's eyes. */
+  private eyeWait = 0;
+  /** Swooping up out of the captain's eyes before the boat pushes off. */
+  private shoreLeaving = false;
+  private eyeLook = { x: 0, y: 0 };
+  private eyeAim = { x: 0, z: 0 };
+  private lastLockT = -9;
   private shoreFocus = new THREE.Vector3();
   private shoreVel = new THREE.Vector3();
   private partyRows: PartyRow[] = [];
@@ -1759,13 +1781,25 @@ export class Game {
       this.rig.snapFoot();
       const cap = this.shore.captain!;
       this.rig.snapTo(this.shoreFocus.set(cap.x, cap.y + 1, cap.z));
+      // the veil lifts on the party at the waterline, seen from behind the captain,
+      // then the camera drops into their eyes
+      this.footEye.begin(cap);
+      this.rig.footAz = this.shoreEyePref ? cap.yaw + Math.PI : 0;
+      this.rig.snapFoot();
+      this.eyeWait = 0.5;
+      this.shoreLeaving = false;
       this.input.enabled = true;
       this.note('isle', `Went ashore on ${L.island.name}`);
       this.audio.splash(0.35, 0, 20);
       this.ui.toast('Ashore', `${L.island.name}: your hands follow your lead`, 3.2);
       if (!this.shoreTipShown) {
         this.shoreTipShown = true;
-        const how = this.input.isTouch ? 'Tap Strike to swing, chain three for a lunge · Pistol fires once, then reloads' : 'Space or click swings, chain three for a lunge · Q fires your pistol · Shift runs';
+        const eye = this.shoreEyePref;
+        const how = this.input.isTouch
+          ? `${eye ? 'Drag on the right to look · ' : ''}Tap Strike to swing, chain three for a lunge · Pistol fires once, then reloads`
+          : eye
+            ? 'Click to grab the mouse and look around · Click swings, chain three for a lunge · Right-click fires your pistol · V for the bird\'s-eye view'
+            : 'Space or click swings, chain three for a lunge · Q fires your pistol · Shift runs';
         setTimeout(() => {
           if (this.shore.active) this.ui.toast('Cutlass and pistol', how, 6);
         }, 3800);
@@ -1777,18 +1811,27 @@ export class Game {
   /** Back into the boat and out to the ship, which weighs anchor. */
   private returnToShip(why = '') {
     const p = this.player;
-    if (!p || !this.shore.active || this.swBusy) return;
+    if (!p || !this.shore.active || this.swBusy || this.shoreLeaving) return;
     this.input.enabled = false;
+    this.input.releaseLook();
     this.setChart(false);
-    this.veil.innerHTML = `<span>${why || `Rowing back to the ${p.name}…`}</span>`;
-    void this.fade(() => {
-      this.leaveShore();
-      p.anchored = false;
-      p.sailTarget = 1 / 3;
-      this.input.enabled = this.state === 'playing';
-      this.rig.snapTo(p.pos);
-      this.last = performance.now();
-    });
+    const row = () => {
+      if (!this.shore.active) return;
+      this.veil.innerHTML = `<span>${why || `Rowing back to the ${p.name}…`}</span>`;
+      void this.fade(() => {
+        this.leaveShore();
+        p.anchored = false;
+        p.sailTarget = 1 / 3;
+        this.input.enabled = this.state === 'playing';
+        this.rig.snapTo(p.pos);
+        this.last = performance.now();
+      });
+    };
+    // up out of the captain's eyes over the beach first, then the veil
+    if (this.rig.eyeBlend > 0.05) {
+      this.shoreLeaving = true;
+      setTimeout(row, 720);
+    } else row();
   }
 
   /** Everyone aboard: the HUD, controls and camera go back to sailing. */
@@ -1800,10 +1843,33 @@ export class Game {
     this.shoreHud.showPrize(null);
     this.shoreHud.show(false);
     this.input.foot = false;
+    this.input.eye = false;
+    this.input.releaseLook();
+    this.shoreLeaving = false;
+    this.shore.eyes = false;
+    this.shoreHud.setEye(false, false, false);
+    this.ui.setFpv(false);
+    if (!this.fpv) this.rig.resetEye();
     this.rig.foot = false;
     this.rig.deck = false;
+    this.rig.footAz = 0;
     this.rig.snapFoot();
     this.rig.zoom = this.seaZoom;
+  }
+
+  /** Ashore: through the captain's eyes, or the bird's-eye view over their shoulder (V). */
+  private setShoreEye(on: boolean) {
+    if (on === this.shoreEyePref) return;
+    this.shoreEyePref = on;
+    try {
+      localStorage.setItem(SHORE_EYE_KEY, on ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+    const cap = this.shore.captain;
+    if (on && cap) this.footEye.begin(cap);
+    if (!on) this.input.releaseLook();
+    this.eyeWait = 0;
   }
 
   /** F or a tap ashore: row back, or open a chest (on a boarded deck: fall back aboard, or take the prize). */
@@ -1828,6 +1894,7 @@ export class Game {
     const p = this.player;
     if (!p) return;
     const L = c.layout.chest;
+    this.footEye.glance(L, 1.1, 4, true);
     const at = new THREE.Vector3(L.x, L.y + 1.2, L.z);
     const fort = !!c.fort;
     // a fort's pay chest holds a garrison's wages, not a cutthroat's pickings
@@ -2082,6 +2149,7 @@ export class Game {
   private onUnearthed(at: THREE.Vector3) {
     const p = this.player;
     if (!p) return;
+    this.footEye.glance(at, 1.6, 3, true);
     const gold = 450 + Math.round(Math.random() * 450);
     p.gold += gold;
     this.vaultStore.earn(gold);
@@ -2752,19 +2820,33 @@ export class Game {
   private controlShore() {
     const st = this.input.state;
     const si = this.shoreIn;
-    // screen-up walks the way the camera looks (north ashore; across her deck when boarding)
-    const az = this.rig.azimuth;
-    const ca = Math.cos(az);
-    const sa = Math.sin(az);
-    si.mx = st.walkX * ca - st.walkY * sa;
-    si.mz = -st.walkX * sa - st.walkY * ca;
+    const cap = this.shore.captain;
     si.run = st.run;
     si.strike = st.fireAuto || st.fireAim;
     si.pistol = st.firePort || st.fireStarboard;
-    si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
+    if (this.input.eye && cap) {
+      // through their eyes: walk where you look, cut and shoot at whatever's under the sight
+      const fe = this.footEye;
+      fe.look(st.lookX, st.lookY);
+      this.eyeLook.x += st.lookX;
+      this.eyeLook.y += st.lookY;
+      fe.walk(st.walkX, st.walkY, si);
+      si.face = fe.yaw;
+      si.aim = si.strike || si.pistol ? fe.ahead(cap, si.pistol ? 12 : 2.4, this.eyeAim) : null;
+    } else {
+      // screen-up walks the way the camera looks (north ashore; across her deck when boarding)
+      const az = this.rig.azimuth;
+      const ca = Math.cos(az);
+      const sa = Math.sin(az);
+      si.mx = st.walkX * ca - st.walkY * sa;
+      si.mz = -st.walkX * sa - st.walkY * ca;
+      si.face = null;
+      si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
+    }
     if (this.prizeOpen && st.ammoPick >= 0 && st.ammoPick <= 2) this.choosePrize((['prize', 'scuttle', 'fleet'] as const)[st.ammoPick]);
     else if (st.helm) this.shoreAct();
-    if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.zoom && !this.input.eye) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.view && !this.shore.deck && !this.shoreLeaving) this.setShoreEye(!this.shoreEyePref);
     if (st.fleet) this.cycleOrder();
     if (st.pause) {
       if (this.mapUi.isOpen) this.setMapView(false);
@@ -5415,6 +5497,7 @@ export class Game {
     const fvel = walker ? this.shoreVel.set(walker.vx, 0, walker.vz) : focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
     this.updateCaptain(dt);
+    if (walker) this.updateFootEye(realDt, walker);
     if (this.photo.active) {
       const ph = this.photo;
       ph.cam.ground = (x, z) => Math.max(this.terrain.heightAt(x, z) + 1.4, w.waterHeight(x, z) + 0.9);
@@ -5443,10 +5526,14 @@ export class Game {
     w.listenerZoom = this.rig.distance;
     this.hazards.sound(w);
     this.updateSeas(dt);
-    // ashore, the leaves between the camera and the captain thin away
+    // ashore, the leaves between the camera and the captain thin away (not once you're behind their eyes)
     const see = globalUniforms.uSeeThru.value;
-    if (walker && !this.photo.active) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5));
+    if (walker && !this.photo.active && eb < 0.9) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5) * (1 - eb));
     else see.w = 0;
+    // the hands follow the camera wherever it went this frame
+    const sh = this.shore;
+    sh.hands.update(realDt, this.rig.camera, walker, this.photo.active ? 0 : eb, this.eyeLook.x, this.eyeLook.y, sh.pistolLoad, w);
+    this.eyeLook.x = this.eyeLook.y = 0;
     P.end();
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
@@ -5564,6 +5651,51 @@ export class Game {
       bars.push({ id: f.id, x: f.x, y: f.y + 2.25 * f.height, z: f.z, hp: f.hp, max: f.maxHp, boss: f.maxHp > 100, label: f.title });
     }
     this.shoreHud.updateBars(bars, this.rig.camera, innerWidth, innerHeight);
+  }
+
+  /**
+   * Ashore: drops the camera into the captain's eyes (or lifts it out), poses
+   * the head on their gait, hides their own figure from themselves and keeps
+   * the sight and the first-person chrome in step.
+   */
+  private updateFootEye(dt: number, cap: Walker) {
+    const sh = this.shore;
+    this.eyeWait = Math.max(0, this.eyeWait - dt);
+    const able = !sh.deck;
+    const want = able && this.shoreEyePref && !this.shoreLeaving && this.eyeWait <= 0 && this.wreck.t < 0;
+    this.rig.firstPerson = want;
+    this.input.eye = want && this.state === 'playing' && !this.photo.active;
+    const fe = this.footEye;
+    // around the eyes the camera keeps behind the captain; from above, north is up again
+    this.rig.footAz = want || this.rig.eyeBlend > 0 ? fe.yaw + Math.PI : 0;
+    // a cut or a shot that found a foe turns the head toward them (more firmly on touch)
+    if (sh.lockT > this.lastLockT) {
+      this.lastLockT = sh.lockT;
+      const f = sh.lockOn;
+      if (f && want) fe.glance(_a.set(f.x, f.y + 1.45 * f.height, f.z), 0.16, this.input.isTouch ? 10 : 5, true);
+    }
+    if (want || this.rig.eyeBlend > 0) {
+      fe.pose(this.state === 'playing' ? dt : 0, cap, this.world.time, sh.treasure, this.rig.eyePos, this.rig.eyeQuat);
+      const a = this.rig.camera.aspect;
+      const base = clamp((2 * Math.atan(Math.tan((42 * Math.PI) / 180) / a) * 180) / Math.PI, 55, 84);
+      // a few degrees wider at a run
+      this.rig.eyeFov = base + fe.sprint * 7;
+    }
+    const eb = this.rig.eyeBlend;
+    cap.hidden = eb > 0.55;
+    sh.eyes = eb > 0.9;
+    const on = eb > 0.5;
+    this.shoreHud.setEye(on, able, this.input.mouseLocked || this.input.isTouch);
+    if (on) {
+      // the sight closes in on a foe within the cutlass's reach, dead ahead
+      let foe = false;
+      for (const f of sh.foes) {
+        if (!f.standing) continue;
+        const d = Math.hypot(f.x - cap.x, f.z - cap.z);
+        if (d < 3.6 && Math.abs(angleDelta(fe.yaw, Math.atan2(f.x - cap.x, f.z - cap.z))) < 0.5) foe = true;
+      }
+      this.shoreHud.setReticle(foe, sh.pistolLoad);
+    }
   }
 
   /** Walks the captain, aims their eyes, and keeps the deck chrome in step. */
@@ -5851,6 +5983,8 @@ export class Game {
     }
 
     P.begin('Vegetation culling', 'sim');
+    // from eye level the far LOD takes over from ~85 m out, even on the island underfoot
+    if (this.veg) this.veg.detail = this.rig.eyeBlend > 0.5 && !this.photo.active ? 85 : Infinity;
     this.veg?.update(cam, this.toSun);
     P.end();
     P.begin('Wake simulation', 'ocean', true);

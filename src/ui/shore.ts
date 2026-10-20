@@ -62,6 +62,10 @@ export class ShoreHud {
   private barEls = new Map<number, HTMLElement>();
   private pistolKey = '';
   private hint: HTMLElement;
+  private reticle: HTMLElement;
+  private eyeHint: HTMLElement;
+  private eyeKey = '';
+  private retKey = '';
 
   constructor() {
     const p = (this.panel = document.createElement('div'));
@@ -95,8 +99,18 @@ export class ShoreHud {
 
     const h = (this.hint = document.createElement('div'));
     h.className = 'shore-hint kd';
-    h.innerHTML = '<kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> or click: cutlass · <kbd>Q</kbd> pistol · <kbd>F</kbd> act';
     this.hud.appendChild(h);
+    this.setHintText(false);
+
+    // through the captain's eyes: a sight that closes in on a foe within reach, ringed by the pistol's reload
+    const r = (this.reticle = document.createElement('div'));
+    r.className = 'foot-reticle';
+    r.innerHTML = '<i class="fr-dot"></i><i class="fr-t a"></i><i class="fr-t b"></i><i class="fr-t c"></i><i class="fr-t d"></i><i class="fr-rl"></i>';
+    this.hud.appendChild(r);
+    const eh = (this.eyeHint = document.createElement('div'));
+    eh.className = 'eye-hint';
+    eh.innerHTML = 'Click to look around · <kbd>V</kbd> bird\'s-eye';
+    this.hud.appendChild(eh);
 
     const pad = document.createElement('div');
     pad.className = 'shore-pad';
@@ -122,6 +136,43 @@ export class ShoreHud {
       this.hint.classList.remove('gone');
       setTimeout(() => this.hint.classList.add('gone'), 14000);
     }
+  }
+
+  private setHintText(eye: boolean) {
+    this.hint.innerHTML = eye
+      ? '<kbd>Mouse</kbd> look · <kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Click</kbd> cutlass · <kbd>Right-click</kbd> pistol · <kbd>F</kbd> act · <kbd>V</kbd> view'
+      : '<kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> or click: cutlass · <kbd>Q</kbd> pistol · <kbd>F</kbd> act · <kbd>V</kbd> view';
+  }
+
+  /**
+   * First-person chrome: `on` through the captain's eyes, `able` when the view
+   * can be switched here at all (not on a boarded deck), `locked` once the
+   * mouse is caught for looking.
+   */
+  setEye(on: boolean, able: boolean, locked: boolean) {
+    const key = `${on}|${able}|${locked}`;
+    if (key === this.eyeKey) return;
+    const was = this.eyeKey.split('|')[0] === 'true';
+    this.eyeKey = key;
+    this.hud.classList.toggle('eye', on);
+    this.hud.classList.toggle('eye-able', able);
+    this.eyeHint.classList.toggle('on', on && !locked);
+    if (on !== was) this.setHintText(on);
+    const b = $('btn-view');
+    b.classList.toggle('on', on);
+    b.title = on ? "Bird's-eye view (V)" : "Captain's eyes (V)";
+    b.innerHTML = `<span class="ti">${icon(ICONS[on ? 'bird' : 'eye'])}</span>`;
+  }
+
+  /** The sight: closed in when a foe stands within the cutlass's reach ahead; the pistol's reload as a ring. */
+  setReticle(foe: boolean, load: number) {
+    const q = load >= 1 ? 1 : Math.round(load * 30) / 30;
+    const key = `${foe}|${q}`;
+    if (key === this.retKey) return;
+    this.retKey = key;
+    this.reticle.classList.toggle('foe', foe);
+    this.reticle.classList.toggle('loading', q < 1);
+    this.reticle.style.setProperty('--rl', `${q}`);
   }
 
   setParty(rows: PartyRow[]) {

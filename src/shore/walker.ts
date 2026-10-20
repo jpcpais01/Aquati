@@ -18,7 +18,7 @@ export type Cut = 0 | 1 | 2;
 /** Seconds into a cut: wind-up ends, the blade lands, follow-through ends, back on guard. */
 export const CUT_WIND = [0.17, 0.15, 0.2];
 export const CUT_HIT = [0.23, 0.21, 0.27];
-const CUT_HOLD = [0.34, 0.31, 0.4];
+export const CUT_HOLD = [0.34, 0.31, 0.4];
 export const CUT_END = [0.56, 0.5, 0.66];
 /** The step in behind each cut as the blade comes over (m/s, spent like a shove). */
 const STEP_IN = [1.7, 1.1, 2.9];
@@ -53,6 +53,7 @@ export class Walker implements CrewFigure {
   readonly matrix = new THREE.Matrix4();
   prop: number = PROP.none;
   visible = false;
+  hidden = false;
   // where and how fast
   x = 0;
   z = 0;
