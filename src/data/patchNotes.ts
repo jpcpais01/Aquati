@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T22:00Z',
     entries: [
       {
+        title: 'Forts rebuilt: five different strongholds that fall apart under your guns',
+        notes: [
+          'No two forts look alike any more. Castillo São Felipe keeps its round bastions and domed sentry boxes. Forte Sainte-Bárbara is now a star fort with arrowhead bastions, five guns and a little chapel with a bell. Kasteel do Morro is a squat sandstone tower fort with crenellated corner towers round a tall keep. Up in Las Brumas, Fortaleza da Bruma is a dark, mossy sea keep under steep slate roofs, and Kasteel Nevelrots is a mist castle with tall round towers and cone roofs. Both of those have a timber gallery hung over the gate. Every fort has lanterns lit by its gate at night.',
+          'Forts now show the beating they take. Every ball that hits stone leaves a blackened scar, and blocks break off and tumble down the wall to pile up at its foot (or splash into the sea). Shoot up a gun and the parapet round it caves in before the gun itself is knocked off its carriage and rolls over burning.',
+          'Keep firing at a corner and its tower top comes down in a roar of dust, sentry box, roof and all. When the last gun falls silent, the seaward towers collapse and fire spreads through the barracks roof, leaving charred rafters and a long column of smoke. A shell or hot shot landing in the plaza can set the roof alight sooner.',
+          'A fort you have taken stays scarred. On later voyages its guns are remounted behind wicker gabions and plank barricades where the parapet came down, its seaward towers are still broken, the scars stay on its walls, and your flag flies over it. The fort bar now names what kind of fort it is.',
+        ],
+      },
+      {
         title: 'Camera views at a tap, and the game remembers yours',
         notes: [
           'On phones and tablets a new magnifier button sits with the others under the map. Tap it to step through four views: Close, Mid, Far, and Cinematic, which is the far view leaned over at that more dramatic angle. Four little gold dots on the button show which one you are on, and the name pops up beside it as you tap.',

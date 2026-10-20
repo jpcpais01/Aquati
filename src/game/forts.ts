@@ -1,6 +1,7 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { staticLod } from '../render/staticLod';
-import { angleDelta, clamp, damp } from '../core/noise';
+import { angleDelta, clamp, damp, mulberry32 } from '../core/noise';
 import { progressSaved } from '../core/progress';
 import { currentIsle } from '../data/renamedIsles';
 import { Bucket, Builder } from '../port/port';
@@ -9,7 +10,8 @@ import type { Camp, Garrison } from '../shore/shore';
 import { Ground } from '../shore/ground';
 import { ShoreMats } from '../shore/kit';
 import {
-  buildFort, finishDoors, FORT_H, FORT_T, FORT_WH, FortLayout, FortSite, fortToWorld, GATE_W, GUN_PIVOT, gunParts, rubbleGeometry, worldToFort,
+  blockGeometry, buildFort, Corner, cornerAt, cornerPad, corners, finishDoors, FortLayout, fortReach, FortSite, fortSolid, FortStyle, fortSurface, fortToWorld, GATE_W, GUN_PIVOT, gunParts,
+  pockGeometry, rubbleGeometry, worldToFort,
 } from '../shore/fortKit';
 import type { AmmoId } from './ammo';
 import type { World } from './world';
@@ -26,6 +28,12 @@ import { Grudge, sideOf } from './peace';
 // comes near, it pays a tribute into your purse as the hours pass, and its
 // carpenters patch your hull while you lie under its walls. Forts taken stay
 // taken, voyage after voyage, synced with your account.
+//
+// A fort shows the battering it takes: every ball that strikes stone leaves a
+// blackened scar and knocks blocks tumbling down the face, a gun's stretch of
+// parapet caves in as its crew are shot up, its tower tops come down under a
+// steady fire, and a fort silenced burns, its barracks roof going up in flames.
+// One you've taken stays scarred, its gaps stopped with gabions and planks.
 
 export const FORTS_KEY = 'aquati.forts.v1';
 
@@ -42,6 +50,12 @@ const ARC = 1.3;
 const TURN = 0.62;
 /** A fort's gun stands high: her gunnery may lay on it this far past her usual reach (with the higher arc that takes). */
 const MARK_REACH = 1.3;
+/** Shot scars and fallen blocks each fort keeps (the oldest give way to the newest). */
+const POCKS = 40;
+const DEBRIS = 24;
+/** A gun's parapet caves in once she's this far shot up; a tower's top comes down after this many hits. */
+const PARAPET_HP = 0.5;
+const TOWER_HITS = 4;
 /** Tribute per hour a fort pays, and the most it holds for you (hours' worth). */
 export const TRIBUTE_HOUR = 150;
 const TRIBUTE_CAP = 8;
@@ -140,6 +154,87 @@ export class FortStore {
   }
 }
 
+/**
+ * One fort's breakable stonework, every piece's triangles in one mesh: a piece
+ * that's down has its triangles folded to a point (no draw call, no new
+ * material, one small buffer upload when it goes).
+ */
+class Shards {
+  readonly mesh: THREE.Mesh;
+  private pos: THREE.BufferAttribute;
+  private full: Float32Array;
+  private ranges = new Map<string, [number, number]>();
+  private shown = new Set<string>();
+
+  static make(parts: { key: string; geos: THREE.BufferGeometry[] }[], mat: THREE.Material) {
+    const list = parts.filter((p) => p.geos.length);
+    return list.length ? new Shards(list, mat) : null;
+  }
+
+  private constructor(parts: { key: string; geos: THREE.BufferGeometry[] }[], mat: THREE.Material) {
+    const geos: THREE.BufferGeometry[] = [];
+    let at = 0;
+    for (const p of parts) {
+      const g = mergeGeometries(p.geos)!;
+      const n = g.getAttribute('position').count;
+      this.ranges.set(p.key, [at, n]);
+      this.shown.add(p.key);
+      at += n;
+      geos.push(g);
+    }
+    const geo = mergeGeometries(geos)!;
+    geo.computeBoundingSphere();
+    geo.computeBoundingBox();
+    this.pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    this.full = (this.pos.array as Float32Array).slice();
+    this.mesh = new THREE.Mesh(geo, mat);
+    this.mesh.castShadow = this.mesh.receiveShadow = true;
+    // its pieces come and go: no simplified levels (they'd keep the whole set)
+    this.mesh.userData.noLod = true;
+  }
+
+  set(key: string, on: boolean) {
+    const r = this.ranges.get(key);
+    if (!r || this.shown.has(key) === on) return;
+    const a = this.pos.array as Float32Array;
+    const [i0, n] = r;
+    if (on) a.set(this.full.subarray(i0 * 3, (i0 + n) * 3), i0 * 3);
+    else a.fill(0, i0 * 3, (i0 + n) * 3);
+    if (on) this.shown.add(key);
+    else this.shown.delete(key);
+    // only that piece's stretch of the buffer goes up
+    this.pos.addUpdateRange(i0 * 3, n * 3);
+    this.pos.needsUpdate = true;
+    // nothing of this set standing: no draw at all
+    this.mesh.visible = this.shown.size > 0;
+  }
+
+  all(on: boolean) {
+    for (const k of this.ranges.keys()) this.set(k, on);
+  }
+}
+
+/** A block knocked off a face, tumbling down to lie at its foot. */
+interface Falling {
+  slot: number;
+  p: THREE.Vector3;
+  v: THREE.Vector3;
+  rot: THREE.Euler;
+  spin: THREE.Vector3;
+  s: number;
+  wet: boolean;
+}
+
+/** A fire on the stonework (world), and how long it burns, then smoulders. */
+interface Blaze {
+  at: THREE.Vector3;
+  t: number;
+  flames: number;
+  smoke: number;
+  size: number;
+  acc: number;
+}
+
 export interface Gun {
   fort: Fort;
   index: number;
@@ -188,6 +283,24 @@ export interface Fort {
   up: number;
   hoist: number;
   mine: THREE.Group;
+  style: FortStyle;
+  corners: Corner[];
+  /** Its stonework whole, wrecked, and patched with timber. */
+  shards: { intact: Shards | null; broken: Shards | null; patch: Shards | null };
+  /** Pieces knocked down, and those patched since. */
+  down: Set<string>;
+  patched: Set<string>;
+  /** Hits on each corner's top. */
+  towerHits: number[];
+  roofHits: number;
+  pocks: THREE.InstancedMesh;
+  pockN: number;
+  debris: THREE.InstancedMesh;
+  debrisN: number;
+  falling: Falling[];
+  blazes: Blaze[];
+  /** Pieces to bring down in a moment (after the last gun goes quiet). */
+  pending: { key: string; t: number }[];
 }
 
 export interface FortHooks {
@@ -210,8 +323,14 @@ const _s = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _col = new THREE.Color();
 const _zero = new THREE.Vector3();
+const _q2 = new THREE.Quaternion();
+const _n = new THREE.Vector3();
+const _w = new THREE.Vector3();
 const UNIT = new THREE.Vector3(1, 1, 1);
 const TINY = new THREE.Vector3(1e-4, 1e-4, 1e-4);
+const ZAXIS = new THREE.Vector3(0, 0, 1);
+/** The rubble heap's own stone colour (rubbleGeometry), tinted per fort. */
+const RUBBLE = new THREE.Color(0xe0d2b2).convertSRGBToLinear();
 
 /**
  * The fort's guns as far as the cannonballs, ships' logs and pirates' memories
@@ -238,16 +357,21 @@ export class Forts {
   private doorGroups: THREE.Group[][] = [];
   private flagGeo: THREE.BufferGeometry | null = null;
   private flagMat: THREE.Material | null = null;
+  private height: (x: number, z: number) => number;
   hooks: FortHooks = { openFire: () => {}, struck: () => {}, silenced: () => {}, riled: () => {} };
 
   constructor(sites: (FortSite & { name: string })[], ground: Ground, mats: ShoreMats) {
     this.root.name = 'forts';
     const M = mats as unknown as Record<Bucket, THREE.Material>;
+    this.height = (x, z) => ground.height(x, z);
     const parts = gunParts();
     const rubbleGeo = rubbleGeometry();
+    const pockGeo = pockGeometry();
+    const blockGeo = blockGeometry();
     sites.forEach((site, i) => {
       const b = new Builder();
       const layout = buildFort(b, site, (x, z) => ground.terrain.heightAt(x, z), 7300 + i * 41);
+      const S = layout.style;
       const g = new THREE.Group();
       g.name = `fort-${i}`;
       g.position.set(site.x, site.y, site.z);
@@ -255,13 +379,22 @@ export class Forts {
       b.finish(g, M);
       finishDoors(layout.doors, M);
       layout.doors.forEach((d, k) => {
-        d.position.set((k ? 1 : -1) * (GATE_W / 2), 0, -FORT_H + 0.75);
+        d.position.set((k ? 1 : -1) * (GATE_W / 2), 0, -S.H + 0.75);
         g.add(d);
       });
+      // what a battering knocks down, three ways over
+      const shard = (k: 'intact' | 'broken' | 'patch') => {
+        const sh = Shards.make(layout.pieces.map((p) => ({ key: p.key, geos: p[k].parts.wood })), M.wood);
+        if (sh) g.add(sh.mesh);
+        return sh;
+      };
+      const shards = { intact: shard('intact'), broken: shard('broken'), patch: shard('patch') };
+      shards.broken?.all(false);
+      shards.patch?.all(false);
       this.root.add(g);
       staticLod.add(g);
       // its plaza and ramp are floor to walk on
-      const H = FORT_H;
+      const H = S.H;
       const footY = layout.rampFootY;
       const L = layout.rampLen;
       ground.lifts.push({
@@ -279,9 +412,28 @@ export class Forts {
       const mine = new THREE.Group();
       mine.visible = false;
       this.root.add(mine);
+      const reach = fortReach(S);
+      // the guns traverse and recoil but never leave the rampart: one sphere round the fort holds them
+      const bound = new THREE.Sphere(new THREE.Vector3(site.x, site.y, site.z), reach + 6);
+      // the scars and fallen blocks, in the world's frame
+      const pocks = new THREE.InstancedMesh(pockGeo, mats.wood, POCKS);
+      const debris = new THREE.InstancedMesh(blockGeo, mats.wood, DEBRIS);
+      for (const m of [pocks, debris]) {
+        for (let k = 0; k < m.instanceMatrix.count; k++) {
+          m.setMatrixAt(k, _m.identity());
+          m.setColorAt(k, _col.setRGB(1, 1, 1));
+        }
+        m.count = 0;
+        m.boundingSphere = bound;
+        m.receiveShadow = true;
+        this.root.add(m);
+      }
+      debris.castShadow = true;
       const f: Fort = {
         id, name: site.name, site, layout, guns: [], owner: 'brethren', gunner: gunnerFor(site.name, new THREE.Vector3(site.x, site.y, site.z)), garrison: null,
         alert: false, quiet: 0, grudge: new Grudge(), doors: 0, up: 0, hoist: 0, mine,
+        style: S, corners: corners(S), shards, down: new Set(), patched: new Set(), towerHits: [0, 0, 0, 0], roofHits: 0,
+        pocks, pockN: 0, debris, debrisN: 0, falling: [], blazes: [], pending: [],
       };
       const n = Math.max(1, layout.guns.length);
       const set = {
@@ -289,8 +441,6 @@ export class Forts {
         carriages: new THREE.InstancedMesh(parts.carriage, mats.wood, n),
         rubble: new THREE.InstancedMesh(rubbleGeo, mats.wood, n),
       };
-      // the guns traverse and recoil but never leave the rampart: one sphere round the fort holds them
-      const bound = new THREE.Sphere(new THREE.Vector3(site.x, site.y, site.z), FORT_H * 1.6 + 4);
       for (const m of [set.barrels, set.carriages, set.rubble]) {
         m.castShadow = m.receiveShadow = true;
         for (let i = 0; i < n; i++) {
@@ -321,7 +471,7 @@ export class Forts {
     return this.forts.map((f) => ({
       site: { island: f.site.island, x: f.site.x, z: f.site.z, yaw: f.site.yaw, y: f.site.y },
       layout: f.layout,
-      walls: { x: f.site.x, z: f.site.z, yaw: f.site.yaw, H: FORT_H, T: FORT_T },
+      walls: { x: f.site.x, z: f.site.z, yaw: f.site.yaw, H: f.style.H, T: f.style.T, pad: cornerPad(f.style) },
     }));
   }
 
@@ -366,6 +516,8 @@ export class Forts {
         g.reload = 2 + Math.random() * 3;
         this.pose(g);
       }
+      this.mend(f);
+      if (ours) this.scarred(f);
       if (f.garrison) {
         const c = f.garrison;
         c.empty = ours;
@@ -419,10 +571,25 @@ export class Forts {
         const k = f.doors * f.doors * (3 - 2 * f.doors);
         for (const d of f.layout.doors) d.rotation.y = -(d.userData.side as number) * k * 1.75;
       }
+      // the wreck going on: pieces coming down, blocks tumbling, fires burning
+      for (let i = f.pending.length - 1; i >= 0; i--) {
+        const q = f.pending[i];
+        q.t -= dt;
+        if (q.t > 0) continue;
+        f.pending.splice(i, 1);
+        this.knock(f, q.key, world);
+      }
+      if (f.falling.length) this.tumble(f, dt, world);
+      if (f.blazes.length) this.burn(f, dt, world, near);
       // whom the guns may fire on
       let any = false;
       for (const g of f.guns) {
         if (g.dead) {
+          // knocked off her trunnions: she goes over in a moment
+          if (g.deadT < 0.7) {
+            this.pose(g);
+            dirty = true;
+          }
           g.deadT += dt;
           if (near < 700) this.smoke(g, dt, world);
           continue;
@@ -556,9 +723,10 @@ export class Forts {
   private smoke(g: Gun, dt: number, world: World) {
     g.smokeT -= dt;
     if (g.smokeT > 0) return;
-    g.smokeT = g.deadT < 8 ? 0.12 : g.deadT < 40 ? 0.45 : 1.6;
+    g.smokeT = g.deadT < 14 ? 0.12 : g.deadT < 50 ? 0.45 : 1.6;
     const p = _v.copy(g.base).setY(g.base.y + 0.5);
-    if (g.deadT < 7) world.particles.flame(p, 0.6 * (1 - g.deadT / 7) + 0.2);
+    // her carriage and the powder by her burn a good while
+    if (g.deadT < 14) world.particles.flame(p, 0.75 * (1 - g.deadT / 14) + 0.25);
     const w = world.wind;
     world.particles.emit({
       x: p.x + (Math.random() - 0.5) * 1.2, y: p.y + 0.6, z: p.z + (Math.random() - 0.5) * 1.2,
@@ -614,44 +782,25 @@ export class Forts {
   strike(b: { pos: THREE.Vector3; vel: THREE.Vector3; damage: number; owner: Ship; ammo: AmmoId }, world: World): boolean {
     for (const f of this.forts) {
       const s = f.site;
-      if (Math.abs(b.pos.x - s.x) > FORT_H * 1.6 || Math.abs(b.pos.z - s.z) > FORT_H * 1.6) continue;
+      const R = fortReach(f.style) + 1;
+      if (Math.abs(b.pos.x - s.x) > R || Math.abs(b.pos.z - s.z) > R) continue;
       if (b.owner === f.gunner) continue;
       const l = worldToFort(s, b.pos.x, b.pos.z, _l);
       const y = b.pos.y - s.y;
-      if (y > FORT_WH + 3.2) continue;
+      if (y > f.style.WH + f.style.rise + f.style.PH + 4.5) continue;
       // the guns themselves stand up over the parapet: a ball can find one square on its muzzle
       let gun = false;
       for (const g of f.guns) if (_v.copy(g.base).setY(g.base.y + 0.75).distanceToSquared(b.pos) < 1.5 * 1.5) gun = true;
-      if (!gun && !this.solid(l.x, l.z, y)) continue;
-      this.impact(f, b, world);
+      if (!gun && !fortSolid(f.style, f.corners, l.x, l.z, y, f.layout.ms)) continue;
+      this.impact(f, b, world, l.x, l.z, y);
       return true;
     }
     return false;
   }
 
-  /** Is there stone at this point of a fort (fort frame, y above the plaza)? */
-  private solid(x: number, z: number, y: number) {
-    const H = FORT_H;
-    const ax = Math.abs(x);
-    const az = Math.abs(z);
-    // the corner bastions and their garitas
-    const tr = Math.hypot(ax - (H - 0.7), az - (H - 0.7));
-    if (tr < 3.3 && y < FORT_WH + 1.25) return true;
-    if (tr < 1.2 && y < FORT_WH + 3.6) return true;
-    const m = Math.max(ax, az);
-    // the walls, their parapets on the outer edge and the battered foot
-    const face = y < FORT_WH * 0.45 ? H + (FORT_WH * 0.45 - y) * 0.18 : H;
-    if (m < face + 0.15 && m > H - FORT_T - 0.1) {
-      if (y < FORT_WH) return true;
-      if (y < FORT_WH + 1.25 && m > H - 1.05) return true;
-      return false;
-    }
-    // the plaza floor
-    return m <= H - FORT_T && y < 0.15;
-  }
-
-  private impact(f: Fort, b: { pos: THREE.Vector3; vel: THREE.Vector3; damage: number; owner: Ship; ammo: AmmoId }, world: World) {
+  private impact(f: Fort, b: { pos: THREE.Vector3; vel: THREE.Vector3; damage: number; owner: Ship; ammo: AmmoId }, world: World, lx: number, lz: number, ly: number) {
     const at = b.pos.clone();
+    const s = f.site;
     const shell = b.ammo === 'shell';
     const [vol, pan, dd] = world.soundAt(at);
     if (shell) {
@@ -671,9 +820,30 @@ export class Forts {
       if (b.ammo === 'wraith') world.particles.wraithHit(at);
       if (b.ammo !== 'grape' || Math.random() < 0.3) world.audio.thud(vol, pan, dd);
     }
+    // the stone takes its scar, and a block or two comes away down the face
+    const j = fortSurface(f.style, f.corners, lx, lz, ly, _w, _n);
+    if (b.ammo !== 'grape' && b.ammo !== 'chain' && b.ammo !== 'firework') {
+      this.scar(f, _w, _n, shell ? 1.15 : 0.55 + Math.random() * 0.35);
+      if (_n.y < 0.5) {
+        const wp = fortToWorld(s, _w.x, _w.z, new THREE.Vector3()).setY(s.y + _w.y);
+        const wn = _n.clone().applyAxisAngle(_s.set(0, 1, 0), s.yaw);
+        for (let i = shell ? 2 : Math.random() < 0.6 ? 1 : 0; i > 0; i--) this.drop(f, wp, wn, 0.7 + Math.random() * 0.6);
+      }
+    }
     // only your guns (and your escorts') can hurt the Brethren's walls
     if (f.owner !== 'brethren' || b.owner.team !== 'player') return;
     this.rile(f, sideOf(b.owner), world.time, b.owner);
+    // a corner's top brought down by steady fire; the barracks fired by a shell or a hot shot in the plaza
+    const tj = j >= 0 ? j : cornerAt(f.corners, lx, lz, 1.5);
+    if (tj >= 0 && ly > f.corners[tj].top - 3 && b.ammo !== 'grape' && b.ammo !== 'chain') {
+      f.towerHits[tj] += shell ? 2 : 1;
+      if (f.towerHits[tj] >= TOWER_HITS) this.knock(f, `tower${tj}`, world);
+    }
+    const PL = f.style.H - f.style.T;
+    if (Math.max(Math.abs(lx), Math.abs(lz)) < PL + 0.5 && ly < 4) {
+      f.roofHits += b.ammo === 'fire' || shell ? 3 : 1;
+      if (f.roofHits >= 3) this.knock(f, 'roof', world);
+    }
     const mult = { round: 1, shell: 1.5, fire: 0.75, chain: 0.3, grape: 0.4, firework: 0, wraith: 1 }[b.ammo] ?? 1;
     let near: Gun | null = null;
     let nd = Infinity;
@@ -709,6 +879,8 @@ export class Forts {
     if (g.dead) return;
     g.hp -= dmg;
     this.hooks.struck(f, g, dmg, at, direct);
+    // her embrasure caves in round her before she's done
+    if (g.hp < GUN_HP * PARAPET_HP) this.knock(f, `gun${g.slot}`, world);
     if (g.hp > 0) return;
     g.hp = 0;
     g.dead = true;
@@ -721,7 +893,206 @@ export class Forts {
     world.onShake(0.5 * vol, p);
     this.pose(g);
     this.flush();
-    this.hooks.silenced(f, g, f.guns.every((o) => o.dead));
+    const last = f.guns.every((o) => o.dead);
+    if (last) {
+      // the last of them: the seaward towers come down, and the fire takes the barracks
+      f.pending.push({ key: 'tower0', t: 1.0 }, { key: 'tower1', t: 2.1 }, { key: 'roof', t: 3.4 });
+    }
+    this.hooks.silenced(f, g, last);
+  }
+
+  // ------------------------------------------------------------------ the wreck
+
+  /** Brings a piece of the fort down (with its dust, falling blocks and fire unless `quiet`). */
+  private knock(f: Fort, key: string, world: World | null, quiet = false) {
+    if (f.down.has(key)) return;
+    const pc = f.layout.pieces.find((p) => p.key === key);
+    if (!pc) return;
+    f.down.add(key);
+    f.shards.intact?.set(key, false);
+    f.shards.broken?.set(key, true);
+    if (quiet || !world) return;
+    const at = fortToWorld(f.site, pc.at.x, pc.at.z, new THREE.Vector3()).setY(f.site.y + pc.at.y);
+    const roof = key === 'roof';
+    const tower = key.startsWith('tower');
+    const big = tower ? 1.5 : roof ? 1.1 : 1;
+    // a roar of masonry, a cloud of dust and stone flying
+    const [vol, pan, d] = world.soundAt(at);
+    world.audio.explosion(vol * (roof ? 0.6 : 0.85), pan, d);
+    world.audio.thud(vol, pan, d);
+    world.onShake(0.35 * big * vol, at);
+    const P = f.style.P;
+    const dust: [number, number, number] = [P.cap.r * 1.1, P.cap.g * 1.05, P.cap.b];
+    for (let i = 0; i < 9 * big; i++) {
+      world.particles.emit({
+        x: at.x + (Math.random() - 0.5) * 2.5 * big, y: at.y + Math.random() * 1.5, z: at.z + (Math.random() - 0.5) * 2.5 * big,
+        vx: (Math.random() - 0.5) * 3, vy: 0.6 + Math.random() * 2.4, vz: (Math.random() - 0.5) * 3,
+        life: 2.4 + Math.random() * 2.2, size: 1.4 * big, sizeEnd: (5 + Math.random() * 3) * big, color: dust, colorEnd: [dust[0] * 0.9, dust[1] * 0.9, dust[2] * 0.9], alpha: 0.6, drag: 1.4, grav: -0.15, spin: (Math.random() - 0.5) * 0.6, kind: 1, fadeIn: 0.04,
+      });
+    }
+    for (let i = 0; i < 16 * big; i++) {
+      world.particles.emit({
+        x: at.x + (Math.random() - 0.5) * 2, y: at.y + Math.random(), z: at.z + (Math.random() - 0.5) * 2,
+        vx: (Math.random() - 0.5) * 9, vy: 2 + Math.random() * 6, vz: (Math.random() - 0.5) * 9,
+        life: 1.4 + Math.random() * 1.2, size: 0.16 + Math.random() * 0.22, color: [P.cap.r * 0.9, P.cap.g * 0.9, P.cap.b * 0.85], alpha: 1, grav: 16, drag: 0.3, spin: (Math.random() - 0.5) * 14, kind: 3, fadeIn: 0.001,
+      });
+    }
+    // a few real blocks go over the side
+    worldToFort(f.site, at.x, at.z, _l);
+    const n = Math.hypot(_l.x, _l.z) > 0.5 ? fortToWorld({ ...f.site, x: 0, z: 0 }, _l.x, _l.z, _n).setY(0).normalize() : _n.set(0, 0, 1);
+    if (!roof) for (let i = 0; i < (tower ? 4 : 2); i++) this.drop(f, at, n, 0.8 + Math.random() * 0.7);
+    // and it burns
+    f.blazes.push({ at: at.clone().setY(at.y - (roof ? 0.4 : 0.6)), t: 0, flames: roof ? 46 : tower ? 12 : 6, smoke: roof ? 150 : 70, size: roof ? 1.25 : 0.9, acc: 0 });
+    if (roof) for (const r of f.layout.roofAt) if (r !== f.layout.roofAt[1]) f.blazes.push({ at: fortToWorld(f.site, r.x, r.z, new THREE.Vector3()).setY(f.site.y + r.y - 0.4), t: -2 - Math.random() * 4, flames: 40, smoke: 120, size: 1.1, acc: 0 });
+  }
+
+  /** A ball's scar on the stone (world point and outward normal). */
+  private scar(f: Fort, at: THREE.Vector3, n: THREE.Vector3, size: number) {
+    const k = f.pockN++ % POCKS;
+    // the scar's +z along the face's outward normal, turned to the world, spun at random
+    _d.copy(n).applyAxisAngle(_s.set(0, 1, 0), f.site.yaw).normalize();
+    _q.setFromUnitVectors(ZAXIS, _d);
+    _q2.setFromAxisAngle(ZAXIS, Math.random() * Math.PI * 2);
+    _q.multiply(_q2);
+    fortToWorld(f.site, at.x, at.z, _v).setY(f.site.y + at.y);
+    f.pocks.setMatrixAt(k, _m.compose(_v, _q, _s.set(size, size, 1)));
+    f.pocks.setColorAt(k, _col.copy(f.style.P.stone).multiplyScalar(0.95 + Math.random() * 0.1));
+    f.pocks.count = Math.min(POCKS, f.pockN);
+    f.pocks.instanceMatrix.needsUpdate = true;
+    if (f.pocks.instanceColor) f.pocks.instanceColor.needsUpdate = true;
+  }
+
+  /** A block knocked loose at `at` (world) to tumble down the face, thrown out along `n`. */
+  private drop(f: Fort, at: THREE.Vector3, n: THREE.Vector3, s: number) {
+    if (f.falling.length > 10) return;
+    const p = at.clone();
+    const out = n.clone();
+    out.y = 0;
+    if (out.lengthSq() < 1e-4) out.set(Math.random() - 0.5, 0, Math.random() - 0.5);
+    out.normalize();
+    p.addScaledVector(out, 0.5);
+    const v = out.multiplyScalar(1.2 + Math.random() * 2.2);
+    v.x += (Math.random() - 0.5) * 1.5;
+    v.z += (Math.random() - 0.5) * 1.5;
+    v.y = 1 + Math.random() * 2;
+    const slot = f.debrisN++ % DEBRIS;
+    // a block that was already lying here makes way
+    for (let i = f.falling.length - 1; i >= 0; i--) if (f.falling[i].slot === slot) f.falling.splice(i, 1);
+    f.falling.push({ slot, p, v, rot: new THREE.Euler(Math.random() * 3, Math.random() * 3, 0), spin: new THREE.Vector3((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 6, (Math.random() - 0.5) * 9), s, wet: p.y < 0 });
+    f.debris.setColorAt(slot, _col.copy(f.style.P.stone).multiplyScalar(0.72 + Math.random() * 0.3));
+    f.debris.count = Math.min(DEBRIS, f.debrisN);
+    if (f.debris.instanceColor) f.debris.instanceColor.needsUpdate = true;
+  }
+
+  private tumble(f: Fort, dt: number, world: World) {
+    for (let i = f.falling.length - 1; i >= 0; i--) {
+      const b = f.falling[i];
+      b.v.y -= 15 * dt;
+      b.p.addScaledVector(b.v, dt);
+      b.rot.x += b.spin.x * dt;
+      b.rot.y += b.spin.y * dt;
+      b.rot.z += b.spin.z * dt;
+      // into the sea: a splash, then down slowly to the bottom
+      if (!b.wet && b.p.y < 0 && this.height(b.p.x, b.p.z) < -0.2) {
+        b.wet = true;
+        world.particles.splash(_v.set(b.p.x, 0, b.p.z), 0.45 * b.s);
+        b.v.multiplyScalar(0.25);
+      }
+      const floor = Math.max(this.height(b.p.x, b.p.z), -8) + 0.22 * b.s;
+      let done = false;
+      if (b.p.y <= floor) {
+        b.p.y = floor;
+        if (b.v.y < -3 && !b.wet) {
+          // a bounce, with a puff of dust
+          b.v.y *= -0.32;
+          b.v.x *= 0.5;
+          b.v.z *= 0.5;
+          b.spin.multiplyScalar(0.5);
+          world.particles.emit({ x: b.p.x, y: b.p.y, z: b.p.z, vy: 0.8, life: 1.2, size: 0.5, sizeEnd: 1.8, color: [0.8, 0.74, 0.62], alpha: 0.45, drag: 2, kind: 1, fadeIn: 0.02 });
+        } else {
+          // settled: lay it flat-ish where it stopped
+          b.rot.x = Math.round(b.rot.x / Math.PI) * Math.PI + (Math.random() - 0.5) * 0.3;
+          b.rot.z = Math.round(b.rot.z / Math.PI) * Math.PI + (Math.random() - 0.5) * 0.3;
+          done = true;
+        }
+      }
+      _q.setFromEuler(b.rot);
+      f.debris.setMatrixAt(b.slot, _m.compose(b.p, _q, _s.setScalar(b.s)));
+      if (done) f.falling.splice(i, 1);
+    }
+    f.debris.instanceMatrix.needsUpdate = true;
+  }
+
+  private burn(f: Fort, dt: number, world: World, near: number) {
+    for (let i = f.blazes.length - 1; i >= 0; i--) {
+      const z = f.blazes[i];
+      z.t += dt;
+      if (z.t > z.flames + z.smoke) {
+        f.blazes.splice(i, 1);
+        continue;
+      }
+      if (z.t < 0 || near > 750) continue;
+      z.acc += dt;
+      const flaming = z.t < z.flames;
+      const rate = flaming ? 0.09 : z.t < z.flames + z.smoke * 0.4 ? 0.5 : 1.3;
+      while (z.acc > rate) {
+        z.acc -= rate;
+        const k = flaming ? Math.min(1, z.t / 2) * (1 - (z.t / z.flames) * 0.5) : 0;
+        if (flaming) world.particles.flame(_v.copy(z.at), z.size * (0.6 + k * 0.6));
+        else {
+          const w = world.wind;
+          world.particles.emit({
+            x: z.at.x + (Math.random() - 0.5) * 1.4, y: z.at.y + 0.5, z: z.at.z + (Math.random() - 0.5) * 1.4,
+            vx: w.dirX * 1.2, vy: 1.8 + Math.random(), vz: w.dirZ * 1.2,
+            life: 5 + Math.random() * 3, size: 1.2 * z.size, sizeEnd: 6.5 * z.size, color: [0.24, 0.22, 0.21], colorEnd: [0.55, 0.54, 0.53], alpha: 0.4 * (1 - (z.t - z.flames) / z.smoke) + 0.08, drag: 0.25, kind: 1, spin: (Math.random() - 0.5) * 0.4, fadeIn: 0.4,
+          });
+        }
+      }
+    }
+  }
+
+  /** Every piece whole again, the scars and fallen blocks gone (a fresh voyage). */
+  private mend(f: Fort) {
+    f.down.clear();
+    f.patched.clear();
+    f.shards.intact?.all(true);
+    f.shards.broken?.all(false);
+    f.shards.patch?.all(false);
+    f.towerHits.fill(0);
+    f.roofHits = 0;
+    f.pockN = f.debrisN = 0;
+    f.pocks.count = f.debris.count = 0;
+    f.falling.length = 0;
+    f.blazes.length = 0;
+    f.pending.length = 0;
+  }
+
+  /**
+   * A fort that's yours, as you left it: its guns remounted behind gabions and
+   * plank mantlets where the parapet came down, the seaward towers still
+   * broken, its face pocked where your shot went home.
+   */
+  private scarred(f: Fort) {
+    for (const p of f.layout.pieces) {
+      if (p.key === 'roof') continue;
+      if (p.key.startsWith('gun') || p.key === 'tower0' || p.key === 'tower1') this.knock(f, p.key, null, true);
+      if (p.key.startsWith('gun')) {
+        f.shards.patch?.set(p.key, true);
+        f.patched.add(p.key);
+      }
+    }
+    const rnd = mulberry32(this.forts.indexOf(f) * 131 + 7);
+    const S = f.style;
+    for (let i = 0; i < 16; i++) {
+      // most on the sea wall, the rest on the flanks toward the sea
+      const side = rnd() < 0.6 ? 0 : rnd() < 0.5 ? 1 : 3;
+      const u = (rnd() - 0.5) * 2 * (S.H - 3);
+      const y = S.WH * (0.2 + rnd() * 0.75);
+      const v = S.H - 0.3;
+      const [x, z] = side === 0 ? [u, v] : side === 1 ? [v, rnd() * S.H * 0.8] : [-v, rnd() * S.H * 0.8];
+      fortSurface(S, f.corners, x, z, y, _w, _n);
+      this.scar(f, _w, _n, 0.55 + rnd() * 0.45);
+    }
   }
 
   // ------------------------------------------------------------------ drawing the guns
@@ -730,19 +1101,29 @@ export class Forts {
     const i = g.slot;
     const { barrels, carriages, rubble } = this.sets[this.forts.indexOf(g.fort)];
     if (g.dead) {
-      // the barrel knocked off its trunnions and lying across the wrecked carriage
+      // the barrel knocked off its trunnions and lying across the wrecked carriage: over she goes, with a bounce
+      const t = clamp(g.deadT / 0.55, 0, 1);
+      const k = t < 0.75 ? (t / 0.75) ** 2 : 1 - Math.sin(((t - 0.75) / 0.25) * Math.PI) * 0.12;
+      _e.set(-g.pitch, g.yaw, 0);
+      _q2.setFromEuler(_e);
       _e.set(-0.3, g.yaw + 0.6, 0.45);
       _q.setFromEuler(_e);
-      _v.copy(g.base).setY(g.base.y + 0.32);
+      _q.copy(_q2.slerp(_q, k));
+      _v.copy(g.base).setY(g.base.y + GUN_PIVOT + (0.32 - GUN_PIVOT) * k);
       barrels.setMatrixAt(i, _m.compose(_v, _q, UNIT));
-      barrels.setColorAt(i, _col.setRGB(0.42, 0.38, 0.34));
+      barrels.setColorAt(i, _col.setRGB(1 - 0.58 * t, 1 - 0.62 * t, 1 - 0.66 * t));
+      _q2.setFromAxisAngle(_d.set(0, 1, 0), g.yaw);
       _e.set(0.1, g.yaw - 0.3, 0.38);
       _q.setFromEuler(_e);
-      _v.copy(g.base).setY(g.base.y - 0.1);
+      _q.copy(_q2.slerp(_q, k));
+      _v.copy(g.base).setY(g.base.y + GUN_PIVOT + (-0.1 - GUN_PIVOT) * k);
       carriages.setMatrixAt(i, _m.compose(_v, _q, UNIT));
-      carriages.setColorAt(i, _col.setRGB(0.3, 0.27, 0.25));
+      carriages.setColorAt(i, _col.setRGB(1 - 0.7 * t, 1 - 0.73 * t, 1 - 0.75 * t));
       _q.setFromAxisAngle(_d.set(0, 1, 0), g.yaw0);
-      rubble.setMatrixAt(i, _m.compose(g.base, _q, UNIT));
+      rubble.setMatrixAt(i, _m.compose(g.base, _q, _s.setScalar(Math.max(1e-4, k))));
+      // its masonry is the fort's own stone
+      const P = g.fort.style.P.cap;
+      rubble.setColorAt(i, _col.setRGB(P.r / RUBBLE.r, P.g / RUBBLE.g, P.b / RUBBLE.b));
       return;
     }
     const back = g.recoil > 0 ? Math.sin(Math.min(1, g.recoil) * Math.PI * 0.5) * 0.45 : 0;
@@ -770,13 +1151,31 @@ export class Forts {
 
   /** Show every wreck and colour for the warm-up's draw (so their programs compile up front). */
   warm() {
-    for (const f of this.forts) f.mine.visible = f.mine.children.length > 0;
+    for (const f of this.forts) {
+      f.mine.visible = f.mine.children.length > 0;
+      for (const sh of [f.shards.intact, f.shards.broken, f.shards.patch]) sh?.all(true);
+      // a scar and a block, so their draws are in the warm-up too
+      for (const m of [f.pocks, f.debris]) {
+        m.setMatrixAt(0, _m.compose(_v.set(f.site.x, f.site.y + 1, f.site.z), _q.identity(), UNIT));
+        m.count = 1;
+        m.instanceMatrix.needsUpdate = true;
+      }
+    }
     for (const g of this.all) this.sets[this.forts.indexOf(g.fort)].rubble.setMatrixAt(g.slot, _m.compose(g.base, _q.identity(), UNIT));
     this.flush();
   }
 
   unwarm() {
-    for (const f of this.forts) this.raise(f);
+    for (const f of this.forts) {
+      this.raise(f);
+      for (const p of f.layout.pieces) {
+        f.shards.intact?.set(p.key, !f.down.has(p.key));
+        f.shards.broken?.set(p.key, f.down.has(p.key));
+        f.shards.patch?.set(p.key, f.patched.has(p.key));
+      }
+      f.pocks.count = Math.min(POCKS, f.pockN);
+      f.debris.count = Math.min(DEBRIS, f.debrisN);
+    }
     for (const g of this.all) this.pose(g);
     this.flush();
   }
@@ -846,6 +1245,6 @@ export class Forts {
 
   /** Where the fort's gate is (world), to steer a landing party by. */
   gate(f: Fort, out = new THREE.Vector3()) {
-    return fortToWorld(f.site, 0, -FORT_H - 2, out);
+    return fortToWorld(f.site, 0, -f.style.H - 2, out);
   }
 }

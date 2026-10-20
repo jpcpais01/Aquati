@@ -131,6 +131,8 @@ export interface FortWalls {
   /** Half-width to the outer face, and the walls' thickness. */
   H: number;
   T: number;
+  /** How far its corner works stand out past the curtain (walkers give them room). */
+  pad?: number;
 }
 
 /** A fort's garrison, handed to the shore like a camp. */
@@ -1808,8 +1810,8 @@ export class Shore {
         const atGate = Math.abs(a.x) < 1.7 && a.z > mouthOut - 0.9;
         tx = 0;
         tz = atGate ? mouthIn : mouthOut;
-        if (!atGate) [tx, tz] = roundWalls(a.x, a.z, tx, tz, H);
-      } else [tx, tz] = roundWalls(a.x, a.z, tx, tz, H);
+        if (!atGate) [tx, tz] = roundWalls(a.x, a.z, tx, tz, H, f.pad);
+      } else [tx, tz] = roundWalls(a.x, a.z, tx, tz, H, f.pad);
       if (tx === b.x && tz === b.z) return out;
       fortToWorld(f, tx, tz, _wp);
       out.x = _wp.x;
@@ -2165,10 +2167,10 @@ function cuts(ax: number, az: number, bx: number, bz: number, E: number) {
 }
 
 /** From a (outside a fort of half-width H, fort frame) toward t: straight on, or to the corner that gets you round. */
-function roundWalls(ax: number, az: number, tx: number, tz: number, H: number): [number, number] {
-  const E = H + 0.6;
+function roundWalls(ax: number, az: number, tx: number, tz: number, H: number, pad = 1): [number, number] {
+  const E = H + Math.max(0.6, pad * 0.5);
   if (!cuts(ax, az, tx, tz, E)) return [tx, tz];
-  const C = H + 3.4;
+  const C = H + pad + 2.4;
   let best: [number, number] = [tx, tz];
   let bd = Infinity;
   for (const [cx, cz] of [[C, C], [-C, C], [C, -C], [-C, -C]]) {

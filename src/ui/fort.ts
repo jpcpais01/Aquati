@@ -12,6 +12,8 @@ const GUN = `<svg viewBox="0 0 24 14" aria-hidden="true"><path d="M2 5.2 17.6 3.
 
 export interface FortView {
   name: string;
+  /** What sort of fort (castle, star fort…). */
+  kind: string;
   ours: boolean;
   /** One per gun: true while it can still fire. */
   guns: boolean[];
@@ -68,12 +70,12 @@ export class FortHud {
   }
 
   set(v: FortView) {
-    const key = `${v.name}|${v.ours}|${v.guns.join()}|${v.garrison}|${v.hint}|${v.hot}`;
+    const key = `${v.name}|${v.kind}|${v.ours}|${v.guns.join()}|${v.garrison}|${v.hint}|${v.hot}`;
     if (key === this.key) return;
-    const wasGuns = this.key.split('|')[2];
+    const wasGuns = this.key.split('|')[3];
     this.key = key;
     this.nameEl.textContent = v.name;
-    this.sub.textContent = v.ours ? 'Your fort' : 'Brethren stronghold';
+    this.sub.textContent = v.ours ? `Your ${v.kind}` : `Brethren ${v.kind}`;
     this.bar.classList.toggle('ours', v.ours);
     if (this.pips.children.length !== v.guns.length) this.pips.innerHTML = v.guns.map(() => `<i>${GUN}</i>`).join('');
     v.guns.forEach((live, i) => this.pips.children[i].classList.toggle('dead', !live));
