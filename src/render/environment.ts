@@ -592,6 +592,10 @@ varying float vSkinW;
       // darker the deeper it lies
       float aqD = length(aqView);
       vec3 aqCol = gl_FragColor.rgb * exp(-aqD * vec3(0.16, 0.05, 0.035) * 0.55);
+#ifndef AQ_CAUSTICS
+      // sunlight thins on its way down to it too (caustic materials already do this in their lighting)
+      aqCol *= exp(-max(-vAqWorld.y, 0.0) * vec3(0.1, 0.038, 0.026));
+#endif
       vec3 aqWater = uUnderColor * (1.0 - clamp(-vAqWorld.y / 22.0, 0.0, 1.0) * 0.5);
       gl_FragColor.rgb = mix(aqCol, aqWater, 1.0 - exp(-aqD / uUnder.z));
     } else {

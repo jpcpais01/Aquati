@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Profiler } from '../core/profiler';
 import { GLSL_SS_APPLY, ScreenSpaceLighting, TraceConfig } from './screenSpace';
+import { getSharedTextures } from './textures';
 
 // Frame graph:
 //   1. opaque scene  -> rtOpaque (HDR colour + depth texture, MSAA)
@@ -171,6 +172,8 @@ export class Pipeline {
       // photo mode: depth of field and a film look, uniforms only (see PhotoLook)
       uniform float uPhoto; uniform vec4 uPGrade; uniform vec3 uPTint; uniform vec4 uPMono; uniform float uPVig;
       uniform vec4 uDof; uniform sampler2D uDofDepth; uniform vec2 uDofNearFar; uniform mat4 uInvProj; uniform mat3 uCamRot; uniform float uCamY;
+      // beneath the waves: the eye (xyz) and the surface over it (w), the sun's light bent down through it, its colour
+      uniform vec4 uEye; uniform vec3 uSunRay; uniform vec3 uShaftColor; uniform sampler2D uCausticTex;
       varying vec2 vUv;
       #if SS
       ${GLSL_SS_APPLY}
@@ -286,17 +289,59 @@ export class Pipeline {
         // gloom brightening toward the surface, and sun shafts sway down through it
         if (uDepth > 0.0) {
           float yUp = vUv.y;
+          float shafts = 0.0;
+          float phase = 1.0;
+          if (uEye.y < uEye.w) {
+            // the camera is under: everything is laid out in the world, not on the screen.
+            // The view ray, and how far it runs before it meets the hull, the sand or the surface
+            vec4 vp = uInvProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+            vec3 rv = normalize(vp.xyz / vp.w);
+            vec3 rw = uCamRot * rv;
+            float dz = texture2D(uDofDepth, vUv).r;
+            float zn = uDofNearFar.x, zf = uDofNearFar.y;
+            float vd = (zn * zf) / (zf - (zf - zn) * dz);
+            float far = min(vd / max(-rv.z, 1e-3), 70.0);
+            // looking up is looking toward the light; down, into the dark
+            yUp = clamp(rw.y * 0.55 + 0.5, 0.0, 1.0);
+            // god rays: the very caustics that dance on the sand, gathered along the
+            // view ray. Each step looks back up the bent sun ray to where its light
+            // came through the surface, so the beams stand still in the water as the
+            // camera moves, and sway with the waves overhead. A fixed dither per
+            // pixel hides the steps (whole texture periods per 100 s of uTime, so the wrap never jumps).
+            float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+            vec2 lean = uSunRay.xz / min(uSunRay.y, -0.2);
+            float acc = 0.0;
+            for (int i = 0; i < 8; i++) {
+              float t = far * (float(i) + jit) * 0.125;
+              vec3 P = uEye.xyz + rw * t;
+              float dd = max(uEye.w - P.y, 0.0);
+              vec2 cuv = (P.xz + lean * dd) * 0.03;
+              float c1 = texture2D(uCausticTex, cuv + vec2(uTime * 0.01, uTime * 0.01), 2.0).r;
+              float c2 = texture2D(uCausticTex, cuv * 1.37 + vec2(-uTime * 0.01, uTime * 0.02) + 0.5, 2.0).r;
+              float c = max(c1 * c2 * 3.2 - 0.18, 0.0) + max(c1 + c2 - 1.0, 0.0) * 1.5;
+              acc += c * exp(-dd * 0.032 - t * 0.02);
+            }
+            shafts = acc * 0.125 * smoothstep(0.0, 3.0, uEye.w - uEye.y + 3.0);
+            // the water scatters light mostly onward: brightest looking toward the sun
+            float toSun = max(dot(rw, -uSunRay), 0.0);
+            phase = 0.55 + 2.2 * pow(toSun, 5.0) + 0.6 * toSun;
+          }
           vec3 abyss = mix(vec3(0.004, 0.03, 0.05), vec3(0.05, 0.3, 0.34), yUp * yUp);
           vec3 seen = col * vec3(0.18, 0.62, 0.74) + abyss;
-          float sx = vUv.x + (1.0 - yUp) * 0.22;
-          float rays = sin(sx * 21.0 + uTime * 0.35) * sin(sx * 34.0 - uTime * 0.27) * sin(sx * 9.0 + uTime * 0.13);
-          rays = max(rays, 0.0);
-          rays *= rays * smoothstep(0.05, 1.0, yUp);
-          // dancing caustic light where the surface sits overhead
-          float cz = sin(vUv.x * 40.0 + sin(vUv.y * 23.0 + uTime) * 2.0 + uTime * 0.8) * sin(vUv.y * 37.0 - uTime * 0.6);
-          // the gloom builds with depth; the shafts are at full strength from a third of the way down
+          // the gloom builds with depth
           col = mix(col, seen * 0.55, uDepth);
-          col += vec3(0.32, 0.72, 0.68) * (rays * 0.42 + max(cz, 0.0) * smoothstep(0.6, 1.0, yUp) * 0.12) * min(uDepth * 3.0, 1.0);
+          float on = min(uDepth * 3.0, 1.0);
+          if (uEye.y < uEye.w) {
+            col += uShaftColor * shafts * phase * on;
+          } else {
+            // the camera stayed above (a reef): sun shafts sway down the screen
+            float sx = vUv.x + (1.0 - yUp) * 0.22;
+            float rays = sin(sx * 21.0 + uTime * 0.35) * sin(sx * 34.0 - uTime * 0.27) * sin(sx * 9.0 + uTime * 0.13);
+            rays = max(rays, 0.0);
+            rays *= rays * smoothstep(0.05, 1.0, yUp);
+            float cz = sin(vUv.x * 40.0 + sin(vUv.y * 23.0 + uTime) * 2.0 + uTime * 0.8) * sin(vUv.y * 37.0 - uTime * 0.6);
+            col += vec3(0.32, 0.72, 0.68) * (rays * 0.42 + max(cz, 0.0) * smoothstep(0.6, 1.0, yUp) * 0.12) * on;
+          }
         }
 
         // gentle split-tone grade: teal shadows, warm highlights
@@ -360,6 +405,10 @@ export class Pipeline {
         uInvProj: { value: new THREE.Matrix4() },
         uCamRot: { value: new THREE.Matrix3() },
         uCamY: { value: 10 },
+        uEye: { value: new THREE.Vector4(0, 10, 0, 0) },
+        uSunRay: { value: new THREE.Vector3(0, -1, 0) },
+        uShaftColor: { value: new THREE.Vector3() },
+        uCausticTex: { value: getSharedTextures().caustics as THREE.Texture },
         ...SS_UNIFORMS(),
       },
     );
@@ -534,13 +583,19 @@ export class Pipeline {
     }
     const dof = ph && ph.aperture > 0;
     fu.uDof.value.set(ph ? ph.focus : 50, ph ? ph.aperture : 0, this.height * 0.018, dof ? 1 : 0);
-    if (dof) {
-      const cam = camera as THREE.PerspectiveCamera;
+    const cam = camera as THREE.PerspectiveCamera;
+    const eye = fu.uEye.value as THREE.Vector4;
+    eye.set(cam.position.x, cam.position.y, cam.position.z, this.under ? this.under.surf : -1e9);
+    if (dof || this.under) {
       fu.uDofDepth.value = this.rtOpaque.depthTexture;
       fu.uDofNearFar.value.set(cam.near, cam.far);
       fu.uInvProj.value.copy(cam.projectionMatrixInverse);
       fu.uCamRot.value.setFromMatrix4(cam.matrixWorld);
-      fu.uCamY.value = cam.position.y - ph.waterY;
+    }
+    if (dof) fu.uCamY.value = cam.position.y - ph.waterY;
+    if (this.under) {
+      fu.uSunRay.value.copy(this.under.ray);
+      fu.uShaftColor.value.copy(this.under.color);
     }
     this.blit(this.finalMat, null);
     P?.end(true);
@@ -559,6 +614,11 @@ export class Pipeline {
   set depth(v: number) {
     this.finalMat.uniforms.uDepth.value = v;
   }
+  /**
+   * The camera is beneath the waves (or null): the surface over it, the sun's
+   * light bent down through it and the colour of its shafts. Uniforms only.
+   */
+  under: { surf: number; ray: THREE.Vector3; color: THREE.Vector3 } | null = null;
   /** Drains colour and deepens the vignette for a sombre beat (0 none .. 1 grey). */
   set desat(v: number) {
     this.finalMat.uniforms.uDesat.value = v;

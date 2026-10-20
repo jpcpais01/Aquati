@@ -41,6 +41,8 @@ export interface WreckReport {
   bounties?: number;
   /** "off Guanaverde", or null in open water. */
   where: string | null;
+  /** How deep the water is where she went down. */
+  fathoms?: number;
   events: VoyageEvent[];
 }
 
@@ -173,12 +175,19 @@ export class WreckScreen {
   onTally: (i: number, best: boolean) => void = () => {};
 
   constructor() {
+    // bubbles drifting up behind the card: a few columns of them, each with its
+    // own size, speed and sway (bigger ones rise faster, as real ones do)
     const bubbles = $('wk-bubbles');
-    for (let i = 0; i < 16; i++) {
-      const b = document.createElement('i');
-      const s = 3 + Math.random() * 9;
-      b.style.cssText = `left:${(Math.random() * 100).toFixed(1)}%;width:${s.toFixed(1)}px;height:${s.toFixed(1)}px;--d:${(5 + Math.random() * 7).toFixed(2)}s;--w:${(Math.random() * 2 - 1).toFixed(2)};animation-delay:-${(Math.random() * 10).toFixed(2)}s`;
-      bubbles.appendChild(b);
+    for (let c = 0; c < 6; c++) {
+      const x = 4 + Math.random() * 92;
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const b = document.createElement('i');
+        const s = Math.random() < 0.2 ? 10 + Math.random() * 8 : 3 + Math.random() * 6;
+        const d = 13 - s * 0.45 + Math.random() * 3;
+        b.style.cssText = `left:${(x + (Math.random() - 0.5) * 3).toFixed(1)}%;width:${s.toFixed(1)}px;height:${s.toFixed(1)}px;--d:${d.toFixed(2)}s;--w:${(Math.random() * 2 - 1).toFixed(2)};animation-delay:-${(Math.random() * d).toFixed(2)}s`;
+        bubbles.appendChild(b);
+      }
     }
     $('wk-crest').innerHTML = crest();
     const skip = (e: Event) => {
@@ -210,9 +219,19 @@ export class WreckScreen {
     });
   }
 
+  /** The letterbox's depth gauge, counting her down (fathoms); it settles when she comes to rest. */
+  depth(fathoms: number, rested: boolean) {
+    const g = $('cine-depth');
+    g.classList.add('on');
+    g.classList.toggle('rest', rested);
+    $('cine-fm').textContent = `${fathoms}`;
+    $('cine-fm-unit').textContent = fathoms === 1 ? 'fathom' : 'fathoms';
+  }
+
   /** The moment she's lost: letterbox the view and caption it. */
   begin(r: WreckReport) {
     const c = SHIP_CLASSES[r.cls];
+    $('cine-depth').classList.remove('on', 'rest');
     $('cine-name').textContent = r.ship;
     $('cine-cls').textContent = c.name;
     $('cine-cause').innerHTML = causeLine(r);
@@ -275,6 +294,9 @@ export class WreckScreen {
         : r.cause === 'reef'
         ? `The <span class="nm">${esc(r.ship)}</span> struck the coral and broke her back after ${duration(r.time)} at sea.`
         : `The <span class="nm">${esc(r.ship)}</span> went down ${where} after ${duration(r.time)} at sea.`;
+    // where she lies now
+    const fm = Math.round(r.fathoms ?? 0);
+    if (fm >= 3 && r.cause !== 'aground' && r.cause !== 'reef') $('wk-epitaph').innerHTML += ` She lies in <b class="fm">${fm} fathoms</b> of water.`;
     $('wk-quip').textContent = `“${quip(r)}”`;
     $('wk-cause').innerHTML = causeLine(r);
 
