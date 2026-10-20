@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T18:00Z',
     entries: [
       {
+        title: 'A treasure map at the helm',
+        notes: [
+          'Your treasure map has moved from the top corner down to the helm console, right after your shot, and it is bigger and much easier to read and tap. It is a little parchment tile: a rolled chart with three torn slots that fill in as you find the pieces, and a count of how many you have.',
+          'Once the map is whole the chart turns into a small gilt compass sealed in red wax. Its needle points the way to the X across your screen, with the distance beside it. Reach the spot and it turns into a glowing red seal with a spade that says Dig here.',
+          'It stays at the bottom of the screen when you go ashore, and it fits on phones held either way without getting under your thumbs. Held upright, it sits on top of your speed.',
+          'The little line of key hints under your speed is gone, so the console is cleaner.',
+        ],
+      },
+      {
         title: 'Softer, slower clouds',
         notes: [
           'The little clouds you see from high above now change shape far more slowly. Their billows used to slide through them as the wind carried them along, so they seemed to boil; now each billow rides with its cloud and only gently swells and settles.',

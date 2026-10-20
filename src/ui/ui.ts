@@ -832,8 +832,6 @@ export class UI {
     el.classList.toggle('on', state !== 'none');
     el.classList.toggle('held', state === 'leave');
     if (state !== 'none') $('helm-text').textContent = state === 'take' ? 'Take the helm' : 'Leave the helm';
-    const hint = this.hud.querySelector('.helm .hint');
-    if (hint) hint.textContent = this.hud.classList.contains('fpv') && state !== 'leave' ? 'WASD walk · arrows sail & helm' : 'W / S sails · A / D helm';
   }
 
   /** Reticle and the "click to look" nudge while walking the deck. */
