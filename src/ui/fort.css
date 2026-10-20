@@ -177,6 +177,7 @@
 @media (orientation: portrait) and (max-width: 600px) {
   .ft-bar {
     top: calc(var(--mt) + 214px * var(--k));
+    max-width: calc(100% - var(--ml) - var(--mr));
   }
 
   #hud.ft-on #toasts {

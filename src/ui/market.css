@@ -636,6 +636,14 @@
   padding: calc(6px * var(--k)) calc(16px * var(--k)) calc(6px * var(--k)) calc(9px * var(--k));
 }
 
+/* upright phones: the speed console moves left, so the prompt rides above the guns */
+@media (orientation: portrait) and (max-width: 600px) {
+  .is-touch .dock-prompt {
+    bottom: calc(var(--mb) + 160px * var(--kt, 1));
+    max-width: calc(100% - var(--ml) - var(--mr) - 130px);
+  }
+}
+
 #hud.fpv .dock-prompt,
 #hud.sunk .dock-prompt {
   display: none;
