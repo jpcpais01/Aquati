@@ -158,7 +158,7 @@ button:focus {
   -webkit-backdrop-filter: blur(calc(10px * var(--u))) saturate(1.15);
   z-index: 30;
   animation: fade 0.35s ease;
-  padding: calc(calc(16px * var(--u)) + var(--safe-t)) calc(calc(16px * var(--u)) + var(--safe-r)) calc(calc(16px * var(--u)) + var(--safe-b)) calc(calc(16px * var(--u)) + var(--safe-l));
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
 }
 
 #notes,
@@ -723,8 +723,8 @@ kbd {
 
 .menu-head {
   position: absolute;
-  left: calc(calc(40px * var(--u)) + var(--safe-l));
-  top: calc(calc(30px * var(--u)) + var(--safe-t));
+  left: var(--ml);
+  top: var(--mt);
   display: flex;
   align-items: center;
   gap: calc(16px * var(--u));
@@ -749,8 +749,8 @@ kbd {
 /* system row, top right: round glass icons with a label that slides out */
 .menu-tools {
   position: absolute;
-  right: calc(calc(32px * var(--u)) + var(--safe-r));
-  top: calc(calc(34px * var(--u)) + var(--safe-t));
+  right: var(--mr);
+  top: var(--mt);
   display: flex;
   gap: calc(10px * var(--u));
   animation: rise 0.9s 0.15s var(--ease) both;
@@ -893,8 +893,8 @@ kbd {
 
 .dock {
   position: absolute;
-  left: calc(calc(40px * var(--u)) + var(--safe-l));
-  bottom: calc(calc(32px * var(--u)) + var(--safe-b));
+  left: var(--ml);
+  bottom: var(--mb);
   width: calc(410px * var(--u));
   display: flex;
   flex-direction: column;
@@ -1438,8 +1438,8 @@ kbd {
   }
 
   .menu-head {
-    left: calc(calc(18px * var(--u)) + var(--safe-l));
-    top: calc(calc(12px * var(--u)) + var(--safe-t));
+    left: var(--ml);
+    top: var(--mt);
     gap: calc(9px * var(--u));
   }
 
@@ -1457,8 +1457,8 @@ kbd {
   }
 
   .menu-tools {
-    right: calc(calc(16px * var(--u)) + var(--safe-r));
-    top: calc(calc(12px * var(--u)) + var(--safe-t));
+    right: var(--mr);
+    top: var(--mt);
     gap: calc(7px * var(--u));
   }
 
@@ -1496,8 +1496,8 @@ kbd {
   /* the ship's card: name, numbers and bars, no box, straight on the sea */
   .ship-detail {
     position: absolute;
-    left: calc(calc(20px * var(--u)) + var(--safe-l));
-    top: calc(calc(88px * var(--u)) + var(--safe-t));
+    left: var(--ml);
+    top: calc(var(--mt) + 76px * var(--u));
     width: calc(250px * var(--u));
     padding: 0;
     text-shadow: 0 1px 12px rgba(0, 10, 18, 0.55);
@@ -1524,8 +1524,8 @@ kbd {
   /* picker, bottom left */
   .ship-tabs {
     position: absolute;
-    left: calc(calc(20px * var(--u)) + var(--safe-l));
-    bottom: calc(calc(14px * var(--u)) + var(--safe-b));
+    left: var(--ml);
+    bottom: var(--mb);
     width: calc(290px * var(--u));
     gap: calc(4px * var(--u));
     padding: calc(5px * var(--u));
@@ -1563,8 +1563,8 @@ kbd {
   /* actions, bottom right: the Shipwright and the Vault, then Set Sail at the end of the row */
   .dock-actions {
     position: absolute;
-    right: calc(calc(16px * var(--u)) + var(--safe-r));
-    bottom: calc(calc(14px * var(--u)) + var(--safe-b));
+    right: var(--mr);
+    bottom: var(--mb);
     display: flex;
     align-items: center;
     gap: calc(8px * var(--u));
@@ -1631,7 +1631,7 @@ kbd {
   .menu-head {
     left: 0;
     right: 0;
-    top: calc(calc(16px * var(--u)) + var(--safe-t));
+    top: var(--mt);
     justify-content: center;
     gap: calc(10px * var(--u));
   }
@@ -1653,7 +1653,7 @@ kbd {
     top: auto;
     right: 0;
     left: 0;
-    bottom: calc(calc(12px * var(--u)) + var(--safe-b));
+    bottom: var(--mb);
     justify-content: center;
     gap: calc(10px * var(--u));
   }
@@ -1678,9 +1678,9 @@ kbd {
   }
 
   .dock {
-    left: calc(calc(12px * var(--u)) + var(--safe-l));
-    right: calc(calc(12px * var(--u)) + var(--safe-r));
-    bottom: calc(calc(64px * var(--u)) + var(--safe-b));
+    left: var(--ml);
+    right: var(--mr);
+    bottom: calc(var(--mb) + 52px * var(--u));
     width: auto;
     max-width: calc(480px * var(--u));
     margin: 0 auto;
@@ -1915,7 +1915,7 @@ kbd {
   align-items: stretch;
   justify-content: flex-start;
   overflow-y: auto;
-  padding: calc(calc(20px * var(--u)) + var(--safe-t)) calc(calc(24px * var(--u)) + var(--safe-r)) calc(calc(20px * var(--u)) + var(--safe-b)) calc(calc(24px * var(--u)) + var(--safe-l));
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
   background: linear-gradient(90deg, rgba(2, 12, 19, 0.9) 0%, rgba(2, 12, 19, 0.66) 42%, rgba(2, 12, 19, 0.3) 100%);
   backdrop-filter: blur(calc(8px * var(--u))) saturate(1.1);
   -webkit-backdrop-filter: blur(calc(8px * var(--u))) saturate(1.1);
@@ -2142,7 +2142,7 @@ kbd {
    without scrolling. .pause-main dissolves so its pieces join the grid. */
 @media (max-height: 560px) and (min-width: 641px) {
   #pause {
-    padding: calc(calc(10px * var(--u)) + var(--safe-t)) calc(calc(16px * var(--u)) + var(--safe-r)) calc(calc(10px * var(--u)) + var(--safe-b)) calc(calc(16px * var(--u)) + var(--safe-l));
+    padding: var(--mt) var(--mr) var(--mb) var(--ml);
   }
 
   .pause-wrap {
@@ -2782,7 +2782,7 @@ button.reset-row:focus-visible .set-go {
   #controls,
   #settings,
   #dead {
-    padding: calc(calc(8px * var(--u)) + var(--safe-t)) calc(calc(12px * var(--u)) + var(--safe-r)) calc(calc(8px * var(--u)) + var(--safe-b)) calc(calc(12px * var(--u)) + var(--safe-l));
+    padding: var(--mt) var(--mr) var(--mb) var(--ml);
   }
 
   .sheet {
@@ -3118,7 +3118,11 @@ body[data-hud='large'] #hud {
 .nav-btns {
   order: 2;
   display: flex;
-  gap: calc(8px * var(--k));
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(6px * var(--k)) calc(8px * var(--k));
+  /* three to a row, centred under the chart */
+  width: calc(3 * max(28px, calc(32px * var(--k))) + 16px * var(--k));
 }
 
 .nav-btns .icon-btn {
@@ -3885,12 +3889,98 @@ body[data-hud='large'] #hud {
   border: 0;
 }
 
+/* touch: the knots sit on top of the sail lever, the number big, the unit a small "kn" */
+.is-touch .bottom {
+  left: var(--ml);
+  transform: none;
+  bottom: calc(var(--mb) + 164px * var(--kt) + 8px);
+  padding: calc(3px * var(--k)) calc(10px * var(--k)) calc(3px * var(--k)) calc(9px * var(--k));
+  background: rgba(6, 20, 30, 0.5);
+  box-shadow: none;
+}
+
+.is-touch .speed b {
+  font-size: max(17px, calc(22px * var(--k)));
+}
+
+.is-touch .speed small {
+  margin-left: 2px;
+  font-size: 0;
+  letter-spacing: 0;
+}
+
+.is-touch .speed small::after {
+  content: 'kn';
+  font: 700 max(8.5px, calc(9.5px * var(--k))) var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.is-touch #hud.ashore .bottom {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: var(--mb);
+}
+
+/* touch: the ship card loses its box: a small name over a slim hull bar,
+   straight on the sea with a soft shade behind for legibility */
+.is-touch .status {
+  width: calc(196px * var(--k));
+}
+
+.is-touch .ship-panel {
+  padding: calc(3px * var(--k)) calc(8px * var(--k)) calc(4px * var(--k)) calc(4px * var(--k));
+  border-color: transparent;
+  border-radius: calc(10px * var(--k));
+  background: linear-gradient(90deg, rgba(4, 16, 24, 0.5), rgba(4, 16, 24, 0.12));
+  box-shadow: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.is-touch .hud-ship {
+  width: calc(22px * var(--k));
+  height: calc(15px * var(--k));
+}
+
+.is-touch .ship-id {
+  gap: calc(5px * var(--k));
+}
+
+/* type and name on one line */
+.is-touch .ship-name {
+  flex-direction: row;
+  align-items: baseline;
+  gap: calc(6px * var(--k));
+}
+
+.is-touch .ship-name span {
+  font-size: max(10px, calc(12px * var(--k)));
+}
+
+.is-touch .ship-name small {
+  flex: none;
+  font-size: max(6.5px, calc(7px * var(--k)));
+}
+
+.is-touch .hull-row {
+  margin-top: calc(3px * var(--k));
+  gap: calc(6px * var(--k));
+}
+
+.is-touch .hull {
+  height: max(3px, calc(4px * var(--k)));
+}
+
+.is-touch .hull-num b {
+  font-size: max(9px, calc(10.5px * var(--k)));
+}
+
+.is-touch .stats-row .chip {
+  height: max(16px, calc(19px * var(--k)));
+  background: rgba(6, 20, 30, 0.45);
+}
+
 @media (orientation: portrait) and (max-width: 600px) {
-  .is-touch .bottom {
-    left: var(--ml);
-    transform: none;
-    bottom: calc(var(--mb) + 6px);
-  }
 
   .status {
     width: calc(216px * var(--k));
@@ -3926,9 +4016,10 @@ body[data-hud='large'] #hud {
   padding: calc(5px * var(--k)) calc(14px * var(--k)) calc(6px * var(--k));
   border-radius: 999px;
   /* no backdrop blur: re-blurring the live 3D view under a sliding card hitches the frame */
-  background: linear-gradient(180deg, rgba(12, 32, 44, 0.92), rgba(6, 20, 30, 0.86));
-  border: 1px solid rgba(244, 199, 101, 0.38);
-  box-shadow: 0 14px 40px rgba(0, 8, 14, 0.35), var(--hi);
+  background: linear-gradient(180deg, rgba(12, 32, 44, 0.7), rgba(6, 20, 30, 0.6));
+  border: 1px solid rgba(244, 199, 101, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 8, 14, 0.22), var(--hi);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   animation: toastIn 0.55s var(--spring), toastOut 0.6s ease forwards;
   animation-delay: 0s, var(--life, 3.4s);
 }
@@ -4482,7 +4573,7 @@ body[data-hud='large'] #hud {
 
 @media (orientation: portrait) and (max-width: 600px) {
   .sail-lever {
-    bottom: calc(var(--mb) + 6px + 52px * var(--k));
+    bottom: calc(var(--mb) - 6px);
   }
 }
 
@@ -4918,7 +5009,7 @@ body[data-hud='large'] #hud {
 /* ------------------------------------------------------------------ sea chart */
 
 #chart {
-  padding: calc(14px + var(--safe-t)) calc(14px + var(--safe-r)) calc(14px + var(--safe-b)) calc(14px + var(--safe-l));
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
 }
 
 .chart-frame {
@@ -5136,7 +5227,7 @@ body[data-hud='large'] #hud {
 
 @media (max-width: 640px), (max-height: 520px) {
   #chart {
-    padding: calc(8px + var(--safe-t)) calc(8px + var(--safe-r)) calc(8px + var(--safe-b)) calc(8px + var(--safe-l));
+    padding: var(--mt) var(--mr) var(--mb) var(--ml);
   }
 
   .chart-frame {
@@ -5181,7 +5272,7 @@ body[data-hud='large'] #hud {
 
 #fps {
   position: fixed;
-  top: calc(2px + var(--safe-t));
+  top: 2px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
@@ -5215,13 +5306,13 @@ body[data-hud='large'] #hud {
 /* frame profiler: tap the FPS counter */
 #prof {
   position: fixed;
-  top: calc(24px + var(--safe-t));
+  top: 24px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 49;
   width: min(380px, calc(100vw - 32px));
-  max-height: calc(100vh - 40px - var(--safe-t));
-  max-height: calc(100dvh - 40px - var(--safe-t));
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
   overscroll-behavior: contain;
   box-sizing: border-box;

@@ -553,7 +553,7 @@
 
 @media (max-height: 560px) {
   #account {
-    padding: calc(calc(8px * var(--u)) + var(--safe-t)) calc(calc(12px * var(--u)) + var(--safe-r)) calc(calc(8px * var(--u)) + var(--safe-b)) calc(calc(12px * var(--u)) + var(--safe-l));
+    padding: var(--mt) var(--mr) var(--mb) var(--ml);
   }
 
   .acct-lede {

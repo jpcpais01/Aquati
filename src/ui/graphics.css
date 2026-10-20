@@ -20,7 +20,7 @@ body.gfx-open #hud {
 /* keep the sea visible: changes apply live behind the card */
 #graphics.screen.dim {
   align-items: flex-start;
-  padding-left: calc(24px + var(--safe-l));
+  padding-left: var(--ml);
   background: linear-gradient(90deg, rgba(2, 12, 19, 0.72) 0%, rgba(2, 12, 19, 0.34) 42%, rgba(2, 12, 19, 0) 72%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -296,7 +296,7 @@ body.gfx-open #hud {
 /* landscape phones: the card hugs the left edge, full height, so the sea shows on the right */
 @media (max-height: 560px) and (min-width: 561px) {
   #graphics.screen.dim {
-    padding-left: calc(10px + var(--safe-l));
+    padding-left: var(--ml);
   }
 
   .gfx-card {
@@ -309,8 +309,8 @@ body.gfx-open #hud {
   #graphics.screen.dim {
     align-items: center;
     justify-content: flex-end;
-    padding-left: calc(10px + var(--safe-l));
-    padding-right: calc(10px + var(--safe-r));
+    padding-left: var(--ml);
+    padding-right: var(--mr);
     background: linear-gradient(0deg, rgba(2, 12, 19, 0.75) 0%, rgba(2, 12, 19, 0.25) 55%, rgba(2, 12, 19, 0) 80%);
   }
 
