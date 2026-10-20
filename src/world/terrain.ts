@@ -87,6 +87,22 @@ interface Crag {
   seed: number;
 }
 
+/**
+ * The worked-out form of one karst tower (see Terrain.towerForm): stacked
+ * tiers, each a little narrower than the one below and set off to one side,
+ * so it leans, steps back in ledges and is never a plain drum.
+ */
+interface TowerForm {
+  tiers: { ox: number; oz: number; r: number; h: number; w: number; e: number; ph: number }[];
+  /** The footprint's squash and turn. */
+  asp: number;
+  c: number;
+  s: number;
+  reach: number;
+  /** Talus round the foot: how far out it runs (units of r). */
+  skirt: number;
+}
+
 export { WORLD_SIZE };
 export const CELL = 2;
 export const GRID_N = WORLD_SIZE / CELL + 1;
@@ -149,6 +165,7 @@ export class Terrain implements SeaFloor {
   /** What the erosion carved at each cell: + spur / ridge, - gully (about -1..1, 0 off the hillsides). */
   readonly erosion = new Float32Array(GRID_N * GRID_N);
   private crags = new Map<Island, Crag[]>();
+  private towerForms = new Map<object, TowerForm>();
   private simplex: Simplex2;
   private seed: number;
   /** Shared across archipelagos: the ground, its lite cousin and the seabed. */
@@ -384,30 +401,97 @@ export class Terrain implements SeaFloor {
   }
 
   /**
-   * The tallest limestone tower over (x, z): sheer, fluted walls (a few metres
-   * from foot to lip, so they read as cliffs) up to a rounded, lumpy top where
-   * the jungle grows. Far below anything where no tower stands.
+   * The karst over (x, z), as Ha Long or El Nido have it: weathered towers
+   * that taper and lean, step back in ledges where the jungle takes hold,
+   * round over into lumpy wooded crowns and drop sheer into the sea, with
+   * fallen blocks drowned round their feet. Towers that stand close merge
+   * into one massif over a saddle. Far below anything where no tower stands.
    */
   private towerHeight(isl: Island, x: number, z: number): number {
     const s = this.simplex;
     let best = -40;
     for (const t of isl.towers!) {
-      const dx = x - t.x;
-      const dz = z - t.z;
-      const reach = t.r * 1.45 + 6;
-      if (dx * dx + dz * dz > reach * reach) continue;
-      const a = Math.atan2(dz, dx);
-      // fluted, craggy walls: rain carves grooves down the stone and buttresses stand out
-      const flute = s.noise(Math.cos(a) * 2.6 + t.seed, Math.sin(a) * 2.6 - t.seed) * 0.16 + s.noise(Math.cos(a) * 7 + t.seed * 2, Math.sin(a) * 7) * 0.05;
-      const d = Math.hypot(dx, dz) / (t.r * (1 + flute));
-      const wall = 1 - smoothstep(0.86, 1.04, d + s.noise(x * 0.09 + t.seed, z * 0.09) * 0.04);
-      if (wall <= 0) continue;
-      // a domed, knobbly top that drops off at the lip
-      const top = t.h * (1 - d * d * 0.16) + s.ridged(x * 0.045 + t.seed, z * 0.045, 3) * 3.4 - 1.7;
-      const h = lerp(-30, top, Math.pow(wall, 0.6));
-      if (h > best) best = h;
+      const dx0 = x - t.x;
+      const dz0 = z - t.z;
+      const F = this.towerForm(t);
+      if (dx0 * dx0 + dz0 * dz0 > F.reach * F.reach) continue;
+      // a bent, squashed footprint: no two towers share an outline
+      const dx = dx0 + s.noise(x * 0.034 + t.seed, z * 0.034) * t.r * 0.2;
+      const dz = dz0 + s.noise(x * 0.034 - 17.1, z * 0.034 + t.seed) * t.r * 0.2;
+      const u = (dx * F.c + dz * F.s) / F.asp;
+      const v = (-dx * F.s + dz * F.c) * F.asp;
+      let h = -40;
+      let d0 = 9;
+      let crown = 0;
+      for (let i = 0; i < F.tiers.length; i++) {
+        const T = F.tiers[i];
+        const eu = u - T.ox;
+        const ev = v - T.oz;
+        const a = Math.atan2(ev, eu);
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        // bays, buttresses and rain flutes round each tier
+        const lobe =
+          s.noise(ca * 1.4 + T.ph, sa * 1.4 - T.ph) * 0.22 + s.noise(ca * 3.6 - T.ph, sa * 3.6 + T.ph * 0.5) * 0.09 + s.noise(ca * 9 + T.ph * 2, sa * 9) * 0.035;
+        const d = Math.sqrt(eu * eu + ev * ev) / (T.r * (1 + lobe));
+        if (i === 0) d0 = d;
+        if (d >= 1) continue;
+        // a near-sheer wall that rounds over at the shoulder into a domed top
+        const p = Math.pow(Math.min(1, (1 - d) / T.w), T.e);
+        const top = T.h * (1 - d * d * 0.14);
+        h = smax(h, lerp(-26, top, p), 2.2);
+        if (i === F.tiers.length - 1) crown = p;
+      }
+      if (h > -40) {
+        // knobbly crown, rough ledges and the odd bulge down the faces
+        h += crown * (s.ridged(x * 0.05 + t.seed, z * 0.05, 3) * 3.2 - 1.2);
+        h += s.noise(x * 0.13 + t.seed, z * 0.13 - t.seed) * 1.1;
+      }
+      // fallen blocks round the foot, just under the water
+      const sk = 1 - smoothstep(0.94, F.skirt, d0);
+      if (sk > 0) h = Math.max(h, lerp(-7, -0.5 + s.noise(x * 0.16, z * 0.16 + t.seed) * 0.9, sk * sk));
+      best = smax(best, h, 5);
     }
     return best;
+  }
+
+  /**
+   * A tower's tiers, from its own seed (so the shared placement stream and
+   * with it every isle, port and fort stays where it was): a broad base
+   * stepping up to a narrower, leaning crown. Heights vary a good deal.
+   */
+  private towerForm(t: NonNullable<Island['towers']>[number]): TowerForm {
+    let F = this.towerForms.get(t);
+    if (F) return F;
+    const rnd = mulberry32(Math.floor(t.seed * 1000) + 5);
+    // (never so slender it reads as a spike)
+    const H = Math.min(t.h * (0.7 + rnd() * 0.6), t.r * 3.3 + 8);
+    const la = rnd() * Math.PI * 2;
+    const lean = t.r * (0.06 + rnd() * 0.18);
+    const n = t.r > 15 ? 3 : 2;
+    const tiers: TowerForm['tiers'] = [];
+    let off = 0;
+    for (let i = 0; i < n; i++) {
+      const k = i / (n - 1);
+      const last = i === n - 1;
+      const hk = last ? 1 : i === 0 ? 0.32 + rnd() * 0.26 : 0.62 + rnd() * 0.2;
+      const a = la + (rnd() - 0.5) * 0.9;
+      off = lean * k;
+      tiers.push({
+        ox: Math.cos(a) * off,
+        oz: Math.sin(a) * off,
+        r: t.r * (1 - k * (0.18 + rnd() * 0.16)),
+        h: H * hk,
+        w: last ? 0.34 + rnd() * 0.2 : 0.1 + rnd() * 0.1,
+        e: 0.4 + rnd() * 0.2,
+        ph: t.seed + i * 3.7,
+      });
+    }
+    const rot = rnd() * Math.PI;
+    const asp = 0.8 + rnd() * 0.45;
+    F = { tiers, asp, c: Math.cos(rot), s: Math.sin(rot), reach: t.r * 1.75 * Math.max(asp, 1 / asp) + 8, skirt: 1.25 + rnd() * 0.3 };
+    this.towerForms.set(t, F);
+    return F;
   }
 
   /** The crags of a rocky isle, in its stretched local frame (units of isl.r). */
