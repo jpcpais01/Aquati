@@ -41,6 +41,8 @@ import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
 import { PhotoMode } from '../ui/photo';
 import { FxItem, fxItem, Item as Cosmetic, POOL, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { chestPart, Found, loadoutStats, part as partById, PART_RARITIES, PartSlot, PartStore, PartTier, pirateFit, portStock, refit, rollPart, SLOT_NAMES } from '../ships/parts';
+import { partIcon } from '../ui/partArt';
 import { Cloud, Part } from '../cloud/cloud';
 import { ADMIN_GOLD } from '../cloud/admin';
 import { AccountPanel } from '../ui/account';
@@ -211,6 +213,10 @@ export class Game {
   private shipwright = new Customizer();
   // the treasure vault: purse, collection and the chest itself
   private vaultStore = new VaultStore();
+  /** Upgrade parts: the locker and every ship's refit. */
+  private partStore = new PartStore();
+  /** Parts won inside the vault, announced once it closes. */
+  private vaultFinds: Found[] = [];
   // cloud saves: sign in from the harbour's top bar and progress follows you
   private cloudSave = new Cloud();
   /** Synced parts still to take up (the livery and ship wait for the harbour). */
@@ -615,7 +621,11 @@ export class Game {
       this.vaultStore.reload();
       this.applyCosmetics();
     }
-    if (!parts.has('look') && !parts.has('ship')) return;
+    if (parts.has('parts')) {
+      this.partStore.reload();
+      this.shipwright.refresh();
+    }
+    if (!parts.has('look') && !parts.has('ship') && !parts.has('parts')) return;
     parts.forEach((p) => this.cloudParts.add(p));
     // the moored ship only changes in the harbour, between scenes
     if (this.state === 'menu' && !this.vault.isOpen && !this.swBusy && this.adoptCloud()) this.setPreview(this.ui.selected);
@@ -779,11 +789,27 @@ export class Game {
     this.cloudSave.onWelcome = (w) => account.welcome(w);
     this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     this.cloudSave.onAdmin = () => {
-      if (!this.vaultStore.grantAll(ADMIN_GOLD)) return;
+      const parts = this.partStore.grantAll();
+      if (!this.vaultStore.grantAll(ADMIN_GOLD) && !parts) return;
       this.applyCosmetics();
-      this.ui.toast('Admiral of the fleet', 'A billion gold and every treasure are yours', 6);
+      this.shipwright.refresh();
+      this.ui.toast('Admiral of the fleet', 'A billion gold, every treasure and every ship part are yours', 6);
     };
     sw.setVault(this.vaultStore);
+    sw.setParts(this.partStore);
+    this.ui.loadout = (id) => this.partStore.loadout(id);
+    this.partStore.subscribe(() => this.ui.refreshShip());
+    this.ui.refreshShip();
+    // every full ten from the vault comes with a ship part on top
+    this.vaultStore.onPull = (n) => {
+      if (n !== 10) return;
+      const r = Math.random();
+      const t = (r < 0.5 ? 0 : r < 0.82 ? 1 : r < 0.96 ? 2 : r < 0.995 ? 3 : 4) as PartTier;
+      const f = this.partStore.grant(rollPart(t, (id) => this.partStore.owns(id)).id);
+      if (f) this.vaultFinds.push(f);
+    };
+    sw.onFit = (slot, id) => this.refitPreview(slot, id);
+    sw.whereSold = (id) => this.whereSold(id);
     sw.onEquip = () => this.applyCosmetics();
     sw.onVault = () => this.openVault();
     sw.onTestFire = () => this.testFire();
@@ -792,9 +818,13 @@ export class Game {
       this.audio.click();
     };
     sw.onDone = () => this.closeShipwright();
-    sw.onTab = (tab: SwTab) => {
-      this.swFocus = ({ flag: 'flag', sails: 'sails', hull: 'hull', skins: 'overview', cannons: 'overview', presets: 'overview' } as const)[tab];
-      this.swAz = 0;
+    sw.onTab = (tab: SwTab, sub?: string) => {
+      const was = this.swFocus;
+      this.swFocus =
+        tab === 'refit'
+          ? (({ hull: 'hull', sails: 'sails', guns: 'guns', figure: 'bow' } as const)[sub as PartSlot] ?? 'overview')
+          : ({ flag: 'flag', sails: 'sails', hull: 'hull', skins: 'overview', cannons: 'overview', presets: 'overview' } as const)[tab];
+      if (tab !== 'refit' || this.swFocus !== was) this.swAz = 0;
     };
     sw.onChange = (look, what) => this.applyLook(look, what);
     // a saved hand-painted flag decodes in the background; redraw once it lands
@@ -971,6 +1001,8 @@ export class Game {
 
   private closeVault() {
     this.vault.close();
+    this.vaultFinds.forEach((f, i) => setTimeout(() => this.announcePart(f, 'Bonus from the Treasure Vault', null), 500 + i * 900));
+    this.vaultFinds = [];
     this.vaultOn = false;
     this.vShow = null;
     this.vstage.hide();
@@ -1012,6 +1044,64 @@ export class Game {
     const at = new THREE.Vector3(p.pos.x + left.x * k * 70 + Math.sin(p.heading) * 6, 0, p.pos.z + left.z * k * 70 + Math.cos(p.heading) * 6);
     this.audio.start();
     if (p.fire(side, this.world, null, at)) this.swAz = k > 0 ? 0.5 : -0.5;
+  }
+
+  /** The Refit tab bolted on a part: rebuild her at the berth, with a flourish for the good ones. */
+  private refitPreview(slot: PartSlot, id: string | null) {
+    const old = this.preview;
+    if (!old || this.state !== 'port') return;
+    this.setPreview(old.cls.id);
+    const s = this.preview!;
+    this.port.setShip(s);
+    this.port.pin(s);
+    s.root.updateMatrixWorld(true);
+    const p = partById(id);
+    if (!p) {
+      this.audio.click();
+      return;
+    }
+    const sh = s.model.shape;
+    const local = {
+      hull: new THREE.Vector3(0, sh.top(0.5) + 0.6, 0),
+      sails: new THREE.Vector3(0, s.cls.masts[0].height * 0.7, sh.z(s.cls.masts[0].t)),
+      guns: new THREE.Vector3(0, sh.mainDeckY(0.5) + 1, 0),
+      figure: new THREE.Vector3(0, sh.top(1), sh.z(1) + 0.6),
+    }[slot];
+    const at = s.model.root.localToWorld(local);
+    const tier = Math.min(4, p.tier + 1);
+    this.world.particles.treasure(at, RARITY[tier].glow, tier);
+    if (p.tier >= 2) this.audio.treasure(tier);
+    else this.audio.coin();
+    // new guns want trying out
+    if (slot === 'guns') setTimeout(() => this.testFire(), 650);
+  }
+
+  /** Which trading port's shipwright has a part in today, if any. */
+  private whereSold(id: string) {
+    const i = this.tradePorts.ports.findIndex((_, k) => portStock(k + 1).some((p) => p.id === id));
+    return i >= 0 ? this.tradePorts.ports[i].name : null;
+  }
+
+  /** The port shipwright's counter, refreshed. */
+  private refreshParts(bought?: string) {
+    const port = this.dockPort;
+    if (!port) return;
+    const k = this.tradePorts.ports.indexOf(port);
+    const offers = portStock(k + 1).map((p) => ({ part: p, owned: this.partStore.owns(p.id) }));
+    this.market.setParts(offers, this.vaultStore.purse, bought);
+  }
+
+  private buyPart(id: string) {
+    const port = this.dockPort;
+    const p = partById(id);
+    if (!port || !p || this.partStore.owns(id) || this.state !== 'docked') return;
+    if (!this.vaultStore.spend(PART_RARITIES[p.tier].price)) return;
+    const f = this.partStore.grant(id);
+    if (f) this.announcePart(f, `Bought at ${port.name}`, null);
+    port.unload(['calico'], true);
+    port.cheer(p.tier >= 3 ? 2 : 1);
+    this.refreshParts(id);
+    this.note('trade', `Bought ${p.name}`, `${port.name} · ${PART_RARITIES[p.tier].price.toLocaleString('en-US')} gold`);
   }
 
   /** Streams a change from the panel onto the moored ship and the harbour. */
@@ -1070,7 +1160,7 @@ export class Game {
       this.swFocus = 'flag';
       this.swAz = 0;
       this.swZoom = 1;
-      this.shipwright.open(this.look, this.port.name);
+      this.shipwright.open(this.look, this.port.name, this.preview?.cls.id);
       this.rig.mode = 'port';
       this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
       this.framePort(0);
@@ -1142,6 +1232,7 @@ export class Game {
     m.onSell = (id) => this.sell(id);
     m.onSellAll = () => this.sell(null);
     m.onRepair = () => this.buyRepair();
+    m.onBuyPart = (id) => this.buyPart(id);
     m.onShot = () => this.buyShot();
     m.onLeave = () => this.castOff();
     // the hold chip opens a peek at what's aboard
@@ -1326,6 +1417,7 @@ export class Game {
     if (best && LOOT[best].rarity >= 2) this.ui.lootToast(lootIcon(best), LOOT[best].rarity, `${RARITIES[LOOT[best].rarity].name} plunder`, LOOT[best].name, 3.4);
     else this.ui.toast(`${R.name} chest · +${gold} gold`, kept.length ? kept.map((id) => LOOT[id].name).join(', ') : 'And fresh shot for the guns', 3.4);
     this.rig.shake(0.12);
+    this.chestPart(Math.max(2, tier), at, 1200);
   }
 
   /** The captain is down: the hands carry them back to the boat, and the camp keeps its chest. */
@@ -1403,6 +1495,7 @@ export class Game {
       p.root.updateMatrixWorld(true);
       this.market.open(port.name, port.spec.taste.tagline, port.market, this.hold, p.gold, this.world.time);
       this.refreshServices();
+      this.refreshParts();
       // start wide and let the camera settle in on the quay
       this.dockT = 0;
       this.rig.mode = 'port';
@@ -1464,6 +1557,7 @@ export class Game {
     if (id) this.market.sold(id, total);
     else this.market.soldAll(total);
     this.refreshServices();
+    this.refreshParts();
     // the porters carry it ashore, finest first, and the quay cheers a good sale
     port.unload(goods);
     port.cheer(total >= 1500 || best >= 4 ? 2 : total >= 250 || best >= 2 ? 1 : 0.5);
@@ -1554,12 +1648,21 @@ export class Game {
 
   // ------------------------------------------------------------------ ships
 
-  private pirateLivery() {
-    return PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
+  /** A pirate's colours, and now and then a prize fitting she took off somebody else. */
+  private pirateLivery(id: ShipClassId = 'sloop') {
+    const liv = PIRATE_LIVERIES[Math.floor(Math.random() * PIRATE_LIVERIES.length)];
+    const parts = pirateFit(id);
+    return Object.keys(parts).length ? { ...liv, parts } : liv;
   }
 
-  private makeShip(id: ShipClassId, team: 'player' | 'pirate', livery = team === 'player' ? lookToLivery(this.look) : this.pirateLivery(), model?: ShipModel): Ship {
-    const s = new Ship(SHIP_CLASSES[id], livery, team, this.quality.physicalHull ? 1 : 0, model);
+  /** Your colours, with this ship's refit. */
+  private playerLivery(id: ShipClassId) {
+    return { ...lookToLivery(this.look), parts: this.partStore.loadout(id) };
+  }
+
+  private makeShip(id: ShipClassId, team: 'player' | 'pirate', livery = team === 'player' ? this.playerLivery(id) : this.pirateLivery(id), model?: ShipModel): Ship {
+    // her refit is built into the model and into her figures
+    const s = new Ship(refit(SHIP_CLASSES[id], livery.parts), livery, team, this.quality.physicalHull ? 1 : 0, model);
     if (team === 'player') {
       s.name = this.look.name.trim() || s.cls.title;
       this.applyCosmetics(s);
@@ -1699,7 +1802,7 @@ export class Game {
         const ids = Object.keys(Game.STOCK) as ShipClassId[];
         const id = ids.find((k) => this.shipyard.filter((m) => m.cls.id === k).length < Game.STOCK[k]);
         const q = this.quality.physicalHull ? 1 : 0;
-        if (id) this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(), q, true);
+        if (id) this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(id), q, true);
         else if (!this.ghostyard) {
           // once the pirates are stocked, one phantom waits in the yard's shadow
           const r = Math.random();
@@ -2204,6 +2307,9 @@ export class Game {
       this.ui.toast(`+${bounty} gold ${ship.ghost ? 'cursed bounty' : 'bounty'}`, ship.ghost ? `The ${ship.name} is laid to rest` : `${ship.name} sunk`, 3.6);
       this.audio.coin();
       this.addInfamy(KILL_INFAMY[ship.cls.id]);
+      // whatever she had bolted on is yours to pull from the wreck
+      const prize = Object.values(ship.livery.parts ?? {})[0];
+      if (prize) setTimeout(() => this.findPart(prize, 'Salvaged from the wreck', ship.pos), 1400);
     }
   }
 
@@ -2379,6 +2485,35 @@ export class Game {
     this.audio.treasure(it.tier);
     if (k.rarity >= 2) this.ui.lootToast(lootIcon(best), k.rarity, `${RARITIES[k.rarity].name} plunder`, k.name, k.rarity === 4 ? 3.8 : 3);
     if (it.tier >= 3) this.rig.shake(it.tier === 4 ? 0.22 : 0.1);
+    this.chestPart(it.tier, at, 900);
+  }
+
+  /** A chest (or a camp's strongbox) may have a ship part in it. */
+  private chestPart(tier: number, at: THREE.Vector3, delay: number) {
+    const p = this.player;
+    const t = chestPart(tier, p ? loadoutStats(p.livery.parts).luck : 0);
+    if (t === null) return;
+    const found = rollPart(t, (id) => this.partStore.owns(id));
+    setTimeout(() => this.findPart(found.id, tier >= 3 ? 'In the treasure chest' : 'Found in the salvage', at), delay);
+  }
+
+  /** A part goes into the locker, with a toast fit for its rarity (a spare is paid out in gold). */
+  private findPart(id: string, kicker: string, at: THREE.Vector3 | null) {
+    const f = this.partStore.grant(id);
+    if (!f) return;
+    this.announcePart(f, kicker, at);
+  }
+
+  private announcePart(f: Found, kicker: string, at: THREE.Vector3 | null) {
+    const p = f.part;
+    const R = PART_RARITIES[p.tier];
+    if (f.refund) this.vaultStore.earn(f.refund);
+    const title = f.fresh ? p.name : `${p.name} (spare · +${f.refund.toLocaleString('en-US')} gold)`;
+    this.ui.lootToast(partIcon(p, 'loot-ico'), [0, 2, 3, 4, 5][p.tier], `${R.name} ${SLOT_NAMES[p.slot].toLowerCase()} · ${kicker}`, title, p.tier >= 3 ? 4.6 : 3.6);
+    this.note('chest', `Found ${p.name}`, `${R.name} ${SLOT_NAMES[p.slot].toLowerCase()}${f.fresh ? ' · fit it at the Shipwright' : ''}`);
+    this.audio.treasure(Math.min(4, p.tier + 1));
+    if (at && this.state === 'playing') this.world.particles.treasure(at.clone().setY(2), RARITY[Math.min(4, p.tier + 1)].glow, Math.min(4, p.tier + 1));
+    if (p.tier >= 3) this.rig.shake(0.12);
   }
 
   /** Says (now and then) that the hold is full and where to empty it. */

@@ -9,7 +9,7 @@ import {
   GLSL_DAMAGE_VERTEX,
   GLSL_DAMAGE_VERTEX_PARS,
 } from '../ships/damageGlsl';
-import { GLSL_SKIN } from '../ships/skinGlsl';
+import { GLSL_PART_SAIL, GLSL_SKIN } from '../ships/skinGlsl';
 import { GLSL_GHOST_ALPHA, GLSL_GHOST_COLOR, GLSL_GHOST_EMISSIVE, GLSL_GHOST_FRAGMENT_PARS, GLSL_GHOST_VERTEX } from '../ships/ghostGlsl';
 
 // One global set of lighting / atmosphere uniforms. Every custom or patched
@@ -295,6 +295,20 @@ float causticsAt(vec3 wp, float depth) {
 // no); woodwork by a flag in its vertex colour; sails only where the bare
 // cloth shows, so emblems and accent stripes stay on top.
 const GLSL_SKIN_FRAGMENT = /* glsl */ `
+#if defined(AQ_SKIN) && AQ_SKIN == 3
+  // upgrade sails: find the bare canvas before a skin repaints it
+  float pcCloth = 0.0;
+  vec3 pcEmis = vec3(0.0);
+  float pcMetal = 0.0;
+  float pcRough = 0.5;
+  float pcAmt = 0.0;
+  if (uPartSail.x > 0.5) {
+    vec3 pr = diffuseColor.rgb / max(uSkinCloth, vec3(0.02));
+    float pm = (pr.r + pr.g + pr.b) / 3.0;
+    float psp = (max(pr.r, max(pr.g, pr.b)) - min(pr.r, min(pr.g, pr.b))) / max(pm, 0.05);
+    pcCloth = (1.0 - smoothstep(0.1, 0.24, psp)) * smoothstep(0.5, 0.66, pm) * (1.0 - smoothstep(1.3, 1.5, pm));
+  }
+#endif
 #ifdef AQ_SKIN
   vec3 skEmis = vec3(0.0);
   float skAmt = 0.0;
@@ -330,6 +344,15 @@ const GLSL_SKIN_FRAGMENT = /* glsl */ `
     // glowing skins come alive after dark
     skEmis *= skMask * (0.55 + uNight * 0.9);
     skAmt = skMask;
+  }
+#endif
+#if defined(AQ_SKIN) && AQ_SKIN == 3
+  if (uPartSail.x > 0.5) {
+    vec2 pcUv = vec2(0.5);
+    #ifdef USE_MAP
+      pcUv = vMapUv;
+    #endif
+    aqSailPart(pcUv, uTime + uPartSail.w, pcCloth, diffuseColor.rgb, pcEmis, pcMetal, pcRough, pcAmt);
   }
 #endif
 `;
@@ -543,6 +566,9 @@ ${GLSL_GHOST_FRAGMENT_PARS}
 #ifdef AQ_SKIN
 ${GLSL_SKIN}
 uniform vec3 uSkinCloth;
+#if AQ_SKIN == 3
+${GLSL_PART_SAIL}
+#endif
 #if AQ_SKIN < 3
 varying vec3 vSkinP;
 varying vec3 vSkinN;
@@ -613,6 +639,10 @@ ${GLSL_GHOST_COLOR}
   metalnessFactor = mix(metalnessFactor, skMetal, skAmt);
   roughnessFactor = mix(roughnessFactor, skRough, skAmt);
 #endif
+#if defined(AQ_SKIN) && AQ_SKIN == 3
+  metalnessFactor = mix(metalnessFactor, pcMetal, pcAmt);
+  roughnessFactor = mix(roughnessFactor, pcRough, pcAmt);
+#endif
 ${GLSL_DAMAGE_SURFACE}`,
       )
       .replace(
@@ -620,6 +650,9 @@ ${GLSL_DAMAGE_SURFACE}`,
         `#include <emissivemap_fragment>
 #ifdef AQ_SKIN
   totalEmissiveRadiance += skEmis;
+#endif
+#if defined(AQ_SKIN) && AQ_SKIN == 3
+  totalEmissiveRadiance += pcEmis * (0.6 + uNight * 0.9);
 #endif
 ${GLSL_DAMAGE_EMISSIVE}
 ${GLSL_GHOST_EMISSIVE}`,

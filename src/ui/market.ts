@@ -2,6 +2,8 @@ import './market.css';
 import { CATEGORIES, Hold, LOOT, LootId, Market, RARITIES } from '../game/treasure';
 import { icon, ICONS } from './art';
 import { lootIcon } from './lootArt';
+import { Part, PART_RARITIES, SLOT_NAMES, statLines } from '../ships/parts';
+import { partIcon } from './partArt';
 
 // The trading port's market: your hold laid out on the counter with today's
 // prices, a Sell button on every lot, the chandlery for repairs and fresh
@@ -23,6 +25,12 @@ export interface Services {
   shot: number;
   /** Broadsides of special shot that buys. */
   shotN: number;
+}
+
+/** A part on the port shipwright's counter. */
+export interface PartOffer {
+  part: Part;
+  owned: boolean;
 }
 
 export class MarketUI {
@@ -50,6 +58,9 @@ export class MarketUI {
   onLeave: () => void = () => {};
   onDock: () => void = () => {};
   onClick: () => void = () => {};
+  onBuyPart: (id: string) => void = () => {};
+  private partList: HTMLElement;
+  private partPurse: HTMLElement;
 
   constructor() {
     const r = (this.root = document.createElement('div'));
@@ -70,6 +81,9 @@ export class MarketUI {
           <button class="mk-svc" data-k="repair">${icon(HAMMER)}<span><b>Repair the hull</b><small></small></span><em><span class="coin"></span><i></i></em></button>
           <button class="mk-svc" data-k="shot">${icon(SHOT)}<span><b>Restock the shot</b><small></small></span><em><span class="coin"></span><i></i></em></button>
         </div>
+        <div class="mk-label"><span>Shipwright</span><span class="mk-wpurse" title="Your purse"></span></div>
+        <ul class="mk-parts"></ul>
+        <p class="mk-pnote">Paid from your purse. New parts are fitted at the Shipwright before your next voyage.</p>
         <footer class="mk-foot"><button class="btn mk-leave">${icon(ICONS.flag)}<span>Cast off</span><kbd class="kd">Esc</kbd></button></footer>
       </div>`;
     document.body.appendChild(r);
@@ -79,6 +93,15 @@ export class MarketUI {
     this.room = r.querySelector('.mk-room')!;
     this.svcRepair = r.querySelector('[data-k="repair"]')!;
     this.svcShot = r.querySelector('[data-k="shot"]')!;
+    this.partList = r.querySelector('.mk-parts')!;
+    this.partPurse = r.querySelector('.mk-wpurse')!;
+    this.partList.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.mk-buy');
+      if (!b || b.disabled) return;
+      e.stopPropagation();
+      this.onClick();
+      this.onBuyPart(b.dataset.id!);
+    });
     const tap = (el: HTMLElement, fn: () => void) =>
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -169,6 +192,26 @@ export class MarketUI {
     };
     set(this.svcRepair, s.repair, `Patch ${fmt(s.repairHp)} hull`, 'Sound as a bell');
     set(this.svcShot, s.shot, `${s.shotN} broadsides of special shot`, 'The racks are full');
+  }
+
+  /** The shipwright's counter: today's parts, and whether the purse stretches to them. */
+  setParts(offers: PartOffer[], purse: number, bought?: string) {
+    this.partPurse.innerHTML = `<span class="coin"></span>${fmt(purse)}`;
+    this.partList.innerHTML = offers
+      .map(({ part: p, owned }) => {
+        const R = PART_RARITIES[p.tier];
+        const lines = statLines(p.stats)
+          .slice(0, 3)
+          .map((l) => `<span class="${l.bad ? 'bad' : ''}">${l.text}</span>`)
+          .join('');
+        const can = !owned && purse >= R.price;
+        return `<li class="mk-row mk-prow t${p.tier}${bought === p.id ? ' just' : ''}" style="--rc:${R.css}">
+          <i class="mk-ico">${partIcon(p, 'loot-ico')}</i>
+          <div class="mk-what"><b>${esc(p.name)}</b><small><em>${R.name}</em> · ${SLOT_NAMES[p.slot]}</small><div class="mk-pst">${lines}</div></div>
+          <button class="mk-buy" data-id="${p.id}"${can ? '' : ' disabled'}>${owned ? 'Owned' : `<span class="coin"></span>${fmt(R.price)}`}</button>
+        </li>`;
+      })
+      .join('');
   }
 
   setGold(g: number) {

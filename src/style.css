@@ -1147,6 +1147,16 @@ kbd {
   box-shadow: 0 0 calc(10px * var(--u)) rgba(94, 227, 212, 0.25);
 }
 
+.pips i.on.up {
+  background: var(--gold-grad);
+  box-shadow: 0 0 calc(10px * var(--u)) rgba(255, 200, 90, 0.55);
+}
+
+.refit-tag {
+  font-style: normal;
+  color: var(--gold-hi);
+}
+
 .pips i.on:has(+ i:not(.on)) {
   border-radius: 0 calc(99px * var(--u)) calc(99px * var(--u)) 0;
 }

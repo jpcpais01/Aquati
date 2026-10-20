@@ -126,7 +126,7 @@
 
 .sw-tabs {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, 1fr);
   gap: 4px;
   margin: 10px 10px 0;
   padding: 4px;
@@ -1135,7 +1135,7 @@
   background: var(--gold-grad);
 }
 
-/* six tabs: stack icon over label wherever the row would be too tight */
+/* seven tabs: stack icon over label wherever the row would be too tight */
 @media (max-height: 560px) and (min-width: 561px) {
   .sw-tab {
     flex-direction: column;
@@ -1159,5 +1159,327 @@
   .sw-tab span {
     font-size: 9px;
     letter-spacing: 0.08em;
+  }
+}
+
+/* ------------------------------------------------------------------ refit: the upgrade track */
+
+.sw-rbars {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.sw-rbar {
+  display: grid;
+  grid-template-columns: 74px 1fr;
+  align-items: center;
+  gap: 10px;
+  font: 700 10px var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.sw-rbar i {
+  position: relative;
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.sw-rbar b,
+.sw-rbar em {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 99px;
+  transition: width 0.45s var(--ease), left 0.45s var(--ease);
+}
+
+.sw-rbar b {
+  background: linear-gradient(90deg, #8fd8d0, #e9f6f4);
+}
+
+.sw-rbar em {
+  background: var(--gold-grad);
+  box-shadow: 0 0 10px rgba(255, 200, 90, 0.7);
+}
+
+.sw-rbar.down em {
+  background: linear-gradient(90deg, #ff7563, #e5604f);
+  box-shadow: none;
+}
+
+.sw-rbar.up span {
+  color: var(--gold-hi);
+}
+
+.sw-track {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+
+/* the line the track hangs on */
+.sw-track::before {
+  content: '';
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  top: 27px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), #6cc8ff 40%, #c48bff 60%, #ffbe3d 80%, #ff5f9e);
+  opacity: 0.35;
+}
+
+.sw-node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: 800 8.5px var(--sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  transition: transform 0.2s var(--ease);
+}
+
+.sw-node svg.part-ico {
+  width: 100%;
+  height: 100%;
+}
+
+.sw-node .sw-node-art,
+.sw-node.std > svg {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  padding: 6px;
+  border-radius: 15px;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--rc) 26%, #0d2230), #06121b 75%);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--rc) 55%, transparent), 0 6px 16px rgba(0, 0, 0, 0.35);
+  transition: box-shadow 0.25s, filter 0.25s;
+}
+
+.sw-node.std > svg {
+  background: radial-gradient(circle at 50% 35%, #1a3442, #06121b 75%);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.18), 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.sw-node span {
+  color: color-mix(in srgb, var(--rc) 80%, white);
+  white-space: nowrap;
+}
+
+.sw-node:hover {
+  transform: translateY(-2px);
+}
+
+.sw-node.sel .sw-node-art,
+.sw-node.std.sel > svg {
+  box-shadow: var(--focus), 0 0 24px color-mix(in srgb, var(--rc) 55%, transparent);
+}
+
+.sw-node.locked .sw-node-art svg {
+  filter: grayscale(0.9) brightness(0.45);
+}
+
+.sw-node.locked span {
+  color: var(--ink-4);
+}
+
+.sw-node-lock {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: 54px;
+  max-width: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.sw-node-lock svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.75);
+  stroke-width: 2;
+  stroke-linecap: round;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
+}
+
+.sw-node.new::after {
+  content: 'New';
+  position: absolute;
+  top: -6px;
+  right: -2px;
+  padding: 1px 5px;
+  border-radius: 99px;
+  font: 800 8px var(--sans);
+  letter-spacing: 0.08em;
+  color: var(--gold-ink);
+  background: var(--gold-grad);
+}
+
+/* legendary parts shimmer; mythic ones are ringed in turning light */
+.sw-node.t3.owned .sw-node-art {
+  background:
+    linear-gradient(115deg, transparent 35%, rgba(255, 240, 190, 0.35) 50%, transparent 65%) 0 0 / 300% 100%,
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--rc) 30%, #0d2230), #06121b 75%);
+  animation: sw-shimmer 3.2s linear infinite;
+}
+
+.sw-node.t4 .sw-node-art {
+  position: relative;
+  isolation: isolate;
+}
+
+.sw-node.t4.owned .sw-node-art::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  z-index: -1;
+  border-radius: 17px;
+  background: conic-gradient(from var(--sw-a, 0deg), #7fe8ff, #c69bff, #ff5f9e, #ffd36a, #7fe8ff);
+  filter: blur(0.5px);
+  animation: sw-spin 4s linear infinite;
+}
+
+.sw-node.t4.owned .sw-node-art::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: 14px;
+  background: radial-gradient(circle at 50% 35%, #2a1e4a, #07061a 75%);
+}
+
+@property --sw-a {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes sw-spin {
+  to {
+    --sw-a: 360deg;
+  }
+}
+
+@keyframes sw-shimmer {
+  from {
+    background-position: 150% 0, 0 0;
+  }
+  to {
+    background-position: -150% 0, 0 0;
+  }
+}
+
+.sw-pinfo {
+  margin-top: 8px;
+  padding: 10px 12px 11px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--rc) 10%, rgba(10, 30, 42, 0.8)), rgba(4, 14, 22, 0.85));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rc) 25%, transparent);
+}
+
+.sw-pinfo small {
+  display: block;
+  font: 800 9.5px var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rc);
+}
+
+.sw-pinfo b {
+  display: block;
+  margin-top: 2px;
+  font: 700 15px / 1.2 var(--serif);
+  color: var(--ink);
+}
+
+.sw-pinfo p {
+  margin: 4px 0 0;
+  font: 500 12px / 1.45 var(--sans);
+  color: var(--ink-2);
+}
+
+.sw-pstats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.sw-pstats span {
+  padding: 3px 8px;
+  border-radius: 99px;
+  font: 700 10.5px var(--sans);
+  color: #dff8d8;
+  background: rgba(120, 220, 140, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(120, 220, 140, 0.25);
+}
+
+.sw-pstats span.bad {
+  color: #ffd3cc;
+  background: rgba(255, 117, 99, 0.13);
+  box-shadow: inset 0 0 0 1px rgba(255, 117, 99, 0.28);
+}
+
+.sw-pinfo em {
+  display: inline-block;
+  margin-top: 9px;
+  font: 800 10px var(--sans);
+  font-style: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.sw-pinfo em.on {
+  color: var(--gold-hi);
+}
+
+.sw-pinfo em.find {
+  color: var(--ink-3);
+}
+
+@media (max-width: 560px) {
+  .sw-track {
+    gap: 3px;
+  }
+
+  .sw-track::before {
+    top: 22px;
+  }
+
+  .sw-node .sw-node-art,
+  .sw-node.std > svg,
+  .sw-node-lock {
+    width: 44px;
+    border-radius: 12px;
+    padding: 5px;
+  }
+
+  .sw-node {
+    font-size: 7.5px;
+    letter-spacing: 0.04em;
   }
 }

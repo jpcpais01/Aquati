@@ -683,4 +683,130 @@
 }
 
 .toast.loot-toast.r-3 small { color: #c48bff; }
+.toast.loot-toast.r-5 {
+  border-color: rgba(198, 155, 255, 0.9);
+  box-shadow: 0 0 40px rgba(127, 232, 255, 0.35), 0 0 22px rgba(255, 95, 158, 0.3), 0 14px 40px rgba(0, 8, 14, 0.35);
+}
+.toast.loot-toast.r-5 small {
+  background: linear-gradient(90deg, #7fe8ff, #c69bff, #ff5f9e);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.toast.loot-toast.r-4 small { color: #ffbe3d; }
 .toast.loot-toast.r-2 small { color: #6cc8ff; }
+
+/* ------------------------------------------------------------------ the port shipwright */
+
+.mk-wpurse {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--gold-hi);
+  font-variant-numeric: tabular-nums;
+}
+
+.mk-wpurse .coin {
+  width: 11px;
+  height: 11px;
+}
+
+.mk-parts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.mk-prow {
+  grid-template-columns: 44px 1fr auto;
+  max-height: none;
+}
+
+.mk-prow.t3 {
+  box-shadow: 0 0 22px rgba(255, 190, 61, 0.16) inset;
+}
+
+.mk-prow.t4 {
+  border-color: rgba(198, 155, 255, 0.55);
+  background: linear-gradient(90deg, rgba(127, 232, 255, 0.12), rgba(198, 155, 255, 0.1) 40%, rgba(255, 95, 158, 0.06) 70%, rgba(255, 255, 255, 0.03));
+  box-shadow: 0 0 26px rgba(198, 155, 255, 0.2) inset;
+}
+
+.mk-prow.just {
+  animation: mk-bought 0.9s var(--spring) both;
+}
+
+@keyframes mk-bought {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--rc) 70%, transparent);
+  }
+  30% {
+    transform: scale(1.03);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--rc) 35%, transparent);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 14px transparent;
+  }
+}
+
+.mk-pst {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.mk-pst span {
+  font: 700 9.5px var(--sans);
+  color: #c9f2c4;
+}
+
+.mk-pst span.bad {
+  color: #ffbcb2;
+}
+
+.mk-pst span + span::before {
+  content: '·';
+  margin-right: 4px;
+  color: var(--ink-4);
+}
+
+.mk-buy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 0;
+  font: 800 12px var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--gold-ink);
+  background: var(--gold-grad);
+  box-shadow: 0 4px 14px rgba(240, 180, 70, 0.3);
+  transition: transform 0.15s var(--ease), filter 0.2s;
+}
+
+.mk-buy:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.mk-buy:disabled {
+  color: var(--ink-3);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+}
+
+.mk-buy .coin {
+  width: 11px;
+  height: 11px;
+}
+
+.mk-pnote {
+  margin: 6px 2px 0;
+  font: 500 10.5px/1.4 var(--sans);
+  color: var(--ink-3);
+}

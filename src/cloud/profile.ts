@@ -12,6 +12,7 @@
 // become `ref:<hash>` and live in their own documents.
 
 import { freshVault, GIFT_PREFIX, VAULT_KEY, VaultState } from '../ships/cosmetics';
+import { freshParts, PARTS_KEY, PartsState, sanitizeParts } from '../ships/parts';
 import { LOOK_KEY, MAX_SAVED, SAVED_KEY } from '../ships/look';
 import { Records, RECORDS_KEY } from '../ui/wreck';
 import { SHIP_KEY } from '../ui/ui';
@@ -27,6 +28,8 @@ export interface Design {
 
 export interface Profile {
   vault: VaultState | null;
+  /** Upgrade parts found and each ship's refit. */
+  parts: PartsState | null;
   look: Json | null;
   designs: Design[];
   records: Records | null;
@@ -74,6 +77,7 @@ export function readLocal(): Profile {
   const designs = readJson(SAVED_KEY);
   const records = readJson(RECORDS_KEY);
   const look = readJson(LOOK_KEY);
+  const parts = readJson(PARTS_KEY);
   const gifts: Record<string, number> = {};
   let ship: string | null = null;
   try {
@@ -90,6 +94,7 @@ export function readLocal(): Profile {
   }
   return {
     vault: readVault(),
+    parts: isObj(parts) ? sanitizeParts(parts) : null,
     look: isObj(look) ? look : null,
     designs: Array.isArray(designs) ? designs.filter((d): d is Design => isObj(d) && typeof d.id === 'string' && isObj(d.look)) : [],
     records: isObj(records) ? { ...ZERO_RECORDS, ...(records as Partial<Records>) } : null,
@@ -108,6 +113,7 @@ function setOrRemove(k: string, v: string | null) {
 export function writeLocal(p: Profile) {
   try {
     setOrRemove(VAULT_KEY, p.vault ? JSON.stringify(p.vault) : null);
+    setOrRemove(PARTS_KEY, p.parts ? JSON.stringify(p.parts) : null);
     setOrRemove(LOOK_KEY, p.look ? JSON.stringify(p.look) : null);
     setOrRemove(SAVED_KEY, p.designs.length ? JSON.stringify(p.designs.slice(0, MAX_SAVED)) : null);
     setOrRemove(RECORDS_KEY, p.records ? JSON.stringify(p.records) : null);
@@ -125,7 +131,7 @@ export function writeLocal(p: Profile) {
   }
 }
 
-export const emptyProfile = (): Profile => ({ vault: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null });
+export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null });
 
 /** Back to a brand-new guest: what a sign-out leaves behind. */
 export function resetLocal() {
@@ -138,6 +144,7 @@ export function hasProgress(p: Profile) {
   const f = freshVault();
   return !!(
     (v && (v.purse !== f.purse || v.pulls > 0 || Object.keys(v.owned).length > Object.keys(f.owned).length)) ||
+    (p.parts && Object.keys(p.parts.owned).length) ||
     p.designs.length ||
     (p.records && p.records.voyages > 0) ||
     (p.bounty && p.bounty.infamy > 0) ||
@@ -251,6 +258,23 @@ function mergeVault(b: VaultState | null, l: VaultState | null, r: VaultState | 
   return out;
 }
 
+function mergeParts(b: PartsState | null, l: PartsState | null, r: PartsState | null, first: boolean): PartsState | null {
+  if (!l) return r;
+  if (!r) return l;
+  const B = b ?? freshParts();
+  const out = structuredClone(r);
+  // finds on either side are kept: counts merge as deltas, like the vault's
+  for (const id of new Set([...Object.keys(l.owned), ...Object.keys(r.owned)])) {
+    const n = (r.owned[id] ?? 0) + Math.max(0, (l.owned[id] ?? 0) - (B.owned[id] ?? 0));
+    if (n > 0) out.owned[id] = n;
+  }
+  out.fit = structuredClone(latest(B.fit, l.fit, r.fit, first));
+  const removed = new Set(B.unseen.filter((id) => !l.unseen.includes(id)));
+  const added = l.unseen.filter((id) => !B.unseen.includes(id));
+  out.unseen = [...new Set([...r.unseen.filter((id) => !removed.has(id)), ...added])];
+  return sanitizeParts(out);
+}
+
 function mergeRecords(b: Records | null, l: Records | null, r: Records | null): Records | null {
   if (!l) return r;
   if (!r) return l;
@@ -296,6 +320,7 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
   for (const [k, n] of Object.entries(local.gifts)) gifts[k] = Math.max(n, gifts[k] ?? 0);
   return {
     vault: mergeVault(B.vault, local.vault, remote.vault, first, giftOverlap),
+    parts: mergeParts(B.parts, local.parts, remote.parts, first),
     look: latest(B.look, local.look, remote.look, first),
     designs: mergeDesigns(base ? B.designs : null, local.designs, remote.designs),
     records: mergeRecords(B.records, local.records, remote.records),
@@ -310,7 +335,7 @@ export type Part = Exclude<keyof Profile, 'gifts'>;
 /** Which parts differ, so the game reloads only what it must. */
 export function changedParts(a: Profile, b: Profile): Set<Part> {
   const out = new Set<Part>();
-  for (const k of ['vault', 'look', 'designs', 'records', 'ship', 'bounty'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
+  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
   return out;
 }
 
@@ -323,6 +348,7 @@ export function parseProfile(raw: unknown): Profile | null {
     const e = emptyProfile();
     return {
       vault: isObj(p.vault) ? ({ ...freshVault(), ...p.vault } as VaultState) : null,
+      parts: isObj(p.parts) ? sanitizeParts(p.parts) : null,
       look: isObj(p.look) ? p.look : null,
       designs: Array.isArray(p.designs) ? (p.designs as unknown[]).filter((d): d is Design => isObj(d) && typeof d.id === 'string' && isObj(d.look)) : e.designs,
       records: isObj(p.records) ? { ...ZERO_RECORDS, ...(p.records as Partial<Records>) } : null,
