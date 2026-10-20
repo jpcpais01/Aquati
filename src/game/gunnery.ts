@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { angleDelta, clamp } from '../core/noise';
 import { globalUniforms } from '../render/environment';
-import { PLAYER_ARC, Ship, gunRange } from '../ships/ship';
+import { PLAYER_ARC, Ship, elevationFor, gunRange, sailAimHeight } from '../ships/ship';
 import { World } from './world';
 
 export type Side = 'port' | 'starboard';
@@ -181,12 +181,15 @@ export class Gunnery {
     const v = p.muzzleSpeed;
     const rvx = foe.vel.x - p.vel.x;
     const rvz = foe.vel.z - p.vel.z;
+    const chain = p.ammo === 'chain';
+    const chainH = chain ? foe.pos.y + sailAimHeight(foe) - p.pos.y - 1.5 : 0;
     let tof = Math.hypot(foe.pos.x - p.pos.x, foe.pos.z - p.pos.z) / v;
     let d = 0;
     for (let i = 0; i < 2; i++) {
       lead.set(foe.pos.x + rvx * tof, 0, foe.pos.z + rvz * tof);
       d = Math.hypot(lead.x - p.pos.x, lead.z - p.pos.z);
-      const e = 0.5 * Math.asin(clamp((GRAVITY * d) / (v * v), 0, 1));
+      // chain is laid up into her sails, which flattens the arc and shortens the flight
+      const e = chain ? elevationFor(v, d, chainH, GRAVITY) : 0.5 * Math.asin(clamp((GRAVITY * d) / (v * v), 0, 1));
       tof = d / (v * Math.cos(e));
     }
     out.set(foe.pos.x + foe.vel.x * tof, 0, foe.pos.z + foe.vel.z * tof);

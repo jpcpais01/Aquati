@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T16:00Z',
     entries: [
       {
+        title: 'Chain shot goes for the sails',
+        notes: [
+          'With chain shot loaded, your gun crews now raise their guns and lay them on the middle of the enemy\'s canvas instead of her waterline, so the chain scythes through sails and rigging the way it should. The lock and lead allow for the flatter, quicker flight.',
+          'Pirates who load chain do the same to you.',
+        ],
+      },
+      {
         title: 'Going down with your ship, beautifully',
         notes: [
           'The bubbles are real now: every one is shaded as a sphere of air in water, with a mirror-bright rim where light can\'t escape, a glint of sun on its shoulder and the bright surface glowing upside down in its belly. Big ones rise faster than small ones, tiny ones zigzag and spiral, and they swell as they climb toward the surface before popping just beneath it.',
