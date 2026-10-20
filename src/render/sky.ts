@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CLOUD, GLSL_AERIAL, GLSL_ATMOS, globalUniforms } from './environment';
 import { CUMULUS_NEAR } from './cumulus';
+import { GLSL_NIGHT_SKY } from './nightSky';
 
 // The sky you only see from the deck. The top-down view never shows the
 // horizon, so this dome draws only in the captain's view: the scattering sky
@@ -30,6 +31,7 @@ export function createSkyDome(): THREE.Mesh {
       uniform vec3 uFogColor;
       uniform vec2 uFogRange;
       ${GLSL_AERIAL}
+      ${GLSL_NIGHT_SKY}
       varying vec3 vDir;
 
       // The cumulus overhead, seen from below as their flat bellies: grey
@@ -66,6 +68,8 @@ export function createSkyDome(): THREE.Mesh {
         belly = mix(belly * night, hz, 1.0 - exp(-db * 0.000042));
         crown = mix(crown * night, hz, 1.0 - exp(-dt * 0.000042));
         belly += vec3(0.62, 0.7, 0.95) * uFlash * 0.7;
+        // by moonlight the thin rims of the clouds drifting before the moon burn silver
+        belly += uSunColor * pow(max(mu, 0.0), 14.0) * (1.0 - smoothstep(0.0, 0.45, kB)) * 3.5 * uNight * (1.0 - uCloudCover * 0.6);
         // near only, unless the sky is closing over
         float keep = max(1.0 - smoothstep(${CUMULUS_NEAR.toFixed(1)}, ${(CUMULUS_NEAR * 1.5).toFixed(1)}, db), smoothstep(0.5, 0.85, uCloudCover));
         float fade = smoothstep(0.0, 0.06, d.y) * keep;
@@ -77,10 +81,18 @@ export function createSkyDome(): THREE.Mesh {
 
       void main() {
         vec3 d = normalize(vDir);
+        // one pixel, in radians of sky: stars and the moon's limb stay pin-sharp at any zoom
+        float pix = length(fwidth(d)) * 0.75;
         float h = d.y;
         vec3 col = skyColor(vec3(d.x, max(h, 0.0), d.z));
         float sd = max(dot(d, uSunDir), 0.0);
         vec3 hz = hazeColor(d);
+        // above the clouds: the stars, the galaxy and the moon
+        vec3 night = nightSky(d, pix, col);
+        vec4 moon = moonDisc(d, pix);
+        night = night * (1.0 - moon.a) + moon.rgb;
+        // the faint airglow banding the horizon on the darkest nights
+        night += vec3(0.006, 0.011, 0.007) * uNight * exp(-max(h, 0.0) * 14.0) * (1.0 - uCloudCover);
         float cover = 0.0;
         if (h > 0.0) {
           // high cirrus: faint streaks combed out along the wind, here and there, in fair weather
@@ -91,18 +103,19 @@ export function createSkyDome(): THREE.Mesh {
           float ci = texture(uNoiseTex, cs + uCloudOffset * 0.4).g;
           float patchy = smoothstep(0.5, 0.75, texture(uNoiseTex, uvC * 0.35 + 0.5).r);
           float cirrus = smoothstep(0.55, 0.85, ci) * patchy * (1.0 - smoothstep(0.3, 0.7, uCloudCover)) * smoothstep(0.04, 0.35, h);
+          col += night * (1.0 - cirrus * 0.6);
           col = mix(col, uLight * 0.95 + uSunColor * 0.1 * (0.6 + pow(sd, 6.0)), cirrus * 0.3 * (1.0 - uNight * 0.6));
 
           vec4 cu = deck(cameraPosition, d, hz);
           col = mix(col, cu.rgb, cu.a);
           cover = cu.a;
         }
-        col += starField(d) * (1.0 - cover) * (1.0 - cover);
-        // the key light itself (the sun by day, the moon by night): a hot disc
-        // with a darkened limb, hidden behind any cloud
+        // the key light itself by day: a hot disc with a darkened limb, hidden
+        // behind any cloud (by night the moon above stands in for it)
         float disc = smoothstep(0.99955, 0.99975, sd);
         float limb = 0.55 + 0.45 * smoothstep(0.99955, 0.99992, sd);
-        col += uSunColor * disc * limb * 7.0 * (1.0 - cover) * (1.0 - uMist * 0.7);
+        float sunKey = step(dot(uSunDir, uMoon.xyz), 0.9999);
+        col += uSunColor * disc * limb * 7.0 * (1.0 - cover) * (1.0 - uMist * 0.7) * sunKey;
         // low mist swallows the lower sky; the horizon melts into the far, hazed water
         col = mix(col, hz, uMist * 0.75 * (1.0 - smoothstep(0.0, 0.5, h)));
         col = mix(col, hz, (1.0 - smoothstep(-0.015, 0.07, h)) * 0.9);

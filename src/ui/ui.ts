@@ -1168,13 +1168,19 @@ export class UI {
 
   private skyKey = '';
   private skyTagT = 0;
-  /** Flashes a short label (the chosen weather) under the clock. */
+  /** Says what a tap on the sky badge chose, in a chip beside the strip. */
   skyTag(text: string) {
-    const el = $('hud-sky');
-    el.dataset.tag = text;
-    replay(el, 'tag');
+    const el = $('hud-say');
+    el.textContent = text;
+    replay(el, 'say');
     clearTimeout(this.skyTagT);
-    this.skyTagT = window.setTimeout(() => el.classList.remove('tag'), 1600);
+    this.skyTagT = window.setTimeout(() => el.classList.remove('say'), 1800);
+  }
+  /** Gold pips on the icon / clock while the weather / hour is pinned rather than left to run. */
+  skyPins(weather: boolean, hour: boolean) {
+    const el = $('hud-sky');
+    el.toggleAttribute('data-pin-wx', weather);
+    el.toggleAttribute('data-pin-hr', hour);
   }
   /** Clock & weather badge beside the minimap. */
   setSky(hour: number, icon: string, label: string) {
@@ -1184,8 +1190,7 @@ export class UI {
     if (key === this.skyKey) return;
     this.skyKey = key;
     const el = $('hud-sky');
-    const tag = el.classList.contains('tag');
-    el.className = `sky ${icon}${hour < 5.5 || hour > 19.5 ? ' night' : ''}${tag ? ' tag' : ''}`;
+    el.className = `sky ${icon}${hour < 5.5 || hour > 19.5 ? ' night' : ''}`;
     el.title = `${label} · ${text}`;
     $('hud-clock').textContent = text;
   }
