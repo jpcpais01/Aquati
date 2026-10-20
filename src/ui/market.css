@@ -17,9 +17,9 @@
 
 .mk-card {
   position: absolute;
-  top: calc(16px + var(--safe-t));
-  right: calc(16px + var(--safe-r));
-  bottom: calc(16px + var(--safe-b));
+  top: var(--mt);
+  right: var(--mr);
+  bottom: var(--mb);
   width: min(400px, 40vw);
   display: flex;
   flex-direction: column;
@@ -485,9 +485,9 @@
 @media (max-width: 760px), (orientation: portrait) {
   .mk-card {
     top: auto;
-    left: calc(8px + var(--safe-l));
-    right: calc(8px + var(--safe-r));
-    bottom: calc(8px + var(--safe-b));
+    left: var(--ml);
+    right: var(--mr);
+    bottom: var(--mb);
     width: auto;
     max-height: 62vh;
     max-height: 62dvh;
@@ -537,8 +537,8 @@
 
 @media (max-height: 520px) and (orientation: landscape) {
   .mk-card {
-    top: calc(8px + var(--safe-t));
-    bottom: calc(8px + var(--safe-b));
+    top: var(--mt);
+    bottom: var(--mb);
     width: min(380px, 46vw);
     gap: 6px;
     --gut: 10px;

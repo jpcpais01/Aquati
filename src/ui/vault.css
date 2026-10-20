@@ -117,9 +117,9 @@
 .vt-head {
   position: absolute;
   z-index: 5;
-  top: calc(18px + var(--safe-t));
-  left: calc(20px + var(--safe-l));
-  right: calc(20px + var(--safe-r));
+  top: var(--mt);
+  left: var(--ml);
+  right: var(--mr);
   display: flex;
   align-items: center;
   gap: 14px;
@@ -191,7 +191,7 @@
 .vt-dock {
   position: absolute;
   z-index: 3;
-  right: calc(24px + var(--safe-r));
+  right: var(--mr);
   top: 50%;
   width: min(330px, 34vw);
   padding: 18px;
@@ -448,7 +448,7 @@
   position: absolute;
   z-index: 5;
   left: 50%;
-  bottom: calc(26px + var(--safe-b));
+  bottom: calc(var(--mb) + 10px);
   transform: translateX(-50%);
   display: none;
   padding: 7px 16px;
@@ -477,7 +477,7 @@
   align-items: center;
   justify-content: center;
   gap: 14px;
-  padding: calc(84px + var(--safe-t)) calc(16px + var(--safe-r)) calc(18px + var(--safe-b)) calc(16px + var(--safe-l));
+  padding: calc(var(--mt) + 68px) var(--mr) var(--mb) var(--ml);
   pointer-events: none !important;
 }
 
@@ -1000,9 +1000,9 @@
 
 .vt-show-panel {
   position: absolute;
-  left: calc(24px + var(--safe-l));
-  top: calc(92px + var(--safe-t));
-  bottom: calc(22px + var(--safe-b));
+  left: var(--ml);
+  top: calc(var(--mt) + 76px);
+  bottom: var(--mb);
   width: min(360px, 36vw);
   display: flex;
   flex-direction: column;
@@ -1161,7 +1161,7 @@
   inset: 0;
   z-index: 4;
   display: none;
-  padding: calc(84px + var(--safe-t)) calc(20px + var(--safe-r)) calc(16px + var(--safe-b)) calc(20px + var(--safe-l));
+  padding: calc(var(--mt) + 68px) var(--mr) var(--mb) var(--ml);
 }
 
 .vt[data-view='coll'] .vt-coll {
@@ -1354,9 +1354,9 @@
 
 @media (max-width: 900px) {
   .vt-head {
-    top: calc(12px + var(--safe-t));
-    left: calc(14px + var(--safe-l));
-    right: calc(14px + var(--safe-r));
+    top: var(--mt);
+    left: var(--ml);
+    right: var(--mr);
     gap: 10px;
   }
 
@@ -1372,7 +1372,7 @@
   }
 
   .vt-coll {
-    padding: calc(70px + var(--safe-t)) calc(10px + var(--safe-r)) calc(10px + var(--safe-b)) calc(10px + var(--safe-l));
+    padding: calc(var(--mt) + 54px) var(--mr) var(--mb) var(--ml);
   }
 
   .vt-coll-sheet {
@@ -1390,17 +1390,17 @@
   }
 
   .vt-reveal {
-    padding-top: calc(70px + var(--safe-t));
+    padding-top: calc(var(--mt) + 54px);
   }
 }
 
 /* portrait: the dock and the showcase become bottom sheets */
 @media (max-aspect-ratio: 4/5) {
   .vt-dock {
-    left: calc(12px + var(--safe-l));
-    right: calc(12px + var(--safe-r));
+    left: var(--ml);
+    right: var(--mr);
     top: auto;
-    bottom: calc(12px + var(--safe-b));
+    bottom: var(--mb);
     width: auto;
     padding: 14px;
     gap: 11px;
@@ -1446,10 +1446,10 @@
   }
 
   .vt-show-panel {
-    left: calc(12px + var(--safe-l));
-    right: calc(12px + var(--safe-r));
+    left: var(--ml);
+    right: var(--mr);
     top: auto;
-    bottom: calc(12px + var(--safe-b));
+    bottom: var(--mb);
     width: auto;
     flex-direction: row;
     align-items: flex-end;
@@ -1496,7 +1496,7 @@
 /* landscape phones: everything tighter */
 @media (max-height: 500px) and (min-aspect-ratio: 4/5) {
   .vt-head {
-    top: calc(8px + var(--safe-t));
+    top: var(--mt);
   }
 
   .vt-titles h1 {
@@ -1511,8 +1511,8 @@
     width: min(280px, 38vw);
     padding: 12px;
     gap: 9px;
-    top: calc(62px + var(--safe-t));
-    bottom: calc(10px + var(--safe-b));
+    top: calc(var(--mt) + 46px);
+    bottom: var(--mb);
     transform: none;
     justify-content: center;
   }
@@ -1534,8 +1534,8 @@
   }
 
   .vt-reveal {
-    padding-top: calc(54px + var(--safe-t));
-    padding-bottom: calc(8px + var(--safe-b));
+    padding-top: calc(var(--mt) + 38px);
+    padding-bottom: var(--mb);
     gap: 6px;
   }
 
@@ -1557,8 +1557,8 @@
   }
 
   .vt-show-panel {
-    top: calc(56px + var(--safe-t));
-    bottom: calc(8px + var(--safe-b));
+    top: calc(var(--mt) + 40px);
+    bottom: var(--mb);
     width: min(330px, 44vw);
     flex-direction: row;
     align-items: center;
@@ -1603,7 +1603,7 @@
   }
 
   .vt-coll {
-    padding-top: calc(54px + var(--safe-t));
+    padding-top: calc(var(--mt) + 38px);
   }
 }
 

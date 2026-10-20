@@ -66,7 +66,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding: 0 calc(5vw + var(--safe-r)) var(--safe-b) calc(5vw + var(--safe-l));
+  padding: 0 5vw var(--mb) 5vw;
 }
 
 #cine.on .cine-bar {
@@ -87,7 +87,7 @@
 
 .cine-cap {
   position: absolute;
-  left: calc(5vw + var(--safe-l));
+  left: 5vw;
   bottom: calc(100% + clamp(14px, 3vh, 30px));
   max-width: calc(100vw - 10vw);
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.7), 0 1px 3px rgba(0, 0, 0, 0.6);
@@ -246,7 +246,7 @@
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
-  padding: calc(22px + var(--safe-t)) calc(20px + var(--safe-r)) calc(18px + var(--safe-b)) calc(20px + var(--safe-l));
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
   background: radial-gradient(ellipse 95% 75% at 50% 40%, rgba(1, 14, 20, 0.12) 0%, rgba(1, 12, 18, 0.42) 62%, rgba(0, 7, 11, 0.8) 100%);
   animation: fade 1.2s ease;
 }
@@ -1515,7 +1515,7 @@
 
 @media (max-width: 720px) {
   #dead {
-    padding-top: calc(16px + var(--safe-t));
+    padding-top: var(--mt);
   }
   .wk {
     gap: 16px;
@@ -1647,7 +1647,7 @@
 /* laptop-height screens: the same card, packed tighter so it all fits without scrolling */
 @media (max-height: 820px) and (min-width: 721px) {
   #dead {
-    padding-top: calc(12px + var(--safe-t));
+    padding-top: var(--mt);
   }
   .wk {
     gap: 14px;

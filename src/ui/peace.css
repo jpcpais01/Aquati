@@ -340,8 +340,8 @@
 @media (max-height: 600px) and (min-width: 561px) {
   .sea-mode {
     position: absolute;
-    right: calc(calc(16px * var(--u)) + var(--safe-r));
-    bottom: calc(calc(14px * var(--u)) + var(--safe-b) + max(40px, calc(52px * var(--u))) + calc(10px * var(--u)));
+    right: var(--mr);
+    bottom: calc(var(--mb) + max(40px, calc(52px * var(--u))) + calc(10px * var(--u)));
     width: calc(250px * var(--u));
     background: rgba(6, 22, 32, 0.55);
     animation: rise 0.9s 0.25s var(--ease) both;
