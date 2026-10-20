@@ -54,6 +54,7 @@ export const PATCH_NOTES: PatchGroup[] = [
         notes: [
           'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
           'Zooming out or sailing into battle no longer makes the waves flicker as the sea switches to a lighter level of detail. The finer waves now fade smoothly into the lighter version as the camera rises, and back again as it comes down.',
+          'The far edges of the sea no longer seem to race past faster than the water round your ship while you sail or zoom. Out there the sea is built more coarsely and glides along with you, and the smallest waves used to flicker across it. Those waves now fade out wherever the sea can\'t show them cleanly, so the whole view moves together.',
         ],
       },
     ],
