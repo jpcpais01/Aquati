@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { getSharedTextures } from '../render/textures';
-import { globalUniforms } from '../render/environment';
+import { GLSL_FW, globalUniforms } from '../render/environment';
 import { Ribbons } from './trails';
 
 // CPU-simulated, GPU-instanced billboard particles. Two pools: alpha
@@ -86,8 +86,9 @@ class Pool {
         attribute vec3 aPos; attribute vec4 aCol; attribute vec4 aMisc; // size, rot, kind + age, seed
         attribute vec3 aVel; // world velocity incl. the breeze (smoke only)
         varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying vec2 vNuv; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
-        varying vec3 vSunV; varying vec3 vViewDir;
+        varying vec3 vSunV; varying vec3 vViewDir; varying vec3 vWp;
         void main() {
+          vWp = aPos;
           vCol = aCol; vUv = position.xy * 2.0; vKind = floor(aMisc.z); vAge = fract(aMisc.z); vSeed = aMisc.w;
           vec4 mv = viewMatrix * vec4(aPos, 1.0);
           float c = cos(aMisc.y), s = sin(aMisc.y);
@@ -121,7 +122,8 @@ class Pool {
         uniform vec3 uFogColor; uniform vec2 uFogRange; uniform float uMist; uniform float uRain; uniform float uTime;
         uniform vec4 uUnder; uniform vec3 uUnderColor;
         varying vec4 vCol; varying vec2 vUv; varying vec2 vUvV; varying vec2 vNuv; varying float vKind; varying float vAge; varying float vSeed; varying float vViewZ;
-        varying vec3 vSunV; varying vec3 vViewDir;
+        varying vec3 vSunV; varying vec3 vViewDir; varying vec3 vWp;
+        ${GLSL_FW}
         float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
         void main() {
           float r = length(vUv);
@@ -181,6 +183,8 @@ class Pool {
           #else
             // smoke and spray are lit by the sky: warm at sunset, dim blue at night, sunk into mist and rain haze
             vec3 col = vCol.rgb * lit;
+            // drifting smoke glows in the colours of the fireworks bursting through it
+            if (uFwLight[0].w + uFwLight[1].w + uFwLight[2].w + uFwLight[3].w > 0.0) col += vCol.rgb * fwLightAt(vWp, vec3(0.0)) * 0.9;
             float fog = max(smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.85, (1.0 - exp(-vViewZ * 0.0045)) * (uMist * 0.7 + uRain * 0.15));
             col = mix(col, uFogColor, fog);
             if (uUnder.x > 0.5) col = mix(col * vec3(0.55, 0.9, 1.0), uUnderColor, 1.0 - exp(-vViewZ / uUnder.z));
@@ -476,6 +480,8 @@ export class Particles {
     uRain: globalUniforms.uRain,
     uTime: globalUniforms.uTime,
     uNight: globalUniforms.uNight,
+    uFwLight: globalUniforms.uFwLight,
+    uFwColor: globalUniforms.uFwColor,
   };
 
   constructor(scale = 1) {
@@ -1043,6 +1049,25 @@ export class Particles {
         // iron grinding on iron as the chain whips out
         this.sparks(pos, dir, carry, 5, [6, 6, 6.5], [1.6, 1.6, 2], 2);
         break;
+      case 'firework': {
+        // a rocket's fuse catching: a fizzing fountain of sparks up the line of flight and a puff of pale smoke
+        const ux = dir.x * 0.34, uz = dir.z * 0.34;
+        for (let i = 0; i < 16; i++) {
+          const sp = rand(5, 16);
+          this.emit({
+            x: pos.x, y: pos.y + 0.3, z: pos.z, vx: (ux + rand(-0.25, 0.25)) * sp + carry.x, vy: rand(0.6, 0.94) * sp, vz: (uz + rand(-0.25, 0.25)) * sp + carry.z,
+            life: rand(0.25, 0.6), size: rand(0.12, 0.22), sizeEnd: 0.03, color: [8, 5.6, 2.2], colorEnd: [3, 0.9, 0.3], drag: 2.5, grav: 9, kind: 2, fadeIn: 0.001,
+          }, true);
+        }
+        this.flash(pos, 1.4, [8, 6, 4], [3, 1.4, 1.6]);
+        for (let i = 0; i < 4; i++) {
+          this.emit({
+            x: pos.x + rand(-0.4, 0.4), y: pos.y + rand(0, 0.8), z: pos.z + rand(-0.4, 0.4), vx: ux * 4 + carry.x * 0.8 + rand(-0.5, 0.5), vy: rand(1.5, 3.5), vz: uz * 4 + carry.z * 0.8 + rand(-0.5, 0.5),
+            life: rand(2.2, 3.4), size: rand(0.8, 1.2), sizeEnd: rand(3.5, 5), color: [0.95, 0.93, 0.92], alpha: 0.4, drag: 1.4, grav: -0.25, spin: rand(-0.4, 0.4), kind: 1, fadeIn: 0.05,
+          });
+        }
+        break;
+      }
       case 'grape': {
         // a wide cone: the bag bursts at the muzzle
         for (let i = 0; i < 14; i++) {

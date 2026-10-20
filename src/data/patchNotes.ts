@@ -13,6 +13,125 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T20:00Z',
+    entries: [
+      {
+        title: 'A new app icon',
+        notes: [
+          'Shores of Fortune has a new face on your home screen: a galleon in silhouette sailing across a huge golden-hour sun, her sails rimmed in gold light, a red pennant at the masthead, palm isles on the horizon and the sun\'s path glittering across a turquoise sea.',
+          'It is drawn to stay clear at every size, from a full home-screen icon down to the little browser-tab icon, and Android\'s round and squircle icon shapes now crop it neatly without clipping the ship. Reinstall or re-add the game to your home screen if your device keeps showing the old one.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:30Z',
+    entries: [
+      {
+        title: 'Peaceful seas',
+        notes: [
+          'A new way to sail: pick Peaceful under your ship in the harbour (or in Settings, under World). Every pirate, bounty hunter, ghost ship, fort, camp and even the Kraken is still out there, but none of them fires until you do. Adventure plays exactly as before.',
+          'Fire first and you have a fight. The ship you hit comes about, and so do her flotilla, any Brethren within hail and any fort whose guns cover her. A blow on a fort\'s walls brings out the ships under them, and a cutlass drawn on one cutthroat ashore brings the whole camp running. The dead only stand by their own.',
+          'Bounty hunters still come after a big enough infamy, but they shadow you just out of reach of their guns, waiting for an excuse. Give one and she comes at you, along with any hunter within earshot.',
+          'The Kraken still rises in storms, but it only watches. Leave it be and it sinks away; strike it and it fights. Your escorts never fire first either, and calm forts no longer stop you going ashore.',
+          'You can always see who is calm: ships at peace carry a pale bar with a little dove and a pale mark on the minimap and chart. The HUD shows a dove while all is quiet, or crossed blades with a count and a burning wick once you have provoked someone. Sail clear and the wick burns down until tempers cool. In a shared voyage the host\'s choice holds for the whole crew, and each captain\'s quarrel is their own: a ship you provoke comes after you and your escorts, not your crewmates.',
+        ],
+      },
+      {
+        title: 'Smoother sailing and zooming',
+        notes: [
+          'The view no longer judders while you sail or zoom. The game used to time each frame by when it got round to drawing it, and that wobbles a little from frame to frame, so the camera moved a touch too far on some frames and too little on others. Frames are now timed by your screen\'s own refresh, so the sea, the islands and your ship all glide past evenly.',
+          'Spinning the mouse wheel now zooms in one smooth glide. Each click used to give the camera a little shove and then let it coast, so a fast spin zoomed in surges that were most noticeable at the edges of the screen.',
+        ],
+      },
+      {
+        title: 'A farewell worthy of your ship',
+        notes: [
+          'The "Lost to the Depths" screen is rebuilt bigger and bolder. The title is huge and lit from above, white where the light catches it and sinking to sea-green, and its letters tumble down into place.',
+          'Your ship gets a brass nameplate: a porthole with her silhouette heeled over and settling into the water, bubbles rising off her, her name in gold, where she went down, how many fathoms she lies in and a parting line.',
+          'A new voyage chart draws your whole voyage as a line from harbour to the sea floor, with every prize, chest, isle, bounty and ghost pinned along it at the moment it happened, popping up as the line runs out to the red marker where she sank.',
+          'Every stat tile now shows the record it is measured against: the best to beat, or the old best crossed out when you beat it. Your rank shows as nine pips with yours glowing, so you can see how far up the ladder you have climbed.',
+          'Bigger buttons: Sail again glints now and then and tells you you will get a fresh ship of the same class. The whole card fits a laptop screen without scrolling and stacks neatly on phones held either way.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'Choose your archipelago',
+        notes: [
+          'Set Sail now asks where you want to start. Two cards show each archipelago as a little painted chart of its real islands, with a gold anchor where you will weigh anchor: Las Afortunadas, your home harbour, or Las Brumas, the misty isles far across the high seas. One tap on a card and you are away.',
+          'Starting in Las Brumas puts you just off its first market with your fleet around you. It goes straight onto your chart, and the first time you start there you get the +600 gold for new waters, the same as if you had sailed all the way.',
+          'The game remembers your last choice and marks it, so Enter (or 1 and 2) picks it again on a keyboard, and Esc or Back takes you to the harbour. Sail Again after a sinking starts you in the same waters. In a shared sea, crew who join a captain still sail straight to the host\'s ship.',
+        ],
+      },
+      {
+        title: 'Fireworks',
+        notes: [
+          'Your gun rack has a sixth slot: fireworks. Load them with 6 (or the rocket in the shot fan on touch) and fire a broadside, and the rockets climb away at a steep 70 degrees and burst high over the sea, lighting the water, your sails and every ship nearby in their colours.',
+          'Ten kinds to collect: Coral Peony, Gold Chrysanthemum, Weeping Willow, Island Palm, Halo Ring, Crossette, Lighthouse Strobe, Dragon\'s Eggs, Shoal of Fish and Saturn. Press 6 again, or tap the loaded slot, to open the locker and pick which goes up next.',
+          'Three showpieces are rare and worth the wait. Kraken\'s Bloom opens a sea-green maw with eight curling arms of fire, the Jolly Roger writes a skull and crossbones across the sky inside a crimson crown, and Fortune\'s Finale fills the night with a golden crown, rings of every colour and a rain of gold coins.',
+          'Every port now has a pyrotechnist on the market with a few kinds for sale, and sometimes a showpiece. Treasure hauls can turn up fireworks too, and the kraken always leaves a Kraken\'s Bloom behind. You start with a small welcome crate.',
+          'Fireworks are only for show: they do no damage. Your locker is saved to your profile, and in co-op your crew sees exactly which kind you fired.',
+        ],
+      },
+      {
+        title: 'A compass that turns like clockwork while you load',
+        notes: [
+          'The compass on the loading screen now spins at a perfectly steady pace, with no speeding up, slowing down or hesitating, and its dotted inner dial slowly turns the other way.',
+          'It is drawn as its own layer that the browser animates on its own, so it keeps turning smoothly even while the islands, towns and ships are being built behind it.',
+          'Loading also now builds the two archipelagos, the six trading towns and your ship in the harbour in separate short steps instead of a few long ones, so the progress bar moves along steadily.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'Las Brumas, carved by the weather',
+        notes: [
+          'The limestone towers of Las Brumas have been reshaped to look like real karst, the kind you find in Ha Long Bay or El Nido. They are no longer straight stone drums: each one narrows as it rises and leans a little to one side, steps back in ledges and rounds over into a lumpy, wooded crown.',
+          'Their outlines are uneven, with bays and buttresses, and their heights vary a lot more, from squat stumps to tall pinnacles. Towers that stand close together now merge into one massif over a saddle.',
+          'The jungle clings to them: shrubs, ferns and stunted trees grow on the ledges and hang down the walls, with long green tongues of creepers between the grey, rain-streaked and ochre-stained stone.',
+          'The sea has gnawed a dark notch into the foot of every wall, and fallen blocks lie just under the water round the sea stacks. Every port, fort and island is still where it was.',
+        ],
+      },
+      {
+        title: 'A gentler cinematic angle',
+        notes: [
+          'The cinematic view past the farthest zoom no longer swoops down to the horizon. It now keeps exactly the same distance and framing as your farthest zoom and only leans the camera over a little more.',
+        ],
+      },
+      {
+        title: 'A cinematic view past the farthest zoom',
+        notes: [
+          'Zooming all the way out still stops where it always did, so a quick flick of the wheel never throws the camera somewhere unexpected.',
+          'But rest at the farthest zoom for a second and then keep zooming out, and the camera leans over a little further, for a more cinematic angle on your ship.',
+          'Each push leans it a touch more, in a slow, weighty glide. Zoom back in and the camera straightens up first, then closes in as usual.',
+          'Works with a mouse wheel, a trackpad and a two-finger pinch on phones and tablets.',
+        ],
+      },
+      {
+        title: 'A treasure map at the helm',
+        notes: [
+          'Your treasure map has moved from the top corner down to the helm console, right after your shot, and it is bigger and much easier to read and tap. It is a little parchment tile: a rolled chart with three torn slots that fill in as you find the pieces, and a count of how many you have.',
+          'Once the map is whole the chart turns into a small gilt compass sealed in red wax. Its needle points the way to the X across your screen, with the distance beside it. Reach the spot and it turns into a glowing red seal with a spade that says Dig here.',
+          'It stays at the bottom of the screen when you go ashore, and it fits on phones held either way without getting under your thumbs. Held upright, it sits on top of your speed.',
+          'The little line of key hints under your speed is gone, so the console is cleaner.',
+        ],
+      },
+      {
+        title: 'Clouds over the open ocean',
+        notes: [
+          'Out on the high seas, when no fight is on, the little clouds no longer thin out into a see-through hole over your ship. They drift right over you, shadow and all, and you sail on underneath. As soon as a battle starts, or the Kraken rises, the clouds clear around your ship again so you can see what you are doing. The change fades in and out over a couple of seconds.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T18:00Z',
     entries: [
       {

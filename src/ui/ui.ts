@@ -16,6 +16,8 @@ import { WreckReport, WreckScreen } from './wreck';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock } from '../game/ammo';
 import type { ShipStatus } from '../game/world';
 import { ammoIcon } from './ammoArt';
+import { fireworkIcon } from './fireworkArt';
+import { FIREWORKS, FireworkId, FW_ORDER } from '../game/fireworks';
 import { progressSaved } from '../core/progress';
 import { CAPTAIN } from '../game/bounty';
 import { Loadout, loadoutParts, refit, refitBars } from '../ships/parts';
@@ -109,6 +111,8 @@ export class UI {
   /** The reset card is unfolded (and asking to be confirmed). */
   private resetOpen = false;
   readonly settings: Settings = loadSettings();
+  /** In someone else's sea: the host's word on peaceful seas (null: ours to choose). */
+  private seaRule: boolean | null = null;
   private get soundOn() {
     return this.settings.sound;
   }
@@ -136,6 +140,7 @@ export class UI {
     this.stopScenes = startLoadScenes();
     this.buildShipPicker();
     this.buildRack();
+    this.buildSeaMode();
     this.syncSound();
     this.markNotes();
     $('btn-sail').addEventListener('click', () => {
@@ -345,6 +350,48 @@ export class UI {
     document.body.dataset.hud = this.settings.hud;
     document.body.classList.toggle('no-fps', !this.settings.fps);
     this.syncSound();
+    this.syncSeaMode();
+  }
+
+  // ------------------------------------------------------------- which seas
+
+  /** The harbour's Adventure / Peaceful choice, under the ship. */
+  private buildSeaMode() {
+    $('sea-mode').querySelectorAll<HTMLElement>('button[data-sea]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.onClick();
+        if (this.seaRule !== null) {
+          this.toast("Your host's rule", `${this.seaRule ? 'Peaceful seas' : 'Adventure'} for everyone in their voyage`, 2.6);
+          return;
+        }
+        this.setSetting('peaceful', b.dataset.sea === 'peaceful');
+      }),
+    );
+  }
+
+  /** Peaceful seas as they stand: the host's rule in a shared sea, else ours. */
+  get peaceful() {
+    return this.seaRule ?? this.settings.peaceful;
+  }
+
+  /** A guest keeps the host's rule (null: their own again). */
+  setSeaRule(rule: boolean | null) {
+    if (this.seaRule === rule) return;
+    this.seaRule = rule;
+    this.syncSeaMode();
+    if (!$('settings').classList.contains('hidden')) this.renderSettings();
+  }
+
+  private syncSeaMode() {
+    const el = $('sea-mode');
+    const v = this.peaceful ? 'peaceful' : 'adventure';
+    el.dataset.sea = v;
+    el.classList.toggle('ruled', this.seaRule !== null);
+    el.querySelectorAll<HTMLElement>('button[data-sea]').forEach((b) => {
+      const on = b.dataset.sea === v;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-checked', String(on));
+    });
   }
 
   private renderSettings() {
@@ -387,12 +434,17 @@ export class UI {
         ])}
       </section>
       <section class="set-group"><h4>World</h4>
+        ${this.peaceRow()}
         ${this.resetCard()}
       </section>`;
     body.querySelectorAll<HTMLElement>('[data-key]').forEach((b) =>
       b.addEventListener('click', () => {
         const k = b.dataset.key as keyof Settings;
         this.onClick();
+        if (b.dataset.ruled) {
+          this.toast("Your host's rule", 'Only the host can change the seas of a shared voyage', 2.6);
+          return;
+        }
         if (b.dataset.v !== undefined) this.setSetting(k, b.dataset.v as never);
         else this.setSetting(k, !this.settings[k] as never);
       }),
@@ -439,6 +491,16 @@ export class UI {
     }
   }
 
+  /** Peaceful seas: a switch of our own, or (a guest) the host's rule, shown and locked. */
+  private peaceRow() {
+    const on = this.peaceful;
+    const ruled = this.seaRule !== null;
+    const desc = ruled
+      ? `Your host's rule for this voyage: ${on ? 'nobody fires first' : 'pirates hunt on sight'}`
+      : 'Pirates, hunters, ghosts, forts and the Kraken all still sail, but none of them fires until you do';
+    return `<button class="set-row" data-key="peaceful" role="switch" aria-checked="${on}"${ruled ? ' aria-disabled="true" data-ruled="1"' : ''}><span class="set-txt"><b>Peaceful seas</b><small>${desc}</small></span><i class="switch${on ? ' on' : ''}"></i></button>`;
+  }
+
   /** The world reset row, or (unfolded) what goes, what stays and the confirm. */
   private resetCard() {
     if (!this.resetOpen)
@@ -482,7 +544,7 @@ export class UI {
     const ids = Object.keys(SHIP_CLASSES) as ShipClassId[];
     const i = ids.indexOf(this.selected);
     const k = e.key.toLowerCase();
-    if (document.activeElement?.closest('.menu-tools, .dock-actions') && (k === 'enter' || k === ' ')) return;
+    if (document.activeElement?.closest('.menu-tools, .dock-actions, .sea-mode') && (k === 'enter' || k === ' ')) return;
     if (k === 'arrowleft' || k === 'a') this.select(ids[(i + ids.length - 1) % ids.length]);
     else if (k === 'arrowright' || k === 'd') this.select(ids[(i + 1) % ids.length]);
     else if (k >= '1' && k <= String(ids.length)) this.select(ids[+k - 1]);
@@ -832,8 +894,6 @@ export class UI {
     el.classList.toggle('on', state !== 'none');
     el.classList.toggle('held', state === 'leave');
     if (state !== 'none') $('helm-text').textContent = state === 'take' ? 'Take the helm' : 'Leave the helm';
-    const hint = this.hud.querySelector('.helm .hint');
-    if (hint) hint.textContent = this.hud.classList.contains('fpv') && state !== 'leave' ? 'WASD walk · arrows sail & helm' : 'W / S sails · A / D helm';
   }
 
   /** Reticle and the "click to look" nudge while walking the deck. */
@@ -990,28 +1050,48 @@ export class UI {
     };
     AMMO_ORDER.forEach((id, i) => {
       const a = AMMO[id];
+      const fw = id === 'firework';
       const slot = document.createElement('button');
-      slot.className = 'slot';
+      slot.className = fw ? 'slot fw' : 'slot';
       slot.dataset.ammo = id;
       slot.setAttribute('role', 'radio');
       slot.setAttribute('aria-label', a.name);
-      slot.title = `${a.name} (${i + 1}): ${a.blurb}`;
+      slot.title = fw ? `${a.name} (${i + 1}): rockets in place of shot. Press ${i + 1} again, or click, to choose which` : `${a.name} (${i + 1}): ${a.blurb}`;
       slot.style.setProperty('--ac', a.css);
-      slot.innerHTML = `<span class="ball">${ammoIcon(id)}</span><kbd class="kd">${i + 1}</kbd><b class="n"></b><em class="gain"></em>`;
-      slot.addEventListener('pointerdown', pick(id));
+      slot.innerHTML = `<span class="ball">${ammoIcon(id)}</span><kbd class="kd">${i + 1}</kbd><b class="n"></b><em class="gain"></em>${fw ? '<i class="fw-caret"></i>' : ''}`;
+      slot.addEventListener(
+        'pointerdown',
+        fw
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // rockets already loaded: the locker opens to choose which kind
+              if (slot.classList.contains('on')) this.toggleFwPicker(slot);
+              else this.onAmmo(id);
+            }
+          : pick(id),
+      );
       slot.addEventListener('mouseenter', () => this.showTag(id, false));
       slot.addEventListener('mouseleave', () => this.hideTag());
       this.rack.appendChild(slot);
       this.ammoSlots.set(id, slot);
 
       const chip = document.createElement('button');
-      chip.className = 'chip-a';
+      chip.className = fw ? 'chip-a fw' : 'chip-a';
       chip.dataset.ammo = id;
       chip.style.setProperty('--i', `${i}`);
       chip.style.setProperty('--ac', a.css);
       chip.setAttribute('aria-label', a.name);
-      chip.innerHTML = `${ammoIcon(id)}<b class="n"></b><small>${a.short}</small>`;
+      chip.innerHTML = `${ammoIcon(id)}<b class="n"></b><small>${fw ? 'Rockets' : a.short}</small>`;
       chip.addEventListener('pointerdown', (e) => {
+        if (fw) {
+          // on touch the rockets chip opens the locker: tapping a kind loads it
+          e.preventDefault();
+          e.stopPropagation();
+          this.setFan(false);
+          this.openFwPicker(this.ammoBtn);
+          return;
+        }
         pick(id)(e);
         this.setFan(false);
       });
@@ -1021,6 +1101,7 @@ export class UI {
     this.ammoBtn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       e.stopPropagation();
+      this.closeFwPicker();
       this.setFan(!this.fan.classList.contains('open'));
       navigator.vibrate?.(8);
     });
@@ -1031,9 +1112,104 @@ export class UI {
       (e) => {
         const t = e.target as Node;
         if (this.fan.classList.contains('open') && !this.fan.contains(t) && !this.ammoBtn.contains(t)) this.setFan(false);
+        const fs = this.ammoSlots.get('firework');
+        if (this.fwPick.classList.contains('open') && !this.fwPick.contains(t) && !(fs && fs.contains(t))) this.closeFwPicker();
       },
       true,
     );
+    this.buildFwPicker();
+  }
+
+  // ------------------------------------------------------------- the firework locker
+
+  /** Picked a kind of firework from the locker. */
+  onFirework: (id: FireworkId) => void = () => {};
+  /** How many of a kind are in the locker. */
+  fwCount: (id: FireworkId) => number = () => 0;
+  private fwPick = document.createElement('div');
+  private fwOpts = new Map<FireworkId, HTMLButtonElement>();
+  private fwSel: FireworkId = 'peony';
+  private fwPickT = 0;
+
+  private buildFwPicker() {
+    const el = this.fwPick;
+    el.className = 'fw-pick';
+    el.id = 'fw-pick';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Firework locker');
+    const opt = (id: FireworkId) => {
+      const f = FIREWORKS[id];
+      return `<button class="fw-opt t${f.tier}" data-fw="${id}" style="--fc:${f.css};--fc2:${f.css2}" title="${f.name}: ${f.blurb.replace(/"/g, '&quot;')}"><span class="fw-art">${fireworkIcon(id)}</span><b>${f.short}</b><em class="n"></em></button>`;
+    };
+    el.innerHTML = `
+      <header><span class="fw-h">Firework locker</span><span class="fw-sel"><b></b><small></small></span></header>
+      <div class="fw-grid">${FW_ORDER.filter((id) => FIREWORKS[id].tier < 2).map(opt).join('')}</div>
+      <div class="fw-show-h"><span>Showpieces</span></div>
+      <div class="fw-grid show">${FW_ORDER.filter((id) => FIREWORKS[id].tier === 2).map(opt).join('')}</div>
+      <p class="fw-foot">Sold by the pyrotechnists in trading ports · found in fine chests</p>`;
+    el.querySelectorAll<HTMLButtonElement>('.fw-opt').forEach((b) => {
+      const id = b.dataset.fw as FireworkId;
+      this.fwOpts.set(id, b);
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (this.fwCount(id) <= 0) {
+          replay(b, 'deny');
+          return;
+        }
+        this.onFirework(id);
+        this.closeFwPicker();
+      });
+      b.addEventListener('mouseenter', () => this.fwHover(id));
+      b.addEventListener('mouseleave', () => this.fwHover(this.fwSel));
+    });
+    $('hud').appendChild(el);
+  }
+
+  private fwHover(id: FireworkId) {
+    const f = FIREWORKS[id];
+    const sel = this.fwPick.querySelector('.fw-sel') as HTMLElement;
+    sel.style.setProperty('--fc', f.css);
+    (sel.firstElementChild as HTMLElement).textContent = f.name;
+    (sel.lastElementChild as HTMLElement).textContent = f.blurb.replace(/^Showpiece\. /, '');
+  }
+
+  /** The locker's counts, redrawn (rockets found, bought or fired). */
+  refreshFwPicker() {
+    for (const [id, b] of this.fwOpts) {
+      const n = this.fwCount(id);
+      b.classList.toggle('none', n <= 0);
+      b.classList.toggle('on', id === this.fwSel);
+      (b.querySelector('.n') as HTMLElement).textContent = `${n}`;
+    }
+  }
+
+  private openFwPicker(anchor: HTMLElement) {
+    const el = this.fwPick;
+    this.refreshFwPicker();
+    this.fwHover(this.fwSel);
+    el.classList.add('open');
+    // above whatever opened it, kept on screen
+    const r = anchor.getBoundingClientRect();
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    const x = Math.min(innerWidth - w - 8, Math.max(8, r.left + r.width / 2 - w / 2));
+    const y = Math.max(8, r.top - h - 12);
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    clearTimeout(this.fwPickT);
+    // on touch the locker folds away by itself, like the fan
+    if (document.body.classList.contains('is-touch')) this.fwPickT = window.setTimeout(() => this.closeFwPicker(), 7000);
+  }
+
+  private toggleFwPicker(anchor: HTMLElement) {
+    if (this.fwPick.classList.contains('open')) this.closeFwPicker();
+    else this.openFwPicker(anchor);
+  }
+
+  closeFwPicker() {
+    clearTimeout(this.fwPickT);
+    this.fwPick.classList.remove('open');
   }
 
   /** Touch: the fan of shot chips around the shot button. Closes itself after a few idle seconds. */
@@ -1044,13 +1220,27 @@ export class UI {
     if (open) this.fanT = window.setTimeout(() => this.setFan(false), 4000);
   }
 
-  /** The loaded shot and what's left of each. */
-  updateAmmo(sel: AmmoId, stock: AmmoStock) {
-    const key = sel + AMMO_ORDER.map((id) => stock[id]).join(',');
+  /** The loaded shot and what's left of each (for fireworks, of the kind chosen). */
+  updateAmmo(sel: AmmoId, stock: AmmoStock, fw: FireworkId) {
+    const key = sel + fw + AMMO_ORDER.map((id) => stock[id]).join(',');
     if (this.hudCache.get('ammo') === key) return;
     const prevSel = this.hudCache.get('ammo-sel');
+    const prevFw = this.hudCache.get('ammo-fw');
     this.hudCache.set('ammo', key);
     this.hudCache.set('ammo-sel', sel);
+    this.hudCache.set('ammo-fw', fw);
+    if (prevFw !== fw) {
+      // the rockets slot wears the kind that's chosen
+      this.fwSel = fw;
+      const f = FIREWORKS[fw];
+      for (const el of [this.ammoSlots.get('firework')!, this.fanChips.get('firework')!]) {
+        const ball = el.querySelector('.ball') ?? el;
+        const old = ball.querySelector('svg');
+        if (old) old.outerHTML = fireworkIcon(fw);
+        el.style.setProperty('--ac', f.css);
+      }
+      this.refreshFwPicker();
+    }
     for (const id of AMMO_ORDER) {
       const n = stock[id];
       const txt = Number.isFinite(n) ? `${n}` : '∞';
@@ -1061,22 +1251,24 @@ export class UI {
         (el.querySelector('.n') as HTMLElement).textContent = txt;
       }
     }
-    this.rack.style.setProperty('--ac', AMMO[sel].css);
+    const css = sel === 'firework' ? FIREWORKS[fw].css : AMMO[sel].css;
+    this.rack.style.setProperty('--ac', css);
     const b = this.ammoBtn;
-    b.style.setProperty('--ac', AMMO[sel].css);
-    if (prevSel !== sel) (b.querySelector('.ab') as HTMLElement).innerHTML = ammoIcon(sel);
+    b.style.setProperty('--ac', css);
+    if (prevSel !== sel || (sel === 'firework' && prevFw !== fw)) (b.querySelector('.ab') as HTMLElement).innerHTML = sel === 'firework' ? fireworkIcon(fw) : ammoIcon(sel);
     const n = stock[sel];
     (b.querySelector('.ac') as HTMLElement).textContent = Number.isFinite(n) ? `${n}` : '';
     b.classList.toggle('special', sel !== 'round');
   }
 
   /** Just loaded a new kind: its name and what it does float over the rack for a moment. */
-  showTag(id: AmmoId, flash = true) {
+  showTag(id: AmmoId, flash = true, fw: FireworkId = this.fwSel) {
     const a = AMMO[id];
+    const f = id === 'firework' ? FIREWORKS[fw] : null;
     const tag = $('ammo-tag');
-    (tag.firstElementChild as HTMLElement).textContent = a.name;
-    (tag.lastElementChild as HTMLElement).textContent = a.blurb.split('. ')[0].replace(/\.$/, '');
-    tag.style.setProperty('--ac', a.css);
+    (tag.firstElementChild as HTMLElement).textContent = f ? f.name : a.name;
+    (tag.lastElementChild as HTMLElement).textContent = (f ? f.blurb.replace(/^Showpiece\. /, '') : a.blurb).split('. ')[0].replace(/\.$/, '');
+    tag.style.setProperty('--ac', f ? f.css : a.css);
     tag.classList.add('show');
     clearTimeout(this.tagT);
     if (flash) {
@@ -1084,6 +1276,8 @@ export class UI {
       for (const el of [this.ammoSlots.get(id)!, this.ammoBtn]) {
         replay(el, 'load');
       }
+      // on touch there's no rack to float a tag over: the toast says it
+      if (f && document.body.classList.contains('is-touch')) this.toast(f.name, 'Rockets loaded · fire a broadside', 1.8);
     }
   }
 
@@ -1226,6 +1420,14 @@ export class UI {
       }
       const mk = s === marked;
       if (el.classList.contains('marked') !== mk) el.classList.toggle('marked', mk);
+      // peaceful seas: a quiet bar while she holds her fire, a flare of blades the moment she's provoked
+      const calm = s.calm ? '1' : '';
+      if (el.dataset.calm !== calm) {
+        const roused = el.dataset.calm === '1';
+        el.dataset.calm = calm;
+        el.classList.toggle('calm', !!calm);
+        if (roused) replay(el, 'roused');
+      }
       const x = (v.x * 0.5 + 0.5) * w;
       const y = (-v.y * 0.5 + 0.5) * h - 18;
       el.style.transform = `translate(${x}px, ${y}px)`;
@@ -1563,7 +1765,8 @@ export class UI {
         continue;
       }
       if (!s.hunter) {
-        tri(s, s.ghost ? '#7dffc4' : '#ff6a55', 11);
+        // peaceful seas: a pale mark for a ship that holds her fire
+        tri(s, s.calm ? (s.ghost ? '#c8f5e2' : '#f2ece0') : s.ghost ? '#7dffc4' : '#ff6a55', 11);
         continue;
       }
       // a hunter: a pulsing crimson ring, and pinned to the rim while she's still over the horizon

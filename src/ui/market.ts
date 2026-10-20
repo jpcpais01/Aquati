@@ -7,6 +7,8 @@ import { partIcon } from './partArt';
 import { shipSilhouette } from './art';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { FLEET_MAX, HireOffer } from '../game/fleet';
+import { FIREWORKS, FireworkId } from '../game/fireworks';
+import { fireworkIcon } from './fireworkArt';
 
 // The trading port's market: your hold laid out on the counter with today's
 // prices, a Sell button on every lot, the chandlery for repairs and fresh
@@ -66,6 +68,15 @@ export interface Services {
   shotN: number;
 }
 
+/** A rocket on the pyrotechnist's counter. */
+export interface PyroOffer {
+  id: FireworkId;
+  price: number;
+  /** How many of it are in your locker, and how many more it takes. */
+  owned: number;
+  room: number;
+}
+
 /** One of your escorts, as the harbour master sees her. */
 export interface FleetMember {
   id: string;
@@ -116,6 +127,8 @@ export class MarketUI {
   onDock: () => void = () => {};
   onClick: () => void = () => {};
   onBuyPart: (id: string) => void = () => {};
+  onBuyFirework: (id: FireworkId) => void = () => {};
+  private pyroList: HTMLElement;
   onHire: (id: string) => void = () => {};
   onPayOff: (id: string) => void = () => {};
   private partList: HTMLElement;
@@ -145,6 +158,8 @@ export class MarketUI {
           <button class="mk-svc" data-k="repair">${icon(HAMMER)}<span><b>Repair the hull</b><small></small></span><em><span class="coin"></span><i></i></em></button>
           <button class="mk-svc" data-k="shot">${icon(SHOT)}<span><b>Restock the shot</b><small></small></span><em><span class="coin"></span><i></i></em></button>
         </div>
+        <div class="mk-label"><span>Pyrotechnist</span><span class="mk-plabel">Rockets for your firework locker</span></div>
+        <ul class="mk-parts mk-pyro"></ul>
         <div class="mk-label"><span>Shipwright</span><span class="mk-wpurse" title="Your purse"></span></div>
         <ul class="mk-parts"></ul>
         <p class="mk-pnote">Paid from your purse. New parts are fitted at the Shipwright before your next voyage.</p>
@@ -161,7 +176,8 @@ export class MarketUI {
     this.room = r.querySelector('.mk-room')!;
     this.svcRepair = r.querySelector('[data-k="repair"]')!;
     this.svcShot = r.querySelector('[data-k="shot"]')!;
-    this.partList = r.querySelector('.mk-parts')!;
+    this.partList = r.querySelector('.mk-parts:not(.mk-pyro)')!;
+    this.pyroList = r.querySelector('.mk-pyro')!;
     this.partPurse = r.querySelector('.mk-wpurse')!;
     this.fleetList = r.querySelector('.mk-fleet')!;
     this.fleetPurse = r.querySelector('.mk-fpurse')!;
@@ -171,7 +187,22 @@ export class MarketUI {
     // the body's own box and every list in it: content growing changes what's left to scroll
     const ro = new ResizeObserver(() => this.edges());
     ro.observe(this.body);
-    for (const el of [this.list, this.partList, this.fleetList]) ro.observe(el);
+    for (const el of [this.list, this.partList, this.fleetList, this.pyroList]) ro.observe(el);
+    this.pyroList.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.mk-buy');
+      if (!b || b.disabled) return;
+      e.stopPropagation();
+      this.onClick();
+      const id = b.dataset.id as FireworkId;
+      const row = b.closest<HTMLElement>('.mk-row');
+      if (row) {
+        // a little burst of the rocket's own colours off the row
+        row.classList.remove('just');
+        void row.offsetWidth;
+        row.classList.add('just');
+      }
+      this.onBuyFirework(id);
+    });
     this.fleetList.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
       if (!b || b.disabled) return;
@@ -360,6 +391,22 @@ export class MarketUI {
   setGold(g: number) {
     this.gold = g;
     this.setServices(this.services);
+  }
+
+  /** The pyrotechnist's stall: today's rockets, how many of each you hold and whether the purse stretches. */
+  setPyro(offers: PyroOffer[], gold: number) {
+    this.pyroList.innerHTML = offers
+      .map((o) => {
+        const f = FIREWORKS[o.id];
+        const can = o.room > 0 && gold >= o.price;
+        const tierName = f.tier === 2 ? 'Showpiece' : f.tier === 1 ? 'Fine' : 'Common';
+        return `<li class="mk-row mk-prow mk-fwrow t${f.tier}" style="--rc:${f.css};--rc2:${f.css2}">
+          <i class="mk-ico">${fireworkIcon(o.id)}</i>
+          <div class="mk-what"><b>${esc(f.name)}</b><small><em>${tierName}</em> · ${o.owned} in your locker</small><div class="mk-pst"><span>${esc(f.blurb.replace(/^Showpiece\. /, ''))}</span></div></div>
+          <button class="mk-buy" data-id="${o.id}"${can ? '' : ' disabled'}>${o.room <= 0 ? 'Full' : `<span class="coin"></span>${fmt(o.price)}`}</button>
+        </li>`;
+      })
+      .join('');
   }
 
   /** A lot sold: its row flies coins into the purse and folds away. */

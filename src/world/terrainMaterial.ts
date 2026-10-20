@@ -63,10 +63,12 @@ const vec3 T_SCORIA = ${lin(0x8d5a44)};
 const vec3 T_ASH = ${lin(0x9a9186)};
 const vec3 T_SAND_PINK = ${lin(0xf6d9cf)};
 const vec3 T_SAND_ROSE = ${lin(0xe8b4a4)};
-const vec3 T_MIST_LIME = ${lin(0xdcd6c6)};
-const vec3 T_MIST_LIME_WARM = ${lin(0xe6d6b6)};
-const vec3 T_MIST_LIME_STAIN = ${lin(0x7f8078)};
+const vec3 T_MIST_LIME = ${lin(0xd8d3c6)};
+const vec3 T_MIST_LIME_WARM = ${lin(0xd2b48a)};
+const vec3 T_MIST_LIME_STAIN = ${lin(0x6c6f66)};
 const vec3 T_MIST_LIME_MOSS = ${lin(0x557f45)};
+const vec3 T_MIST_LIME_VINE = ${lin(0x3e7034)};
+const vec3 T_MIST_LIME_NOTCH = ${lin(0x3a3c36)};
 `;
 
 const FRAG_HEAD = /* glsl */ `
@@ -280,9 +282,17 @@ const FRAG_ALBEDO = /* glsl */ `
     // the walls (noise stretched along height), ferns and moss on every ledge
     float stain = smoothstep(0.5, 0.78, texture(uNoiseTex, vec2(xz.x * 0.11 + xz.y * 0.07, h * 0.006 + xz.y * 0.013)).g + (nR.a - 0.5) * 0.2);
     vec3 lime = mix(T_MIST_LIME, T_MIST_LIME_WARM, smoothstep(0.35, 0.75, beds) * 0.5);
-    lime = mix(lime, T_MIST_LIME_STAIN, stain * 0.62);
+    // iron-ochre where a slab broke away not long ago
+    lime = mix(lime, T_MIST_LIME_WARM, smoothstep(0.62, 0.8, nM.r + (nS.g - 0.5) * 0.5) * 0.55);
+    lime = mix(lime, T_MIST_LIME_STAIN, stain * 0.55);
     lime *= 1.0 - crack * 0.22;
-    lime = mix(lime, T_MIST_LIME_MOSS, smoothstep(0.62, 0.86, wn.y + (nR.g - 0.5) * 0.4) * 0.8);
+    lime = mix(lime, T_MIST_LIME_MOSS, smoothstep(0.55, 0.8, wn.y + (nR.g - 0.5) * 0.4) * 0.85);
+    // creepers and ferns hang in long tongues down the walls from every ledge
+    float vine = texture(uNoiseTex, vec2(xz.x * 0.09 - xz.y * 0.06, h * 0.012 + xz.y * 0.011) + vec2(0.41, 0.83)).g + (nS.r - 0.5) * 0.35 + (nD.a - 0.5) * 0.2;
+    lime = mix(lime, mix(T_MIST_LIME_VINE, T_MIST_LIME_MOSS, nD.g * 0.6), smoothstep(0.56, 0.68, vine) * 0.9 * smoothstep(3.0, 9.0, h));
+    // the sea gnaws a dark, dripping notch into the foot of every wall
+    float notch = (1.0 - smoothstep(1.4, 2.6, h + (nS.b - 0.5) * 1.2)) * smoothstep(-0.8, 0.2, h);
+    lime = mix(lime, T_MIST_LIME_NOTCH, notch * 0.8);
     rock = mix(rock, lime, vAqBiome * (1.0 - kV));
   }
   float fineFade = 1.0 - smoothstep(0.1, 0.25, fp);
@@ -291,7 +301,8 @@ const FRAG_ALBEDO = /* glsl */ `
 
   // spurs go bare a little sooner, gullies hold their green on steeper ground
   float rn = (nD.g - 0.5) * 0.26 + vAqErode * 0.09;
-  float rockT = smoothstep(0.26, 0.33, slope + rn);
+  // (in the mist the jungle clings on to steeper ground)
+  float rockT = smoothstep(0.26, 0.33, slope + rn - vAqBiome * 0.07);
   rockT = max(rockT, smoothstep(0.32, 0.42, vAqInfo.y + rn));
   rockT = max(rockT, kR * smoothstep(0.18, 0.24, slope + rn)); // sandstone isles show more cliff
   rockT *= smoothstep(-6.0, -1.0, h) * 0.6 + 0.4;

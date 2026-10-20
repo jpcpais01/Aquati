@@ -1,7 +1,7 @@
 import './wreck.css';
 import { RARITY } from '../game/loot';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
-import { crest, icon, ICONS } from './art';
+import { crest, icon, ICONS, shipSilhouette } from './art';
 import { progressSaved } from '../core/progress';
 
 // "Lost to the Depths": the farewell when your ship goes down. A letterboxed
@@ -283,20 +283,26 @@ export class WreckScreen {
       .split(' ')
       .map((w, wi) => `<span class="w">${[...w].map((ch, i) => `<span style="--i:${wi * 4 + i}">${ch}</span>`).join('')}</span>`)
       .join(' ');
+    // the lost ship's nameplate: her name, her class, a porthole with her going under
+    const c = SHIP_CLASSES[r.cls];
+    $('wk-ship-name').textContent = r.ship;
+    $('wk-ship-cls').textContent = c.name;
+    $('wk-port-ship').innerHTML = shipSilhouette(c);
+    $('wk-retry-sub').textContent = `A fresh ${c.name.toLowerCase()}`;
     const where = r.where ? esc(r.where) : 'in open water';
+    const at = `after ${duration(r.time)} at sea`;
+    const fm = Math.round(r.fathoms ?? 0);
+    const lies = fm >= 3 && r.cause !== 'aground' && r.cause !== 'reef' ? `, and lies in <b class="fm">${fm} fathoms</b>` : '';
     $('wk-epitaph').innerHTML =
       r.cause === 'aground'
-        ? `The <span class="nm">${esc(r.ship)}</span> ran aground ${where} after ${duration(r.time)} at sea.`
+        ? `She ran aground ${where} ${at}.`
         : r.cause === 'kraken'
-        ? `The <span class="nm">${esc(r.ship)}</span> was pulled into the deep ${where} after ${duration(r.time)} at sea.`
+        ? `She was pulled into the deep ${where} ${at}${lies}.`
         : r.cause === 'maelstrom'
-        ? `The <span class="nm">${esc(r.ship)}</span> was drawn down the maelstrom's throat after ${duration(r.time)} at sea.`
+        ? `She was drawn down the maelstrom's throat ${at}.`
         : r.cause === 'reef'
-        ? `The <span class="nm">${esc(r.ship)}</span> struck the coral and broke her back after ${duration(r.time)} at sea.`
-        : `The <span class="nm">${esc(r.ship)}</span> went down ${where} after ${duration(r.time)} at sea.`;
-    // where she lies now
-    const fm = Math.round(r.fathoms ?? 0);
-    if (fm >= 3 && r.cause !== 'aground' && r.cause !== 'reef') $('wk-epitaph').innerHTML += ` She lies in <b class="fm">${fm} fathoms</b> of water.`;
+        ? `She struck the coral and broke her back ${at}.`
+        : `She went down ${where} ${at}${lies}.`;
     $('wk-quip').textContent = `“${quip(r)}”`;
     $('wk-cause').innerHTML = causeLine(r);
 
@@ -307,6 +313,8 @@ export class WreckScreen {
     const prog = next ? (score - lo) / (next[0] - lo) : 1;
     $('wk-rank-name').textContent = name;
     $('wk-rank-line').textContent = line;
+    $('wk-ladder').innerHTML =
+      RANKS.map((_, i) => `<i class="${i < ri ? 'past' : i === ri ? 'now' : ''}" style="--i:${i}"></i>`).join('') + `<span>Rank ${ri + 1} of ${RANKS.length}</span>`;
     $('wk-rank-next').innerHTML = next ? `<b>${(next[0] - score).toLocaleString()}</b> renown to ${next[1]}` : 'The highest rank on these seas';
     const medal = $('wk-medal');
     medal.style.setProperty('--p', prog.toFixed(3));
@@ -315,17 +323,41 @@ export class WreckScreen {
     $('wk-score-best').classList.toggle('hidden', !best.renown);
 
     // the tally
-    const tile = (i: number, cls: string, label: string, tag: boolean) =>
-      `<div class="wk-tile${tag ? ' best' : ''}" style="--i:${i}"><span class="${cls}"></span><b data-n="${i}">0</b><small>${label}</small>${tag ? '<em>New best</em>' : ''}</div>`;
+    // each tile against your record: the old best when you beat it, the best to beat when you didn't
+    const was = (v: number, rec: number, tag: boolean, fmt: (n: number) => string) =>
+      first ? 'First voyage' : tag ? `was ${fmt(rec)}` : rec > 0 ? `best ${fmt(rec)}` : v > 0 ? 'a first' : '&nbsp;';
+    const num = (n: number) => Math.round(n).toLocaleString();
+    const tile = (i: number, cls: string, label: string, tag: boolean, rec: string) =>
+      `<div class="wk-tile${tag ? ' best' : ''}" style="--i:${i}"><span class="${cls}"></span><b data-n="${i}">0</b><small>${label}</small><i class="wk-rec">${rec}</i>${tag ? '<em>New best</em>' : ''}</div>`;
     $('wk-tiles').innerHTML =
-      tile(0, 'clock', 'At sea', best.time) + tile(1, 'coin', 'Gold', best.gold) + tile(2, 'skull', 'Sunk', best.kills) + tile(3, 'isle', `Isles of ${r.islesTotal}`, best.isles);
+      tile(0, 'clock', 'At sea', best.time, was(r.time, recs.time, best.time, clock)) +
+      tile(1, 'coin', 'Gold', best.gold, was(r.gold, recs.gold, best.gold, num)) +
+      tile(2, 'skull', 'Sunk', best.kills, was(r.kills, recs.kills, best.kills, num)) +
+      tile(3, 'isle', `Isles of ${r.islesTotal}`, best.isles, was(r.isles, recs.isles, best.isles, num));
+
+    // the voyage as a line from harbour to the sea floor, every deed pinned along it
+    const T = Math.max(r.time, 1);
+    let lastX = -1;
+    let lane = 0;
+    const pins = r.events
+      .map((e) => {
+        const x = Math.min(0.96, Math.max(0.02, e.t / T));
+        lane = x - lastX < 0.045 ? (lane + 1) % 3 : 0;
+        lastX = x;
+        return `<i class="wk-pin k-${e.kind}" style="--x:${x.toFixed(4)};--l:${lane}" title="${clock(e.t)} · ${esc(e.text)}"><b><span class="${KIND_ICON[e.kind]}"></span></b></i>`;
+      })
+      .join('');
+    $('wk-voy').innerHTML =
+      `<div class="wk-voy-track"><div class="wk-voy-fill"></div>${pins}<i class="wk-pin k-lost end" style="--x:1;--l:0"><b><span class="skull"></span></b></i></div>` +
+      `<div class="wk-voy-ends"><span>${icon(ICONS.anchor)}Set sail</span><span>${r.events.length ? `${r.events.length} ${r.events.length === 1 ? 'entry' : 'entries'} in the log` : 'A quiet voyage'}</span><span>Lost · ${clock(r.time)}</span></div>`;
+    $('wk-voy-len').textContent = duration(r.time);
     const rate = r.shots ? Math.min(100, Math.round((r.hits / r.shots) * 100)) : 0;
     const minor = (i: number, ic: keyof typeof ICONS, label: string, v: string, sub: string) =>
       `<div class="wk-minor-row" style="--i:${i}">${icon(ICONS[ic])}<span>${label}</span><b>${v}</b><small>${sub}</small></div>`;
     const chest = r.best >= 1 ? RARITY[r.best] : null;
     $('wk-minor').innerHTML =
-      minor(0, 'target', 'Accuracy', r.shots ? `${rate}%` : '–', r.shots ? `${r.hits} of ${r.shots} shots` : 'no shots fired') +
-      minor(1, 'cannon', 'Damage dealt', r.dealt.toLocaleString(), r.kills ? `${Math.round(r.dealt / r.kills).toLocaleString()} per prize` : 'hull points') +
+      minor(0, 'target', 'Accuracy', r.shots ? `${rate}%` : '–', r.shots ? `${r.hits} of ${r.shots} hit` : 'no shots fired') +
+      minor(1, 'cannon', 'Damage', r.dealt.toLocaleString(), r.kills ? `${Math.round(r.dealt / r.kills).toLocaleString()} per prize` : 'hull points') +
       minor(2, 'anchor', 'Treasure', `${r.chests}`, chest ? `best: <i style="color:${chest.css}">${chest.name}</i>` : 'chests opened') +
       minor(3, 'wind', 'Sailed', `${r.miles.toFixed(1)}`, 'sea miles');
 

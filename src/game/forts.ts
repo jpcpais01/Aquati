@@ -12,6 +12,7 @@ import {
 } from '../shore/fortKit';
 import type { AmmoId } from './ammo';
 import type { World } from './world';
+import { Grudge, sideOf } from './peace';
 
 // The Brethren's island forts. Each holds a rise above the sea with four
 // bronze guns in the embrasures of its sea walls; come within their reach and
@@ -178,6 +179,8 @@ export interface Fort {
   /** Its guns are firing (they had a target lately). */
   alert: boolean;
   quiet: number;
+  /** Peaceful seas: the captains who have fired on it (or its garrison, or a ship under its guns). */
+  grudge: Grudge;
   /** Gate doors: 0 shut .. 1 swung open. */
   doors: number;
   /** Your colours: 0 at the foot of the staff .. 1 at the truck, and whether they're going up. */
@@ -193,6 +196,8 @@ export interface FortHooks {
   struck(f: Fort, g: Gun, dmg: number, at: THREE.Vector3, direct: boolean): void;
   /** A gun is silenced; `last` when it was the last of them. */
   silenced(f: Fort, g: Gun, last: boolean): void;
+  /** Peaceful seas: a captain's side has given it cause (`by` the ship that did it, if a ship did). */
+  riled(f: Fort, side: number, by: Ship | null): void;
 }
 
 const _l = { x: 0, z: 0 };
@@ -232,7 +237,7 @@ export class Forts {
   private doorGroups: THREE.Group[][] = [];
   private flagGeo: THREE.BufferGeometry | null = null;
   private flagMat: THREE.Material | null = null;
-  hooks: FortHooks = { openFire: () => {}, struck: () => {}, silenced: () => {} };
+  hooks: FortHooks = { openFire: () => {}, struck: () => {}, silenced: () => {}, riled: () => {} };
 
   constructor(sites: (FortSite & { name: string })[], ground: Ground, mats: ShoreMats) {
     this.root.name = 'forts';
@@ -274,7 +279,7 @@ export class Forts {
       this.root.add(mine);
       const f: Fort = {
         id, name: site.name, site, layout, guns: [], owner: 'brethren', gunner: gunnerFor(site.name, new THREE.Vector3(site.x, site.y, site.z)), garrison: null,
-        alert: false, quiet: 0, doors: 0, up: 0, hoist: 0, mine,
+        alert: false, quiet: 0, grudge: new Grudge(), doors: 0, up: 0, hoist: 0, mine,
       };
       const n = Math.max(1, layout.guns.length);
       const set = {
@@ -430,8 +435,12 @@ export class Forts {
           g.target = null;
           continue;
         }
-        this.pick(g, f, player, ships);
-        if (g.target) any = true;
+        this.pick(g, f, player, ships, world);
+        if (g.target) {
+          any = true;
+          // a mark under its guns keeps the quarrel fresh
+          if (f.owner === 'brethren') f.grudge.mark(sideOf(g.target), world.time);
+        }
         dirty = this.lay(g, dt) || dirty;
         if (g.target && g.want >= 0 && g.reload <= 0 && Math.abs(angleDelta(g.yaw, g.wantYaw)) < 0.035) this.fire(g, f, world);
       }
@@ -450,12 +459,16 @@ export class Forts {
   }
 
   /** The nearest mark within the gun's arc and reach: you or your escorts for theirs, pirates for yours. */
-  private pick(g: Gun, f: Fort, player: Ship | null, ships: Ship[]) {
+  private pick(g: Gun, f: Fort, player: Ship | null, ships: Ship[], world: World) {
     const ours = f.owner === 'player';
+    // peaceful seas: the Brethren's guns stay quiet for any captain who hasn't given them cause
+    const calm = !ours && world.peaceful;
+    const now = world.time;
     let best: Ship | null = null;
     let bd = FORT_RANGE;
     const consider = (s: Ship) => {
       if (!s.alive || s.removed || s.prize) return;
+      if (calm && !f.grudge.against(s, now)) return;
       const dx = s.pos.x - g.base.x;
       const dz = s.pos.z - g.base.z;
       const d = Math.hypot(dx, dz);
@@ -559,12 +572,15 @@ export class Forts {
    * to lay on. A gun stands up on its wall, so each mark is set out past it on
    * the water, where a ball fired flat for that range would arc through it.
    */
-  marks(out: { x: number; z: number; r: number; reach?: number }[], start: number, p: Ship | null, reach: number): number {
+  marks(out: { x: number; z: number; r: number; reach?: number; calm?: boolean }[], start: number, p: Ship | null, reach: number, peace: { now: number; riledOnly: boolean } | null = null): number {
     let n = start;
     if (!p || !p.alive) return n;
     const v = p.muzzleSpeed;
     for (const f of this.forts) {
       if (f.owner !== 'brethren' || Math.hypot(f.site.x - p.pos.x, f.site.z - p.pos.z) > FORT_RANGE + 60) continue;
+      // peaceful seas: a fort that holds its fire is marked so (and an escort's guns leave it be)
+      const calm = !!peace && !f.grudge.against(p, peace.now);
+      if (calm && peace!.riledOnly) continue;
       for (const g of f.guns) {
         if (g.dead) continue;
         const dx = g.base.x - p.pos.x;
@@ -584,6 +600,7 @@ export class Forts {
         m.z = p.pos.z + (dz / D) * flat;
         m.r = 3;
         m.reach = MARK_REACH;
+        m.calm = calm;
       }
     }
     return n;
@@ -654,7 +671,8 @@ export class Forts {
     }
     // only your guns (and your escorts') can hurt the Brethren's walls
     if (f.owner !== 'brethren' || b.owner.team !== 'player') return;
-    const mult = { round: 1, shell: 1.5, fire: 0.75, chain: 0.3, grape: 0.4, wraith: 1 }[b.ammo] ?? 1;
+    this.rile(f, sideOf(b.owner), world.time, b.owner);
+    const mult = { round: 1, shell: 1.5, fire: 0.75, chain: 0.3, grape: 0.4, firework: 0, wraith: 1 }[b.ammo] ?? 1;
     let near: Gun | null = null;
     let nd = Infinity;
     for (const g of f.guns) {
@@ -763,14 +781,24 @@ export class Forts {
 
   // ------------------------------------------------------------------ questions the game asks
 
+  /** Peaceful seas: captain `side` has given the fort cause to fight (a ball on its walls, a blow on its garrison, a shot at a ship under its guns). */
+  rile(f: Fort, side: number, now: number, by: Ship | null = null) {
+    if (f.owner !== 'brethren') return;
+    const fresh = !f.grudge.holds(side, now);
+    f.grudge.mark(side, now);
+    if (fresh) this.hooks.riled(f, side, by);
+  }
+
   byGunner(s: Ship | null): Fort | null {
     return s ? (this.forts.find((f) => f.gunner === s) ?? null) : null;
   }
 
-  /** The hostile fort whose live guns reach (x, z), if any. */
-  covering(x: number, z: number): Fort | null {
+  /** The hostile fort whose live guns reach (x, z), if any (with `calm`, peaceful seas: only one at war with that captain). */
+  covering(x: number, z: number, calm: { side: number; now: number } | null = null): Fort | null {
     for (const f of this.forts) {
       if (f.owner !== 'brethren' || f.guns.every((g) => g.dead)) continue;
+      // peaceful seas: a fort that holds its fire covers nothing
+      if (calm && !f.grudge.holds(calm.side, calm.now)) continue;
       if (f.guns.some((g) => !g.dead && Math.hypot(g.base.x - x, g.base.z - z) < FORT_RANGE - 20)) return f;
     }
     return null;

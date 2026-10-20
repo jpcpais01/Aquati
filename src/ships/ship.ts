@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { angleDelta, clamp, damp, lerp, smoothstep } from '../core/noise';
 import { World } from '../game/world';
 import { AMMO, AmmoId, EFFECT } from '../game/ammo';
+import { FIREWORKS, FireworkId } from '../game/fireworks';
 import { globalUniforms } from '../render/environment';
 import { BowWave } from '../fx/bowWave';
 import { ShipModel } from './shipModel';
@@ -35,6 +36,10 @@ interface PendingShot {
   target: Ship | null;
   point: THREE.Vector3 | null;
   ammo: AmmoId;
+  /** Fireworks: which kind, and this rocket's place (k of n) in the volley. */
+  fw?: FireworkId;
+  k?: number;
+  n?: number;
 }
 
 /** How far a player's guns can train fore and aft of square, radians. The firing arcs on the water show exactly this. */
@@ -108,6 +113,8 @@ let SHIP_ID = 0;
 export class Ship {
   /** Set while other captains share the sea; null sailing alone. */
   static net: NetRules | null = null;
+  /** Someone of another team laid a blow (or a special shot) on her: how a quarrel starts on peaceful seas. */
+  static onStruck: (s: Ship, by: Ship) => void = () => {};
   readonly id = ++SHIP_ID;
   /** Another captain's game sails her: she goes where it says, and only it decides her fate. */
   remote = false;
@@ -146,6 +153,8 @@ export class Ship {
   readonly reloadFull: { port: number; starboard: number };
   /** The shot the guns load for the next broadside. */
   ammo: AmmoId = 'round';
+  /** With fireworks loaded, which kind goes up. */
+  firework: FireworkId = 'peony';
   /** Seconds left burning (fire shot), and who lit her. */
   afire = 0;
   afireBy: Ship | null = null;
@@ -157,6 +166,10 @@ export class Ship {
   private burnT = 0;
   lastHit = -100;
   lastAttacker: Ship | null = null;
+  /** Peaceful seas: bit `i` set while she is at war with captain `i` of the crew (see game/peace.ts). */
+  wrath = 0;
+  /** Peaceful seas: she holds her fire against you (for the bars, the minimap and the chart). */
+  calm = false;
   burning = 0;
   gold = 0;
   kills = 0;
@@ -244,6 +257,7 @@ export class Ship {
     const fresh = this.afire <= 0;
     this.afire = Math.min(EFFECT.burnMax, Math.max(0, this.afire) + EFFECT.burnPerHit);
     if (by) this.afireBy = by;
+    this.struck(by);
     return fresh;
   }
 
@@ -252,6 +266,7 @@ export class Ship {
     if (!this.alive || !this.effect(by, 'chain')) return false;
     const fresh = this.torn <= 0;
     this.torn = EFFECT.tornTime;
+    this.struck(by);
     return fresh;
   }
 
@@ -260,6 +275,7 @@ export class Ship {
     if (!this.alive || this.ghost || !this.effect(by, 'grape')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = EFFECT.crewTime;
+    this.struck(by);
     return fresh;
   }
 
@@ -268,6 +284,7 @@ export class Ship {
     if (!this.alive || this.ghost || !this.effect(by, 'dread')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = Math.max(this.crewHit, EFFECT.dreadTime);
+    this.struck(by);
     return fresh;
   }
 
@@ -339,9 +356,18 @@ export class Ship {
     ms.sort((a, b) => Math.abs(a.m.pos.z) - Math.abs(b.m.pos.z));
     const pt = point ? point.clone() : null;
     const ammo = this.ammo;
-    ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt, ammo }));
+    if (ammo === 'firework') {
+      // rockets: a showpiece goes up off the middle gun with a white salute either
+      // side; anything else, up to four guns spread along the side, one after another
+      const fw = this.firework;
+      const show = FIREWORKS[fw].tier === 2;
+      const n = Math.min(show ? 3 : 4, ms.length);
+      const along = ms.slice().sort((a, b) => a.m.pos.z - b.m.pos.z);
+      const picks = show ? ms.slice(0, n) : Array.from({ length: n }, (_, i) => along[Math.min(along.length - 1, Math.floor(((i + 0.5) * along.length) / n))]);
+      picks.forEach((e, k) => this.pending.push({ at: world.time + (show ? k * 0.4 : k * 0.22 + Math.random() * 0.06), muzzle: e.i, target: null, point: null, ammo, fw, k, n }));
+    } else ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt, ammo }));
     this.reload[side] = this.reloadFull[side] = this.cls.reload * AMMO[ammo].reload * this.boost.reload;
-    this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass;
+    this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass * (ammo === 'firework' ? 0.2 : 1);
     if (Ship.net && !this.remote) Ship.net.fired(this, side, target, pt);
     return true;
   }
@@ -352,6 +378,14 @@ export class Ship {
     this.root.updateMatrixWorld();
     const pos = m.pos.clone().applyMatrix4(this.model.root.matrixWorld);
     const dir = m.dir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
+    if (p.ammo === 'firework') {
+      dir.y = 0;
+      dir.normalize();
+      world.fireworks?.launch(p.fw ?? this.firework, pos, dir, this.vel, p.k ?? 0, p.n ?? 1);
+      world.particles.ammoMuzzle(pos, dir, this.vel, 'firework');
+      world.onShake(this.team === 'player' ? 0.08 : 0, pos);
+      return;
+    }
     const am = AMMO[p.ammo];
     const v = this.cls.muzzleSpeed * am.speed * (0.97 + Math.random() * 0.06);
     const g = GRAVITY;
@@ -428,6 +462,7 @@ export class Ship {
     if (hull) this.dmg.onHit(at, dmg, world);
     this.lastHit = world.time;
     if (attacker) this.lastAttacker = attacker;
+    this.struck(attacker);
     this.rollKick += (Math.random() - 0.5) * 0.04;
     if (this.hp <= 0) this.die(attacker, world);
     return dmg;
@@ -439,7 +474,12 @@ export class Ship {
     this.hp -= dmg;
     this.lastHit = world.time;
     if (attacker) this.lastAttacker = attacker;
+    this.struck(attacker);
     if (this.hp <= 0) this.die(attacker, world);
+  }
+
+  private struck(by: Ship | null) {
+    if (by && by !== this && by.team !== this.team) Ship.onStruck(this, by);
   }
 
   /** She's done for: the blast (or the curse breaking), and the wreck begins to settle. */

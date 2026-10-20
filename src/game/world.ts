@@ -8,6 +8,7 @@ import type { Debris } from '../fx/debris';
 import type { AmmoId } from './ammo';
 import { Vortex, vortexCalm, vortexDip } from '../world/vortex';
 import type { HazardSense } from './hazards';
+import type { Fireworks } from '../fx/fireworks';
 
 export interface Wind {
   angle: number; // direction the wind blows toward
@@ -34,6 +35,8 @@ export type ShipStatus = 'ablaze' | 'shredded' | 'crew' | 'dread' | 'phased' | '
 /** Everything a ship / projectile needs to know about its surroundings. */
 export class World {
   time = 0;
+  /** Peaceful seas (see game/peace.ts): nobody in these waters fires first. In a shared sea, the host's word. */
+  peaceful = false;
   readonly wind: Wind;
   listener = new THREE.Vector3();
   listenerZoom = 140;
@@ -48,6 +51,8 @@ export class World {
   /** A special shot just set a lasting effect on a ship. */
   onStatus: (ship: unknown, status: ShipStatus, attacker: unknown) => void = () => {};
   debris!: Debris;
+  /** Rockets in the night sky (see fx/fireworks.ts). */
+  fireworks: Fireworks | null = null;
   /** The maelstroms turning out at sea (see game/hazards.ts): they draw the surface down into a funnel. */
   readonly vortices: Vortex[] = [];
   /** What a captain can tell of the maelstroms ahead (see game/hazards.ts). */

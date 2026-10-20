@@ -292,6 +292,46 @@ export class Vegetation {
       }
     }
 
+    // ---------------------------------------------------------------- karst creepers
+    // Shrubs, ferns and the odd stunted tree clinging to the towers' walls and
+    // ledges, too steep for the forest proper (their own stream, so the rest
+    // of the island's planting stays as it was)
+    if (karst) {
+      const kr = mulberry32(Math.floor(isl.seed * 613) + 77);
+      const kext = ext * 1.3;
+      const kTries = Math.floor(((kext * kext * 4) / 10) * this.density);
+      let placed = 0;
+      for (let n = 0; n < kTries && placed < 700; n++) {
+        const x = isl.x + (kr() * 2 - 1) * kext;
+        const z = isl.z + (kr() * 2 - 1) * kext;
+        const h = t.heightAt(x, z);
+        if (h < 5 || cleared(x, z)) continue;
+        t.gradientAt(x, z, grad);
+        const slope = grad.length();
+        if (slope < 0.5 || slope > 4.5) continue;
+        // in clumps and tongues, not sprinkled evenly
+        const clump = s.noise(x * 0.07 + 3.3, z * 0.07 - h * 0.05) * 0.5 + 0.5;
+        if (kr() > clump * clump * 0.9) continue;
+        const k = kr();
+        if (slope < 0.85 && k < 0.18) {
+          if (!free(x, z, 1.8)) continue;
+          take(x, z, 1.8);
+          L.tree.push(pl(x, h - 0.6, z, 0.5 + kr() * 0.3, T_ROUND + Math.floor(kr() * 2)));
+          t.stampCanopy(x, z, 2.4, 0.6);
+        } else if (k < 0.72 || slope > 2.4) {
+          if (!free(x, z, 0.9)) continue;
+          take(x, z, 0.9);
+          L.bush.push(pl(x, h - 0.3 - Math.min(slope, 3) * 0.3, z, 0.7 + kr() * 0.8, 1));
+        } else {
+          if (!free(x, z, 0.6)) continue;
+          take(x, z, 0.6);
+          L.fern.push(pl(x, h - 0.15, z, 0.9 + kr() * 0.7, Math.floor(kr() * 2)));
+        }
+        t.stampAO(x, z, 1.6, 0.22);
+        placed++;
+      }
+    }
+
     // ---------------------------------------------------------------- understorey
     for (const tr of forest) {
       const n = rnd() < 0.75 ? 1 + Math.floor(rnd() * 2.5) : 0;
