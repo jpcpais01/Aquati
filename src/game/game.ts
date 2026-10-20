@@ -42,6 +42,7 @@ import { Vault } from '../ui/vault';
 import { PhotoMode } from '../ui/photo';
 import { FxItem, fxItem, Item as Cosmetic, POOL, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
 import { Cloud, Part } from '../cloud/cloud';
+import { ADMIN_GOLD } from '../cloud/admin';
 import { AccountPanel } from '../ui/account';
 import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
@@ -665,6 +666,11 @@ export class Game {
     );
     this.cloudSave.onWelcome = (w) => account.welcome(w);
     this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
+    this.cloudSave.onAdmin = () => {
+      if (!this.vaultStore.grantAll(ADMIN_GOLD)) return;
+      this.applyCosmetics();
+      this.ui.toast('Admiral of the fleet', 'A billion gold and every treasure are yours', 6);
+    };
     sw.setVault(this.vaultStore);
     sw.onEquip = () => this.applyCosmetics();
     sw.onVault = () => this.openVault();

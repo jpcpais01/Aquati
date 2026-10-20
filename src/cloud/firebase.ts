@@ -21,6 +21,8 @@ export interface CloudUser {
   email: string;
   photo: string;
   provider: 'google' | 'email';
+  /** Firebase has confirmed the address belongs to this person (always so for Google). */
+  verified: boolean;
 }
 
 export interface Remote {
@@ -45,6 +47,7 @@ function toUser(u: User): CloudUser {
     email,
     photo: u.photoURL ?? '',
     provider: google ? 'google' : 'email',
+    verified: u.emailVerified,
   };
 }
 

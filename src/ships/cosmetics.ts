@@ -292,6 +292,22 @@ export class VaultStore {
     this.save();
   }
 
+  /** Fills the purse to at least `gold` and adds every vault item; true if anything changed. */
+  grantAll(gold: number) {
+    let changed = false;
+    if (this.s.purse < gold) {
+      this.s.purse = gold;
+      changed = true;
+    }
+    for (const i of POOL) {
+      if (this.s.owned[i.id]) continue;
+      this.s.owned[i.id] = 1;
+      changed = true;
+    }
+    if (changed) this.save();
+    return changed;
+  }
+
   /** Hands out a one-off gift once per save; true if it was given just now. */
   gift(key: string, gold: number) {
     const k = GIFT_PREFIX + key;

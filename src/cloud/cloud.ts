@@ -11,6 +11,7 @@
 import type { FirebaseOptions } from 'firebase/app';
 import { onProgressSaved } from '../core/progress';
 import { POOL } from '../ships/cosmetics';
+import { isAdmin } from './admin';
 import type { CloudApi, CloudUser } from './firebase';
 import {
   changedParts, dropMissing, hasProgress, merge, pack, paintRefs, Part, Profile, readLocal, resetLocal, stable, unpack, writeLocal,
@@ -85,6 +86,8 @@ export class Cloud {
   /** Fires after the cloud rewrote parts of this device's saves (the game reloads them). */
   onApplied: (parts: Set<Part>) => void = () => {};
   onWelcome: (w: Welcome) => void = () => {};
+  /** Fires once per page load, after the first sync, when an admin captain signs in. */
+  onAdmin: () => void = () => {};
 
   private api: CloudApi | null = null;
   private ready: Promise<CloudApi | null> | null = null;
@@ -312,6 +315,8 @@ export class Cloud {
         this.welcomed = uid;
         const kind = created ? 'new' : !base && hasProgress(local) ? 'joined' : 'back';
         this.onWelcome({ kind, name: user.name });
+        // granted after the merge, so the grant itself syncs up as ordinary progress
+        if (isAdmin(user)) this.onAdmin();
       }
       this.lastSync = Date.now();
       this.set('synced');
