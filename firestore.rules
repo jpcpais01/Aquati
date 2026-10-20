@@ -2,6 +2,7 @@ rules_version = '2';
 
 // Shores of Fortune cloud saves. Each captain can read and write only their
 // own save (captains/{uid}) and their own hand-painted flags under it.
+// Multiplayer's handshake rooms are at the bottom.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /captains/{uid} {
@@ -16,6 +17,32 @@ service cloud.firestore {
         allow create, update: if request.auth != null && request.auth.uid == uid
           && request.resource.data.d is string
           && request.resource.data.d.size() < 900000;
+      }
+    }
+
+    // Sail together (src/net/signal.ts): only the handshake lives here. A host
+    // opens rooms/{CODE}; each guest leaves an offer under it and the host's
+    // game writes its answer back, then the ships talk to each other directly.
+    // Anyone holding a code may knock (guests needn't sign in); every field is
+    // small and checked, and `exp` lets a TTL policy sweep up old rooms.
+    match /rooms/{code} {
+      allow get: if code.matches('^[A-Z0-9]{6}$');
+      allow create, update: if code.matches('^[A-Z0-9]{6}$')
+        && request.resource.data.keys().hasOnly(['host', 'open', 'n', 'v', 't', 'exp'])
+        && request.resource.data.host is string && request.resource.data.host.size() <= 48
+        && request.resource.data.open is bool
+        && request.resource.data.n is int && request.resource.data.n >= 0 && request.resource.data.n <= 4;
+      allow delete: if true;
+
+      match /peers/{pid} {
+        allow read: if true;
+        allow create: if pid.size() <= 24
+          && request.resource.data.keys().hasOnly(['name', 'offer', 't', 'exp'])
+          && request.resource.data.name is string && request.resource.data.name.size() <= 48
+          && request.resource.data.offer is string && request.resource.data.offer.size() < 24000;
+        allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answer'])
+          && request.resource.data.answer is string && request.resource.data.answer.size() < 24000;
+        allow delete: if true;
       }
     }
   }

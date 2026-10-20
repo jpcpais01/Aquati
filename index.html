@@ -42,6 +42,7 @@
       <nav class="menu-tools">
         <span class="build-tag" id="build-tag" aria-label="Game version"></span>
         <button class="tool acct-chip hidden" id="btn-account" data-label="Sign in" aria-label="Sign in"></button>
+        <button class="tool crew-tool" id="btn-crew" data-label="Sail together" aria-label="Sail together"><span class="ti" data-icon="crew"></span></button>
         <button class="tool" id="btn-bounties" data-label="Wanted board" aria-label="Wanted board"><span class="ti" data-icon="skull"></span><i class="new-dot" id="bounty-dot"></i></button>
         <button class="tool" id="btn-notes" data-label="Patch notes" aria-label="Patch notes"><span class="ti" data-icon="scroll"></span><i class="new-dot" id="notes-dot"></i></button>
         <button class="tool" id="btn-controls" data-label="Controls" aria-label="Controls"><span class="ti" data-icon="keys"></span></button>
@@ -86,6 +87,7 @@
           <button class="icon-btn" id="btn-pause" title="Pause (Esc)" aria-label="Pause"><span class="ti" data-icon="pause"></span></button>
           <button class="icon-btn view-btn" id="btn-view" title="Captain's view (V)" aria-label="Captain's view"><span class="ti" data-icon="eye"></span></button>
           <button class="icon-btn" id="btn-photo" title="Photo mode (P)" aria-label="Photo mode"><span class="ti" data-icon="camera"></span></button>
+          <button class="icon-btn crew-btn" id="btn-crew3" title="Sail together" aria-label="Sail together"><span class="ti" data-icon="crew"></span></button>
           <button class="icon-btn" id="btn-sweep" title="Clear wrecks &amp; debris" aria-label="Clear wrecks and debris"><span class="ti" data-icon="sweep"></span></button>
         </div>
         <div class="map-col">
@@ -149,6 +151,7 @@
           <nav class="menu-list" id="pause-list">
             <button class="mi" id="btn-resume"><span class="ti" data-icon="play"></span><span class="mi-l">Resume voyage</span><kbd class="kd">Esc</kbd></button>
             <button class="mi" id="btn-chart"><span class="ti" data-icon="map"></span><span class="mi-l">Sea chart</span><kbd class="kd">M</kbd></button>
+            <button class="mi" id="btn-crew2"><span class="ti" data-icon="crew"></span><span class="mi-l">Sail together</span></button>
             <button class="mi" id="btn-bounties2"><span class="ti" data-icon="skull"></span><span class="mi-l">Wanted board</span></button>
             <button class="mi" id="btn-photo2"><span class="ti" data-icon="camera"></span><span class="mi-l">Photo mode</span><kbd class="kd">P</kbd></button>
             <button class="mi" id="btn-settings2"><span class="ti" data-icon="sliders"></span><span class="mi-l">Settings</span></button>
@@ -354,6 +357,16 @@
           <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
         </header>
         <div class="sheet-body acct-body" id="account-body"></div>
+      </div>
+    </div>
+
+    <div id="crew" class="screen dim hidden">
+      <div class="sheet crew-card" role="dialog" aria-labelledby="crew-title">
+        <header class="sheet-head">
+          <div><div class="kicker" id="crew-kicker">Up to four captains</div><h2 class="screen-title" id="crew-title">Sail together</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body crew-body" id="crew-body"></div>
       </div>
     </div>
 

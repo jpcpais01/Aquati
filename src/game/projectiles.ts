@@ -385,7 +385,7 @@ export class Projectiles {
   /** Wraith-fire struck home: green fire and a crew that will not stand to its guns. */
   private haunt(b: Ball, s: Ship, world: World, n?: THREE.Vector3) {
     world.particles.wraithHit(b.pos.clone(), n);
-    if (s.terrify()) world.onStatus(s, 'dread', b.owner);
+    if (s.terrify(b.owner)) world.onStatus(s, 'dread', b.owner);
   }
 
   // ------------------------------------------------------------------ special shot
@@ -415,7 +415,7 @@ export class Projectiles {
     world.particles.shreds(at, b.vel, [_col.r, _col.g, _col.b]);
     const [vol, pan, d] = world.soundAt(at);
     if (this.canPlay(s.id * 8 + 2, world.time, 0.2)) world.audio.chain(vol, pan, d);
-    if (s.shred()) world.onStatus(s, 'shredded', b.owner);
+    if (s.shred(b.owner)) world.onStatus(s, 'shredded', b.owner);
     this.onHit({ ship: s, attacker: b.owner, damage: dmg, pos: at });
   }
 
@@ -425,7 +425,7 @@ export class Projectiles {
     world.particles.pelletHit(b.pos.clone());
     const [vol, pan, d] = world.soundAt(b.pos);
     if (this.canPlay(s.id * 8 + 3, world.time, 0.25)) world.audio.grape(vol, pan, d);
-    if (s.rake()) world.onStatus(s, 'crew', b.owner);
+    if (s.rake(b.owner)) world.onStatus(s, 'crew', b.owner);
     else if (s.ghost && this.canPlay(s.id * 8 + 6, world.time, 2.5)) world.onStatus(s, 'fleshless', b.owner);
     const r = this.rakes.get(s);
     if (r) {

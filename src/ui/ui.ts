@@ -52,7 +52,7 @@ export interface VoyageInfo {
 }
 
 /** Cards that sit over the menus and close on Esc or a tap outside; later ones stack on top. */
-const OVERLAYS = ['notes', 'controls', 'settings', 'graphics', 'account', 'bounties'];
+const OVERLAYS = ['notes', 'controls', 'settings', 'graphics', 'account', 'bounties', 'crew'];
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -1219,7 +1219,7 @@ export class UI {
       seen.add(s.id);
       let el = this.barEls.get(s.id);
       // a prize that signs on changes sides: her bar is made afresh
-      const kind = s.team === 'player' ? 'ally' : s.hunter ? 'hunter' : s.ghost ? 'ghost' : '';
+      const kind = s.captain ? 'mate' : s.team === 'player' ? 'ally' : s.hunter ? 'hunter' : s.ghost ? 'ghost' : '';
       if (el && el.dataset.kind !== kind) {
         el.remove();
         el = undefined;
@@ -1228,7 +1228,7 @@ export class UI {
         el = document.createElement('div');
         el.className = kind ? `ebar ${kind}` : 'ebar';
         el.dataset.kind = kind;
-        const label = kind === 'ally' ? esc(s.name) : s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name;
+        const label = kind === 'mate' ? `<em>${esc(s.captain!)}</em>${esc(s.name)}` : kind === 'ally' ? esc(s.name) : s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name;
         el.innerHTML = `<i></i><span>${label}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
         this.bars.appendChild(el);
         this.barEls.set(s.id, el);
@@ -1499,6 +1499,29 @@ export class UI {
       if (s === player || !s.alive) continue;
       // your escorts in the fleet's aqua; a prize sailing off for port in faded parchment
       if (s.team === 'player') {
+        // a crewmate's flagship in gold, pinned to the rim while she's off the map
+        if (s.captain) {
+          const d = Math.hypot(s.pos.x - cx, s.pos.z - cz);
+          if (d > R - 18) {
+            const a = Math.atan2(s.pos.z - cz, s.pos.x - cx);
+            const rr = S / 2 - 14;
+            g.save();
+            g.translate(S / 2 + Math.cos(a) * rr, S / 2 + Math.sin(a) * rr);
+            g.rotate(a + Math.PI / 2);
+            g.fillStyle = '#ffd36a';
+            g.strokeStyle = 'rgba(0,0,0,0.55)';
+            g.lineWidth = 2;
+            g.beginPath();
+            g.moveTo(0, -10);
+            g.lineTo(7, 6);
+            g.lineTo(-7, 6);
+            g.closePath();
+            g.fill();
+            g.stroke();
+            g.restore();
+          } else tri(s, '#ffd36a', 13);
+          continue;
+        }
         tri(s, '#5ee3d4', 11);
         continue;
       }

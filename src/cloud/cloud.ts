@@ -23,7 +23,7 @@ export type { Part } from './profile';
 export type CloudState = 'off' | 'starting' | 'guest' | 'syncing' | 'synced' | 'offline' | 'error';
 
 const env = import.meta.env;
-const CONFIG: FirebaseOptions | null =
+export const CONFIG: FirebaseOptions | null =
   env.VITE_FIREBASE_API_KEY && env.VITE_FIREBASE_PROJECT_ID && env.VITE_FIREBASE_APP_ID
     ? {
         apiKey: env.VITE_FIREBASE_API_KEY,
