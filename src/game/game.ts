@@ -25,7 +25,7 @@ import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
 import { Seas } from '../world/seas';
-import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, REGIONS, seaEdge, STREAM_R } from '../world/regions';
+import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, RegionId, regionById, REGIONS, seaEdge, STREAM_R } from '../world/regions';
 import { Dolphins } from '../fx/dolphins';
 import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
@@ -43,6 +43,7 @@ import { GHOST_LIVERY, Livery, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from
 import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
+import { readStartSea, SeaCard, SeaPick } from '../ui/seaPick';
 import { loadRecords, type VoyageEvent, type WreckReport } from '../ui/wreck';
 import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
@@ -196,6 +197,8 @@ export class Game {
   private dolphinT = 20;
   private dolphins = new Dolphins();
   private charts = new ChartStore();
+  /** "Where shall we sail?": the archipelago picker after Set Sail. */
+  private seaPick = new SeaPick();
   private ocean!: Ocean;
   private wake!: WakeField;
   private particles!: Particles;
@@ -947,6 +950,8 @@ export class Game {
     this.renderer.setAnimationLoop(() => this.frame());
     // sign-in loads once the harbour is up, off the critical path
     setTimeout(() => this.cloudSave.start(), 900);
+    // the picker's painted charts, made while the captain admires the ship
+    setTimeout(() => this.seaPick.prepare(this.seaCards(), (x, z) => this.terrain.heightAt(x, z)), 2200);
     // came by an invite link: the crew card opens, one tap from aboard
     const join = new URLSearchParams(location.search).get('join');
     if (join) {
@@ -1008,7 +1013,8 @@ export class Game {
       this.audio.click();
     };
     ui.onSelect = (id) => this.setPreview(id);
-    ui.onSail = () => this.startVoyage();
+    ui.onSail = () => this.chooseSea();
+    this.seaPick.onClick = () => ui.onClick();
     ui.onAmmo = (id) => this.selectAmmo(id);
     ui.onFirework = (id) => this.chooseFirework(id);
     ui.fwCount = (id) => this.fwLocker.count(id);
@@ -3549,8 +3555,85 @@ export class Game {
     }
   }
 
-  private startVoyage() {
+  /** Set Sail: choose the archipelago to weigh anchor in (a guest just joins the host, wherever she is). */
+  private chooseSea() {
+    if (!this.preview || this.swBusy || this.state !== 'menu') return;
+    if (this.coop.guest) return this.startVoyage();
+    this.ui.showMenu(false);
+    this.seaPick.open(
+      this.seaCards(),
+      (x, z) => this.terrain.heightAt(x, z),
+      (id) => this.sailFrom(id),
+      () => this.ui.showMenu(true),
+    );
+  }
+
+  /** Weighs anchor in the chosen archipelago: at home straight away, or across the sea under the veil. */
+  private sailFrom(id: RegionId) {
+    if (this.state !== 'menu' || !this.preview) return;
+    if (id === 'home') return this.startVoyage();
+    this.veil.innerHTML = `<span>Setting a course for ${regionById(id).name}…</span>`;
+    void this.fade(() => this.startVoyage(id));
+  }
+
+  /** What the picker shows of each archipelago: its isles, where you'd weigh anchor and what lies there. */
+  private seaCards(): SeaCard[] {
+    const vibe: Record<RegionId, string> = {
+      home: 'Sunlit lagoons, white beaches and your home port. The easy way in.',
+      brumas: 'Limestone towers and jade jungle in a drifting mist, a long voyage from home.',
+    };
+    return REGIONS.map((r) => {
+      const inR = (x: number, z: number) => nearestRegion(x, z).region === r;
+      const markets = this.tradePorts.ports.filter((tp) => inR(tp.site.x, tp.site.z)).length;
+      const forts = this.forts.forts.filter((f) => inR(f.site.x, f.site.z)).length;
+      const chips = [`${markets} market${markets === 1 ? '' : 's'}`, `${forts} fort${forts === 1 ? '' : 's'}`];
+      if (r.id === 'home') chips.unshift('Home harbour');
+      else chips.push(this.charts.has(r.id) ? 'Charted' : '+600 gold landfall');
+      const berth = r.id === 'home' ? this.spawnPoint : this.berthIn(r);
+      return {
+        id: r.id,
+        name: r.name,
+        motto: r.motto,
+        vibe: vibe[r.id],
+        chips,
+        isles: this.terrain.islands.filter((i) => inR(i.x, i.z)).map((i) => ({ x: i.x, z: i.z, r: i.r })),
+        berth: { x: berth.x, z: berth.z },
+        style: r.id === 'home' ? 'home' : 'brumas',
+      };
+    });
+  }
+
+  /** Where a voyage begins in an archipelago away from home: off its first market's quay, bows to the sea. */
+  private berthIn(region: Region) {
+    const tp = this.tradePorts.ports.find((t) => nearestRegion(t.site.x, t.site.z).region === region);
+    if (tp) {
+      const { x, z, nx, nz } = tp.site;
+      return { x: x + nx * 75, z: z + nz * 75, h: Math.atan2(nx, nz) };
+    }
+    const at = this.findOpenWater(region.x, region.z, 300, 600);
+    return { x: at.x, z: at.z, h: Math.atan2(at.x - region.x, at.z - region.z) };
+  }
+
+  /** Moves the anchored flagship and her escorts to `region`'s berth, the menu camera with them. */
+  private moorIn(region: Region) {
+    const p = this.preview!;
+    const b = this.berthIn(region);
+    const at = this.deepFor(p, b.x, b.z, b.h);
+    p.place(at.x, at.z, b.h);
+    this.rig.orbitCenter.set(p.pos.x, 0, p.pos.z);
+    this.rig.orbitQuat = p.root.quaternion.clone();
+    let i = 0;
+    for (const s of this.escorts.keys()) {
+      const a = this.anchorage(at.x, at.z, b.h, p.cls.length, i++, this.escorts.size, s, 1.5);
+      s.place(a.x, a.z, a.h);
+    }
+    this.rig.snapTo(p.pos);
+  }
+
+  private startVoyage(from: RegionId = 'home') {
     if (!this.preview) return;
+    const away = from !== 'home' && !this.coop.guest ? regionById(from) : null;
+    if (away) this.moorIn(away);
     this.audio.start();
     this.audio.setMusic(false);
     const p = this.preview;
@@ -3618,7 +3701,8 @@ export class Game {
       }
       this.rig.snapTo(p.pos);
       this.ui.toast('Weigh anchor', `The ${p.name} falls in with ${lead.captain ?? 'the host'}'s ${lead.name}`, 3.4);
-    } else
+    } else if (away) this.arrive(away, p);
+    else
     this.ui.toast('Weigh anchor', fleet.length ? `The ${p.name} sets sail with ${fleet.join(' and ')}` : `The ${p.name} sets sail`, 3);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
@@ -4709,7 +4793,7 @@ export class Game {
       this.enterMenu();
       if (again && this.preview) {
         if (this.preview.cls.id !== cls) this.setPreview(cls);
-        this.startVoyage();
+        this.startVoyage(readStartSea());
       }
     });
   }

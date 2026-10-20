@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T19:00Z',
     entries: [
       {
+        title: 'Choose your archipelago',
+        notes: [
+          'Set Sail now asks where you want to start. Two cards show each archipelago as a little painted chart of its real islands, with a gold anchor where you will weigh anchor: Las Afortunadas, your home harbour, or Las Brumas, the misty isles far across the high seas. One tap on a card and you are away.',
+          'Starting in Las Brumas puts you just off its first market with your fleet around you. It goes straight onto your chart, and the first time you start there you get the +600 gold for new waters, the same as if you had sailed all the way.',
+          'The game remembers your last choice and marks it, so Enter (or 1 and 2) picks it again on a keyboard, and Esc or Back takes you to the harbour. Sail Again after a sinking starts you in the same waters. In a shared sea, crew who join a captain still sail straight to the host\'s ship.',
+        ],
+      },
+      {
         title: 'Fireworks',
         notes: [
           'Your gun rack has a sixth slot: fireworks. Load them with 6 (or the rocket in the shot fan on touch) and fire a broadside, and the rockets climb away at a steep 70 degrees and burst high over the sea, lighting the water, your sails and every ship nearby in their colours.',
