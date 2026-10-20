@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T15:00Z',
     entries: [
       {
+        title: 'Reset the world',
+        notes: [
+          'Settings has a new World section with a Reset the world button, on the home screen and in the pause menu. It unfolds into a card that shows exactly what is swept away and what you keep, and asks you to confirm before anything happens.',
+          'A reset gives you a fresh sea: every fort you took goes back to the Brethren, your infamy and the Wanted Board start over, your treasure map and dig tally are torn up, prize ships go back to sea, and your waypoints are lifted. If you\'re out on a voyage, it ends and you sail home to harbour with every wreck and pirate cleared away.',
+          'Your account, every coin of gold, your ships, skins, effects, parts, liveries, saved designs, escorts you hired for gold and your records all stay yours.',
+          'It works with cloud saves: a reset on one device carries to your others the next time they sync, and old progress from before the reset never sneaks back in.',
+        ],
+      },
+      {
         title: 'Treasure maps you\'ll want to frame',
         notes: [
           'The treasure map is redrawn as a proper pirate chart: the island in ink and watercolour with its coast echoed out to sea, hills, palms, a compass rose with rhumb lines, the isle\'s name on a ribbon, a scale of paces, the odd sea serpent, coffee rings and scorched edges. The three torn pieces lie together on the table with ragged, fibrous tears, and a piece you haven\'t looked at yet swoops into place the first time you open the map.',

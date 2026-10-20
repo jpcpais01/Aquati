@@ -182,6 +182,19 @@ export class FleetStore {
     this.save();
   }
 
+  /**
+   * A fresh sea: prizes taken from it go back to it, but ships hired with
+   * your own gold stay on your books (patched up, tallies cleared).
+   */
+  wipe() {
+    this.state = {
+      ships: this.state.ships.filter((s) => s.origin === 'hired').map((s) => ({ ...s, hp: 1, kills: 0 })),
+      lost: 0,
+      order: this.state.order,
+    };
+    this.save();
+  }
+
   /** Writes back each escort's hull and tally (quietly unless something changed). */
   sync(recs: { id: string; hp: number; kills: number }[]) {
     let dirty = false;

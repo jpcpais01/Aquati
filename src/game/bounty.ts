@@ -386,6 +386,12 @@ export class BountyBook {
     this.subs.forEach((f) => f());
   }
 
+  /** A fresh sea: no infamy, every poster unstamped. */
+  wipe() {
+    this.s = freshLedger();
+    this.save();
+  }
+
   /** Infamy earned; returns the new rank if it just went up, else -1. */
   addInfamy(pts: number) {
     if (pts <= 0) return -1;

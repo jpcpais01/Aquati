@@ -47,7 +47,27 @@ export interface Profile {
   fleet: FleetState | null;
   /** The island forts you've taken, and their tribute. */
   forts: FortSave | null;
+  /**
+   * When the captain last reset the world (ms since 1970, 0 for never). The
+   * world's progress (infamy, maps, prizes, forts) from before a reset never
+   * merges back in from another device: the newest reset wins outright.
+   */
+  world: number;
 }
+
+/** Stamp of the last world reset on this device. */
+export const WORLD_KEY = 'aquati.world.v1';
+
+/** Marks a world reset; the stores then save their fresh state as usual. */
+export function markWorldReset() {
+  try {
+    localStorage.setItem(WORLD_KEY, String(Date.now()));
+  } catch {
+    /* private mode: there's no cloud copy to argue with either */
+  }
+}
+
+const stamp = (v: unknown) => (Number.isFinite(Number(v)) ? Math.max(0, Math.floor(Number(v))) : 0);
 
 /** Gifts saved before amounts were recorded. */
 const LEGACY_GIFTS: Record<string, number> = { 'fleet-10k': 10000 };
@@ -89,7 +109,9 @@ export function readLocal(): Profile {
   const parts = readJson(PARTS_KEY);
   const gifts: Record<string, number> = {};
   let ship: string | null = null;
+  let world = 0;
   try {
+    world = stamp(localStorage.getItem(WORLD_KEY));
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k?.startsWith(GIFT_PREFIX)) continue;
@@ -113,6 +135,7 @@ export function readLocal(): Profile {
     maps: readMaps(),
     fleet: readFleet(),
     forts: readForts(),
+    world,
   };
 }
 
@@ -134,6 +157,7 @@ export function writeLocal(p: Profile) {
     setOrRemove(MAPS_KEY, p.maps ? JSON.stringify(p.maps) : null);
     setOrRemove(FLEET_KEY, p.fleet ? JSON.stringify(p.fleet) : null);
     setOrRemove(FORTS_KEY, p.forts ? JSON.stringify(p.forts) : null);
+    setOrRemove(WORLD_KEY, p.world ? String(p.world) : null);
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -146,7 +170,7 @@ export function writeLocal(p: Profile) {
   }
 }
 
-export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null, forts: null });
+export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null, forts: null, world: 0 });
 
 /** Back to a brand-new guest: what a sign-out leaves behind. */
 export function resetLocal() {
@@ -346,6 +370,10 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
   for (const [k, n] of Object.entries(local.gifts)) if (k in remote.gifts && !(k in B.gifts)) giftOverlap += n;
   const gifts = { ...remote.gifts };
   for (const [k, n] of Object.entries(local.gifts)) gifts[k] = Math.max(n, gifts[k] ?? 0);
+  // a world reset on one side since the other last saw it: that side's world stands as it is
+  const lw = local.world ?? 0;
+  const rw = remote.world ?? 0;
+  const pick = !first && lw !== rw ? (lw > rw ? local : remote) : null;
   return {
     vault: mergeVault(B.vault, local.vault, remote.vault, first, giftOverlap),
     parts: mergeParts(B.parts, local.parts, remote.parts, first),
@@ -354,10 +382,11 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
     records: mergeRecords(B.records, local.records, remote.records),
     gifts,
     ship: latest(B.ship, local.ship, remote.ship, first),
-    bounty: mergeLedger(B.bounty ?? null, local.bounty ?? null, remote.bounty ?? null),
-    maps: mergeMaps(B.maps ?? null, local.maps ?? null, remote.maps ?? null, first),
-    fleet: mergeFleet(base ? B.fleet ?? null : null, local.fleet ?? null, remote.fleet ?? null),
-    forts: mergeForts(B.forts ?? null, local.forts ?? null, remote.forts ?? null),
+    bounty: pick ? pick.bounty : mergeLedger(B.bounty ?? null, local.bounty ?? null, remote.bounty ?? null),
+    maps: pick ? pick.maps : mergeMaps(B.maps ?? null, local.maps ?? null, remote.maps ?? null, first),
+    fleet: pick ? pick.fleet : mergeFleet(base ? B.fleet ?? null : null, local.fleet ?? null, remote.fleet ?? null),
+    forts: pick ? pick.forts : mergeForts(B.forts ?? null, local.forts ?? null, remote.forts ?? null),
+    world: Math.max(lw, rw),
   };
 }
 
@@ -366,7 +395,7 @@ export type Part = Exclude<keyof Profile, 'gifts'>;
 /** Which parts differ, so the game reloads only what it must. */
 export function changedParts(a: Profile, b: Profile): Set<Part> {
   const out = new Set<Part>();
-  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet', 'forts'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
+  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet', 'forts', 'world'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
   return out;
 }
 
@@ -389,6 +418,7 @@ export function parseProfile(raw: unknown): Profile | null {
       maps: cleanMaps(p.maps),
       fleet: cleanFleet(p.fleet),
       forts: cleanForts(p.forts),
+      world: stamp(p.world),
     };
   } catch {
     return null;

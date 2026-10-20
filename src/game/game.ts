@@ -46,6 +46,7 @@ import { chestPart, Found, loadoutStats, part as partById, PART_RARITIES, PartSl
 import { partIcon } from '../ui/partArt';
 import { Cloud, Part } from '../cloud/cloud';
 import { ADMIN_GOLD } from '../cloud/admin';
+import { markWorldReset } from '../cloud/profile';
 import { AccountPanel } from '../ui/account';
 import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
@@ -773,6 +774,8 @@ export class Game {
 
   /** The cloud rewrote some saves (another device's progress, or a sign-out). */
   private applyCloud(parts: Set<Part>) {
+    // the world was reset on another device: this device's pins go with it
+    if (parts.has('world')) this.waypoints.clear();
     if (parts.has('bounty')) this.bounty.reload();
     if (parts.has('fleet')) this.fleet.reload();
     if (parts.has('forts')) {
@@ -839,6 +842,7 @@ export class Game {
       this.resetWorld();
       this.enterMenu();
     };
+    ui.onResetWorld = () => this.freshSea();
     ui.onAgain = () => this.leaveWreck(false);
     ui.onRetry = () => this.leaveWreck(true);
     ui.onTally = (i, best) => this.audio.tally(i, best);
@@ -3079,6 +3083,38 @@ export class Game {
     this.fortHud.clear();
     this.player = null;
     this.preview = null;
+  }
+
+  /**
+   * Settings → Reset the world: a fresh sea. Every fort back in the Brethren's
+   * hands, infamy and the Wanted Board wiped, the treasure map torn up, prizes
+   * cast loose, pins lifted, and (at sea) the voyage ends back in harbour with
+   * every wreck and pirate cleared away. The purse, ships, cosmetics, parts,
+   * liveries, ships hired for gold and personal records all stay.
+   */
+  private freshSea() {
+    if ((this.state !== 'menu' && this.state !== 'paused') || this.swBusy || this.vault.isOpen) return;
+    this.audio.bell(2, 0.25);
+    void this.fade(() => {
+      this.ui.showPause(false);
+      markWorldReset();
+      this.bounty.wipe();
+      this.maps.wipe();
+      this.fortStore.wipe();
+      this.fleet.wipe();
+      this.waypoints.clear();
+      try {
+        localStorage.removeItem(BOARD_SEEN_KEY);
+      } catch {
+        /* private mode */
+      }
+      this.resetWorld();
+      this.forts.apply(this.fortStore.state.taken);
+      this.syncTreasure();
+      this.enterMenu();
+      this.markBoard();
+      this.ui.toast('A fresh sea', 'The Brethren hold every fort again. Your gold, ships and treasures are safe', 5);
+    });
   }
 
   /** Bird's-eye or the captain's own eyes on deck. */
