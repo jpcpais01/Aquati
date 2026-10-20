@@ -101,6 +101,7 @@ export class UI {
   onClearPins: () => void = () => {};
   /** Photo mode, from the pause menu or the HUD's camera button. */
   onPhoto: () => void = () => {};
+  onZoomView: () => void = () => {};
   /** Sweeps the sea of sunken wrecks and floating wreckage. */
   onSweep: () => void = () => {};
   onClick: () => void = () => {};
@@ -235,6 +236,11 @@ export class UI {
       // drop focus so Space (fire) can't press it again
       (e.currentTarget as HTMLElement).blur();
       this.onPause();
+    });
+    $('btn-zoom').addEventListener('click', (e) => {
+      (e.currentTarget as HTMLElement).blur();
+      this.onClick();
+      this.onZoomView();
     });
     $('btn-photo').addEventListener('click', (e) => {
       (e.currentTarget as HTMLElement).blur();
@@ -866,6 +872,26 @@ export class UI {
     this.toasts.appendChild(el);
     while (this.toasts.children.length > 3) this.toasts.firstElementChild?.remove();
     setTimeout(() => el.remove(), (life + 0.7) * 1000);
+  }
+
+  private zoomView = -1;
+  private zoomTagT = 0;
+
+  /** The zoom button's pips (0 close .. 3 cinematic); `announce` pops the view's name beside it. */
+  setZoomView(i: number, name: string, announce = false) {
+    if (i === this.zoomView && !announce) return;
+    this.zoomView = i;
+    const b = $('btn-zoom');
+    b.setAttribute('aria-label', `Camera view: ${name}`);
+    b.dataset.view = String(i);
+    b.querySelectorAll('.zoom-pips i').forEach((p, k) => p.classList.toggle('on', k <= i));
+    if (!announce) return;
+    b.dataset.name = name;
+    b.classList.remove('tag');
+    void b.offsetWidth;
+    b.classList.add('tag');
+    clearTimeout(this.zoomTagT);
+    this.zoomTagT = window.setTimeout(() => b.classList.remove('tag'), 1300);
   }
 
   /** Captain's view chrome: the toggle, walk hints, reticle and the touch spyglass. */

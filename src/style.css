@@ -3170,6 +3170,75 @@ body[data-hud='large'] #hud {
   transform: scale(0.92);
 }
 
+/* the touch zoom button: steps close / mid / far / cinematic, four pips under the glass */
+.zoom-btn {
+  display: none;
+}
+
+.is-touch .zoom-btn {
+  display: flex;
+}
+
+#hud.fpv .zoom-btn {
+  display: none;
+}
+
+.zoom-btn .ti {
+  transform: translateY(-2px);
+}
+
+.zoom-pips {
+  position: absolute;
+  left: 50%;
+  bottom: 13%;
+  display: flex;
+  gap: 2px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.zoom-pips i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  transition: background 0.25s, box-shadow 0.25s, transform 0.25s var(--ease);
+}
+
+.zoom-pips i.on {
+  background: var(--gold);
+  box-shadow: 0 0 4px rgba(244, 213, 138, 0.7);
+}
+
+/* the cinematic view: the last pip burns brightest */
+.zoom-btn[data-view='3'] .zoom-pips i:last-child {
+  transform: scale(1.35);
+}
+
+.zoom-btn::after {
+  content: attr(data-name);
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(10, 28, 40, 0.86);
+  color: var(--ink);
+  font: 600 11px/1.2 Inter, system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(6px, -50%);
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.3s var(--ease);
+}
+
+.zoom-btn.tag::after {
+  opacity: 1;
+  transform: translate(0, -50%);
+}
+
 .view-btn.on {
   color: var(--gold-ink);
   border-color: transparent;

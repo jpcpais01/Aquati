@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T22:00Z',
     entries: [
       {
+        title: 'Camera views at a tap, and the game remembers yours',
+        notes: [
+          'On phones and tablets a new magnifier button sits with the others under the map. Tap it to step through four views: Close, Mid, Far, and Cinematic, which is the far view leaned over at that more dramatic angle. Four little gold dots on the button show which one you are on, and the name pops up beside it as you tap.',
+          'Pinching to zoom still works as before, and the dots follow along.',
+          'The game now remembers the view you last sailed with, on every device. Close it zoomed right out on the cinematic angle and that is exactly how the camera greets you next time you set sail.',
+        ],
+      },
+      {
         title: 'A lighter HUD on phones, and menus that use the whole screen',
         notes: [
           'The home screen, the archipelago picker, the crew card, the Shipwright, the Vault, the market, photo mode and the sunk screen now run edge to edge like the game itself, instead of leaving a band for the notch and system bars. Everything keeps the same even 3% margin from every edge.',

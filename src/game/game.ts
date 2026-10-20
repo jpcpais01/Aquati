@@ -157,6 +157,16 @@ const loadShoreEye = () => {
     return true;
   }
 };
+/** The camera view you last sailed with (zoom 0..1 and the cinematic lean), restored on the next launch. */
+const VIEW_KEY = 'aquati.view';
+const loadView = (): { zoom: number; tilt: number } | null => {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
+    return v && Number.isFinite(v.zoom) && Number.isFinite(v.tilt) ? v : null;
+  } catch {
+    return null;
+  }
+};
 /** `?maelstrom` / `?reef` set sail a little way off the first maelstrom / reef (for trying them out). */
 const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(location.search) ? 'maelstrom' : /[?&]reef\b/.test(location.search) ? 'reef' : null) : null;
 /** `?brumas` / `?highseas` set sail off Las Brumas / out on the high seas between the archipelagos (for a look). */
@@ -1067,6 +1077,12 @@ export class Game {
     this.fwLocker.subscribe(() => ui.refreshFwPicker());
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
+    ui.onZoomView = () => {
+      const i = (this.rig.view + 1) % CameraRig.VIEWS.length;
+      const v = CameraRig.VIEWS[i];
+      this.rig.setView(v.zoom, v.tilt);
+      this.ui.setZoomView(i, v.name, true);
+    };
     ui.onMap = (on) => this.setChart(on);
     ui.onPin = (x, z, pick) => this.tapPin(x, z, pick);
     ui.onClearPins = () => {
@@ -3894,8 +3910,12 @@ export class Game {
     this.ui.showHud(true);
     this.rig.mode = 'follow';
     this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
-    this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.rig.resetTilt();
+    // pick up the view you last sailed with, else a comfortable middle distance
+    const saved = loadView();
+    if (saved) this.rig.setView(saved.zoom, saved.tilt);
+    else this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
+    this.viewSaved = `${this.rig.zoom.toFixed(3)},${this.rig.tilt.toFixed(3)}`;
     if (SEA_TEST) {
       this.testSea(p);
       this.rig.snapTo(p.pos);
@@ -6417,8 +6437,32 @@ export class Game {
     (sh as unknown as { _updateMatrix(c: THREE.Camera, m: THREE.Matrix4, f: THREE.Frustum): void })._updateMatrix(cam, sh.matrix, sh.getFrustum());
   }
 
+  private viewSaved = '';
+  private viewSaveT = 0;
+
+  /** Keeps the zoom button's pips on the current view and remembers it (at sea; ashore, the sea view waiting for you). */
+  private syncView() {
+    if (this.state !== 'playing') return;
+    const r = this.rig;
+    const v = r.view;
+    this.ui.setZoomView(v, CameraRig.VIEWS[v].name);
+    const now = performance.now();
+    if (now < this.viewSaveT) return;
+    this.viewSaveT = now + 600;
+    const zoom = r.foot ? this.seaZoom : r.zoom;
+    const key = `${zoom.toFixed(3)},${r.tilt.toFixed(3)}`;
+    if (key === this.viewSaved) return;
+    this.viewSaved = key;
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ zoom: +zoom.toFixed(3), tilt: +r.tilt.toFixed(3) }));
+    } catch {
+      /* private mode */
+    }
+  }
+
   private render(dt: number) {
     if (!this.ocean) return;
+    this.syncView();
     const P = this.prof;
     P.begin('Shadow & scene setup', 'render');
     const cam = this.rig.camera;
