@@ -98,6 +98,10 @@ export class UI {
   onClick: () => void = () => {};
   /** Live settings changed (sound, music, shake…); the game applies what it owns. */
   onSettings: (s: Settings) => void = () => {};
+  /** Settings → Reset the world, confirmed. */
+  onResetWorld: () => void = () => {};
+  /** The reset card is unfolded (and asking to be confirmed). */
+  private resetOpen = false;
   readonly settings: Settings = loadSettings();
   private get soundOn() {
     return this.settings.sound;
@@ -149,6 +153,7 @@ export class UI {
     };
     const openSettings = () => {
       this.onClick();
+      this.resetOpen = false;
       this.renderSettings();
       this.openOverlay('settings');
     };
@@ -370,6 +375,9 @@ export class UI {
           ['gentle', 'Gentle'],
           ['off', 'Off'],
         ])}
+      </section>
+      <section class="set-group"><h4>World</h4>
+        ${this.resetCard()}
       </section>`;
     body.querySelectorAll<HTMLElement>('[data-key]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -394,6 +402,22 @@ export class UI {
         this.onClick();
       });
     });
+    body.querySelectorAll<HTMLElement>('[data-reset]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.onClick();
+        const k = b.dataset.reset;
+        if (k === 'go') {
+          this.resetOpen = false;
+          this.closeOverlay('settings');
+          this.onResetWorld();
+          return;
+        }
+        this.resetOpen = k === 'open';
+        this.renderSettings();
+        body.querySelector<HTMLElement>(this.resetOpen ? '[data-reset="keep"]' : '[data-reset="open"]')?.focus({ preventScroll: true });
+        if (this.resetOpen) body.querySelector('.reset-card')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }),
+    );
     $('set-gfx').addEventListener('click', () => {
       // the graphics card clears the stage to show the sea, so it replaces this sheet
       this.closeOverlay('settings');
@@ -403,6 +427,43 @@ export class UI {
       const v = s[focusKey as keyof Settings];
       body.querySelector<HTMLElement>(`[data-key="${focusKey}"][data-v="${v}"], button.set-row[data-key="${focusKey}"]`)?.focus({ preventScroll: true });
     }
+  }
+
+  /** The world reset row, or (unfolded) what goes, what stays and the confirm. */
+  private resetCard() {
+    if (!this.resetOpen)
+      return `<button class="set-row reset-row" data-reset="open"><span class="set-txt"><b>Reset the world</b><small>A fresh sea: forts, infamy, maps and prizes start over. Gold and ships stay yours</small></span><span class="set-go">${icon(ICONS.refresh)}</span></button>`;
+    const atSea = !$('pause').classList.contains('hidden');
+    const li = (t: string) => `<li>${t}</li>`;
+    return `<div class="reset-card" role="group" aria-label="Reset the world">
+      <div class="reset-head"><span class="reset-ico">${icon(ICONS.refresh)}</span><span class="set-txt"><b>Reset the world?</b><small>${
+        atSea ? 'This voyage ends and you sail home to a fresh sea.' : 'The archipelago goes back to how you first found it.'
+      } This can't be undone.</small></span></div>
+      <div class="reset-cols">
+        <div class="reset-col goes"><h5>Swept away</h5><ul>${[
+          'Forts you took, back to the Brethren',
+          'Infamy and the Wanted Board',
+          'Your treasure map and dig tally',
+          'Prize ships in your fleet',
+          'Wrecks, pirates and waypoints',
+        ]
+          .map(li)
+          .join('')}</ul></div>
+        <div class="reset-col stays"><h5>Yours to keep</h5><ul>${[
+          'Your account and every coin of gold',
+          'Ships, skins, effects and parts',
+          'Liveries and saved designs',
+          'Escorts hired for gold',
+          'Your records',
+        ]
+          .map(li)
+          .join('')}</ul></div>
+      </div>
+      <div class="reset-acts">
+        <button class="reset-btn keep" data-reset="keep">Keep my world</button>
+        <button class="reset-btn go" data-reset="go">${icon(ICONS.refresh)}Reset the world</button>
+      </div>
+    </div>`;
   }
 
   /** Menu shortcuts: arrows / A D / 1 2 3 pick a ship, Enter sets sail. */
