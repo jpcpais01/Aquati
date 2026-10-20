@@ -23,6 +23,30 @@ export const SKY_HORIZON = new THREE.Color(0.63, 0.8, 0.94);
 export const FOG_COLOR = new THREE.Color(0.55, 0.73, 0.86);
 export const WATER_LEVEL = 0;
 export const MAX_GUSTS = 8;
+
+/**
+ * The cloud field's recipe, shared by the GLSL below and by the CPU (which
+ * finds the heaps to stand cumulus impostors on, see render/cumulus.ts).
+ * Each layer is [scale, offset u, offset v] on the noise texture.
+ */
+export const CLOUD = {
+  base: 700, // flat cloud base (m)
+  uvPerM: 0.0011, // cloud-field uv per metre of ground
+  sys: [0.13, 0.61, 0.17], // R: weather systems
+  cell: [0.11, 0.13, 0.57], // B: one heap per Worley cell
+  bil: [0.83, 0.37, 0.71], // R: billows
+} as const;
+
+/** The cloud field's threshold for a cloud cover (mirrors cloudLo() in GLSL). */
+export function cloudLo(cover: number) {
+  const c4 = cover * cover * cover * cover;
+  return 0.89 - cover * 0.7 - c4 * c4 * c4 * c4 * 0.5;
+}
+
+/** The cloud field from its three noise samples (mirrors cloudField() in GLSL). */
+export function cloudMix(sys: number, cell: number, bil: number) {
+  return cell * 0.5 + (sys - 0.5) * 1.6 + (bil - 0.5) * 0.55 + 0.25;
+}
 /** Gust puffs are stretched along the wind by this much. Mirrored on the CPU. */
 export const GUST_STRETCH = 1.8;
 
@@ -147,7 +171,8 @@ vec3 skyColor(vec3 d) {
   float hp = max(h, 0.0);
   float mu = dot(d, uSunDir);
   float sd = max(mu, 0.0);
-  vec3 col = mix(uSkyHorizon, uSkyZenith, pow(hp, 0.4));
+  // the pale band of thick air is narrow: by twenty degrees up it is mostly blue
+  vec3 col = mix(uSkyHorizon, uSkyZenith, (1.0 - exp(-hp * 7.0)) * 1.001);
   // overhead the blue deepens and saturates; the cloudier, the less of it
   float clear = 1.0 - uCloudCover * 0.75;
   col = mix(col, col * vec3(0.82, 0.92, 1.08), smoothstep(0.25, 0.9, hp) * clear * (1.0 - uNight));
@@ -156,7 +181,7 @@ vec3 skyColor(vec3 d) {
   col += uSkyHorizon * exp(-hp * 18.0) * 0.1;
   // warm haze toward the sun (cool glow around the moon at night): a broad
   // multiple-scattering wash, the aureole, and a tight hot corona
-  col += uHaze * (pow(sd, 5.0) * 0.32 + pow(sd, 48.0) * 0.9 + pow(sd, 700.0) * 2.4);
+  col += uHaze * (pow(sd, 5.0) * 0.17 + pow(sd, 48.0) * 0.8 + pow(sd, 700.0) * 2.4);
   #ifndef AQ_NO_STARS
   col += starField(d);
   #endif
@@ -169,51 +194,58 @@ vec3 skyColor(vec3 d) {
 
 // ---- the cloud deck: one noise field shared by the sky, its reflection in
 // the sea and the shadows drifting across water and islands
-const float AQ_CLOUD_ALT = 700.0;
-// the weather's cloud cover as a threshold on the cloud field
+const float AQ_CLOUD_ALT = ${CLOUD.base.toFixed(1)};
+// the weather's cloud cover as a threshold on the cloud field: calibrated so
+// a clear day keeps about a tenth of the sky, fair weather a quarter, a
+// cloudy one two thirds, and a storm closes it completely
 float cloudLo() {
-  return 0.76 - uCloudCover * 0.58;
+  float c = uCloudCover;
+  float c4 = c * c * c * c;
+  return 0.89 - c * 0.7 - c4 * c4 * c4 * c4 * 0.5;
 }
-// The cloud field: broad weather systems, fields of cloud within them, and
-// inverted Worley cells that heap each cloud into billows. The sky, its
-// reflection and the shadows on sea and islands all read this one field.
+// The cloud field, as fair-weather cumulus really sit in the sky: weather
+// systems a couple of kilometres across that gather clouds in some quarters
+// and leave wide blue gaps in others, one rounded heap per Worley cell (about
+// 600 m apart), and billows that lump each heap into cauliflower. The sky,
+// its reflection and the shadows on sea and islands all read this one field.
+// Above cloudLo() there is cloud; how far above sets how high it heaps.
+float cloudMix(float sys, float cell, float bil) {
+  return cell * 0.5 + (sys - 0.5) * 1.6 + (bil - 0.5) * 0.55 + 0.25;
+}
 float cloudField(vec2 uv) {
-  float n = texture(uNoiseTex, uv * 0.43 + vec2(0.61, 0.17)).r * 0.46
-    + texture(uNoiseTex, uv).r * 0.34
-    + texture(uNoiseTex, uv * 2.7 + vec2(0.37, 0.71)).r * 0.2;
-  float b = 1.0 - texture(uNoiseTex, uv * 0.38 + vec2(0.13, 0.57)).b;
-  return 0.5 + (n - 0.5) * 1.35 + (b - 0.55) * 0.12;
+  return cloudMix(
+    texture(uNoiseTex, uv * ${CLOUD.sys[0]} + vec2(${CLOUD.sys[1]}, ${CLOUD.sys[2]})).r,
+    1.0 - texture(uNoiseTex, uv * ${CLOUD.cell[0]} + vec2(${CLOUD.cell[1]}, ${CLOUD.cell[2]})).b,
+    texture(uNoiseTex, uv * ${CLOUD.bil[0]} + vec2(${CLOUD.bil[1]}, ${CLOUD.bil[2]})).r);
+}
+// 0 at a cloud's rim .. 1 at its core
+float heapK(float n, float lo) {
+  return clamp((n - lo) * 3.3, 0.0, 1.0);
+}
+// How tall the heaps stand above their flat base (m): fair-weather cumulus
+// tower, a grey day flattens them into rolls, a storm piles the deck high.
+float heapTall() {
+  return mix(480.0, 280.0, smoothstep(0.45, 0.9, uCloudCover)) + uStorm * 520.0;
+}
+// where the deck straight above ground point xz casts its shadow from
+vec2 cloudGroundUv(vec2 xz) {
+  return (xz - uSunDir.xz / max(uSunDir.y, 0.2) * AQ_CLOUD_ALT) * 0.0011 + uCloudOffset;
 }
 // cloud-texture coordinates where a ray from p along d meets the deck at
 // altitude alt; every slice of a column maps to the patch of sea it shades
 vec2 cloudUv(vec3 p, vec3 d, float alt, out float dist) {
   dist = (alt - p.y) / max(d.y, 0.012);
-  vec2 xz = p.xz + d.xz * dist;
-  vec2 ground = xz - uSunDir.xz / max(uSunDir.y, 0.2) * AQ_CLOUD_ALT;
-  return ground * 0.0011 + uCloudOffset;
+  return cloudGroundUv(p.xz + d.xz * dist);
 }
-// Cloud at a point of the deck: x coverage, y thickness, z sunlight that
-// reaches it through the cloud toward the sun. The broad field is the same
-// one that casts the shadows; inverted Worley cells heap it into billows.
-vec3 cloudSample(vec2 uv) {
-  float lo = cloudLo();
-  float dn = cloudField(uv) + (0.5 - texture(uNoiseTex, uv * 0.95 + vec2(0.71, 0.29)).b) * 0.06;
-  float body = smoothstep(lo, lo + 0.1, dn);
-  // thin at the rim, dense in the core: each cloud carries its own shading
-  float thick = smoothstep(lo, lo + 0.14 + uCloudCover * 0.3, dn);
-  float ns = cloudField(uv + normalize(uSunDir.xz + vec2(1e-4)) * 0.05);
-  float sunlit = exp(-max(ns - lo, 0.0) * 4.0);
-  return vec3(body, thick, sunlit);
-}
-// the cloud deck's reflection in a moving sea needs no self-shadowing
+// the cloud deck where a reflected ray meets its base: x coverage, y thickness, z sunlight
 vec3 cloudSampleLite(vec2 uv) {
   float lo = cloudLo();
   float dn = cloudField(uv);
-  return vec3(smoothstep(lo, lo + 0.1, dn), smoothstep(lo, lo + 0.14 + uCloudCover * 0.3, dn), 0.6);
+  return vec3(smoothstep(lo, lo + 0.06, dn), smoothstep(lo, lo + 0.2 + uCloudCover * 0.2, dn), 0.6);
 }
-// Lit cloud seen along d. Seen from below, thin edges glow with the sun
-// passing through them while dense cores sink to a blue-grey lit only by the
-// sky; toward the sun the whole deck takes a silver forward-scattered rim.
+// Lit cloud seen along d, for the sea's mirror and the sky's light: sunny
+// where thin, sinking to a blue-grey belly lit only by the sky where thick;
+// toward the sun the whole deck takes a silver forward-scattered rim.
 vec3 cloudColor(vec3 c, vec3 d) {
   float mu = dot(d, uSunDir);
   float fwd = pow(max(mu, 0.0), 8.0);
@@ -226,11 +258,12 @@ vec3 cloudColor(vec3 c, vec3 d) {
 }
 float cloudShadow(vec2 xz) {
   vec2 uv = xz * 0.0011 + uCloudOffset;
-  // the same field the sky draws, so every shadow belongs to a cloud above
+  // the same field the sky draws, so every shadow belongs to a cloud above:
+  // crisp at the rim, deepest under the tall cores
   float n = cloudField(uv);
   // coverage slides the threshold: a few puffs on a clear day, a solid deck in a storm
   float lo = cloudLo();
-  float s = mix(1.0, 0.5, smoothstep(lo, lo + 0.18, n));
+  float s = 1.0 - smoothstep(lo - 0.01, lo + 0.05, n) * (0.34 + 0.18 * smoothstep(lo, lo + 0.25, n));
   // the little low puffs drifting between you and the sun
   if (uLowCloudXf.w > 0.0) {
     vec2 q = (xz - uLowCloudXf.xy) * uLowCloudXf.z;
