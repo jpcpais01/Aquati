@@ -6,7 +6,8 @@ import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { HOLD_ROOM } from '../game/treasure';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
-import { SeaChart, ChartScene, portMark } from './chart';
+import { SeaChart, ChartScene, portMark, pinMark, fmtDist } from './chart';
+import { PIN_COLORS } from '../game/waypoints';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
 import { WreckReport, WreckScreen } from './wreck';
@@ -68,6 +69,7 @@ export class UI {
   readonly chart = new SeaChart($<HTMLCanvasElement>('chart-canvas'));
   private chartPlayer: Ship | null = null;
   private barEls = new Map<number, HTMLDivElement>();
+  private pinEls = new Map<number, HTMLDivElement>();
   private floaterPool: { el: HTMLDivElement; t: number; life: number; x: number; y: number; vy: number }[] = [];
   selected: ShipClassId = savedShip();
   onSelect: (id: ShipClassId) => void = () => {};
@@ -83,6 +85,8 @@ export class UI {
   onSound: (on: boolean) => void = () => {};
   onPause: () => void = () => {};
   onMap: (open: boolean) => void = () => {};
+  /** A tap on the sea chart: drop a waypoint there, or lift the one within `pick` metres. */
+  onPin: (x: number, z: number, pick: number) => void = () => {};
   /** Photo mode, from the pause menu or the HUD's camera button. */
   onPhoto: () => void = () => {};
   onClick: () => void = () => {};
@@ -222,6 +226,7 @@ export class UI {
     this.mapCanvas.addEventListener('click', () => this.onMap(true));
     $('chart-close').addEventListener('click', () => this.onMap(false));
     $('chart-center').addEventListener('click', () => this.chartPlayer && this.chart.recenter(this.chartPlayer));
+    this.chart.onTap = (x, z, pick) => this.onPin(x, z, pick);
     // tapping the dimmed sea around the chart closes it too
     $('chart').addEventListener('click', (e) => {
       if (e.target === e.currentTarget) this.onMap(false);
@@ -1165,6 +1170,60 @@ export class UI {
     this.chart.setTerrain(terrain);
   }
 
+  /**
+   * A small tag at the foot of each waypoint's pillar with its distance; pins off
+   * screen slide to the edge and point the way.
+   */
+  updatePins(pins: { id: number; x: number; z: number; y: number; hue: number }[], from: { x: number; z: number }, camera: THREE.Camera, w: number, h: number) {
+    const seen = new Set<number>();
+    const v = new THREE.Vector3();
+    for (const pin of pins) {
+      v.set(pin.x, pin.y + 3, pin.z).project(camera);
+      let x = v.x;
+      let y = v.y;
+      // behind the camera the projection flips: mirror it so the arrow still points the right way
+      if (v.z > 1) {
+        x = -x;
+        y = -y;
+      }
+      const mx = 1 - 56 / w;
+      const my = 1 - 64 / h;
+      const k = Math.max(Math.abs(x) / mx, Math.abs(y) / my, 1e-4);
+      const edge = k > 1 || v.z > 1;
+      if (edge) {
+        x /= k;
+        y /= k;
+      }
+      seen.add(pin.id);
+      let el = this.pinEls.get(pin.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'wpin';
+        el.innerHTML = '<i></i><span></span>';
+        el.style.setProperty('--pc', PIN_COLORS[pin.hue].css);
+        this.bars.appendChild(el);
+        this.pinEls.set(pin.id, el);
+      }
+      const d = Math.hypot(pin.x - from.x, pin.z - from.z);
+      const t = fmtDist(d);
+      const span = el.lastElementChild as HTMLElement;
+      if (span.textContent !== t) span.textContent = t;
+      el.classList.toggle('edge', edge);
+      // a tag fades as you close in: the pillar itself says enough up close
+      el.style.opacity = edge ? '1' : `${Math.min(1, Math.max(0.15, (d - 20) / 60))}`;
+      const sx = (x * 0.5 + 0.5) * w;
+      const sy = (-y * 0.5 + 0.5) * h;
+      el.style.transform = `translate(${sx}px, ${sy}px)`;
+      if (edge) (el.firstElementChild as HTMLElement).style.transform = `rotate(${Math.atan2(-y * h, x * w)}rad)`;
+    }
+    this.pinEls.forEach((el, id) => {
+      if (!seen.has(id)) {
+        el.remove();
+        this.pinEls.delete(id);
+      }
+    });
+  }
+
   drawMap(
     player: Ship,
     ships: Ship[],
@@ -1175,6 +1234,7 @@ export class UI {
     camps: { x: number; z: number; routed: boolean }[] = [],
     /** Ashore: the captain on foot, at the middle of a closer map. */
     walker: { x: number; z: number; yaw: number } | null = null,
+    pins: { x: number; z: number; hue: number }[] = [],
   ) {
     const g = this.map;
     const S = this.mapCanvas.width;
@@ -1273,6 +1333,50 @@ export class UI {
       g.restore();
     }
     for (const s of ships) if (s !== player && s.alive) tri(s, '#ff6a55', 11);
+    // waypoints: in range where they stand, else on the rim with how far to sail
+    g.font = '700 19px Inter, system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    pins.forEach((pin, i) => {
+      const css = PIN_COLORS[pin.hue].css;
+      const d = Math.hypot(pin.x - cx, pin.z - cz);
+      if (d < R - 30) {
+        pinMark(g, ...toMap(pin.x, pin.z), 13, css, `${i + 1}`);
+        return;
+      }
+      const a = Math.atan2(pin.z - cz, pin.x - cx);
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const rr = S / 2 - 16;
+      const x = S / 2 + ca * rr;
+      const y = S / 2 + sa * rr;
+      g.save();
+      g.translate(x, y);
+      g.rotate(a);
+      g.shadowColor = css;
+      g.shadowBlur = 10;
+      g.fillStyle = css;
+      g.strokeStyle = 'rgba(20, 14, 6, 0.7)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(11, 0);
+      g.lineTo(-7, 9);
+      g.lineTo(-3, 0);
+      g.lineTo(-7, -9);
+      g.closePath();
+      g.fill();
+      g.shadowBlur = 0;
+      g.stroke();
+      g.restore();
+      const t = fmtDist(d);
+      const lx = S / 2 + ca * (rr - 36);
+      const ly = S / 2 + sa * (rr - 30);
+      g.lineWidth = 5;
+      g.strokeStyle = 'rgba(6, 22, 30, 0.85)';
+      g.strokeText(t, lx, ly);
+      g.fillStyle = css;
+      g.fillText(t, lx, ly);
+    });
     tri(player, walker ? 'rgba(255,255,255,0.7)' : '#ffffff', 14);
     if (walker) {
       // the captain: a gold arrowhead
