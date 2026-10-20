@@ -377,6 +377,7 @@
   display: none;
   align-items: center;
   gap: calc(9px * var(--k));
+  min-width: calc(124px * var(--k));
   height: calc(44px * var(--k));
   margin-left: calc(2px * var(--k));
   padding: 0 calc(12px * var(--k)) 0 calc(5px * var(--k));
@@ -684,7 +685,9 @@
 
 /* touch: the console is sails & speed, then the map, low between the thumbs */
 .is-touch .map-chip {
-  height: calc(40px * var(--k));
+  /* thumb sized: scaled off the touch controls, not the (smaller) phone HUD */
+  --k: calc(var(--kt) * 1.08);
+  height: calc(42px * var(--k));
   margin: calc(-2px * var(--k)) calc(-10px * var(--k)) calc(-2px * var(--k)) calc(2px * var(--k));
 }
 
@@ -706,7 +709,7 @@
   }
 
   .is-touch #hud:has(.map-chip.on) .sail-lever {
-    bottom: calc(var(--mb) + 6px + 52px * var(--k) + 46px * var(--k));
+    bottom: calc(var(--mb) + 6px + 52px * var(--k) + 52px * var(--kt));
   }
 }
 
