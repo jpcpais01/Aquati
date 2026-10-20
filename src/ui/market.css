@@ -120,6 +120,41 @@
 .mk-room {
   letter-spacing: 0.08em;
   color: var(--ink-2);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* one chip per hull when escorts carry cargo: the flagship's crate, then each escort's in aqua */
+.mk-hull {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mk-hull i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #d2a160, #9a6a3c);
+  box-shadow: inset 0 0 0 1px #6e4a28;
+}
+
+.mk-hull.esc {
+  color: #8ff0e4;
+}
+
+.mk-hull.esc i {
+  background: #5ee3d4;
+  box-shadow: 0 0 6px rgba(94, 227, 212, 0.55);
+}
+
+.mk-hull.full {
+  color: var(--coral);
+}
+
+.mk-esc {
+  color: #8ff0e4;
 }
 
 /* everything between the name and Cast off scrolls as one; the head and foot stay put */
@@ -662,6 +697,32 @@
   color: var(--coral);
 }
 
+/* the escorts' share of the cargo, in the fleet's aqua beside the flagship's */
+.chip.hold-chip .hold-fleet {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  color: #8ff0e4;
+  font-weight: 700;
+}
+
+.chip.hold-chip.fleet .hold-fleet {
+  display: inline-flex;
+}
+
+.chip.hold-chip .hold-fleet::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5ee3d4;
+  box-shadow: 0 0 5px rgba(94, 227, 212, 0.7);
+}
+
+.chip.hold-chip .hold-fleet.full {
+  color: var(--coral);
+}
+
 .chip.hold-chip .crate {
   width: max(9px, calc(11px * var(--k)));
   height: max(9px, calc(11px * var(--k)));
@@ -737,6 +798,11 @@
 
 .hold-peek li b {
   color: var(--ink-2);
+}
+
+.hold-peek h4.hp-esc {
+  margin-top: 10px;
+  color: #5ee3d4;
 }
 
 .hold-peek .hp-worth {

@@ -354,6 +354,43 @@ export class Loot {
     this.items.push({ x, z, tier, goods, heal: 0, spin: (Math.random() - 0.5) * 0.4, phase: Math.random() * 10, age: 0, sparkle: 0 });
   }
 
+  /**
+   * Another hull sweeping the water (an escort): pulls in what's near her and
+   * returns what she has hauled aboard. Drift and ageing are left to update().
+   */
+  gather(dt: number, at: THREE.Vector3, radius: number, refuse?: (it: Item) => boolean): Item[] {
+    const got: Item[] = [];
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const it = this.items[i];
+      const dx = at.x - it.x, dz = at.z - it.z;
+      const d = Math.hypot(dx, dz);
+      if (d >= radius || refuse?.(it)) continue;
+      if (d < radius * 0.5) {
+        got.push(it);
+        this.items.splice(i, 1);
+        continue;
+      }
+      const pull = Math.min(d, (6 + 26 * (1 - d / radius)) * dt);
+      it.x += (dx / d) * pull;
+      it.z += (dz / d) * pull;
+    }
+    return got;
+  }
+
+  /** The nearest floating salvage within `within` of (x, z) that `ok` accepts. */
+  nearestFor(x: number, z: number, within: number, ok: (it: Item) => boolean): Item | null {
+    let best: Item | null = null;
+    let bd = within;
+    for (const it of this.items) {
+      const d = Math.hypot(it.x - x, it.z - z);
+      if (d < bd && ok(it)) {
+        bd = d;
+        best = it;
+      }
+    }
+    return best;
+  }
+
   /** Returns collected items for the given collector position. */
   update(dt: number, world: World, collector: THREE.Vector3 | null, radius: number, refuse?: (it: Item) => boolean): Item[] {
     const got: Item[] = [];
