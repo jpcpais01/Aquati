@@ -59,9 +59,9 @@ export interface VortexState {
 }
 
 const NAMES: [string, number, 1 | -1][] = [
-  ['La Gargantilha', 94, 1],
-  ['Redemolino Noir', 80, -1],
-  ['El Ojo de Juracán', 72, 1],
+  ['La Gargantilha', 128, 1],
+  ['Redemolino Noir', 112, -1],
+  ['El Ojo de Juracán', 100, 1],
 ];
 
 /** Peak swirl (m/s, at the edge of the throat) and inflow at full strength. */
@@ -70,7 +70,7 @@ const INFLOW = 3.1;
 /** Radius fraction where the swirl peaks; inside it the water turns like a solid wheel. */
 const CORE = 0.17;
 /** Strain from the funnel's walls and its throat, as fractions of max hull per second. */
-const STRAIN = 0.011;
+const STRAIN = 0.018;
 const THROAT = 0.055;
 
 const _v = new THREE.Vector2();
@@ -90,13 +90,13 @@ export class Hazards implements HazardSense {
     for (const [name, r, dir] of NAMES) {
       for (let attempt = 0; attempt < 4000; attempt++) {
         const a = rnd() * TAU;
-        const d = 200 + Math.sqrt(rnd()) * 700;
+        const d = 200 + Math.sqrt(rnd()) * 760;
         const x = Math.cos(a) * d;
         const z = Math.sin(a) * d;
-        if (d + r * 1.1 > 930) continue;
-        if (avoid.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r * 1.3)) continue;
-        if (this.reefs.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r * 1.4 + 30)) continue;
-        if (this.maelstroms.some((o) => Math.hypot(o.x - x, o.z - z) < o.r0 + r + 300)) continue;
+        if (d + r > 960) continue;
+        if (avoid.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r * 1.05)) continue;
+        if (this.reefs.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 40)) continue;
+        if (this.maelstroms.some((o) => Math.hypot(o.x - x, o.z - z) < o.r0 + r + 220)) continue;
         // deep, open water all the way round its pull
         let deep = true;
         for (const rr of [0, 0.5, 1, 1.2]) {
@@ -107,6 +107,8 @@ export class Hazards implements HazardSense {
         }
         if (!deep) continue;
         this.maelstroms.push({ name, x, z, r0: r, phase: rnd() * 100, vortex: { x, z, r, k: 1, dir } });
+        // the seabed falls away under it, so its throat has somewhere to go
+        terrain.carveAbyss(x, z, r * 1.05);
         break;
       }
     }

@@ -147,6 +147,7 @@ export class Ship {
   readonly gunFiredAt: number[];
   private pending: PendingShot[] = [];
   private heave = 0;
+  private swellHeave = 0;
   private pitch = 0;
   private roll = 0;
   private rollKick = 0;
@@ -530,7 +531,9 @@ export class Ship {
     const hp = world.waterHeight(this.pos.x + port.x * B * 0.5, this.pos.z + port.z * B * 0.5);
     const hst = world.waterHeight(this.pos.x - port.x * B * 0.5, this.pos.z - port.z * B * 0.5);
     const resp = damp(3.2 / c.mass, dt);
-    const targetHeave = (hb + hs + hp + hst) * 0.25;
+    // a maelstrom's funnel is no swell to ride over: she sits down its wall at once
+    const funnel = world.funnelAt(this.pos.x, this.pos.z);
+    const targetHeave = (hb + hs + hp + hst) * 0.25 + funnel;
     const targetPitch = -Math.atan2(hb - hs, L * 0.76) * 0.9;
     let targetRoll = Math.atan2(hp - hst, B) * 0.8;
     targetRoll += this.angVel * this.speed * 0.022; // heel out of the turn
@@ -558,7 +561,8 @@ export class Ship {
       sinkY = -this.dmg.lowered;
       targetRoll += this.dmg.list;
     }
-    this.heave += (targetHeave * swell - this.heave) * resp;
+    this.swellHeave += (targetHeave * swell - this.swellHeave) * resp;
+    this.heave = this.swellHeave - funnel;
     this.pitch += (pitchTarget - this.pitch) * resp;
     this.roll += (targetRoll - this.roll) * resp;
 

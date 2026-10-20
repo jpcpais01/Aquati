@@ -56,6 +56,7 @@ import { lootIcon } from '../ui/lootArt';
 import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood } from './treasure';
 import { Kraken } from './kraken';
 import { Hazards } from './hazards';
+import { vortexDepth } from '../world/vortex';
 import { HazardHud, HazardView } from '../ui/hazard';
 import type { HazardMark } from '../ui/chart';
 import { KrakenHud, KrakenReward } from '../ui/kraken';
@@ -519,6 +520,14 @@ export class Game {
     // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns)
     const fortSites = findFortSites(this.terrain, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3);
     const fortGround = fortSites.flatMap(fortClearings);
+    // maelstroms in deep water, well clear of every harbour mouth, fort and the
+    // waters you sail from (each bores an abyss into the seabed, so before the meshes)
+    this.hazards = new Hazards(this.terrain, [
+      { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 },
+      { x: 0, z: 150, r: 300 },
+      ...[site, ...tradeSites].map((t) => ({ x: t.x, z: t.z, r: 260 })),
+      ...fortSites.map((f) => ({ x: f.x, z: f.z, r: 280 })),
+    ]);
     // the cutthroats' camps: a glade a short walk in from the beach on most isles
     const camps = findCampSites(this.terrain, [...towns, ...fortGround], site.island);
     this.digAvoid = [...towns, ...campClearings(camps), ...fortGround];
@@ -581,7 +590,8 @@ export class Game {
       const [vol, pan] = this.world.soundAt(p);
       this.audio.explosion(vol * 0.18, pan, 160);
     };
-    this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx, this.waypoints.fx);
+    this.ocean.placeVortices(this.hazards.maelstroms.map((m) => ({ x: m.x, z: m.z, r: m.r0 })));
+    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.loot.fx, this.waypoints.fx);
     // the sea from beneath: hidden until the farewell follows a wreck under (the warm-up still draws it)
     this.opaque.add(this.ocean.underside);
     this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
@@ -591,13 +601,6 @@ export class Game {
     this.world.onShake = (a) => this.rig.shake(a);
     this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
     this.world.onStatus = (ship, st, by) => this.onStatus(ship as Ship, st, by as Ship | null);
-    // maelstroms in deep water, well clear of every harbour mouth, fort and the waters you sail from
-    this.hazards = new Hazards(this.terrain, [
-      { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 },
-      { x: 0, z: 150, r: 300 },
-      ...[site, ...tradeSites].map((t) => ({ x: t.x, z: t.z, r: 260 })),
-      ...fortSites.map((f) => ({ x: f.x, z: f.z, r: 280 })),
-    ]);
     this.hazards.attach(this.world);
     this.world.onHazard = (ship, kind, dmg, at) => this.onHazard(ship as Ship, kind, dmg, at);
     this.hzHud = new HazardHud(document.getElementById('hud')!);
@@ -5107,12 +5110,15 @@ export class Game {
     const under1 = 1 - Math.min(1, this.dpr / (devicePixelRatio || 1));
     this.pipeline.sharpen = Math.min(0.42, 0.12 + (1 - this.scaler.scale) * 0.4 + under1 * 0.22);
     // the lowest the sea surface can sink this frame: every swell's trough at
-    // once, a wake's dip, and any maelstrom's funnel. Beneath it the water hides
-    // the world, so the screen-space lighting skips those pixels.
+    // once, a wake's dip, and a nearby maelstrom's funnel. Beneath it the water
+    // hides the world, so the screen-space lighting skips those pixels. (Never
+    // below the open seabed: a hull deeper down a throat is past saving.)
     let dip = 1.4;
     for (const w of this.world.waves) dip += w.amp;
-    for (const v of globalUniforms.uVortex.value) dip += Math.abs(v.w) * (v.z / 85) * 8.8;
-    this.pipeline.ss.seaCut = under || this.isUnder ? -1e9 : -dip;
+    for (const v of globalUniforms.uVortex.value) {
+      if (Math.hypot(v.x - this.rig.camera.position.x, v.y - this.rig.camera.position.z) < v.z + 700) dip += vortexDepth(v.z, v.w);
+    }
+    this.pipeline.ss.seaCut = under || this.isUnder ? -1e9 : -Math.min(dip, 15);
     if (this.photo.active) {
       // a free camera can look out to the horizon: the sky and the far sea come in,
       // the diorama blur gives way to the lens's own depth of field
