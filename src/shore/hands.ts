@@ -244,8 +244,11 @@ export class Hands {
     this.sway.x = clamp(this.sway.x + this.swayV.x * Math.min(dt, 0.05), -0.06, 0.06);
     this.sway.y = clamp(this.sway.y + this.swayV.y * Math.min(dt, 0.05), -0.05, 0.05);
     // ...and ride the stride
-    const walk = clamp(w.stride / 3, 0, 1.6);
+    const walk = w.airborne ? 0 : clamp(w.stride / 3, 0, 1.6);
     const sway = _sway.set(this.sway.x + Math.sin(w.phase) * 0.012 * walk, this.sway.y - Math.abs(Math.sin(w.phase)) * 0.014 * walk + 0.006 * walk, 0);
+    // a jump: the hands lag the lift and float at the top, then dip as the feet come down
+    if (w.airborne) sway.y += clamp(-w.vy * 0.008, -0.03, 0.035);
+    else if (w.landT < 0.35) sway.y -= Math.sin((w.landT / 0.35) * Math.PI) * clamp(w.landV / 6, 0.3, 1) * 0.03;
     // swooping in: everything rises from below the frame
     sway.y -= (1 - smooth(this.show)) * 0.5;
 

@@ -26,6 +26,9 @@ const STEP_IN = [1.7, 1.1, 2.9];
 /** Walking and running pace on foot (m/s). */
 export const WALK = 3.0;
 export const RUN = 5.3;
+/** A jump: take-off speed (m/s) and the pull back down (m/s²): about 0.75 m up, 0.7 s aloft. */
+export const JUMP_V = 4.4;
+const GRAVITY = 13;
 
 const TAU = Math.PI * 2;
 /** The body's own sway, lean, twist and step the joints can't give, laid onto the matrix: */
@@ -83,6 +86,14 @@ export class Walker implements CrewFigure {
   tipLive = false;
   /** Depth of the water at the feet (0 on dry land). */
   wade = 0;
+  /** Off the ground: the feet's height over it (m) and how fast they climb (m/s). */
+  air = 0;
+  vy = 0;
+  /** World height of the feet while aloft (NaN on the ground). */
+  private flyY = NaN;
+  /** Seconds since the feet last came down from a jump, and how hard (m/s). */
+  landT = 9;
+  landV = 0;
   // fighting
   hp: number;
   /** Digging for treasure: spade strokes, counted in `digPhase` (one per whole number). */
@@ -147,6 +158,37 @@ export class Walker implements CrewFigure {
 
   get cutting() {
     return this.cutT >= 0;
+  }
+
+  get airborne() {
+    return !Number.isNaN(this.flyY);
+  }
+
+  /** Springs up off the ground; returns false if already aloft. */
+  jump(v = JUMP_V) {
+    if (this.airborne) return false;
+    this.flyY = this.y;
+    this.vy = v;
+    return true;
+  }
+
+  /**
+   * Carries a jump on over ground at `ground`; returns how hard the feet came
+   * down (m/s) on the frame they land, else 0.
+   */
+  fly(dt: number, ground: number) {
+    this.landT += dt;
+    if (!this.airborne) return 0;
+    this.vy -= GRAVITY * dt;
+    this.flyY += this.vy * dt;
+    // still climbing over a rise: the ground catches the feet early
+    if (this.flyY > ground) return 0;
+    const hit = Math.max(0.5, -this.vy);
+    this.flyY = NaN;
+    this.vy = 0;
+    this.landT = 0;
+    this.landV = hit;
+    return hit;
   }
 
   /** Can act: standing, not reeling. */
@@ -319,6 +361,21 @@ export class Walker implements CrewFigure {
       K[P.rootY] = j * 0.2 - (1 - j) * 0.06;
       for (let i = 0; i < POSE_SIZE; i++) T[i] = lerp(T[i], K[i], w);
     }
+    if (!this.down) {
+      if (this.airborne) this.leapPose(T);
+      else if (this.landT < 0.4) {
+        // the knees take the landing, harder the further the drop
+        const d = clamp(this.landV / 7, 0.2, 0.6) * (1 - this.landT / 0.4) ** 2;
+        const th = 0.55 * d;
+        const kn = 1.1 * d;
+        T[P.legLX] += th;
+        T[P.legRX] += th;
+        T[P.kneeL] += kn;
+        T[P.kneeR] += kn;
+        T[P.rootY] -= 0.38 * (1 - Math.cos(th)) + 0.42 * (1 - Math.cos(kn - th));
+        T[P.spineX] += th * 0.6;
+      }
+    }
     if (this.hang > 0) this.hangPose(T, tt);
     if (this.yielded > 0 && !this.down) this.yieldPose(T, tt);
     this.face(T, tt, moving);
@@ -333,6 +390,28 @@ export class Walker implements CrewFigure {
     if (this.down || this.fall > 0) B.fill(0);
     for (let i = 0; i < 5; i++) this.body[i] += (B[i] - this.body[i]) * k;
     this.prop = digging ? PROP.spade : this.yielded > 0.3 ? PROP.none : this.armed || this.cheer > 0 || this.hang > 0 ? PROP.cutlass : PROP.none;
+  }
+
+  /** Aloft: knees tucked on the way up, legs reaching for the ground on the way down, arms out for balance. */
+  private leapPose(o: Float32Array) {
+    const up = clamp(this.vy / JUMP_V, -1, 1);
+    const tuck = 0.55 + 0.45 * up;
+    const k = (i: number, v: number) => (o[i] = lerp(o[i], v, 0.85));
+    k(P.legLX, 0.75 * tuck + 0.15);
+    k(P.kneeL, 1.25 * tuck + 0.2);
+    k(P.legRX, 0.35 * tuck - 0.1);
+    k(P.kneeR, 0.9 * tuck + 0.35);
+    k(P.rootY, 0);
+    if (!this.armed && this.cutT < 0 && this.aim <= 0) {
+      k(P.armLX, 0.5 - 0.35 * up);
+      k(P.armRX, 0.5 - 0.35 * up);
+      k(P.armLZ, 0.45);
+      k(P.armRZ, 0.45);
+      k(P.elbowL, 0.5);
+      k(P.elbowR, 0.5);
+    }
+    k(P.spineX, 0.12 - 0.08 * up);
+    o[P.jaw] = Math.max(o[P.jaw], 0.15);
   }
 
   /** Swinging on a line: the left fist high on the rope, blade out, knees tucked to clear the rails. */
@@ -719,6 +798,9 @@ export class Walker implements CrewFigure {
     const ease = f * f * (3 - 2 * f);
     const up = 1 - ease;
     const b = this.body;
+    // aloft the feet are where the jump has carried them
+    this.air = this.airborne ? Math.max(0, this.flyY - ground) : 0;
+    ground += this.air;
     // a body on its back is a hand's breadth off the sand
     this.y = ground;
     _e.set(-ease * 1.5 + b[PT] * up, this.yaw + b[TW] * up, b[RL] * up);
