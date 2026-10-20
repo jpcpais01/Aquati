@@ -544,7 +544,10 @@ export class Vegetation {
             sh.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
             sh.boundingSphere = inst.boundingSphere;
             f.near.add(sh);
-            f.nearB.push(batch(sh, o.shadow[v], mats, true));
+            // the far LOD casts no shadow of its own: the stand-in keeps casting out to the shadow map's edge
+            const sb = batch(sh, o.shadow[v], mats, true);
+            sb.reach = 1.5;
+            f.nearB.push(sb);
           }
           if (o.lo) {
             // the far LOD plants the very same instances, culled on their own
