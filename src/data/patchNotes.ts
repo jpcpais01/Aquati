@@ -25,6 +25,15 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'The high seas, properly charted',
+        notes: [
+          'The open water on the Sea Chart is no longer a flat blue square. Mar Sereno is now engraved like a fine old nautical chart: the sea darkens from each archipelago\'s shelf into the deep, with depth contours, scattered soundings in fathoms and a long swell rolling across it.',
+          'A great gilt compass rose sits in the open water south of the lane, with its 32 rhumb lines running out across the whole chart.',
+          'The Corriente del Sereno and its counter-current are marked either side of the sailing lane, with drifting arrows showing which way they set, and the shallow Banco del Sereno is outlined under the lane.',
+          'Past the edge of the known sea the water turns dark and hatched, with a warning that the swell turns every keel back.',
+        ],
+      },
+      {
         title: 'A smooth sea under sail',
         notes: [
           'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
