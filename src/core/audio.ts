@@ -769,6 +769,135 @@ export class Audio {
   }
 
   /**
+   * A named hunter sets out after you: a war horn blown somewhere over the
+   * horizon (two long, low, wavering blasts through the island echo) over a
+   * slow pair of war drums.
+   */
+  horn() {
+    const v = this.voice(0.34, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    out.connect(this.reverbIn);
+    const t0 = ctx.currentTime + 0.05;
+    [[0, 2.1, 98], [2.5, 2.9, 92.5]].forEach(([at, len, f]) => {
+      const t = t0 + at;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.Q.value = 2.2;
+      lp.frequency.setValueAtTime(260, t);
+      lp.frequency.linearRampToValueAtTime(900, t + 0.5);
+      lp.frequency.linearRampToValueAtTime(520, t + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.5, t + 0.35);
+      g.gain.setValueAtTime(0.5, t + len - 0.6);
+      g.gain.exponentialRampToValueAtTime(0.001, t + len + 0.4);
+      // a breathy wobble, as a horn blown by lungs rather than a reed
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 5.2;
+      const lg = ctx.createGain();
+      lg.gain.value = 1.6;
+      lfo.connect(lg);
+      for (const [mul, det, a] of [[1, -7, 1], [1, 6, 0.8], [2, 3, 0.35], [0.5, 0, 0.45]]) {
+        const o = ctx.createOscillator();
+        o.type = mul === 0.5 ? 'triangle' : 'sawtooth';
+        o.frequency.setValueAtTime(f * mul * 0.94, t);
+        o.frequency.exponentialRampToValueAtTime(f * mul, t + 0.25);
+        o.frequency.setValueAtTime(f * mul, t + len - 0.3);
+        o.frequency.exponentialRampToValueAtTime(f * mul * 0.9, t + len + 0.4);
+        o.detune.value = det;
+        lg.connect(o.detune);
+        const og = ctx.createGain();
+        og.gain.value = a * 0.3;
+        o.connect(og).connect(lp);
+        o.start(t);
+        o.stop(t + len + 0.5);
+      }
+      lfo.start(t);
+      lfo.stop(t + len + 0.5);
+      lp.connect(g).connect(out);
+    });
+    this.drums(t0 + 0.1, [0, 0.55, 2.6, 3.15, 3.5], 0.9);
+  }
+
+  /** Deep war drums: a skin thump with a pitch drop and a little slap of noise, at each beat. */
+  private drums(t0: number, beats: number[], vol = 1) {
+    const v = this.voice(0.4 * vol, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    out.connect(this.reverbIn);
+    beats.forEach((b, i) => {
+      const t = t0 + b;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(i % 2 ? 74 : 62, t);
+      o.frequency.exponentialRampToValueAtTime(38, t + 0.32);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(1, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.75);
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = 220;
+      bp.Q.value = 1.4;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.35, t);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      n.connect(bp).connect(ng).connect(out);
+      n.start(t, Math.random() * 1.5, 0.15);
+    });
+  }
+
+  /** The wanted level rises: one heavy drum and a tolling bell, ominous and short. */
+  wanted(level: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.drums(ctx.currentTime + 0.02, level >= 4 ? [0, 0.22, 0.6] : [0, 0.5], 0.8);
+    this.bell(1, 0.1 + level * 0.02);
+  }
+
+  /** A named captain sunk and the Crown's bounty claimed: a brassy fanfare, then the purse pours over. */
+  bounty() {
+    const v = this.voice(0.24, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    out.connect(this.reverbIn);
+    const t0 = ctx.currentTime + 0.05;
+    // G C E G . . E G-C' : a herald's call, warm saw brass through a closing filter
+    const line: [number, number, number][] = [[392, 0, 0.16], [523.3, 0.16, 0.16], [659.3, 0.32, 0.16], [784, 0.48, 0.5], [659.3, 1.02, 0.14], [784, 1.16, 0.14], [1046.5, 1.3, 1.4]];
+    for (const [f, at, len] of line) {
+      const t = t0 + at;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(900, t);
+      lp.frequency.linearRampToValueAtTime(3200, t + 0.06);
+      lp.frequency.exponentialRampToValueAtTime(1300, t + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.42, t + 0.03);
+      g.gain.setValueAtTime(0.42, t + Math.max(0.04, len - 0.08));
+      g.gain.exponentialRampToValueAtTime(0.001, t + len + (len > 1 ? 0.9 : 0.12));
+      for (const det of [-8, 8]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        o.detune.value = det;
+        o.connect(lp);
+        o.start(t);
+        o.stop(t + len + 1);
+      }
+      lp.connect(g).connect(out);
+    }
+    this.drums(t0 + 1.28, [0], 0.7);
+    setTimeout(() => this.sale(2400), 1300);
+  }
+
+  /**
    * A sale. A few pieces are counted out by hand; a fair sum lands as a
    * purse thumped on the counter and poured out; a fortune gets a second
    * purse, a squeezebox flourish and the whole quay roaring.

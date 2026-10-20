@@ -398,8 +398,9 @@ export class Projectiles {
       if (s === direct) dmg += directDmg;
       this.onHit({ ship: s, attacker: b.owner, damage: dmg, pos: at.clone().setY(Math.max(at.y, 1.5)) });
     }
-    // the direct hit, if the burst somehow skipped her (a dead ship, or a friend)
-    if (direct && direct.team === b.owner.team) this.onHit({ ship: direct, attacker: b.owner, damage: directDmg, pos: at.clone() });
+    // the direct hit, if the burst skipped her: a friend, or a ship the ball itself just sank
+    // (she must still be reported, or her sinking is never credited)
+    if (direct && (direct.team === b.owner.team || !direct.alive)) this.onHit({ ship: direct, attacker: b.owner, damage: directDmg, pos: at.clone() });
   }
 
   clear() {

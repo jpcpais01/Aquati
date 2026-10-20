@@ -15,6 +15,7 @@ import { freshVault, GIFT_PREFIX, VAULT_KEY, VaultState } from '../ships/cosmeti
 import { LOOK_KEY, MAX_SAVED, SAVED_KEY } from '../ships/look';
 import { Records, RECORDS_KEY } from '../ui/wreck';
 import { SHIP_KEY } from '../ui/ui';
+import { BOUNTY_KEY, cleanLedger, Ledger, mergeLedger, readLedger } from '../game/bounty';
 
 type Json = Record<string, unknown>;
 
@@ -32,6 +33,8 @@ export interface Profile {
   /** Gift key → gold it paid. */
   gifts: Record<string, number>;
   ship: string | null;
+  /** Infamy and the Wanted Board's stamped posters. */
+  bounty: Ledger | null;
 }
 
 /** Gifts saved before amounts were recorded. */
@@ -92,6 +95,7 @@ export function readLocal(): Profile {
     records: isObj(records) ? { ...ZERO_RECORDS, ...(records as Partial<Records>) } : null,
     gifts,
     ship,
+    bounty: readLedger(),
   };
 }
 
@@ -108,6 +112,7 @@ export function writeLocal(p: Profile) {
     setOrRemove(SAVED_KEY, p.designs.length ? JSON.stringify(p.designs.slice(0, MAX_SAVED)) : null);
     setOrRemove(RECORDS_KEY, p.records ? JSON.stringify(p.records) : null);
     setOrRemove(SHIP_KEY, p.ship);
+    setOrRemove(BOUNTY_KEY, p.bounty ? JSON.stringify(p.bounty) : null);
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -120,7 +125,7 @@ export function writeLocal(p: Profile) {
   }
 }
 
-export const emptyProfile = (): Profile => ({ vault: null, look: null, designs: [], records: null, gifts: {}, ship: null });
+export const emptyProfile = (): Profile => ({ vault: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null });
 
 /** Back to a brand-new guest: what a sign-out leaves behind. */
 export function resetLocal() {
@@ -135,6 +140,7 @@ export function hasProgress(p: Profile) {
     (v && (v.purse !== f.purse || v.pulls > 0 || Object.keys(v.owned).length > Object.keys(f.owned).length)) ||
     p.designs.length ||
     (p.records && p.records.voyages > 0) ||
+    (p.bounty && p.bounty.infamy > 0) ||
     Object.keys(p.gifts).length
   );
 }
@@ -295,6 +301,7 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
     records: mergeRecords(B.records, local.records, remote.records),
     gifts,
     ship: latest(B.ship, local.ship, remote.ship, first),
+    bounty: mergeLedger(B.bounty ?? null, local.bounty ?? null, remote.bounty ?? null),
   };
 }
 
@@ -303,7 +310,7 @@ export type Part = Exclude<keyof Profile, 'gifts'>;
 /** Which parts differ, so the game reloads only what it must. */
 export function changedParts(a: Profile, b: Profile): Set<Part> {
   const out = new Set<Part>();
-  for (const k of ['vault', 'look', 'designs', 'records', 'ship'] as const) if (!same(a[k], b[k])) out.add(k);
+  for (const k of ['vault', 'look', 'designs', 'records', 'ship', 'bounty'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
   return out;
 }
 
@@ -321,6 +328,7 @@ export function parseProfile(raw: unknown): Profile | null {
       records: isObj(p.records) ? { ...ZERO_RECORDS, ...(p.records as Partial<Records>) } : null,
       gifts: isObj(p.gifts) ? Object.fromEntries(Object.entries(p.gifts).filter(([, n]) => Number.isFinite(n)) as [string, number][]) : {},
       ship: typeof p.ship === 'string' ? p.ship : null,
+      bounty: cleanLedger(p.bounty),
     };
   } catch {
     return null;

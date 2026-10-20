@@ -12,7 +12,7 @@ import { progressSaved } from '../core/progress';
 
 export interface VoyageEvent {
   t: number;
-  kind: 'kill' | 'chest' | 'isle' | 'trade';
+  kind: 'kill' | 'chest' | 'isle' | 'trade' | 'bounty';
   text: string;
   detail: string;
 }
@@ -35,6 +35,10 @@ export interface WreckReport {
   cause: 'shot' | 'rammed' | 'aground';
   killer?: string;
   killerCls?: ShipClassId;
+  /** The named captain who sent her down, if a hunter did. */
+  hunter?: string;
+  /** Named captains sunk this voyage. */
+  bounties?: number;
   /** "off Isla Verde", or null in open water. */
   where: string | null;
   events: VoyageEvent[];
@@ -95,7 +99,7 @@ export function loadRecords(): Records {
 }
 
 function causeLine(r: WreckReport) {
-  const k = r.killer ? `the <span class="nm">${esc(r.killer)}</span>` : 'pirates';
+  const k = r.hunter && r.killer ? `${esc(r.hunter)} in the <span class="nm">${esc(r.killer)}</span>` : r.killer ? `the <span class="nm">${esc(r.killer)}</span>` : 'pirates';
   if (r.cause === 'aground') return 'Holed on the reef';
   if (r.cause === 'rammed') return `Rammed by ${k}`;
   return `Sunk by ${k}`;
@@ -115,6 +119,9 @@ function quip(r: WreckReport) {
   if (r.cause === 'rammed') fits.push('Close quarters. Very close quarters.');
   if (r.killerCls === 'galleon' && r.cls === 'sloop') fits.push('A sloop against a galleon. Brave. Briefly.');
   if (r.killerCls === 'sloop' && r.cls === 'galleon') fits.push(`Brought down by a sloop. Nobody needs to know, ${mine} captain.`);
+  if (r.hunter) fits.push(`${r.hunter} will dine out on this for a year. Your poster comes down; theirs stays up.`);
+  if ((r.bounties ?? 0) >= 2) fits.push(`${r.bounties} of the Brethren's named captains went down before you did. The Crown will miss you.`);
+  else if (r.bounties === 1) fits.push('One named captain sunk. A poster on the wall, stamped in red, with your name on the claim.');
   if (r.shots > 20 && r.hits / Math.max(1, r.shots) < 0.15) fits.push('The gunners swear the sea moved.');
   if (!fits.length) {
     fits.push(
@@ -128,7 +135,7 @@ function quip(r: WreckReport) {
   return fits[(Math.random() * fits.length) | 0];
 }
 
-const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle', trade: 'coin' };
+const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle', trade: 'coin', bounty: 'skull' };
 
 export class WreckScreen {
   private cine = $('cine');

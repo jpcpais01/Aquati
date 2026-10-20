@@ -1,0 +1,769 @@
+/* =====================================================================
+   Bounties: the Brethren's wanted posters, the Wanted Board, the HUD's
+   wanted meter, the pointer to a hunter and the big notices.
+   ===================================================================== */
+
+:root {
+  --parch: #efe0bb;
+  --parch-2: #dcc596;
+  --parch-ink: #2b1a0d;
+  --parch-ink-2: rgba(43, 26, 13, 0.7);
+  --blood: #b3261e;
+  --blood-hi: #ff6b55;
+}
+
+/* ------------------------------------------------------------------ the board */
+
+#bounties {
+  z-index: 35;
+}
+
+.sheet.bb-card {
+  width: min(calc(1020px * var(--u)), 100%);
+  max-height: min(calc(900px * var(--u)), 100%);
+}
+
+.bb-head {
+  display: grid;
+  gap: calc(10px * var(--u));
+  padding-bottom: calc(18px * var(--u));
+  margin-bottom: calc(18px * var(--u));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.bb-rank {
+  display: flex;
+  align-items: center;
+  gap: calc(16px * var(--u));
+}
+
+.bb-seal {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(64px * var(--u));
+  height: calc(64px * var(--u));
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 32%, #d8473a, #8e1b17 62%, #5a0f0c);
+  box-shadow: inset 0 calc(2px * var(--u)) 0 rgba(255, 200, 180, 0.35), inset 0 calc(-3px * var(--u)) calc(6px * var(--u)) rgba(0, 0, 0, 0.35), 0 calc(8px * var(--u)) calc(22px * var(--u)) rgba(140, 20, 10, 0.4);
+}
+
+.bb-seal .wp-tier {
+  flex-wrap: wrap;
+  justify-content: center;
+  width: calc(44px * var(--u));
+  gap: calc(2px * var(--u));
+}
+
+.bb-seal .wp-tier i {
+  --s: calc(11px * var(--u));
+  background: rgba(40, 6, 4, 0.55);
+}
+
+.bb-seal .wp-tier i.on {
+  background: #ffe1b0;
+}
+
+.bb-rank small {
+  display: block;
+  font: 700 calc(10px * var(--t)) var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.bb-rank h3 {
+  margin: calc(3px * var(--u)) 0 0;
+  font: 700 calc(28px * var(--t)) var(--serif);
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.bb-rank p {
+  margin: calc(2px * var(--u)) 0 0;
+  color: var(--ink-2);
+  font: 500 calc(13.5px * var(--t)) var(--sans);
+}
+
+.bb-bar {
+  position: relative;
+  height: calc(8px * var(--u));
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.bb-bar i {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #8e1b17, #e5604f 60%, #f4c765);
+  box-shadow: 0 0 12px rgba(229, 96, 79, 0.5);
+}
+
+.bb-next {
+  font: 500 calc(12.5px * var(--t)) var(--sans);
+  color: var(--ink-3);
+}
+
+.bb-next b {
+  color: var(--ink);
+}
+
+.bb-next span {
+  color: var(--gold-hi);
+  font-weight: 700;
+}
+
+.bb-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: calc(8px * var(--u));
+  margin-top: calc(4px * var(--u));
+}
+
+.bb-stats div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(3px * var(--u));
+  padding: calc(11px * var(--u)) calc(4px * var(--u)) calc(10px * var(--u));
+  border-radius: calc(16px * var(--u));
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.bb-stats b {
+  font: 800 calc(19px * var(--t)) var(--sans);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.bb-stats b small {
+  font-size: 0.65em;
+  color: var(--ink-3);
+}
+
+.bb-stats span {
+  font: 600 calc(9.5px * var(--t)) var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  text-align: center;
+}
+
+.bb-how {
+  margin: calc(4px * var(--u)) 0 0;
+  font: 500 calc(12.5px * var(--t)) / 1.5 var(--sans);
+  color: var(--ink-3);
+}
+
+.bb-wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(176px * var(--u)), 1fr));
+  gap: calc(22px * var(--u)) calc(16px * var(--u));
+  padding: calc(6px * var(--u)) calc(4px * var(--u)) calc(10px * var(--u));
+}
+
+@media (max-width: 560px) {
+  .bb-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .bb-wall {
+    grid-template-columns: repeat(2, 1fr);
+    gap: calc(16px * var(--u)) calc(10px * var(--u));
+  }
+}
+
+/* ------------------------------------------------------------------ a poster */
+
+.wp {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: calc(16px * var(--u)) calc(12px * var(--u)) calc(14px * var(--u));
+  color: var(--parch-ink);
+  background:
+    radial-gradient(ellipse at 20% 15%, rgba(255, 250, 230, 0.55), transparent 55%),
+    radial-gradient(ellipse at 85% 90%, rgba(120, 80, 30, 0.22), transparent 55%),
+    radial-gradient(circle at 70% 30%, rgba(140, 95, 40, 0.12) 0 2%, transparent 3%),
+    radial-gradient(circle at 25% 75%, rgba(140, 95, 40, 0.1) 0 3%, transparent 4%),
+    linear-gradient(170deg, var(--parch), var(--parch-2));
+  box-shadow: 0 calc(14px * var(--u)) calc(30px * var(--u)) rgba(0, 0, 0, 0.42), inset 0 0 calc(26px * var(--u)) rgba(110, 70, 20, 0.35);
+  clip-path: polygon(0 1.5%, 6% 0, 18% 1%, 33% 0.2%, 47% 1.2%, 62% 0, 78% 0.8%, 92% 0.1%, 100% 1.4%, 99.4% 18%, 100% 36%, 99.2% 55%, 100% 74%, 99.5% 90%, 100% 98.6%, 88% 100%, 72% 99.2%, 55% 100%, 40% 99.3%, 24% 100%, 9% 99.4%, 0 100%, 0.6% 82%, 0 64%, 0.7% 45%, 0 27%);
+  transform: rotate(var(--tilt, 0deg));
+  transition: transform 0.35s var(--spring);
+}
+
+.wp:hover {
+  transform: rotate(0deg) translateY(calc(-4px * var(--u))) scale(1.03);
+}
+
+.wp-nail {
+  position: absolute;
+  top: calc(6px * var(--u));
+  left: 50%;
+  width: calc(8px * var(--u));
+  height: calc(8px * var(--u));
+  margin-left: calc(-4px * var(--u));
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #c9c3b8, #5a544c 70%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.wp header b {
+  display: block;
+  font: 800 calc(25px * var(--t)) / 1 var(--serif);
+  letter-spacing: 0.12em;
+}
+
+.wp header small {
+  display: block;
+  margin-top: calc(3px * var(--u));
+  font: 700 calc(8.5px * var(--t)) var(--sans);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--parch-ink-2);
+}
+
+.wp-face {
+  position: relative;
+  width: calc(112px * var(--u));
+  height: calc(122px * var(--u));
+  margin: calc(9px * var(--u)) 0 calc(8px * var(--u));
+  border-radius: 46% / 42%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 40%, #f6ead0, #d9bf8a);
+  box-shadow: 0 0 0 calc(2px * var(--u)) var(--parch-ink), 0 0 0 calc(4px * var(--u)) var(--parch), 0 0 0 calc(5px * var(--u)) var(--parch-ink-2);
+}
+
+.wp-face svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.wp h3 {
+  margin: calc(4px * var(--u)) 0 0;
+  font: 700 calc(15.5px * var(--t)) / 1.15 var(--serif);
+  letter-spacing: 0.03em;
+}
+
+.wp em {
+  display: block;
+  margin-top: calc(2px * var(--u));
+  font: italic 600 calc(12.5px * var(--t)) Georgia, serif;
+  color: var(--blood);
+}
+
+.wp-ship {
+  margin: calc(5px * var(--u)) 0 0;
+  font: 600 calc(10px * var(--t)) var(--sans);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--parch-ink-2);
+}
+
+.wp-ship span {
+  color: var(--parch-ink);
+}
+
+.wp-tier {
+  display: flex;
+  gap: calc(3px * var(--u));
+  margin-top: calc(6px * var(--u));
+}
+
+.wp-tier i,
+.wn-pips i {
+  --s: calc(11px * var(--u));
+  width: var(--s);
+  height: calc(var(--s) * 1.08);
+  background: rgba(43, 26, 13, 0.18);
+  -webkit-mask: var(--skull) center / contain no-repeat;
+  mask: var(--skull) center / contain no-repeat;
+}
+
+.wp-tier i.on {
+  background: var(--parch-ink);
+}
+
+.wp-reward {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: calc(5px * var(--u));
+  margin-top: calc(8px * var(--u));
+  padding-top: calc(7px * var(--u));
+  border-top: 1px solid rgba(43, 26, 13, 0.3);
+  width: 86%;
+}
+
+.wp-reward small,
+.wp-reward span {
+  font: 700 calc(9px * var(--t)) var(--sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--parch-ink-2);
+}
+
+.wp-reward b {
+  font: 800 calc(21px * var(--t)) var(--serif);
+  letter-spacing: 0.02em;
+}
+
+.wp-trait {
+  margin: calc(6px * var(--u)) 0 0;
+  font: italic 500 calc(11px * var(--t)) / 1.35 Georgia, serif;
+  color: var(--parch-ink-2);
+}
+
+.wp.s-unknown .wp-face {
+  filter: sepia(0.4) contrast(0.9);
+}
+
+.wp.s-unknown h3,
+.wp.s-unknown .wp-ship {
+  opacity: 0.7;
+}
+
+.wp.s-unknown em {
+  color: var(--parch-ink-2);
+}
+
+.wp-stamp {
+  position: absolute;
+  top: 25%;
+  left: 50%;
+  translate: -50% 0;
+  rotate: -14deg;
+  padding: calc(4px * var(--u)) calc(14px * var(--u)) calc(5px * var(--u));
+  border: calc(3px * var(--u)) double var(--blood);
+  border-radius: calc(6px * var(--u));
+  color: var(--blood);
+  text-align: center;
+  opacity: 0.92;
+  background: rgba(246, 228, 196, 0.72);
+  box-shadow: 0 0 0 calc(2px * var(--u)) rgba(246, 228, 196, 0.5);
+  pointer-events: none;
+}
+
+.wp-stamp b {
+  display: block;
+  font: 800 calc(30px * var(--t)) / 1 var(--serif);
+  letter-spacing: 0.16em;
+}
+
+.wp-stamp small {
+  display: block;
+  font: 800 calc(8.5px * var(--t)) var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.wp-large {
+  position: absolute;
+  top: calc(14px * var(--u));
+  right: calc(-30px * var(--u));
+  rotate: 38deg;
+  width: calc(120px * var(--u));
+  padding: calc(3px * var(--u)) 0;
+  background: var(--blood);
+  color: #fff1e0;
+  font: 800 calc(8.5px * var(--t)) var(--sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+/* a jolly roger to mask the skull pips with */
+:root {
+  --skull: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 26'%3E%3Cpath fill-rule='evenodd' d='M12 1C6 1 2 5.2 2 10.6c0 3.2 1.5 5.4 3.6 6.8V21a1.5 1.5 0 0 0 1.5 1.5h1.4V20h1.6v2.5h3.8V20h1.6v2.5h1.4a1.5 1.5 0 0 0 1.5-1.5v-3.6c2.1-1.4 3.6-3.6 3.6-6.8C22 5.2 18 1 12 1zM8.2 9.2a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2zm7.6 0a2.6 2.6 0 1 0 0 5.2 2.6 2.6 0 0 0 0-5.2zM12 14.6l-1.5 2.6h3z'/%3E%3C/svg%3E");
+}
+
+/* ------------------------------------------------------------------ HUD: the wanted meter */
+
+.wanted {
+  display: none;
+  align-items: center;
+  gap: calc(8px * var(--k));
+  align-self: flex-start;
+  max-width: 100%;
+  height: max(20px, calc(26px * var(--k)));
+  padding: 0 calc(11px * var(--k)) 0 calc(9px * var(--k));
+  border-radius: 99px;
+  background: linear-gradient(90deg, rgba(60, 10, 8, 0.78), rgba(8, 22, 32, 0.7));
+  border: 1px solid rgba(255, 120, 100, 0.22);
+}
+
+.wanted.on {
+  display: flex;
+  animation: wantedIn 0.6s var(--spring);
+}
+
+@keyframes wantedIn {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-12px * var(--k)));
+  }
+}
+
+.wn-pips {
+  display: flex;
+  gap: calc(3px * var(--k));
+}
+
+.wn-pips i {
+  --s: max(10px, calc(13px * var(--k)));
+  position: relative;
+  background: rgba(255, 230, 210, 0.16);
+}
+
+/* the skull filling up toward the next level rises from the jaw */
+.wn-pips i::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, #ff6b55, #ffd28a);
+  clip-path: inset(calc((1 - var(--p, 0)) * 100%) 0 0 0);
+  transition: clip-path 0.5s var(--ease);
+}
+
+.wn-pips i.lit::after {
+  background: linear-gradient(0deg, #ff5040, #ffe7a8);
+}
+
+.wanted.hot .wn-pips i.lit {
+  filter: drop-shadow(0 0 4px rgba(255, 90, 60, 0.9));
+}
+
+.wanted.bump {
+  animation: wantedBump 0.9s var(--spring);
+}
+
+@keyframes wantedBump {
+  30% {
+    transform: scale(1.14);
+    border-color: rgba(255, 140, 110, 0.85);
+    box-shadow: 0 0 0 3px rgba(255, 90, 60, 0.25), 0 0 26px rgba(255, 80, 50, 0.55);
+  }
+}
+
+#hud-hunt {
+  display: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 700 max(10.5px, calc(12px * var(--k))) var(--serif);
+  letter-spacing: 0.03em;
+  color: #ffd8cc;
+}
+
+#hud-hunt span {
+  font: 700 max(9.5px, calc(11px * var(--k))) var(--sans);
+  color: rgba(255, 216, 204, 0.62);
+  font-variant-numeric: tabular-nums;
+}
+
+.wanted.hunted #hud-hunt {
+  display: block;
+}
+
+.wanted.hunted .wn-lbl {
+  display: none;
+}
+
+.wn-lbl {
+  font: 800 max(9px, calc(10px * var(--k))) var(--sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 216, 204, 0.75);
+}
+
+/* ------------------------------------------------------------------ HUD: the hunter off screen */
+
+#hunt-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  pointer-events: none;
+  will-change: transform;
+}
+
+#hunt-mark.on {
+  display: block;
+}
+
+#hunt-mark .hm-disc {
+  position: absolute;
+  left: calc(-17px * var(--k));
+  top: calc(-17px * var(--k));
+  width: calc(34px * var(--k));
+  height: calc(34px * var(--k));
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, #d8473a, #7a1410);
+  box-shadow: 0 0 0 2px rgba(255, 220, 200, 0.85), 0 0 18px rgba(255, 70, 40, 0.7);
+  animation: huntPulse 1.4s ease-in-out infinite;
+}
+
+#hunt-mark .hm-disc::after {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  background: #ffe9d6;
+  -webkit-mask: var(--skull) center / contain no-repeat;
+  mask: var(--skull) center / contain no-repeat;
+}
+
+#hunt-mark .hm-arrow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+#hunt-mark .hm-arrow::before {
+  content: '';
+  position: absolute;
+  left: calc(19px * var(--k));
+  top: calc(-7px * var(--k));
+  border-left: calc(11px * var(--k)) solid #ffd2c4;
+  border-top: calc(7px * var(--k)) solid transparent;
+  border-bottom: calc(7px * var(--k)) solid transparent;
+  filter: drop-shadow(0 0 4px rgba(255, 80, 50, 0.9));
+}
+
+#hunt-mark b {
+  position: absolute;
+  top: calc(21px * var(--k));
+  left: 0;
+  translate: -50% 0;
+  white-space: nowrap;
+  padding: calc(2px * var(--k)) calc(8px * var(--k));
+  border-radius: 99px;
+  background: rgba(30, 6, 4, 0.78);
+  font: 700 max(10px, calc(11px * var(--k))) var(--sans);
+  color: #ffe0d6;
+  letter-spacing: 0.02em;
+}
+
+@keyframes huntPulse {
+  50% {
+    box-shadow: 0 0 0 2px rgba(255, 220, 200, 0.85), 0 0 0 7px rgba(255, 70, 40, 0.18), 0 0 26px rgba(255, 70, 40, 0.9);
+  }
+}
+
+/* the hunter's own health bar: wider, framed in gold, her name always on show */
+.ebar.hunter {
+  width: 96px;
+  height: 7px;
+  margin-left: -48px;
+  box-shadow: 0 0 0 1px rgba(255, 210, 140, 0.75), 0 0 12px rgba(255, 80, 40, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.ebar.hunter i {
+  background: linear-gradient(90deg, #8e1b17, #ff5a3d, #ffb26b);
+}
+
+.ebar.hunter span {
+  display: block;
+  bottom: 12px;
+  font: 700 12px var(--serif);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: #ffe2c8;
+  text-shadow: 0 0 8px rgba(255, 70, 40, 0.8), 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.ebar.hunter span::before {
+  content: '';
+  display: inline-block;
+  width: 11px;
+  height: 12px;
+  margin-right: 5px;
+  vertical-align: -1px;
+  background: #ffcfb8;
+  -webkit-mask: var(--skull) center / contain no-repeat;
+  mask: var(--skull) center / contain no-repeat;
+}
+
+/* ------------------------------------------------------------------ HUD: the big notices */
+
+#bounty-banner {
+  position: absolute;
+  left: 50%;
+  top: max(calc(var(--g) + var(--safe-t) + 150px * var(--k)), 21vh);
+  display: none;
+  align-items: center;
+  gap: calc(14px * var(--k));
+  width: max-content;
+  max-width: min(calc(520px * var(--k)), calc(100% - 2 * var(--g)));
+  padding: calc(12px * var(--k)) calc(22px * var(--k)) calc(12px * var(--k)) calc(12px * var(--k));
+  border-radius: calc(22px * var(--k));
+  background: linear-gradient(180deg, rgba(48, 10, 8, 0.94), rgba(16, 6, 6, 0.9));
+  border: 1px solid rgba(255, 150, 120, 0.4);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 40px rgba(200, 40, 20, 0.25), var(--hi);
+  translate: -50% 0;
+}
+
+#bounty-banner.claimed {
+  background: linear-gradient(180deg, rgba(46, 32, 8, 0.95), rgba(18, 12, 4, 0.92));
+  border-color: rgba(244, 199, 101, 0.6);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 50px rgba(244, 180, 60, 0.3), var(--hi);
+}
+
+#bounty-banner.on {
+  display: flex;
+  animation: bannerIn 0.7s var(--spring), bannerOut 0.7s ease forwards;
+  animation-delay: 0s, 6.3s;
+}
+
+#bounty-banner.claimed.on {
+  animation-delay: 0s, 5.8s;
+}
+
+@keyframes bannerIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.9) rotate(-1.5deg);
+  }
+}
+
+@keyframes bannerOut {
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.97);
+  }
+}
+
+.bn-face {
+  position: relative;
+  flex: none;
+  width: calc(78px * var(--k));
+  height: calc(86px * var(--k));
+  border-radius: 46% / 42%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 40%, #f6ead0, #d3b27a);
+  box-shadow: 0 0 0 2px var(--parch-ink), 0 0 0 4px #e6cf9c, 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.bn-face svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.bn-stamp {
+  position: absolute;
+  top: 36%;
+  left: 50%;
+  translate: -50% 0;
+  rotate: -16deg;
+  padding: 1px calc(7px * var(--k));
+  border: 2px double var(--blood);
+  border-radius: 4px;
+  color: var(--blood);
+  font: 800 calc(17px * var(--k)) var(--serif);
+  letter-spacing: 0.14em;
+  background: rgba(255, 238, 215, 0.55);
+  animation: stampDown 0.5s 0.55s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+@keyframes stampDown {
+  from {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+.bn-txt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  text-align: left;
+}
+
+.bn-txt small {
+  font: 800 max(9px, calc(10px * var(--k))) var(--sans);
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--blood-hi);
+}
+
+#bounty-banner.claimed .bn-txt small {
+  color: var(--gold);
+}
+
+.bn-txt > b {
+  margin-top: 2px;
+  font: 700 max(17px, calc(23px * var(--k))) / 1.1 var(--serif);
+  letter-spacing: 0.04em;
+  color: #fff2e6;
+}
+
+.bn-ship {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--k));
+  margin-top: calc(3px * var(--k));
+  font: 600 max(10px, calc(11.5px * var(--k))) var(--sans);
+  letter-spacing: 0.06em;
+  color: rgba(255, 226, 214, 0.72);
+}
+
+.bn-ship .wp-tier {
+  margin: 0;
+}
+
+.bn-ship .wp-tier i {
+  --s: max(9px, calc(11px * var(--k)));
+  background: rgba(255, 220, 200, 0.2);
+}
+
+.bn-ship .wp-tier i.on {
+  background: #ff8a70;
+}
+
+.bn-txt q {
+  margin-top: calc(6px * var(--k));
+  font: italic 500 max(11.5px, calc(13.5px * var(--k))) / 1.35 Georgia, serif;
+  color: #ffe8dc;
+  quotes: '“' '”';
+}
+
+.bn-reward {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--k));
+  margin-top: calc(7px * var(--k));
+  font: 800 max(11px, calc(12.5px * var(--k))) var(--sans);
+  color: var(--gold-hi);
+  letter-spacing: 0.02em;
+}
+
+.bn-reward.big {
+  font-size: max(15px, calc(20px * var(--k)));
+  text-shadow: 0 0 14px rgba(255, 190, 60, 0.6);
+}
+
+.bn-inf {
+  margin-top: 2px;
+  font: 700 max(10px, calc(11px * var(--k))) var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 200, 180, 0.8);
+}
+
+/* portrait phones: under the ship, clear of the toasts above and the guns below */
+@media (orientation: portrait) and (max-width: 600px) {
+  #bounty-banner {
+    top: auto;
+    bottom: calc(var(--safe-b) + 150px);
+  }
+}
