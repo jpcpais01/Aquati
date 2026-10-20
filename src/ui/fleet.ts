@@ -2,6 +2,7 @@ import './fleet.css';
 import { icon, ICONS, shipSilhouette } from './art';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Order, ORDER_INFO, ORDERS } from '../game/fleet';
+import { replay } from './replay';
 
 // The fleet on the HUD: under your own ship's panel, a slim card for each
 // escort (her silhouette, name, what she's doing and her hull) and the three
@@ -82,9 +83,7 @@ export class FleetHud {
     }
     if (!flash) return;
     const b = this.btns[o];
-    b.classList.remove('sig');
-    void b.offsetWidth;
-    b.classList.add('sig');
+    replay(b, 'sig');
   }
 
   get current() {
@@ -118,9 +117,7 @@ export class FleetHud {
       row.status.textContent = r.status;
       row.el.classList.toggle('fighting', r.fighting);
       if (frac < prev - 0.002) {
-        row.el.classList.remove('hit');
-        void row.el.offsetWidth;
-        row.el.classList.add('hit');
+        replay(row.el, 'hit');
       }
     }
     for (const [id, row] of this.rows) {

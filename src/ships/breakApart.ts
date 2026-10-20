@@ -7,6 +7,12 @@ import * as THREE from 'three';
 // happens to be built. Whole sub-objects (yard pivots, loose sails, the
 // pennant) that sit inside the cut are cloned into the broken piece and the
 // originals hidden, so everything can be restored when the crew repairs it.
+//
+// The slicing runs as generators that yield every few thousand vertices or
+// triangles: a dying ship drops every spar at once, and run in one go the cuts
+// took tens of milliseconds a frame for several frames (a stall of most of a
+// second on a phone, right as she went down). ShipDamage drives them a slice
+// at a time under a per-frame budget.
 
 export interface Cut {
   plane: THREE.Plane; // positive side breaks away
@@ -30,6 +36,60 @@ const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _cen = new THREE.Vector3();
 const _box = new THREE.Box3();
+
+/** Loop iterations between yields: a slice is a few hundredths of a millisecond. */
+const SLICE = 2047;
+/** Clipped triangles (each allocates a handful of vertices) between yields. */
+const CLIPS = 127;
+
+/**
+ * A geometry's bounding box and sphere, a slice at a time. Cuts and the
+ * renderer's culling both need them, and a ship's big merged meshes get theirs
+ * the first time a spar breaks: three's own pass over a galleon's woodwork is
+ * several milliseconds in one go.
+ */
+export function* bounds(g: THREE.BufferGeometry): Generator<void, void> {
+  if (g.boundingBox && g.boundingSphere) return;
+  const p = g.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!p || (p as unknown as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute || !(p.array instanceof Float32Array) || p.itemSize !== 3 || p.normalized || g.morphAttributes.position) {
+    if (!g.boundingBox) g.computeBoundingBox();
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    return;
+  }
+  const a = p.array;
+  const n = p.count;
+  let x0 = Infinity, y0 = Infinity, z0 = Infinity, x1 = -Infinity, y1 = -Infinity, z1 = -Infinity;
+  for (let i = 0; i < n; i++) {
+    if ((i & SLICE) === SLICE) yield;
+    const x = a[i * 3], y = a[i * 3 + 1], z = a[i * 3 + 2];
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+    if (z < z0) z0 = z;
+    if (z > z1) z1 = z;
+  }
+  const box = new THREE.Box3(new THREE.Vector3(x0, y0, z0), new THREE.Vector3(x1, y1, z1));
+  const c = box.getCenter(new THREE.Vector3());
+  let r2 = 0;
+  for (let i = 0; i < n; i++) {
+    if ((i & SLICE) === SLICE) yield;
+    const dx = a[i * 3] - c.x, dy = a[i * 3 + 1] - c.y, dz = a[i * 3 + 2] - c.z;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d > r2) r2 = d;
+  }
+  // three may have filled them in meanwhile (a first draw): keep its own
+  if (!g.boundingBox) g.boundingBox = box;
+  if (!g.boundingSphere) g.boundingSphere = new THREE.Sphere(c, n ? Math.sqrt(r2) : -1);
+}
+
+/** Runs a sliced job straight through (anything that can't wait a frame). */
+export function finish<T>(job: Generator<void, T>): T {
+  for (;;) {
+    const r = job.next();
+    if (r.done) return r.value;
+  }
+}
 
 type Vert = Float32Array;
 
@@ -60,9 +120,9 @@ function clipTri(vs: Vert[], ds: number[]): [Vert[], Vert[]] {
   return [pos, neg];
 }
 
-/** Slices a mesh's geometry by a cut expressed in hull-root space. */
-export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): SplitResult | null {
-  if (src.index) return splitIndexed(src, toRoot, cut);
+/** Slices a mesh's geometry by a cut expressed in hull-root space (sliced: see the top of the file). */
+export function* splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): Generator<void, SplitResult | null> {
+  if (src.index) return yield* splitIndexed(src, toRoot, cut);
   const geo = src;
   const names = Object.keys(geo.attributes).filter((n) => !(geo.attributes[n] as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute);
   const pi = names.indexOf('position');
@@ -84,7 +144,19 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
 
   // plain float attributes are copied a whole run of triangles at a time
   const fast = attrs.every((a) => a.array instanceof Float32Array && !a.normalized);
-  const arrays = attrs.map((a) => (fast ? (a.array as Float32Array) : Float32Array.from({ length: a.count * a.itemSize }, (_, i) => a.getComponent(Math.floor(i / a.itemSize), i % a.itemSize))));
+  const arrays: Float32Array[] = [];
+  for (const a of attrs) {
+    if (fast) {
+      arrays.push(a.array as Float32Array);
+      continue;
+    }
+    const f = new Float32Array(a.count * a.itemSize);
+    for (let i = 0, o = 0; i < a.count; i++) {
+      if ((i & SLICE) === SLICE) yield;
+      for (let c = 0; c < a.itemSize; c++) f[o++] = a.getComponent(i, c);
+    }
+    arrays.push(f);
+  }
   const P = arrays[0];
   const e = toRoot.elements;
   const nx = pn.x, ny = pn.y, nz = pn.z, pc = plane.constant;
@@ -94,6 +166,7 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
   const ds = new Float32Array(triCount * 3);
   let pieceTris = 0;
   for (let t = 0; t < triCount; t++) {
+    if ((t & SLICE) === SLICE) yield;
     let cx = 0, cy = 0, cz = 0, pos = 0, neg = 0;
     for (let k = 0; k < 3; k++) {
       const o = (t * 3 + k) * 3;
@@ -134,7 +207,9 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
     }
     return v;
   };
+  let clips = 0;
   for (let t = 0; t < triCount; t++) {
+    if ((t & SLICE) === SLICE || (cls[t] === 2 && (++clips & CLIPS) === CLIPS)) yield;
     if (cls[t] !== 2) continue;
     const vs = [read(t * 3), read(t * 3 + 1), read(t * 3 + 2)];
     const [pos, neg] = clipTri(vs, [ds[t * 3], ds[t * 3 + 1], ds[t * 3 + 2]]);
@@ -156,13 +231,15 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
   if (!pieceTris) return null;
 
   const polyTris = (polys: Vert[][]) => polys.reduce((n, p) => n + Math.max(0, p.length - 2), 0);
-  const build = (want: number, extra: Vert[][]) => {
+  const build = function* (want: number, extra: Vert[][]): Generator<void, THREE.BufferGeometry> {
     let tris = polyTris(extra);
     for (let t = 0; t < triCount; t++) if (cls[t] === want) tris++;
     const out = sizes.map((s) => new Float32Array(tris * 3 * s));
     const off = sizes.map(() => 0);
     // whole triangles: one copy per run of consecutive ones
+    let n = 0;
     for (let t = 0; t < triCount; ) {
+      if ((++n & SLICE) === SLICE) yield;
       if (cls[t] !== want) {
         t++;
         continue;
@@ -177,6 +254,7 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
       t = end;
     }
     for (const poly of extra) {
+      if ((++n & CLIPS) === CLIPS) yield;
       for (let i = 1; i + 1 < poly.length; i++) {
         for (const v of [poly[0], poly[i], poly[i + 1]]) {
           let o = 0;
@@ -195,7 +273,8 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
     g.boundingSphere = geo.boundingSphere!.clone();
     return g;
   };
-  return { keep: build(0, keepExtra), piece: build(1, pieceExtra), rim, keepEdge: null };
+  const keep = yield* build(0, keepExtra);
+  return { keep, piece: yield* build(1, pieceExtra), rim, keepEdge: null };
 }
 
 /**
@@ -205,7 +284,7 @@ export function splitGeometry(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, 
  * buffers and only the triangles that change are touched: the kept ones get a
  * new index, the broken-off ones and the clipped seam become small geometries.
  */
-function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): SplitResult | null {
+function* splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): Generator<void, SplitResult | null> {
   const index = src.index!;
   const position = src.getAttribute('position') as THREE.BufferAttribute;
   if ((position as unknown as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute) return null;
@@ -233,6 +312,7 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
   const dv = new Float32Array(nv);
   const plain = P instanceof Float32Array && !position.normalized && position.itemSize === 3;
   for (let i = 0; i < nv; i++) {
+    if ((i & SLICE) === SLICE) yield;
     let x: number, y: number, z: number;
     if (plain) {
       x = P[i * 3];
@@ -251,6 +331,7 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
   let pieceTris = 0;
   let straddle = 0;
   for (let t = 0; t < triCount; t++) {
+    if ((t & SLICE) === SLICE) yield;
     const a = idx[t * 3], b = idx[t * 3 + 1], c = idx[t * 3 + 2];
     const da = dv[a], db = dv[b], dc = dv[c];
     if (da <= 0 && db <= 0 && dc <= 0) continue;
@@ -277,7 +358,9 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
   const pieceExtra: Vert[][] = [];
   const keepExtra: Vert[][] = [];
   const rim: THREE.Vector3[] = [];
+  let clips = 0;
   for (let t = 0; t < triCount; t++) {
+    if ((t & SLICE) === SLICE || (cls[t] === 2 && (++clips & CLIPS) === CLIPS)) yield;
     if (cls[t] !== 2) continue;
     const i0 = idx[t * 3], i1 = idx[t * 3 + 1], i2 = idx[t * 3 + 2];
     const [pos, neg] = clipTri([read(i0), read(i1), read(i2)], [dv[i0], dv[i1], dv[i2]]);
@@ -313,6 +396,7 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
   const kidx = new (idx.constructor as Uint32ArrayConstructor)(keepTris * 3);
   let o = 0;
   for (let t = 0; t < triCount; t++) {
+    if ((t & SLICE) === SLICE) yield;
     if (cls[t] !== 0) continue;
     kidx[o++] = idx[t * 3];
     kidx[o++] = idx[t * 3 + 1];
@@ -324,7 +408,7 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
   bounds(keep);
 
   // the small loose geometries: whole broken-off triangles plus clipped polygons
-  const loose = (whole: number, polys: Vert[][]) => {
+  const loose = function* (whole: number, polys: Vert[][]): Generator<void, THREE.BufferGeometry | null> {
     let tris = 0;
     for (let t = 0; t < triCount; t++) if (cls[t] === whole) tris++;
     for (const p of polys) tris += Math.max(0, p.length - 2);
@@ -343,6 +427,7 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
       const src = a.array instanceof Float32Array && !a.normalized ? a.array : null;
       let w = 0;
       for (let t = 0; t < triCount; t++) {
+        if ((t & SLICE) === SLICE) yield;
         if (cls[t] !== whole) continue;
         for (let j = 0; j < 3; j++) {
           const i = idx[t * 3 + j];
@@ -352,13 +437,18 @@ function splitIndexed(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut
       }
       off[k] = w;
     }
-    for (const poly of polys) for (let i = 1; i + 1 < poly.length; i++) for (const v of [poly[0], poly[i], poly[i + 1]]) put(v);
+    let n = 0;
+    for (const poly of polys) {
+      if ((++n & CLIPS) === CLIPS) yield;
+      for (let i = 1; i + 1 < poly.length; i++) for (const v of [poly[0], poly[i], poly[i + 1]]) put(v);
+    }
     const g = new THREE.BufferGeometry();
     names.forEach((n, k) => g.setAttribute(n, new THREE.BufferAttribute(out[k], sizes[k])));
     return bounds(g);
   };
   // class 3 never occurs: the seam's kept side has no whole triangles
-  return { keep, piece: loose(1, pieceExtra)!, rim, keepEdge: loose(3, keepExtra) };
+  const piece = (yield* loose(1, pieceExtra))!;
+  return { keep, piece, rim, keepEdge: yield* loose(3, keepExtra) };
 }
 
 /**
@@ -380,12 +470,13 @@ export function disposeUnshared(g: THREE.BufferGeometry, base: THREE.BufferGeome
 }
 
 /** Drops rope segments that touch the broken-off region. */
-export function filterLines(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): THREE.BufferGeometry | null {
+export function* filterLines(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): Generator<void, THREE.BufferGeometry | null> {
   const p = src.getAttribute('position') as THREE.BufferAttribute;
   const out: number[] = [];
   let dropped = 0;
   const inCut = (v: THREE.Vector3) => (cut.plane.distanceToPoint(v) > -0.05 && cut.lateral(v)) || (!!cut.rigging && cut.rigging(v));
   for (let i = 0; i + 1 < p.count; i += 2) {
+    if ((i & SLICE) === SLICE - 1) yield;
     _a.fromBufferAttribute(p, i).applyMatrix4(toRoot);
     _b.fromBufferAttribute(p, i + 1).applyMatrix4(toRoot);
     if (inCut(_a) || inCut(_b)) {
@@ -404,7 +495,7 @@ export function filterLines(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cu
  * The laid-rope twin of filterLines: a rope (all the triangles sharing an
  * aRope id) goes as a whole when any part of it is caught by the cut.
  */
-export function filterRopes(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): THREE.BufferGeometry | null {
+export function* filterRopes(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cut: Cut): Generator<void, THREE.BufferGeometry | null> {
   const p = src.getAttribute('position') as THREE.BufferAttribute;
   const id = src.getAttribute('aRope') as THREE.BufferAttribute | undefined;
   const index = src.index;
@@ -412,6 +503,7 @@ export function filterRopes(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cu
   const inCut = (v: THREE.Vector3) => (cut.plane.distanceToPoint(v) > -0.05 && cut.lateral(v)) || (!!cut.rigging && cut.rigging(v));
   const dead = new Set<number>();
   for (let i = 0; i < p.count; i++) {
+    if ((i & SLICE) === SLICE) yield;
     const r = id.getX(i);
     if (dead.has(r)) continue;
     if (inCut(_a.fromBufferAttribute(p, i).applyMatrix4(toRoot))) dead.add(r);
@@ -419,6 +511,7 @@ export function filterRopes(src: THREE.BufferGeometry, toRoot: THREE.Matrix4, cu
   if (!dead.size) return null;
   const keep: number[] = [];
   for (let t = 0; t < index.count; t += 3) {
+    if ((t & SLICE) === SLICE - 2) yield;
     const a = index.getX(t);
     if (!dead.has(id.getX(a))) keep.push(a, index.getX(t + 1), index.getX(t + 2));
   }

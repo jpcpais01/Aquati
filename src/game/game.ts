@@ -202,6 +202,8 @@ export class Game {
    */
   private shipyard: ShipModel[] = [];
   private keel: ShipModel | null = null;
+  /** World time until which the yard downs tools: a sinking is busy enough on its own. */
+  private yardIdleUntil = 0;
   /** One ghost hull kept ready (built like the pirates', a slice at a time), and the ghost who keeps her shaders compiled. */
   private ghostyard: ShipModel | null = null;
   ghostKeeper: Ship | null = null;
@@ -3228,6 +3230,9 @@ export class Game {
   private static readonly STOCK: Record<ShipClassId, number> = { sloop: 3, brig: 3, galleon: 1 };
 
   private runShipyard() {
+    // the yard's slices are a few milliseconds each: not in the seconds a ship is going down
+    // (her spars coming apart, a hunter sailing in), when they'd all land on the same frames
+    if (this.world.time < this.yardIdleUntil) return;
     this.preload.step();
     const tex = this.texQueue.shift();
     if (tex) this.renderer.initTexture(tex);
@@ -3851,6 +3856,9 @@ export class Game {
   }
 
   private onSunk(ship: Ship, attacker: Ship) {
+    this.yardIdleUntil = this.world.time + 3;
+    // word of it takes a moment to reach the Brethren: a hunter the kill earns sets out once she's under
+    this.heat.cool = Math.max(this.heat.cool, 2.5);
     if (ship.team === 'player') return this.onEscortLost(ship);
     // the replacement waits until the wreck has settled
     this.spawnTimer = Math.max(this.spawnTimer, 10);
@@ -5192,9 +5200,21 @@ export class Game {
     const simDt = frozen ? 0 : dt * (this.coop.live ? 1 : this.timeScale);
     this.update(simDt, dt);
     this.render(simDt);
+    if (import.meta.env.DEV) this.watchPrograms();
     this.input.consume();
     P.frameEnd();
     this.cpuMs = performance.now() - now;
+  }
+
+  private progCount = 0;
+  /** Dev builds: names any shader that compiles mid-voyage (each is a stall; see render/warmup.ts). */
+  private watchPrograms() {
+    const list = this.renderer.info.programs;
+    if (!list) return;
+    if (list.length > this.progCount && this.progCount && this.state === 'playing') {
+      for (const p of list.slice(this.progCount)) console.warn('[aquati] shader compiled mid-voyage:', p.name || p.cacheKey.slice(0, 120));
+    }
+    this.progCount = list.length;
   }
 
   /** Main-thread time the last frame took (ms): tells the resolution scaler whether pixels are the problem. */
