@@ -1,0 +1,210 @@
+/* The sea's dangers: a pill under the top of the screen. Amber for a warning,
+   coral red and breathing once the sea has hold of you, aqua when your keel
+   clears the coral. Sized off --k like the rest of the HUD; no backdrop blur
+   (it would re-blur the live sea every frame). */
+
+.hz {
+  --hz: #ffc46a;
+  --hz-glow: rgba(255, 180, 80, 0.45);
+  --hz-spin: 6s;
+  position: absolute;
+  top: calc(var(--g) + var(--safe-t) + 2px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--k));
+  max-width: calc(100% - 2 * var(--g) - 24px);
+  padding: calc(7px * var(--k)) calc(14px * var(--k)) calc(7px * var(--k)) calc(8px * var(--k));
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(30, 24, 14, 0.9), rgba(14, 10, 6, 0.88));
+  border: 1px solid color-mix(in srgb, var(--hz) 45%, transparent);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 240, 210, 0.08);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -14px) scale(0.95);
+  transition: opacity 0.4s ease, transform 0.6s var(--spring), border-color 0.6s ease, top 0.5s var(--spring);
+}
+
+.hz.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.hz[data-level='danger'] {
+  --hz: #ff7a5c;
+  --hz-glow: rgba(255, 96, 60, 0.6);
+  background: linear-gradient(180deg, rgba(52, 16, 10, 0.92), rgba(24, 6, 4, 0.9));
+  animation: hzBreathe 1.3s ease-in-out infinite;
+}
+
+.hz[data-level='info'] {
+  --hz: #6ee6d6;
+  --hz-glow: rgba(94, 227, 212, 0.45);
+  background: linear-gradient(180deg, rgba(10, 36, 40, 0.9), rgba(4, 16, 20, 0.88));
+}
+
+.hz.jolt {
+  animation: hzJolt 0.45s ease, hzBreathe 1.3s ease-in-out 0.45s infinite;
+}
+
+@keyframes hzBreathe {
+  50% {
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38), 0 0 calc(22px * var(--k)) var(--hz-glow), inset 0 1px 0 rgba(255, 240, 210, 0.08);
+  }
+}
+
+@keyframes hzJolt {
+  20% {
+    transform: translate(calc(-50% + 4px), 1px) scale(1.04);
+  }
+  45% {
+    transform: translate(calc(-50% - 4px), 0) scale(1.02);
+  }
+  70% {
+    transform: translate(calc(-50% + 2px), 0);
+  }
+}
+
+/* the icon in its gauge ring */
+.hz-ico {
+  position: relative;
+  flex: none;
+  width: max(30px, calc(36px * var(--k)));
+  height: max(30px, calc(36px * var(--k)));
+  color: var(--hz);
+}
+
+.hz-ico span {
+  position: absolute;
+  inset: 22%;
+  filter: drop-shadow(0 0 5px var(--hz-glow));
+}
+
+.hz-ico span svg,
+.hz-arrow svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.hz[data-kind='vortex'] .hz-ico span {
+  animation: hzSpin var(--hz-spin) linear infinite;
+}
+
+@keyframes hzSpin {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+.hz-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.hz-ring circle {
+  fill: none;
+  stroke-width: 2.6;
+}
+
+.hz-ring .bg {
+  stroke: rgba(255, 240, 210, 0.12);
+}
+
+.hz-ring .fg {
+  stroke: var(--hz);
+  stroke-linecap: round;
+  stroke-dasharray: 106.8;
+  stroke-dashoffset: 106.8;
+  transition: stroke-dashoffset 0.35s ease, stroke 0.5s ease;
+}
+
+.hz-txt {
+  display: flex;
+  flex-direction: column;
+  gap: calc(3px * var(--k));
+  min-width: 0;
+  line-height: 1.1;
+}
+
+.hz-txt b {
+  font: 700 max(12px, calc(14.5px * var(--k))) var(--serif);
+  letter-spacing: 0.08em;
+  color: #fff4e0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hz-txt small {
+  font: 600 max(9.5px, calc(11px * var(--k))) var(--sans);
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--hz) 70%, #fff4e0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the way out */
+.hz-arrow {
+  flex: none;
+  width: 0;
+  height: max(18px, calc(22px * var(--k)));
+  color: var(--hz);
+  opacity: 0;
+  filter: drop-shadow(0 0 6px var(--hz-glow));
+  transition: opacity 0.4s ease, width 0.4s var(--spring), transform 0.25s ease;
+}
+
+.hz-arrow.on {
+  width: max(18px, calc(22px * var(--k)));
+  opacity: 1;
+}
+
+/* make room: under the fort's bar or the Kraken's, and the toasts under the pill */
+#hud.ft-on .hz {
+  top: calc(var(--g) + var(--safe-t) + 92px * var(--k));
+}
+
+#hud.kr-on .hz {
+  top: calc(var(--g) + var(--safe-t) + 70px * var(--k));
+}
+
+#hud.hz-on #toasts {
+  top: calc(var(--g) + var(--safe-t) + 58px * var(--k));
+}
+
+#hud.hz-on.ft-on #toasts {
+  top: calc(var(--g) + var(--safe-t) + 148px * var(--k));
+}
+
+#hud.ashore .hz {
+  display: none;
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .hz {
+    top: calc(var(--g) + var(--safe-t) + 214px * var(--k));
+  }
+
+  #hud.ft-on .hz,
+  #hud.kr-on .hz {
+    top: calc(var(--g) + var(--safe-t) + 300px * var(--k));
+  }
+
+  #hud.hz-on #toasts {
+    top: calc(var(--g) + var(--safe-t) + 270px * var(--k));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hz,
+  .hz.jolt,
+  .hz[data-level='danger'],
+  .hz[data-kind='vortex'] .hz-ico span {
+    animation: none;
+  }
+}

@@ -54,6 +54,9 @@ import { holdPeek, MarketUI } from '../ui/market';
 import { lootIcon } from '../ui/lootArt';
 import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood } from './treasure';
 import { Kraken } from './kraken';
+import { Hazards } from './hazards';
+import { HazardHud, HazardView } from '../ui/hazard';
+import type { HazardMark } from '../ui/chart';
 import { KrakenHud, KrakenReward } from '../ui/kraken';
 import { CameraRig } from './cameraRig';
 import { Gunnery, Side } from './gunnery';
@@ -116,6 +119,8 @@ const WRECK_REACH = 520;
 const _cineV = new THREE.Vector3();
 
 const BOARD_SEEN_KEY = 'aquati.boardSeen';
+/** `?maelstrom` / `?reef` set sail a little way off the first maelstrom / reef (for trying them out). */
+const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(location.search) ? 'maelstrom' : /[?&]reef\b/.test(location.search) ? 'reef' : null) : null;
 /** `?kraken` brews a storm at once and sends the Kraken a few seconds into the voyage. */
 const KRAKEN_TEST = typeof location !== 'undefined' && /[?&]kraken\b/.test(location.search);
 
@@ -310,6 +315,20 @@ export class Game {
   /** A dressed captain's own cloth and flag, uploaded one a frame before she sails in. */
   private texQueue: THREE.Texture[] = [];
   private cumulus = new SkyCumulus();
+  // the sea's own dangers: maelstroms and open-sea reefs; see game/hazards.ts
+  private hazards!: Hazards;
+  private hzHud!: HazardHud;
+  private hzMarks: HazardMark[] = [];
+  /** Which ones you've come upon this voyage (each is named the first time). */
+  private hzSeen = new Set<string>();
+  /** The pill's last state, for the bell and the groan as it changes. */
+  private hzState: 'none' | 'near' | 'shoal' | 'over' | 'caught' | 'aground' = 'none';
+  private hzBellT = 0;
+  /** The sea last hurt you: what and where, for the farewell's cause. */
+  private hzHit: { kind: 'reef' | 'maelstrom'; name: string; t: number } | null = null;
+  /** When each ship last had the sea's grip called out over her. */
+  private hzCalled = new WeakMap<Ship, number>();
+  private hzGrad = new THREE.Vector2();
   // the Kraken: rises (rarely) out of a storm to drag her under; see game/kraken.ts
   private kraken = new Kraken();
   private krHud!: KrakenHud;
@@ -557,6 +576,20 @@ export class Game {
     this.world.onShake = (a) => this.rig.shake(a);
     this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
     this.world.onStatus = (ship, st, by) => this.onStatus(ship as Ship, st, by as Ship | null);
+    // maelstroms in deep water, well clear of every harbour mouth, fort and the waters you sail from
+    this.hazards = new Hazards(this.terrain, [
+      { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 },
+      { x: 0, z: 150, r: 300 },
+      ...[site, ...tradeSites].map((t) => ({ x: t.x, z: t.z, r: 260 })),
+      ...fortSites.map((f) => ({ x: f.x, z: f.z, r: 280 })),
+    ]);
+    this.hazards.attach(this.world);
+    this.world.onHazard = (ship, kind, dmg, at) => this.onHazard(ship as Ship, kind, dmg, at);
+    this.hzHud = new HazardHud(document.getElementById('hud')!);
+    this.hzMarks = [
+      ...this.hazards.maelstroms.map((m): HazardMark => ({ kind: 'vortex', name: m.name, x: m.x, z: m.z, r: m.vortex.r, dir: m.vortex.dir })),
+      ...this.hazards.reefs.map((r): HazardMark => ({ kind: 'reef', name: r.name, x: r.x, z: r.z, r: r.r, dir: 1 })),
+    ];
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
     this.windField = new WindField(this.world.wind.dirX, this.world.wind.dirZ, q.tier === 0 ? 6 : 8);
     this.world.gustAt = (x, z) => this.windField.at(x, z);
@@ -2906,6 +2939,11 @@ export class Game {
     this.voyageTime = 0;
     this.log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] };
     this.discovered.clear();
+    this.hzSeen.clear();
+    this.hzState = 'none';
+    this.hzHit = null;
+    this.hzHud.set(null);
+    if (HAZARD_TEST) this.testHazard(p);
     this.shore.resetCamps();
     // the Brethren re-man and re-arm their forts between voyages; yours stay yours
     this.forts.apply(this.fortStore.state.taken);
@@ -3568,7 +3606,9 @@ export class Game {
     const aground = this.terrain.heightAt(p.pos.x, p.pos.z) > -p.cls.draft * 1.6;
     const beast = this.kraken.active && w.time - this.krakenHitT < 20;
     const shore = foe?.battery ?? false;
-    const cause: WreckReport['cause'] = beast ? 'kraken' : how === 'shot' ? (foe ? (shore ? 'fort' : 'shot') : 'aground') : aground || !foe ? 'aground' : shore ? 'fort' : 'rammed';
+    // the sea itself: the last bite of a reef or a maelstrom's throat (unless a ball finished her)
+    const sea = this.hzHit && w.time - this.hzHit.t < 4 && how === 'hull' ? this.hzHit : null;
+    const cause: WreckReport['cause'] = beast ? 'kraken' : sea ? sea.kind : how === 'shot' ? (foe ? (shore ? 'fort' : 'shot') : 'aground') : aground || !foe ? 'aground' : shore ? 'fort' : 'rammed';
     let near: { name: string; d: number } | null = null;
     for (const isl of this.terrain.islands) {
       const d = Math.hypot(isl.x - p.pos.x, isl.z - p.pos.z) - isl.r;
@@ -3589,9 +3629,9 @@ export class Game {
       best: this.log.best,
       miles: this.log.metres / 1852,
       cause,
-      killer: cause === 'aground' || cause === 'kraken' ? undefined : foe?.name,
-      killerCls: cause === 'aground' || cause === 'kraken' || cause === 'fort' ? undefined : foe?.cls.id,
-      hunter: cause !== 'aground' && cause !== 'kraken' && cause !== 'fort' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
+      killer: sea ? sea.name : cause === 'aground' || cause === 'kraken' ? undefined : foe?.name,
+      killerCls: sea || cause === 'aground' || cause === 'kraken' || cause === 'fort' ? undefined : foe?.cls.id,
+      hunter: !sea && cause !== 'aground' && cause !== 'kraken' && cause !== 'fort' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
       bounties: this.heat.claimed,
       where: near ? (near.d < 60 ? `on the shoals of ${near.name}` : `off ${near.name}`) : null,
       events: this.log.events.slice(),
@@ -3821,6 +3861,155 @@ export class Game {
     });
   }
 
+
+  // ------------------------------------------------------------------ maelstroms & reefs
+
+  /** The sea took a bite out of a ship: say so over her, and settle who gets the credit if she goes down. */
+  private onHazard(ship: Ship, kind: 'reef' | 'maelstrom', dmg: number, at: THREE.Vector3) {
+    const p = this.player;
+    const w = this.world;
+    const name = kind === 'reef' ? this.terrain.reefNear(at.x, at.z, 30)?.name ?? 'the reef' : this.hazards.stateOf(ship, 1.2)?.m.name ?? 'the maelstrom';
+    const [x, y, ok] = this.screenOf(_a.set(ship.pos.x, ship.root.position.y + ship.cls.freeboard + 3, ship.pos.z));
+    if (ship === p) {
+      if (this.state !== 'playing') return;
+      this.hzHit = { kind, name, t: w.time };
+      if (ok && dmg >= 1) this.ui.floater(`-${Math.round(dmg)}`, x, y, 'bad');
+      if (kind === 'maelstrom') this.rig.shake(0.12);
+      return;
+    }
+    const near = !!p && Math.hypot(ship.pos.x - p.pos.x, ship.pos.z - p.pos.z) < 380;
+    const last = this.hzCalled.get(ship) ?? -100;
+    if (near && ok && ship.alive && w.time - last > 5) {
+      this.hzCalled.set(ship, w.time);
+      const text = kind === 'reef' ? (ship.scrape > 0.55 ? 'Hard aground!' : 'On the reef!') : 'Caught in the maelstrom!';
+      this.ui.floater(ship.team === 'player' ? `The ${ship.name}: ${text.toLowerCase()}` : text, x, y - 18, ship.team === 'player' ? 'fleet' : 'rare');
+    } else if (near && ok && dmg >= 1 && ship.team === 'pirate') this.ui.floater(`${Math.round(dmg)}`, x, y, '');
+    if (ship.alive) return;
+    // she's gone: lured there by you (she was fighting you, or you'd just had her under your guns)?
+    const ai = this.ais.get(ship);
+    const lured = ship.team === 'pirate' && !!p && p.alive && this.state === 'playing' && ((ship.lastAttacker === p && w.time - ship.lastHit < 90) || (!!ai && ai.target === p && ai.mode === 'engage'));
+    if (lured) {
+      if (ok) this.ui.floater(kind === 'reef' ? 'Lured onto the reef!' : 'Swallowed by the maelstrom!', x, y - 34, 'epic');
+      this.note('kill', kind === 'reef' ? `Led the ${ship.name} onto ${name}` : `Drew the ${ship.name} into ${name}`, kind === 'reef' ? 'She tore her bottom out on the coral' : 'The sea did the rest');
+      this.onSunk(ship, p!);
+    } else this.onSunk(ship, ship);
+  }
+
+  /** The pill under the top of the screen, the leadsman's bell and the first sight of each danger. */
+  private updateHazards(p: Ship, dt: number) {
+    const hz = this.hazards;
+    this.hzBellT -= dt;
+    if (!p.alive || this.shore.active || this.photo.active) {
+      this.hzHud.set(null);
+      this.hzState = 'none';
+      return;
+    }
+    const vs = hz.stateOf(p, 2.4);
+    const reef = hz.reefOf(p, 170);
+    const draft = p.cls.draft;
+    const fmt = (m: number) => `${m.toFixed(1)} m`;
+    // the first sight of each: named, with what it means for your ship
+    if (vs && vs.u < 2.4 && !this.hzSeen.has(vs.m.name)) {
+      this.hzSeen.add(vs.m.name);
+      this.ui.toast(vs.m.name, 'A maelstrom turns here · keep clear of its pull', 4);
+    }
+    if (reef && !this.hzSeen.has(reef.name)) {
+      this.hzSeen.add(reef.name);
+      this.ui.toast(reef.name, draft < 1.8 ? 'Coral reef · your shallow keel clears most of it' : 'Coral reef · watch for breakers, she draws too much water', 4);
+    }
+    let state: typeof this.hzState = 'none';
+    let v: HazardView | null = null;
+    // the way out, as an arrow on screen (0 = up, clockwise)
+    const arrowFor = (heading: number) => {
+      const [x0, y0, ok0] = this.screenOf(_a.set(p.pos.x, p.root.position.y, p.pos.z));
+      const [x1, y1, ok1] = this.screenOf(_a.set(p.pos.x + Math.sin(heading) * 30, p.root.position.y, p.pos.z + Math.cos(heading) * 30));
+      return ok0 && ok1 ? Math.atan2(x1 - x0, -(y1 - y0)) : null;
+    };
+    if (vs && vs.u < 0.95) {
+      const throat = vs.u < 0.3;
+      const free = vs.out > 0.8 && !throat;
+      const grip = clamp((0.95 - vs.u) / 0.85, 0, 1);
+      state = 'caught';
+      const out = hz.escape(p.pos.x, p.pos.z);
+      v = {
+        kind: 'vortex',
+        level: free ? 'warn' : 'danger',
+        title: throat ? 'In the maelstrom\'s throat!' : free ? 'Breaking free' : 'Caught in the maelstrom',
+        sub: throat ? 'Her timbers are giving way · run before the wind!' : free ? `${vs.m.name} · hold your course` : `${vs.m.name} · sail out with the wind`,
+        gauge: grip,
+        spin: lerp(3.2, 0.7, grip),
+        arrow: out === null ? null : arrowFor(out),
+      };
+    } else if (p.scrape > 0.08) {
+      state = 'aground';
+      const depth = p.reefDepth;
+      this.terrain.gradientAt(p.pos.x, p.pos.z, this.hzGrad);
+      const deep = this.hzGrad.lengthSq() > 1e-6 ? Math.atan2(-this.hzGrad.x, -this.hzGrad.y) : null;
+      v = {
+        kind: 'reef',
+        level: 'danger',
+        title: p.scrape > 0.6 ? 'Hard aground!' : 'Scraping the reef!',
+        sub: `${reef?.name ?? 'Coral'} · ${fmt(Math.max(0, depth))} of water, you draw ${fmt(draft)} · steer for deep water`,
+        gauge: p.scrape,
+        arrow: deep === null ? null : arrowFor(deep),
+      };
+    } else {
+      const look = Math.max(40, Math.abs(p.speed) * 7) + p.cls.length * 0.5;
+      const shoal = reef ? hz.shoalAhead(p, look) : null;
+      const under = reef ? -this.terrain.heightAt(p.pos.x, p.pos.z) : 99;
+      if (shoal) {
+        state = 'shoal';
+        v = {
+          kind: 'reef',
+          level: 'warn',
+          title: 'Shoal water ahead',
+          sub: `${reef!.name} · ${fmt(shoal.depth)} over the coral, you draw ${fmt(draft)}`,
+          gauge: clamp(1 - shoal.dist / look, 0.08, 1),
+          arrow: null,
+        };
+      } else if (reef && under < 4.5 && this.terrain.reefAt(p.pos.x, p.pos.z) > 0.3) {
+        state = 'over';
+        v = { kind: 'reef', level: 'info', title: 'Over the reef', sub: `Your keel clears it · ${fmt(under)} of water, you draw ${fmt(draft)}`, gauge: clamp(draft / Math.max(under, 0.1), 0, 1), arrow: null };
+      } else if (vs && vs.u < 2.1) {
+        state = 'near';
+        v = {
+          kind: 'vortex',
+          level: 'warn',
+          title: 'Maelstrom ahead',
+          sub: `${vs.m.name} · ${Math.max(0, Math.round(vs.dist - vs.m.vortex.r))} m to its pull`,
+          gauge: clamp((2.1 - vs.u) / 1.15, 0, 1),
+          spin: 4.5,
+          arrow: null,
+        };
+      }
+    }
+    // the watch calls it: the bell for danger ahead, a groan of timber as the sea takes hold
+    if (state !== this.hzState) {
+      if ((state === 'shoal' || state === 'near') && this.hzBellT <= 0) {
+        this.audio.shoalBell();
+        this.hzBellT = 9;
+      }
+      if (state === 'caught') {
+        this.audio.groan();
+        this.rig.shake(0.3);
+      }
+      this.hzState = state;
+    }
+    this.hzHud.set(v);
+  }
+
+  /** `?maelstrom` / `?reef`: set sail just off one, bows on. */
+  private testHazard(p: Ship) {
+    const m = this.hazards.maelstroms[0];
+    const r = this.hazards.reefs[0];
+    const at = HAZARD_TEST === 'maelstrom' && m ? { x: m.x, z: m.z, d: m.vortex.r * 1.7 } : r ? { x: r.x, z: r.z, d: r.r + 60 } : null;
+    if (!at) return;
+    const a = Math.random() * Math.PI * 2;
+    const x = at.x + Math.cos(a) * at.d;
+    const z = at.z + Math.sin(a) * at.d;
+    p.place(x, z, Math.atan2(at.x - x, at.z - z));
+    p.speed = p.cls.maxSpeed * 0.5;
+  }
 
   // ------------------------------------------------------------------ the Kraken
 
@@ -4245,6 +4434,9 @@ export class Game {
     this.updateFleet(dt);
     for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships, this.state === 'playing' ? this.escortShips : []);
     P.end();
+    P.begin('Maelstroms & reefs', 'ships');
+    this.hazards.update(dt, w, this.ships, this.loot.all(), this.rig.target, globalUniforms.uStorm.value);
+    P.end();
     P.begin('Ship physics & rigging', 'ships');
     if (dt > 0) this.boarding.pin(dt);
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
@@ -4335,6 +4527,7 @@ export class Game {
       }
       this.checkDiscoveries(p);
       this.updateForts(p, dt);
+      this.updateHazards(p, dt);
       // rammed or holed on a reef: no cannonball to report it
       if (!p.alive) this.onPlayerSunk('hull');
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));
@@ -4401,6 +4594,7 @@ export class Game {
       w.listenerRight.set(1, 0);
     }
     w.listenerZoom = this.rig.distance;
+    this.hazards.sound(w);
     // ashore, the leaves between the camera and the captain thin away
     const see = globalUniforms.uSeeThru.value;
     if (walker && !this.photo.active) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5));
@@ -4468,7 +4662,7 @@ export class Game {
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight, this.boarding.prize, marked);
       const cap = this.shore.captain;
       const camps = this.shore.camps.filter((c) => !c.fort).map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
-      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks());
+      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks(), this.hzMarks);
       this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
       this.mapUi.setChip(this.maps.state);
@@ -4480,6 +4674,7 @@ export class Game {
         pins: this.waypoints.pins,
         treasure: this.maps.target,
         forts: this.fortMarks().map((f, i) => ({ ...f, name: this.forts.forts[i].name })),
+        hazards: this.hzMarks,
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });
     }

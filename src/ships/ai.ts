@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { angleDelta, clamp, mulberry32 } from '../core/noise';
 import { World } from '../game/world';
 import { Ship, gunRange } from './ship';
@@ -16,6 +17,8 @@ const PIRATE_AMMO: Record<ShipClassId, [AmmoId, number][]> = {
 // each other, and run for it when their hull is in tatters.
 
 type Mode = 'patrol' | 'engage' | 'flee';
+
+const _g = new THREE.Vector2();
 
 /** A pirate flotilla: wingmen keep station on the flagship, and when one ship
  *  sights you the whole pack comes about to hunt together. */
@@ -60,21 +63,34 @@ export class PirateAI {
       const r = 120 + this.rnd() * 260;
       const x = clamp(this.ship.pos.x + Math.cos(a) * r, -880, 880);
       const z = clamp(this.ship.pos.z + Math.sin(a) * r, -880, 880);
-      if (world.terrain.heightAt(x, z) < -7) {
+      if (world.terrain.heightAt(x, z) < -7 && !world.hazards?.vortexAt(x, z, 1.6)) {
         this.wp = { x, z };
         return;
       }
     }
   }
 
-  /** Steering away from shallows: probe ahead and to either side. */
-  private avoid(world: World, heading: number): number {
+  /**
+   * Steering away from shallows and maelstroms: probe ahead and to either side.
+   * Hot on your heels a captain reads the breakers over a reef too late and
+   * skirts a maelstrom far too close; a named hunter knows these waters
+   * better than that, and a phantom floats over the coral as if it weren't
+   * there. `escaping`: already in a maelstrom's grip, she only looks for land.
+   */
+  private avoid(world: World, heading: number, escaping = false): number {
     const s = this.ship;
     const L = s.cls.length;
+    const reckless = this.mode === 'engage' && !this.hunter;
+    const hz = world.hazards;
     const blocked = (ang: number, d: number) => {
       const x = s.pos.x + Math.sin(ang) * d;
       const z = s.pos.z + Math.cos(ang) * d;
-      return world.terrain.heightAt(x, z) > -s.cls.draft - 1.5;
+      const h = world.terrain.heightAt(x, z);
+      if (h > -s.cls.draft - 1.5) {
+        if (h > -0.2 || world.terrain.reefAt(x, z) < 0.3) return true;
+        if (!s.ghost && (!reckless || d < L)) return true;
+      }
+      return !escaping && !!hz && hz.vortexAt(x, z, reckless ? 0.6 : 1.25);
     };
     const look = [L * 0.8, L * 1.6, L * 2.6 + s.speed * 2];
     let ahead = false;
@@ -211,7 +227,18 @@ export class PirateAI {
       }
     }
 
-    const steerTo = this.avoid(world, this.desired);
+    // the sea has her: in a maelstrom's grip every hand goes to the braces to
+    // spiral out with the flow, and hard on the coral she claws off for deep water
+    const esc = world.hazards?.escape(s.pos.x, s.pos.z) ?? null;
+    if (esc !== null) {
+      this.desired = esc;
+      s.sailTarget = 1;
+    } else if (s.scrape > 0.12) {
+      world.terrain.gradientAt(s.pos.x, s.pos.z, _g);
+      if (_g.lengthSq() > 1e-6) this.desired = Math.atan2(-_g.x, -_g.y);
+      s.sailTarget = 1;
+    }
+    const steerTo = this.avoid(world, this.desired, esc !== null);
     s.rudder = clamp(angleDelta(s.heading, steerTo) * 2.2, -1, 1);
 
     // gunnery

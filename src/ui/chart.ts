@@ -82,6 +82,77 @@ export function fortMark(g: CanvasRenderingContext2D, x: number, y: number, r: n
   g.restore();
 }
 
+/**
+ * A maelstrom on a map: an inked spiral winding in, turned by `turn` (radians)
+ * so it slowly wheels on the live maps.
+ */
+export function vortexMark(g: CanvasRenderingContext2D, x: number, y: number, r: number, turn = 0, dir: 1 | -1 = 1) {
+  g.save();
+  g.translate(x, y);
+  g.rotate(turn * dir);
+  g.scale(dir, 1);
+  g.lineCap = 'round';
+  for (const [w, c] of [[r * 0.42, 'rgba(8, 20, 28, 0.7)'], [r * 0.2, '#ff9a7a']] as const) {
+    g.strokeStyle = c;
+    g.lineWidth = Math.max(1.2, w);
+    g.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const t = i / 40;
+      const a = t * Math.PI * 4.2;
+      const rr = r * (0.08 + 0.92 * t);
+      const px = Math.cos(a) * rr;
+      const py = Math.sin(a) * rr;
+      if (i) g.lineTo(px, py);
+      else g.moveTo(px, py);
+    }
+    g.stroke();
+  }
+  g.fillStyle = '#1a0a08';
+  g.beginPath();
+  g.arc(0, 0, Math.max(1.5, r * 0.14), 0, Math.PI * 2);
+  g.fill();
+  g.restore();
+}
+
+/** A reef on a map: the old chartmakers' danger mark, a cross ringed with dots. */
+export function reefMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  g.save();
+  g.translate(x, y);
+  g.lineCap = 'round';
+  for (const [w, c] of [[r * 0.36, 'rgba(8, 20, 28, 0.7)'], [r * 0.17, '#ffb38a']] as const) {
+    g.strokeStyle = c;
+    g.lineWidth = Math.max(1.1, w);
+    g.beginPath();
+    g.moveTo(-r * 0.55, 0);
+    g.lineTo(r * 0.55, 0);
+    g.moveTo(0, -r * 0.55);
+    g.lineTo(0, r * 0.55);
+    g.stroke();
+  }
+  g.fillStyle = '#ffb38a';
+  g.strokeStyle = 'rgba(8, 20, 28, 0.6)';
+  g.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+    g.beginPath();
+    g.arc(Math.cos(a) * r, Math.sin(a) * r, Math.max(1, r * 0.12), 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+  }
+  g.restore();
+}
+
+/** A sea hazard as the maps show it. */
+export interface HazardMark {
+  kind: 'vortex' | 'reef';
+  name: string;
+  x: number;
+  z: number;
+  /** Its reach (m): a maelstrom's pull, or how far the reef spreads. */
+  r: number;
+  dir: 1 | -1;
+}
+
 /** A treasure map's X, in red ink with a dark outline. */
 export function xMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
   g.save();
@@ -113,6 +184,8 @@ export interface ChartScene {
   treasure?: { x: number; z: number } | null;
   /** The island forts, and whose they are. */
   forts?: { x: number; z: number; name: string; ours: boolean; quiet: boolean }[];
+  /** Maelstroms and open-sea reefs: every captain knows the old tales of where they lie. */
+  hazards?: HazardMark[];
   windX: number;
   windZ: number;
   time: number;
@@ -477,6 +550,39 @@ export class SeaChart {
       g.strokeText(f.name, x, y - 18);
       g.fillStyle = f.ours ? '#9ff3e8' : '#ffb59a';
       g.fillText(f.name, x, y - 18);
+    }
+
+    // the sea's dangers, inked in coral red: a maelstrom's pull dashed round its
+    // spiral, a reef's danger mark, each with its name in italic
+    for (const hz of sc.hazards ?? []) {
+      const [x, y] = toS(hz.x, hz.z);
+      const rr = hz.r * s;
+      g.font = 'italic 600 12px Georgia, serif';
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+      if (hz.kind === 'vortex') {
+        g.save();
+        g.setLineDash([5, 5]);
+        g.lineDashOffset = -sc.time * 6 * hz.dir;
+        g.strokeStyle = 'rgba(255, 140, 110, 0.55)';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.arc(x, y, rr, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+        vortexMark(g, x, y, Math.max(9, Math.min(26, rr * 0.45)), sc.time * 0.6, hz.dir);
+        g.lineWidth = 4;
+        g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+        const ly = y + Math.max(rr, 14) + 14;
+        g.strokeText(hz.name, x, ly);
+        g.fillStyle = '#ffb59a';
+        g.fillText(hz.name, x, ly);
+      } else {
+        reefMark(g, x, y, 7);
+        g.strokeText(hz.name, x, y - 17);
+        g.fillStyle = '#ffc9a6';
+        g.fillText(hz.name, x, y - 17);
+      }
     }
 
     if (sc.treasure) {

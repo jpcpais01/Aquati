@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { angleDelta, clamp, damp, lerp } from '../core/noise';
+import { angleDelta, clamp, damp, lerp, smoothstep } from '../core/noise';
 import { World } from '../game/world';
 import { AMMO, AmmoId, EFFECT } from '../game/ammo';
 import { globalUniforms } from '../render/environment';
@@ -133,6 +133,16 @@ export class Ship {
   held = 0;
   /** Sideways drift (x, z m/s) from being shoved by another hull; bleeds off against the water. */
   readonly drift = new THREE.Vector2();
+  /** The water's own flow under her (x, z m/s): a maelstrom's current, set each frame by the hazards. */
+  readonly current = new THREE.Vector2();
+  /** How fast the turning water swings her head round (rad/s), likewise. */
+  spin = 0;
+  /** How hard her keel is grinding on coral (0 clear .. 1 hard aground), eased. */
+  scrape = 0;
+  /** Water over the coral where she last struck it (m). */
+  reefDepth = 0;
+  private scrapeAcc = 0;
+  private scrapeT = 0;
   /** World time each gun last fired, by muzzle index (crews time their drill to it). */
   readonly gunFiredAt: number[];
   private pending: PendingShot[] = [];
@@ -446,7 +456,7 @@ export class Ship {
       this.speed = 0;
       this.angVel = 0;
     }
-    this.heading += this.angVel * dt;
+    this.heading += (this.angVel + this.spin) * dt;
 
     // leeway: a little sideways slip with the wind
     const port = this.portDir(_v2);
@@ -454,7 +464,7 @@ export class Ship {
     const slip = cross * 0.35 * this.sailLevel * w.strength;
     // a shove from another hull: the keel resists sideways motion far more than fore-and-aft
     this.drift.multiplyScalar(1 - damp(1.5, dt));
-    this.vel.set(fx * this.speed + port.x * slip + this.drift.x, 0, fz * this.speed + port.z * slip + this.drift.y);
+    this.vel.set(fx * this.speed + port.x * slip + this.drift.x + this.current.x, 0, fz * this.speed + port.z * slip + this.drift.y + this.current.y);
     this.pos.x += this.vel.x * dt;
     this.pos.z += this.vel.z * dt;
 
@@ -462,10 +472,28 @@ export class Ship {
     this.groundCooldown -= dt;
     const L = c.length;
     const probes = [0.46, 0.2, -0.1, -0.42];
+    let grind = 0;
+    let gx = 0;
+    let gz = 0;
     for (const pf of probes) {
       const px = this.pos.x + fx * L * pf;
       const pz = this.pos.z + fz * L * pf;
       const h = world.terrain.heightAt(px, pz);
+      // open-sea coral: no beach to run up on, just a crest a keel either clears
+      // or grinds across, depending on how much water she draws (a phantom's
+      // hull floats over it untouched)
+      const reef = h < 0 ? world.terrain.reefAt(px, pz) : 0;
+      if (reef > 0.3) {
+        if (!this.ghost) {
+          const k = clamp((h + c.draft * 0.95) / 0.9, 0, 1) * smoothstep(0.3, 0.6, reef);
+          if (k > grind) {
+            grind = k;
+            gx = px;
+            gz = pz;
+          }
+        }
+        continue;
+      }
       const lim = -c.draft * 0.75;
       if (h > lim) {
         world.terrain.gradientAt(px, pz, _g);
@@ -486,6 +514,7 @@ export class Ship {
         this.speed *= pf > 0.3 ? 0.86 : 0.95;
       }
     }
+    this.grindReef(grind, gx, gz, dt, world);
     // world edge
     const r = Math.hypot(this.pos.x, this.pos.z);
     if (r > 960) {
@@ -742,6 +771,45 @@ export class Ship {
         }, true);
       }
     }
+  }
+
+  /**
+   * Her keel on coral (`k` 0..1, deepest at x, z): it drags her up short and
+   * stiffens her helm, and grinds her hull open in shuddering bites, worst at
+   * the first strike. Hard aground she barely moves until she works her way
+   * off into deeper water.
+   */
+  private grindReef(k: number, x: number, z: number, dt: number, world: World) {
+    const was = this.scrape;
+    this.scrape += (k - this.scrape) * damp(k > this.scrape ? 14 : 5, dt);
+    if (k < 0.02 || !this.alive) {
+      this.scrapeAcc = 0;
+      return;
+    }
+    this.reefDepth = Math.max(0, -world.terrain.heightAt(x, z));
+    const c = this.cls;
+    const spd = Math.abs(this.speed);
+    this.speed *= 1 - damp(k * 1.35, dt);
+    this.angVel *= 1 - damp(k * 1.8, dt);
+    // driven onto it at speed, the strike itself tears the most
+    const strike = was < 0.06 && spd > 1.5;
+    this.scrapeAcc += k * (2.6 + spd * 2.4) * dt + (strike ? spd * 3.4 * k : 0);
+    this.scrapeT -= dt;
+    if (this.scrapeT > 0 && !strike) return;
+    this.scrapeT = 0.5 + Math.random() * 0.15;
+    const at = _fp.set(x, this.heave - c.draft * 0.35, z);
+    const dealt = this.damage(this.scrapeAcc, null, world, at);
+    this.scrapeAcc = 0;
+    world.onHazard(this, 'reef', dealt, at);
+    // she shudders, throws up a cloud of churned sand and splintered coral, and foams at the hull
+    this.kickRoll((Math.random() - 0.5) * 0.06 * k + (strike ? 0.05 * Math.sign(Math.random() - 0.5) : 0));
+    const wy = world.waterHeight(x, z);
+    world.particles.sandHit(new THREE.Vector3(x, wy + 0.1, z));
+    if (strike || Math.random() < 0.5) world.particles.splash(new THREE.Vector3(x, wy, z), 0.35 + k * 0.4 + (strike ? 0.3 : 0));
+    world.wake.stamp(x, z, c.beam * 0.7, 0.35 * k);
+    const [vol, pan, d] = world.soundAt(this.pos);
+    world.audio.scrape(vol, pan, d, k, strike);
+    if (strike) world.onShake(this.team === 'player' ? 0.45 * k + 0.15 : 0, this.pos);
   }
 
   dispose() {

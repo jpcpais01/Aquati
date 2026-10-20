@@ -6,6 +6,35 @@ import { WORLD_SIZE } from './worldSize';
 
 export type IslandKind = 'lush' | 'volcanic' | 'atoll' | 'rocky';
 
+/**
+ * A coral reef out in open water, far from any island: a barrier arc with
+ * passes through it, a horseshoe ring round a sandy pool, or a scatter of
+ * coral heads. Its crest lies a metre or two under the surface, so a sloop's
+ * shallow keel slips over most of it while a deep galleon grinds and sticks.
+ */
+export type ReefKind = 'barrier' | 'horseshoe' | 'teeth';
+
+export interface Reef {
+  name: string;
+  kind: ReefKind;
+  /** Middle of the reef, and a radius that takes all of it in (m). */
+  x: number;
+  z: number;
+  r: number;
+  /** Crest arcs round a centre (cx, cz) of radius R from angle a0 to a1, half-width w. */
+  arcs: { cx: number; cz: number; R: number; a0: number; a1: number; w: number; passes: number[] }[];
+  /** Lone coral heads (bommies): top radius r. */
+  heads: { x: number; z: number; r: number }[];
+  /** The sandy pool inside a horseshoe. */
+  pool: { x: number; z: number; r: number } | null;
+  seed: number;
+}
+
+/** Depth of a reef's crest (m), before the coral heads on it. */
+const REEF_CREST = -1.45;
+/** Nothing on a reef comes nearer the surface than this. */
+const REEF_TOP = -0.34;
+
 export interface Island {
   name: string;
   kind: IslandKind;
@@ -52,6 +81,10 @@ export class Terrain {
   /** 1 inside an atoll's lagoon, where the reef ring breaks the swell. */
   private lagoon = new Uint8Array(GRID_N * GRID_N);
   private lastLagoon = 0;
+  /** Open-sea coral reefs (see Reef). */
+  readonly reefs: Reef[] = [];
+  /** How much reef each cell is (0..1): living coral a keel can strike. */
+  private reefMask = new Float32Array(GRID_N * GRID_N);
   private simplex: Simplex2;
   private seed: number;
 
@@ -59,7 +92,9 @@ export class Terrain {
     this.seed = seed;
     this.simplex = new Simplex2(seed);
     this.placeIslands();
+    this.placeReefs();
     this.buildHeights();
+    this.buildReefs();
   }
 
   // ---------------------------------------------------------------- layout
@@ -182,6 +217,183 @@ export class Terrain {
     return h;
   }
 
+  // ---------------------------------------------------------------- reefs
+
+  private placeReefs() {
+    const rnd = mulberry32(this.seed * 13 + 5);
+    const plan: [string, ReefKind][] = [
+      ['Arrecife del Diablo', 'barrier'],
+      ['La Herradura', 'horseshoe'],
+      ['Los Dientes', 'teeth'],
+      ['Bajo de las Ánimas', 'teeth'],
+    ];
+    const TAU = Math.PI * 2;
+    for (const [name, kind] of plan) {
+      for (let attempt = 0; attempt < 3000; attempt++) {
+        const ang = rnd() * TAU;
+        const dist = 220 + Math.sqrt(rnd()) * 660;
+        const x = Math.cos(ang) * dist;
+        const z = Math.sin(ang) * dist;
+        const seed = rnd() * 100;
+        const arcs: Reef['arcs'] = [];
+        const heads: Reef['heads'] = [];
+        let pool: Reef['pool'] = null;
+        let r: number;
+        if (kind === 'barrier') {
+          // a long gentle arc, its hollow side sheltering a few lone heads
+          const R = 120 + rnd() * 70;
+          const span = 1.05 + rnd() * 0.55;
+          const mid = rnd() * TAU;
+          const cx = x - Math.cos(mid) * R;
+          const cz = z - Math.sin(mid) * R;
+          const w = 10 + rnd() * 4;
+          // one or two passes through it, where a deep keel can thread the coral
+          const passes = rnd() < 0.5 ? [0.38 + rnd() * 0.24] : [0.22 + rnd() * 0.14, 0.64 + rnd() * 0.14];
+          arcs.push({ cx, cz, R, a0: mid - span / 2, a1: mid + span / 2, w, passes });
+          for (let i = 0; i < 7; i++) {
+            const a = mid + (rnd() - 0.5) * span * 0.9;
+            const rr = R - 26 - rnd() * 46;
+            heads.push({ x: cx + Math.cos(a) * rr, z: cz + Math.sin(a) * rr, r: 3.5 + rnd() * 6 });
+          }
+          r = R * Math.sin(span / 2) + w * 3 + 20;
+        } else if (kind === 'horseshoe') {
+          // a ring of coral round a pale sandy pool, open on one side
+          const R = 54 + rnd() * 16;
+          const gap = 0.85 + rnd() * 0.3;
+          const open = rnd() * TAU;
+          const w = 9 + rnd() * 2.5;
+          arcs.push({ cx: x, cz: z, R, a0: open + gap / 2, a1: open + TAU - gap / 2, w, passes: [] });
+          pool = { x, z, r: R - w * 0.6 };
+          for (let i = 0; i < 4; i++) {
+            const a = open + (rnd() - 0.5) * gap * 1.6;
+            const rr = R + 18 + rnd() * 30;
+            heads.push({ x: x + Math.cos(a) * rr, z: z + Math.sin(a) * rr, r: 3 + rnd() * 4 });
+          }
+          r = R + w * 3 + 34;
+        } else {
+          // the teeth: a maze of coral heads, some fused into ridges
+          const spread = 70 + rnd() * 30;
+          const n = 18 + Math.floor(rnd() * 6);
+          for (let i = 0; i < n; i++) {
+            const a = rnd() * TAU;
+            const rr = Math.sqrt(rnd()) * spread;
+            const hx = x + Math.cos(a) * rr;
+            const hz = z + Math.sin(a) * rr;
+            heads.push({ x: hx, z: hz, r: 5 + rnd() * 8 });
+            if (rnd() < 0.35) {
+              const b = rnd() * TAU;
+              heads.push({ x: hx + Math.cos(b) * 9, z: hz + Math.sin(b) * 9, r: 4 + rnd() * 5 });
+            }
+          }
+          r = spread + 30;
+        }
+        if (Math.hypot(x, z) + r > 900) continue;
+        // well clear of every island (their towns, forts and anchorages), of the
+        // waters you set sail in, and of each other
+        if (Math.hypot(x - 0, z - 150) < r + 260 || Math.hypot(x - 40, z - 210) < r + 260) continue;
+        let ok = true;
+        for (const isl of this.islands) {
+          const ir = isl.r * Math.max(isl.stretch, 1 / isl.stretch) * 1.2 + 36;
+          if (Math.hypot(isl.x - x, isl.z - z) < ir + r) {
+            ok = false;
+            break;
+          }
+        }
+        for (const o of this.reefs) if (Math.hypot(o.x - x, o.z - z) < o.r + r + 110) ok = false;
+        if (!ok) continue;
+        this.reefs.push({ name, kind, x, z, r, arcs, heads, pool, seed });
+        break;
+      }
+    }
+  }
+
+  /** Height of one reef at (x, z), and how much living coral is there (the pool's sand isn't). */
+  private reefHeight(rf: Reef, x: number, z: number, out: [number, number]): [number, number] {
+    const s = this.simplex;
+    const TAU = Math.PI * 2;
+    // a ragged, lumpy crest, never quite level
+    const crestN = s.noise(x * 0.021 + rf.seed, z * 0.021) * 0.32 + s.noise(x * 0.07, z * 0.07 - rf.seed) * 0.12;
+    const crest = REEF_CREST + crestN;
+    let h = -40;
+    let m = 0;
+    for (const a of rf.arcs) {
+      const dx = x - a.cx;
+      const dz = z - a.cz;
+      const d = Math.hypot(dx, dz);
+      const span = a.a1 - a.a0;
+      let t = (Math.atan2(dz, dx) - a.a0) % TAU;
+      if (t < 0) t += TAU;
+      let dc: number;
+      let u: number;
+      if (t <= span) {
+        dc = Math.abs(d - a.R);
+        u = t / span;
+      } else {
+        // past the end of the arc: round it off
+        const e0x = a.cx + Math.cos(a.a0) * a.R, e0z = a.cz + Math.sin(a.a0) * a.R;
+        const e1x = a.cx + Math.cos(a.a1) * a.R, e1z = a.cz + Math.sin(a.a1) * a.R;
+        const d0 = Math.hypot(x - e0x, z - e0z);
+        const d1 = Math.hypot(x - e1x, z - e1z);
+        dc = Math.min(d0, d1);
+        u = d0 < d1 ? 0 : 1;
+      }
+      // the crest tapers to the tips and its edges fray into spurs and grooves
+      const w = a.w * (0.5 + 0.5 * Math.sqrt(Math.sin(Math.PI * clamp(u, 0, 1)))) * (0.8 + 0.4 * (s.noise(x * 0.035 - rf.seed, z * 0.035) * 0.5 + 0.5));
+      dc += s.noise(x * 0.09 + rf.seed, z * 0.09) * a.w * 0.22;
+      // passes: the coral gives way to a channel a deep keel can thread, its banks a little crooked
+      const along = u * span * a.R + s.noise(x * 0.03, z * 0.03 + rf.seed) * 5;
+      let pass = 0;
+      for (const pu of a.passes) pass = Math.max(pass, 1 - smoothstep(9, 17, Math.abs(along - pu * span * a.R)));
+      const c = crest - pass * 2.6;
+      const prof = 1 - smoothstep(w * 0.7, w * 2.5, dc);
+      const hh = lerp(-26, c, Math.pow(prof, 0.85));
+      if (hh > h) h = hh;
+      m = Math.max(m, (1 - smoothstep(w * 1.3, w * 2.6, dc)) * (1 - pass * 0.85));
+    }
+    for (const hd of rf.heads) {
+      const d = Math.hypot(x - hd.x, z - hd.z) + s.noise(x * 0.15, z * 0.15 + rf.seed) * hd.r * 0.25;
+      const prof = 1 - smoothstep(hd.r * 0.55, hd.r * 1.9, d);
+      const hh = lerp(-26, crest + 0.2, Math.pow(prof, 0.9));
+      if (hh > h) h = hh;
+      m = Math.max(m, 1 - smoothstep(hd.r * 1.1, hd.r * 2.0, d));
+    }
+    // knobs of brain and staghorn coral standing proud of the crest
+    const knob = smoothstep(0.32, 0.85, s.noise(x * 0.16 + rf.seed, z * 0.16)) * 0.42 + smoothstep(0.5, 0.9, s.noise(x * 0.41, z * 0.41 - rf.seed)) * 0.16;
+    h += knob * smoothstep(crest - 1.4, crest, h);
+    if (rf.pool) {
+      // inside the horseshoe the bottom shoals to pale sand you can see from the deck
+      const d = Math.hypot(x - rf.pool.x, z - rf.pool.z);
+      const ph = -5.2 + s.fbm(x * 0.03, z * 0.03, 2) * 0.9;
+      const hh = lerp(-26, ph, 1 - smoothstep(rf.pool.r * 0.75, rf.pool.r * 1.15, d));
+      if (hh > h) h = hh;
+    }
+    out[0] = Math.min(h, REEF_TOP);
+    out[1] = m;
+    return out;
+  }
+
+  /** Raises the reefs out of the seafloor and marks their coral. */
+  private buildReefs() {
+    const H = this.heights;
+    const o: [number, number] = [0, 0];
+    for (const rf of this.reefs) {
+      const i0 = Math.max(0, Math.floor((rf.x - rf.r + HALF) / CELL));
+      const i1 = Math.min(GRID_N - 1, Math.ceil((rf.x + rf.r + HALF) / CELL));
+      const j0 = Math.max(0, Math.floor((rf.z - rf.r + HALF) / CELL));
+      const j1 = Math.min(GRID_N - 1, Math.ceil((rf.z + rf.r + HALF) / CELL));
+      for (let j = j0; j <= j1; j++) {
+        const z = -HALF + j * CELL;
+        for (let i = i0; i <= i1; i++) {
+          const x = -HALF + i * CELL;
+          const k = j * GRID_N + i;
+          this.reefHeight(rf, x, z, o);
+          if (o[0] > H[k] - 3) H[k] = Math.min(REEF_TOP, smax(H[k], o[0], 2.5));
+          if (o[1] > this.reefMask[k]) this.reefMask[k] = o[1];
+        }
+      }
+    }
+  }
+
   private buildHeights() {
     const H = this.heights;
     // coarse rolling seafloor
@@ -253,6 +465,25 @@ export class Terrain {
     const c = H[k + GRID_N];
     const d = H[k + GRID_N + 1];
     return lerp(lerp(a, b, tx), lerp(c, d, tx), tz);
+  }
+
+  /** How much living reef lies under (x, z): 0 open water or island shelf .. 1 coral (bilinear). */
+  reefAt(x: number, z: number): number {
+    const fx = clamp((x + HALF) / CELL, 0, GRID_N - 1.001);
+    const fz = clamp((z + HALF) / CELL, 0, GRID_N - 1.001);
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const tx = fx - i;
+    const tz = fz - j;
+    const M = this.reefMask;
+    const k = j * GRID_N + i;
+    return lerp(lerp(M[k], M[k + 1], tx), lerp(M[k + GRID_N], M[k + GRID_N + 1], tx), tz);
+  }
+
+  /** The reef whose waters (x, z) lies in, if any, and how far out from its middle. */
+  reefNear(x: number, z: number, pad = 0): Reef | null {
+    for (const rf of this.reefs) if (Math.hypot(rf.x - x, rf.z - z) < rf.r + pad) return rf;
+    return null;
   }
 
   /** Whether (x, z) lies in a sheltered atoll lagoon (nearest grid cell). */
@@ -430,6 +661,7 @@ export class Terrain {
         const infoA = new Float32Array(vn * vn * 3);
         const aoA = new Float32Array(vn * vn);
         const canA = new Float32Array(vn * vn);
+        const reefA = new Float32Array(vn * vn);
         for (let vj = 0; vj < vn; vj++) {
           for (let vi = 0; vi < vn; vi++) {
             const i = ci * chunkCells + vi * lod;
@@ -451,6 +683,7 @@ export class Terrain {
             this.surfaceInfo(j * GRID_N + i, h, kindA, infoA, k * 3);
             aoA[k] = this.ao[j * GRID_N + i];
             canA[k] = this.canopy[j * GRID_N + i];
+            reefA[k] = this.reefMask[j * GRID_N + i];
           }
         }
         const idx: number[] = [];
@@ -474,6 +707,7 @@ export class Terrain {
         geo.setAttribute('aqInfo', new THREE.BufferAttribute(infoA, 3));
         geo.setAttribute('aqAO', new THREE.BufferAttribute(aoA, 1));
         geo.setAttribute('aqCanopy', new THREE.BufferAttribute(canA, 1));
+        geo.setAttribute('aqReef', new THREE.BufferAttribute(reefA, 1));
         geo.setIndex(idx);
         geo.computeBoundingSphere();
         const mesh = new THREE.Mesh(geo, mat);
@@ -496,17 +730,21 @@ export class Terrain {
     return group;
   }
 
-  /** Half-float heightmap for the water shader (shore foam + wave damping). */
+  /**
+   * Half-float heightmap for the water shader (shore foam + wave damping) in
+   * r, and the reef mask in g (the swell breaks white over open-sea coral).
+   */
   createHeightTexture(res = 512): THREE.DataTexture {
-    const data = new Uint16Array(res * res);
+    const data = new Uint16Array(res * res * 2);
     for (let j = 0; j < res; j++) {
       for (let i = 0; i < res; i++) {
         const x = -HALF + (i + 0.5) * (WORLD_SIZE / res);
         const z = -HALF + (j + 0.5) * (WORLD_SIZE / res);
-        data[j * res + i] = THREE.DataUtils.toHalfFloat(this.heightAt(x, z));
+        data[(j * res + i) * 2] = THREE.DataUtils.toHalfFloat(this.heightAt(x, z));
+        data[(j * res + i) * 2 + 1] = THREE.DataUtils.toHalfFloat(this.reefAt(x, z));
       }
     }
-    const tex = new THREE.DataTexture(data, res, res, THREE.RedFormat, THREE.HalfFloatType);
+    const tex = new THREE.DataTexture(data, res, res, THREE.RGFormat, THREE.HalfFloatType);
     tex.magFilter = THREE.LinearFilter;
     tex.minFilter = THREE.LinearFilter;
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;

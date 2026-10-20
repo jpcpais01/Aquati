@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { getSharedTextures } from './textures';
+import { VORTEX_N } from '../world/vortex';
 import { shadowUniforms } from './softShadows';
 import {
   GLSL_DAMAGE_EMISSIVE,
@@ -98,6 +99,9 @@ export const globalUniforms = {
   // 0..1; and the ink it spills, which stains the sea over it
   uKraken: { value: new THREE.Vector4(0, 0, 1, 0) },
   uKrakenInk: { value: 0 },
+  // the maelstroms (see game/hazards.ts, world/vortex.ts): xz centre, radius (m),
+  // strength signed by the way it turns; an unused slot has strength 0
+  uVortex: { value: Array.from({ length: VORTEX_N }, () => new THREE.Vector4(0, 0, 1, 0)) },
 };
 
 export const GLSL_GUST = /* glsl */ `

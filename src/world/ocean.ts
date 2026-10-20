@@ -5,6 +5,7 @@ import { GLSL_WAVES, packWaves, Wave } from './waves';
 import { WORLD_SIZE } from './terrain';
 import { WakeField } from './wakeField';
 import { GLSL_SURF, shoreUniforms } from './shore';
+import { GLSL_VORTEX, VORTEX_N } from './vortex';
 
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
@@ -142,6 +143,7 @@ const OCEAN_VERT = /* glsl */ `
   uniform sampler2D uWakeTex;
   uniform vec4 uWakeRect;
   ${GLSL_SURF}
+  ${GLSL_VORTEX}
   varying vec3 vWorld;
   varying vec3 vNormal;
   varying float vCrest;
@@ -154,9 +156,16 @@ const OCEAN_VERT = /* glsl */ `
     float th = texture(uHeightTex, huv).r;
     vTerrain = th;
     float damp = clamp(-th / 8.0, 0.12, 1.0);
+    // a maelstrom smooths the swell as it spins the water round, and draws
+    // the surface down into its funnel (the CPU buoyancy reads the same shape)
+    vec2 vxGrad;
+    float vxDip = vortexDip(wp.xz, vxGrad);
+    damp *= vortexCalm(wp.xz);
     vec3 n; float crest;
     vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
     wp.xyz += off;
+    wp.y -= vxDip;
+    n.xz += vxGrad * n.y;
     // wake waves ride on top of the swell
     vec2 wuv = (wp.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
     vec2 wb = min(wuv, 1.0 - wuv);
@@ -399,6 +408,9 @@ export class Ocean {
         uniform vec2 uFogRange;
         uniform vec4 uKraken;
         uniform float uKrakenInk;
+        uniform vec4 uVortex[${VORTEX_N}];
+        uniform vec4 uWaveA[8];
+        uniform vec4 uWaveB[8];
         ${GLSL_AERIAL}
         ${GLSL_SURF}
         varying vec3 vWorld;
@@ -591,6 +603,77 @@ export class Ocean {
             vec2 sGrad = sdir * clamp(sg, -0.8, 0.8);
             N = normalize(N - vec3(sGrad.x, 0.0, sGrad.y) * 1.6);
           }
+          // ---- maelstroms: the sea winds round and down into a funnel. Spiral
+          // arms of white water wind in toward the eye, swept round faster the
+          // nearer they come, with long torn streaks of foam laid along the
+          // flow; the walls ridge with the spin, and a ring of churn boils
+          // round the black throat at its heart.
+          float vxCover = 0.0;
+          float vxFoamSum = 0.0;
+          float vxDark = 0.0;
+          float vxEye = 0.0;
+          float vxMilk = 0.0;
+          for (int i = 0; i < ${VORTEX_N}; i++) {
+            vec4 v4 = uVortex[i];
+            float k = abs(v4.w);
+            if (k < 0.001) continue;
+            vec2 q = p - v4.xy;
+            float d = length(q);
+            float u = d / v4.z;
+            if (u > 1.15) continue;
+            float dir = v4.w > 0.0 ? 1.0 : -1.0;
+            float a = atan(q.y, q.x) * dir;
+            float lr = log(d + 4.0);
+            // trailing log-spiral arms: phase holds along a = -b ln r, turning with the water
+            float armPh = 4.0 * a + 7.6 * lr - t * k * 1.1;
+            float arm = sin(armPh);
+            // the turn of the water at this radius (rad/s), as game/hazards.ts drives
+            // the ships: a Rankine vortex, a solid core inside a swirl that falls away
+            float om = k * 8.5 * (u < 0.17 ? u / 0.17 : pow(0.17 / max(u, 0.17), 0.62)) / max(d, 6.0);
+            // torn streaks along the flow: noise sampled round the circle (seamless:
+            // a whole number of tiles per turn), cross-faded between two phases so
+            // the shear never winds itself into hair-thin lines
+            vec2 qx = dFdx(q), qy = dFdy(q);
+            float dd = max(d * d, 1e-3);
+            vec2 gA = vec2(q.x * qx.y - q.y * qx.x, q.x * qy.y - q.y * qy.x) / dd * (4.0 / 6.2832);
+            vec2 gR = vec2(dot(q, qx), dot(q, qy)) / max(d * (d + 4.0), 1e-3) * 3.2;
+            float PER = 7.0;
+            float f0 = fract(t / PER);
+            float f1 = fract(t / PER + 0.5);
+            float c0 = floor(t / PER);
+            float c1 = floor(t / PER + 0.5);
+            vec2 vuv = vec2(a / 6.2832 * 4.0, lr * 3.2);
+            // explicit gradients: the angle jumps a whole tile at the seam, which
+            // would otherwise drop that column of pixels to the coarsest mip
+            vec2 gx = vec2(gA.x, gR.x), gy = vec2(gA.y, gR.y);
+            float s0 = textureGrad(uNoiseTex, vuv - vec2(om * f0 * PER / 6.2832 * 4.0, 0.0) + vec2(0.37, 0.61) * c0, gx, gy).g;
+            float s1 = textureGrad(uNoiseTex, vuv - vec2(om * f1 * PER / 6.2832 * 4.0, 0.0) + vec2(0.37, 0.61) * c1 + 0.5, gx, gy).g;
+            float w0 = 1.0 - abs(f0 * 2.0 - 1.0);
+            float streak = mix(s1, s0, w0);
+            float band = (1.0 - smoothstep(0.5, 1.08, u)) * smoothstep(0.035, 0.16, u);
+            // narrow arms that thicken as they wind in, braided with finer
+            // filaments (a tighter spiral, faded out before it can shimmer at
+            // range), and loose streaks torn off between them
+            float inward = 1.0 - u;
+            float armS = arm + (streak - 0.5) * 1.4;
+            float filPh = armPh * 3.0 + streak * 3.5;
+            float filAA = 1.0 - smoothstep(0.7, 1.8, fwidth(filPh));
+            float fil = smoothstep(0.5, 0.95, sin(filPh)) * smoothstep(0.42, 0.75, streak + inward * 0.25) * filAA;
+            float cov = band * k * (smoothstep(0.2 - inward * 0.45, 0.95, armS) * (0.28 + 0.62 * inward) + fil * (0.18 + 0.4 * inward) + smoothstep(0.62, 0.9, streak) * 0.2);
+            // the churning collar round the throat
+            float ring = exp(-pow((u - 0.115) / 0.045, 2.0)) * k;
+            cov = max(cov, ring * (0.75 + 0.25 * streak));
+            vxCover = max(vxCover, clamp(cov, 0.0, 0.97));
+            // ridged walls: the arms stand up in low ridges, catching the light
+            vec2 rdir = q / max(d, 1e-3);
+            vec2 tdir = vec2(-rdir.y, rdir.x) * dir;
+            float rel = cos(armPh) * band * k;
+            N = normalize(N + vec3(rdir.x, 0.0, rdir.y) * rel * 0.16 + vec3(tdir.x, 0.0, tdir.y) * (streak - 0.5) * band * k * 0.12);
+            vxDark = max(vxDark, k * (1.0 - smoothstep(0.0, 0.85, u)));
+            vxEye = max(vxEye, k * (1.0 - smoothstep(0.03, 0.105, u)));
+            // churned to milk where the walls steepen: water beaten full of air
+            vxMilk = max(vxMilk, k * smoothstep(0.07, 0.14, u) * (1.0 - smoothstep(0.16, 0.5, u)) * (0.6 + 0.4 * streak));
+          }
           vec3 Ng = normalize(N + vec3(gustRip.x, 0.0, gustRip.y) * 0.5);
 
           // ---- refraction with leak protection
@@ -667,6 +750,13 @@ export class Ocean {
               // its ink: a violet-black stain spreading over the water
               body = mix(body, vec3(0.025, 0.004, 0.04) * light, clamp(uKrakenInk * krIn * 1.4, 0.0, 0.8));
             }
+          }
+
+          // the funnel's walls fall away into shadow, its throat into black water
+          if (vxDark > 0.001) {
+            body *= 1.0 - vxDark * 0.42;
+            body = mix(body, vec3(0.13, 0.24, 0.25) * light, clamp(vxMilk * 0.5, 0.0, 0.45));
+            body = mix(body, vec3(0.002, 0.018, 0.028) * light, clamp(vxEye, 0.0, 0.92));
           }
 
           // ---- reflection
@@ -765,6 +855,29 @@ export class Ocean {
           float capBreak = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
           foam += crestFoam * mix(capBreak, bubbles, 0.3);
           foam += spume * (0.5 + 0.5 * bubbles) + rainSplash * 0.7;
+          // a maelstrom's arms, cut from the bubble web swept round with them
+          float vxFoam = 0.0;
+          if (vxCover > 0.002) {
+            vxFoam = foamCut(fv, vxCover, fp) * 0.95;
+            foam += vxFoam;
+          }
+          // the swell trips over an open-sea reef: each crest stands up and spills
+          // white across the coral as it rolls over, then the foam thins to lace
+          // until the next one comes (sailors know a reef by its breakers)
+          float reefFoam = 0.0;
+          vec2 rt = texture(uHeightTex, (p - uWorldRect.xy) * uWorldRect.w).rg;
+          if (rt.g > 0.02) {
+            float rDepth = max(-rt.r, 0.0);
+            float shoal = rt.g * (1.0 - smoothstep(0.9, 3.6, rDepth));
+            float th0 = uWaveA[0].z * dot(uWaveA[0].xy, p) - uWaveB[0].x * t + uWaveB[0].z;
+            float th1 = uWaveA[1].z * dot(uWaveA[1].xy, p) - uWaveB[1].x * t + uWaveB[1].z;
+            float swl = sin(th0) * 0.62 + sin(th1) * 0.38 + (nz.g - 0.5) * 0.55;
+            float burst = smoothstep(0.32, 0.9, swl) * (1.0 - smoothstep(1.4, 3.6, rDepth) * 0.5);
+            float trail = smoothstep(0.1, 0.85, sin(th0 + 0.9) + (nz2.a - 0.5) * 0.5) * 0.45;
+            float rCover = shoal * (0.15 + 0.75 * burst + 0.3 * trail) * (0.75 + uStorm * 0.5 + uSurf.x * 0.3);
+            reefFoam = foamCut(fv, clamp(rCover, 0.0, 0.95), fp);
+            foam += reefFoam * 0.9;
+          }
           foam += foamCut(fv, clamp(krSpiral, 0.0, 0.95), fp) * 0.9;
           foam = clamp(foam, 0.0, 1.0);
           vec3 foamCol = vec3(0.96, 0.98, 1.0) * (uSunColor * (0.25 + 0.75 * ndl) * cloud * 0.42 + uSkyZenith * 0.55);
@@ -772,7 +885,7 @@ export class Ocean {
 
           // ---- bioluminescence: on dark nights churned water glows blue-green
           if (uNight > 0.05) {
-            float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5 + krSpiral * 0.45
+            float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5 + krSpiral * 0.45 + vxFoam * 0.5 + reefFoam * 0.4
               + (crestFoam * 0.18 * capBreak + spume * 0.08) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;

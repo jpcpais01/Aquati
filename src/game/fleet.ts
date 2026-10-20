@@ -346,10 +346,16 @@ export class EscortAI {
   }
 
   /** Steering away from shallows: probe ahead and to either side (as the pirates do). */
-  private avoid(world: World, heading: number): number {
+  private avoid(world: World, heading: number, escaping = false): number {
     const s = this.ship;
     const L = s.cls.length;
-    const blocked = (ang: number, d: number) => world.terrain.heightAt(s.pos.x + Math.sin(ang) * d, s.pos.z + Math.cos(ang) * d) > -s.cls.draft - 1.5;
+    // your own captains give reefs and maelstroms a wide berth, whatever the fight
+    const hz = world.hazards;
+    const blocked = (ang: number, d: number) => {
+      const x = s.pos.x + Math.sin(ang) * d;
+      const z = s.pos.z + Math.cos(ang) * d;
+      return world.terrain.heightAt(x, z) > -s.cls.draft - 1.5 || (!escaping && !!hz && hz.vortexAt(x, z, 1.3));
+    };
     const look = [L * 0.8, L * 1.6, L * 2.6 + s.speed * 2];
     if (!look.some((d) => blocked(heading, d))) return heading;
     for (let k = 1; k <= 6; k++) {
@@ -401,7 +407,13 @@ export class EscortAI {
         if (od < minD) this.desired += angleDelta(this.desired, Math.atan2(-ox, -oz)) * (o === flag ? 0.7 : 0.5);
       }
     }
-    s.rudder = clamp(angleDelta(s.heading, this.avoid(world, this.desired)) * 2.2, -1, 1);
+    // caught by a maelstrom anyway: out with the flow under full sail
+    const esc = world.hazards?.escape(s.pos.x, s.pos.z) ?? null;
+    if (esc !== null) {
+      this.desired = esc;
+      s.sailTarget = 1;
+    }
+    s.rudder = clamp(angleDelta(s.heading, this.avoid(world, this.desired, esc !== null)) * 2.2, -1, 1);
     this.gunnery(dt, world, foes, marks, range);
   }
 
