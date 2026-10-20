@@ -531,6 +531,8 @@ export class Game {
     this.applyAtmosphere();
     const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm'] as const;
     const times = ['auto', 'dawn', 'noon', 'golden', 'dusk', 'night'] as const;
+    const pins = () => this.ui.skyPins(this.atmos.mode !== 'auto', this.atmos.timeMode !== 'auto');
+    pins();
     // the icon picks the weather, the clock picks the hour
     document.getElementById('hud-sky')!.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -543,11 +545,13 @@ export class Game {
         const t = times[(times.indexOf(this.atmos.timeMode) + 1) % times.length];
         this.atmos.setTimeMode(t);
         this.ui.skyTag(t === 'auto' ? 'Time · Auto' : TIMES[t].name);
+        pins();
         return;
       }
       const m = modes[(modes.indexOf(this.atmos.mode) + 1) % modes.length];
       this.atmos.setMode(m);
       this.ui.skyTag(m === 'auto' ? 'Weather · Auto' : WEATHER[m].name);
+      pins();
     });
     this.atmos.onChange = (_k, title, line) => {
       if (this.state === 'playing') this.ui.toast(title, line, 3.4);

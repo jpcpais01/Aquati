@@ -25,6 +25,15 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Prefer the old view? V or the eye button switches to the view from above and back again, and the game remembers your choice. Boarding fights keep their deck camera. From eye level, trees far across the island use their lighter models, so walking the islands stays smooth.',
         ],
       },
+      {
+        title: 'A tidier sky badge',
+        notes: [
+          'Tapping the weather or the clock under the map no longer makes the whole badge jump down, fade and turn into spaced-out capitals. It stays exactly where it is.',
+          'The name of the weather or hour you picked now pops up in a matching pill to the left of the badge, instead of landing on top of the pause and camera buttons.',
+          'The weather icon and the clock each light up softly when you hover over them and dip when pressed, so it is clear they are two separate buttons.',
+          'A small gold dot marks a weather or hour you have pinned. Keep tapping until it is back on Auto and the dot goes away.',
+        ],
+      },
     ],
   },
   {
@@ -69,6 +78,7 @@ export const PATCH_NOTES: PatchGroup[] = [
         notes: [
           'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
           'Zooming out or sailing into battle no longer makes the waves flicker as the sea switches to a lighter level of detail. The finer waves now fade smoothly into the lighter version as the camera rises, and back again as it comes down.',
+          'The far edges of the sea no longer seem to race past faster than the water round your ship while you sail or zoom. Out there the sea is built more coarsely and glides along with you, and the smallest waves used to flicker across it. Those waves now fade out wherever the sea can\'t show them cleanly, so the whole view moves together.',
         ],
       },
     ],
