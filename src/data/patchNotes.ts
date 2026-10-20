@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-20T16:00Z',
+    hour: '2026-10-20T17:00Z',
     entries: [
       {
         title: 'Islands carved by rain',
@@ -23,6 +23,30 @@ export const PATCH_NOTES: PatchGroup[] = [
           'The forest follows the lie of the land: it crowds into the damp gullies, thins out along the bare spurs, and boulders weather out of the ridges. The rock looks like rock, too: pale, weathered limestone laid down in uneven beds, with warm iron stains where the old orange stripes used to be.',
           'The pines are gone, since they never belonged in the tropics. Tree ferns now stand in the cloud forest up on the heights, each with a shaggy trunk, a lacy parasol of fronds, a skirt of dead ones and curled fiddleheads at its heart.',
           'With the land reshaped, Kasteel do Morro now stands guard over Punta Belleau, and the Aguadouro trading post has moved to Perlabana.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T16:00Z',
+    entries: [
+      {
+        title: 'Fallen pirates give up the ghost',
+        notes: [
+          'When an enemy pirate dies, his spirit now slips out of him: a little glowing green ghost in his own likeness, wearing the same tricorn, bandana, knit cap or straw hat he had on, with two hollow eyes, a tiny smile and a curling wisp of a tail.',
+          'He pops up out of the water or off the sand, bobs there a moment and looks up at you, then does one last thing before he goes: a cheery wave, a twirl, a tip of his hat or a wide-mouthed "boo!". Then he drifts away into the sky trailing green motes and vanishes in a soft puff of sparkles, with a small, hollow "woo-oo" of his own.',
+          'It happens wherever pirates fall: the crew of a ship you sink as they go under one by one (her captain goes down with her), the cutthroats of an island camp, a fort\'s garrison, and the crew you cut down when you board a ship. A ghost ship\'s crew is freed too when you lay her to rest.',
+          'They glow softly and fit the light, gentle by day and brighter against the dark at night, and they cost next to nothing to draw.',
+        ],
+      },
+      {
+        title: 'Your escorts carry plunder too',
+        notes: [
+          'Every ship in your fleet now has her own hold, sized by her class: a sloop carries 10, a brig 16 and a galleon 26. Captured prizes and hired ships alike sweep up wreckage and chests as they sail through them.',
+          'When the sea is quiet your escorts break formation to pick up floating salvage nearby, leaving whatever is right under your own bows for you, then fall back in on your quarters.',
+          'A full hold no longer means leaving plunder behind: goods your ship has no room for are sent across to an escort with space. Only when every hold in the fleet is full does anything go over the side.',
+          'Dock at a trading port and the whole fleet\'s cargo goes ashore with yours. The market lays it all out on one counter, with each hull\'s room shown and which escort carries what, and "Sell the fleet\'s cargo" sells the lot.',
+          'The hold chip on the HUD shows your escorts\' cargo in aqua beside your own, and tapping it lists each ship\'s hold. Their holds are saved and sync between devices, so if you go down your escorts carry their cargo safe to port. If one is sunk, her cargo floats up where she went down.',
         ],
       },
       {
