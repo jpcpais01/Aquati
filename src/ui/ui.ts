@@ -709,6 +709,11 @@ export class UI {
     this.wreck.end();
   }
 
+  /** The letterbox's depth gauge as she sinks (fathoms), settling when she rests. */
+  wreckDepth(fathoms: number, rested: boolean) {
+    this.wreck.depth(fathoms, rested);
+  }
+
   toast(kicker: string, title: string, life = 3.4) {
     const el = document.createElement('div');
     el.className = 'toast';

@@ -22,6 +22,9 @@ interface Piece {
   color: THREE.Color;
   floating: boolean;
   grounded: boolean;
+  /** Adrift beneath the waves: rises (buoy > 0) or sinks (< 0) until it reaches the surface or the sand. */
+  under: boolean;
+  buoy: number;
   age: number;
   life: number;
   sink: number;
@@ -152,9 +155,30 @@ export class Debris {
     this.pieces.push({
       kind, pos: pos.clone(), vel: vel.clone(), quat,
       spin: new THREE.Vector3(rand(-1, 1), rand(-1, 1), rand(-1, 1)).multiplyScalar(kind === 0 ? rand(6, 16) : rand(2, 6)),
-      scale, color, floating: false, grounded: false, age: 0, life, sink: 0, bob: Math.random() * 10,
+      scale, color, floating: false, grounded: false, under: false, buoy: 0, age: 0, life, sink: 0, bob: Math.random() * 10,
       floatQ: new THREE.Quaternion(),
     });
+  }
+
+  /**
+   * Wreckage torn loose beneath the waves: planks and casks claw their way up
+   * toward the light, crates and ballast tumble slowly down to the sand.
+   */
+  drown(at: THREE.Vector3, n: number, colors: THREE.Color[]) {
+    for (let i = 0; i < n; i++) {
+      const r = Math.random();
+      const kind: 0 | 1 | 2 = r < 0.55 ? 0 : r < 0.8 ? 1 : 2;
+      const vel = new THREE.Vector3(rand(-1.4, 1.4), rand(-0.4, 0.8), rand(-1.4, 1.4));
+      const pos = at.clone().add(_v.set(rand(-1.5, 1.5), rand(-0.5, 1), rand(-1.5, 1.5)));
+      const c = kind === 0 ? colors[Math.floor(Math.random() * colors.length)].clone().multiplyScalar(rand(0.75, 1.05)) : kind === 1 ? new THREE.Color(0.55, 0.36, 0.2) : new THREE.Color(0.7, 0.52, 0.33);
+      const scale = kind === 0 ? new THREE.Vector3(rand(0.6, 1.6), 1, rand(0.8, 1.3)) : new THREE.Vector3(1, 1, 1).multiplyScalar(rand(0.85, 1.1));
+      this.add(kind, pos, vel, c, scale, rand(50, 80));
+      const p = this.pieces[this.pieces.length - 1];
+      p.under = true;
+      // most timber floats; a crate full of shot does not
+      p.buoy = kind === 2 ? -rand(0.6, 1.1) : kind === 1 ? rand(1.0, 1.6) : Math.random() < 0.8 ? rand(0.6, 1.4) : -rand(0.3, 0.5);
+      p.spin.multiplyScalar(0.12);
+    }
   }
 
   /** Planks blasted outward from a breach. */
@@ -202,6 +226,35 @@ export class Debris {
     for (let i = this.pieces.length - 1; i >= 0; i--) {
       const p = this.pieces[i];
       p.age += dt;
+      if (p.under) {
+        // drifting in the water: heavy drag, a lazy tumble, a sway in the swell's surge
+        const k = Math.exp(-1.6 * dt);
+        p.vel.multiplyScalar(k);
+        p.vel.y += p.buoy * dt;
+        p.bob += dt;
+        p.pos.x += (p.vel.x + Math.sin(p.bob * 0.8 + p.buoy * 9) * 0.18) * dt;
+        p.pos.y += p.vel.y * dt;
+        p.pos.z += (p.vel.z + Math.cos(p.bob * 0.6 + p.buoy * 5) * 0.18) * dt;
+        p.spin.multiplyScalar(Math.exp(-0.2 * dt));
+        const l = p.spin.length();
+        if (l > 1e-4) p.quat.premultiply(_q.setFromAxisAngle(_v.copy(p.spin).divideScalar(l), l * dt));
+        const ground = world.terrain.heightAt(p.pos.x, p.pos.z);
+        const wh = world.waterHeight(p.pos.x, p.pos.z);
+        if (p.pos.y > wh - 0.2) {
+          // broke the surface: from here it bobs and drifts like any other flotsam
+          p.under = false;
+          p.floating = true;
+          p.vel.set(p.vel.x * 0.3, 0, p.vel.z * 0.3);
+          _e.setFromQuaternion(p.quat, 'YXZ');
+          p.floatQ.setFromEuler(_e.set(rand(-0.15, 0.15), _e.y, rand(-0.15, 0.15), 'YXZ'));
+          if (p.kind === 1) p.floatQ.multiply(_q.setFromAxisAngle(_v.set(1, 0, 0), Math.PI / 2));
+        } else if (p.pos.y < ground + 0.15) {
+          p.under = false;
+          p.grounded = true;
+          p.pos.y = ground + 0.12;
+        }
+        continue;
+      }
       if (!p.floating && !p.grounded) {
         p.vel.y -= 16 * dt;
         p.pos.addScaledVector(p.vel, dt);

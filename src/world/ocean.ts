@@ -297,6 +297,7 @@ const REFL_FRAG = /* glsl */ `
 const UNDER_FRAG = /* glsl */ `
   ${GLSL_ATMOS}
   uniform sampler2D uNormalTex;
+  uniform vec4 uBoil;
   uniform vec4 uUnder;
   uniform vec3 uUnderColor;
   varying vec3 vWorld;
@@ -330,6 +331,16 @@ const UNDER_FRAG = /* glsl */ `
     }
     // foam on the crests, seen from beneath as soft bright patches
     col += vec3(0.75, 0.85, 0.88) * uLight * smoothstep(0.3, 0.85, vCrest) * 0.35;
+    // where her air breaks the surface: a churning, frothing boil of white, seen from below
+    if (uBoil.w > 0.0) {
+      float bd = length(p - uBoil.xy) / uBoil.z;
+      if (bd < 1.0) {
+        vec4 fn = texture(uNoiseTex, p * 0.035 + vec2(t * 0.03, -t * 0.025));
+        float fr = texture(uNoiseTex, p * 0.09 - vec2(t * 0.06, t * 0.04) + fn.rg * 0.4).b;
+        float froth = smoothstep(0.45, 0.85, fn.g * 0.55 + fr * 0.55) * (1.0 - bd * bd) * uBoil.w;
+        col = mix(col, vec3(0.86, 0.95, 1.0) * (uLight * 0.9 + 0.12), froth * 0.6);
+      }
+    }
     // the light comes down through the water to the eye
     col *= exp(-d * vec3(0.16, 0.05, 0.035) * 0.55);
     col = mix(col, deep, 1.0 - exp(-d / (uUnder.z * 1.6)));
@@ -375,6 +386,8 @@ export class Ocean {
       uWaveA: { value: Array.from({ length: waves.length }, (_, i) => new THREE.Vector4().fromArray(packed.a, i * 4)) },
       uWaveB: { value: Array.from({ length: waves.length }, (_, i) => new THREE.Vector4().fromArray(packed.b, i * 4)) },
       uHeightTex: { value: opts.heightTex },
+      // seen from beneath: air from a wreck breaking the surface (xz centre, radius m, strength 0..1)
+      uBoil: { value: new THREE.Vector4(0, 0, 1, 0) },
       uWorldRect: { value: new THREE.Vector4(-WORLD_SIZE / 2, -WORLD_SIZE / 2, WORLD_SIZE, 1 / WORLD_SIZE) },
       uNormalTex: { value: tex.waterNormal },
       uSceneColor: { value: null as THREE.Texture | null },
@@ -956,6 +969,11 @@ export class Ocean {
       }),
     );
     this.underside.visible = false;
+  }
+
+  /** Air breaking the surface over a wreck, as seen from beneath (strength 0 hides it). */
+  setBoil(x: number, z: number, r: number, strength: number) {
+    (this.material.uniforms.uBoil.value as THREE.Vector4).set(x, z, Math.max(r, 1), strength);
   }
 
   /** Swap the sea for its underside while the camera is below the waves. */
