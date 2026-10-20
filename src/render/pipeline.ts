@@ -705,10 +705,11 @@ export class Pipeline {
   /**
    * The hour's look, from the atmosphere: the sun shafts' lit haze colour (rgb,
    * 0 = none) and the glow lit haze adds on its own (w), the beams' colour
-   * in the shallows, the haze's density and how dark its shaded columns read, and the grade. Uniforms only.
+   * in the shallows, the haze's density and how dark its shaded columns read, the grade and the vignette. Uniforms only.
    */
-  setLook(air: THREE.Vector4, sea: THREE.Vector3, haze: THREE.Vector2, lo: THREE.Vector3, hi: THREE.Vector3, sat: number) {
+  setLook(air: THREE.Vector4, sea: THREE.Vector3, haze: THREE.Vector2, lo: THREE.Vector3, hi: THREE.Vector3, sat: number, vignette = 0.55) {
     const u = this.finalMat.uniforms;
+    u.uVignette.value = vignette;
     u.uShaftAir.value.copy(air);
     u.uShaftSea.value.copy(sea);
     u.uShaftHaze.value.copy(haze);
