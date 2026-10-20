@@ -7,6 +7,9 @@ import '@fontsource/inter/700.css';
 import '@fontsource/inter/800.css';
 import './style.css';
 import { Game } from './game/game';
+import { installImmersiveOnFirstTouch } from './core/immersive';
+
+installImmersiveOnFirstTouch();
 
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   // updateViaCache 'none': always fetch sw.js itself fresh, so new builds are found on the next visit.
