@@ -1,4 +1,5 @@
 import './fort.css';
+import { replay } from './replay';
 
 // A fort's chrome: a stone-and-brass bar across the top of the screen while
 // you're within sight of one (its name, a pip for each gun lit or smashed,
@@ -78,9 +79,7 @@ export class FortHud {
     v.guns.forEach((live, i) => this.pips.children[i].classList.toggle('dead', !live));
     // a gun just fell silent: the bar shudders
     if (wasGuns && wasGuns !== v.guns.join()) {
-      this.bar.classList.remove('hit');
-      void this.bar.offsetWidth;
-      this.bar.classList.add('hit');
+      replay(this.bar, 'hit');
     }
     this.garr.textContent = v.ours ? 'Guns cover you' : v.garrison >= 0 ? `Garrison ${v.garrison}` : '';
     this.hintEl.textContent = v.hint;
@@ -91,9 +90,7 @@ export class FortHud {
   taken(name: string, line: string) {
     this.card.querySelector('h2')!.innerHTML = [...name.toUpperCase()].map((c, i) => (c === ' ' ? '<span class="sp"> </span>' : `<span style="--i:${i}">${c}</span>`)).join('');
     this.card.querySelector('p')!.textContent = line;
-    this.card.classList.remove('on');
-    void this.card.offsetWidth;
-    this.card.classList.add('on');
+    replay(this.card, 'on');
     clearTimeout(this.timer);
     this.timer = window.setTimeout(() => this.card.classList.remove('on'), 6200);
   }

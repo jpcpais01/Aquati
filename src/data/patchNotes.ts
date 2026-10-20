@@ -16,6 +16,21 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T17:00Z',
     entries: [
       {
+        title: 'No more freeze when a ship goes down',
+        notes: [
+          'Sinking a ship no longer stops the game for a moment. The kill that puts a new skull on your Wanted level sends a bounty hunter after you, and her colours used to make the game prepare fresh shaders on the spot. She now shares the ones every pirate uses, which were ready before you set sail.',
+          'A dying ship drops every mast, her bowsprit and finally her hull, and each break used to be cut in one go on back-to-back frames. The cuts are now worked out a sliver at a time and land all at once, so masts still crack and topple right on cue.',
+          'The gold, kills and Wanted chips, the hull bar and the gun badges no longer make the browser rework the whole page every time they flash.',
+          'The light the sky casts on your sails is prepared while the game loads, instead of a few seconds into your first voyage.',
+          'The shipyard building the next pirates pauses for a few seconds while a ship goes down, and the bounty hunter sets out a moment after the kill, so neither piles onto the same frames as the sinking.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T17:00Z',
+    entries: [
+      {
         title: 'Las Brumas and the high seas',
         notes: [
           'The sea is bigger now. Far out to the east-north-east, past three archipelagos\' worth of open ocean, lie Las Brumas, the Isles of Mist: sheer limestone towers crowned with jungle, sea stacks standing in jade water, pink coral beaches and blossom trees. It\'s all one sea, with no loading screens: just keep sailing.',

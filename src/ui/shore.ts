@@ -2,6 +2,7 @@ import './shore.css';
 import * as THREE from 'three';
 import { icon, ICONS, STAT_ICONS } from './art';
 import { FLEET_ICONS } from './fleet';
+import { replay } from './replay';
 
 // The HUD ashore: the landing party's health in place of the hull, the
 // "row back" / "open the chest" pill, bars over the cutthroats you're
@@ -146,9 +147,7 @@ export class ShoreHud {
       row.el.querySelector('.pm-s')!.textContent = r.down ? (i === 0 ? 'Down' : 'Out cold') : i === 0 ? `${Math.ceil(r.hp)}` : '';
       row.bar.style.transform = `scaleX(${f})`;
       if (was && parseInt(was.split('|')[1]) > Math.round(f * 60)) {
-        row.el.classList.remove('hit');
-        void row.el.offsetWidth;
-        row.el.classList.add('hit');
+        replay(row.el, 'hit');
       }
     });
     this.rows.forEach((r, i) => (r.el.style.display = i < rows.length ? '' : 'none'));

@@ -19,6 +19,7 @@ import { ammoIcon } from './ammoArt';
 import { progressSaved } from '../core/progress';
 import { CAPTAIN } from '../game/bounty';
 import { Loadout, loadoutParts, refit, refitBars } from '../ships/parts';
+import { replay } from './replay';
 export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
@@ -909,9 +910,7 @@ export class UI {
     el.textContent = v;
     if (bump && prev !== undefined && parseInt(v) > parseInt(prev)) {
       const chip = el.parentElement!;
-      chip.classList.remove('bump');
-      void chip.offsetWidth;
-      chip.classList.add('bump');
+      replay(chip, 'bump');
     }
   }
 
@@ -934,9 +933,7 @@ export class UI {
       $('hud-hull-ghost').style.transform = `scaleX(${f})`;
       if (frac < prev - 0.001) {
         const panel = fill.closest('.ship-panel')!;
-        panel.classList.remove('hit');
-        void (panel as HTMLElement).offsetWidth;
-        panel.classList.add('hit');
+        replay(panel, 'hit');
       }
     }
     const hp = `${Math.ceil(Math.max(0, p.hp))}`;
@@ -1085,9 +1082,7 @@ export class UI {
     if (flash) {
       this.tagT = window.setTimeout(() => this.hideTag(), 2400);
       for (const el of [this.ammoSlots.get(id)!, this.ammoBtn]) {
-        el.classList.remove('load');
-        void el.offsetWidth;
-        el.classList.add('load');
+        replay(el, 'load');
       }
     }
   }
@@ -1100,9 +1095,7 @@ export class UI {
   /** None of that shot left. */
   ammoDenied(id: AmmoId) {
     for (const el of [this.ammoSlots.get(id)!, this.fanChips.get(id)!]) {
-      el.classList.remove('deny');
-      void el.offsetWidth;
-      el.classList.add('deny');
+      replay(el, 'deny');
     }
   }
 
@@ -1111,9 +1104,7 @@ export class UI {
     for (const el of [this.ammoSlots.get(id)!, this.ammoBtn]) {
       const g = el.querySelector('.gain') as HTMLElement | null;
       if (g) g.textContent = `+${n}`;
-      el.classList.remove('gain-on');
-      void el.offsetWidth;
-      el.classList.add('gain-on');
+      replay(el, 'gain-on');
     }
   }
 
@@ -1139,9 +1130,7 @@ export class UI {
   gunsReady(side: 'port' | 'starboard') {
     const els: [HTMLElement, string][] = [[$(side === 'port' ? 't-port' : 't-star'), 'ping'], [this.rack, side === 'port' ? 'ping-p' : 'ping-s']];
     for (const [el, cls] of els) {
-      el.classList.remove(cls);
-      void el.offsetWidth;
-      el.classList.add(cls);
+      replay(el, cls);
       setTimeout(() => el.classList.remove(cls), 650);
     }
   }
@@ -1149,9 +1138,7 @@ export class UI {
   flashBroadside(side: 'port' | 'starboard') {
     const els: [HTMLElement, string][] = [[$(side === 'port' ? 't-port' : 't-star'), 'flash'], [this.rack, side === 'port' ? 'flash-p' : 'flash-s']];
     for (const [el, cls] of els) {
-      el.classList.remove(cls);
-      void el.offsetWidth;
-      el.classList.add(cls);
+      replay(el, cls);
     }
   }
 
@@ -1178,9 +1165,7 @@ export class UI {
   /** A soft ring ripples off the wind arrow as the wind comes round. */
   windShift() {
     const el = $('hud-wind');
-    el.classList.remove('shift');
-    void el.offsetWidth;
-    el.classList.add('shift');
+    replay(el, 'shift');
   }
 
   private skyKey = '';
@@ -1189,9 +1174,7 @@ export class UI {
   skyTag(text: string) {
     const el = $('hud-sky');
     el.dataset.tag = text;
-    el.classList.remove('tag');
-    void el.offsetWidth;
-    el.classList.add('tag');
+    replay(el, 'tag');
     clearTimeout(this.skyTagT);
     this.skyTagT = window.setTimeout(() => el.classList.remove('tag'), 1600);
   }

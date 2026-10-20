@@ -1,6 +1,7 @@
 import './bounty.css';
 import { SHIP_CLASSES } from '../ships/shipTypes';
 import { CAPTAINS, Face, Ledger, NamedCaptain, REPUTE, REPUTE_BONUS, reputeRank, wantedProgress, WANTED_AT } from '../game/bounty';
+import { replay } from './replay';
 
 // The bounty side of the HUD and harbour: the Brethren's wanted posters
 // (engraved portraits drawn here as SVG), the Wanted Board that collects them,
@@ -227,9 +228,7 @@ export class WantedHud {
       });
       this.root.title = level < WANTED_AT.length ? `Infamy ${pts} · next skull at ${WANTED_AT[level]}` : `Infamy ${pts} · most wanted`;
       if (grew) {
-        this.root.classList.remove('bump');
-        void this.root.offsetWidth;
-        this.root.classList.add('bump');
+        replay(this.root, 'bump');
       }
     }
     const hk = hunter ? `${hunter.name}|${Math.round(hunter.dist / 10)}` : '';
@@ -288,10 +287,9 @@ export class BountyBanner {
   private show(html: string, kind: string, life: number) {
     clearTimeout(this.timer);
     const el = this.el;
-    el.className = '';
+    el.className = el.classList.contains('on') ? `on ${kind}` : kind;
     el.innerHTML = html;
-    void el.offsetWidth;
-    el.className = `on ${kind}`;
+    replay(el, 'on');
     this.timer = window.setTimeout(() => el.classList.remove('on'), life * 1000);
   }
 
