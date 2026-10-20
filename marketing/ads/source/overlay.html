@@ -1,0 +1,75 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="ad.css">
+<style>
+html, body, .ad { background: transparent !important; }
+.o { position: absolute; left: 0; right: 0; text-align: center; will-change: transform, opacity; }
+.big { font-family: var(--serif); font-weight: 800; text-transform: uppercase; line-height: 0.95; font-size: 150px; color: #fff; text-shadow: 0 8px 36px rgba(0,10,20,.65), 0 2px 6px rgba(0,0,0,.45); }
+.big.gold { background: linear-gradient(180deg, #fff6dc 0%, #ffd67a 45%, #e8a640 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 8px 26px rgba(0,10,20,.7)); }
+.line { display: block; }
+#veilT { position: absolute; left: 0; right: 0; top: 0; height: 560px; background: linear-gradient(180deg, rgba(2,14,24,.7), rgba(2,14,24,0)); }
+#veilB { position: absolute; left: 0; right: 0; bottom: 0; height: 760px; background: linear-gradient(0deg, rgba(2,12,22,.8), rgba(2,12,22,0)); }
+#flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+#endbg { position: absolute; inset: 0; background: radial-gradient(90% 55% at 50% 42%, rgba(3,24,40,.55), rgba(2,12,22,.9)); opacity: 0; }
+#wm { top: 70px; }
+#cta { bottom: 300px; }
+#end { top: 600px; }
+.logo.xl { font-size: 150px; }
+.crest { width: 130px; height: 130px; }
+</style></head><body><div class="ad">
+<div id="veilT"></div><div id="veilB"></div><div id="endbg"></div>
+<div class="o" id="wm"><div class="brand" data-part="logo" data-cls="sm" style="transform:scale(.8)"></div></div>
+<div class="o" id="t1" style="top:1400px"><span class="big line" id="t1a">Your ship.</span><span class="big gold line" id="t1b">Your sea.</span></div>
+<div class="o" id="t2" style="top:1380px"><div class="kicker" id="t2k" style="margin-bottom:22px">Real-time naval combat</div><span class="big line" id="t2a">Broadside</span><span class="big gold line" id="t2b">battles</span></div>
+<div class="o" id="t3" style="top:1380px"><div class="kicker" id="t3k" style="margin-bottom:22px">Sloop · Brigantine · Galleon</div><span class="big line" id="t3a">Choose</span><span class="big gold line" id="t3b">your ship</span></div>
+<div class="o" id="t4" style="top:1380px"><div class="kicker" id="t4k" style="margin-bottom:22px;color:#ffd36e">Krakens · ghost ships · maelstroms</div><span class="big line" id="t4a">Beware</span><span class="big gold line" id="t4b">the deep</span></div>
+<div class="o" id="end"><div class="brand"><div data-part="crest"></div><div data-part="logo" data-cls="xl"></div></div><div class="sub" id="endsub" style="margin-top:34px">Sail the turquoise archipelago</div></div>
+<div class="o" id="cta" data-part="cta"></div>
+<div id="flash"></div>
+</div><script src="parts.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const cl = (x) => Math.max(0, Math.min(1, x));
+const eo = (x) => 1 - Math.pow(1 - cl(x), 3);
+const back = (x) => { x = cl(x); const c = 1.7; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
+// a word that punches in (scale + rise + blur) at `at` and leaves at `out`
+function pop(el, t, at, out, dy = 70) {
+  const a = (t - at) / 0.38, b = (t - out) / 0.25;
+  const vis = cl(a * 2.2) * (1 - cl(b));
+  const s = 0.84 + 0.16 * back(a);
+  const y = (1 - eo(a)) * dy - eo(b) * 40;
+  el.style.opacity = vis;
+  el.style.transform = `translateY(${y}px) scale(${s})`;
+  el.style.filter = el.classList.contains('gold') ? `drop-shadow(0 8px 26px rgba(0,10,20,.7)) blur(${(1 - cl(a * 1.6)) * 14}px)` : `blur(${(1 - cl(a * 1.6)) * 14}px)`;
+}
+const VOLLEYS = [4.27, 7.93], FOE = [6.07];
+window.render = (t) => {
+  // shot windows (s): A 0-4, B 4-9.5, C 9.5-13.5, D 13.5-18.5, E 18.5-24.5
+  pop($('t1a'), t, 0.15, 3.75); pop($('t1b'), t, 1.35, 3.75);
+  pop($('t2k'), t, 4.15, 9.25, 30); pop($('t2a'), t, 4.3, 9.25); pop($('t2b'), t, 4.75, 9.25);
+  pop($('t3k'), t, 9.65, 13.25, 30); pop($('t3a'), t, 9.8, 13.25); pop($('t3b'), t, 10.25, 13.25);
+  pop($('t4k'), t, 13.7, 18.25, 30); pop($('t4a'), t, 13.9, 18.25); pop($('t4b'), t, 14.5, 18.25);
+  // brand bug up top through the action, then the full logo takes over
+  const wm = cl((t - 0.4) / 0.5) * (1 - cl((t - 18.2) / 0.3));
+  $('wm').style.opacity = wm * 0.92;
+  $('veilT').style.opacity = 0.9;
+  $('veilB').style.opacity = 1 - cl((t - 18.5) / 0.5) * 0.3;
+  // end card
+  const e = (t - 19.4) / 0.9;
+  $("endbg").style.opacity = eo(e);
+  const en = $('end');
+  en.style.opacity = cl(e * 1.5);
+  en.style.transform = `translateY(${(1 - eo(e)) * 60}px) scale(${0.9 + 0.1 * eo(e)})`;
+  en.style.filter = `blur(${(1 - cl(e * 1.4)) * 16}px)`;
+  const c = (t - 20.6) / 0.45;
+  const cta = $('cta');
+  cta.style.opacity = cl(c * 2);
+  const pulse = t > 21.3 ? 1 + 0.035 * Math.sin((t - 21.3) * Math.PI * 2 / 1.1) : 1;
+  cta.style.transform = `translateY(${(1 - eo(c)) * 80}px) scale(${(0.8 + 0.2 * back(c)) * pulse})`;
+  // muzzle flash kicks on every volley, and a soft white wipe on each cut
+  let f = 0;
+  for (const v of VOLLEYS) f = Math.max(f, 0.22 * Math.exp(-Math.max(0, t - v) * 9) * (t >= v ? 1 : 0));
+  for (const v of FOE) f = Math.max(f, 0.12 * Math.exp(-Math.max(0, t - v) * 9) * (t >= v ? 1 : 0));
+  for (const cut of [4, 9.5, 13.5, 18.5]) { const d = t - cut; if (d >= 0 && d < 0.3) f = Math.max(f, 0.55 * (1 - d / 0.3)); }
+  $('flash').style.opacity = f;
+};
+render(0);
+</script></body></html>
