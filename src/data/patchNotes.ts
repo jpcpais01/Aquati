@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T02:00Z',
     entries: [
       {
+        title: 'Bounties, infamy and the Brethren\'s hunters',
+        notes: [
+          'Every pirate you sink now makes you more hated among the Brethren of the Coast. A wanted meter of five skulls sits under your purse, and each new skull sends one of the Brethren\'s named captains to hunt you down.',
+          'There are ten of them, from Calico Ned in his chain-shot sloop to Blackheart Vane in a molten galleon with a fleet at his back. Each sails under their own sails, flag and Treasure Vault finish, loads their own favourite shot, and has a tougher hull, harder-hitting and faster guns, and a sharper aim than any ordinary crew. They come from over the horizon and never give up the chase. A horn and war drums tell you one is on the way, and an arrow at the edge of the screen and a pulsing ring on the minimap and sea chart show where.',
+          'Sink one for a big Crown bounty, a hold full of their plunder and their poster stamped SUNK on the new Wanted Board. Open it from the skull button in the harbour or the pause menu.',
+          'Your lifetime infamy rises from Unknown to Legend of the Black Water, and every rank makes the Crown pay 5% more on every bounty. The hotter your wanted level, the more ordinary pirates are worth too. Your infamy and posters are saved to your account.',
+          'A hunter on your tail stops you docking or rowing ashore until you deal with them. Ships sunk outright by a direct shell hit now pay their bounty and drop their loot, which they sometimes didn\'t before.',
+        ],
+      },
+      {
         title: 'Full screen, sideways, at the first tap',
         notes: [
           'On phones and tablets, your first tap now takes the game full screen and turns it to landscape, so the whole sea fills your screen.',
