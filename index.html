@@ -117,7 +117,17 @@
       <div id="floaters"></div>
       <div id="bars"></div>
       <div class="touch" id="touch">
-        <div class="joy" id="joy"><div class="knob" id="joy-knob"></div></div>
+        <div class="joy" id="joy"><i class="bow"></i><div class="knob" id="joy-knob"></div></div>
+        <div class="sail-lever" id="sail-lever" data-lvl="0" role="slider" aria-label="Sails" aria-valuemin="0" aria-valuemax="3" aria-valuenow="0">
+          <div class="sl-track" id="sl-track">
+            <i class="sl-rail"><i class="sl-fill"></i></i>
+            <i class="sl-notch"></i><i class="sl-notch"></i><i class="sl-notch"></i><i class="sl-notch"></i>
+            <div class="sl-knob">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path class="sl-mast" d="M12 2.5v19M5 6.2h14" /><path class="sl-cloth" d="M5.6 6.6h12.8c.7 3.7.5 7.2-.6 10.6H6.2c-1.1-3.4-1.3-6.9-.6-10.6z" /><rect class="sl-furl" x="5.2" y="5.6" width="13.6" height="2.4" rx="1.2" /></svg>
+            </div>
+          </div>
+          <div class="sl-labels" aria-hidden="true"><span>Full</span><span>Half</span><span>Slow</span><span>Stop</span></div>
+        </div>
         <div class="fire-pad">
           <button class="fbtn side" id="t-port"><i class="rl"></i><span class="ti" data-icon="chevL"></span><small>Port</small></button>
           <button class="fbtn main" id="t-fire"><span class="ti" data-icon="cannon"></span><small>Fire</small></button>
@@ -260,7 +270,8 @@
         <div class="sheet-body controls-body">
           <section class="ctl-group touch-only">
             <h4>On touch</h4>
-            <div class="ctl"><span class="gesture">Drag left side</span><span>Steer &amp; trim, like a tiller</span></div>
+            <div class="ctl"><span class="gesture">Sail lever</span><span>Bottom left: slide or tap Stop, Slow, Half or Full. It stays where you leave it</span></div>
+            <div class="ctl"><span class="gesture">Drag left side</span><span>Helm: point where the bow should go, let go to hold your course</span></div>
             <div class="ctl"><span class="gesture">Fire</span><span>Fire the outlined side, at the foe off that beam</span></div>
             <div class="ctl"><span class="gesture">◀ Port · Stbd ▶</span><span>Fire one side</span></div>
             <div class="ctl"><span class="gesture">Shot button</span><span>Pick the shot your guns load, above Fire</span></div>

@@ -397,6 +397,7 @@ export class Game {
     this.input = new Input(canvas);
     this.ui.setTouch(this.input.isTouch);
     this.input.bindJoystick(document.getElementById('joy')!, document.getElementById('joy-knob')!);
+    this.input.bindSailLever(document.getElementById('sail-lever')!, document.getElementById('sl-track')!);
     this.input.bindFireButtons(document.getElementById('t-port')!, document.getElementById('t-fire')!, document.getElementById('t-star')!);
     this.input.bindViewButtons(document.getElementById('btn-view')!, document.getElementById('btn-helm')!, document.getElementById('t-spy')!);
     this.captain.onStep = (k) => this.audio.footstep(k);
@@ -4340,9 +4341,11 @@ export class Game {
       this.captain.spyWanted = st.spy;
     }
     if (st.sailDelta) p.sailTarget = clamp(Math.round(p.sailTarget * 3 + st.sailDelta) / 3, 0, 1);
+    if (st.sailSet >= 0) p.sailTarget = clamp(st.sailSet, 0, 3) / 3;
+    // the touch helm only steers: the sails stay wherever the lever (or W / S) left them
     if (st.steerHeading !== null && !this.fpv) {
       p.rudder = clamp(angleDelta(p.heading, st.steerHeading) * 2.4, -1, 1);
-      p.sailTarget = st.steerThrottle < 0.2 ? p.sailTarget : Math.ceil(st.steerThrottle * 3 - 0.05) / 3;
+      this.input.helmShow(p.heading, st.steerHeading);
     } else p.rudder = st.rudder;
     if (st.ammoPick >= 0) this.selectAmmo(AMMO_ORDER[st.ammoPick]);
     if (st.ammoNext) this.cycleAmmo();
