@@ -123,14 +123,25 @@ function dolphinGeometry(): THREE.BufferGeometry {
 
 const STROKE_GLSL = /* glsl */ `
 attribute float aPart;
-attribute vec2 aStroke; // fluke phase, stroke amplitude
-// the tail beats up and down from just behind the dorsal, the flukes sweeping widest
+attribute vec3 aStroke; // fluke phase, stroke amplitude, arch of the whole body along its path
+// The tail beats up and down in a wave running back from the chest, swelling
+// toward the flukes; the head nods a little against each beat; the whole body
+// bends along the arc it is swimming (over the crest of a leap, down a dive).
 void dolphinStroke(inout vec3 p, inout vec3 n) {
-  float t = clamp((0.05 - p.z) / 0.5, 0.0, 1.0);
-  float w = t * t;
-  float wave = aStroke.x + p.z * 5.0;
-  p.y += aStroke.y * w * sin(wave);
-  float slope = aStroke.y * (-4.0 * t * sin(wave) + w * 5.0 * cos(wave));
+  float t = clamp((0.08 - p.z) / 0.52, 0.0, 1.0);
+  float w = t * t * (0.35 + 0.65 * t);
+  float wave = aStroke.x + p.z * 4.2;
+  float head = smoothstep(0.12, 0.5, p.z) * 0.12;
+  p.y += aStroke.y * (w * sin(wave) - head * sin(aStroke.x + 0.6));
+  float slope = aStroke.y * ((-1.0 / 0.52) * (0.7 * t + 1.95 * t * t) * sin(wave) + w * 4.2 * cos(wave));
+  // the flukes feather: pitched against the stroke, lagging it a quarter beat
+  if (aPart > 0.5 && aPart < 1.5) {
+    float f = cos(aStroke.x - 0.45) * aStroke.y * 3.2;
+    p.y += (p.z + 0.4) * f;
+    slope += f;
+  }
+  p.y += aStroke.z * (p.z * p.z * 4.0 - 0.12);
+  slope += aStroke.z * p.z * 8.0;
   n = normalize(vec3(n.x, n.y, n.z - n.y * slope));
   // flippers scull a little
   if (aPart > 1.5 && aPart < 2.5) p.y += sin(aStroke.x * 0.5) * 0.015 * abs(p.x) * 6.0;
@@ -146,6 +157,12 @@ function strokeShader(shader: { vertexShader: string }) {
 
 // ---------------------------------------------------------------- swimmers
 
+/**
+ * What she's doing: cruising at depth, coming up for a breath (a slow roll of
+ * the back and dorsal through the surface), climbing for a leap, or in the air.
+ */
+type Act = 'swim' | 'breathe' | 'rise' | 'air';
+
 interface Dolphin {
   /** Slot beside the ship (ship frame: s across, f along). */
   s: number;
@@ -154,18 +171,30 @@ interface Dolphin {
   y: number;
   z: number;
   yaw: number;
+  /** Turning rate (rad/s), eased: she sweeps round rather than snapping to a heading. */
+  yawRate: number;
+  /** Nose up (+) or down; underwater she swims where she points. */
   pitch: number;
+  pitchRate: number;
   roll: number;
+  /** Vertical speed in the air (m/s). */
   vy: number;
   speed: number;
   phase: number;
-  /** Seconds until her next leap; airborne while `air` > 0. */
+  /** Stroke amplitude and body arch, eased. */
+  amp: number;
+  bend: number;
+  act: Act;
+  /** Seconds until she next comes up to breathe, and until she next leaps. */
+  breathT: number;
   leapT: number;
-  air: number;
   /** Swim depth she settles to (m below the surface). */
   depth: number;
   size: number;
   wobble: number;
+  /** Now and then she rolls onto her side to look up at the ship. */
+  look: number;
+  lookT: number;
 }
 
 type PodState = 'in' | 'with' | 'out';
@@ -188,10 +217,12 @@ export class Dolphins {
   /** Called with a splash (where, how big) and a call (where, whistle or clicks). */
   onSplash: (at: THREE.Vector3, size: number) => void = () => {};
   onCall: (at: THREE.Vector3, whistle: boolean) => void = () => {};
+  /** Called as one breathes at the surface: a puff of spray from the blowhole. */
+  onBlow: (at: THREE.Vector3) => void = () => {};
 
   constructor() {
     const geo = dolphinGeometry();
-    this.stroke = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 2), 2);
+    this.stroke = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
     this.stroke.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('aStroke', this.stroke);
     const mat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.28, metalness: 0, envMapIntensity: 1.1 }), { caustics: true, clouds: true });
@@ -237,8 +268,9 @@ export class Dolphins {
       const s = bow ? (i === 0 ? -1.6 : 1.8) : this.side * (ship.cls.beam * 0.5 + 4 + (i % 3) * 3.2 + Math.random() * 1.5);
       const f = bow ? L * 0.5 + 3 + Math.random() * 2 : L * (0.3 - (i - 2) * 0.16) + Math.random() * 3;
       this.pod.push({
-        s, f, x: ax + (Math.random() - 0.5) * 16, y: -1.5, z: az + (Math.random() - 0.5) * 16, yaw: h + Math.PI * 0.8 * -this.side, pitch: 0, roll: 0, vy: 0,
-        speed: 9, phase: Math.random() * TAU, leapT: 1 + Math.random() * 5, air: 0, depth: 0.7 + Math.random() * 0.7, size: 0.85 + Math.random() * 0.3, wobble: Math.random() * TAU,
+        s, f, x: ax + (Math.random() - 0.5) * 16, y: -1.5, z: az + (Math.random() - 0.5) * 16, yaw: h + Math.PI * 0.8 * -this.side, yawRate: 0, pitch: 0, pitchRate: 0, roll: 0, vy: 0,
+        speed: 9, phase: Math.random() * TAU, amp: 0.05, bend: 0, act: 'swim', breathT: 1 + Math.random() * 6, leapT: 2 + Math.random() * 6,
+        depth: 0.8 + Math.random() * 0.7, size: 0.85 + Math.random() * 0.3, wobble: Math.random() * TAU, look: 0, lookT: 6 + Math.random() * 20,
       });
     }
     this.state = 'in';
@@ -272,6 +304,7 @@ export class Dolphins {
       if (!this.pod.length) this.mesh.count = 0;
       return;
     }
+    dt = Math.min(dt, 0.05);
     if (!ship || !ship.alive) this.dismiss();
     this.t += dt;
     if (this.state === 'in' && this.t > 9) this.state = 'with';
@@ -280,6 +313,7 @@ export class Dolphins {
     const fx = Math.sin(h);
     const fz = Math.cos(h);
     const shipSpeed = ship ? Math.max(0, ship.speed) : 0;
+    const out = this.state === 'out' || !ship;
     const arr = this.stroke.array as Float32Array;
     let n = 0;
     for (let i = this.pod.length - 1; i >= 0; i--) {
@@ -289,63 +323,129 @@ export class Dolphins {
       let tx: number;
       let tz: number;
       let want: number;
-      if (this.state === 'out' || !ship) {
+      if (out) {
         // peel off to her side and dive away into the blue
         const away = d.s >= 0 ? 1 : -1;
         tx = d.x + (fz * away * 0.8 + fx * 0.6) * 40;
         tz = d.z + (-fx * away * 0.8 + fz * 0.6) * 40;
         want = 10;
-        d.depth = Math.min(4, d.depth + dt * 0.25);
+        d.depth = Math.min(5, d.depth + dt * 0.4);
       } else {
-        d.wobble += dt * (0.4 + i * 0.07);
+        d.wobble += dt * (0.35 + i * 0.05);
         const slack = shipSpeed < 1.5 ? 6 : 0;
-        // a slow ship gets circled; a fast one gets raced
-        const sw = d.s + Math.sin(d.wobble) * (1.4 + slack);
-        const fw = d.f + Math.cos(d.wobble * 0.8) * (2 + slack) + shipSpeed * 0.25;
+        // a slow ship gets circled; a fast one gets raced (each drifts about her slot on her own slow beat)
+        const sw = d.s + Math.sin(d.wobble) * (1.2 + slack) + Math.sin(d.wobble * 2.3 + i) * 0.5;
+        const fw = d.f + Math.cos(d.wobble * 0.7) * (2 + slack) + shipSpeed * 0.25;
         tx = ship.pos.x + fz * sw + fx * fw;
         tz = ship.pos.z - fx * sw + fz * fw;
+        // and they keep a body's width from each other
+        for (const o of this.pod) {
+          if (o === d) continue;
+          const ox = d.x - o.x;
+          const oz = d.z - o.z;
+          const dd = Math.hypot(ox, oz);
+          if (dd < 2.6 && dd > 1e-3) {
+            tx += (ox / dd) * (2.6 - dd) * 1.5;
+            tz += (oz / dd) * (2.6 - dd) * 1.5;
+          }
+        }
         const gap = Math.hypot(tx - d.x, tz - d.z);
-        want = Math.max(4.5, shipSpeed) + clamp(gap * 0.35, -3, 8);
+        want = Math.max(4.5, shipSpeed) + clamp(gap * 0.3, -2.5, 7);
       }
-      const dx = tx - d.x;
-      const dz = tz - d.z;
-      const toYaw = Math.atan2(dx, dz);
-      if (d.air <= 0) {
-        const turn = clamp(angleDelta(d.yaw, toYaw), -2.2 * dt, 2.2 * dt);
-        d.yaw += turn;
-        d.roll = lerp(d.roll, clamp(-turn / Math.max(dt, 1e-4) * 0.35, -0.6, 0.6), damp(4, dt));
-        d.speed = lerp(d.speed, want, damp(1.2, dt));
-      }
-      d.x += Math.sin(d.yaw) * d.speed * dt;
-      d.z += Math.cos(d.yaw) * d.speed * dt;
-      d.phase += dt * (3.2 + d.speed * 0.42);
 
-      // porpoising: up out of the water in a long arc, and back in nose first
-      if (d.air > 0) {
+      // ------------------------------------------------ steering: sweep round, banking into the turn
+      if (d.act !== 'air') {
+        const toYaw = Math.atan2(tx - d.x, tz - d.z);
+        const wantRate = clamp(angleDelta(d.yaw, toYaw) * 1.4, -1.1, 1.1);
+        d.yawRate += (wantRate - d.yawRate) * damp(2.5, dt);
+        d.speed = lerp(d.speed, want + (d.act === 'rise' ? 2.5 : 0), damp(d.act === 'rise' ? 2 : 0.8, dt));
+      }
+      d.yaw += d.yawRate * dt;
+      d.lookT -= dt;
+      if (d.lookT <= 0) {
+        // a roll onto her side to eye the ship (toward it), then back
+        d.lookT = d.look ? 8 + Math.random() * 20 : 2 + Math.random() * 2.5;
+        d.look = d.look || out ? 0 : (d.s >= 0 ? -1 : 1) * (0.7 + Math.random() * 0.5);
+      }
+      const bank = clamp(-d.yawRate * d.speed * 0.09, -0.75, 0.75) + (d.act === 'swim' ? d.look : 0);
+      d.roll += (bank - d.roll) * damp(d.act === 'air' ? 1 : 3, dt);
+
+      // ------------------------------------------------ up and down: she swims where she points
+      d.breathT -= dt;
+      d.leapT -= dt * (want > 11 ? 1.8 : 1);
+      let wantPitch = 0;
+      if (d.act === 'swim') {
+        // cruising depth, with a lazy rise and fall
+        const target = wh - d.depth - Math.sin(d.wobble * 1.7) * 0.25;
+        wantPitch = clamp((target - d.y) * 0.32, -0.4, 0.3);
+        if (!out && d.leapT <= 0 && d.speed > 4.5 && shipSpeed > 1.5) {
+          d.act = 'rise';
+          // a friend often goes with her
+          for (const o of this.pod) if (o !== d && o.act === 'swim' && o.leapT < 2.5 && Math.hypot(o.x - d.x, o.z - d.z) < 6) o.leapT = Math.min(o.leapT, 0.12 + Math.random() * 0.25);
+        } else if (d.breathT <= 0 && !out) d.act = 'breathe';
+      }
+      if (d.act === 'breathe') {
+        // up until the crown of her back breaks the surface, then she rolls over and down
+        wantPitch = clamp((wh + 0.05 - d.y) * 0.5, 0.06, 0.32);
+        if (d.y > wh - 0.22) {
+          d.act = 'swim';
+          d.breathT = 3 + Math.random() * 6;
+          d.pitchRate = Math.min(d.pitchRate, -0.15);
+          this.onBlow(_p.set(d.x + Math.sin(d.yaw) * LEN * d.size * 0.28, wh + 0.15, d.z + Math.cos(d.yaw) * LEN * d.size * 0.28));
+        }
+      } else if (d.act === 'rise') {
+        // a steepening climb from below, flukes driving hard
+        wantPitch = 0.62;
+        if (d.y > wh - 0.15 && d.pitch > 0.25) {
+          d.act = 'air';
+          const hs = d.speed * Math.cos(d.pitch);
+          // a long, low arc: porpoising, not a show jump
+          d.vy = clamp(d.speed * Math.sin(d.pitch) * 0.75, 3.4, 5.8);
+          d.speed = hs;
+          d.leapT = 5 + Math.random() * 10;
+          d.breathT = 4 + Math.random() * 5;
+          this.onSplash(_p.set(d.x, wh, d.z), 0.55 * d.size);
+        }
+      }
+      const prevPitch = d.pitch;
+      if (d.act === 'air') {
+        // a ballistic arc, the body lying along it: nose up out of the water, nose first back in
         d.vy -= 9.81 * dt;
         d.y += d.vy * dt;
         d.pitch = Math.atan2(d.vy, d.speed);
-        if (d.y < wh - 0.2 && d.vy < 0) {
-          d.air = 0;
-          d.leapT = 2.5 + Math.random() * 6;
-          this.onSplash(_p.set(d.x, wh, d.z), 0.9 * d.size);
+        d.x += Math.sin(d.yaw) * d.speed * dt;
+        d.z += Math.cos(d.yaw) * d.speed * dt;
+        if (d.y < wh - 0.1 && d.vy < 0) {
+          d.act = 'swim';
+          // she carries her dive on under the surface and pulls out of it
+          d.speed = Math.hypot(d.speed, d.vy) * 0.85;
+          d.pitchRate = 0;
+          this.onSplash(_p.set(d.x, wh, d.z), 0.95 * d.size);
         }
       } else {
-        const depth = wh - d.depth - Math.sin(d.phase * 0.25) * 0.25;
-        d.vy = lerp(d.vy, clamp((depth - d.y) * 2, -2, 2), damp(3, dt));
-        d.y += d.vy * dt;
-        d.pitch = lerp(d.pitch, Math.atan2(d.vy, Math.max(d.speed, 1)) * 0.8, damp(5, dt));
-        d.leapT -= dt;
-        if (d.leapT <= 0 && this.state !== 'out' && d.speed > 4) {
-          // a quick climb, then she's clear of the water
-          d.air = 1;
-          d.y = wh - 0.3;
-          d.vy = 4.6 + Math.random() * 2.2;
-          this.onSplash(_p.set(d.x, wh, d.z), 0.6 * d.size);
-        }
+        // pitch eases toward what she wants, never faster than a dolphin can arch
+        const wantRate = clamp((wantPitch - d.pitch) * 2.4, -1.3, 1.3);
+        d.pitchRate += (wantRate - d.pitchRate) * damp(4, dt);
+        d.pitch = clamp(d.pitch + d.pitchRate * dt, -1.2, 1.0);
+        const c = Math.cos(d.pitch);
+        d.x += Math.sin(d.yaw) * d.speed * c * dt;
+        d.z += Math.cos(d.yaw) * d.speed * c * dt;
+        d.y += Math.sin(d.pitch) * d.speed * dt;
+        // never more than her back above the water when not leaping
+        if (d.act !== 'rise') d.y = Math.min(d.y, wh - 0.12);
       }
+
+      // ------------------------------------------------ the stroke: harder climbing, a glide in the bow wave or the air
+      const bowRide = !out && d.f > (ship?.cls.length ?? 0) * 0.4 && shipSpeed > 4 && d.act === 'swim';
+      const thrust = d.act === 'air' ? 0.006 : d.act === 'rise' ? 0.085 : bowRide ? 0.022 : 0.032 + Math.min(0.03, d.speed * 0.0028) + Math.max(0, d.pitch) * 0.04;
+      d.amp += (thrust - d.amp) * damp(d.act === 'air' ? 6 : 2.5, dt);
+      // about a body length and a bit per beat
+      d.phase += TAU * Math.max(0.7, d.speed / (1.2 * LEN * d.size)) * dt * (d.act === 'air' ? 0.3 : 1);
+      const curve = (d.pitch - prevPitch) / dt / Math.max(d.speed, 2);
+      d.bend += (clamp(curve * 0.9, -0.09, 0.09) - d.bend) * damp(6, dt);
+
       // gone over the horizon (or deep): done with
-      if (this.state === 'out' && (this.t > 14 || (ship && Math.hypot(d.x - ship.pos.x, d.z - ship.pos.z) > 160))) {
+      if (this.state === 'out' && (this.t > 16 || (ship && Math.hypot(d.x - ship.pos.x, d.z - ship.pos.z) > 160))) {
         this.pod.splice(i, 1);
         continue;
       }
@@ -354,8 +454,9 @@ export class Dolphins {
       _q.setFromEuler(_e);
       _m.compose(_p.set(d.x, d.y, d.z), _q, _s.set(L, L, L));
       _m.toArray(this.mesh.instanceMatrix.array, n * 16);
-      arr[n * 2] = d.phase;
-      arr[n * 2 + 1] = d.air > 0 ? 0.015 : 0.05 + Math.min(0.03, d.speed * 0.003);
+      arr[n * 3] = d.phase;
+      arr[n * 3 + 1] = d.amp;
+      arr[n * 3 + 2] = d.bend;
       n++;
     }
     this.mesh.count = n;
@@ -364,7 +465,7 @@ export class Dolphins {
       this.mesh.instanceMatrix.addUpdateRange(0, n * 16);
       this.mesh.instanceMatrix.needsUpdate = true;
       this.stroke.clearUpdateRanges();
-      this.stroke.addUpdateRange(0, n * 2);
+      this.stroke.addUpdateRange(0, n * 3);
       this.stroke.needsUpdate = true;
     }
     // a whistle here, a burst of clicks there, while they're with you
