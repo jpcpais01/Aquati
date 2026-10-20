@@ -194,8 +194,9 @@ export class WakeField {
   }
 
   /** Lets waves feel the sea floor: slower in shallows, stopped by land. */
-  setTerrain(heightTex: THREE.Texture) {
+  setTerrain(heightTex: THREE.Texture, rect?: THREE.Vector4) {
     this.simMat.uniforms.uHeightTex.value = heightTex;
+    if (rect) (this.simMat.uniforms.uWorldRect.value as THREE.Vector4).copy(rect);
   }
 
   private add(x: number, z: number, radius: number, strength: number, kind: number) {

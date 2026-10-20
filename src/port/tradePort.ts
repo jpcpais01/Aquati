@@ -76,6 +76,21 @@ export const TRADE_SPECS: TradeSpec[] = [
     taste: { tagline: 'A thirsty town: spirits and provisions fetch top coin.', mult: { spirits: 1.5, provisions: 1.15, cloth: 1, coin: 1, gems: 0.85, jewellery: 0.85, art: 0.8, relics: 0.9 } },
     wall: 0xf0cf5e, wall2: 0x8fbf7a, roof: 0x6b3a2a, trim: 0xf6efd8, awning: [0x2f7d3a, 0xf6efd8], flag: [0x2f7d3a, 0xf0cf5e, 0x6b3a2a],
   },
+  // Las Brumas
+  {
+    name: 'Vila Garoa',
+    signature: 'bazaar',
+    house: 'Tea & Silk Bazaar',
+    taste: { tagline: 'Damp hills, dry throats: tea houses pay well for spirits, cloth and jewellery.', mult: { spirits: 1.35, cloth: 1.3, jewellery: 1.15, provisions: 1, coin: 0.95, gems: 0.95, art: 0.9, relics: 0.85 } },
+    wall: 0xbfe0d0, wall2: 0xf4e6dc, roof: 0x3f6f62, trim: 0xfaf4ea, awning: [0xd9667a, 0xfaf4ea], flag: [0x3f6f62, 0xd9667a, 0xfaf4ea],
+  },
+  {
+    name: 'Esmeraldeau',
+    signature: 'gallery',
+    house: 'Jade Carvers\' Gallery',
+    taste: { tagline: 'The carvers of the mist buy relics, gems and old art to inspire their jade.', mult: { relics: 1.45, gems: 1.25, art: 1.2, jewellery: 1, coin: 0.95, provisions: 0.9, cloth: 0.85, spirits: 0.85 } },
+    wall: 0xf3e7cf, wall2: 0xa9cdb8, roof: 0x7a3e52, trim: 0xfff8ec, awning: [0x2e8a6e, 0xf3e7cf], flag: [0x2e8a6e, 0xf3e7cf, 0x7a3e52],
+  },
 ];
 
 // ------------------------------------------------------------------ shared art

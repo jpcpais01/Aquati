@@ -218,6 +218,7 @@ export class Audio {
     this.musicEnabled = on;
     this.syncMusic(0.6);
     this.syncBoss();
+    this.syncSea();
   }
 
   /** Volume sliders (0..1 each). Music skips the effects compressor, so it takes master directly. */
@@ -235,6 +236,7 @@ export class Audio {
     this.musicBus?.gain.setTargetAtTime(v.music * v.master, t, 0.04);
     if (this.music && !this.musicGain) this.syncMusic(0.1);
     this.syncBoss();
+    this.syncSea();
   }
 
   setMuted(m: boolean) {
@@ -2645,5 +2647,282 @@ export class Audio {
       }
     }, 120);
     this.boss = b;
+  }
+
+  // ---------------------------------------------------------------- the high seas
+  // A calm theme for the open ocean, played live: a slow, warm pad breathing
+  // through Dmaj9, Bm11, Gmaj7#11 and A6sus, a deep sine under each chord, a
+  // harp picking lazily over the chord tones and, now and then, a soft
+  // ocarina line from the pentatonic, all washed in a long, cross-fed echo
+  // like light on the swell. It fades in when you leave the islands behind and
+  // drifts away as land comes up over the horizon.
+  private seaBus: GainNode | null = null;
+  private seaSong: { gain: GainNode; wet: GainNode; dry: GainNode; timer: number; next: number; bar: number; nodes: AudioScheduledSourceNode[] } | null = null;
+
+  private syncSea() {
+    if (!this.ctx || !this.seaBus) return;
+    this.seaBus.gain.setTargetAtTime(this.musicEnabled ? this.vol.music * 0.95 : 0, this.ctx.currentTime, 0.1);
+  }
+
+  /** The high seas' theme on or off (it fades either way). */
+  highSeas(on: boolean) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    if (!on) {
+      const sg = this.seaSong;
+      if (!sg) return;
+      this.seaSong = null;
+      sg.gain.gain.cancelScheduledValues(t);
+      sg.gain.gain.setTargetAtTime(0, t, 1.6);
+      window.setTimeout(() => {
+        clearInterval(sg.timer);
+        for (const n of sg.nodes) n.stop();
+        sg.gain.disconnect();
+      }, 9000);
+      return;
+    }
+    if (this.seaSong) return;
+    if (!this.seaBus) {
+      this.seaBus = ctx.createGain();
+      this.seaBus.connect(this.master);
+      this.syncSea();
+    }
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(1, t + 6);
+    gain.connect(this.seaBus);
+    // the echo: two delays feeding each other through a dark filter, panned apart
+    const dry = ctx.createGain();
+    dry.gain.value = 0.8;
+    dry.connect(gain);
+    const wet = ctx.createGain();
+    wet.gain.value = 0.55;
+    const nodes: AudioScheduledSourceNode[] = [];
+    const dl = ctx.createDelay(2);
+    const dr = ctx.createDelay(2);
+    dl.delayTime.value = 0.61;
+    dr.delayTime.value = 0.83;
+    const fb = ctx.createBiquadFilter();
+    fb.type = 'lowpass';
+    fb.frequency.value = 2400;
+    const fbl = ctx.createGain();
+    const fbr = ctx.createGain();
+    fbl.gain.value = 0.48;
+    fbr.gain.value = 0.46;
+    const pl = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    const pr = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    wet.connect(fb);
+    fb.connect(dl);
+    fb.connect(dr);
+    dl.connect(fbr).connect(dr);
+    dr.connect(fbl).connect(dl);
+    if (pl && pr) {
+      pl.pan.value = -0.7;
+      pr.pan.value = 0.7;
+      dl.connect(pl).connect(gain);
+      dr.connect(pr).connect(gain);
+    } else {
+      dl.connect(gain);
+      dr.connect(gain);
+    }
+    const sg = { gain, wet, dry, timer: 0, next: t + 0.3, bar: 0, nodes };
+    const BAR = (60 / 64) * 4;
+    const hz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
+    // chord voicings (midi), and the root under each
+    const CHORDS: [number[], number][] = [
+      [[62, 66, 69, 73, 76], 38], // Dmaj9
+      [[59, 62, 66, 69, 76], 35], // Bm11
+      [[55, 59, 62, 66, 73], 43], // Gmaj7#11
+      [[57, 61, 64, 66, 71], 45], // A6sus (add9)
+      [[62, 66, 69, 73, 76], 38],
+      [[54, 61, 64, 69, 73], 42], // F#m7
+      [[55, 62, 66, 71, 74], 43], // Gmaj7
+      [[57, 62, 64, 69, 71], 45], // Asus4
+    ];
+    const PENTA = [69, 71, 73, 76, 78, 81, 83, 85];
+    const pad = (at: number, notes: number[], len: number) => {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(700, at);
+      lp.frequency.linearRampToValueAtTime(1500, at + len * 0.5);
+      lp.frequency.linearRampToValueAtTime(800, at + len + 2.5);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(0.05, at + 2.2);
+      g.gain.setValueAtTime(0.05, at + len - 0.4);
+      g.gain.linearRampToValueAtTime(0.0001, at + len + 3);
+      lp.connect(g);
+      g.connect(dry);
+      g.connect(wet);
+      for (const m of notes) {
+        for (const det of [-6, 5]) {
+          const o = ctx.createOscillator();
+          o.type = 'triangle';
+          o.frequency.value = hz(m);
+          o.detune.value = det + (Math.random() - 0.5) * 3;
+          o.connect(lp);
+          o.start(at);
+          o.stop(at + len + 3.2);
+        }
+      }
+    };
+    const bass = (at: number, m: number, len: number) => {
+      const o = ctx.createOscillator();
+      o.frequency.value = hz(m);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(0.11, at + 0.9);
+      g.gain.exponentialRampToValueAtTime(0.02, at + len);
+      g.gain.linearRampToValueAtTime(0.0001, at + len + 1.5);
+      o.connect(g).connect(dry);
+      o.start(at);
+      o.stop(at + len + 1.6);
+    };
+    // a plucked harp string: a bright attack that mellows as it rings
+    const harp = (at: number, m: number, v: number) => {
+      const f = hz(m);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(v, at + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.0008, at + 2.6);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(f * 6, at);
+      lp.frequency.exponentialRampToValueAtTime(f * 1.5, at + 1.2);
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      if (pan) pan.pan.value = (Math.random() - 0.5) * 0.8;
+      lp.connect(g);
+      (pan ? g.connect(pan) : g).connect(dry);
+      (pan ?? g).connect(wet);
+      for (const [mul, k] of [[1, 1], [2, 0.35], [3, 0.12]] as const) {
+        const o = ctx.createOscillator();
+        o.type = mul === 1 ? 'triangle' : 'sine';
+        o.frequency.value = f * mul;
+        const og = ctx.createGain();
+        og.gain.value = k;
+        o.connect(og).connect(lp);
+        o.start(at);
+        o.stop(at + 2.7);
+      }
+    };
+    // a breathy ocarina: a sine with a soft vibrato and a puff of air at the start
+    const ocarina = (at: number, m: number, len: number) => {
+      const o = ctx.createOscillator();
+      o.frequency.value = hz(m);
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 5.2;
+      const vg = ctx.createGain();
+      vg.gain.setValueAtTime(0, at);
+      vg.gain.linearRampToValueAtTime(hz(m) * 0.006, at + len * 0.6);
+      vib.connect(vg).connect(o.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(0.045, at + 0.18);
+      g.gain.setValueAtTime(0.04, at + len - 0.2);
+      g.gain.linearRampToValueAtTime(0.0001, at + len + 0.5);
+      o.connect(g);
+      g.connect(dry);
+      g.connect(wet);
+      o.start(at);
+      o.stop(at + len + 0.6);
+      vib.start(at);
+      vib.stop(at + len + 0.6);
+      const n = this.noiseSrc(ctx, at, 0.25, 1);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = hz(m) * 2;
+      bp.Q.value = 2;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.012, at);
+      ng.gain.exponentialRampToValueAtTime(0.0005, at + 0.22);
+      n.connect(bp).connect(ng).connect(wet);
+    };
+    let lastMel = 73;
+    sg.timer = window.setInterval(() => {
+      const now = ctx.currentTime;
+      while (sg.next < now + 1.5) {
+        const at = sg.next;
+        const ci = Math.floor(sg.bar / 2) % CHORDS.length;
+        const [notes, root] = CHORDS[ci];
+        if (sg.bar % 2 === 0) {
+          pad(at, notes, BAR * 2);
+          bass(at, root, BAR * 2);
+        }
+        // the harp: eighth notes over the chord, rising and falling, often resting
+        const tones = [...notes, ...notes.map((n) => n + 12)].sort((a, b) => a - b);
+        for (let e = 0; e < 8; e++) {
+          if (Math.random() > (e % 2 ? 0.38 : 0.62)) continue;
+          const k = Math.floor((Math.sin((sg.bar * 8 + e) * 0.7) * 0.5 + 0.5) * (tones.length - 1));
+          harp(at + e * (BAR / 8) + (Math.random() - 0.5) * 0.02, tones[k], 0.05 + Math.random() * 0.03);
+        }
+        // the ocarina sings a little phrase every few bars
+        if (sg.bar % 4 === 1 && Math.random() < 0.75) {
+          let beat = 0;
+          const len = 2 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < len; i++) {
+            const step = Math.round((Math.random() - 0.5) * 3);
+            const j = Math.max(0, Math.min(PENTA.length - 1, PENTA.indexOf(lastMel) + step));
+            lastMel = PENTA[j < 0 ? 2 : j];
+            const d = (BAR / 4) * (i === len - 1 ? 3 : 1 + Math.floor(Math.random() * 2));
+            ocarina(at + beat, lastMel, d * 0.95);
+            beat += d;
+          }
+        }
+        sg.next += BAR;
+        sg.bar++;
+      }
+    }, 200);
+    this.seaSong = sg;
+  }
+
+  /** A dolphin calls: a rising, warbling whistle, or a quick burst of clicks. */
+  dolphin(vol: number, pan: number, whistle: boolean) {
+    const ctx = this.ctx;
+    if (!ctx || vol < 0.02) return;
+    const t = ctx.currentTime + Math.random() * 0.05;
+    const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (p) p.pan.value = clamp1(pan);
+    const out = ctx.createGain();
+    out.gain.value = vol;
+    (p ? out.connect(p) : out).connect(this.ambBus);
+    if (whistle) {
+      const o = ctx.createOscillator();
+      const f0 = 2600 + Math.random() * 1600;
+      const len = 0.35 + Math.random() * 0.5;
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f0 * (1.35 + Math.random() * 0.5), t + len * 0.45);
+      o.frequency.exponentialRampToValueAtTime(f0 * (0.9 + Math.random() * 0.3), t + len);
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 9 + Math.random() * 8;
+      const vg = ctx.createGain();
+      vg.gain.value = f0 * 0.03;
+      vib.connect(vg).connect(o.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.05, t + 0.04);
+      g.gain.setValueAtTime(0.05, t + len * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + len + 0.05);
+      vib.start(t);
+      vib.stop(t + len + 0.05);
+    } else {
+      const n = 6 + Math.floor(Math.random() * 10);
+      const gap = 0.018 + Math.random() * 0.03;
+      for (let i = 0; i < n; i++) {
+        const at = t + i * gap * (1 - i * 0.02);
+        const s = this.noiseSrc(ctx, at, 0.012, 2);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 3800 + Math.random() * 1400;
+        bp.Q.value = 6;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.09, at);
+        g.gain.exponentialRampToValueAtTime(0.001, at + 0.011);
+        s.connect(bp).connect(g).connect(out);
+      }
+    }
   }
 }

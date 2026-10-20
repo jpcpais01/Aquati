@@ -1112,6 +1112,17 @@ export class Ocean {
     }
   }
 
+  /**
+   * Points the shore foam and wave damping at an archipelago's own seabed map
+   * (every pass of the sea shares these uniforms). Swapped out on the high
+   * seas, where both maps read as open deep water at their edges.
+   */
+  setSeabed(tex: THREE.Texture, rect: THREE.Vector4) {
+    const u = this.material.uniforms;
+    u.uHeightTex.value = tex;
+    (u.uWorldRect.value as THREE.Vector4).copy(rect);
+  }
+
   follow(x: number, z: number) {
     const s = this.snap * 4;
     this.mesh.position.set(Math.round(x / s) * s, 0, Math.round(z / s) * s);

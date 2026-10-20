@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { clamp, mulberry32 } from '../core/noise';
 import { Bucket, Builder, C, lin, shade } from '../port/port';
 import { PropGeo } from '../port/pirates';
-import { Island, Terrain } from '../world/terrain';
+import { Island, SeaFloor } from '../world/terrain';
 import type { CampLayout } from './kit';
 import type { Disc } from './ground';
 
@@ -85,6 +85,8 @@ export function worldToFort(s: { x: number; z: number; yaw: number }, x: number,
 // ------------------------------------------------------------------ sites
 
 const FORT_NAMES = ['Castillo São Felipe', 'Forte Sainte-Bárbara', 'Kasteel do Morro', 'Fuerte San Cristóvão', 'Bastión de Yaguana'];
+/** The Brethren's strongholds in Las Brumas. */
+export const BRUMAS_FORT_NAMES = ['Fortaleza da Bruma', 'Kasteel Nevelrots', 'Bastión de la Garoa'];
 
 /**
  * Rises above the sea for the forts: a flat shoulder of dry ground a short
@@ -93,7 +95,7 @@ const FORT_NAMES = ['Castillo São Felipe', 'Forte Sainte-Bárbara', 'Kasteel do
  * spot on each island the towns leave free, then the `count` of them spread
  * widest across the archipelago.
  */
-export function findFortSites(terrain: Terrain, avoid: Disc[], skip: Island[], count: number): (FortSite & { name: string })[] {
+export function findFortSites(terrain: SeaFloor, avoid: Disc[], skip: Island[], count: number, names = FORT_NAMES): (FortSite & { name: string })[] {
   const H = FORT_H;
   const per: { site: FortSite; score: number }[] = [];
   terrain.islands.forEach((isl, idx) => {
@@ -176,7 +178,7 @@ export function findFortSites(terrain: Terrain, avoid: Disc[], skip: Island[], c
       }
     });
     const s = per.splice(bi, 1)[0].site;
-    out.push({ ...s, name: FORT_NAMES[out.length % FORT_NAMES.length] });
+    out.push({ ...s, name: names[out.length % names.length] });
   }
   return out;
 }

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mulberry32 } from '../core/noise';
-import { Island, Terrain } from '../world/terrain';
+import { Island, SeaFloor } from '../world/terrain';
 import type { Vegetation } from '../world/vegetation';
 
 // The islands as ground to walk on: how high the sand is underfoot, where the
@@ -60,7 +60,7 @@ export class Ground {
   readonly lifts: Lift[] = [];
 
   constructor(
-    readonly terrain: Terrain,
+    readonly terrain: SeaFloor,
     private veg: Vegetation | undefined,
     /** Towns and the harbour: no wandering through their walls. */
     readonly towns: Disc[],
@@ -214,10 +214,10 @@ export class Ground {
  * a beach a boat can land on, clear of towns, camps and trees. `seed` picks
  * the island and the spot, so every device draws the same map.
  */
-export function digSite(ground: Ground, seed: number, avoid: Disc[], skip: Island | null): { island: Island; x: number; z: number } | null {
+export function digSite(ground: Ground, seed: number, avoid: Disc[], skip: Island | null, within: (i: Island) => boolean = () => true): { island: Island; x: number; z: number } | null {
   const t = ground.terrain;
   const rnd = mulberry32(seed);
-  const isles = t.islands.filter((i) => i !== skip && i.r > 40);
+  const isles = t.islands.filter((i) => i !== skip && i.r > 40 && within(i));
   for (let n = 0; n < 8 && isles.length; n++) {
     const isl = isles.splice(Math.floor(rnd() * isles.length), 1)[0];
     for (let k = 0; k < 60; k++) {
@@ -253,7 +253,7 @@ export function digSite(ground: Ground, seed: number, avoid: Disc[], skip: Islan
  * most islands, away from the towns. Fixed by the world's seed, and handed to
  * the vegetation as clearings so no tree grows through a tent.
  */
-export function findCampSites(terrain: Terrain, avoid: Disc[], skip: Island | null): CampSite[] {
+export function findCampSites(terrain: SeaFloor, avoid: Disc[], skip: Island | null): CampSite[] {
   const sites: CampSite[] = [];
   terrain.islands.forEach((isl, idx) => {
     if (isl === skip) return;

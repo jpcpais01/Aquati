@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { angleDelta, clamp, damp, mulberry32, smoothstep } from '../core/noise';
 import { globalUniforms } from '../render/environment';
-import { Reef, Terrain } from '../world/terrain';
+import { Reef, SeaFloor } from '../world/terrain';
 import { Vortex, VORTEX_N } from '../world/vortex';
 import type { Ship } from '../ships/ship';
 import type { Item } from './loot';
@@ -58,11 +58,25 @@ export interface VortexState {
   out: number;
 }
 
-const NAMES: [string, number, 1 | -1][] = [
+/** A maelstrom to place: name, radius of its pull (m), and which way it turns. */
+type MaelstromSpec = [string, number, 1 | -1];
+
+export const NAMES: MaelstromSpec[] = [
   ['La Gargantilha', 128, 1],
   ['Redemolino Noir', 112, -1],
   ['El Ojo de Juracán', 100, 1],
 ];
+/** Las Brumas has one, out in the jade water among the stacks. */
+export const BRUMAS_NAMES: MaelstromSpec[] = [['Sorvedouro da Bruma', 108, -1]];
+
+/** Where an archipelago's maelstroms go: round its centre, clear of `avoid`. */
+export interface MaelstromPlan {
+  cx: number;
+  cz: number;
+  names: MaelstromSpec[];
+  avoid: { x: number; z: number; r: number }[];
+  seed: number;
+}
 
 /** Peak swirl (m/s, at the edge of the throat) and inflow at full strength. */
 const SWIRL = 8.5;
@@ -83,16 +97,21 @@ export class Hazards implements HazardSense {
   private fxT = 0;
   private storm = 0;
 
-  constructor(private terrain: Terrain, avoid: { x: number; z: number; r: number }[], seed = 4242) {
+  constructor(private terrain: SeaFloor, plans: MaelstromPlan[]) {
     this.reefs = terrain.reefs;
+    for (const plan of plans) this.place(plan);
+  }
+
+  private place({ cx, cz, names, avoid, seed }: MaelstromPlan) {
+    const terrain = this.terrain;
     const rnd = mulberry32(seed);
     const TAU = Math.PI * 2;
-    for (const [name, r, dir] of NAMES) {
+    for (const [name, r, dir] of names) {
       for (let attempt = 0; attempt < 4000; attempt++) {
         const a = rnd() * TAU;
         const d = 200 + Math.sqrt(rnd()) * 760;
-        const x = Math.cos(a) * d;
-        const z = Math.sin(a) * d;
+        const x = cx + Math.cos(a) * d;
+        const z = cz + Math.sin(a) * d;
         if (d + r > 960) continue;
         if (avoid.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r * 1.05)) continue;
         if (this.reefs.some((o) => Math.hypot(o.x - x, o.z - z) < o.r + r + 40)) continue;

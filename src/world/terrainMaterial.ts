@@ -17,6 +17,8 @@ import { GLSL_SURF, shoreUniforms } from './shore';
 //   aqAO    baked horizon AO
 //   aqCanopy  tree cover (0..1): mossy forest floor and leaf litter under crowns
 //   aqReef    open-sea coral reef (0..1): a dense living carpet of coral heads
+//   aqBiome   archipelago: 0 the home isles, 1 Las Brumas (pink coral sand,
+//             jade turf, pale limestone towers streaked grey by the rain)
 
 function lin(hex: number): string {
   const c = new THREE.Color(hex).convertSRGBToLinear();
@@ -56,6 +58,12 @@ const vec3 T_SANDSTONE_PALE = ${lin(0xf0c896)};
 const vec3 T_BASALT = ${lin(0x7d726a)};
 const vec3 T_SCORIA = ${lin(0x8d5a44)};
 const vec3 T_ASH = ${lin(0x9a9186)};
+const vec3 T_SAND_PINK = ${lin(0xf6d9cf)};
+const vec3 T_SAND_ROSE = ${lin(0xe8b4a4)};
+const vec3 T_LIME = ${lin(0xdcd6c6)};
+const vec3 T_LIME_WARM = ${lin(0xe6d6b6)};
+const vec3 T_LIME_STAIN = ${lin(0x7f8078)};
+const vec3 T_LIME_MOSS = ${lin(0x557f45)};
 `;
 
 const FRAG_HEAD = /* glsl */ `
@@ -63,6 +71,7 @@ varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqCanopy;
 varying float vAqReef;
+varying float vAqBiome;
 ${PALETTE}
 ${GLSL_SURF}
 // the swash cycle, as fractions of a wave period: the sheet runs up until
@@ -115,6 +124,8 @@ const FRAG_ALBEDO = /* glsl */ `
 
   // ---------------------------------------------------------------- sand
   vec3 sand = mix(T_SAND, T_SAND_WARM, smoothstep(0.38, 0.68, nS.g) * 0.75);
+  // Las Brumas: sand ground from pink coral and shell, rosier in drifts
+  sand = mix(sand, mix(T_SAND_PINK, T_SAND_ROSE, smoothstep(0.42, 0.7, nS.g) * 0.7), vAqBiome);
   sand *= 0.94 + nF.a * 0.12;
   // wind-combed ripples: strong in the shallows, a whisper on dry beach
   float rph = dot(xz, vec2(0.79, 0.61)) * 2.4 + (nD.g - 0.5) * 7.0 + (nS.r - 0.5) * 14.0;
@@ -172,6 +183,8 @@ const FRAG_ALBEDO = /* glsl */ `
   vec3 g = mix(T_GRASS, T_GRASS_LIGHT, smoothstep(0.46, 0.66, nS.r + (nD.g - 0.5) * 0.12) * 0.5);
   g = mix(g, T_GRASS_DRY, smoothstep(0.52, 0.66, nM.r + tint * 0.14 + (nD.g - 0.5) * 0.1) * 0.7);
   g = mix(g, T_GRASS_DEEP, smoothstep(0.5, 0.62, 1.0 - nS.g + (nD.r - 0.5) * 0.1) * 0.6);
+  // Las Brumas: wetter, bluer jade turf
+  g = mix(g, g * vec3(0.74, 1.0, 0.86), vAqBiome);
   float jungle = smoothstep(3.5, 10.0, h) * smoothstep(0.44, 0.58, nM.g + (nD.g - 0.5) * 0.08) * (1.0 - kA);
   g = mix(g, T_JUNGLE, jungle * 0.8);
   // sun-cured grass up on the high lush ridges
@@ -236,6 +249,16 @@ const FRAG_ALBEDO = /* glsl */ `
   rVol = mix(rVol, T_ASH, smoothstep(0.6, 0.75, texture(uNoiseTex, vec2(xz.x * 0.06 + xz.y * 0.02, h * 0.012)).g) * 0.35);
   #endif
   vec3 rock = rLush * kL + rLush * kA + rSand * kR + rVol * kV;
+  if (vAqBiome > 0.01) {
+    // limestone: pale stone in soft bands, long grey rain stains running down
+    // the walls (noise stretched along height), ferns and moss on every ledge
+    float stain = smoothstep(0.5, 0.78, texture(uNoiseTex, vec2(xz.x * 0.11 + xz.y * 0.07, h * 0.006 + xz.y * 0.013)).g + (nR.a - 0.5) * 0.2);
+    vec3 lime = mix(T_LIME, T_LIME_WARM, smoothstep(0.35, 0.75, strata) * 0.5);
+    lime = mix(lime, T_LIME_STAIN, stain * 0.62);
+    lime *= 1.0 - crack * 0.22;
+    lime = mix(lime, T_LIME_MOSS, smoothstep(0.62, 0.86, wn.y + (nR.g - 0.5) * 0.4) * 0.8);
+    rock = mix(rock, lime, vAqBiome * (1.0 - kV));
+  }
   float fineFade = 1.0 - smoothstep(0.1, 0.25, fp);
   float bRock = mix(-crack * 0.2 * fineFade + nR.a * 0.08 * fineFade, (strata - 0.5) * 0.28 + nR.a * 0.05 * fineFade, kR)
     + kV * ((1.0 - cells) * 0.22) * (1.0 - smoothstep(0.25, 0.6, fp));
@@ -364,13 +387,15 @@ attribute vec3 aqInfo;
 attribute float aqAO;
 attribute float aqCanopy;
 attribute float aqReef;
+attribute float aqBiome;
+varying float vAqBiome;
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqAO;
 varying float vAqCanopy;
 varying float vAqReef;`,
       )
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;\nvAqReef = aqReef;');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;\nvAqReef = aqReef;\nvAqBiome = aqBiome;');
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', `${lite ? '#define AQ_TERRAIN_LITE\n' : ''}varying float vAqAO;\n${FRAG_HEAD}\nvoid main() {`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_ALBEDO}`)

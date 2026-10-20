@@ -1,6 +1,6 @@
 import { SUN_DIR } from '../render/environment';
 import { clamp } from '../core/noise';
-import { Terrain, Island } from '../world/terrain';
+import { SeaFloor, Island } from '../world/terrain';
 
 // Finds a stretch of coast for the harbour: a beach backed by land, a shelf
 // that drops to deep water a short pier's length out, open sea in front for
@@ -30,7 +30,7 @@ interface Candidate {
 }
 
 /** Every stretch of an island's coast that can take a quay. */
-function* candidates(terrain: Terrain, isl: Island, strict: boolean): Generator<Candidate> {
+function* candidates(terrain: SeaFloor, isl: Island, strict: boolean): Generator<Candidate> {
   const sl = Math.hypot(SUN_DIR.x, SUN_DIR.z);
   const sx = SUN_DIR.x / sl;
   const sz = SUN_DIR.z / sl;
@@ -85,7 +85,7 @@ function* candidates(terrain: Terrain, isl: Island, strict: boolean): Generator<
   }
 }
 
-export function findPortSite(terrain: Terrain, near: { x: number; z: number }): PortSite {
+export function findPortSite(terrain: SeaFloor, near: { x: number; z: number }): PortSite {
   for (const strict of [true, false]) {
     let best: PortSite | null = null;
     let bestScore = -Infinity;
@@ -111,7 +111,7 @@ export function findPortSite(terrain: Terrain, near: { x: number; z: number }): 
  * doesn't already use, then the `count` of them spread widest across the
  * archipelago, so there is always a market within a fair sail.
  */
-export function findTradeSites(terrain: Terrain, count: number, taken: PortSite[]): PortSite[] {
+export function findTradeSites(terrain: SeaFloor, count: number, taken: PortSite[], mid = { x: 0, z: 0 }): PortSite[] {
   const per: PortSite[] = [];
   for (const isl of terrain.islands) {
     if (taken.some((t) => t.island === isl)) continue;
@@ -121,8 +121,10 @@ export function findTradeSites(terrain: Terrain, count: number, taken: PortSite[
       for (const c of candidates(terrain, isl, strict)) {
         // the quay should look out over open sea, towards the middle of the archipelago
         const s = c.site;
-        const toMid = Math.hypot(s.x, s.z) || 1;
-        const facing = -(s.nx * s.x + s.nz * s.z) / toMid;
+        const mx = s.x - mid.x;
+        const mz = s.z - mid.z;
+        const toMid = Math.hypot(mx, mz) || 1;
+        const facing = -(s.nx * mx + s.nz * mz) / toMid;
         const score = c.land * 1.2 + c.shallow * 0.8 - Math.abs(c.shelf - 14) * 0.03 + facing * 0.4 - Math.abs(c.ang - 0.9) * 0.3;
         if (score > bestScore) {
           bestScore = score;
