@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T20:00Z',
     entries: [
       {
+        title: 'Storms worth sailing into, and every weather reworked',
+        notes: [
+          'Storms look like storms now. The sea turns a deep bottle-green slate, the troughs fall into shadow and the steep crests glow a cold green where the light comes through them. The flat grey haze and the hard white hatching that used to cover the water are gone.',
+          'The big swells break for real: white caps spill along their crests in broken, wandering lines, ride along with the waves and leave foam fading to lace behind them, with milky green water churned up underneath. Long soft streaks of spume trail away down the wind between them.',
+          'The wind tears spray off the tops of the breaking crests and flings it downwind in torn white sheets, more of it under a gust. It replaces the old puffs of smoke-like spray.',
+          'Rain finally shows up. Fine streaks fall past the camera and burst on the swell in little rings and crowns of spray, and the showers sweep across the sea in curtains that drift with the wind. Lightning lights up the patch of sea where it strikes, and the murk glows with each flash.',
+          'Every weather got a pass. Sea mist now lies in drifting banks with clear water between them instead of a white-out, rain dulls the sea to a soft grey-teal, cloudy days are a little softer and greyer, and storms get a cold, moody grade that closes in round your ship. Clear and fair days keep their colour.',
+        ],
+      },
+      {
         title: 'A new app icon',
         notes: [
           'Shores of Fortune has a new face on your home screen: a galleon in silhouette sailing across a huge golden-hour sun, her sails rimmed in gold light, a red pennant at the masthead, palm isles on the horizon and the sun\'s path glittering across a turquoise sea.',
