@@ -2107,6 +2107,8 @@ export interface CrewFigure {
   readonly matrix: THREE.Matrix4;
   prop: number;
   visible: boolean;
+  /** Walking about but not drawn (the captain, seen from their own eyes). */
+  hidden?: boolean;
 }
 
 export class CrewSystem {
@@ -2286,7 +2288,7 @@ export class CrewSystem {
       }
     }
     for (const f of this.figures) {
-      if (!f.visible || f.row < 0) continue;
+      if (!f.visible || f.hidden || f.row < 0) continue;
       const e = f.matrix.elements;
       if (this.culling && !this.inView(e[12], e[13], e[14])) continue;
       const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
