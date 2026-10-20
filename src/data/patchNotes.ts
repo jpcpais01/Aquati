@@ -25,11 +25,17 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'A gentler cinematic angle',
+        notes: [
+          'The cinematic view past the farthest zoom no longer swoops down to the horizon. It now keeps exactly the same distance and framing as your farthest zoom and only leans the camera over a little more.',
+        ],
+      },
+      {
         title: 'A cinematic view past the farthest zoom',
         notes: [
           'Zooming all the way out still stops where it always did, so a quick flick of the wheel never throws the camera somewhere unexpected.',
-          'But rest at the farthest zoom for a second and then keep zooming out, and the camera swings down low over the water toward the horizon: the sea runs on to the skyline, distant islands rise out of the haze and the open sky and its clouds fill the top of the screen.',
-          'Each push tips it a little further, in a slow, weighty glide, until you are sailing in a proper cinematic shot. Zoom back in and the camera levels out first, then closes in as usual.',
+          'But rest at the farthest zoom for a second and then keep zooming out, and the camera leans over a little further, for a more cinematic angle on your ship.',
+          'Each push leans it a touch more, in a slow, weighty glide. Zoom back in and the camera straightens up first, then closes in as usual.',
           'Works with a mouse wheel, a trackpad and a two-finger pinch on phones and tablets.',
         ],
       },
