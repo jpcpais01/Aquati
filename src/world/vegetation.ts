@@ -491,15 +491,16 @@ export class Vegetation {
 
   build() {
     const lo = 1;
-    const palms = [palmGeometry(8.5, 1.6, 3), palmGeometry(10.5, 2.4, 7), palmGeometry(7, 0.9, 13)];
-    const palmsLo = [palmGeometry(8.5, 1.6, 3, lo), palmGeometry(10.5, 2.4, 7, lo), palmGeometry(7, 0.9, 13, lo)];
-    const palmsSh = [palmGeometry(8.5, 1.6, 3, 0, true), palmGeometry(10.5, 2.4, 7, 0, true), palmGeometry(7, 0.9, 13, 0, true)];
+    // (trunks flagged as bark: see flora.ts barkSign)
+    const palms = [palmGeometry(8.5, 1.6, 3, 0, false, true), palmGeometry(10.5, 2.4, 7, 0, false, true), palmGeometry(7, 0.9, 13, 0, false, true)];
+    const palmsLo = [palmGeometry(8.5, 1.6, 3, lo, false, true), palmGeometry(10.5, 2.4, 7, lo, false, true), palmGeometry(7, 0.9, 13, lo, false, true)];
+    const palmsSh = [palmGeometry(8.5, 1.6, 3, 0, true, true), palmGeometry(10.5, 2.4, 7, 0, true, true), palmGeometry(7, 0.9, 13, 0, true, true)];
     const treeSpec: [number, 'round' | 'tall' | 'flame' | 'blossom'][] = [[5, 'round'], [17, 'round'], [29, 'tall'], [41, 'flame'], [52, 'blossom'], [63, 'blossom']];
-    const trees = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st));
-    const treesLo = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, lo));
-    const treesSh = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, true));
-    const treeFerns = [treeFernGeometry(3), treeFernGeometry(8), treeFernGeometry(14)];
-    const treeFernsLo = [treeFernGeometry(3, lo), treeFernGeometry(8, lo), treeFernGeometry(14, lo)];
+    const trees = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, false, true));
+    const treesLo = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, lo, false, true));
+    const treesSh = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, true, true));
+    const treeFerns = [treeFernGeometry(3, 0, true), treeFernGeometry(8, 0, true), treeFernGeometry(14, 0, true)];
+    const treeFernsLo = [treeFernGeometry(3, lo, true), treeFernGeometry(8, lo, true), treeFernGeometry(14, lo, true)];
     const bananas = [bananaGeometry(2), bananaGeometry(9)];
     const bananasLo = [bananaGeometry(2, lo), bananaGeometry(9, lo)];
     const ferns = [fernGeometry(4), fernGeometry(12)];
@@ -529,10 +530,11 @@ export class Vegetation {
     const drift = [driftwoodGeometry(1), driftwoodGeometry(6)];
 
     const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ vertexColors: true, envMapIntensity: 0.8, ...o });
-    const palmMat = patchMaterial(std({ roughness: 0.7, side: THREE.DoubleSide }), { clouds: true, sway: 0.0028, foliage: true });
-    const treeMat = patchMaterial(std({ roughness: 0.8 }), { clouds: true, sway: 0.0018, foliage: true });
+    // up close: ringed, fibrous palm and tree-fern stems; fissured broadleaf bark under crowns of leaf clusters
+    const palmMat = patchMaterial(std({ roughness: 0.7, side: THREE.DoubleSide }), { clouds: true, sway: 0.0028, foliage: true, bark: 2 });
+    const treeMat = patchMaterial(std({ roughness: 0.8 }), { clouds: true, sway: 0.0018, foliage: true, bark: 1, leaves: true });
     const bananaMat = patchMaterial(std({ roughness: 0.62, side: THREE.DoubleSide }), { clouds: true, sway: 0.02, foliage: true });
-    const bushMat = patchMaterial(std({ roughness: 0.82 }), { clouds: true, foliage: true });
+    const bushMat = patchMaterial(std({ roughness: 0.82 }), { clouds: true, foliage: true, leaves: true });
     const coverMat = patchMaterial(std({ roughness: 0.86, side: THREE.DoubleSide, envMapIntensity: 0.7 }), { clouds: true, sway: 0.12, foliage: true, fade: 300 });
     const rockMat = patchMaterial(std({ roughness: 0.78 }), { clouds: true, caustics: true });
     const beachMat = patchMaterial(std({ roughness: 0.6 }), { caustics: true, clouds: true, fade: 200 });

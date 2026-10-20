@@ -31,6 +31,7 @@ import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, RegionId, regionById
 import { Dolphins } from '../fx/dolphins';
 import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
+import { Grass, GRASS_PUSHERS } from '../world/grass';
 import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { buildShore, setShoreField, setSurf } from '../world/shore';
@@ -140,6 +141,8 @@ const WRECK_REACH = 520;
 
 const _cineV = new THREE.Vector3();
 const _swayV = new THREE.Vector3();
+/** Who parts the grass this frame (see Grass.setPushers). */
+const _pushers: { x: number; y: number; z: number }[] = [];
 /** Planking torn from a sinking hull. */
 const WRECK_TIMBER = [new THREE.Color(0.42, 0.29, 0.18), new THREE.Color(0.55, 0.4, 0.26), new THREE.Color(0.33, 0.24, 0.16)];
 
@@ -234,6 +237,8 @@ export class Game {
   private lastFoe: Ship | null = null;
   private player: Ship | null = null;
   private veg?: Vegetation;
+  /** Blades of grass around the eye (none on the lightest devices). */
+  private grass?: Grass;
   private preview: Ship | null = null;
   private state: State = 'loading';
   private discovered = new Set<string>();
@@ -685,6 +690,11 @@ export class Game {
     const plants = veg.build();
     this.opaque.add(plants);
     freezeStatic(plants);
+    if (q.tier > 0) {
+      this.grass = new Grass([home, mist], [...towns, ...campClearings(camps), ...fortGround], q.tier === 1 ? 0.8 : 1);
+      this.opaque.add(this.grass.group);
+      freezeStatic(this.grass.group);
+    }
     await mark(0.4, 900);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
     await preloadPaint(this.look.flag.paint);
@@ -6466,6 +6476,19 @@ export class Game {
     // from eye level the far LOD takes over from ~85 m out, even on the island underfoot
     if (this.veg) this.veg.detail = this.rig.eyeBlend > 0.5 && !this.photo.active ? 85 : Infinity;
     this.veg?.update(cam, this.toSun, this.shadowC, this.shadowR);
+    if (this.grass) {
+      // feet walking through the meadow part it
+      const sh = this.shore;
+      const pu = _pushers;
+      pu.length = 0;
+      if (sh.active) {
+        if (sh.captain) pu.push(sh.captain);
+        for (const m of sh.party) if (pu.length < GRASS_PUSHERS && m.walker !== sh.captain && m.walker.visible) pu.push(m.walker);
+        for (const f of sh.foes) if (pu.length < GRASS_PUSHERS && f.visible && Math.hypot(f.x - cam.position.x, f.z - cam.position.z) < 30) pu.push(f);
+      }
+      this.grass.setPushers(pu);
+      this.grass.update(cam, this.veg?.hold);
+    }
     for (const r of this.regions) (r.land.userData.lod as TerrainLod | undefined)?.update(cam);
     staticLod.update(cam);
     P.end();

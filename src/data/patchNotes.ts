@@ -13,6 +13,27 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T21:00Z',
+    entries: [
+      {
+        title: 'Grass you can walk through',
+        notes: [
+          'The meadows on every island now grow real grass. Walk ashore and you wade through clumps of blades that sway in the wind, roll in waves as the breeze crosses the hillside and bow flat as each gust passes. They part around your boots and your crew\'s as you walk through them.',
+          'Each blade grows out of ground of exactly its own colour, so the grass is lush and dark in the damp hollows, sun-gold on the high ridges and blue-green in Las Brumas. It stops cleanly where the turf meets the sand or bare rock and thins out under the trees.',
+          'It only grows around you and fades out smoothly with distance, so it costs nothing out at sea.',
+        ],
+      },
+      {
+        title: 'Islands up close',
+        notes: [
+          'The ground under your feet has real texture now. Sand is grainy, with bits of shell and grit washed into drifts, and pink coral fragments in Las Brumas. Turf shows soil and sun-dried thatch between the clumps, the forest floor is littered with fallen leaves, and rock is gritty, finely cracked and freckled with lichen.',
+          'Tree crowns break up into lit clusters of leaves with shadowy gaps between them, and each cluster catches the sun on its own side. Broadleaf trunks have fissured bark with moss creeping up from the roots, and palms and tree ferns show the ring scars where old fronds fell.',
+          'All of this detail only shows when you are close enough to see it, and fades away smoothly further out.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T20:00Z',
     entries: [
       {

@@ -136,6 +136,9 @@ function smax(a: number, b: number, k: number): number {
 const DEEP_SAND = new THREE.Color(0xa99a76).convertSRGBToLinear();
 /** Side of each archipelago's seabed plane (m). */
 const FLOOR_SPAN = WORLD_SIZE * 4;
+/** Scratch for Terrain.turfCell. */
+const _kind = new Float32Array(3);
+const _info = new Float32Array(3);
 
 export class Terrain implements SeaFloor {
   /** Centre of this archipelago's square, and its south-west (min x, min z) corner. */
@@ -957,6 +960,36 @@ export class Terrain implements SeaFloor {
       (this.heightAt(x, z + e) - this.heightAt(x, z - e)) / (2 * e),
     );
     return out;
+  }
+
+  /**
+   * The ground of one 2 m grid cell for the grass (world/grass.ts): writes its
+   * four corner heights (x0z0, x1z0, x0z1, x1z1), then the ground shader's own
+   * inputs at its middle (volcanic, atoll, rocky, biome; tint, summit, tree
+   * cover, erosion) at `o`, and returns the cell's key, or -1 off the grid.
+   */
+  turfCell(i: number, j: number, out: Float32Array, o: number): number {
+    if (i < 0 || j < 0 || i >= GRID_N - 1 || j >= GRID_N - 1) return -1;
+    const k = j * GRID_N + i;
+    const H = this.heights;
+    out[o] = H[k];
+    out[o + 1] = H[k + 1];
+    out[o + 2] = H[k + GRID_N];
+    out[o + 3] = H[k + GRID_N + 1];
+    _kind.fill(0);
+    _info.fill(0);
+    this.surfaceInfo(k, (H[k] + H[k + 1] + H[k + GRID_N] + H[k + GRID_N + 1]) * 0.25, _kind, _info, 0);
+    out[o + 4] = _kind[0];
+    out[o + 5] = _kind[1];
+    out[o + 6] = _kind[2];
+    out[o + 7] = this.style === 'brumas' ? 1 : 0;
+    out[o + 8] = _info[0];
+    out[o + 9] = _info[1];
+    const C = this.canopy;
+    const E = this.erosion;
+    out[o + 10] = (C[k] + C[k + 1] + C[k + GRID_N] + C[k + GRID_N + 1]) * 0.25;
+    out[o + 11] = (E[k] + E[k + 1] + E[k + GRID_N] + E[k + GRID_N + 1]) * 0.25;
+    return k;
   }
 
   private gridH(i: number, j: number): number {
