@@ -7,6 +7,7 @@ import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality
 import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
+import { freezeStatic, skipWhenHidden } from '../render/staticScene';
 import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDraw } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
@@ -194,6 +195,8 @@ export class Game {
   private smokeT = 0;
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
+  /** The pixel ratio at full render scale (device ratio, capped and kept in the pixel budget). */
+  private baseDpr = 1;
   private birds!: Birds;
   private reef!: ReefLife;
   private windField!: WindField;
@@ -516,11 +519,15 @@ export class Game {
     ui.progress(0.62);
     await nextFrame();
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
-    this.opaque.add(veg.build());
+    // the plants never move once placed (culling only repacks their instances)
+    const plants = veg.build();
+    this.opaque.add(plants);
+    freezeStatic(plants);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
+    skipWhenHidden(this.port.root);
     this.tradePorts = new TradePorts(tradeSites, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.tradePorts.root);
     for (const tp of this.tradePorts.ports) {
@@ -870,7 +877,7 @@ export class Game {
     const b = this.settings.budget;
     const maxSamples = this.renderer.capabilities.maxSamples || 0;
     this.pipeline.configure(
-      { msaa: s.antialias ? Math.min(4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift },
+      { msaa: s.antialias ? Math.min(this.quality.mobile ? 2 : 4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift },
       { ao: s.rtAO, gi: s.rtGI, shadows: s.rtShadows, aoSamples: b.aoSamples, shadowSteps: b.shadowSteps },
     );
     this.ocean?.setReflections(s.rtReflections ? b.ssrSteps : 0);
@@ -2622,7 +2629,10 @@ export class Game {
   private resize() {
     const w = innerWidth;
     const h = innerHeight;
-    this.dpr = this.captureDpr || Math.min(devicePixelRatio || 1, this.quality.maxDpr) * this.scaler.scale;
+    // full-scale pixel ratio: the device's, capped, and kept inside the pixel budget
+    const base = Math.min(devicePixelRatio || 1, this.quality.maxDpr, Math.sqrt(this.quality.maxPixels / Math.max(1, w * h)));
+    this.baseDpr = Math.max(base, Math.min(devicePixelRatio || 1, 0.75));
+    this.dpr = this.captureDpr || this.baseDpr * this.scaler.scale;
     this.renderer.setPixelRatio(this.dpr);
     this.renderer.setSize(w, h, false);
     this.pipeline.setSize(w * this.dpr, h * this.dpr);
@@ -4384,7 +4394,7 @@ export class Game {
     P.tick(now);
     this.fps = P.fps;
     dt = Math.min(dt, 0.05);
-    if (this.scaler.sample(dt)) this.resize();
+    if (this.scaler.sample(dt, this.cpuMs)) this.resize();
     // Auto's last resort: still slow at the lowest resolution, so shed effects
     if (this.scaler.pressure >= 2) {
       this.scaler.pressure = 0;
@@ -4398,7 +4408,13 @@ export class Game {
     this.render(simDt);
     this.input.consume();
     P.frameEnd();
+    this.cpuMs = performance.now() - now;
   }
+
+  /** Main-thread time the last frame took (ms): tells the resolution scaler whether pixels are the problem. */
+  private cpuMs = 0;
+  /** Time until the minimap's next redraw. */
+  private mapT = 0;
 
   private update(dt: number, realDt: number) {
     const w = this.world;
@@ -4664,8 +4680,15 @@ export class Game {
       this.fleetHud.show(rows.length > 0);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight, this.boarding.prize, marked);
       const cap = this.shore.captain;
-      const camps = this.shore.camps.filter((c) => !c.fort).map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
-      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks(), this.hzMarks);
+      // the minimap is a 2D canvas redrawn from scratch (sea chart, coasts,
+      // every marker): 20 times a second reads as smooth at its size and
+      // takes a big slice of main-thread time off every frame
+      this.mapT -= realDt;
+      if (this.mapT <= 0) {
+        this.mapT = 0.05;
+        const camps = this.shore.camps.filter((c) => !c.fort).map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
+        this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks(), this.hzMarks);
+      }
       this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
       this.mapUi.setChip(this.maps.state);
@@ -4960,12 +4983,15 @@ export class Game {
       this.envT = 0;
     }
     // the sky's light changes slowly: refresh the image-based lighting a few times a second
+    // (and only when it has actually changed enough to see)
     this.envT -= dt > 0 ? dt : 0;
     if (this.envT <= 0) {
       this.envT = 0.35;
-      P.begin('Sky lighting (IBL)', 'render', true);
-      this.skyEnv.update();
-      P.end(true);
+      if (this.skyEnv.stale(0.35)) {
+        P.begin('Sky lighting (IBL)', 'render', true);
+        this.skyEnv.update();
+        P.end(true);
+      }
     }
 
     P.begin('Vegetation culling', 'sim');
@@ -5020,7 +5046,17 @@ export class Game {
     const rr = this.pipeline.rtRefl;
     this.ocean.setReflectionTarget(rr.texture, rr.width, rr.height);
     this.pipeline.refl = this.ocean.reflecting ? this.ocean.reflScene : null;
-    this.pipeline.sharpen = 0.12 + (1 - this.scaler.scale) * 0.4;
+    // sharpen more the further below the screen's own pixels we render (the
+    // browser stretches the picture the rest of the way)
+    const under1 = 1 - Math.min(1, this.dpr / (devicePixelRatio || 1));
+    this.pipeline.sharpen = Math.min(0.42, 0.12 + (1 - this.scaler.scale) * 0.4 + under1 * 0.22);
+    // the lowest the sea surface can sink this frame: every swell's trough at
+    // once, a wake's dip, and any maelstrom's funnel. Beneath it the water hides
+    // the world, so the screen-space lighting skips those pixels.
+    let dip = 1.4;
+    for (const w of this.world.waves) dip += w.amp;
+    for (const v of globalUniforms.uVortex.value) dip += Math.abs(v.w) * (v.z / 85) * 8.8;
+    this.pipeline.ss.seaCut = under || this.isUnder ? -1e9 : -dip;
     if (this.photo.active) {
       // a free camera can look out to the horizon: the sky and the far sea come in,
       // the diorama blur gives way to the lens's own depth of field

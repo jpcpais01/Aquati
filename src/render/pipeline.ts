@@ -412,7 +412,10 @@ export class Pipeline {
       depthTexture: depthTex,
       depthBuffer: true,
     });
-    this.rtWater = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, samples: this.settings.msaa, depthBuffer: true });
+    // no MSAA here: the sea clips itself against the world per pixel (its own
+    // depth test against rtOpaque), so extra samples only ever smoothed a few
+    // spray particles while doubling the pass's memory traffic and adding a resolve
+    this.rtWater = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: true });
     const lin = { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter };
     let bw = Math.max(1, w >> 1);
     let bh = Math.max(1, h >> 1);

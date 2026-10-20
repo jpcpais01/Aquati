@@ -133,6 +133,8 @@ export class FortStore {
 export interface Gun {
   fort: Fort;
   index: number;
+  /** Its slot in its own fort's gun meshes. */
+  slot: number;
   /** The carriage on the rampart (world), and the embrasure's facing. */
   base: THREE.Vector3;
   yaw0: number;
@@ -211,9 +213,13 @@ function gunnerFor(name: string, at: THREE.Vector3): Ship {
 export class Forts {
   readonly root = new THREE.Group();
   readonly forts: Fort[] = [];
-  private barrels: THREE.InstancedMesh;
-  private carriages: THREE.InstancedMesh;
-  private rubble: THREE.InstancedMesh;
+  /**
+   * Each fort's guns, carriages and wreckage as its own small instanced set,
+   * so the frustum (and the shadow pass's) culls a fort that's out of view:
+   * one world-wide set spanned every island and was drawn twice a frame from
+   * anywhere on the sea.
+   */
+  private sets: { barrels: THREE.InstancedMesh; carriages: THREE.InstancedMesh; rubble: THREE.InstancedMesh }[] = [];
   private all: Gun[] = [];
   private doorGroups: THREE.Group[][] = [];
   private flagGeo: THREE.BufferGeometry | null = null;
@@ -224,19 +230,7 @@ export class Forts {
     this.root.name = 'forts';
     const M = mats as unknown as Record<Bucket, THREE.Material>;
     const parts = gunParts();
-    const n = Math.max(1, sites.length * 4);
-    this.barrels = new THREE.InstancedMesh(parts.barrel, mats.iron, n);
-    this.carriages = new THREE.InstancedMesh(parts.carriage, mats.wood, n);
-    this.rubble = new THREE.InstancedMesh(rubbleGeometry(), mats.wood, n);
-    for (const m of [this.barrels, this.carriages, this.rubble]) {
-      m.castShadow = m.receiveShadow = true;
-      m.frustumCulled = false;
-      for (let i = 0; i < n; i++) {
-        m.setMatrixAt(i, _m.identity());
-        m.setColorAt(i, _col.setRGB(1, 1, 1));
-      }
-      m.count = sites.length * 4;
-    }
+    const rubbleGeo = rubbleGeometry();
     sites.forEach((site, i) => {
       const b = new Builder();
       const layout = buildFort(b, site, (x, z) => ground.terrain.heightAt(x, z), 7300 + i * 41);
@@ -274,9 +268,28 @@ export class Forts {
         id, name: site.name, site, layout, guns: [], owner: 'brethren', gunner: gunnerFor(site.name, new THREE.Vector3(site.x, site.y, site.z)), garrison: null,
         alert: false, quiet: 0, doors: 0, up: 0, hoist: 0, mine,
       };
+      const n = Math.max(1, layout.guns.length);
+      const set = {
+        barrels: new THREE.InstancedMesh(parts.barrel, mats.iron, n),
+        carriages: new THREE.InstancedMesh(parts.carriage, mats.wood, n),
+        rubble: new THREE.InstancedMesh(rubbleGeo, mats.wood, n),
+      };
+      // the guns traverse and recoil but never leave the rampart: one sphere round the fort holds them
+      const bound = new THREE.Sphere(new THREE.Vector3(site.x, site.y, site.z), FORT_H * 1.6 + 4);
+      for (const m of [set.barrels, set.carriages, set.rubble]) {
+        m.castShadow = m.receiveShadow = true;
+        for (let i = 0; i < n; i++) {
+          m.setMatrixAt(i, _m.identity());
+          m.setColorAt(i, _col.setRGB(1, 1, 1));
+        }
+        m.count = layout.guns.length;
+        m.boundingSphere = bound;
+        this.root.add(m);
+      }
+      this.sets.push(set);
       layout.guns.forEach((gs, k) => {
         const gun: Gun = {
-          fort: f, index: this.all.length, base: gs.pos.clone(), yaw0: gs.yaw, yaw: gs.yaw, pitch: 0.02, hp: GUN_HP, dead: false, deadT: 0, reload: 2 + k * 1.3, recoil: 0, shaken: 0, smokeT: 0, target: null, want: -1, wantYaw: gs.yaw,
+          fort: f, index: this.all.length, slot: k, base: gs.pos.clone(), yaw0: gs.yaw, yaw: gs.yaw, pitch: 0.02, hp: GUN_HP, dead: false, deadT: 0, reload: 2 + k * 1.3, recoil: 0, shaken: 0, smokeT: 0, target: null, want: -1, wantYaw: gs.yaw,
         };
         f.guns.push(gun);
         this.all.push(gun);
@@ -284,7 +297,6 @@ export class Forts {
       this.doorGroups.push(layout.doors);
       this.forts.push(f);
     });
-    this.root.add(this.barrels, this.carriages, this.rubble);
     for (const g of this.all) this.pose(g);
     this.flush();
   }
@@ -687,21 +699,22 @@ export class Forts {
   // ------------------------------------------------------------------ drawing the guns
 
   private pose(g: Gun) {
-    const i = g.index;
+    const i = g.slot;
+    const { barrels, carriages, rubble } = this.sets[this.forts.indexOf(g.fort)];
     if (g.dead) {
       // the barrel knocked off its trunnions and lying across the wrecked carriage
       _e.set(-0.3, g.yaw + 0.6, 0.45);
       _q.setFromEuler(_e);
       _v.copy(g.base).setY(g.base.y + 0.32);
-      this.barrels.setMatrixAt(i, _m.compose(_v, _q, UNIT));
-      this.barrels.setColorAt(i, _col.setRGB(0.42, 0.38, 0.34));
+      barrels.setMatrixAt(i, _m.compose(_v, _q, UNIT));
+      barrels.setColorAt(i, _col.setRGB(0.42, 0.38, 0.34));
       _e.set(0.1, g.yaw - 0.3, 0.38);
       _q.setFromEuler(_e);
       _v.copy(g.base).setY(g.base.y - 0.1);
-      this.carriages.setMatrixAt(i, _m.compose(_v, _q, UNIT));
-      this.carriages.setColorAt(i, _col.setRGB(0.3, 0.27, 0.25));
+      carriages.setMatrixAt(i, _m.compose(_v, _q, UNIT));
+      carriages.setColorAt(i, _col.setRGB(0.3, 0.27, 0.25));
       _q.setFromAxisAngle(_d.set(0, 1, 0), g.yaw0);
-      this.rubble.setMatrixAt(i, _m.compose(g.base, _q, UNIT));
+      rubble.setMatrixAt(i, _m.compose(g.base, _q, UNIT));
       return;
     }
     const back = g.recoil > 0 ? Math.sin(Math.min(1, g.recoil) * Math.PI * 0.5) * 0.45 : 0;
@@ -709,26 +722,28 @@ export class Forts {
     _q.setFromEuler(_e);
     _d.set(Math.sin(g.yaw), 0, Math.cos(g.yaw));
     _v.copy(g.base).setY(g.base.y + GUN_PIVOT).addScaledVector(_d, -back);
-    this.barrels.setMatrixAt(i, _m.compose(_v, _q, UNIT));
-    this.barrels.setColorAt(i, _col.setRGB(1, 1, 1));
+    barrels.setMatrixAt(i, _m.compose(_v, _q, UNIT));
+    barrels.setColorAt(i, _col.setRGB(1, 1, 1));
     _q.setFromAxisAngle(_s.set(0, 1, 0), g.yaw);
     _v.copy(g.base).setY(g.base.y + GUN_PIVOT).addScaledVector(_d, -back * 0.8);
-    this.carriages.setMatrixAt(i, _m.compose(_v, _q, UNIT));
-    this.carriages.setColorAt(i, _col.setRGB(1, 1, 1));
-    this.rubble.setMatrixAt(i, _m.compose(g.base, _q, TINY));
+    carriages.setMatrixAt(i, _m.compose(_v, _q, UNIT));
+    carriages.setColorAt(i, _col.setRGB(1, 1, 1));
+    rubble.setMatrixAt(i, _m.compose(g.base, _q, TINY));
   }
 
   private flush() {
-    for (const m of [this.barrels, this.carriages, this.rubble]) {
-      m.instanceMatrix.needsUpdate = true;
-      if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    for (const set of this.sets) {
+      for (const m of [set.barrels, set.carriages, set.rubble]) {
+        m.instanceMatrix.needsUpdate = true;
+        if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      }
     }
   }
 
   /** Show every wreck and colour for the warm-up's draw (so their programs compile up front). */
   warm() {
     for (const f of this.forts) f.mine.visible = f.mine.children.length > 0;
-    for (const g of this.all) this.rubble.setMatrixAt(g.index, _m.compose(g.base, _q.identity(), UNIT));
+    for (const g of this.all) this.sets[this.forts.indexOf(g.fort)].rubble.setMatrixAt(g.slot, _m.compose(g.base, _q.identity(), UNIT));
     this.flush();
   }
 

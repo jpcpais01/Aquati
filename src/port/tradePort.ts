@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { skipWhenHidden } from '../render/staticScene';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { patchMaterial } from '../render/environment';
@@ -435,6 +436,8 @@ export class TradePort {
     this.far.visible = false;
     this.build();
     this.group.updateMatrixWorld(true);
+    // the town far off, or the half of it swapped out by distance, skips the per-frame matrix walk
+    for (const o of [this.group, this.near, this.far]) skipWhenHidden(o);
   }
 
   get x() {
