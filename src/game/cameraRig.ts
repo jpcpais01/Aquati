@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp, damp, lerp } from '../core/noise';
+import { angleDelta, clamp, damp, lerp } from '../core/noise';
 
 // Near-top-down follow camera with a gentle diorama tilt that steepens as you
 // zoom out, a velocity look-ahead, trauma-based shake, and a cinematic orbit
@@ -88,6 +88,13 @@ export class CameraRig {
   deck = false;
   deckYaw = 0;
   private dk = 0;
+  /**
+   * Ashore around the captain's eyes: the bearing the follow camera swings
+   * round to (from behind them, the way they look), eased, so the swoop into
+   * and out of their eyes never has to roll through a half-turn.
+   */
+  footAz = 0;
+  private fa = 0;
   /** Ground height under the camera, so it never dips into a hillside ashore. */
   ground: ((x: number, z: number) => number) | null = null;
   /** A cross-fade from a frozen camera pose into whatever the rig computes next (mode switches). */
@@ -163,7 +170,7 @@ export class CameraRig {
   get azimuth() {
     const k = this.dk * this.dk * (3 - 2 * this.dk);
     const a = this.deckYaw;
-    return Math.atan2(Math.sin(a), Math.cos(a)) * k * this.footBlend;
+    return (Math.atan2(Math.sin(a), Math.cos(a)) * k + this.fa * (1 - k)) * this.footBlend;
   }
 
   /** 0 at sea .. 1 ashore, eased. */
@@ -176,6 +183,7 @@ export class CameraRig {
   snapFoot() {
     this.ft = this.foot ? 1 : 0;
     this.dk = this.deck ? 1 : 0;
+    this.fa = angleDelta(0, this.footAz);
   }
 
   /** Effective viewing distance (drives shadow reach, sound and fx radii). */
@@ -291,6 +299,7 @@ export class CameraRig {
     this.tiltSmooth += (this.tilt - this.tiltSmooth) * damp(2.2, dt);
     this.ft = clamp(this.ft + (this.foot ? dt : -dt) / 0.9, 0, 1);
     this.dk = clamp(this.dk + (this.deck ? dt : -dt) / 1.1, 0, 1);
+    this.fa = angleDelta(0, this.fa + angleDelta(this.fa, this.footAz) * damp(2.4, dt));
     const fb = this.footBlend;
     this.blend += ((this.mode === 'follow' ? 1 : 0) - this.blend) * damp(this.mode === 'follow' ? 1.4 : 3, dt);
     const inBattle = !!foe && this.mode === 'follow';

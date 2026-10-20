@@ -59,6 +59,7 @@ export class TreasureMapUI {
   private root: HTMLElement;
   private canvas: HTMLCanvasElement;
   private chip: HTMLButtonElement;
+  private kick: HTMLElement;
   private slots: HTMLElement[];
   private art: Art | null = null;
   private artKey = '';
@@ -104,18 +105,23 @@ export class TreasureMapUI {
     });
 
     const c = (this.chip = document.createElement('button'));
-    c.className = 'chip map-chip';
+    c.className = 'map-chip';
     c.title = 'Treasure map (T)';
+    c.setAttribute('aria-label', 'Treasure map');
     c.innerHTML =
-      `<span class="tm-ico">${icon(ICONS.scroll)}</span>` +
-      `<span class="mc-slots">${[0, 1, 2].map(() => `<i>${SCRAP}</i>`).join('')}</span>` +
-      `<span class="mc-seal">${SEAL}</span><span class="mc-dir"><i></i></span><b></b>`;
+      `<kbd class="kd mc-key">T</kbd><span class="mc-disc"><span class="tm-ico">${icon(ICONS.scroll)}</span><span class="mc-dir"><i></i></span>` +
+      `<span class="mc-spade">${icon(ICONS.spade)}</span><span class="mc-seal">${SEAL}</span></span>` +
+      `<span class="mc-txt"><small class="mc-kick">Treasure map</small><span class="mc-row">` +
+      `<span class="mc-slots">${[0, 1, 2].map(() => `<i>${SCRAP}</i>`).join('')}</span><b></b></span></span>` +
+      ``;
     c.addEventListener('click', (e) => {
       e.stopPropagation();
       this.onOpen();
     });
     this.slots = [...c.querySelectorAll<HTMLElement>('.mc-slots i')];
-    document.querySelector('#hud .stats-row')!.appendChild(c);
+    this.kick = c.querySelector('.mc-kick')!;
+    // it rides in the helm console, after the shot rack
+    document.querySelector('#hud .bottom')!.appendChild(c);
 
     const d = (this.gauge = document.createElement('div'));
     d.className = 'dig-gauge';
@@ -180,7 +186,11 @@ export class TreasureMapUI {
       this.chip.classList.toggle('on', n > 0);
       this.chip.classList.toggle('whole', whole);
       this.slots.forEach((s, i) => s.classList.toggle('have', !!(shown & (1 << i))));
-      if (!whole) this.chip.querySelector('b')!.textContent = `${pieceCount(shown)}/3`;
+      if (!whole) {
+        this.chip.classList.remove('near');
+        this.chip.querySelector('b')!.textContent = `${pieceCount(shown)}/3`;
+        this.kick.textContent = pieceCount(shown) === 2 ? 'One piece to go' : 'Treasure map';
+      }
       this.navKey = '';
       const before = +(was.split('|')[0] || 0);
       if (was && pieceCount(shown) > pieceCount(before)) {
@@ -198,15 +208,27 @@ export class TreasureMapUI {
     }
     if (n < 3 || this.flying || !from || !x || !camera) return;
     // the way to the X, as the screen sees it
-    _a.set(from.x, x.y, from.z).project(camera);
-    _b.set(x.x, x.y, x.z).project(camera);
-    let dx = _b.x - _a.x;
-    let dy = _b.y - _a.y;
-    if (_b.z > 1) {
-      dx = -dx;
-      dy = -dy;
+    let ang: number;
+    camera.getWorldDirection(_a);
+    if (Math.abs(_a.y) < 0.8) {
+      // from eye level: a compass bearing against the way you face (up = dead ahead)
+      const fl = Math.hypot(_a.x, _a.z) || 1;
+      const fx = _a.x / fl;
+      const fz = _a.z / fl;
+      const vx = x.x - from.x;
+      const vz = x.z - from.z;
+      ang = Math.atan2(vx * -fz + vz * fx, vx * fx + vz * fz);
+    } else {
+      _a.set(from.x, x.y, from.z).project(camera);
+      _b.set(x.x, x.y, x.z).project(camera);
+      let dx = _b.x - _a.x;
+      let dy = _b.y - _a.y;
+      if (_b.z > 1) {
+        dx = -dx;
+        dy = -dy;
+      }
+      ang = Math.atan2(dx * innerWidth, dy * innerHeight);
     }
-    const ang = Math.atan2(dx * innerWidth, dy * innerHeight);
     const d = Math.hypot(x.x - from.x, x.z - from.z);
     const near = d < 28;
     const nk = `${Math.round(ang * 18)}|${near ? 'n' : fmtDist(d)}`;
@@ -215,6 +237,7 @@ export class TreasureMapUI {
     this.chip.classList.toggle('near', near);
     this.chip.querySelector<HTMLElement>('.mc-dir i')!.style.transform = `rotate(${ang}rad)`;
     this.chip.querySelector('b')!.textContent = near ? 'Dig here' : fmtDist(d);
+    this.kick.textContent = near ? 'X marks the spot' : 'To the X';
   }
 
   /**

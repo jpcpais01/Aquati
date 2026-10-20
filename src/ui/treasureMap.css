@@ -366,57 +366,182 @@
 
 /* ------------------------------------------------------------------ the HUD chip */
 
-/* hidden until the first piece: three torn slots fill in, then a wax seal,
-   an arrow that points to the X across the screen, and how far it is */
-.chip.map-chip {
+/* The map rides at the end of the helm console, a parchment tile of its own.
+   Hidden until the first piece: a rolled chart with three torn slots that fill
+   in; once whole, a little compass whose needle points to the X across the
+   screen, the wax seal on its rim and how far it is; at the X, a red seal and
+   a spade. */
+.map-chip {
+  --mc: #e9cf95;
+  position: relative;
   display: none;
+  align-items: center;
+  gap: calc(9px * var(--k));
+  min-width: calc(124px * var(--k));
+  height: calc(44px * var(--k));
+  margin-left: calc(2px * var(--k));
+  padding: 0 calc(12px * var(--k)) 0 calc(5px * var(--k));
+  border-radius: 999px;
+  border: 1px solid rgba(233, 207, 149, 0.26);
+  background: radial-gradient(120% 140% at 0% 50%, rgba(233, 196, 120, 0.2), transparent 60%), linear-gradient(180deg, rgba(54, 38, 20, 0.7), rgba(24, 17, 10, 0.72));
+  box-shadow: inset 0 1px 0 rgba(255, 236, 196, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
   pointer-events: auto;
   cursor: pointer;
-  color: inherit;
   appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.2s, background 0.3s, box-shadow 0.3s, transform 0.25s var(--spring);
 }
 
-.chip.map-chip.on {
+.map-chip.on {
+  display: flex;
+  animation: mc-in 0.55s var(--spring);
+}
+
+@keyframes mc-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-8px) scale(0.85);
+  }
+}
+
+.map-chip:hover {
+  border-color: rgba(244, 210, 140, 0.55);
+}
+
+.map-chip:active {
+  transform: scale(0.95);
+}
+
+.map-chip.bump {
+  animation: bump 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+}
+
+/* the disc: a rolled chart, then a compass, then the seal at the X */
+.mc-disc {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(34px * var(--k));
+  height: calc(34px * var(--k));
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 30%, #fbefcd, #e6c88a 48%, #b8884a 100%);
+  box-shadow: inset 0 0 0 1px rgba(96, 62, 24, 0.55), inset 0 -2px 3px rgba(96, 58, 18, 0.35), 0 2px 6px rgba(0, 0, 0, 0.35);
+  transition: background 0.4s, box-shadow 0.4s;
+}
+
+.mc-disc > span {
+  grid-area: 1 / 1;
   display: flex;
 }
 
-.chip.map-chip .tm-ico {
-  display: flex;
-  width: max(12px, calc(15px * var(--k)));
-  height: max(12px, calc(15px * var(--k)));
-  color: #e9cf95;
+.map-chip .tm-ico {
+  width: 58%;
+  height: 58%;
+  color: #5b3a16;
 }
 
-.chip.map-chip .tm-ico .ico {
+.map-chip .tm-ico .ico,
+.mc-spade .ico {
   width: 100%;
   height: 100%;
+}
+
+.mc-dir,
+.mc-spade,
+.mc-seal {
+  display: none !important;
+}
+
+.mc-txt {
+  display: flex;
+  flex-direction: column;
+  gap: calc(2px * var(--k));
+  min-width: 0;
+  line-height: 1;
+}
+
+.mc-kick {
+  font: 700 max(7.5px, calc(8.5px * var(--k))) var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mc);
+  opacity: 0.78;
+  white-space: nowrap;
+}
+
+.mc-row {
+  display: flex;
+  align-items: center;
+  gap: calc(7px * var(--k));
+}
+
+.map-chip b {
+  font: 800 max(13px, calc(15px * var(--k))) var(--sans);
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.map-chip .mc-key {
+  position: absolute;
+  top: calc(1px * var(--k));
+  left: calc(3px * var(--k));
+  z-index: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0 calc(3px * var(--k));
+  border: 0;
+  border-radius: 4px;
+  background: rgba(4, 16, 24, 0.78);
+  color: var(--ink-3);
+  font: 700 max(8px, calc(8.5px * var(--k))) / 1.45 var(--sans);
+}
+
+.is-touch .mc-key {
+  display: none;
 }
 
 .mc-slots {
   display: flex;
   align-items: center;
-  gap: max(1px, calc(1.5px * var(--k)));
+  gap: calc(2px * var(--k));
 }
 
 .mc-slots i {
   display: flex;
-  width: max(5px, calc(6.5px * var(--k)));
-  height: max(9px, calc(12px * var(--k)));
+  width: calc(9px * var(--k));
+  height: calc(15px * var(--k));
+}
+
+.mc-slots i:nth-child(1) {
+  transform: rotate(-4deg);
 }
 
 .mc-slots i:nth-child(2) {
   transform: translateY(-0.5px) rotate(3deg);
 }
 
+.mc-slots i:nth-child(3) {
+  transform: rotate(-1deg);
+}
+
 .mc-slots .scrap path {
   fill: rgba(255, 232, 186, 0.06);
-  stroke: rgba(255, 232, 186, 0.4);
-  stroke-width: 0.9;
+  stroke: rgba(255, 232, 186, 0.42);
+  stroke-width: 0.8;
   stroke-dasharray: 1.5 1.3;
 }
 
+.mc-slots i.have .scrap {
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.5));
+}
+
 .mc-slots i.have .scrap path {
-  fill: #ead39e;
+  fill: #efdba8;
   stroke: #8a6230;
   stroke-dasharray: none;
 }
@@ -432,26 +557,51 @@
   }
 }
 
-.mc-seal,
+/* whole: the compass and the way to the X */
+.map-chip.whole {
+  border-color: rgba(244, 199, 101, 0.6);
+  background: radial-gradient(120% 140% at 0% 50%, rgba(255, 196, 92, 0.3), transparent 62%), linear-gradient(180deg, rgba(70, 44, 16, 0.86), rgba(30, 18, 8, 0.84));
+  box-shadow: inset 0 1px 0 rgba(255, 236, 196, 0.16), 0 0 16px rgba(244, 180, 70, 0.3);
+}
+
+.map-chip.whole .tm-ico,
+.map-chip.whole .mc-slots {
+  display: none;
+}
+
+.map-chip.whole .mc-dir,
+.map-chip.whole .mc-seal {
+  display: flex !important;
+}
+
+.map-chip.whole .mc-disc {
+  background: radial-gradient(circle, rgba(8, 26, 38, 0.96) 52%, rgba(8, 26, 38, 0) 53%), repeating-conic-gradient(from -3deg, rgba(255, 220, 150, 0.85) 0 6deg, transparent 6deg 45deg), radial-gradient(circle, #6b4a1e, #2e1d0a);
+  box-shadow: inset 0 0 0 1.5px #e3b35a, inset 0 0 0 3px rgba(40, 24, 8, 0.8), 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 10px rgba(244, 190, 90, 0.35);
+}
+
 .mc-dir {
-  display: none;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
 }
 
-.chip.map-chip.whole .tm-ico,
-.chip.map-chip.whole .mc-slots {
-  display: none;
-}
-
-.chip.map-chip.whole .mc-seal,
-.chip.map-chip.whole .mc-dir {
-  display: flex;
+.mc-dir i {
+  width: 34%;
+  height: 64%;
+  background: linear-gradient(90deg, #ffe7a8 50%, #d29a3a 50%);
+  clip-path: polygon(50% 0, 100% 100%, 50% 78%, 0 100%);
+  filter: drop-shadow(0 0 3px rgba(255, 210, 120, 0.8));
+  transition: transform 0.25s ease-out;
 }
 
 .mc-seal {
-  width: max(13px, calc(16px * var(--k)));
-  height: max(13px, calc(16px * var(--k)));
-  margin-left: calc(-1px * var(--k));
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+  position: absolute;
+  right: calc(-4px * var(--k));
+  bottom: calc(-3px * var(--k));
+  width: calc(15px * var(--k));
+  height: calc(15px * var(--k));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
 .mc-seal .seal {
@@ -470,50 +620,50 @@
   stroke-linecap: round;
 }
 
-.mc-dir {
-  width: max(11px, calc(13px * var(--k)));
-  height: max(11px, calc(13px * var(--k)));
-  border-radius: 50%;
-  align-items: center;
-  justify-content: center;
-  background: rgba(244, 199, 101, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(244, 199, 101, 0.4);
-}
-
-.mc-dir i {
-  width: 52%;
-  height: 62%;
-  background: var(--gold-hi);
-  clip-path: polygon(50% 0, 100% 100%, 50% 74%, 0 100%);
-  transition: transform 0.25s ease-out;
-}
-
-.chip.map-chip.whole {
-  border-color: rgba(244, 199, 101, 0.55);
-  background: linear-gradient(180deg, rgba(58, 36, 14, 0.82), rgba(26, 16, 8, 0.78));
-  box-shadow: 0 0 12px rgba(244, 180, 70, 0.28);
-}
-
-.chip.map-chip.whole b {
+.map-chip.whole b {
+  font-size: max(14px, calc(17px * var(--k)));
   color: var(--gold-hi);
 }
 
-.chip.map-chip.near {
+/* at the X: the seal grows into the disc with a spade on it, and it all glows red */
+.map-chip.near {
+  border-color: rgba(255, 140, 100, 0.75);
   animation: mc-near 1.1s ease-in-out infinite;
 }
 
-.chip.map-chip.near b {
-  color: #ffb39c;
+.map-chip.near .mc-dir,
+.map-chip.near .mc-seal {
+  display: none !important;
+}
+
+.map-chip.near .mc-spade {
+  display: flex !important;
+  width: 56%;
+  height: 56%;
+  color: #ffe6d4;
+}
+
+.map-chip.near .mc-disc {
+  background: radial-gradient(circle at 38% 30%, #e0503c, #a5221a 60%, #6d1410);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 190, 160, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4), 0 0 14px rgba(255, 90, 60, 0.55);
+}
+
+.map-chip.near .mc-kick {
+  color: #ffc2ae;
+}
+
+.map-chip.near b {
+  color: #ffd0bf;
 }
 
 @keyframes mc-near {
   50% {
-    box-shadow: 0 0 18px rgba(255, 110, 70, 0.6), 0 0 0 2px rgba(255, 140, 90, 0.35);
+    box-shadow: 0 0 20px rgba(255, 110, 70, 0.6), 0 0 0 2px rgba(255, 140, 90, 0.35);
   }
 }
 
 /* the map's spent: it chars and curls away */
-.chip.map-chip.spent {
+.map-chip.spent {
   animation: mc-burn 1.5s ease-in forwards;
   pointer-events: none;
 }
@@ -531,6 +681,57 @@
     transform: translateY(-6px) scale(0.6) rotate(-6deg);
     filter: brightness(0.3) sepia(1) blur(1px);
   }
+}
+
+/* touch: the console is sails & speed, then the map, low between the thumbs */
+.is-touch .map-chip {
+  /* thumb sized: scaled off the touch controls, not the (smaller) phone HUD */
+  --k: calc(var(--kt) * 1.08);
+  height: calc(42px * var(--k));
+  margin: calc(-2px * var(--k)) calc(-10px * var(--k)) calc(-2px * var(--k)) calc(2px * var(--k));
+}
+
+/* a phone held upright: the map sits on top of the speed, the lever over both */
+@media (orientation: portrait) and (max-width: 600px) {
+  .is-touch .bottom:has(.map-chip.on) {
+    flex-direction: column-reverse;
+    align-items: stretch;
+    border-radius: calc(24px * var(--k));
+    padding: calc(5px * var(--k)) calc(5px * var(--k)) calc(6px * var(--k));
+  }
+
+  .is-touch .bottom:has(.map-chip.on) .helm {
+    justify-content: center;
+  }
+
+  .is-touch .map-chip {
+    margin: 0;
+  }
+
+  .is-touch #hud:has(.map-chip.on) .sail-lever {
+    bottom: calc(var(--mb) + 6px + 52px * var(--k) + 52px * var(--kt));
+  }
+}
+
+/* ashore the console goes, but the map stays where it was */
+#hud.ashore .bottom {
+  padding: 0;
+  border-color: transparent;
+  background: none;
+  box-shadow: none;
+}
+
+#hud.ashore .bottom > :not(.map-chip) {
+  display: none !important;
+}
+
+#hud.ashore .map-chip {
+  margin: 0;
+  box-shadow: 0 10px 28px rgba(0, 8, 14, 0.35), inset 0 1px 0 rgba(255, 236, 196, 0.12);
+}
+
+#hud.ashore:has(.map-chip.on) .shore-hint {
+  bottom: calc(var(--mb) + 56px * var(--k));
 }
 
 /* a found piece tumbling into its slot */

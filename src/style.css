@@ -3767,16 +3767,7 @@ body[data-hud='large'] #hud {
   color: var(--ink-3);
 }
 
-.hint {
-  font: 600 8.5px var(--sans);
-  letter-spacing: 0.12em;
-  color: var(--ink-4);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 /* on touch the console is just sails & speed, low and centred between the thumbs */
-.is-touch .hint,
 .is-touch .rack,
 .is-touch .ammo-tag {
   display: none;

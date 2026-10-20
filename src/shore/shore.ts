@@ -10,6 +10,7 @@ import { CampSite, Ground, Landing } from './ground';
 import { fortToWorld, worldToFort } from './fortKit';
 import { DeckFloor, Floor, Lines, railPoint } from './deck';
 import { Cut, CUT_HIT, CUT_WIND, RUN, WALK, Walker } from './walker';
+import { Hands } from './hands';
 
 // Going ashore. The captain rows in with four hands, walks the islands on foot
 // and the hands follow in a loose wedge, guard the captain's back and settle
@@ -74,6 +75,8 @@ export interface ShoreInput {
   interact: boolean;
   /** Where a mouse click points on the ground, to cut toward. */
   aim: { x: number; z: number } | null;
+  /** Seen through the captain's own eyes: they face where they look (null: they face where they walk). */
+  face: number | null;
 }
 
 export interface ShoreHooks {
@@ -218,7 +221,14 @@ export type Prompt = { key: 'boat' | 'chest' | 'fight' | 'dig' | 'retreat'; titl
 export class Shore {
   readonly group = new THREE.Group();
   readonly camps: Camp[] = [];
-  private mats: ShoreMats;
+  readonly mats: ShoreMats;
+  /** The captain's hands and what's in them, for the first-person view. */
+  readonly hands: Hands;
+  /** Through the captain's eyes: their own figure is not drawn, the muzzle flash comes from the hands. */
+  eyes = false;
+  /** The foe the last cut or shot locked onto, and when (shore time), so the eyes can follow. */
+  lockOn: Walker | null = null;
+  lockT = -9;
   private boat = new THREE.Group();
   private boatBlocks: { x: number; z: number; r: number }[] = [];
   active = false;
@@ -293,6 +303,8 @@ export class Shore {
     this.group.name = 'shore';
     this.floor = ground;
     const mats = (this.mats = shoreMats());
+    this.hands = new Hands(mats);
+    this.group.add(this.hands.group);
     this.lines = new Lines(mats);
     this.group.add(this.lines.ropes, this.lines.hooks);
     // the ship's boat, hidden until it's pulled up on a beach
@@ -479,6 +491,7 @@ export class Shore {
     const fx = landing.dx;
     const fz = landing.dz;
     cap.place(sx + fx * 1.2, sz + fz * 1.2, yaw);
+    this.hands.dress(cap.look);
     this.march = yaw;
     this.party.slice(1).forEach((p, i) => {
       const side = i % 2 ? 1 : -1;
@@ -916,7 +929,9 @@ export class Shore {
     const k = damp(len > 0.02 ? 10 : 14, dt);
     cap.vx += (wx - cap.vx) * k;
     cap.vz += (wz - cap.vz) * k;
-    if (len > 0.1 && !cap.cutting) cap.wantYaw = Math.atan2(inp.mx, inp.mz);
+    if (inp.face !== null) {
+      if (!cap.cutting) cap.wantYaw = inp.face;
+    } else if (len > 0.1 && !cap.cutting) cap.wantYaw = Math.atan2(inp.mx, inp.mz);
     this.stillT = len > 0.05 ? 0 : this.stillT + dt;
     // the wedge follows the way you walk, not every twitch of the stick
     if (Math.hypot(cap.vx, cap.vz) > 1) this.march += angleDelta(this.march, Math.atan2(cap.vx, cap.vz)) * damp(2.2, dt);
@@ -942,7 +957,11 @@ export class Shore {
     this.pistolT = Math.max(0, this.pistolT - dt);
     if (inp.pistol && this.pistolT <= 0 && this.shotAt < 0) {
       const t = this.pistolTarget(cap, inp.aim);
-      if (t) cap.wantYaw = Math.atan2(t.x - cap.x, t.z - cap.z);
+      if (t) {
+        cap.wantYaw = Math.atan2(t.x - cap.x, t.z - cap.z);
+        this.lockOn = t;
+        this.lockT = this.time;
+      }
       else if (inp.aim) cap.wantYaw = Math.atan2(inp.aim.x - cap.x, inp.aim.z - cap.z);
       cap.target = t;
       this.shotAt = 0;
@@ -979,6 +998,10 @@ export class Shore {
     }
     if (best) cap.wantYaw = Math.atan2(best.x - cap.x, best.z - cap.z);
     else if (aim) cap.wantYaw = want;
+    if (best) {
+      this.lockOn = best;
+      this.lockT = this.time;
+    }
     cap.yaw += angleDelta(cap.yaw, cap.wantYaw) * 0.6;
     if (!cap.swing(cut)) return;
     this.combo++;
@@ -1017,6 +1040,8 @@ export class Shore {
     const s = Math.sin(cap.yaw);
     const c = Math.cos(cap.yaw);
     _hand.set(cap.x + s * 0.75 + c * 0.2, cap.y + 1.42, cap.z + c * 0.75 - s * 0.2);
+    // seen from the captain's eyes, the shot leaves the flintlock in their hand
+    if (this.eyes && this.hands.group.visible) _hand.copy(this.hands.muzzle);
     const p = world.particles;
     p.emit({ x: _hand.x, y: _hand.y, z: _hand.z, life: 0.08, size: 0.5, sizeEnd: 0.9, color: [9, 6, 2.4], colorEnd: [4, 1.6, 0.3], kind: 0, fadeIn: 0.001 }, true);
     for (let i = 0; i < 6; i++) {
@@ -1496,7 +1521,7 @@ export class Shore {
   /** A pale smear of light along the cutlass's arc, from the wind-up through the blow. */
   private bladeTrail(w: Walker, world: World) {
     const c = w.cut;
-    const on = w.cutting && w.cutT > CUT_WIND[c] * 0.8 && w.cutT < CUT_HIT[c] + 0.09 && w.visible;
+    const on = w.cutting && w.cutT > CUT_WIND[c] * 0.8 && w.cutT < CUT_HIT[c] + 0.09 && w.visible && !w.hidden;
     if (!on) {
       w.tipLive = false;
       return;

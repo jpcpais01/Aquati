@@ -9,7 +9,6 @@
 }
 
 #hud.ashore .ship-panel,
-#hud.ashore .bottom,
 #hud.ashore .fire-pad,
 #hud.ashore #btn-view,
 #hud.ashore .reticle,
@@ -402,4 +401,131 @@
 
 .is-touch .prize-card {
   bottom: calc(var(--mb) + 150px * var(--kt, 1));
+}
+
+/* ------------------------------------------------------------------ through the captain's eyes
+   A slim sight in the middle of the screen: four ticks that close in round a
+   foe within the cutlass's reach, and the pistol's reload drawn as a ring. */
+
+.foot-reticle,
+.eye-hint {
+  display: none;
+}
+
+#hud.ashore.eye-able #btn-view {
+  display: flex !important;
+}
+
+#hud.ashore.eye .foot-reticle {
+  display: block;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+  --gap: 9px;
+  --tick: rgba(255, 255, 255, 0.78);
+}
+
+.foot-reticle i {
+  position: absolute;
+  display: block;
+}
+
+.foot-reticle .fr-dot {
+  left: -2px;
+  top: -2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.28), 0 0 6px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s var(--spring), background 0.18s;
+}
+
+.foot-reticle .fr-t {
+  width: 2px;
+  height: 7px;
+  left: -1px;
+  top: -3.5px;
+  border-radius: 1px;
+  background: var(--tick);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2);
+  transition: transform 0.22s var(--spring), background 0.18s, opacity 0.2s;
+  opacity: 0.55;
+}
+
+.foot-reticle .fr-t.a {
+  transform: rotate(45deg) translateY(calc(-1 * var(--gap)));
+}
+
+.foot-reticle .fr-t.b {
+  transform: rotate(135deg) translateY(calc(-1 * var(--gap)));
+}
+
+.foot-reticle .fr-t.c {
+  transform: rotate(225deg) translateY(calc(-1 * var(--gap)));
+}
+
+.foot-reticle .fr-t.d {
+  transform: rotate(315deg) translateY(calc(-1 * var(--gap)));
+}
+
+.foot-reticle.foe {
+  --gap: 6px;
+  --tick: #ffb36b;
+}
+
+.foot-reticle.foe .fr-t {
+  opacity: 1;
+}
+
+.foot-reticle.foe .fr-dot {
+  background: #ffd08a;
+  transform: scale(1.3);
+}
+
+.foot-reticle .fr-rl {
+  left: -15px;
+  top: -15px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  opacity: 0;
+  background: conic-gradient(rgba(255, 214, 140, 0.85) calc(var(--rl, 1) * 360deg), rgba(255, 255, 255, 0.12) 0);
+  -webkit-mask: radial-gradient(circle, transparent 13px, #000 13.5px, #000 15px, transparent 15.5px);
+  mask: radial-gradient(circle, transparent 13px, #000 13.5px, #000 15px, transparent 15.5px);
+  transition: opacity 0.3s;
+}
+
+.foot-reticle.loading .fr-rl {
+  opacity: 1;
+}
+
+#hud.ashore.eye .eye-hint.on {
+  display: flex;
+  position: absolute;
+  left: 50%;
+  top: 28%;
+  transform: translateX(-50%);
+  align-items: center;
+  gap: 6px;
+  padding: 8px 15px;
+  border-radius: 999px;
+  background: rgba(5, 18, 26, 0.72);
+  font-size: 13px;
+  color: var(--ink-2);
+  pointer-events: none;
+  white-space: nowrap;
+  animation: prompt-in 0.3s var(--spring);
+}
+
+.is-touch #hud.ashore.eye .eye-hint.on {
+  display: none;
+}
+
+/* the touch sight sits a little smaller under a thumb-driven view */
+.is-touch #hud.ashore.eye .foot-reticle {
+  --gap: 8px;
 }

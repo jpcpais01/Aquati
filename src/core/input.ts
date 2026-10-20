@@ -66,6 +66,12 @@ export class Input {
    * screen), Space or a click swings the cutlass, Q / E fire the pistol, F acts.
    */
   foot = false;
+  /**
+   * Ashore through the captain's own eyes: the mouse (once a click has caught
+   * it) or a drag on the right of a touch screen looks around; a click swings
+   * the cutlass and a right-click fires the pistol.
+   */
+  eye = false;
   private locked = false;
   private rmb = false;
   private spyToggle = false;
@@ -139,9 +145,15 @@ export class Input {
     // pointerType keeps mouse-click firing on touchscreen laptops, where isTouch is also true
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.enabled || e.pointerType !== 'mouse') return;
-      if (this.fpv && !this.locked) {
+      if ((this.fpv || this.eye) && !this.locked) {
         // the first click in the captain's view grabs the mouse for looking around
         void Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
+        return;
+      }
+      if (this.eye) {
+        // through the captain's eyes: the cutlass on the left button, the pistol on the right
+        if (e.button === 0) this.state.fireAuto = true;
+        if (e.button === 2) this.state.firePort = true;
         return;
       }
       this.state.pointer.x = e.clientX;
@@ -186,12 +198,12 @@ export class Input {
             this.joyId = t.identifier;
             this.joyOrigin = { x: t.clientX, y: t.clientY };
             this.showJoy(t.clientX, t.clientY);
-          } else if (this.fpv && this.lookId === null && t.identifier !== this.joyId) {
+          } else if ((this.fpv || this.eye) && this.lookId === null && t.identifier !== this.joyId) {
             this.lookId = t.identifier;
             this.lookLast = { x: t.clientX, y: t.clientY };
           }
         }
-        if (e.touches.length === 2 && this.joyId === null && !this.fpv) {
+        if (e.touches.length === 2 && this.joyId === null && !this.fpv && !this.eye) {
           const [a, b] = [e.touches[0], e.touches[1]];
           this.pinch = { id1: a.identifier, id2: b.identifier, d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) };
         }
