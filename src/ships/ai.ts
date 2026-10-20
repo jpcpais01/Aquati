@@ -36,9 +36,17 @@ export class PirateAI {
   pack: Pack | null = null;
   /** Station relative to the flagship: x to starboard, z astern (metres). */
   slot = { x: 0, z: 0 };
+  /**
+   * A named captain sent after you: hunts you from any distance, never strikes
+   * her colours, and loads her own favourite shot.
+   */
+  readonly hunter: boolean;
+  private ammoMix: [AmmoId, number][];
 
-  constructor(readonly ship: Ship, difficulty: number) {
-    this.aggression = clamp(0.55 + difficulty * 0.15, 0.4, 1);
+  constructor(readonly ship: Ship, difficulty: number, hunt?: { ammo: [AmmoId, number][] }) {
+    this.hunter = !!hunt;
+    this.ammoMix = hunt?.ammo ?? PIRATE_AMMO[ship.cls.id];
+    this.aggression = hunt ? 1 : clamp(0.55 + difficulty * 0.15, 0.4, 1);
     this.wp.x = ship.pos.x;
     this.wp.z = ship.pos.z;
   }
@@ -101,7 +109,8 @@ export class PirateAI {
       if (pk && pk.leader && !pk.leader.ship.alive) pk.leader = null;
       // the pack answers a sighting by any of its ships
       if (pk && target && world.time - pk.alertT < 20 && dist < 560) provoked = true;
-      if (target && hpF < 0.22 && this.mode !== 'flee' && this.rnd() < 0.5) this.mode = 'flee';
+      if (this.hunter) this.mode = target ? 'engage' : this.mode === 'engage' ? 'patrol' : this.mode;
+      else if (target && hpF < 0.22 && this.mode !== 'flee' && this.rnd() < 0.5) this.mode = 'flee';
       else if (target && (dist < 230 || provoked) && this.mode !== 'flee') this.mode = 'engage';
       else if (this.mode === 'engage' && (!target || dist > 340)) this.mode = 'patrol';
       else if (this.mode === 'flee' && (!target || dist > 300)) this.mode = 'patrol';
@@ -183,7 +192,7 @@ export class PirateAI {
   private pickAmmo(dist: number, target: Ship): AmmoId {
     const s = this.ship;
     let r = this.rnd();
-    for (const [id, p] of PIRATE_AMMO[s.cls.id]) {
+    for (const [id, p] of this.ammoMix) {
       if (r < p) {
         const reach = gunRange(s.cls.muzzleSpeed * AMMO[id].speed) * 0.9;
         if (dist > reach) return 'round';

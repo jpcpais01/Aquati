@@ -65,6 +65,8 @@ import { Camp, Shore, ShoreInput } from '../shore/shore';
 import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
 import { rollTier } from './loot';
 import { rollContents } from './treasure';
+import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarned, KILL_INFAMY, NamedCaptain, REPUTE, wantedLevel } from './bounty';
+import { BountyBanner, BountyBoard, WantedHud } from '../ui/bounty';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
@@ -89,6 +91,8 @@ const MAX_WRECKS = 3;
 const WRECK_REACH = 520;
 
 const _cineV = new THREE.Vector3();
+
+const BOARD_SEEN_KEY = 'aquati.boardSeen';
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
@@ -244,6 +248,22 @@ export class Game {
   private foeBars: FoeBar[] = [];
   private shoreTipShown = false;
   private ray = new THREE.Raycaster();
+  // bounties: your infamy among the Brethren, and the named captains it sends after you
+  private bounty = new BountyBook();
+  private board = new BountyBoard();
+  private wanted = new WantedHud();
+  private banner = new BountyBanner();
+  /**
+   * The voyage's heat: infamy earned, hunters sent and claimed, the breather
+   * after a claim, and the captain the Brethren will send next (her hull is
+   * built ahead of time, like every pirate's).
+   */
+  private heat = { pts: 0, sent: 0, claimed: 0, cool: 0, met: new Set<string>(), next: null as NamedCaptain | null };
+  private hunters = new Map<Ship, NamedCaptain>();
+  private hunterHull: ShipModel | null = null;
+  private keelFor: NamedCaptain | null = null;
+  /** A dressed captain's own cloth and flag, uploaded one a frame before she sails in. */
+  private texQueue: THREE.Texture[] = [];
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -498,7 +518,7 @@ export class Game {
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
     for (const id of Object.keys(SHIP_CLASSES) as ShipClassId[]) {
       // pirate paint only: the player's own ship is in the scene and gets the warm-up draw below
-      for (const liv of PIRATE_LIVERIES) {
+      for (const liv of [...PIRATE_LIVERIES, HUNTER_HULL]) {
         for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
       }
     }
@@ -538,6 +558,7 @@ export class Game {
 
   /** The cloud rewrote some saves (another device's progress, or a sign-out). */
   private applyCloud(parts: Set<Part>) {
+    if (parts.has('bounty')) this.bounty.reload();
     if (parts.has('vault')) {
       this.vaultStore.reload();
       this.applyCosmetics();
@@ -595,6 +616,41 @@ export class Game {
     };
     this.audio.setMuted(!ui.settings.sound);
     ui.onSettings(ui.settings);
+    const openBoard = () => {
+      ui.onClick();
+      this.board.render(this.bounty.ledger);
+      ui.openOverlay('bounties');
+      try {
+        localStorage.setItem(BOARD_SEEN_KEY, this.boardSig());
+      } catch {
+        /* private mode: the dot just stays */
+      }
+      this.markBoard();
+    };
+    document.getElementById('btn-bounties')!.addEventListener('click', openBoard);
+    document.getElementById('btn-bounties2')!.addEventListener('click', openBoard);
+    this.bounty.onChange(() => {
+      this.markBoard();
+      if (!document.getElementById('bounties')!.classList.contains('hidden')) this.board.render(this.bounty.ledger);
+    });
+    this.markBoard();
+  }
+
+  /** What the Wanted Board shows, in brief: a new poster or a fresh stamp lights the harbour button's dot. */
+  private boardSig() {
+    const l = this.bounty.ledger;
+    return `${l.seen.length}|${Object.keys(l.sunk).length}|${this.bounty.rank}`;
+  }
+
+  private markBoard() {
+    let seen = '';
+    try {
+      seen = localStorage.getItem(BOARD_SEEN_KEY) ?? '';
+    } catch {
+      /* ignore */
+    }
+    const l = this.bounty.ledger;
+    document.getElementById('bounty-dot')!.classList.toggle('hidden', !l.seen.length || seen === this.boardSig());
   }
 
   /** Pushes graphics settings into the renderer; safe to call any time. */
@@ -1067,12 +1123,19 @@ export class Game {
       this.market.setDock(null);
       return false;
     }
-    const chased = !!this.lastFoe;
+    const hunted = this.huntedNear(p);
+    const chased = !!this.lastFoe || hunted;
     const n = this.hold.count;
-    const why = chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
+    const why = hunted && !this.lastFoe ? 'A hunter is on your tail: no harbour will let you in' : chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
     this.market.setDock({ name: port.name, ok: !chased, why });
     if (!chased && !this.fpv && this.input.state.helm) this.dock(port);
     return true;
+  }
+
+  /** A named hunter closing in: she won't wait politely outside a harbour or off a beach. */
+  private huntedNear(p: Ship) {
+    for (const s of this.hunters.keys()) if (s.alive && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) < 380) return true;
+    return false;
   }
 
   // ------------------------------------------------------------------ going ashore
@@ -1089,9 +1152,10 @@ export class Game {
       this.shoreHud.setPrompt(null);
       return;
     }
-    const chased = !!this.lastFoe;
+    const hunted = this.huntedNear(p);
+    const chased = !!this.lastFoe || hunted;
     const camp = this.shore.camps.find((c) => c.site.island === L.island && !c.routed);
-    const sub = chased ? 'Shake off your pursuers first' : camp ? 'Cutthroats are camped on this isle: bring blades' : 'The captain and four hands row in';
+    const sub = hunted && !this.lastFoe ? 'A hunter is on your tail: no time to row ashore' : chased ? 'Shake off your pursuers first' : camp ? 'Cutthroats are camped on this isle: bring blades' : 'The captain and four hands row in';
     this.shoreHud.setPrompt({ key: 'land', title: `Go ashore on ${L.island.name}`, sub, ok: !chased });
     if (!chased && this.input.state.helm) this.goAshore();
   }
@@ -1263,6 +1327,7 @@ export class Game {
   private dock(port: TradePort) {
     const p = this.player;
     if (!p || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe) return;
+    this.wanted.hideMark();
     this.setChart(false);
     this.setView(false);
     this.input.releaseLook();
@@ -1461,6 +1526,7 @@ export class Game {
     this.water.remove(s.bowWave.mesh);
     this.ships.splice(this.ships.indexOf(s), 1);
     this.ais.delete(s);
+    this.hunters.delete(s);
     s.root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.geometry) m.geometry.dispose();
@@ -1521,22 +1587,52 @@ export class Game {
 
   private runShipyard() {
     this.preload.step();
+    const tex = this.texQueue.shift();
+    if (tex) this.renderer.initTexture(tex);
     if (!this.keel) {
-      const ids = Object.keys(Game.STOCK) as ShipClassId[];
-      const id = ids.find((k) => this.shipyard.filter((m) => m.cls.id === k).length < Game.STOCK[k]);
-      if (!id) return;
-      this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(), this.quality.physicalHull ? 1 : 0, true);
+      // the next named captain's ship comes first: she may be sent for at any moment
+      const next = this.heat.next;
+      if (next && !this.hunterHull && this.state === 'playing') {
+        this.keelFor = next;
+        this.keel = new ShipModel(SHIP_CLASSES[next.cls], hunterLivery(next), this.quality.physicalHull ? 1 : 0, true);
+        this.keel.setSkin(skinItem(next.skin));
+        this.texQueue.push(...this.keel.ownTextures());
+      } else {
+        const ids = Object.keys(Game.STOCK) as ShipClassId[];
+        const id = ids.find((k) => this.shipyard.filter((m) => m.cls.id === k).length < Game.STOCK[k]);
+        if (!id) return;
+        this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(), this.quality.physicalHull ? 1 : 0, true);
+      }
     }
     // a little each frame: every slice is small, and a frame stops starting new ones after 1.5 ms
     const t0 = performance.now();
     while (performance.now() - t0 < 1.5) {
       if (this.keel.step()) {
-        this.shipyard.push(this.keel);
-        this.preload.add(this.keel.root);
+        const k = this.keel;
         this.keel = null;
+        const For = this.keelFor;
+        this.keelFor = null;
+        if (For && For !== this.heat.next) this.scrapHull(k);
+        else if (For) {
+          this.hunterHull = k;
+          this.preload.add(k.root);
+        } else {
+          this.shipyard.push(k);
+          this.preload.add(k.root);
+        }
         return;
       }
     }
+  }
+
+  /** A hull built for a captain who is no longer coming (a new voyage started). */
+  private scrapHull(m: ShipModel) {
+    this.preload.drop(m.root);
+    m.root.traverse((o) => {
+      const g = (o as THREE.Mesh).geometry;
+      if (g) g.dispose();
+    });
+    m.dispose();
   }
 
   private launchPirate(id: ShipClassId, x: number, z: number, heading: number) {
@@ -1649,6 +1745,7 @@ export class Game {
     this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 4;
+    this.resetHeat();
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
@@ -1658,6 +1755,9 @@ export class Game {
     this.leaveShore();
     this.landing = null;
     this.shoreHud.setPrompt(null);
+    this.hunters.clear();
+    this.wanted.reset();
+    this.banner.clear();
     this.peek.classList.remove('on');
     this.setView(false);
     this.rig.resetEye();
@@ -1956,7 +2056,11 @@ export class Game {
   private onSunk(ship: Ship, attacker: Ship) {
     // the replacement waits until the wreck has settled
     this.spawnTimer = Math.max(this.spawnTimer, 10);
-    const bounty = { sloop: 60, brig: 110, galleon: 220 }[ship.cls.id];
+    const named = ship.hunter ? CAPTAIN.get(ship.hunter) : undefined;
+    if (named) return this.claimHunter(ship, named, attacker);
+    // the Crown pays more the more the Brethren hate you, and more again for your infamy
+    const heat = 1 + wantedLevel(this.heat.pts) * HEAT_BONUS;
+    const bounty = Math.round({ sloop: 60, brig: 110, galleon: 220 }[ship.cls.id] * heat * this.bounty.bonus);
     const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
     if (attacker === this.player) {
@@ -1965,7 +2069,152 @@ export class Game {
       this.vaultStore.earn(bounty);
       this.ui.toast(`+${bounty} gold bounty`, `${ship.name} sunk`, 3.2);
       this.audio.coin();
+      this.addInfamy(KILL_INFAMY[ship.cls.id]);
     }
+  }
+
+  // ------------------------------------------------------------------ bounties
+
+  /** A new voyage starts cold: no infamy, no hunters, the first of them already chosen. */
+  private resetHeat() {
+    const h = this.heat;
+    h.pts = h.sent = h.claimed = h.cool = 0;
+    h.met.clear();
+    this.hunters.clear();
+    this.wanted.reset();
+    this.banner.clear();
+    // the first to come is always one of the cheapest; a hull built for a later one is no use now
+    if (h.next && h.next.tier !== 1) h.next = null;
+    if (!h.next) {
+      if (this.hunterHull) this.scrapHull(this.hunterHull);
+      this.hunterHull = null;
+      h.next = this.bounty.pick(1, h.met);
+    }
+  }
+
+  /** Infamy earned by your guns: the wanted level climbs and, with it, your name among the Brethren. */
+  private addInfamy(pts: number) {
+    if (this.state !== 'playing') return;
+    const h = this.heat;
+    const was = wantedLevel(h.pts);
+    h.pts += pts;
+    const lv = wantedLevel(h.pts);
+    const rank = this.bounty.addInfamy(pts);
+    if (lv > was) {
+      this.bounty.reached(lv);
+      this.audio.wanted(lv);
+      this.ui.toast(`Wanted · ${'☠'.repeat(lv)}`, lv >= 5 ? 'The whole Brethren is hunting you' : `A hunter sets out · pirate bounties +${Math.round(lv * HEAT_BONUS * 100)}%`, 3.6);
+    }
+    if (rank >= 0) this.ui.toast('Your infamy grows', `${REPUTE[rank][1]} · Crown bounties +${Math.round((this.bounty.bonus - 1) * 100)}%`, 4.2);
+  }
+
+  /** Sends for the hunters your infamy has earned, and keeps the HUD pointed at them. */
+  private updateHunters(dt: number) {
+    const p = this.player!;
+    const h = this.heat;
+    h.cool -= dt;
+    if (!h.next) h.next = this.bounty.pick(Math.min(5, h.sent + 1), h.met);
+    let near: Ship | null = null;
+    let nd = Infinity;
+    for (const s of this.hunters.keys()) {
+      if (!s.alive) continue;
+      const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
+      if (d < nd) {
+        nd = d;
+        near = s;
+      }
+    }
+    // one at a time, a breather after each claim, and only once her ship is ready on the slipway
+    if (!near && p.alive && h.cool <= 0 && this.hunterHull && huntersEarned(h.pts) > h.sent) this.sendHunter();
+    const c = near ? this.hunters.get(near) : undefined;
+    this.wanted.update(h.pts, wantedLevel(h.pts), near && c ? { name: c.handle, dist: nd } : null);
+    if (near && c && p.alive && !this.fpv) {
+      const v = _a.set(near.pos.x, near.root.position.y + 6, near.pos.z).project(this.rig.camera);
+      const front = v.z < 1;
+      this.wanted.point((v.x * 0.5 + 0.5) * innerWidth, (-v.y * 0.5 + 0.5) * innerHeight, front, nd, c.handle, innerWidth, innerHeight);
+    } else this.wanted.hideMark();
+  }
+
+  /** The Brethren's captain sails in from over the horizon, under her own colours, with a pack if she has one. */
+  private sendHunter() {
+    const p = this.player!;
+    const h = this.heat;
+    const c = h.next!;
+    const model = this.hunterHull!;
+    this.hunterHull = null;
+    h.next = null;
+    const at = this.findOpenWater(p.pos.x, p.pos.z, 470, 600);
+    const heading = Math.atan2(p.pos.x - at.x, p.pos.z - at.z);
+    const s = this.makeShip(c.cls, 'pirate', model.livery, model);
+    s.name = c.ship;
+    s.hunter = c.id;
+    s.setBoost(c.boost);
+    s.place(at.x, at.z, heading);
+    s.sailTarget = 1;
+    s.sailLevel = 0.8;
+    s.speed = s.cls.maxSpeed * 0.6;
+    const ai = new PirateAI(s, 4, { ammo: c.ammo });
+    this.ais.set(s, ai);
+    this.hunters.set(s, c);
+    // her escorts: only hulls already waiting on the slipway, never one built on the spot
+    if (c.escorts) {
+      const pack = new Pack();
+      pack.leader = ai;
+      ai.pack = pack;
+      const sh = Math.sin(heading);
+      const ch = Math.cos(heading);
+      for (let i = 0; i < c.escorts; i++) {
+        const id = (['brig', 'sloop'] as ShipClassId[]).find((k) => this.shipyard.some((m) => m.cls.id === k));
+        if (!id) break;
+        const side = i % 2 === 0 ? 1 : -1;
+        const slot = { x: side * 38, z: 34 };
+        let x = s.pos.x + ch * slot.x - sh * slot.z;
+        let z = s.pos.z - sh * slot.x - ch * slot.z;
+        if (this.terrain.heightAt(x, z) > -9) {
+          const o = this.findOpenWater(s.pos.x, s.pos.z, 50, 110);
+          x = o.x;
+          z = o.z;
+        }
+        const e = this.launchPirate(id, x, z, heading);
+        e.pack = pack;
+        e.slot = slot;
+      }
+    }
+    h.sent++;
+    h.met.add(c.id);
+    this.bounty.sighted(c.id);
+    const gold = Math.round(c.bounty * this.bounty.bonus);
+    this.banner.hunt(c, gold);
+    this.audio.horn();
+    this.note('bounty', `${c.epithet} came hunting`, `${c.ship} · ${gold.toLocaleString()} gold on her`);
+  }
+
+  /** A named captain on the bottom: her bounty, a hold full of her plunder and her poster stamped. */
+  private claimHunter(ship: Ship, c: NamedCaptain, attacker: Ship) {
+    this.hunters.delete(ship);
+    // she carried her fortune with her
+    this.loot.drop(ship.pos.x, ship.pos.z, 6 + c.tier, 0.7 + c.tier * 0.06, true);
+    const p = this.player;
+    if (attacker !== p || !p || this.state !== 'playing') {
+      this.ui.toast('Her bounty goes unclaimed', `The ${ship.name} sank by another hand`, 3.4);
+      return;
+    }
+    const h = this.heat;
+    const gold = Math.round(c.bounty * this.bounty.bonus);
+    const inf = c.tier * 3;
+    p.gold += gold;
+    this.vaultStore.earn(gold);
+    this.bounty.claim(c.id, gold);
+    h.claimed++;
+    h.cool = 35;
+    this.addInfamy(inf);
+    this.banner.claimed(c, gold, inf);
+    this.audio.bounty();
+    this.rig.shake(0.3);
+    this.pipeline.flash(0.12);
+    const at = new THREE.Vector3(ship.pos.x, ship.root.position.y + ship.cls.freeboard + 3, ship.pos.z);
+    for (let i = 0; i < 14; i++) this.particles.sparkle(at, [1.4, 1.05, 0.45], 1.6);
+    this.note('bounty', `Claimed the bounty on ${c.epithet}`, `The ${ship.name} · +${gold.toLocaleString()} gold`);
   }
 
   /** Salvage hauled aboard: its goods go into the hold, its shot into the racks, and it patches the hull. */
@@ -2056,6 +2305,8 @@ export class Game {
       cause,
       killer: cause === 'aground' ? undefined : foe?.name,
       killerCls: cause === 'aground' ? undefined : foe?.cls.id,
+      hunter: cause !== 'aground' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
+      bounties: this.heat.claimed,
       where: near ? (near.d < 60 ? `on the shoals of ${near.name}` : `off ${near.name}`) : null,
       events: this.log.events.slice(),
     };
@@ -2555,6 +2806,7 @@ export class Game {
         this.updateLandPrompt(p, dt, docking);
         // no fresh pirates while the captain's ashore: the sea fills again once you sail
         this.directSpawns(dt);
+        this.updateHunters(dt);
       }
       this.checkDiscoveries(p);
       // rammed or holed on a reef: no cannonball to report it
@@ -2881,11 +3133,11 @@ export class Game {
     const p = this.player!;
     // pirates left far astern while cruising are recycled so the seas around you stay busy
     for (const s of this.ships.slice()) {
-      if (s.team !== 'pirate' || !s.alive) continue;
+      if (s.team !== 'pirate' || !s.alive || s.hunter) continue;
       const ai = this.ais.get(s);
       if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
     }
-    const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive).length;
+    const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive && !s.hunter).length;
     const want = Math.min(4, 2 + Math.floor(p.kills / 4));
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {

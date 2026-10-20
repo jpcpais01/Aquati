@@ -809,6 +809,10 @@
   color: var(--coral);
 }
 
+.wk-log li.k-bounty b {
+  color: var(--gold-hi);
+}
+
 .wk-log li.k-lost small .nm {
   font-size: 11px;
 }

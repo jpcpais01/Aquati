@@ -117,6 +117,13 @@ export class Ship {
   burning = 0;
   gold = 0;
   kills = 0;
+  /**
+   * A named captain's edge over an ordinary crew: a stouter hull, heavier and
+   * quicker guns, more way, and a steadier aim (scales the pirates' scatter).
+   */
+  readonly boost = { hp: 1, guns: 1, reload: 1, speed: 1, aim: 1 };
+  /** The named captain aboard (see game/bounty.ts), if she is a hunter. */
+  hunter: string | null = null;
   anchored = false;
   /** Sideways drift (x, z m/s) from being shoved by another hull; bleeds off against the water. */
   readonly drift = new THREE.Vector2();
@@ -191,7 +198,13 @@ export class Ship {
   }
 
   get maxHp() {
-    return this.cls.hp;
+    return Math.round(this.cls.hp * this.boost.hp);
+  }
+
+  /** Makes her a named captain's ship: boosted, and her hull filled to the new strength. */
+  setBoost(b: Ship['boost']) {
+    Object.assign(this.boost, b);
+    this.hp = this.maxHp;
   }
 
   get forward(): THREE.Vector3 {
@@ -235,7 +248,7 @@ export class Ship {
     const pt = point ? point.clone() : null;
     const ammo = this.ammo;
     ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt, ammo }));
-    this.reload[side] = this.reloadFull[side] = this.cls.reload * AMMO[ammo].reload;
+    this.reload[side] = this.reloadFull[side] = this.cls.reload * AMMO[ammo].reload * this.boost.reload;
     this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass;
     return true;
   }
@@ -274,7 +287,7 @@ export class Ship {
     }
     const elev = clamp(0.5 * Math.asin(clamp((g * dist) / (v * v), 0, 1)), 0.015, 0.36);
     // pirate gun crews are a little less disciplined than yours
-    const sloppy = mine ? 1 : 2.4;
+    const sloppy = mine ? 1 : 2.4 * this.boost.aim;
     const yaw = (Math.random() - 0.5) * 0.035 * sloppy;
     const pitch = elev + (Math.random() - 0.5) * 0.02 * sloppy;
     const fa0 = Math.atan2(dir.x, dir.z) + yaw;
@@ -287,7 +300,7 @@ export class Ship {
       const vk = b ? 0.94 + Math.random() * 0.1 : 1;
       const vel = new THREE.Vector3(Math.sin(fa) * Math.cos(pa), Math.sin(pa), Math.cos(fa) * Math.cos(pa)).multiplyScalar(v * vk);
       vel.add(this.vel);
-      world.onShot({ pos: b ? pos.clone() : pos, vel, owner: this, damage: this.cls.damage * am.damage, trail: am.trail ?? this.cannonFx.trail, ammo: p.ammo });
+      world.onShot({ pos: b ? pos.clone() : pos, vel, owner: this, damage: this.cls.damage * am.damage * this.boost.guns, trail: am.trail ?? this.cannonFx.trail, ammo: p.ammo });
     }
     world.particles.muzzle(pos, dir, this.vel, this.cannonFx.blast);
     if (p.ammo !== 'round') world.particles.ammoMuzzle(pos, dir, this.vel, p.ammo);
@@ -379,7 +392,7 @@ export class Ship {
       // shredded canvas (chain shot) draws far less wind, mending over the last few seconds
       const tornK = 1 - EFFECT.tornSlow * Math.min(1, this.torn / 3);
       const hpF = (0.72 + 0.28 * (this.hp / this.maxHp)) * this.dmg.speedFactor * tornK;
-      const target = c.maxSpeed * this.sailLevel * windFactor(relDeg) * (0.75 + 0.25 * w.strength) * hpF * (1 + gust * 0.08);
+      const target = c.maxSpeed * this.boost.speed * this.sailLevel * windFactor(relDeg) * (0.75 + 0.25 * w.strength) * hpF * (1 + gust * 0.08);
       const rate = target > this.speed ? c.accel : c.accel * 1.4;
       this.speed += (target - this.speed) * damp(rate, dt);
       const steer = clamp(0.28 + 0.9 * (this.speed / c.maxSpeed), 0.28, 1.1);

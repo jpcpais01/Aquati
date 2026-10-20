@@ -525,6 +525,12 @@ export class ShipModel {
   private readonly detail: boolean;
   /** Custom liveries own their materials (no cache) and must be disposed. */
   private readonly owned: boolean;
+  /**
+   * A cached pirate paint dressed in a skin, sails and flag of its own (the
+   * named captains): own hull, woodwork and flag materials over the shared
+   * textures, so nothing new compiles and only the cloth is repainted.
+   */
+  private readonly dressed: boolean;
   /** This ship's skin (owned liveries only; everyone else shares NO_SKIN). */
   readonly skinUniforms: SkinUniforms;
 
@@ -533,7 +539,8 @@ export class ShipModel {
   /** `deferred` leaves the geometry unbuilt: call step() (a little per frame) until it returns true. */
   constructor(readonly cls: ShipClass, readonly livery: Livery, quality = 1, deferred = false) {
     this.owned = livery.id.startsWith('custom');
-    this.skinUniforms = this.owned ? makeSkinUniforms() : NO_SKIN;
+    this.dressed = !this.owned && !!livery.skin;
+    this.skinUniforms = this.owned || this.dressed ? makeSkinUniforms() : NO_SKIN;
     this.skinUniforms.uSkinCloth.value.set(livery.sail);
     this.detail = quality > 0;
     this.shape = new HullShape(cls);
@@ -601,6 +608,32 @@ export class ShipModel {
   }
 
   private materials(quality: number): MaterialSet {
+    const base = this.paint(quality);
+    return this.dressed ? this.dress(base, quality) : base;
+  }
+
+  /** Over the cached paint: this ship's own skinned hull and woodwork, flag and sailcloth. */
+  private dress(base: MaterialSet, quality: number): MaterialSet {
+    const su = this.skinUniforms;
+    const b = base.hull;
+    const hullParams = { map: b.map, normalMap: b.normalMap, normalScale: b.normalScale.clone(), roughness: b.roughness, metalness: 0, envMapIntensity: b.envMapIntensity };
+    const hull =
+      quality > 0
+        ? new THREE.MeshPhysicalMaterial({ ...hullParams, clearcoat: 0.55, clearcoatRoughness: 0.28 })
+        : new THREE.MeshStandardMaterial(hullParams);
+    patchMaterial(hull, { clouds: true, caustics: true, skin: 1 }, su);
+    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2 }, su);
+    const flag = patchMaterial(new THREE.MeshStandardMaterial({ map: flagTexture(this.livery), side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.5 }), { flag: true });
+    return { ...base, hull, wood, flag, sailPlain: sailTexture(this.livery, false), sailEmblem: sailTexture(this.livery, true) };
+  }
+
+  /** The textures only this ship carries (a dressed captain's cloth and flag), for uploading ahead of the first draw. */
+  ownTextures(): THREE.Texture[] {
+    if (!this.dressed) return [];
+    return [this.mats.flag.map, this.mats.sailPlain, this.mats.sailEmblem].filter((t): t is THREE.Texture => !!t);
+  }
+
+  private paint(quality: number): MaterialSet {
     const key = `${this.cls.id}|${this.livery.id}|${quality}`;
     const cached = this.owned ? undefined : materialCache.get(key);
     if (cached) return cached;
@@ -618,7 +651,8 @@ export class ShipModel {
       quality > 0
         ? new THREE.MeshPhysicalMaterial({ ...hullParams, clearcoat: 0.55, clearcoatRoughness: 0.28 })
         : new THREE.MeshStandardMaterial(hullParams);
-    patchMaterial(hull, { clouds: true, caustics: true, skin: 1 }, this.skinUniforms);
+    const su = this.owned ? this.skinUniforms : NO_SKIN;
+    patchMaterial(hull, { clouds: true, caustics: true, skin: 1 }, su);
     const sternRows = this.cls.sternCastle ? (this.cls.id === 'galleon' ? 3 : 2) : 1;
     const st = sternTexture(this.livery, sternRows);
     const stern = patchMaterial(
@@ -627,7 +661,7 @@ export class ShipModel {
     );
     if (!sharedDeck) sharedDeck = deckTextures();
     const deck = patchMaterial(new THREE.MeshStandardMaterial({ map: sharedDeck.map, normalMap: sharedDeck.normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78 }), { clouds: true });
-    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2 }, this.skinUniforms);
+    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2 }, su);
     const iron = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true });
     const trim = patchMaterial(new THREE.MeshStandardMaterial({ color: hexL(this.livery.trim), roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true });
     const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(5.0, 3.2, 1.4) });
@@ -2670,8 +2704,16 @@ export class ShipModel {
   dispose() {
     this.sailMaterial.dispose();
     this.sailEmblemMaterial.dispose();
-    if (!this.owned) return;
     const m = this.mats;
+    if (this.dressed) {
+      // only what dress() made: the hull's textures belong to the cache
+      m.flag.map?.dispose();
+      for (const mat of [m.hull, m.wood, m.flag]) mat.dispose();
+      m.sailPlain.dispose();
+      m.sailEmblem.dispose();
+      return;
+    }
+    if (!this.owned) return;
     for (const mat of [m.hull, m.stern, m.wood, m.iron, m.trim, m.glow, m.flag, m.rope, m.ratline]) {
       const ms = mat as THREE.MeshStandardMaterial;
       if (ms.map && ms.map !== sharedDeck?.map) ms.map.dispose();

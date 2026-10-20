@@ -452,6 +452,25 @@ export class SeaChart {
     g.setLineDash([]);
     for (const sh of sc.ships) {
       if (sh === p || !sh.alive) continue;
+      // the Brethren make sure you know where their hunters are
+      if (sh.hunter) {
+        const [hx, hy] = toS(sh.pos.x, sh.pos.z);
+        const hp = (sc.time * 0.6) % 1;
+        g.strokeStyle = `rgba(255, 90, 60, ${0.85 * (1 - hp)})`;
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.arc(hx, hy, 12 + hp * 26, 0, Math.PI * 2);
+        g.stroke();
+        tri(sh, '#ffcf7a', 13);
+        g.font = '700 13px Cinzel, Georgia, serif';
+        g.textAlign = 'center';
+        g.lineWidth = 3;
+        g.strokeStyle = 'rgba(40, 6, 4, 0.85)';
+        g.strokeText(sh.name, hx, hy - 20);
+        g.fillStyle = '#ffd8c8';
+        g.fillText(sh.name, hx, hy - 20);
+        continue;
+      }
       if (Math.hypot(sh.pos.x - p.pos.x, sh.pos.z - p.pos.z) > SPYGLASS) continue;
       tri(sh, '#ff6a55', 10);
     }

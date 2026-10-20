@@ -172,6 +172,12 @@ export interface Livery {
   sailPattern?: SailPattern;
   /** Emblem painted on the main sails; overrides `emblem` when present. */
   sailMark?: { emblem: EmblemId; backing: BackingId; color: string } | null;
+  /**
+   * A vault skin worn over the shared pirate paint (named captains). The hull's
+   * textures still come from the livery's cache; the model gets its own skin
+   * uniforms, sails and flag.
+   */
+  skin?: string;
 }
 
 export const PLAYER_LIVERY: Livery = {

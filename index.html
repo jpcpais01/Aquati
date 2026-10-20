@@ -42,6 +42,7 @@
       <nav class="menu-tools">
         <span class="build-tag" id="build-tag" aria-label="Game version"></span>
         <button class="tool acct-chip hidden" id="btn-account" data-label="Sign in" aria-label="Sign in"></button>
+        <button class="tool" id="btn-bounties" data-label="Wanted board" aria-label="Wanted board"><span class="ti" data-icon="skull"></span><i class="new-dot" id="bounty-dot"></i></button>
         <button class="tool" id="btn-notes" data-label="Patch notes" aria-label="Patch notes"><span class="ti" data-icon="scroll"></span><i class="new-dot" id="notes-dot"></i></button>
         <button class="tool" id="btn-controls" data-label="Controls" aria-label="Controls"><span class="ti" data-icon="keys"></span></button>
         <button class="tool" id="btn-settings" data-label="Settings" aria-label="Settings"><span class="ti" data-icon="sliders"></span></button>
@@ -78,6 +79,7 @@
           <div class="chip" title="Ships sunk"><span class="skull"></span><b id="hud-kills">0</b></div>
           <div class="chip" title="Islands charted"><span class="isle"></span><b id="hud-isles">0</b></div>
         </div>
+        <div class="wanted" id="hud-wanted" title="Infamy among the Brethren"><span class="wn-pips"><i></i><i></i><i></i><i></i><i></i></span><span class="wn-lbl">Wanted</span><b id="hud-hunt"></b></div>
       </div>
       <div class="nav">
         <div class="nav-btns">
@@ -109,6 +111,8 @@
       <div class="reticle" id="reticle"><i></i><span id="reticle-side"></span></div>
       <button class="fpv-prompt" id="btn-helm"><kbd class="kd">F</kbd><span id="helm-text">Take the helm</span></button>
       <div class="fpv-hint" id="fpv-hint">Click to look around · <kbd>WASD</kbd> walk · <kbd>V</kbd> leave</div>
+      <div id="hunt-mark" aria-hidden="true"><i class="hm-arrow"></i><i class="hm-disc"></i><b></b></div>
+      <div id="bounty-banner" aria-live="polite"></div>
       <div id="toasts"></div>
       <div id="floaters"></div>
       <div id="bars"></div>
@@ -134,6 +138,7 @@
           <nav class="menu-list" id="pause-list">
             <button class="mi" id="btn-resume"><span class="ti" data-icon="play"></span><span class="mi-l">Resume voyage</span><kbd class="kd">Esc</kbd></button>
             <button class="mi" id="btn-chart"><span class="ti" data-icon="map"></span><span class="mi-l">Sea chart</span><kbd class="kd">M</kbd></button>
+            <button class="mi" id="btn-bounties2"><span class="ti" data-icon="skull"></span><span class="mi-l">Wanted board</span></button>
             <button class="mi" id="btn-photo2"><span class="ti" data-icon="camera"></span><span class="mi-l">Photo mode</span><kbd class="kd">P</kbd></button>
             <button class="mi" id="btn-settings2"><span class="ti" data-icon="sliders"></span><span class="mi-l">Settings</span></button>
             <button class="mi" id="btn-graphics2"><span class="ti"></span><span class="mi-l">Graphics</span></button>
@@ -309,6 +314,16 @@
           <div class="ctl-tip"><span class="ti" data-icon="cutlass"></span>Cutthroats camp on many isles. Get close and they come running: your hands pick a man each and rush to anyone going for you. Rout the camp and its chest is yours.</div>
           <div class="ctl-tip"><span class="ti" data-icon="wheel"></span>Sail across the wind for the best speed. Heading straight into it is slow going.</div>
         </div>
+      </div>
+    </div>
+
+    <div id="bounties" class="screen dim hidden">
+      <div class="sheet bb-card" role="dialog" aria-labelledby="bounties-title">
+        <header class="sheet-head">
+          <div><div class="kicker">The Brethren of the Coast</div><h2 class="screen-title" id="bounties-title">Wanted Board</h2></div>
+          <button class="round-btn" data-close title="Close (Esc)" aria-label="Close"><span class="ti" data-icon="close"></span></button>
+        </header>
+        <div class="sheet-body bb-body" id="bounties-body"></div>
       </div>
     </div>
 

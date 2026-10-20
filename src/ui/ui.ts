@@ -14,6 +14,7 @@ import { WreckReport, WreckScreen } from './wreck';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock } from '../game/ammo';
 import { ammoIcon } from './ammoArt';
 import { progressSaved } from '../core/progress';
+import { CAPTAIN } from '../game/bounty';
 export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
@@ -49,9 +50,10 @@ export interface VoyageInfo {
 }
 
 /** Cards that sit over the menus and close on Esc or a tap outside; later ones stack on top. */
-const OVERLAYS = ['notes', 'controls', 'settings', 'graphics', 'account'];
+const OVERLAYS = ['notes', 'controls', 'settings', 'graphics', 'account', 'bounties'];
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 export class UI {
   readonly menu = $('menu');
@@ -1103,8 +1105,8 @@ export class UI {
       let el = this.barEls.get(s.id);
       if (!el) {
         el = document.createElement('div');
-        el.className = 'ebar';
-        el.innerHTML = `<i></i><span>${s.cls.name}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
+        el.className = s.hunter ? 'ebar hunter' : 'ebar';
+        el.innerHTML = `<i></i><span>${s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
         this.bars.appendChild(el);
         this.barEls.set(s.id, el);
       }
@@ -1332,7 +1334,36 @@ export class UI {
       }
       g.restore();
     }
-    for (const s of ships) if (s !== player && s.alive) tri(s, '#ff6a55', 11);
+    for (const s of ships) {
+      if (s === player || !s.alive) continue;
+      if (!s.hunter) {
+        tri(s, '#ff6a55', 11);
+        continue;
+      }
+      // a hunter: a pulsing crimson ring, and pinned to the rim while she's still over the horizon
+      const d = Math.hypot(s.pos.x - cx, s.pos.z - cz);
+      const pulse = (performance.now() / 1400) % 1;
+      let [x, y] = toMap(s.pos.x, s.pos.z);
+      if (d > R - 24) {
+        const a = Math.atan2(s.pos.z - cz, s.pos.x - cx);
+        x = S / 2 + Math.cos(a) * (S / 2 - 16);
+        y = S / 2 + Math.sin(a) * (S / 2 - 16);
+      }
+      g.strokeStyle = `rgba(255, 80, 50, ${0.9 * (1 - pulse)})`;
+      g.lineWidth = 3;
+      g.beginPath();
+      g.arc(x, y, 9 + pulse * 18, 0, Math.PI * 2);
+      g.stroke();
+      if (d > R - 24) {
+        g.fillStyle = '#d8392b';
+        g.beginPath();
+        g.arc(x, y, 8, 0, Math.PI * 2);
+        g.fill();
+        g.strokeStyle = '#ffe2d0';
+        g.lineWidth = 2;
+        g.stroke();
+      } else tri(s, '#ffcf7a', 14);
+    }
     // waypoints: in range where they stand, else on the rim with how far to sail
     g.font = '700 19px Inter, system-ui, sans-serif';
     g.textAlign = 'center';
