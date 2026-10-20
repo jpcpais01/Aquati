@@ -4162,7 +4162,7 @@ export class Game {
       const file = new File([blob], name, { type: 'image/png' });
       if (navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: 'Shores of Fortune' });
+          await navigator.share({ files: [file], title: 'Shores O’ Fortune' });
           this.photo.saved(blob, 'Photo shared', size);
           return;
         } catch (e) {

@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T21:00Z',
     entries: [
       {
+        title: 'Shores O\u2019 Fortune',
+        notes: [
+          'The game now goes by Shores O\u2019 Fortune, with a salty pirate swagger in the gilded wordmark. Same sea, same ships, same saves.',
+        ],
+      },
+      {
         title: 'Grass you can walk through',
         notes: [
           'The meadows on every island now grow real grass. Walk ashore and you wade through clumps of blades that sway in the wind, roll in waves as the breeze crosses the hillside and bow flat as each gust passes. They part around your boots and your crew\'s as you walk through them.',

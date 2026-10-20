@@ -31,7 +31,7 @@ export default defineConfig({
       injectRegister: false,
       includeAssets: ['favicon.ico', 'icons/icon.svg', 'icons/apple-touch-icon.png'],
       manifest: {
-        name: 'Shores of Fortune',
+        name: 'Shores O’ Fortune',
         short_name: 'Fortune',
         description: 'Sail, explore and battle across a sun-drenched pirate archipelago.',
         theme_color: '#0b3a4a',

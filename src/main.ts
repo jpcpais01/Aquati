@@ -34,5 +34,5 @@ try {
   });
 } catch (e) {
   console.error(e);
-  fail('Shores of Fortune needs WebGL 2 to sail. Try a recent Chrome, Safari, Edge or Firefox.');
+  fail('Shores O’ Fortune needs WebGL 2 to sail. Try a recent Chrome, Safari, Edge or Firefox.');
 }
