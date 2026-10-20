@@ -184,8 +184,8 @@ vec3 starField(vec3 d) {
   vec3 h = aqHash33(c);
   if (h.x > 0.32) return vec3(0.0);
   vec3 sd = normalize(c + 0.2 + 0.6 * aqHash33(c * 1.71 + 41.7));
-  float a = length(ds - sd) * 450.0;
-  float b = pow(h.y, 9.0) * 3.0 * exp(-a * a);
+  float a = length(ds - sd) * 520.0;
+  float b = pow(h.y, 12.0) * 1.2 * exp(-a * a);
   return vec3(0.85, 0.9, 1.0) * b * uNight * uNight * (1.0 - uCloudCover) * smoothstep(0.0, 0.25, d.y);
 }
 
