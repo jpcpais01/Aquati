@@ -174,20 +174,24 @@ export const ICONS = {
 };
 
 let crestN = 0;
-/** Compass-rose crest; each copy gets its own gradient id so hidden copies don't break visible ones. */
+/**
+ * Compass-rose crest; each copy gets its own gradient ids so hidden copies don't break visible ones.
+ * The rose is its own <svg> over the rings: spinning an HTML-level element runs on the
+ * compositor, so the loading screen's compass keeps turning while the main thread is busy.
+ */
 export const crest = () => {
   const id = `crest-g${crestN++}`;
-  return `<svg class="crest" viewBox="0 0 64 64" aria-hidden="true">
-  <defs><linearGradient id="crest-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset=".55" stop-color="#efc463"/><stop offset="1" stop-color="#b98227"/></linearGradient></defs>
-  <circle cx="32" cy="32" r="27" fill="none" stroke="url(#crest-g)" stroke-width="1.6" opacity=".85"/>
-  <circle cx="32" cy="32" r="22.5" fill="none" stroke="url(#crest-g)" stroke-width=".8" stroke-dasharray="1.2 3.2" opacity=".8"/>
-  <g class="crest-rose">
-    <path d="M32 6 36 28 32 32 28 28Z M32 58 28 36 32 32 36 36Z M6 32 28 28 32 32 28 36Z M58 32 36 36 32 32 36 28Z" fill="url(#crest-g)"/>
-    <path d="M32 6 32 32 28 28Z M32 58 32 32 36 36Z M6 32 32 32 28 36Z M58 32 32 32 36 28Z" fill="#8a5a17" opacity=".45"/>
-    <path d="M32 16 34 30 32 32 30 30Z M32 48 30 34 32 32 34 34Z M16 32 30 30 32 32 30 34Z M48 32 34 34 32 32 34 30Z" fill="url(#crest-g)" opacity=".7" transform="rotate(45 32 32)"/>
-  </g>
-  <circle cx="32" cy="32" r="2.4" fill="#0b3546" stroke="url(#crest-g)" stroke-width="1.2"/>
-</svg>`.replace(/crest-g/g, id);
+  const grad = (k: string) =>
+    `<defs><linearGradient id="${id}${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset=".55" stop-color="#efc463"/><stop offset="1" stop-color="#b98227"/></linearGradient></defs>`;
+  return `<span class="crest" aria-hidden="true"><svg class="crest-ring" viewBox="0 0 64 64">${grad('a')}
+  <circle cx="32" cy="32" r="27" fill="none" stroke="url(#${id}a)" stroke-width="1.6" opacity=".85"/>
+  <circle cx="32" cy="32" r="22.5" fill="none" stroke="url(#${id}a)" stroke-width=".8" stroke-dasharray="1.2 3.2" opacity=".8"/>
+</svg><svg class="crest-rose" viewBox="0 0 64 64">${grad('b')}
+  <path d="M32 6 36 28 32 32 28 28Z M32 58 28 36 32 32 36 36Z M6 32 28 28 32 32 28 36Z M58 32 36 36 32 32 36 28Z" fill="url(#${id}b)"/>
+  <path d="M32 6 32 32 28 28Z M32 58 32 32 36 36Z M6 32 32 32 28 36Z M58 32 32 32 36 28Z" fill="#8a5a17" opacity=".45"/>
+  <path d="M32 16 34 30 32 32 30 30Z M32 48 30 34 32 32 34 34Z M16 32 30 30 32 32 30 34Z M48 32 34 34 32 32 34 30Z" fill="url(#${id}b)" opacity=".7" transform="rotate(45 32 32)"/>
+  <circle cx="32" cy="32" r="2.4" fill="#0b3546" stroke="url(#${id}b)" stroke-width="1.2"/>
+</svg></span>`;
 };
 
 /** Compass bezel for the round minimap: a fine ring, ticks every 15°, cardinal letters and a gold north pip. */
