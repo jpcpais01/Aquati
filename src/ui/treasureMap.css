@@ -7,47 +7,367 @@
 .tm-card {
   position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  animation: chart-in 0.4s var(--ease);
+  gap: calc(22px * var(--u));
+  max-width: 100%;
+  animation: tm-unroll 0.55s var(--ease);
+}
+
+@keyframes tm-unroll {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94) rotate(-1.2deg);
+  }
+}
+
+.tm-sheet {
+  position: relative;
+  flex: none;
+  width: min(600px, calc(100vh - 56px), calc(100vw - 360px));
+  aspect-ratio: 1;
 }
 
 .tm-canvas {
-  width: min(560px, 88vw, calc(100vh - 170px));
-  height: auto;
-  aspect-ratio: 1;
-  filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.45));
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
-.tm-foot {
+/* the X glows and pings like a heartbeat once its piece is in hand */
+.tm-x {
+  position: absolute;
+  width: 11%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.tm-x.on {
+  opacity: 1;
+}
+
+.tm-x::before,
+.tm-x::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.tm-x::before {
+  background: radial-gradient(circle, rgba(255, 120, 70, 0.32) 0%, rgba(220, 60, 30, 0.14) 45%, transparent 70%);
+  animation: tm-xglow 1.8s ease-in-out infinite;
+}
+
+.tm-x::after {
+  border: 2px solid rgba(170, 34, 22, 0.7);
+  animation: tm-xping 1.8s cubic-bezier(0.2, 0.7, 0.3, 1) infinite;
+}
+
+@keyframes tm-xglow {
+  50% {
+    transform: scale(1.18);
+    opacity: 0.6;
+  }
+}
+
+@keyframes tm-xping {
+  from {
+    transform: scale(0.45);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.7);
+    opacity: 0;
+  }
+}
+
+/* the ledger beside the sheet: the pieces, the riddle, the way there */
+.tm-side {
+  width: calc(272px * var(--u));
+  flex: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  max-width: min(560px, 88vw);
-  text-align: center;
+  gap: calc(14px * var(--u));
+  padding: calc(18px * var(--u)) calc(18px * var(--u)) calc(16px * var(--u));
+  border-radius: calc(20px * var(--u));
+  background: linear-gradient(180deg, rgba(16, 34, 46, 0.94), rgba(7, 19, 28, 0.92));
+  border: 1px solid rgba(244, 199, 101, 0.24);
+  box-shadow: 0 24px 60px rgba(0, 6, 12, 0.45), var(--hi);
+}
+
+.tm-head {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: calc(3px * var(--u));
+  padding-right: calc(40px * var(--u));
+}
+
+.tm-kick {
+  font: 700 calc(9px * var(--t)) var(--sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold);
 }
 
 .tm-title {
-  font: 700 20px var(--serif);
-  letter-spacing: 0.05em;
+  font: 700 calc(21px * var(--t)) / 1.15 var(--serif);
+  letter-spacing: 0.04em;
   color: var(--ink);
 }
 
-.tm-sub {
-  font: 500 13.5px var(--sans);
+#tmap.whole .tm-title {
+  color: var(--gold-hi);
+  text-shadow: 0 0 18px rgba(244, 199, 101, 0.35);
+}
+
+.tm-pieces {
+  display: flex;
+  align-items: center;
+  gap: calc(5px * var(--u));
+}
+
+.tm-p {
+  width: calc(17px * var(--u));
+  height: calc(27px * var(--u));
+  display: flex;
+}
+
+.tm-p .scrap,
+.mc-slots .scrap,
+.tm-fly .scrap {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.tm-p .scrap path {
+  fill: rgba(255, 232, 186, 0.05);
+  stroke: rgba(255, 232, 186, 0.35);
+  stroke-width: 0.7;
+  stroke-dasharray: 1.6 1.4;
+}
+
+.tm-p.have .scrap path {
+  fill: #e8d09a;
+  stroke: #7d5628;
+  stroke-dasharray: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.4));
+}
+
+.tm-p:nth-child(1) {
+  transform: rotate(-4deg);
+}
+
+.tm-p:nth-child(3) {
+  transform: rotate(5deg);
+}
+
+.tm-count {
+  margin-left: calc(6px * var(--u));
+  font: 700 calc(11px * var(--t)) var(--sans);
   color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+#tmap.whole .tm-count {
+  color: var(--gold);
+}
+
+.tm-clues {
+  list-style: none;
+  margin: 0;
+  padding: calc(12px * var(--u)) 0 0;
+  border-top: 1px solid rgba(244, 199, 101, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: calc(9px * var(--u));
+}
+
+.tm-clues li {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(9px * var(--u));
+}
+
+.tm-clues li i {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(20px * var(--u));
+  height: calc(20px * var(--u));
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 232, 186, 0.25);
+  font: 700 calc(8.5px * var(--t)) var(--serif);
+  font-style: normal;
+  color: var(--ink-4);
+}
+
+.tm-clues li span {
+  padding-top: calc(2px * var(--u));
+  font: italic 500 calc(12px * var(--t)) / 1.35 Georgia, 'Times New Roman', serif;
+  color: var(--ink-4);
+}
+
+.tm-clues li.read i {
+  border: none;
+  background: radial-gradient(circle at 35% 30%, #c8473a, #8a1d14);
+  color: #ffe2cf;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.tm-clues li.read span {
+  font-size: calc(13.5px * var(--t));
+  color: #f3e4bf;
+}
+
+.tm-where {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--u));
+  padding: calc(10px * var(--u)) calc(12px * var(--u));
+  border-radius: calc(14px * var(--u));
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--stroke);
+}
+
+#tmap.whole .tm-where {
+  background: linear-gradient(90deg, rgba(244, 199, 101, 0.14), rgba(244, 199, 101, 0.03));
+  border-color: rgba(244, 199, 101, 0.3);
+}
+
+.tm-needle {
+  flex: none;
+  width: calc(30px * var(--u));
+  height: calc(30px * var(--u));
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 40% 35%, #26404e, #0d1e28);
+  border: 1px solid rgba(244, 199, 101, 0.4);
+  transition: transform 0.9s var(--spring);
+}
+
+.tm-needle .needle {
+  width: 78%;
+  height: 78%;
+}
+
+.needle .n {
+  fill: #e5604f;
+}
+
+.needle .s {
+  fill: #e9dcc0;
+}
+
+.needle circle {
+  fill: var(--gold);
+}
+
+#tmap:not(.whole) .tm-needle {
+  opacity: 0.45;
+}
+
+.tm-wt {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tm-wt b {
+  font: 700 calc(12.5px * var(--t)) var(--sans);
+  color: var(--ink);
+}
+
+.tm-wt small {
+  font: 500 calc(10.5px * var(--t)) / 1.3 var(--sans);
+  color: var(--ink-3);
 }
 
 .tm-close {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: calc(-4px * var(--u));
+  right: calc(-6px * var(--u));
   z-index: 1;
 }
 
-/* the HUD chip: hidden until the first piece, gold once the map is whole */
+/* upright screens: the ledger under the sheet */
+@media (orientation: portrait) {
+  .tm-card {
+    flex-direction: column;
+    gap: calc(12px * var(--u));
+  }
+
+  .tm-sheet {
+    width: min(560px, calc(100vw - 20px), calc(100vh - 330px));
+  }
+
+  .tm-side {
+    width: min(560px, calc(100vw - 28px));
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: calc(10px * var(--u)) calc(12px * var(--u));
+    padding: calc(13px * var(--u)) calc(14px * var(--u));
+  }
+
+  .tm-clues,
+  .tm-where {
+    grid-column: 1 / -1;
+  }
+
+  .tm-clues {
+    padding-top: calc(9px * var(--u));
+    gap: calc(6px * var(--u));
+  }
+
+}
+
+/* short landscape phones: as tall a sheet as fits, a slimmer ledger */
+@media (orientation: landscape) and (max-height: 500px) {
+  .tm-card {
+    gap: 12px;
+  }
+
+  .tm-sheet {
+    width: min(calc(100vh - 20px), calc(100vw - 300px));
+  }
+
+  .tm-side {
+    width: 238px;
+    gap: 9px;
+    padding: 12px 13px;
+    border-radius: 16px;
+  }
+
+  .tm-title {
+    font-size: 17px;
+  }
+
+  .tm-clues {
+    padding-top: 8px;
+    gap: 6px;
+  }
+
+  .tm-clues li.read span,
+  .tm-clues li span {
+    font-size: 11.5px;
+  }
+
+  .tm-where {
+    padding: 7px 9px;
+  }
+}
+
+/* ------------------------------------------------------------------ the HUD chip */
+
+/* hidden until the first piece: three torn slots fill in, then a wax seal,
+   an arrow that points to the X across the screen, and how far it is */
 .chip.map-chip {
   display: none;
   pointer-events: auto;
@@ -72,11 +392,457 @@
   height: 100%;
 }
 
+.mc-slots {
+  display: flex;
+  align-items: center;
+  gap: max(1px, calc(1.5px * var(--k)));
+}
+
+.mc-slots i {
+  display: flex;
+  width: max(5px, calc(6.5px * var(--k)));
+  height: max(9px, calc(12px * var(--k)));
+}
+
+.mc-slots i:nth-child(2) {
+  transform: translateY(-0.5px) rotate(3deg);
+}
+
+.mc-slots .scrap path {
+  fill: rgba(255, 232, 186, 0.06);
+  stroke: rgba(255, 232, 186, 0.4);
+  stroke-width: 0.9;
+  stroke-dasharray: 1.5 1.3;
+}
+
+.mc-slots i.have .scrap path {
+  fill: #ead39e;
+  stroke: #8a6230;
+  stroke-dasharray: none;
+}
+
+.mc-slots i.pop {
+  animation: mc-pop 0.6s var(--spring);
+}
+
+@keyframes mc-pop {
+  0% {
+    transform: scale(2.2) rotate(-20deg);
+    filter: brightness(1.8) drop-shadow(0 0 4px #ffd68a);
+  }
+}
+
+.mc-seal,
+.mc-dir {
+  display: none;
+}
+
+.chip.map-chip.whole .tm-ico,
+.chip.map-chip.whole .mc-slots {
+  display: none;
+}
+
+.chip.map-chip.whole .mc-seal,
+.chip.map-chip.whole .mc-dir {
+  display: flex;
+}
+
+.mc-seal {
+  width: max(13px, calc(16px * var(--k)));
+  height: max(13px, calc(16px * var(--k)));
+  margin-left: calc(-1px * var(--k));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45));
+}
+
+.mc-seal .seal {
+  width: 100%;
+  height: 100%;
+}
+
+.seal path {
+  fill: #b3271b;
+}
+
+.seal .sx {
+  fill: none;
+  stroke: #ffd8c0;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.mc-dir {
+  width: max(11px, calc(13px * var(--k)));
+  height: max(11px, calc(13px * var(--k)));
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  background: rgba(244, 199, 101, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(244, 199, 101, 0.4);
+}
+
+.mc-dir i {
+  width: 52%;
+  height: 62%;
+  background: var(--gold-hi);
+  clip-path: polygon(50% 0, 100% 100%, 50% 74%, 0 100%);
+  transition: transform 0.25s ease-out;
+}
+
 .chip.map-chip.whole {
-  border-color: rgba(244, 199, 101, 0.6);
-  box-shadow: 0 0 12px rgba(244, 180, 70, 0.35);
+  border-color: rgba(244, 199, 101, 0.55);
+  background: linear-gradient(180deg, rgba(58, 36, 14, 0.82), rgba(26, 16, 8, 0.78));
+  box-shadow: 0 0 12px rgba(244, 180, 70, 0.28);
 }
 
 .chip.map-chip.whole b {
-  color: #ff8a6a;
+  color: var(--gold-hi);
+}
+
+.chip.map-chip.near {
+  animation: mc-near 1.1s ease-in-out infinite;
+}
+
+.chip.map-chip.near b {
+  color: #ffb39c;
+}
+
+@keyframes mc-near {
+  50% {
+    box-shadow: 0 0 18px rgba(255, 110, 70, 0.6), 0 0 0 2px rgba(255, 140, 90, 0.35);
+  }
+}
+
+/* the map's spent: it chars and curls away */
+.chip.map-chip.spent {
+  animation: mc-burn 1.5s ease-in forwards;
+  pointer-events: none;
+}
+
+@keyframes mc-burn {
+  0% {
+    box-shadow: 0 0 12px rgba(244, 180, 70, 0.3);
+  }
+  30% {
+    box-shadow: 0 0 22px rgba(255, 120, 40, 0.8);
+    filter: brightness(1.5) sepia(0.6);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.6) rotate(-6deg);
+    filter: brightness(0.3) sepia(1) blur(1px);
+  }
+}
+
+/* a found piece tumbling into its slot */
+.tm-fly {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  width: 22px;
+  height: 34px;
+  pointer-events: none;
+  filter: drop-shadow(0 0 8px rgba(255, 214, 138, 0.8)) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.45));
+  will-change: transform, opacity;
+}
+
+.tm-fly .scrap path {
+  fill: #ecd6a2;
+  stroke: #7d5628;
+  stroke-width: 0.6;
+}
+
+/* doubloons from the hole to the purse */
+.tm-coin {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  width: 13px;
+  height: 13px;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* ------------------------------------------------------------------ the haul card */
+
+.toast.tm-haul {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--k));
+  text-align: left;
+  border-radius: calc(18px * var(--k));
+  padding: calc(7px * var(--k)) calc(16px * var(--k)) calc(7px * var(--k)) calc(10px * var(--k));
+  border-color: rgba(244, 199, 101, 0.7);
+  background: linear-gradient(180deg, rgba(48, 32, 14, 0.94), rgba(20, 14, 8, 0.9));
+  box-shadow: 0 0 30px rgba(255, 190, 70, 0.3), 0 14px 40px rgba(0, 8, 14, 0.4), var(--hi);
+}
+
+.th-chest {
+  flex: none;
+  width: calc(40px * var(--k));
+  height: calc(34px * var(--k));
+  animation: th-chest 0.9s 0.15s var(--spring) backwards;
+  filter: drop-shadow(0 0 10px rgba(255, 200, 90, 0.55));
+}
+
+.th-chest svg {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes th-chest {
+  from {
+    transform: translateY(10px) scale(0.5) rotate(-12deg);
+    opacity: 0;
+  }
+}
+
+.th-t {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.toast.tm-haul b {
+  white-space: nowrap;
+}
+
+.th-row {
+  display: flex;
+  align-items: center;
+  gap: calc(5px * var(--k));
+  margin-top: calc(3px * var(--k));
+}
+
+.th-gold {
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--k));
+  margin-right: calc(4px * var(--k));
+}
+
+.th-gold em {
+  font: 800 max(10px, calc(12.5px * var(--k))) var(--sans);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--gold-hi);
+}
+
+.th-it {
+  display: flex;
+  width: calc(22px * var(--k));
+  height: calc(22px * var(--k));
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  animation: th-it 0.5s var(--spring) backwards;
+}
+
+.th-it:nth-child(2) {
+  animation-delay: 0.5s;
+}
+
+.th-it:nth-child(3) {
+  animation-delay: 0.65s;
+}
+
+.th-it:nth-child(4) {
+  animation-delay: 0.8s;
+}
+
+.th-it:nth-child(5) {
+  animation-delay: 0.95s;
+}
+
+@keyframes th-it {
+  from {
+    transform: scale(0);
+  }
+}
+
+.th-it svg,
+.th-it .loot-ico {
+  width: 100%;
+  height: 100%;
+}
+
+.th-it.r-2 {
+  box-shadow: inset 0 0 0 1.5px rgba(108, 200, 255, 0.7);
+}
+
+.th-it.r-3 {
+  box-shadow: inset 0 0 0 1.5px rgba(196, 139, 255, 0.8), 0 0 8px rgba(196, 139, 255, 0.4);
+}
+
+.th-it.r-4,
+.th-it.r-5 {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 190, 61, 0.9), 0 0 10px rgba(255, 181, 46, 0.5);
+}
+
+/* ------------------------------------------------------------------ digging */
+
+/* the dig gauge sits where the shore prompt does, out of the middle of the view */
+.dig-gauge {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--mb) + 104px * var(--k));
+  transform: translateX(-50%);
+  display: none;
+  align-items: center;
+  gap: calc(9px * var(--k));
+  width: calc(250px * var(--k));
+  max-width: calc(100% - var(--ml) - var(--mr));
+  box-sizing: border-box;
+  padding: calc(6px * var(--k)) calc(14px * var(--k)) calc(7px * var(--k)) calc(7px * var(--k));
+  border-radius: 999px;
+  border: 1px solid rgba(244, 199, 101, 0.45);
+  background: var(--glass-3);
+  box-shadow: 0 10px 30px rgba(0, 8, 14, 0.35), var(--hi);
+  pointer-events: none;
+}
+
+.dig-gauge.on {
+  display: flex;
+  animation: prompt-in 0.3s var(--spring);
+}
+
+.dg-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: calc(28px * var(--k));
+  height: calc(28px * var(--k));
+  border-radius: 50%;
+  background: var(--gold-grad);
+  color: var(--gold-ink);
+}
+
+.dg-ico .ico {
+  width: 62%;
+  height: 62%;
+  transform-origin: 50% 20%;
+}
+
+.dig-gauge.stroke .dg-ico .ico {
+  animation: dg-stroke 0.45s ease-out;
+}
+
+@keyframes dg-stroke {
+  35% {
+    transform: rotate(-28deg) translateY(2px);
+  }
+}
+
+.dg-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--k));
+}
+
+.dg-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dg-top b {
+  font: 700 max(10.5px, calc(12.5px * var(--k))) var(--sans);
+  white-space: nowrap;
+}
+
+.dg-top small {
+  font: 700 max(8.5px, calc(9.5px * var(--k))) var(--sans);
+  color: var(--gold);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* the hole: bands of sand going darker as it goes down, the chest at the bottom */
+.dg-bar {
+  position: relative;
+  height: max(6px, calc(7px * var(--k)));
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.dg-bar i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  clip-path: inset(0 100% 0 0);
+  background: linear-gradient(90deg, #f3dfa6 0%, #d8b06a 35%, #a9763e 70%, #6e4823 100%);
+  transition: clip-path 0.25s ease-out;
+}
+
+.dg-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(16.66% - 1px), rgba(4, 18, 26, 0.55) calc(16.66% - 1px) 16.66%);
+  pointer-events: none;
+}
+
+.dg-bar em {
+  position: absolute;
+  right: calc(-5px * var(--k));
+  top: 50%;
+  width: calc(12px * var(--k));
+  height: calc(10px * var(--k));
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: linear-gradient(180deg, #a5683a, #5e3418);
+  box-shadow: inset 0 0 0 1px #2b1607, inset 0 calc(3px * var(--k)) 0 -1px #e6b450;
+}
+
+.dig-gauge.heave {
+  border-color: rgba(255, 214, 120, 0.9);
+  box-shadow: 0 0 26px rgba(255, 190, 70, 0.45), 0 10px 30px rgba(0, 8, 14, 0.35);
+}
+
+.dig-gauge.heave .dg-bar i {
+  background: var(--gold-grad);
+  animation: dg-shine 0.7s ease-in-out infinite alternate;
+}
+
+.dig-gauge.heave .dg-bar em {
+  animation: dg-rattle 0.18s linear infinite;
+}
+
+@keyframes dg-shine {
+  to {
+    filter: brightness(1.35);
+  }
+}
+
+@keyframes dg-rattle {
+  50% {
+    transform: translateY(-62%) rotate(6deg);
+  }
+}
+
+.is-touch .dig-gauge {
+  bottom: calc(var(--mb) + max(44px, 52px * var(--k)));
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .is-touch .dig-gauge {
+    bottom: calc(var(--mb) + 160px * var(--kt, 1));
+    max-width: calc(100% - var(--ml) - var(--mr) - 130px);
+  }
+}
+
+#hud.fpv .dig-gauge,
+#hud.sunk .dig-gauge {
+  display: none;
+}
+
+.tm-head .tm-close {
+  width: calc(34px * var(--u));
+  height: calc(34px * var(--u));
 }

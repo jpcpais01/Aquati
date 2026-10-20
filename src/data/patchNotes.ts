@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T15:00Z',
+    entries: [
+      {
+        title: 'Treasure maps you\'ll want to frame',
+        notes: [
+          'The treasure map is redrawn as a proper pirate chart: the island in ink and watercolour with its coast echoed out to sea, hills, palms, a compass rose with rhumb lines, the isle\'s name on a ribbon, a scale of paces, the odd sea serpent, coffee rings and scorched edges. The three torn pieces lie together on the table with ragged, fibrous tears, and a piece you haven\'t looked at yet swoops into place the first time you open the map.',
+          'Every piece you hold gives up one line of the riddle beside the map: which shore to land on, how many paces to walk and which way, and where to dig. Once the map is whole the red X glows and pulses, and the map tells you how far away it is and in which direction.',
+          'Found pieces now tumble from where you found them into the map chip on the HUD, which shows three torn slots filling up. When the map is whole the chip turns into a wax seal with an arrow that points to the X across the screen and the distance to it, and it pulses when you\'re close enough to dig.',
+          'Digging shows a small gauge, out of the way just above your controls: how many feet down you are, how many spades are going, a kick on every spadeful, and a golden "Heave!" when the spade strikes the chest.',
+          'When the chest comes up, doubloons shower from the hole into your purse and a card shows the isle, your gold counting up and the plunder you found. Then the spent map chars and curls away. Opening and closing the map also rustles like old parchment.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T14:00Z',
     entries: [
       {

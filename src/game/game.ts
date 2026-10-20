@@ -363,6 +363,8 @@ export class Game {
   // treasure maps: torn pieces from chests, an X on an island, and the dig
   private maps = new TreasureMaps();
   private mapUi = new TreasureMapUI();
+  /** The X in the world, for the map chip's arrow. */
+  private mapX = new THREE.Vector3();
   /** Towns and camps a map's X keeps clear of. */
   private digAvoid: Disc[] = [];
   // the Brethren's island forts: shore guns to silence, a garrison to beat, a flag to raise
@@ -682,6 +684,7 @@ export class Game {
     this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol);
     this.mapUi.onOpen = () => this.setMapView(true);
     this.mapUi.onClose = () => this.setMapView(false);
+    this.mapUi.onCoin = () => this.audio.coin(0, 0.22);
     this.syncTreasure();
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
@@ -1784,10 +1787,17 @@ export class Game {
     const i = this.maps.addPiece((seed) => this.digTarget(seed));
     if (i < 0) return;
     const n = this.maps.count;
+    let sx: number | null = null;
+    let sy: number | null = null;
     if (at) {
       const [x, y, ok] = this.screenOf(at);
-      if (ok) this.ui.floater('Treasure map piece!', x, y - 30, 'rare');
+      if (ok) {
+        this.ui.floater('Treasure map piece!', x, y - 30, 'rare');
+        sx = x;
+        sy = y - 10;
+      }
     }
+    this.mapUi.flyPiece(i, sx, sy);
     const how = this.input.isTouch ? 'tap the map chip' : 'press T';
     if (n < 3) {
       this.ui.toast(`Treasure map · ${n} of 3 pieces`, `Torn and stained: ${how} to look`, 3.6);
@@ -1814,10 +1824,30 @@ export class Game {
       this.setChart(false);
       this.input.releaseLook();
       const m = this.maps.state;
-      const isl = this.terrain.islands.find((i) => i.name === m.isle) ?? null;
-      this.mapUi.show(true, m, isl, (x, z) => this.terrain.heightAt(x, z));
-      this.audio.click();
-    } else this.mapUi.show(false);
+      const isl = this.mapIsland();
+      const cap = this.shore.active ? this.shore.captain : null;
+      const p = this.player;
+      this.mapUi.show(true, m, isl, (x, z) => this.terrain.heightAt(x, z), cap ? { x: cap.x, z: cap.z } : p ? { x: p.pos.x, z: p.pos.z } : null);
+      this.audio.parchment();
+    } else {
+      this.mapUi.show(false);
+      this.audio.parchment(0.6);
+    }
+  }
+
+  /** The isle the map's X is on: by name, or (should the charts have renamed it) the one under the X. */
+  private mapIsland() {
+    const m = this.maps.state;
+    if (!m.pieces && !m.isle) return null;
+    let isl = this.terrain.islands.find((i) => i.name === m.isle) ?? null;
+    if (!isl) {
+      let best = Infinity;
+      for (const i of this.terrain.islands) {
+        const d = Math.hypot(i.x - m.x, i.z - m.z) / Math.max(1, i.r);
+        if (d < best) [best, isl] = [d, i];
+      }
+    }
+    return isl;
   }
 
   /** The chest is out of the ground: a hoard, the map spent. */
@@ -1835,15 +1865,19 @@ export class Game {
     this.log.chests++;
     this.log.best = Math.max(this.log.best, tier);
     const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
-    const isle = this.maps.state.isle;
+    const isle = this.mapIsland()?.name ?? this.maps.state.isle;
     this.note('chest', `Dug up buried treasure on ${isle}`, `+${gold} gold${kept.length ? ' · ' + kept.map((id) => LOOT[id].name).join(', ') : ''}`);
     const [x, y, ok] = this.screenOf(at);
     if (ok) this.ui.floater(`+${gold} gold`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[tier]);
     this.audio.treasure(tier);
     this.rig.shake(0.2);
-    const best = kept[0];
-    if (best) this.ui.lootToast(lootIcon(best), LOOT[best].rarity, 'Buried treasure', LOOT[best].name, 4.2);
-    this.ui.toast(`Buried treasure · +${gold} gold`, kept.length > 1 ? `${kept.length} pieces of plunder for the hold` : 'And fresh shot for the guns', 4.2);
+    this.mapUi.reveal({
+      isle,
+      gold,
+      items: kept.map((id) => ({ art: lootIcon(id), rarity: LOOT[id].rarity, name: LOOT[id].name })),
+      x: ok ? x : null,
+      y: ok ? y : null,
+    });
     this.maps.consume();
     this.syncTreasure();
   }
@@ -4710,7 +4744,10 @@ export class Game {
       }
       this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
-      this.mapUi.setChip(this.maps.state);
+      const tx = this.maps.target;
+      if (tx) this.mapX.set(tx.x, Math.max(0, this.terrain.heightAt(tx.x, tx.z)), tx.z);
+      this.mapUi.setChip(this.maps.state, ashore && cap ? cap : p.pos, tx ? this.mapX : null, this.rig.camera);
+      this.mapUi.setDig(ashore ? this.shore.digView : null);
     }
     if (p && this.chartOpen) {
       this.ui.drawChart({
