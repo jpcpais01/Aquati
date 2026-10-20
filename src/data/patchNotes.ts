@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T14:00Z',
+    entries: [
+      {
+        title: 'Clear your waypoints',
+        notes: [
+          'The sea chart now has a Clear pins button at the top whenever you have waypoints down. One tap removes them all, and each pillar of light fades away.',
+          'You can still tap or click a single pin on the chart to remove just that one. The chart legend now says so.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T13:00Z',
     entries: [
       {

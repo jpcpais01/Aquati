@@ -40,7 +40,7 @@ export interface Pin {
   armed: boolean;
 }
 
-const MAX_FX = MAX_PINS + 4; // room for pins still dissolving
+const MAX_FX = MAX_PINS * 2; // room for pins still dissolving
 
 // Additive, in the water/fx pass like the salvage beacons: soft-tested against
 // the opaque depth so isles and hulls stand in front of the light.
@@ -218,6 +218,11 @@ export class Waypoints {
     this.fading.push(pin);
     if (this.fading.length > MAX_FX - MAX_PINS) this.fading.shift();
     this.save();
+  }
+
+  /** Lifts every pin: the whole chart is cleared, each pillar dissolving. */
+  clear() {
+    for (const p of [...this.pins]) this.lift(p);
   }
 
   /** Advances the light and returns a pin the ship has just sailed into. */

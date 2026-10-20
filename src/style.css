@@ -4729,8 +4729,43 @@ body[data-hud='large'] #hud {
   right: 14px;
   top: 14px;
   display: flex;
+  align-items: center;
   gap: 8px;
   z-index: 1;
+}
+
+/* remove every waypoint at once: a pill beside the round buttons, only while pins are down */
+.chart-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(42px * var(--u));
+  padding: 0 calc(14px * var(--u)) 0 calc(11px * var(--u));
+  border-radius: 999px;
+  border: 1px solid rgba(255, 210, 122, 0.45);
+  background: var(--glass-2);
+  box-shadow: var(--hi), 0 0 14px rgba(255, 210, 122, 0.18);
+  color: #ffd27a;
+  font: 600 calc(12.5px * var(--u)) var(--sans);
+  white-space: nowrap;
+  transition: transform 0.2s var(--ease), background 0.2s;
+}
+
+.chart-clear.hidden {
+  display: none;
+}
+
+.chart-clear .ti {
+  width: calc(14px * var(--u));
+  height: calc(14px * var(--u));
+}
+
+.chart-clear:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.chart-clear:active {
+  transform: scale(0.94);
 }
 
 @media (max-width: 640px), (max-height: 520px) {
