@@ -19,6 +19,7 @@ import { SHIP_KEY } from '../ui/ui';
 import { BOUNTY_KEY, cleanLedger, Ledger, mergeLedger, readLedger } from '../game/bounty';
 import { cleanMaps, freshMaps, MapState, MAPS_KEY, readMaps } from '../game/treasureMaps';
 import { cleanFleet, FLEET_KEY, FleetState, mergeFleet, readFleet } from '../game/fleet';
+import { cleanForts, FORTS_KEY, FortSave, mergeForts, readForts } from '../game/forts';
 
 type Json = Record<string, unknown>;
 
@@ -44,6 +45,8 @@ export interface Profile {
   maps: MapState | null;
   /** Your escorts: prizes that signed on and ships hired in port. */
   fleet: FleetState | null;
+  /** The island forts you've taken, and their tribute. */
+  forts: FortSave | null;
 }
 
 /** Gifts saved before amounts were recorded. */
@@ -109,6 +112,7 @@ export function readLocal(): Profile {
     bounty: readLedger(),
     maps: readMaps(),
     fleet: readFleet(),
+    forts: readForts(),
   };
 }
 
@@ -129,6 +133,7 @@ export function writeLocal(p: Profile) {
     setOrRemove(BOUNTY_KEY, p.bounty ? JSON.stringify(p.bounty) : null);
     setOrRemove(MAPS_KEY, p.maps ? JSON.stringify(p.maps) : null);
     setOrRemove(FLEET_KEY, p.fleet ? JSON.stringify(p.fleet) : null);
+    setOrRemove(FORTS_KEY, p.forts ? JSON.stringify(p.forts) : null);
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -141,7 +146,7 @@ export function writeLocal(p: Profile) {
   }
 }
 
-export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null });
+export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null, forts: null });
 
 /** Back to a brand-new guest: what a sign-out leaves behind. */
 export function resetLocal() {
@@ -160,6 +165,7 @@ export function hasProgress(p: Profile) {
     (p.bounty && p.bounty.infamy > 0) ||
     (p.maps && (p.maps.pieces > 0 || p.maps.dug > 0)) ||
     (p.fleet && (p.fleet.ships.length > 0 || p.fleet.lost > 0)) ||
+    (p.forts && Object.keys(p.forts.taken).length > 0) ||
     Object.keys(p.gifts).length
   );
 }
@@ -351,6 +357,7 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
     bounty: mergeLedger(B.bounty ?? null, local.bounty ?? null, remote.bounty ?? null),
     maps: mergeMaps(B.maps ?? null, local.maps ?? null, remote.maps ?? null, first),
     fleet: mergeFleet(base ? B.fleet ?? null : null, local.fleet ?? null, remote.fleet ?? null),
+    forts: mergeForts(B.forts ?? null, local.forts ?? null, remote.forts ?? null),
   };
 }
 
@@ -359,7 +366,7 @@ export type Part = Exclude<keyof Profile, 'gifts'>;
 /** Which parts differ, so the game reloads only what it must. */
 export function changedParts(a: Profile, b: Profile): Set<Part> {
   const out = new Set<Part>();
-  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
+  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet', 'forts'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
   return out;
 }
 
@@ -381,6 +388,7 @@ export function parseProfile(raw: unknown): Profile | null {
       bounty: cleanLedger(p.bounty),
       maps: cleanMaps(p.maps),
       fleet: cleanFleet(p.fleet),
+      forts: cleanForts(p.forts),
     };
   } catch {
     return null;

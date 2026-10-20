@@ -51,6 +51,37 @@ export function portMark(g: CanvasRenderingContext2D, x: number, y: number, r: n
   g.restore();
 }
 
+/** A fort on a map: a little crenellated tower, coral red while the Brethren hold it, aqua once it's yours. */
+export function fortMark(g: CanvasRenderingContext2D, x: number, y: number, r: number, ours: boolean, quiet = false) {
+  g.save();
+  g.translate(x, y);
+  const k = r / 10;
+  const fill = ours ? '#5ee3d4' : quiet ? '#c9a98a' : '#ff8a6a';
+  g.shadowColor = ours ? 'rgba(94, 227, 212, 0.8)' : 'rgba(255, 120, 80, 0.7)';
+  g.shadowBlur = r * 0.9;
+  g.fillStyle = fill;
+  g.strokeStyle = 'rgba(20, 10, 4, 0.85)';
+  g.lineWidth = Math.max(1.4, 1.6 * k);
+  g.lineJoin = 'round';
+  g.beginPath();
+  // walls with three merlons, and an arched gate
+  g.moveTo(-8 * k, 8 * k);
+  g.lineTo(-8 * k, -4 * k);
+  for (const [a, b] of [[-8, -4.6], [-1.7, 1.7], [4.6, 8]]) {
+    g.lineTo(a * k, -8 * k);
+    g.lineTo(b * k, -8 * k);
+    g.lineTo(b * k, -4 * k);
+  }
+  g.lineTo(8 * k, 8 * k);
+  g.lineTo(2.4 * k, 8 * k);
+  g.arc(0, 8 * k, 2.4 * k, 0, Math.PI, true);
+  g.closePath();
+  g.fill();
+  g.shadowBlur = 0;
+  g.stroke();
+  g.restore();
+}
+
 /** A treasure map's X, in red ink with a dark outline. */
 export function xMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
   g.save();
@@ -80,6 +111,8 @@ export interface ChartScene {
   pins?: { x: number; z: number; hue: number; age: number }[];
   /** A whole treasure map's X. */
   treasure?: { x: number; z: number } | null;
+  /** The island forts, and whose they are. */
+  forts?: { x: number; z: number; name: string; ours: boolean; quiet: boolean }[];
   windX: number;
   windZ: number;
   time: number;
@@ -432,6 +465,18 @@ export class SeaChart {
       g.strokeText(pt.name, x, y - 18);
       g.fillStyle = '#ffd77a';
       g.fillText(pt.name, x, y - 18);
+    }
+
+    // the forts, named (every captain knows where the Brethren's guns are)
+    g.font = '600 12px Cinzel, Georgia, serif';
+    for (const f of sc.forts ?? []) {
+      const [x, y] = toS(f.x, f.z);
+      fortMark(g, x, y, 9, f.ours, f.quiet);
+      g.lineWidth = 4;
+      g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+      g.strokeText(f.name, x, y - 18);
+      g.fillStyle = f.ours ? '#9ff3e8' : '#ffb59a';
+      g.fillText(f.name, x, y - 18);
     }
 
     if (sc.treasure) {

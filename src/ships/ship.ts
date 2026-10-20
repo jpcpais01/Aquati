@@ -127,6 +127,8 @@ export class Ship {
   anchored = false;
   /** Taken in a boarding action and sailing off under a prize crew: no longer anybody's enemy. */
   prize = false;
+  /** A fort's guns standing in as the owner of its shot (never a real ship). */
+  battery = false;
   /** Held fast (0 free .. 1): the Kraken's coils round her hull stop her in the water. */
   held = 0;
   /** Sideways drift (x, z m/s) from being shoved by another hull; bleeds off against the water. */
@@ -308,7 +310,8 @@ export class Ship {
       const fa = base + clamp(angleDelta(base, ang), -arc, arc);
       dir.set(Math.sin(fa), 0, Math.cos(fa));
     }
-    const elev = clamp(0.5 * Math.asin(clamp((g * dist) / (v * v), 0, 1)), 0.015, 0.36);
+    // (aim points only lie past the usual reach for a mark up on a fort's walls, which wants the higher arc)
+    const elev = clamp(0.5 * Math.asin(clamp((g * dist) / (v * v), 0, 1)), 0.015, 0.47);
     // pirate gun crews are a little less disciplined than yours
     const sloppy = mine ? 1 : 2.4 * this.boost.aim;
     const yaw = (Math.random() - 0.5) * 0.035 * sloppy;

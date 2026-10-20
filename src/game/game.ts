@@ -76,6 +76,11 @@ import { DigTarget, TreasureMaps } from './treasureMaps';
 import { TreasureMapUI } from '../ui/treasureMap';
 import { EscortAI, EscortRec, FleetStore, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
 import { EscortRow, FleetHud } from '../ui/fleet';
+import { Fort, FORT_RANGE, Forts, FortStore, Gun, HAVEN_R, TRIBUTE_HOUR } from './forts';
+import { findFortSites, fortClearings } from '../shore/fortKit';
+import { shoreMats } from '../shore/kit';
+import { FortHud } from '../ui/fort';
+import { gunRange } from '../ships/ship';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
@@ -338,6 +343,14 @@ export class Game {
   private mapUi = new TreasureMapUI();
   /** Towns and camps a map's X keeps clear of. */
   private digAvoid: Disc[] = [];
+  // the Brethren's island forts: shore guns to silence, a garrison to beat, a flag to raise
+  private forts!: Forts;
+  private fortStore = new FortStore();
+  private fortHud!: FortHud;
+  private fortFocus = new THREE.Vector3();
+  /** When the forts' tribute was last looked for, and the next hammer-knock under your own walls. */
+  private tributeT = 0;
+  private havenT = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -472,10 +485,14 @@ export class Game {
     const site = findPortSite(this.terrain, this.spawnPoint);
     const tradeSites = findTradeSites(this.terrain, 4, [site]);
     const towns = [site, ...tradeSites].flatMap(portClearings);
+    // the Brethren's forts: a stone square on a rise over the sea, on three isles (well clear of any town)
+    // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns)
+    const fortSites = findFortSites(this.terrain, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3);
+    const fortGround = fortSites.flatMap(fortClearings);
     // the cutthroats' camps: a glade a short walk in from the beach on most isles
-    const camps = findCampSites(this.terrain, towns, site.island);
-    this.digAvoid = [...towns, ...campClearings(camps)];
-    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps)], q.tier === 0));
+    const camps = findCampSites(this.terrain, [...towns, ...fortGround], site.island);
+    this.digAvoid = [...towns, ...campClearings(camps), ...fortGround];
+    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps), ...fortGround], q.tier === 0));
     ui.progress(0.62);
     await nextFrame();
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
@@ -554,14 +571,21 @@ export class Game {
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
     this.ground = new Ground(this.terrain, veg, towns);
+    this.forts = new Forts(fortSites, this.ground, shoreMats());
+    this.opaque.add(this.forts.root);
     this.shore = new Shore(this.ground, camps, this.crew, {
       floater: (text, at, kind) => {
         const [x, y, ok] = this.screenOf(at);
         if (ok) this.ui.floater(text, x, y, kind);
       },
       shake: (a) => this.rig.shake(a),
-      alarm: () => {
-        if (this.shore.active) this.ui.toast('To arms!', 'Cutthroats come running from their camp', 2.8);
+      alarm: (c) => {
+        if (!this.shore.active) return;
+        if (c.fort) {
+          const f = this.forts.forts.find((o) => o.garrison === c);
+          this.ui.toast('The garrison sallies!', `Soldiers pour out of the gate of ${f?.name ?? 'the fort'}`, 3.2);
+          this.audio.wanted(3);
+        } else this.ui.toast('To arms!', 'Cutthroats come running from their camp', 2.8);
       },
       routed: (c) => this.onCampRouted(c),
       plunder: (c) => this.plunderCamp(c),
@@ -575,9 +599,13 @@ export class Game {
         this.audio.footstep(1);
         if (cap) this.rig.shake(0.1);
       },
-      step: (k, wet, deck) => (deck ? this.audio.footstep(k) : this.audio.sandStep(k, wet)),
-    });
+      step: (k, wet, deck) => (deck || this.ground.lifted(this.shore.captain?.x ?? 0, this.shore.captain?.z ?? 0) !== null ? this.audio.footstep(k) : this.audio.sandStep(k, wet)),
+    }, this.forts.garrisons());
     this.opaque.add(this.shore.group);
+    // each fort's garrison is a camp ashore: they're appended after the cutthroats' camps
+    const g0 = this.shore.camps.length - this.forts.forts.length;
+    this.forts.forts.forEach((f, i) => (f.garrison = this.shore.camps[g0 + i]));
+    this.wireForts();
     this.boarding = new Boarding(this.shore.lines, {
       thrown: (at) => {
         const [vol, pan, d] = this.world.soundAt(at);
@@ -659,6 +687,7 @@ export class Game {
     this.warming = true;
     this.tradePorts.warm();
     this.shore.warm();
+    this.forts.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
     if (this.preview) this.preload.add(this.preview.root);
     this.preload.step(true);
@@ -669,6 +698,7 @@ export class Game {
     veg.hold = false;
     this.clouds.warm = false;
     this.shore.unwarm();
+    this.forts.unwarm();
     this.opaque.remove(keeper.root);
     this.cumulus.warm = false;
     this.warming = false;
@@ -686,6 +716,11 @@ export class Game {
   private applyCloud(parts: Set<Part>) {
     if (parts.has('bounty')) this.bounty.reload();
     if (parts.has('fleet')) this.fleet.reload();
+    if (parts.has('forts')) {
+      this.fortStore.reload();
+      // a fort taken on another device changes hands here too (between voyages)
+      if (this.state === 'menu') this.forts.apply(this.fortStore.state.taken);
+    }
     if (parts.has('maps')) {
       this.maps.reload();
       this.syncTreasure();
@@ -1383,10 +1418,26 @@ export class Game {
     const hunted = this.huntedNear(p);
     const beast = this.kraken.active;
     const chased = !!this.lastFoe || hunted || beast;
-    const camp = this.shore.camps.find((c) => c.site.island === L.island && !c.routed);
-    const sub = beast ? 'Not with the Kraken in these waters' : hunted && !this.lastFoe ? 'A hunter is on your tail: no time to row ashore' : chased ? 'Shake off your pursuers first' : camp ? 'Cutthroats are camped on this isle: bring blades' : 'The captain and four hands row in';
-    this.shoreHud.setPrompt({ key: 'land', title: `Go ashore on ${L.island.name}`, sub, ok: !chased });
-    if (!chased && this.input.state.helm) this.goAshore();
+    const camp = this.shore.camps.find((c) => c.site.island === L.island && !c.routed && !c.fort);
+    const fort = this.forts.forts.find((f) => f.site.island === L.island && f.owner === 'brethren');
+    // no boat lives long under a fort's guns: silence them, or land out of their reach
+    const guns = this.forts.covering(L.x, L.z) ?? this.forts.covering(p.pos.x, p.pos.z);
+    const blocked = chased || !!guns;
+    const sub = beast
+      ? 'Not with the Kraken in these waters'
+      : hunted && !this.lastFoe
+      ? 'A hunter is on your tail: no time to row ashore'
+      : chased
+      ? 'Shake off your pursuers first'
+      : guns
+      ? `The guns of ${guns.name} cover this shore: silence them first`
+      : fort
+      ? `${fort.name} holds this isle: storm its gate`
+      : camp
+      ? 'Cutthroats are camped on this isle: bring blades'
+      : 'The captain and four hands row in';
+    this.shoreHud.setPrompt({ key: 'land', title: `Go ashore on ${L.island.name}`, sub, ok: !blocked });
+    if (!blocked && this.input.state.helm) this.goAshore();
   }
 
   /** Lowers the boat: the ship rides at anchor while the landing party rows in. */
@@ -1394,6 +1445,7 @@ export class Game {
     const p = this.player;
     const L = this.landing;
     if (!p || !L || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.kraken.active || this.shore.active || this.wreck.t >= 0) return;
+    if (this.forts.covering(L.x, L.z) || this.forts.covering(p.pos.x, p.pos.z)) return;
     this.setChart(false);
     this.setView(false);
     this.input.releaseLook();
@@ -1476,6 +1528,8 @@ export class Game {
   }
 
   private onCampRouted(c: Camp) {
+    const fort = c.fort ? this.forts.forts.find((f) => f.garrison === c) : null;
+    if (fort) return this.takeFort(fort);
     this.ui.toast('Camp routed', 'Their chest is yours for the taking', 3.4);
     this.note('kill', 'Routed a cutthroat camp', c.site.island.name);
     this.audio.chime();
@@ -1487,19 +1541,21 @@ export class Game {
     if (!p) return;
     const L = c.layout.chest;
     const at = new THREE.Vector3(L.x, L.y + 1.2, L.z);
-    const gold = 120 + Math.round(Math.random() * 140) + c.gang.length * 15;
+    const fort = !!c.fort;
+    // a fort's pay chest holds a garrison's wages, not a cutthroat's pickings
+    const gold = fort ? 520 + Math.round(Math.random() * 300) : 120 + Math.round(Math.random() * 140) + c.gang.length * 15;
     p.gold += gold;
     this.vaultStore.earn(gold);
-    const tier = rollTier(0.5, 2);
+    const tier = fort ? rollTier(1.2, 3) : rollTier(0.5, 2);
     const goods = rollContents(tier);
     const res = this.hold.stow(goods);
     if (res.tossed.length) this.nagHold(res.tossed.length);
-    this.stockAmmo({ shell: 2, fire: 1, chain: 1, grape: 2 }, null);
+    this.stockAmmo(fort ? { shell: 4, fire: 2, chain: 2, grape: 3 } : { shell: 2, fire: 1, chain: 1, grape: 2 }, null);
     this.log.chests++;
     this.log.best = Math.max(this.log.best, tier);
     const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
     const R = RARITY[tier];
-    this.note('chest', `Plundered a cutthroat camp`, `+${gold} gold${kept.length ? ' · ' + kept.map((id) => LOOT[id].name).join(', ') : ''}`);
+    this.note('chest', fort ? 'Opened a fort\'s pay chest' : `Plundered a cutthroat camp`, `+${gold} gold${kept.length ? ' · ' + kept.map((id) => LOOT[id].name).join(', ') : ''}`);
     const [x, y, ok] = this.screenOf(at);
     if (ok) this.ui.floater(`+${gold} gold`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[tier]);
     this.audio.treasure(tier);
@@ -1511,6 +1567,147 @@ export class Game {
     this.chestPart(Math.max(2, tier), at, 1200);
     // cutthroats always carry a scrap of somebody's map
     setTimeout(() => this.foundPiece(at), 1400);
+  }
+
+  // ------------------------------------------------------------------ the forts
+
+  private wireForts() {
+    this.fortHud = new FortHud(document.getElementById('hud')!);
+    this.forts.apply(this.fortStore.state.taken);
+    this.forts.hooks = {
+      openFire: (f) => {
+        if (this.state !== 'playing') return;
+        this.ui.toast(`${f.name} opens fire!`, 'The Brethren\'s shore guns have your range', 3.4);
+        this.audio.wanted(2);
+        this.note('fort', `Came under the guns of ${f.name}`, f.site.island.name);
+      },
+      struck: (_f, _g, dmg, at) => {
+        if (this.state !== 'playing') return;
+        this.log.hits++;
+        this.log.dealt += dmg;
+        const [x, y, ok] = this.screenOf(at);
+        if (ok) this.ui.floater(`${Math.round(dmg)}`, x, y);
+      },
+      silenced: (f, g, last) => this.gunSilenced(f, g, last),
+    };
+  }
+
+  private gunSilenced(f: Fort, g: Gun, last: boolean) {
+    if (this.state !== 'playing') return;
+    const [x, y, ok] = this.screenOf(_a.copy(g.base).setY(g.base.y + 3));
+    if (ok) this.ui.floater('Silenced!', x, y, 'rare');
+    this.addInfamy(4);
+    if (last) {
+      this.ui.toast(`The guns of ${f.name} are silent`, 'Land your crew and storm the fort', 4.2);
+      this.note('fort', `Silenced the guns of ${f.name}`, f.site.island.name);
+      this.audio.horn();
+    } else {
+      const n = this.forts.liveGuns(f);
+      this.ui.toast('Gun silenced', `${n} of ${f.guns.length} still firing`, 2.4);
+    }
+  }
+
+  /** The garrison is beaten: their colours come down, yours go up, and the fort is yours for good. */
+  private takeFort(f: Fort) {
+    this.forts.conquer(f);
+    this.fortStore.take(f.id);
+    this.note('fort', `Took ${f.name}`, `${f.site.island.name} · ${TRIBUTE_HOUR} gold tribute an hour`);
+    this.addInfamy(30);
+    this.ui.toast('The garrison throws down its arms', 'Their colours are coming down', 2.6);
+    this.audio.chime();
+    // your colours up the staff once theirs are down: the card, a fanfare, a burst of light at the truck
+    setTimeout(() => {
+      if (this.state !== 'playing' && this.state !== 'paused') return;
+      this.fortHud.taken(f.name, `Its guns are yours · ${TRIBUTE_HOUR} gold tribute an hour · repairs under its walls`);
+      this.audio.bounty();
+      this.rig.shake(0.12);
+    }, 2600);
+    setTimeout(() => {
+      if (this.state !== 'playing' && this.state !== 'paused') return;
+      const top = f.layout.flagTop;
+      for (let i = 0; i < 3; i++) this.particles.treasure(_a.set(top.x, top.y + 0.5, top.z), [0.4, 1.4, 1.3], 3);
+      this.audio.coin(0, 0.6);
+    }, 6000);
+  }
+
+  /** The fort bar, tribute paid in as you pass, and carpenters under your own walls. */
+  private updateForts(p: Ship, dt: number) {
+    const ashore = this.shore.active;
+    const cap = ashore ? this.shore.captain : null;
+    const ax = cap ? cap.x : p.pos.x;
+    const az = cap ? cap.z : p.pos.z;
+    const f = this.kraken.fighting || this.shore.deck ? null : this.forts.nearest(ax, az);
+    this.fortHud.show(!!f && !this.photo.active);
+    if (f) {
+      const ours = f.owner === 'player';
+      const guns = f.guns.map((g) => !g.dead);
+      const live = this.forts.liveGuns(f);
+      const gar = f.garrison && !f.garrison.routed ? f.garrison.gang.filter((w) => !w.down).length : -1;
+      let hint = '';
+      let hot = false;
+      if (ours) {
+        const owed = this.fortStore.owed(f.id);
+        hint =
+          f.up < 1
+            ? 'Your colours are going up'
+            : this.forts.havenNear(p.pos.x, p.pos.z) && p.hp < p.maxHp - 1
+            ? 'Under its walls · carpenters at work'
+            : owed > 0
+            ? `Tribute gathering · ${owed} gold`
+            : 'Safe harbour · its guns cover you';
+      } else if (live > 0) {
+        const near = Math.hypot(f.site.x - p.pos.x, f.site.z - p.pos.z) < FORT_RANGE + 30;
+        hint = near ? (this.gunnery.combat ? 'Silence its guns' : 'Close in: its walls stand high') : 'Silence its guns';
+        hot = near && f.alert;
+      } else if (ashore) {
+        hint = f.garrison?.alert ? 'Beat the garrison' : 'Storm the gate';
+        hot = true;
+      } else {
+        hint = 'Guns silent · land and storm the fort';
+        hot = true;
+      }
+      this.fortHud.set({ name: f.name, ours, guns, garrison: ours ? -1 : gar, hint, hot });
+    }
+    // tribute: the garrison rows it out as you pass
+    this.tributeT -= dt;
+    if (this.tributeT <= 0 && !ashore && p.alive) {
+      this.tributeT = 1.5;
+      for (const o of this.forts.forts) {
+        if (o.up < 1 || !this.forts.collectRange(o, p.pos.x, p.pos.z) || this.fortStore.owed(o.id) < 10) continue;
+        const n = this.fortStore.collect(o.id);
+        if (!n) continue;
+        p.gold += n;
+        this.vaultStore.earn(n);
+        this.stockAmmo({ shell: 1, fire: 1, chain: 1, grape: 1 }, null);
+        this.ui.toast(`+${n} gold tribute`, `${o.name} sends out its tribute, and fresh shot`, 3.8);
+        this.audio.coin();
+        this.audio.coin(0.18, 0.4);
+        this.note('trade', `Collected tribute from ${o.name}`, `+${n} gold`);
+        const [x, y, ok] = this.screenOf(_a.set(p.pos.x, p.root.position.y + p.cls.freeboard + 5, p.pos.z));
+        if (ok) this.ui.floater(`+${n} gold`, x, y, 'loot');
+      }
+    }
+    // repairs: carpenters out in boats while you lie quiet under your own guns
+    const haven = p.alive && !this.lastFoe ? this.forts.havenNear(p.pos.x, p.pos.z, HAVEN_R) : null;
+    if (haven && this.world.time - p.lastHit > 6) {
+      const was = p.hp;
+      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.03 * dt);
+      for (const s of this.escortShips) if (s.alive && this.world.time - s.lastHit > 6) s.hp = Math.min(s.maxHp, s.hp + s.maxHp * 0.03 * dt);
+      this.havenT -= dt;
+      if (was < p.maxHp && this.havenT <= 0) {
+        // the odd hammer-knock and a few chips of fresh timber off her side
+        this.havenT = 0.7 + Math.random() * 0.9;
+        this.audio.knock();
+        const side = Math.random() < 0.5 ? 1 : -1;
+        const at = _a.set(p.pos.x + Math.cos(p.heading) * side * p.cls.beam * 0.5, p.root.position.y + p.cls.freeboard * 0.6, p.pos.z - Math.sin(p.heading) * side * p.cls.beam * 0.5);
+        this.particles.sparkle(at, [1.2, 1.0, 0.6], 0.6);
+      }
+    }
+  }
+
+  /** The forts for the minimap and the chart. */
+  private fortMarks() {
+    return this.forts.forts.map((f) => ({ x: f.site.x, z: f.site.z, ours: f.owner === 'player', quiet: f.owner === 'brethren' && f.guns.every((g) => g.dead) }));
   }
 
   // ------------------------------------------------------------------ treasure maps
@@ -2489,6 +2686,8 @@ export class Game {
     this.rig.orbitBox = box;
     this.rig.orbitQuat = rot;
     this.mooreFleet();
+    // the forts you hold fly her colours
+    this.forts.setColours(s);
   }
 
   private findOpenWater(cx: number, cz: number, rMin: number, rMax: number): THREE.Vector3 {
@@ -2708,6 +2907,10 @@ export class Game {
     this.log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] };
     this.discovered.clear();
     this.shore.resetCamps();
+    // the Brethren re-man and re-arm their forts between voyages; yours stay yours
+    this.forts.apply(this.fortStore.state.taken);
+    this.forts.setColours(p);
+    this.fortHud.clear();
     this.ammoStock = freshStock();
     this.hold.capacity = HOLD_ROOM[p.cls.id] ?? 12;
     this.hold.clear();
@@ -2771,6 +2974,7 @@ export class Game {
     this.krakenCool = 0;
     this.krakenSlowT = 0;
     this.gunnery.nMarks = 0;
+    this.fortHud.clear();
     this.player = null;
     this.preview = null;
   }
@@ -3014,7 +3218,10 @@ export class Game {
       }
     }
     this.lastFoe = best;
-    return best ? best.pos : null;
+    if (best) return best.pos;
+    // a fort's guns on you: keep its walls in the frame
+    const f = this.forts.engaging(p.pos.x, p.pos.z);
+    return f ? this.fortFocus.set(f.site.x, 0, f.site.z) : null;
   }
 
   // ------------------------------------------------------------------ combat events
@@ -3087,16 +3294,19 @@ export class Game {
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8) + (ship.ghost ? 2 : 0), luck, ship.cls.id === 'galleon' || ship.ghost);
     // your escorts' kills are yours: the Crown pays the flagship
     const escort = this.escorts.get(attacker);
-    if (escort && this.player && this.state === 'playing') {
-      escort.rec.kills++;
-      this.player.kills++;
+    // ...and so are the kills of a fort's guns that fly your colours
+    const fort = this.forts.byGunner(attacker);
+    const ally = (!!escort || fort?.owner === 'player') && !!this.player && this.state === 'playing';
+    if (ally) {
+      if (escort) escort.rec.kills++;
+      this.player!.kills++;
       const [x, y, ok] = this.screenOf(_a.set(ship.pos.x, ship.root.position.y + ship.cls.freeboard + 4, ship.pos.z));
-      if (ok) this.ui.floater(`The ${attacker.name} sinks her!`, x, y, 'fleet');
+      if (ok) this.ui.floater(escort ? `The ${attacker.name} sinks her!` : `${attacker.name}'s guns sink her!`, x, y, 'fleet');
     }
-    if (attacker === this.player || (escort && this.player && this.state === 'playing')) {
-      const by = escort ? ` (the ${attacker.name})` : '';
+    if (attacker === this.player || ally) {
+      const by = escort ? ` (the ${attacker.name})` : fort ? ` (the guns of ${attacker.name})` : '';
       if (ship.ghost) this.note('ghost', `Laid the ${ship.name} to rest${by}`, `Ghost ${ship.cls.name.toLowerCase()} · +${bounty} gold`);
-      else this.note(escort ? 'fleet' : 'kill', escort ? `The ${attacker.name} sank the ${ship.name}` : `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
+      else this.note(escort || fort ? 'fleet' : 'kill', escort || fort ? `The ${fort ? `guns of ${attacker.name}` : attacker.name} sank the ${ship.name}` : `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
       this.player!.gold += bounty;
       this.vaultStore.earn(bounty);
       this.ui.toast(`+${bounty} gold ${ship.ghost ? 'cursed bounty' : 'bounty'}`, ship.ghost ? `The ${ship.name} is laid to rest` : `${ship.name} sunk`, 3.6);
@@ -3357,7 +3567,8 @@ export class Game {
     const foe = p.lastAttacker && p.lastAttacker !== p && w.time - p.lastHit < 20 ? p.lastAttacker : null;
     const aground = this.terrain.heightAt(p.pos.x, p.pos.z) > -p.cls.draft * 1.6;
     const beast = this.kraken.active && w.time - this.krakenHitT < 20;
-    const cause: WreckReport['cause'] = beast ? 'kraken' : how === 'shot' ? (foe ? 'shot' : 'aground') : aground || !foe ? 'aground' : 'rammed';
+    const shore = foe?.battery ?? false;
+    const cause: WreckReport['cause'] = beast ? 'kraken' : how === 'shot' ? (foe ? (shore ? 'fort' : 'shot') : 'aground') : aground || !foe ? 'aground' : shore ? 'fort' : 'rammed';
     let near: { name: string; d: number } | null = null;
     for (const isl of this.terrain.islands) {
       const d = Math.hypot(isl.x - p.pos.x, isl.z - p.pos.z) - isl.r;
@@ -3379,8 +3590,8 @@ export class Game {
       miles: this.log.metres / 1852,
       cause,
       killer: cause === 'aground' || cause === 'kraken' ? undefined : foe?.name,
-      killerCls: cause === 'aground' || cause === 'kraken' ? undefined : foe?.cls.id,
-      hunter: cause !== 'aground' && cause !== 'kraken' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
+      killerCls: cause === 'aground' || cause === 'kraken' || cause === 'fort' ? undefined : foe?.cls.id,
+      hunter: cause !== 'aground' && cause !== 'kraken' && cause !== 'fort' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
       bounties: this.heat.claimed,
       where: near ? (near.d < 60 ? `on the shoals of ${near.name}` : `off ${near.name}`) : null,
       events: this.log.events.slice(),
@@ -3616,7 +3827,8 @@ export class Game {
   private wireKraken() {
     const k = this.kraken;
     this.krHud = new KrakenHud(document.getElementById('hud')!);
-    this.projectiles.strike = (b) => k.active && k.strike(b, this.world);
+    // a ball may find the Kraken, or the stone of a fort
+    this.projectiles.strike = (b) => (k.active && k.strike(b, this.world)) || this.forts.strike(b, this.world);
     this.projectiles.onBlast = (at, r, dmg, owner) => {
       if (k.active) k.blast(at, r, dmg, owner, this.world);
     };
@@ -4048,6 +4260,12 @@ export class Game {
     P.begin('Kraken', 'ships');
     this.updateKraken(dt, realDt);
     P.end();
+    P.begin('Forts', 'ships');
+    const target = this.player && this.player.alive && this.state === 'playing' && this.wreck.t < 0 ? this.player : null;
+    if (dt > 0) this.forts.update(dt, w, target, this.ships, this.rig.target);
+    // her guns lay on the forts' guns too, wherever she can reach them
+    if (target && !this.shore.active) this.gunnery.nMarks = this.forts.marks(this.gunnery.marks, this.gunnery.nMarks, target, gunRange(target.muzzleSpeed));
+    P.end();
     P.begin('Debris & flotsam', 'fx');
     this.pushers.length = 0;
     for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
@@ -4116,6 +4334,7 @@ export class Game {
         this.updateHunters(dt);
       }
       this.checkDiscoveries(p);
+      this.updateForts(p, dt);
       // rammed or holed on a reef: no cannonball to report it
       if (!p.alive) this.onPlayerSunk('hull');
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));
@@ -4248,8 +4467,8 @@ export class Game {
       this.fleetHud.show(rows.length > 0);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight, this.boarding.prize, marked);
       const cap = this.shore.captain;
-      const camps = this.shore.camps.map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
-      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target);
+      const camps = this.shore.camps.filter((c) => !c.fort).map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
+      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks());
       this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
       this.mapUi.setChip(this.maps.state);
@@ -4260,6 +4479,7 @@ export class Game {
         ports: this.tradePorts.ports.map((tp) => ({ x: tp.x, z: tp.z, name: tp.name })),
         pins: this.waypoints.pins,
         treasure: this.maps.target,
+        forts: this.fortMarks().map((f, i) => ({ ...f, name: this.forts.forts[i].name })),
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });
     }
