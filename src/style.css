@@ -209,7 +209,9 @@ button:focus {
 }
 
 .crest-rose {
-  transform-origin: calc(32px * var(--u)) calc(32px * var(--u));
+  /* SVG user units (viewBox 64): the rose pivots on its hub at any size */
+  transform-box: view-box;
+  transform-origin: 32px 32px;
 }
 
 .crest-slot.spin .crest-rose {
