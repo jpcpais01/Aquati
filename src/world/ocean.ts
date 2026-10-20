@@ -895,9 +895,12 @@ export class Ocean {
           // open water drifts between deep sapphire and a slightly brighter cobalt
           vec3 scatterDeep = mix(vec3(0.004, 0.058, 0.16), vec3(0.007, 0.086, 0.19), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
           vec3 scatterShallow = vec3(0.035, 0.34, 0.37);
-          // a storm churns the sea into a dark slate green
-          scatterDeep = mix(scatterDeep, vec3(0.012, 0.05, 0.062), uStorm * 0.7);
-          scatterShallow = mix(scatterShallow, vec3(0.05, 0.2, 0.2), uStorm * 0.55);
+          // a storm churns the sea into a deep bottle-green slate
+          scatterDeep = mix(scatterDeep, vec3(0.006, 0.036, 0.042), uStorm * 0.8);
+          scatterShallow = mix(scatterShallow, vec3(0.04, 0.17, 0.16), uStorm * 0.6);
+          // rain dulls it to a soft grey-teal, beaten matt by the drops
+          scatterDeep = mix(scatterDeep, vec3(0.01, 0.05, 0.075), uRain * (1.0 - uStorm) * 0.45);
+          scatterShallow = mix(scatterShallow, vec3(0.05, 0.22, 0.24), uRain * (1.0 - uStorm) * 0.35);
           vec3 scatter = mix(scatterShallow, scatterDeep, smoothstep(0.0, 13.0, path));
           // light travels further through the upper layer at oblique angles
           scatter *= 1.0 + (1.0 - NdV) * 0.4;
@@ -910,12 +913,16 @@ export class Ocean {
           // Broken up by the macro noise so it never traces the interference.
           float hgt = clamp(vWorld.y * 0.6 + 0.5, 0.0, 1.0);
           body *= 0.88 + 0.2 * hgt;
+          // a big sea under a grey sky: the troughs fall into shadow and the
+          // steep crests let a cold green light through their thin tops
+          body *= mix(1.0, 0.72 + 0.5 * hgt, uStorm);
           // swell faces turned toward the sun read a shade brighter, sculpting
           // the long rollers without painting a pattern on them
           body *= 1.0 + clamp(dot(Ns.xz, normalize(L.xz)) * 1.1, -0.18, 0.18);
           float sssView = pow(max(dot(V, -L + vec3(0.0, 0.6, 0.0)), 0.0), 2.0);
           float sss = hgt * hgt * (0.3 + sssView) * (0.35 + 0.65 * mac2.r);
           body += vec3(0.02, 0.19, 0.22) * sss * 0.11 * light * (1.0 - T);
+          body += vec3(0.02, 0.2, 0.16) * smoothstep(0.15, 0.75, vCrest) * uStorm * (0.45 + sssView) * light * 0.3;
           // wake crests glow translucent turquoise, troughs sink a touch deeper
           body += vec3(0.04, 0.36, 0.34) * clamp(wakeH * 1.6, -0.25, 1.0) * (0.45 + sssView) * light * 0.5;
           // ruffled water under a gust scatters less light back up: darker, matte
@@ -1043,21 +1050,57 @@ export class Ocean {
           float wakeFoam = foamCut(fv, wCover, fp) * smoothstep(0.01, 0.06, wf);
           wakeFoam *= 0.7 + 0.3 * smoothstep(0.0, 0.6, wf);
           // whitecaps break only here and there, and more often where a gust blows
-          float breaking = smoothstep(0.54 - uStorm * 0.34, 0.8 - uStorm * 0.22, texture(uNoiseTex, p * 0.0093 - wdrift * 0.017).g + gust * 0.35);
-          float crestFoam = smoothstep(0.5 - uStorm * 0.22, 0.95, vCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.3);
-          // storm spume: long streaks of foam torn off the crests and laid down the wind
+          float breaking = smoothstep(0.54 - uStorm * 0.16, 0.8 - uStorm * 0.1, texture(uNoiseTex, p * 0.0093 - wdrift * 0.017).g + gust * 0.35);
+          float crestFoam = smoothstep(0.5 - uStorm * 0.1, 0.95, vCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.15);
+          // In a blow the long swells break along their crests: white water
+          // tumbles down each face as the crest runs on and is left lying on
+          // its back, thinning to lace. The breaking stretches ride with the
+          // waves (noise in each wave's own frame), and every crest breaks in
+          // different places, so the caps march across the sea in broken lines.
+          float caps = 0.0;
+          float aerated = 0.0;
           float spume = 0.0;
-          if (uStorm > 0.05) {
-            vec2 sp = vec2(dot(p - uWindPivot, wdir) * 0.011, dot(p - uWindPivot, wperp) * 0.14) - vec2(t * 0.05, 0.0);
-            float sn = texture(uNoiseTex, sp).g * 0.7 + texture(uNoiseTex, sp * 2.3 + 0.5).a * 0.3;
-            spume = smoothstep(0.62, 0.8, sn) * uStorm * 0.55 * (0.4 + 0.6 * hgt);
+          if (uStorm > 0.02) {
+            float capN = texture(uNoiseTex, p * 0.043 + vec2(0.37, 0.11)).g;
+            // the crest lines meander (a real sea is never ruled straight)
+            vec2 cw = (texture(uNoiseTex, p * 0.0037 + vec2(0.17, 0.53)).rg - 0.5) * 3.2
+                    + (texture(uNoiseTex, p * 0.011 + vec2(0.71, 0.29)).ba - 0.5) * 1.1;
+            for (int i = 0; i < 3; i++) {
+              vec4 wa = uWaveA[i];
+              vec4 wb = uWaveB[i];
+              float th = wa.z * dot(wa.xy, p) - wb.x * t + wb.z + (i == 1 ? cw.y : cw.x);
+              // how far behind its crest (sin = 1) this point lies, in wavelengths
+              float cd = fract((1.5708 - th) * 0.159155);
+              vec2 cu = vec2(dot(p, vec2(-wa.y, wa.x)) * 0.0105, th * 0.0447 + float(i) * 0.37);
+              float seg = texture(uNoiseTex, cu).g * 0.7 + texture(uNoiseTex, cu * 2.7 + 0.19).a * 0.3;
+              float brk = smoothstep(0.54 - uStorm * 0.08 - gust * 0.15, 0.74, seg + (capN - 0.5) * 0.35);
+              float wgt = wa.w / max(uWaveA[0].w, 1e-3);
+              // a bright tumbling lip right at the crest, the spilt foam fanning out behind it
+              caps += brk * wgt * (smoothstep(0.0, 0.006, cd) * (exp(-cd * 7.5) * 1.1 + exp(-cd * 45.0) * 0.6) + smoothstep(0.975, 1.0, cd) * 0.8);
+              aerated += brk * wgt * exp(-cd * 3.5);
+            }
+            caps = clamp(caps * uStorm, 0.0, 1.0);
+            aerated = clamp(aerated * uStorm, 0.0, 1.0);
+            // spume: foam blown off the caps in long streaks down the wind,
+            // meandering, gathered in bands and woven of the same bubble lace
+            vec2 sq = p - uWindPivot;
+            vec2 sp = vec2(dot(sq, wdir) * 0.005, dot(sq, wperp) * 0.055) - vec2(t * 0.028, 0.0);
+            sp.y += (texture(uNoiseTex, p * 0.0031 - wdrift * 0.002).g - 0.5) * 0.9;
+            float sn = texture(uNoiseTex, sp).g * 0.75 + texture(uNoiseTex, sp * vec2(2.3, 1.7) + 0.5).a * 0.25;
+            float sBand = smoothstep(0.45, 0.75, texture(uNoiseTex, vec2(dot(sq, wperp), dot(sq, wdir) * 0.3) * 0.0045 + vec2(0.61, 0.23)).r + aerated * 0.4);
+            // gone where the streaks would come thinner than a pixel or two (no shimmer at range)
+            float sAA = 1.0 - smoothstep(0.2, 0.55, fwidth(sp.y));
+            spume = smoothstep(0.58, 0.82, sn) * sBand * sAA * uStorm * 0.75;
           }
+          // the sea under a breaking cap is beaten full of air: milky bottle green
+          col = mix(col, vec3(0.13, 0.3, 0.27) * light * (0.55 + 0.45 * cloud), aerated * 0.32 * (1.0 - F));
           float foam = surfFoam * (0.82 + 0.18 * clamp(surfCover, 0.0, 1.0));
           foam += wakeFoam * (0.8 + 0.2 * bubbles);
           // whitecaps break up softly; the cellular lace alone reads as polka dots on a big cap
           float capBreak = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
           foam += crestFoam * mix(capBreak, bubbles, 0.3);
-          foam += spume * (0.5 + 0.5 * bubbles) + rainSplash * 0.7;
+          foam += foamCut(fv, caps * 0.97, fp) * (0.75 + 0.25 * capBreak) + smoothstep(0.55, 1.0, caps) * 0.25;
+          foam += spume * (0.3 + 0.7 * bubbles) + rainSplash * 0.7;
           // a maelstrom's arms, cut from the bubble web swept round with them
           float vxFoam = 0.0;
           if (vxCover + vxWall > 0.002) {
@@ -1092,7 +1135,7 @@ export class Ocean {
           // ---- bioluminescence: on dark nights churned water glows blue-green
           if (uNight > 0.05) {
             float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5 + krSpiral * 0.45 + vxFoam * 0.5 + reefFoam * 0.4
-              + (crestFoam * 0.18 * capBreak + spume * 0.08) * (1.0 - 0.5 * uStorm);
+              + (crestFoam * 0.18 * capBreak + spume * 0.08 + caps * 0.12) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;
           }
@@ -1107,7 +1150,15 @@ export class Ocean {
           // sky just above it, so the horizon stays a crisp line instead of
           // melting into one milky band (mist and a closing sky soften it)
           vec3 seaHaze = hazeColor(-V) * mix(vec3(1.0), vec3(0.8, 0.88, 0.97), (1.0 - uMist * 0.85) * (1.0 - uCloudCover * 0.45));
+          // a lightning strike lights the sea round it, and its glare skates off the swell
+          if (uStrike.w > 0.001) {
+            vec2 sk = p - uStrike.xy;
+            float sk2 = dot(sk, sk) / (uStrike.z * uStrike.z);
+            col += vec3(0.55, 0.62, 0.95) * uStrike.w * (exp(-sk2) * 0.35 + exp(-sk2 * 14.0) * 1.6) * (0.35 + F * 2.5);
+          }
           col = mix(col, seaHaze, aerialAt(vViewDist, 0.0) * 0.88);
+          // banks of mist and curtains of rain drifting over the water
+          col = mix(col, hazeColor(-V), veilAt(vWorld));
 
           gl_FragColor = ghostSee > 0.0 ? vec4(col * ghostSee, ghostSee) : vec4(col, 1.0);
         }`,

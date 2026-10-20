@@ -22,6 +22,7 @@ import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Spirits, SpiritFrom } from '../fx/spirits';
 import { Rain } from '../fx/rain';
+import { Spindrift } from '../fx/spindrift';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
@@ -288,6 +289,9 @@ export class Game {
   private skyEnv: SkyEnvironment;
   private envT = 0;
   private rain!: Rain;
+  private spindrift!: Spindrift;
+  /** The last lightning strike: xz, reach of its light (m), its strength. */
+  private strikeAt = new THREE.Vector4();
   private clouds!: LowClouds;
   private lightning!: Lightning;
   private baseWaves: Wave[] = [];
@@ -295,7 +299,6 @@ export class Game {
   private swellAngle = 0;
   private baseAngle = 0;
   private cloudOff = new THREE.Vector2();
-  private sprayT = 0;
   private crew!: CrewSystem;
   private settings: Settings;
   private softShadows = false;
@@ -801,9 +804,11 @@ export class Game {
     this.world.gustAt = (x, z) => this.windField.at(x, z);
     this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
-    this.rain = new Rain([2400, 4800, 7200][q.tier]);
+    const waveU = this.ocean.material.uniforms as unknown as { uWaveA: THREE.IUniform; uWaveB: THREE.IUniform };
+    this.rain = new Rain([2400, 4800, 7200][q.tier], waveU);
+    this.spindrift = new Spindrift([140, 260, 400][q.tier], waveU);
     this.lightning = new Lightning();
-    this.water.add(this.rain.mesh, this.lightning.mesh);
+    this.water.add(this.rain.mesh, this.spindrift.mesh, this.lightning.mesh);
     this.clouds = new LowClouds(this.terrain.islands, q.tier);
     this.cumulus.budget = q.tier === 0 ? 1600 : 4200;
     this.water.add(this.clouds.mesh);
@@ -6271,7 +6276,7 @@ export class Game {
     fog.near = a.fogRange.x;
     fog.far = a.fogRange.y;
     this.pipeline.exposure = a.exposure;
-    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat);
+    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat, a.vignette);
   }
 
   /** Rain, lightning, thunder, spindrift and the clock badge. */
@@ -6300,26 +6305,15 @@ export class Game {
     }
     const flash = this.lightning.flash;
     globalUniforms.uFlash.value = flash;
+    // the sea round the strike lights up with it (a sheet flash, far off, only faintly)
+    if (strike) this.strikeAt.set(strike.x, strike.z, strike.bolt ? 140 : 420, strike.bolt ? 1 : 0.22);
+    const sa = this.strikeAt;
+    globalUniforms.uStrike.value.set(sa.x, sa.y, sa.z, flash * sa.w);
     this.pipeline.lightning = Math.min(flash, 1.5) * 0.55;
     this.opaque.environmentIntensity = SKY_LIGHT * (1 + flash * 5);
 
-    // spindrift: gusts tear spray off the crests in a blow
-    if (a.storm > 0.35 && dt > 0) {
-      this.sprayT += dt * a.storm * 14;
-      const reach = this.rig.distance * 0.7;
-      while (this.sprayT > 1) {
-        this.sprayT -= 1;
-        const x = tgt.x + (Math.random() - 0.5) * reach * 2;
-        const z = tgt.z + (Math.random() - 0.5) * reach * 1.4;
-        if (this.terrain.heightAt(x, z) > -2) continue;
-        const sp = 7 + a.wind * 6;
-        w.particles.emit({
-          x, y: w.waterHeight(x, z) + 0.4, z,
-          vx: w.wind.dirX * sp, vy: 1 + Math.random() * 1.5, vz: w.wind.dirZ * sp,
-          life: 1.4 + Math.random() * 1.2, size: 1.2, sizeEnd: 5 + Math.random() * 3, color: [1.2, 1.26, 1.3], alpha: 0.32, drag: 0.9, grav: 1.2, kind: 1, fadeIn: 0.15,
-        });
-      }
-    }
+    // spindrift: in a blow the wind tears the tops off the crests
+    this.spindrift.update(smoothstep(0.25, 0.9, a.storm) + Math.max(0, a.wind - 1) * 0.5, tgt.x, tgt.z, this.rig.distance, a.wind);
 
     this.audio.setWeather(a.rain, a.storm, a.wind);
     this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
@@ -6501,6 +6495,8 @@ export class Game {
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.rain.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.spindrift.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.spirits.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.kraken.view.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
@@ -6539,6 +6535,7 @@ export class Game {
     // no rain or wind wisps down here
     if (under) {
       this.rain.mesh.visible = false;
+      this.spindrift.mesh.visible = false;
       this.clouds.mesh.visible = false;
     }
     this.wisps.mesh.visible = !under;

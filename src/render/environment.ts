@@ -86,6 +86,12 @@ export const globalUniforms = {
   uWet: { value: 0 }, // surface wetness, lags the rain
   uFlash: { value: 0 }, // lightning
   uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
+  // weather lying low on the sea (see veilAt): x density at sea level (1/m),
+  // y its height scale (m), z how patchy it lies (0 an even sheet .. 1 banks
+  // with clear water between), w how fast its patches drift with the wind (m/s)
+  uVeil: { value: new THREE.Vector4(0, 20, 0, 0) },
+  // a lightning strike lighting the sea round it: xz where it hit, z its reach (m), w its light
+  uStrike: { value: new THREE.Vector4(0, 0, 1, 0) },
   // the night sky (see render/nightSky.ts): world directions into the slowly
   // wheeling star sphere; the moon's place and visibility, and its phase as
   // the sun's direction seen from it (w the lit share of the disc)
@@ -173,6 +179,22 @@ float gustAt(vec2 p) {
 }
 `;
 
+/**
+ * Where the low weather lies thick and where it opens up (see veilAt): the rain
+ * draws its curtains from this too, so the drops fall where the murk is.
+ * Needs uNoiseTex, uWindDrift and uVeil declared.
+ */
+export const GLSL_VEIL_PATCH = /* glsl */ `
+float veilPatch(vec2 xz) {
+  vec2 d = uWindDrift * uVeil.w;
+  float n = texture(uNoiseTex, xz * 0.0013 - d * 0.0013 + vec2(0.31, 0.77)).r * 0.6
+          + texture(uNoiseTex, xz * 0.0047 - d * 0.0047 * 1.3 + vec2(0.71, 0.13)).g * 0.4;
+  // the baked noise hugs 0.5: stretch it into banks and gaps
+  float bank = smoothstep(0.34, 0.68, n);
+  return mix(1.0, bank * 1.75 + 0.06, uVeil.z);
+}
+`;
+
 export const GLSL_ATMOS = /* glsl */ `
 uniform float uTime;
 uniform vec3 uSunDir;
@@ -192,13 +214,30 @@ uniform float uStorm;
 uniform float uWet;
 uniform float uFlash;
 uniform float uMist;
+uniform vec4 uVeil;
+uniform vec4 uStrike;
 uniform mat3 uStarRot;
 uniform sampler2D uLowCloudTex;
 uniform vec4 uLowCloudXf;
 
-// how much low mist lies between the eye and a point d metres away
-float mistAt(float d) {
-  return (1.0 - exp(-d * 0.0045)) * uMist * 0.7;
+// Weather lying low on the water: banks of sea mist, curtains of rain. Its
+// density falls away with height, so from up high you look down through it
+// (a veil over the sea, thinner over the masts) and from the deck you look
+// into it; and it lies in drifting patches, so the view sails in and out of
+// banks with clear water between instead of sinking into one even wall.
+// Returns how much of the light from wp it hides.
+${GLSL_VEIL_PATCH}
+float veilAt(vec3 wp) {
+  if (uVeil.x <= 0.0) return 0.0;
+  vec3 c = cameraPosition;
+  float H = uVeil.y;
+  float yc = max(c.y, 0.0);
+  float yp = max(wp.y, 0.0);
+  float dy = yc - yp;
+  // mean of exp(-y / H) along the ray
+  float e = abs(dy) > 0.05 ? H * (exp(-yp / H) - exp(-yc / H)) / dy : exp(-yp / H);
+  float tau = uVeil.x * length(wp - c) * e * veilPatch(wp.xz);
+  return 1.0 - exp(-tau);
 }
 
 vec3 aqHash32(vec2 p) {
@@ -431,14 +470,22 @@ export const GLSL_AERIAL = /* glsl */ `
 vec3 hazeColor(vec3 d) {
   float mu = dot(normalize(vec3(d.x, max(d.y, 0.0) * 0.4, d.z) + vec3(0.0, 1e-4, 0.0)), uSunDir);
   float sd = max(mu, 0.0);
-  return uFogColor * (0.94 + 0.08 * mu * mu) + uHaze * (pow(sd, 5.0) * 0.26 + pow(sd, 40.0) * 0.3);
+  return uFogColor * (0.94 + 0.08 * mu * mu) + uHaze * (pow(sd, 5.0) * 0.26 + pow(sd, 40.0) * 0.3)
+    // lightning lights the rain and the murk from inside
+    + vec3(0.62, 0.7, 0.95) * uFlash * 0.3;
 }
 float aerialAt(float dist, float y) {
   float near = uFogRange.x * 0.8;
   float r = max(dist - near, 0.0) / max(uFogRange.y - near, 1.0);
   float a = 1.0 - exp(-r * r * 2.2 - r * 0.5);
   a *= mix(1.0, 0.72, smoothstep(12.0, 170.0, y));
-  return max(a, mistAt(dist));
+  return a;
+}
+// the air and the low weather together, between the eye and world point wp
+float airAt(vec3 wp) {
+  float a = aerialAt(length(wp - cameraPosition), wp.y);
+  float v = veilAt(wp);
+  return 1.0 - (1.0 - a) * (1.0 - v);
 }
 `;
 
@@ -774,7 +821,7 @@ varying float vSkinW;
       vec3 aqWater = uUnderColor * (1.0 - clamp(-vAqWorld.y / 22.0, 0.0, 1.0) * 0.5);
       gl_FragColor.rgb = mix(aqCol, aqWater, 1.0 - exp(-aqD / uUnder.z));
     } else {
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), aerialAt(length(aqView), vAqWorld.y));
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), airAt(vAqWorld));
     }
   }`,
       )
