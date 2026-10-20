@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T19:30Z',
+    entries: [
+      {
+        title: 'A farewell worthy of your ship',
+        notes: [
+          'The "Lost to the Depths" screen is rebuilt bigger and bolder. The title is huge and lit from above, white where the light catches it and sinking to sea-green, and its letters tumble down into place.',
+          'Your ship gets a brass nameplate: a porthole with her silhouette heeled over and settling into the water, bubbles rising off her, her name in gold, where she went down, how many fathoms she lies in and a parting line.',
+          'A new voyage chart draws your whole voyage as a line from harbour to the sea floor, with every prize, chest, isle, bounty and ghost pinned along it at the moment it happened, popping up as the line runs out to the red marker where she sank.',
+          'Every stat tile now shows the record it is measured against: the best to beat, or the old best crossed out when you beat it. Your rank shows as nine pips with yours glowing, so you can see how far up the ladder you have climbed.',
+          'Bigger buttons: Sail again glints now and then and tells you you will get a fresh ship of the same class. The whole card fits a laptop screen without scrolling and stacks neatly on phones held either way.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T19:00Z',
     entries: [
       {
