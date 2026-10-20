@@ -23,7 +23,6 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Bounty hunters still come after a big enough infamy, but they shadow you just out of reach of their guns, waiting for an excuse. Give one and she comes at you, along with any hunter within earshot.',
           'The Kraken still rises in storms, but it only watches. Leave it be and it sinks away; strike it and it fights. Your escorts never fire first either, and calm forts no longer stop you going ashore.',
           'You can always see who is calm: ships at peace carry a pale bar with a little dove and a pale mark on the minimap and chart. The HUD shows a dove while all is quiet, or crossed blades with a count and a burning wick once you have provoked someone. Sail clear and the wick burns down until tempers cool. In a shared voyage the host\'s choice holds for the whole crew, and each captain\'s quarrel is their own: a ship you provoke comes after you and your escorts, not your crewmates.',
->>>>>>> 68038b1 (Peaceful seas: nobody fires first, and a quarrel spreads the way it should)
         ],
       },
       {
