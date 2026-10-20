@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T20:00Z',
     entries: [
       {
+        title: 'A new view while you load',
+        notes: [
+          'The loading screen now opens on Las Brumas: a ship riding the turquoise shallows off a pink beach under the limestone towers, still drifting slowly while the sea is made ready.',
+          'Held upright, a phone frames the ship and the shore instead of open water, and it loads a sharper image to match its screen.',
+        ],
+      },
+      {
         title: 'Steady surf on every beach',
         notes: [
           'The white surf along the beaches no longer flickers and slides about while you sail. Away from your ship the sea is built more coarsely and glides along with you, and the breakers were worked out on that moving framework, so their foam crawled and jumped. Every breaker is now worked out right where you see it, so the surf rolls in steadily on every beach in view.',
