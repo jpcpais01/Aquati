@@ -14,8 +14,8 @@ const _sq = new THREE.Euler();
 
 /** How steeply the camera looks down on a boarding fight (radians above the horizon). */
 const DECK_PITCH = 0.98;
-/** Cinematic tilt at its fullest: radians above the horizon, so the sea runs out to the skyline. */
-const CINE_PITCH = 0.17;
+/** Cinematic tilt at its fullest: radians above the horizon, a modest lean from the 1.1 of the farthest zoom. */
+const CINE_PITCH = 0.74;
 /** How long the zoom must rest against its stop before a fresh push starts tilting toward the horizon. */
 const TILT_GATE = 1;
 
@@ -26,8 +26,8 @@ export class CameraRig {
   zoom = 0.45; // 0 close .. 1 far
   private zoomSmooth = 0.45;
   /**
-   * Past the farthest zoom: 0 = the usual high view .. 1 = swung low over the
-   * water with the horizon and sky in frame. Zooming out further only stirs it
+   * Past the farthest zoom: 0 = the usual high view .. 1 = leaned a little
+   * further over at the same distance, for a more cinematic angle. Zooming out further only stirs it
    * after the wheel (or pinch) has rested a second against the stop, so a
    * flick to full zoom never tips the camera by accident.
    */
@@ -157,8 +157,7 @@ export class CameraRig {
 
   private get followDistance() {
     const z = this.zoomSmooth * this.zoomSmooth * 0.6 + this.zoomSmooth * 0.4;
-    // tilted low, the camera also draws in a little so the ship holds the foreground
-    const d = lerp(70, 300, z) * (1 - this.tiltBlend * 0.3);
+    const d = lerp(70, 300, z);
     // in battle, pull back just enough that both ships stay comfortably in frame
     const sea = Math.max(d, lerp(d, this.fitDist, this.battle));
     const foot = lerp(13, 46, z);
@@ -364,8 +363,6 @@ export class CameraRig {
     const b = this.blend * this.blend * (3 - 2 * this.blend);
     this.camera.position.lerpVectors(op, followPos, b);
     const lookAt = new THREE.Vector3().lerpVectors(aim, this.focus, b);
-    // tilted low, aim a touch above her so she rides the lower half and the sky gets room
-    lookAt.y += tw * dist * 0.045 * b;
 
     // trauma shake (squared for a punchy falloff)
     this.trauma = Math.max(0, this.trauma - dt * 1.6);
@@ -377,7 +374,7 @@ export class CameraRig {
       this.camera.position.z += Math.sin(time * 41 + 1) * k * 0.6;
     }
     this.camera.lookAt(lookAt);
-    this.camera.fov = lerp(30, lerp(lerp(34, 38, tw), 40, fb), b);
+    this.camera.fov = lerp(30, lerp(34, 40, fb), b);
 
     // swoop into (or out of) the captain's eyes along a curve that drops in
     // from above and behind, so it lands looking where they look
@@ -424,7 +421,7 @@ export class CameraRig {
     // depth precision, so distant decks, sails and shorelines never z-fight
     const near = lerp(clamp(this.camera.position.y * 0.08, 2, 30), clamp(dist * 0.03, 0.3, 1.5), fb);
     this.camera.near = lerp(near, 0.1, Math.min(1, e * 1.6));
-    this.camera.far = lerp(lerp(2600, 3600, tw), 3600, e);
+    this.camera.far = lerp(2600, 3600, e);
     this.applyEase(dt);
     // slide the frame so the ship sits in the space the menu leaves free;
     // fades out as the camera swings into follow
