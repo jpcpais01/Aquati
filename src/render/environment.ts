@@ -442,6 +442,98 @@ float aerialAt(float dist, float y) {
 }
 `;
 
+/**
+ * Plants up close (patchMaterial `leaves` / `bark`). A canopy is a few soft
+ * puffs: here each breaks up into lit clusters of leaves with dark gaps
+ * between them, every cluster turning its own face to the sun, and a leafy
+ * grain within them once you stand beneath the tree. Wood (painted with
+ * negative colour, see flora.ts) gets fissured plates of bark with moss low on
+ * the trunk (1) or a palm's ring scars and fibres (2). All of it in the
+ * plant's own frame, so it never swims as the wind bends the plant, and all
+ * of it skipped once a pixel spans more than the detail it would draw.
+ */
+const GLSL_PLANT_DETAIL = /* glsl */ `
+varying vec3 vAqObj;
+varying vec3 vAqObjN;
+float aqPlantBump = 0.0;
+
+// Mikkelsen's derivative bump mapping (unnormalised: h is in metres)
+vec3 aqPlantNormal(vec3 surfPos, vec3 surfNorm, float h, float faceDir) {
+  vec3 sx = dFdx(surfPos);
+  vec3 sy = dFdy(surfPos);
+  vec2 dh = vec2(dFdx(h), dFdy(h));
+  vec3 r1 = cross(sy, surfNorm);
+  vec3 r2 = cross(surfNorm, sx);
+  float det = dot(sx, r1) * faceDir;
+  vec3 grad = sign(det) * (dh.x * r1 + dh.y * r2);
+  return normalize(abs(det) * surfNorm - grad);
+}
+
+void aqPlantDetail(inout vec3 col, vec3 vcol) {
+  float fp = length(fwidth(vAqObj));
+  vec3 on = normalize(vAqObjN);
+#ifdef AQ_BARK
+  if (vcol.g < 0.0) {
+    col = abs(col);
+    float w = 1.0 - smoothstep(0.03, 0.09, fp);
+    if (w > 0.0) {
+      float wx = on.x * on.x / (on.x * on.x + on.z * on.z + 1e-4);
+#if AQ_BARK == 1
+      // plates split by long, wandering vertical fissures
+      vec2 sc = vec2(2.2, 0.32);
+      vec4 a = texture(uNoiseTex, vec2(vAqObj.x, vAqObj.y) * sc + vec2(0.13, 0.6));
+      vec4 b = texture(uNoiseTex, vec2(vAqObj.z, vAqObj.y) * sc + vec2(0.57, 0.2));
+      vec4 t = mix(a, b, wx);
+      float fiss = 1.0 - smoothstep(0.0, 0.07, abs(t.g - 0.5) + (t.a - 0.5) * 0.04);
+      float plate = smoothstep(0.3, 0.7, t.a);
+      vec3 c = col * (0.86 + plate * 0.3) * (1.0 - fiss * 0.55);
+      // moss creeps up the foot of the trunk, pale lichen higher on the plates
+      float moss = smoothstep(0.45, 0.65, t.r + (1.0 - smoothstep(0.3, 2.2, vAqObj.y)) * 0.35) * (1.0 - fiss);
+      c = mix(c, c * vec3(0.75, 1.15, 0.6), moss * 0.5);
+      c = mix(c, c * vec3(1.3, 1.3, 1.2), smoothstep(0.66, 0.74, t.b + plate * 0.1) * (1.0 - moss) * 0.3);
+      col = mix(col, c, w);
+      aqPlantBump = (plate * 0.006 - fiss * 0.02) * w;
+#else
+      // a palm's stem: rings where old fronds fell, fibres running up between them
+      vec4 a = texture(uNoiseTex, vec2(vAqObj.x * 3.1, vAqObj.y * 0.4) + vec2(0.41, 0.3));
+      vec4 b = texture(uNoiseTex, vec2(vAqObj.z * 3.1, vAqObj.y * 0.4) + vec2(0.07, 0.77));
+      vec4 t = mix(a, b, wx);
+      float ring = fract(vAqObj.y * 5.2 + (t.r - 0.5) * 0.5);
+      float scar = smoothstep(0.0, 0.07, ring) * (1.0 - smoothstep(0.1, 0.24, ring));
+      float fibre = (t.a - 0.5) * 2.0;
+      vec3 c = col * (1.0 + fibre * 0.12) * (1.0 - scar * 0.38);
+      c = mix(c, c * vec3(1.15, 1.1, 1.02), smoothstep(0.55, 0.75, t.g) * 0.5);
+      col = mix(col, c, w);
+      aqPlantBump = (-scar * 0.012 + fibre * 0.0025) * w;
+#endif
+    }
+    return;
+  }
+#endif
+#ifdef AQ_LEAVES
+  // clusters of leaves half a metre across (worley cells), the leaf grain within them
+  float w = 1.0 - smoothstep(0.08, 0.3, fp);
+  if (w > 0.0) {
+    vec3 an = on * on;
+    an *= an;
+    an /= an.x + an.y + an.z;
+    vec3 p = vAqObj * 0.11;
+    vec4 t = texture(uNoiseTex, p.zy + vec2(0.31, 0.12)) * an.x + texture(uNoiseTex, p.xz + vec2(0.71, 0.53)) * an.y + texture(uNoiseTex, p.xy + vec2(0.05, 0.88)) * an.z;
+    // worley cells broken up by the fbm, so clusters are ragged, not round
+    float cl = 1.0 - smoothstep(0.05, 0.78, t.b + (t.g - 0.5) * 0.55);
+    float fine = 1.0 - smoothstep(0.012, 0.05, fp);
+    // flowers stay bright: the contrast is for leaves
+    float leafy = 0.45 + 0.55 * smoothstep(0.0, 0.04, col.g - max(col.r, col.b));
+    vec3 c = col * mix(1.0, 0.72 + cl * 0.42 + (t.a - 0.5) * 0.3 * fine, leafy);
+    // the cluster crowns catch the sun warm and yellow-green
+    c = mix(c, c * vec3(1.1, 1.08, 0.8), cl * cl * 0.3 * leafy);
+    col = mix(col, c, w);
+    aqPlantBump = (cl * 0.035 + (t.a - 0.5) * 0.018 * fine) * (1.0 - smoothstep(0.03, 0.12, fp));
+  }
+#endif
+}
+`;
+
 export interface PatchOptions {
   caustics?: boolean;
   clouds?: boolean;
@@ -456,6 +548,8 @@ export interface PatchOptions {
   solid?: boolean; // never cut by damage holes (inner surfaces)
   skin?: 1 | 2 | 3; // takes a vault skin: 1 hull planking, 2 painted woodwork, 3 sailcloth
   ghost?: boolean; // a ghost ship's timber and canvas: spectral, rotting, half see-through (needs uGhost)
+  leaves?: boolean; // canopy puffs break up into lit leaf clusters up close
+  bark?: 1 | 2; // wood painted with negative colour (flora.ts barkSign) gets 1 fissured bark, 2 ringed palm stems
 }
 
 /** How each material was patched, so ships can re-patch per-hull damage clones. */
@@ -487,6 +581,8 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
     if (opts.cut) defs.push('#define AQ_DMG_CUT');
     if (opts.skin) defs.push(`#define AQ_SKIN ${opts.skin}`);
     if (opts.ghost) defs.push('#define AQ_GHOST');
+    if (opts.leaves) defs.push('#define AQ_LEAVES');
+    if (opts.bark) defs.push(`#define AQ_BARK ${opts.bark}`);
     const head = defs.join('\n') + '\n';
 
     shader.vertexShader = shader.vertexShader
@@ -513,7 +609,11 @@ varying vec3 vSkinN;
 varying float vSkinW;
 #endif
 #endif
-${GLSL_DAMAGE_VERTEX_PARS}`,
+${GLSL_DAMAGE_VERTEX_PARS}
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+varying vec3 vAqObj;
+varying vec3 vAqObjN;
+#endif`,
       )
       .replace(
         '#include <color_vertex>',
@@ -543,6 +643,11 @@ ${GLSL_DAMAGE_VERTEX_PARS}`,
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+  // the plant's own frame, before the wind moves it: leaf and bark detail stays put on the plant
+  vAqObj = position;
+  vAqObjN = objectNormal;
+#endif
 #if defined(AQ_SKIN) && AQ_SKIN < 3
   vSkinP = transformed;
   vSkinN = objectNormal;
@@ -634,6 +739,9 @@ ${GLSL_AERIAL}
 ${GLSL_FW}
 ${GLSL_DAMAGE_FRAGMENT_PARS}
 ${GLSL_GHOST_FRAGMENT_PARS}
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+${GLSL_PLANT_DETAIL}
+#endif
 #ifdef AQ_SKIN
 ${GLSL_SKIN}
 uniform vec3 uSkinCloth;
@@ -690,6 +798,13 @@ varying float vSkinW;
 ${GLSL_SKIN_FRAGMENT}
 ${GLSL_DAMAGE_FRAGMENT}
 ${GLSL_GHOST_COLOR}
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+  #ifdef USE_COLOR
+  aqPlantDetail(diffuseColor.rgb, vColor.rgb);
+  #else
+  aqPlantDetail(diffuseColor.rgb, vec3(1.0));
+  #endif
+#endif
 #ifdef AQ_DETAIL
   {
     vec4 nz = texture(uNoiseTex, vAqWorld.xz * 0.021);
@@ -706,6 +821,13 @@ ${GLSL_GHOST_COLOR}
         `#include <roughnessmap_fragment>
   roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.42, uWet);
 `,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+  normal = aqPlantNormal(-vViewPosition, normal, aqPlantBump, faceDirection);
+#endif`,
       )
       .replace(
         '#include <metalnessmap_fragment>',

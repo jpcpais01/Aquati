@@ -71,6 +71,83 @@ const vec3 T_MIST_LIME_VINE = ${lin(0x3e7034)};
 const vec3 T_MIST_LIME_NOTCH = ${lin(0x3a3c36)};
 `;
 
+/**
+ * The turf: where grass grows and what colour it is, shared by the ground's
+ * fragment shader and the grass blades' vertex shader (world/grass.ts), so
+ * every blade rises out of ground of exactly its own colour and the meadow
+ * ends where the turf does. The caller defines AQ_TEX (texture() in a
+ * fragment shader, textureLod() in a vertex shader).
+ */
+export const GLSL_TURF = /* glsl */ `
+${PALETTE}
+// four octaves of the shared tiling noise (R big fbm, G mid fbm, B worley, A fine)
+// The tiling noise is value noise, whose square lattice shows through any
+// crisp threshold. A domain warp bends that lattice into organic contours.
+void aqGroundNoise(vec2 xz, out vec4 nW, out vec4 nM, out vec4 nS, out vec4 nD, out vec4 nF) {
+  nW = AQ_TEX(uNoiseTex, xz * 0.013 + vec2(0.71, 0.29));
+  vec2 wxz = xz + (nW.rg - 0.5) * 16.0;
+  vec2 rxz = mat2(0.8, -0.6, 0.6, 0.8) * wxz;
+  nM = AQ_TEX(uNoiseTex, wxz * 0.0071 + vec2(0.31, 0.17)); // ~140 m
+  nS = AQ_TEX(uNoiseTex, rxz * 0.027);                      // ~37 m
+  nD = AQ_TEX(uNoiseTex, wxz * 0.12 + vec2(0.53, 0.21));    // ~8 m
+  nF = AQ_TEX(uNoiseTex, xz * 0.53 + vec2(0.11, 0.77));     // ~2 m
+}
+
+// metres above the top of the beach (negative: still on the sand)
+float aqTurfEdge(float h, float kA, vec4 nM, vec4 nS, vec4 nD, vec4 nF) {
+  float beachTop = mix(1.2, 1.55, kA) + (nS.g - 0.5) * 0.9 + (nM.r - 0.5) * 0.5;
+  return h + (nD.a - 0.5) * 0.4 + (nF.g - 0.5) * 0.08 - beachTop;
+}
+
+float aqJungleAt(float h, float kA, vec4 nM, vec4 nD) {
+  return smoothstep(3.5, 10.0, h) * smoothstep(0.44, 0.58, nM.g + (nD.g - 0.5) * 0.08) * (1.0 - kA);
+}
+
+// forest floor under the trees
+float aqUnderAt(float canopy, float kA, vec4 nD) {
+  return smoothstep(0.15, 0.85, canopy + (nD.g - 0.5) * 0.35) * (1.0 - kA);
+}
+
+// bare rock: steep ground, bald summits, the sandstone isles' cliffs
+float aqRockAt(float h, float slope, float summit, float kR, float erode, float biome, vec4 nD) {
+  // spurs go bare a little sooner, gullies hold their green on steeper ground
+  float rn = (nD.g - 0.5) * 0.26 + erode * 0.09;
+  // (in the mist the jungle clings on to steeper ground)
+  float rockT = smoothstep(0.26, 0.33, slope + rn - biome * 0.07);
+  rockT = max(rockT, smoothstep(0.32, 0.42, summit + rn));
+  rockT = max(rockT, kR * smoothstep(0.18, 0.24, slope + rn));
+  return rockT * (smoothstep(-6.0, -1.0, h) * 0.6 + 0.4);
+}
+
+// the turf's colour (before the wildflowers and the wind's sheen)
+vec3 aqTurfColor(float h, vec3 kind, float tint, float erode, float biome, float jungle, float under, float edge, vec4 nM, vec4 nS, vec4 nD, vec4 nF) {
+  float kV = kind.x;
+  float kL = clamp(1.0 - kind.x - kind.y - kind.z, 0.0, 1.0);
+  vec3 g = mix(T_GRASS, T_GRASS_LIGHT, smoothstep(0.46, 0.66, nS.r + (nD.g - 0.5) * 0.12) * 0.5);
+  g = mix(g, T_GRASS_DRY, smoothstep(0.52, 0.66, nM.r + tint * 0.14 + (nD.g - 0.5) * 0.1) * 0.7);
+  g = mix(g, T_GRASS_DEEP, smoothstep(0.5, 0.62, 1.0 - nS.g + (nD.r - 0.5) * 0.1) * 0.6);
+  // Las Brumas: wetter, bluer jade turf
+  g = mix(g, g * vec3(0.74, 1.0, 0.86), biome);
+  g = mix(g, T_JUNGLE, jungle * 0.8);
+  // sun-cured grass up on the high lush ridges
+  g = mix(g, T_GRASS_GOLD, smoothstep(14.0, 32.0, h + (nM.g - 0.5) * 10.0) * 0.42 * kL);
+  // the rain's work: deep, damp green down every gully, sunlit and a little
+  // drier along the spurs between them, so each hillside reads as ribs
+  float gully = smoothstep(-0.05, -0.6, erode + (nD.r - 0.5) * 0.2);
+  float spur = smoothstep(0.1, 0.65, erode + (nD.r - 0.5) * 0.2);
+  g = mix(g, T_JUNGLE * 0.9, gully * 0.5);
+  g = mix(g, mix(T_GRASS_LIGHT, T_GRASS_GOLD, 0.35 + kV * 0.4), spur * 0.32);
+  // forest floor under the trees: deep moss with drifts of fallen leaves
+  vec3 floorC = mix(T_FOREST_FLOOR, T_LEAF_LITTER, smoothstep(0.52, 0.7, nF.r + (nD.a - 0.5) * 0.3) * 0.75);
+  g = mix(g, floorC, under * 0.72);
+  // tufts: per-blade-clump light and dark
+  g *= 0.9 + nF.g * 0.2;
+  // a richer, darker lip where turf meets the sand
+  float lip = 1.0 - smoothstep(0.1, 0.55, edge);
+  return mix(g, g * vec3(0.78, 0.86, 0.8), lip * 0.5);
+}
+`;
+
 const FRAG_HEAD = /* glsl */ `
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
@@ -78,7 +155,8 @@ varying float vAqCanopy;
 varying float vAqReef;
 varying float vAqErode;
 varying float vAqBiome;
-${PALETTE}
+#define AQ_TEX(s, uv) texture(s, uv)
+${GLSL_TURF}
 ${GLSL_SURF}
 // the swash cycle, as fractions of a wave period: the sheet runs up until
 // SW_UP, then drains back until SW_END
@@ -117,16 +195,8 @@ const FRAG_ALBEDO = /* glsl */ `
   // faded out, since derivative bump on it would only show 2x2-pixel grain
   float fp = length(fwidth(xz));
 
-  // four octaves of the shared tiling noise (R big fbm, G mid fbm, B worley, A fine)
-  // The tiling noise is value noise, whose square lattice shows through any
-  // crisp threshold. A domain warp bends that lattice into organic contours.
-  vec4 nW = texture(uNoiseTex, xz * 0.013 + vec2(0.71, 0.29));
-  vec2 wxz = xz + (nW.rg - 0.5) * 16.0;
-  vec2 rxz = mat2(0.8, -0.6, 0.6, 0.8) * wxz;
-  vec4 nM = texture(uNoiseTex, wxz * 0.0071 + vec2(0.31, 0.17)); // ~140 m
-  vec4 nS = texture(uNoiseTex, rxz * 0.027);                      // ~37 m
-  vec4 nD = texture(uNoiseTex, wxz * 0.12 + vec2(0.53, 0.21));    // ~8 m
-  vec4 nF = texture(uNoiseTex, xz * 0.53 + vec2(0.11, 0.77));    // ~2 m
+  vec4 nW, nM, nS, nD, nF;
+  aqGroundNoise(xz, nW, nM, nS, nD, nF);
 
   // ---------------------------------------------------------------- sand
   vec3 sand = mix(T_SAND, T_SAND_WARM, smoothstep(0.38, 0.68, nS.g) * 0.75);
@@ -183,35 +253,13 @@ const FRAG_ALBEDO = /* glsl */ `
   }
 
   // ---------------------------------------------------------------- grass
-  float beachTop = mix(1.2, 1.55, kA) + (nS.g - 0.5) * 0.9 + (nM.r - 0.5) * 0.5;
-  float edge = h + (nD.a - 0.5) * 0.4 + (nF.g - 0.5) * 0.08 - beachTop;
+  float edge = aqTurfEdge(h, kA, nM, nS, nD, nF);
   float grassT = smoothstep(-0.05, 0.1, edge);
-  vec3 g = mix(T_GRASS, T_GRASS_LIGHT, smoothstep(0.46, 0.66, nS.r + (nD.g - 0.5) * 0.12) * 0.5);
-  g = mix(g, T_GRASS_DRY, smoothstep(0.52, 0.66, nM.r + tint * 0.14 + (nD.g - 0.5) * 0.1) * 0.7);
-  g = mix(g, T_GRASS_DEEP, smoothstep(0.5, 0.62, 1.0 - nS.g + (nD.r - 0.5) * 0.1) * 0.6);
-  // Las Brumas: wetter, bluer jade turf
-  g = mix(g, g * vec3(0.74, 1.0, 0.86), vAqBiome);
-  float jungle = smoothstep(3.5, 10.0, h) * smoothstep(0.44, 0.58, nM.g + (nD.g - 0.5) * 0.08) * (1.0 - kA);
-  g = mix(g, T_JUNGLE, jungle * 0.8);
-  // sun-cured grass up on the high lush ridges
-  g = mix(g, T_GRASS_GOLD, smoothstep(14.0, 32.0, h + (nM.g - 0.5) * 10.0) * 0.42 * kL);
-  // the rain's work: deep, damp green down every gully, sunlit and a little
-  // drier along the spurs between them, so each hillside reads as ribs
-  float ero = vAqErode;
-  float gully = smoothstep(-0.05, -0.6, ero + (nD.r - 0.5) * 0.2);
-  float spur = smoothstep(0.1, 0.65, ero + (nD.r - 0.5) * 0.2);
-  g = mix(g, T_JUNGLE * 0.9, gully * 0.5);
-  g = mix(g, mix(T_GRASS_LIGHT, T_GRASS_GOLD, 0.35 + kV * 0.4), spur * 0.32);
-  // forest floor under the trees: deep moss with drifts of fallen leaves
-  float under = smoothstep(0.15, 0.85, vAqCanopy + (nD.g - 0.5) * 0.35) * (1.0 - kA);
-  vec3 floorC = mix(T_FOREST_FLOOR, T_LEAF_LITTER, smoothstep(0.52, 0.7, nF.r + (nD.a - 0.5) * 0.3) * 0.75);
-  g = mix(g, floorC, under * 0.72);
-  // tufts: per-blade-clump light and dark
+  float jungle = aqJungleAt(h, kA, nM, nD);
+  float under = aqUnderAt(vAqCanopy, kA, nD);
+  vec3 g = aqTurfColor(h, vAqKind, tint, vAqErode, vAqBiome, jungle, under, edge, nM, nS, nD, nF);
   float tuft = nF.g;
-  g *= 0.9 + tuft * 0.2;
-  // a richer, darker lip where turf meets the sand
   float lip = 1.0 - smoothstep(0.1, 0.55, edge);
-  g = mix(g, g * vec3(0.78, 0.86, 0.8), lip * 0.5);
   // wildflowers in meadow clearings
   #ifdef AQ_TERRAIN_LITE
   float fl = 0.0;
@@ -299,13 +347,7 @@ const FRAG_ALBEDO = /* glsl */ `
   float bRock = mix(-crack * 0.2 * fineFade + nR.a * 0.08 * fineFade, (beds - 0.5) * 0.2 - crack * 0.1 * fineFade + nR.a * 0.06 * fineFade - streak * 0.03, kR)
     + kV * ((1.0 - cells) * 0.22) * (1.0 - smoothstep(0.25, 0.6, fp));
 
-  // spurs go bare a little sooner, gullies hold their green on steeper ground
-  float rn = (nD.g - 0.5) * 0.26 + vAqErode * 0.09;
-  // (in the mist the jungle clings on to steeper ground)
-  float rockT = smoothstep(0.26, 0.33, slope + rn - vAqBiome * 0.07);
-  rockT = max(rockT, smoothstep(0.32, 0.42, vAqInfo.y + rn));
-  rockT = max(rockT, kR * smoothstep(0.18, 0.24, slope + rn)); // sandstone isles show more cliff
-  rockT *= smoothstep(-6.0, -1.0, h) * 0.6 + 0.4;
+  float rockT = aqRockAt(h, slope, vAqInfo.y, kR, vAqErode, vAqBiome, nD);
 
   // ---------------------------------------------------------------- compose
   float land = smoothstep(-0.05, 0.05, h);
@@ -316,6 +358,65 @@ const FRAG_ALBEDO = /* glsl */ `
   aqRough = mix(mix(0.96, 0.9, grassT * land), 0.82, rockT);
   // cavities: cracks and crevices darken a touch
   albedo *= 1.0 - crack * rockT * 0.15;
+
+  // ---------------------------------------------------------------- underfoot
+  // What a captain on foot sees at their boots: grains and bits of shell and
+  // pebble in the sand, soil and dry thatch between the turf's blades, fallen
+  // leaves on the forest floor, and stone that is granular, finely cracked and
+  // freckled with lichen. Only within a few dozen metres of the eye (from the
+  // follow view the whole branch is skipped), and its relief only where a
+  // pixel is no more than a centimetre or two across.
+  #ifndef AQ_TERRAIN_LITE
+  float nearW = 1.0 - smoothstep(0.045, 0.13, fp);
+  if (nearW > 0.0 && h > -3.0) {
+    vec2 q = mat2(0.6, 0.8, -0.8, 0.6) * xz;
+    vec4 u1 = texture(uNoiseTex, q * 1.9 + vec2(0.37, 0.81));       // 53 cm tile: ~4 cm cells
+    vec4 u2 = texture(uNoiseTex, xz * 0.71 + vec2(0.62, 0.05));     // 1.4 m tile: ~10 cm cells
+    vec4 u3 = texture(uNoiseTex, q.yx * 5.3 + vec2(0.19, 0.44));    // 19 cm tile: millimetre grain
+    float fineB = 1.0 - smoothstep(0.004, 0.02, fp);
+    float midB = 1.0 - smoothstep(0.006, 0.026, fp);
+    float turfW = grassT * land * (1.0 - rockT);
+    float sandW = (1.0 - grassT * land) * (1.0 - rockT);
+    float floorW = turfW * under;
+    turfW *= 1.0 - under;
+    float grain = (u3.a - 0.5) * 2.0;
+    // sand: fine grain, and grit, shell and coral bits in drifts
+    float grit = (1.0 - smoothstep(0.08, 0.15, u1.b)) * smoothstep(0.56, 0.7, u2.g + (nD.a - 0.5) * 0.4);
+    vec3 gritC = mix(vec3(0.66, 0.54, 0.4), vec3(1.1, 1.07, 1.0), step(0.45, u1.r));
+    gritC = mix(gritC, T_CORAL_B * 1.1, step(0.62, u2.r) * max(vAqBiome, kA));
+    vec3 sandM = mix(albedo * (1.0 + grain * 0.07), albedo * gritC, grit * 0.7);
+    // turf: the soil showing between clumps, sun-dried thatch, blade-scale grain
+    vec2 tq = mat2(0.96, 0.28, -0.28, 0.96) * xz;
+    float thatch = texture(uNoiseTex, tq * vec2(2.6, 0.45) + vec2(0.71, 0.33)).a;
+    float soil = smoothstep(0.55, 0.85, u2.b + (u1.a - 0.5) * 0.3);
+    vec3 turfM = albedo * (1.0 + grain * 0.07);
+    turfM = mix(turfM, albedo * vec3(0.62, 0.5, 0.36), soil * 0.4 * (1.0 - vAqBiome * 0.4));
+    turfM = mix(turfM, T_GRASS_GOLD * 0.9, smoothstep(0.62, 0.78, thatch) * 0.35);
+    // forest floor: a litter of fallen leaves, ochre, brown and old green
+    float leaf = 1.0 - smoothstep(0.24, 0.36, u2.b);
+    vec3 leafC = mix(T_LEAF_LITTER, vec3(0.32, 0.12, 0.04), smoothstep(0.4, 0.6, u1.r));
+    leafC = mix(leafC, T_FOREST_FLOOR * 1.2, smoothstep(0.55, 0.7, u2.r));
+    vec3 floorM = mix(albedo * (1.0 + grain * 0.1), leafC * (0.85 + u3.a * 0.3), leaf * 0.7);
+    // rock: grain, a web of fine cracks, lichen rosettes (none on fresh basalt)
+    float fcrack = smoothstep(0.62, 0.8, u1.b);
+    // (ragged rosettes: the cells broken up by the fine noise)
+    float lichen = (1.0 - smoothstep(0.16, 0.36, u2.b + (u1.a - 0.5) * 0.35)) * smoothstep(0.56, 0.7, u2.g + (nR.g - 0.5) * 0.3) * (1.0 - kV) * smoothstep(0.2, 0.6, wn.y + 0.4);
+    vec3 lichC = albedo * mix(vec3(1.25, 1.3, 0.95), vec3(1.4, 1.05, 0.6), kR * step(0.5, u1.g));
+    vec3 rockM = albedo * (1.0 + grain * 0.06 * midB) * (1.0 - fcrack * 0.24);
+    rockM = mix(rockM, lichC * (0.9 + u3.a * 0.2), lichen * 0.45);
+    // volcanic: gas bubbles frozen into the stone
+    rockM *= 1.0 - kV * (1.0 - smoothstep(0.06, 0.14, u1.b)) * 0.45;
+    // (the turf's own detail only right underfoot: further out the blades say it)
+    turfM = mix(albedo, turfM, 1.0 - smoothstep(0.015, 0.05, fp));
+    vec3 near = sandM * sandW + turfM * turfW + floorM * floorW + rockM * rockT;
+    albedo = mix(albedo, near, nearW);
+    aqBump += (sandW * (grit * 0.012 + grain * 0.0015 * fineB)
+      + turfW * ((u1.a - 0.5) * 0.02 - soil * 0.008)
+      + floorW * (leaf * 0.006 + (u1.a - 0.5) * 0.01)
+      + rockT * (grain * 0.003 * fineB - fcrack * 0.012 + lichen * 0.002 - kV * (1.0 - smoothstep(0.06, 0.14, u1.b)) * 0.01)) * midB;
+    aqRough = mix(aqRough, aqRough * (0.92 + u3.a * 0.16), nearW);
+  }
+  #endif
 
   // volcanic crater: cooling crust over glowing seams, a molten heart
   float crater = vAqInfo.z;

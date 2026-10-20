@@ -20,6 +20,14 @@ const _c = new THREE.Vector3();
 const _n = new THREE.Vector3();
 const _col = new THREE.Color();
 
+/**
+ * Bark is flagged by painting it with negative colour: the plant materials
+ * built with `bark` (see patchMaterial) read the sign as "this is wood", take
+ * the colour's size and carve fissures or ring scars into it up close. Only
+ * the island planting asks for it; any other material would draw it black.
+ */
+const barkSign = (mark: boolean) => (mark ? -1 : 1);
+
 export function lin(hex: number): THREE.Color {
   return new THREE.Color(hex).convertSRGBToLinear();
 }
@@ -229,8 +237,9 @@ function sawFrond(
  * of comb-toothed fronds (young ones bright and upright, old ones dark and
  * drooping, now and then a dried one hanging) and a cluster of nuts.
  */
-export function palmGeometry(height: number, lean: number, seed: number, lod = 0, shadow = false): Geo {
+export function palmGeometry(height: number, lean: number, seed: number, lod = 0, shadow = false, mark = false): Geo {
   const rnd = mulberry32(seed);
+  const sg = barkSign(mark);
   const parts: Geo[] = [];
   const sway = (rnd() - 0.5) * 0.9;
   const curve = (t: number) => new THREE.Vector3(lean * t * t, height * t, sway * Math.sin(t * Math.PI) * 0.5);
@@ -249,7 +258,7 @@ export function palmGeometry(height: number, lean: number, seed: number, lod = 0
       (t, _a2, out) => {
         const band = lod ? 1 : Math.cos(t * rings * Math.PI) > 0 ? 1 : 0.8;
         out.copy(trunkDark).lerp(trunkLight, (0.3 + t * 0.7) * band);
-        out.lerp(foot, Math.pow(1 - t, 12) * 0.6);
+        out.lerp(foot, Math.pow(1 - t, 12) * 0.6).multiplyScalar(sg);
       },
     ),
   );
@@ -312,7 +321,7 @@ interface PuffSpec {
  * umbrella of a flame tree, a lilac/pink blossom tree and a tall two-tiered
  * jungle emergent. Visible limbs fork from the trunk into the canopy puffs.
  */
-export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shadow = false): Geo {
+export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shadow = false, mark = false): Geo {
   const rnd = mulberry32(seed * 31 + 7);
   const s = new Simplex2(seed + 3);
   const parts: Geo[] = [];
@@ -355,7 +364,8 @@ export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shado
   // trunk + limbs
   const barkDark = lin(0x4a3627);
   const barkLight = lin(0x7d6047);
-  const bark = (t: number, a: number, out: THREE.Color) => out.copy(barkDark).lerp(barkLight, 0.35 + t * 0.5 + Math.sin(a * 3) * 0.08);
+  const sg = barkSign(mark);
+  const bark = (t: number, a: number, out: THREE.Color) => out.copy(barkDark).lerp(barkLight, 0.35 + t * 0.5 + Math.sin(a * 3) * 0.08).multiplyScalar(sg);
   const trunkTop = new THREE.Vector3((rnd() - 0.5) * 0.4, H + 0.3, (rnd() - 0.5) * 0.4);
   const tr = style === 'tall' ? 0.42 : 0.34;
   const tp: THREE.Vector3[] = [];
@@ -436,8 +446,9 @@ export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shado
  * young ones arching up, old ones sagging), a skirt of dead fronds hanging
  * against the trunk and a knot of curled fiddleheads at the heart.
  */
-export function treeFernGeometry(seed: number, lod = 0): Geo {
+export function treeFernGeometry(seed: number, lod = 0, mark = false): Geo {
   const rnd = mulberry32(seed * 23 + 11);
+  const sg = barkSign(mark);
   const H = 3.8 + rnd() * 1.8;
   const lean = (rnd() - 0.5) * 0.7;
   const wob = (rnd() - 0.5) * 0.5;
@@ -455,7 +466,7 @@ export function treeFernGeometry(seed: number, lod = 0): Geo {
       (t) => 0.19 * (1 + 0.9 * Math.pow(1 - t, 7) + 0.25 * t * t) * (lod ? 1 : 1 + 0.07 * Math.cos(t * rings * 2 * Math.PI)),
       lod ? 4 : 7,
       (t, a, out) => {
-        out.copy(fibre).lerp(scar, lod ? 0.3 : (0.5 + 0.5 * Math.cos(t * rings * 2 * Math.PI + a * 2)) * 0.45 + t * 0.2);
+        out.copy(fibre).lerp(scar, lod ? 0.3 : (0.5 + 0.5 * Math.cos(t * rings * 2 * Math.PI + a * 2)) * 0.45 + t * 0.2).multiplyScalar(sg);
       },
     ),
   );
