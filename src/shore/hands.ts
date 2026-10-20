@@ -50,7 +50,7 @@ function key(px: number, py: number, pz: number, dir: [number, number, number], 
   return { p: new THREE.Vector3(px, py, pz), q: new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(_x, _y, _z)) };
 }
 
-const GUARD = key(0.24, -0.22, -0.44, [-0.18, 0.62, -0.76], [-0.2, 0.3, -1]);
+const GUARD = key(0.24, -0.22, -0.44, [-0.2, 0.44, -0.88], [-0.2, 0.3, -1]);
 const DOWN = key(0.32, -0.82, -0.3, [-0.1, 0.4, -0.9], [0, 0.4, -1]);
 /** Each cut: coiled at the wind-up's end, the blade landing, the follow-through. */
 const CUTS: [Key, Key, Key][] = [
