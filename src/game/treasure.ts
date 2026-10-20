@@ -1,4 +1,4 @@
-// What the sea gives up: thirty kinds of plunder in five rarities, from casks
+// What the sea gives up: sixty kinds of plunder in five rarities, from casks
 // of rum to the Crown of the Drowned King. Salvage and chests no longer pay
 // out gold on the spot: their goods ride home in the ship's hold and are only
 // worth something once a trading port's market buys them.
@@ -42,6 +42,11 @@ export type LootId =
   | 'doubloons' | 'pearls' | 'emeralds' | 'dagger' | 'portrait' | 'saffron'
   | 'ruby' | 'tiara' | 'chalice' | 'seascape' | 'astrolabe'
   | 'crown' | 'idol' | 'krakenPearl' | 'mask'
+  | 'hardtack' | 'oranges' | 'saltfish' | 'coconuts' | 'rope' | 'cider' | 'cowries' | 'tankard'
+  | 'tea' | 'cacao' | 'brandy' | 'lace' | 'spyglass' | 'coral' | 'pipe'
+  | 'reserve' | 'ingots' | 'jade' | 'cameo' | 'musicBox' | 'chronometer'
+  | 'diamond' | 'globe' | 'helm' | 'egg' | 'carpet'
+  | 'trident' | 'bottleShip' | 'sceptre' | 'sunstone'
   | 'krakenInk' | 'krakenBeak';
 
 export interface LootKind {
@@ -98,6 +103,42 @@ export const LOOT: Record<LootId, LootKind> = Object.fromEntries(
     K('idol', 'Golden Idol', 4, 'relics', 2000, 2, 'idol', 'Solid gold, and very much cursed. Probably.'),
     K('krakenPearl', "Kraken's Pearl", 4, 'gems', 3200, 1, 'casket', 'It hums when the sea is angry.'),
     K('mask', 'Mask of El Dorado', 4, 'relics', 2800, 1, 'idol', 'The sun itself, beaten into a face.'),
+    // ------------------------------------------------ the second manifest
+    // common
+    K('hardtack', "Ship's Biscuit", 0, 'provisions', 10, 1, 'crate', 'Hard enough to break a tooth. Knock out the weevils first.'),
+    K('oranges', 'Crate of Oranges', 0, 'provisions', 19, 1, 'crate', 'Sunshine in a crate, and no scurvy aboard this month.'),
+    K('saltfish', 'Salted Cod', 0, 'provisions', 13, 1, 'crate', 'Stiff as a board and twice as salty.'),
+    K('coconuts', 'Green Coconuts', 0, 'provisions', 11, 1, 'sack', 'Sweet water inside, if you have a cutlass handy.'),
+    K('rope', 'Coil of Hemp Rope', 0, 'cloth', 17, 1, 'crate', 'Forty fathoms of good tarred line. Every bosun wants it.'),
+    K('cider', 'Jug of Cider', 0, 'spirits', 21, 1, 'barrel', 'Cloudy, sharp and pressed from orchard apples a world away.'),
+    K('cowries', 'Cowrie Shells', 0, 'coin', 15, 1, 'sack', 'Glossy little shells that buy a meal on half the coasts out there.'),
+    K('tankard', 'Pewter Tankard', 0, 'relics', 16, 1, 'crate', 'Dented from a hundred tavern brawls. Holds a full pint still.'),
+    // uncommon
+    K('tea', 'Lacquered Tea Caddy', 1, 'provisions', 80, 1, 'crate', 'Smoky black leaf in a red tin painted with cranes.'),
+    K('cacao', 'Cacao Pods', 1, 'provisions', 65, 1, 'sack', 'Grind the beans with sugar and you have something divine.'),
+    K('brandy', 'Decanter of Brandy', 1, 'spirits', 105, 1, 'crate', 'Cut crystal and old amber fire. Pour it slowly.'),
+    K('lace', 'Corália Lace', 1, 'cloth', 92, 1, 'crate', 'Bobbin lace so fine the nuns of Sainte-Corália went blind making it.'),
+    K('spyglass', 'Brass Spyglass', 1, 'relics', 120, 1, 'casket', 'Spots a sail before she spots you.'),
+    K('coral', 'Red Coral Branch', 1, 'gems', 100, 1, 'casket', 'Blood-red coral from the deep reefs, polished to a gleam.'),
+    K('pipe', 'Meerschaum Pipe', 1, 'art', 85, 1, 'casket', 'Its bowl is carved as a bearded old sea captain. He disapproves.'),
+    // rare
+    K('reserve', "Ronvliet Reserve, 1702", 2, 'spirits', 210, 1, 'crate', 'The distillery\'s finest year, dusty and wax-sealed. Drink it and weep.'),
+    K('ingots', 'Silver Ingots', 2, 'coin', 250, 2, 'casket', 'Stamped bars from the mint at Aguadouro. Heavy as sin.'),
+    K('jade', 'Jade Dragon', 2, 'art', 290, 1, 'idol', 'A coiled dragon carved from a single green stone.'),
+    K('cameo', 'Cameo Brooch', 2, 'jewellery', 235, 1, 'casket', 'A lady in ivory profile on sardonyx, ringed with seed pearls.'),
+    K('musicBox', 'Gilded Music Box', 2, 'art', 260, 1, 'casket', 'Wind it and a tiny ship sails round, playing a sailor\'s waltz.'),
+    K('chronometer', 'Marine Chronometer', 2, 'relics', 340, 1, 'casket', 'Keeps true time at sea, so you always know your longitude.'),
+    // epic
+    K('diamond', 'Heart of Aguadouro', 3, 'gems', 820, 1, 'casket', 'A blue-white diamond the bankers swore was never stolen.'),
+    K('globe', 'Celestial Globe', 3, 'relics', 640, 2, 'idol', 'Every star and constellation in gold on a sphere of night.'),
+    K('helm', "Conquistador's Helm", 3, 'relics', 580, 2, 'idol', 'A crested steel morion with gold filigree, and a dent with a story.'),
+    K('egg', 'Jewelled Egg', 3, 'jewellery', 760, 1, 'casket', 'Open it and a little golden swan unfolds its wings.'),
+    K('carpet', "Sultan's Silk Carpet", 3, 'cloth', 620, 2, 'crate', 'Ten thousand knots to the hand. They say it once flew.'),
+    // legendary
+    K('trident', 'Trident of the Deep', 4, 'relics', 3000, 2, 'idol', 'Raise it and the waves bow. Or so the drowned sailors said.'),
+    K('bottleShip', 'Golden Galleon in a Bottle', 4, 'art', 2600, 1, 'casket', 'A perfect galleon of solid gold. Some say she was full size once.'),
+    K('sceptre', 'Sceptre of Sainte-Corália', 4, 'jewellery', 2500, 1, 'casket', 'The lost sceptre of the island queens, with a sapphire the size of a fist.'),
+    K('sunstone', 'Sunstone of the Lost Fleet', 4, 'gems', 3100, 1, 'casket', 'It finds the sun through the thickest storm. The fleet that lost it never came home.'),
     // trophies: only the Kraken gives these up
     K('krakenInk', 'Vial of Kraken Ink', 3, 'relics', 950, 1, 'casket', 'Black as the deep. At night it writes by itself.'),
     K('krakenBeak', 'Beak of the Kraken', 4, 'relics', 3800, 2, 'idol', 'Sharp enough to bite through a keel. It has.'),

@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { clamp, lerp, smoothstep } from '../core/noise';
-import { patchMaterial } from '../render/environment';
+import { patchInfo, patchMaterial } from '../render/environment';
+import { disposeLevel, simplifiedLevels, type LodJob } from '../render/lod';
+import { shadowOnly } from '../render/passCull';
 import { Livery, ShipClass } from './shipTypes';
 import type { SkinItem } from './cosmetics';
 import { loadoutParts, type Part, type PartSlot } from './parts';
@@ -373,6 +375,24 @@ function ropeGeometry(specs: RopeSpec[]): THREE.BufferGeometry | null {
 /** Pixels per metre (at 1x zoom) above which a ship shows its close-range detail, and below which it drops it again. */
 const FINE_ON = 21;
 const FINE_OFF = 17;
+/**
+ * Simplified core meshes: deviation allowed (m) and the pixels per metre
+ * below which each level shows. Both stay under about half a pixel on screen,
+ * so the swap can't be seen.
+ */
+const LOD_NEAR = { job: { error: 0.018, prune: true, permissive: true } as LodJob, below: 26 };
+const LOD_FAR = { job: { error: 0.07, prune: true, permissive: true } as LodJob, below: 6.5 };
+/** The shadow stand-in: welded shape only, held to 5 cm (the shadow map's texels are 6-25 cm). */
+const LOD_SHADOW: LodJob = { error: 0.05, weld: true, prune: true, permissive: true };
+
+interface LodSet {
+  mesh: THREE.Mesh;
+  full: THREE.BufferGeometry;
+  near: THREE.BufferGeometry | null;
+  far: THREE.BufferGeometry | null;
+  /** Coarse twin drawn into the shadow map in the mesh's place. */
+  proxy: THREE.Mesh | null;
+}
 const _spinQ = new THREE.Quaternion();
 
 export class ShipModel {
@@ -417,6 +437,15 @@ export class ShipModel {
   private readonly lineMeshes: THREE.LineSegments[] = [];
   private fineOn = true;
   private readonly detail: boolean;
+  private lods: LodSet[] = [];
+  /** Off while the damage model is cutting the full meshes (and until the rig is whole again). */
+  private lodLive = false;
+  private lodLevel = -1;
+  /** Meshes still with the simplifier. */
+  private lodPending = 0;
+  /** The damage model has the full meshes out: no levels until it hands them back. */
+  private lodHeld = false;
+  private lodGone = false;
   /** Custom liveries own their materials (no cache) and must be disposed. */
   private readonly owned: boolean;
   /**
@@ -2599,9 +2628,81 @@ export class ShipModel {
     this.fineIron = [];
     this.fineTrim = [];
     this.ropeTubes = [];
+    this.buildLods();
     this.root.traverse((o) => {
       o.matrixAutoUpdate = true;
     });
+  }
+
+  /**
+   * Simplified levels of the core meshes (hull, planking, ironwork, trim): a
+   * near and a far one for the main view, and a welded, pruned stand-in that
+   * casts the shadow instead of the full mesh. Each is only an index over the
+   * mesh's own vertices (see render/lod.ts).
+   */
+  private buildLods() {
+    for (const child of [...this.root.children]) {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh || mesh.userData.fine || Array.isArray(mesh.material)) continue;
+      const opts = patchInfo.get(mesh.material)?.opts;
+      // the sails and flags bend in the vertex shader: their flat rest pose would fold away
+      if (opts?.sail || opts?.flag) continue;
+      const full = mesh.geometry;
+      const jobs = [LOD_NEAR.job, LOD_FAR.job];
+      if (mesh.castShadow) jobs.push(LOD_SHADOW);
+      this.lodPending++;
+      void simplifiedLevels(full, jobs).then(([near, far, shadow]) => {
+        this.lodPending--;
+        // gone, or already cut up by a hit while the worker was busy
+        if (this.lodGone || mesh.geometry !== full || mesh.parent !== this.root || mesh.userData.dmgOff) {
+          for (const g of [near, far, shadow]) if (g) disposeLevel(g);
+          return;
+        }
+        let proxy: THREE.Mesh | null = null;
+        if (shadow) {
+          proxy = shadowOnly(new THREE.Mesh(shadow, mesh.material));
+          proxy.customDepthMaterial = mesh.customDepthMaterial;
+          proxy.position.copy(mesh.position);
+          proxy.quaternion.copy(mesh.quaternion);
+          proxy.scale.copy(mesh.scale);
+          proxy.receiveShadow = false;
+          proxy.visible = false;
+          proxy.userData.dmgSkip = true;
+          proxy.userData.lodProxy = true;
+          this.root.add(proxy);
+        }
+        if (near || far || proxy) this.lods.push({ mesh, full, near, far, proxy });
+        if (!this.lodPending && !this.lodHeld) this.resumeLods();
+      });
+    }
+  }
+
+  /** Puts every full mesh back (and its own shadow) before the damage model cuts them. */
+  suspendLods() {
+    this.lodHeld = true;
+    if (!this.lodLive) return;
+    this.lodLive = false;
+    this.lodLevel = -1;
+    for (const l of this.lods) {
+      l.mesh.geometry = l.full;
+      if (l.proxy) {
+        l.proxy.visible = false;
+        l.mesh.castShadow = true;
+      }
+    }
+  }
+
+  /** Back to the light levels once the rig is whole and every mesh has its own geometry again. */
+  resumeLods() {
+    this.lodHeld = false;
+    if (this.lodLive || this.lodPending || !this.lods.length) return;
+    for (const l of this.lods) if (l.mesh.geometry !== l.full || l.mesh.userData.dmgOff || l.mesh.parent !== this.root) return;
+    this.lodLive = true;
+    for (const l of this.lods) {
+      if (!l.proxy) continue;
+      l.proxy.visible = true;
+      l.mesh.castShadow = false;
+    }
   }
 
   /** Laid rope for one assembly (the hull, or a yard that braces round): close range only. */
@@ -2625,6 +2726,18 @@ export class ShipModel {
    * they're hidden.
    */
   updateDetail(pxPerM: number) {
+    if (this.lodLive) {
+      const was = this.lodLevel;
+      // each boundary leans toward the level already showing, so a ship
+      // sitting right on one doesn't flick back and forth
+      const nearT = LOD_NEAR.below * (was >= 1 ? 1.08 : 0.92);
+      const farT = LOD_FAR.below * (was === 2 ? 1.08 : 0.92);
+      const level = pxPerM < farT ? 2 : pxPerM < nearT ? 1 : 0;
+      if (level !== was) {
+        this.lodLevel = level;
+        for (const l of this.lods) l.mesh.geometry = (level === 2 ? (l.far ?? l.near) : level === 1 ? l.near : null) ?? l.full;
+      }
+    }
     if (this.fineOn ? pxPerM < FINE_OFF : pxPerM > FINE_ON) this.fineOn = !this.fineOn;
     const near = this.fineOn && this.fineMeshes.length > 0;
     // anything the damage model has taken down (dmgOff) stays down
@@ -2678,6 +2791,13 @@ export class ShipModel {
   }
 
   dispose() {
+    // the levels not on show (the ship's own traversal disposes the rest)
+    this.lodGone = true;
+    for (const l of this.lods) {
+      if (l.mesh.geometry !== l.full) l.full.dispose();
+      for (const g of [l.near, l.far]) if (g && l.mesh.geometry !== g) disposeLevel(g);
+    }
+    this.lods = [];
     this.sailMaterial.dispose();
     this.sailEmblemMaterial.dispose();
     const m = this.mats;

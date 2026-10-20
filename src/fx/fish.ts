@@ -3,7 +3,7 @@ import { angleDelta, clamp, damp, lerp, mulberry32 } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import type { World } from '../game/world';
 import type { Ship } from '../ships/ship';
-import type { Island, Terrain } from '../world/terrain';
+import type { Island, SeaFloor } from '../world/terrain';
 
 // Reef life. Every island's shallows teem: shoals of tropical fish (blue and
 // yellow tangs, clownfish, sergeant majors, wrasse, and great glittering bait
@@ -568,7 +568,7 @@ export class ReefLife {
   private time = 0;
   private rnd = mulberry32(4242);
 
-  constructor(private terrain: Terrain, lite: boolean) {
+  constructor(private terrain: SeaFloor, lite: boolean) {
     const mat = patchMaterial(new THREE.MeshStandardMaterial({ roughness: 0.45, metalness: 0 }), { caustics: true, clouds: true });
     const base = mat.onBeforeCompile;
     mat.onBeforeCompile = (shader, r) => {

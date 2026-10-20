@@ -403,7 +403,13 @@ export const patchInfo = new WeakMap<THREE.Material, { opts: PatchOptions; extra
 
 /** Injects the shared atmosphere into a three.js standard / physical material. */
 export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts: PatchOptions, extraUniforms: Record<string, THREE.IUniform> = {}): T {
-  const key = JSON.stringify(opts) + Object.keys(extraUniforms).join(',');
+  // Only options that are on, in a fixed order: `{ ghost: false }` and no ghost
+  // at all are the same shader and must be the same program. A named captain's
+  // dressed paint left `ghost` out, so her hull, woodwork and flag compiled
+  // copies of their own the moment she sailed in, right after the kill that
+  // earned her: a stall of most of a second.
+  const on = (Object.keys(opts) as (keyof PatchOptions)[]).filter((k) => opts[k]).sort();
+  const key = JSON.stringify(on.map((k) => [k, opts[k]])) + Object.keys(extraUniforms).sort().join(',');
   patchInfo.set(mat, { opts, extra: extraUniforms });
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (shader) => {
@@ -592,6 +598,10 @@ varying float vSkinW;
       // darker the deeper it lies
       float aqD = length(aqView);
       vec3 aqCol = gl_FragColor.rgb * exp(-aqD * vec3(0.16, 0.05, 0.035) * 0.55);
+#ifndef AQ_CAUSTICS
+      // sunlight thins on its way down to it too (caustic materials already do this in their lighting)
+      aqCol *= exp(-max(-vAqWorld.y, 0.0) * vec3(0.1, 0.038, 0.026));
+#endif
       vec3 aqWater = uUnderColor * (1.0 - clamp(-vAqWorld.y / 22.0, 0.0, 1.0) * 0.5);
       gl_FragColor.rgb = mix(aqCol, aqWater, 1.0 - exp(-aqD / uUnder.z));
     } else {
@@ -794,16 +804,29 @@ export class SkyEnvironment {
     const r = this.renderer;
     const prev = r.getRenderTarget();
     this.cubeCam.update(r, this.scene);
-    this.rt = this.pmrem.fromCubemap(this.cubeRT.texture, this.rt);
     // three's prefilter takes 256 GGX samples per texel per mip, sized for
     // sharp HDR photos. A smooth sky needs a fraction of that, and this runs
-    // a few times a second: the first refresh (behind the loading screen)
-    // drops it, so the second, also at load, compiles the light version.
-    const ggx = (this.pmrem as unknown as { _ggxMaterial?: THREE.ShaderMaterial | null })._ggxMaterial;
-    if (ggx && ggx.defines.GGX_SAMPLES !== GGX_SAMPLES) {
+    // a few times a second. The filter material only exists once the
+    // generator has its targets, so the first bake (behind the loading screen)
+    // makes them itself and trims the samples before anything compiles. It
+    // used to trim after that bake, and the light version then compiled on
+    // the next refresh, seconds into play: a stall of most of a second.
+    const pm = this.pmrem as unknown as { _ggxMaterial?: THREE.ShaderMaterial | null; _setSize?(size: number): void; _allocateTargets?(): THREE.WebGLRenderTarget };
+    if (!this.rt && pm._setSize && pm._allocateTargets) {
+      pm._setSize(this.cubeRT.width);
+      this.rt = pm._allocateTargets();
+    }
+    const trim = () => {
+      const ggx = pm._ggxMaterial;
+      if (!ggx || ggx.defines.GGX_SAMPLES === GGX_SAMPLES) return false;
       ggx.defines.GGX_SAMPLES = GGX_SAMPLES;
       ggx.needsUpdate = true;
-    }
+      return true;
+    };
+    trim();
+    this.rt = this.pmrem.fromCubemap(this.cubeRT.texture, this.rt);
+    // should three ever stop making them that way: bake again now, still at load
+    if (trim()) this.rt = this.pmrem.fromCubemap(this.cubeRT.texture, this.rt);
     r.setRenderTarget(prev);
     return this.rt.texture;
   }

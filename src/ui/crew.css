@@ -1,0 +1,430 @@
+/* ------------------------------------------------------------------ the crew card (Sail together) */
+
+.crew-card {
+  width: min(calc(540px * var(--u)), 100%);
+}
+
+.crew-body {
+  display: flex;
+  flex-direction: column;
+  gap: calc(14px * var(--u));
+}
+
+.crew-lede {
+  margin: 0;
+  font: 500 calc(14px * var(--t)) / 1.5 var(--sans);
+  color: var(--ink-2);
+}
+
+.crew-name input {
+  font-weight: 700;
+}
+
+.crew-ways {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(12px * var(--u));
+}
+
+@media (max-width: 520px) {
+  .crew-ways {
+    grid-template-columns: 1fr;
+  }
+}
+
+.crew-way {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: calc(6px * var(--u));
+  padding: calc(16px * var(--u));
+  border-radius: calc(18px * var(--u));
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px var(--stroke), var(--hi);
+}
+
+.crew-way.host {
+  background: radial-gradient(120% 90% at 0% 0%, rgba(244, 199, 101, 0.16), rgba(244, 199, 101, 0.02) 60%), rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(244, 199, 101, 0.28), var(--hi);
+}
+
+.crew-way-ico {
+  display: grid;
+  place-items: center;
+  width: calc(40px * var(--u));
+  height: calc(40px * var(--u));
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--gold-hi);
+}
+
+.crew-way-ico .ico {
+  width: 58%;
+  height: 58%;
+}
+
+.crew-way h3 {
+  margin: calc(4px * var(--u)) 0 0;
+  font: 800 calc(16px * var(--t)) var(--sans);
+  color: var(--ink);
+}
+
+.crew-way p {
+  flex: 1;
+  margin: 0 0 calc(6px * var(--u));
+  font: 500 calc(12.5px * var(--t)) / 1.45 var(--sans);
+  color: var(--ink-3);
+}
+
+.crew-way .btn {
+  align-self: stretch;
+}
+
+.crew-join {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8px * var(--u));
+  align-self: stretch;
+}
+
+.crew-join .btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.crew-code {
+  flex: 1;
+  min-width: 0;
+  min-height: calc(46px * var(--u));
+  padding: 0 calc(12px * var(--u));
+  border-radius: calc(14px * var(--u));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(0, 10, 18, 0.4);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25);
+  color: var(--gold-hi);
+  font: 800 calc(18px * var(--t)) var(--sans);
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.crew-code::placeholder {
+  color: var(--ink-4);
+}
+
+.crew-code:focus {
+  outline: none;
+  border-color: rgba(244, 199, 101, 0.6);
+  box-shadow: 0 0 0 3px rgba(244, 199, 101, 0.18), inset 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* hosting: the code, big enough to read out over a call */
+
+.crew-invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(8px * var(--u));
+  padding: calc(18px * var(--u)) calc(16px * var(--u)) calc(16px * var(--u));
+  border-radius: calc(20px * var(--u));
+  background: radial-gradient(90% 120% at 50% 0%, rgba(244, 199, 101, 0.2), rgba(244, 199, 101, 0.03) 70%), rgba(0, 10, 18, 0.3);
+  box-shadow: inset 0 0 0 1px rgba(244, 199, 101, 0.3), var(--hi);
+}
+
+.crew-code-l {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--u));
+  font: 700 calc(11px * var(--t)) var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.crew-code-l .ico {
+  width: calc(15px * var(--u));
+  height: calc(15px * var(--u));
+}
+
+.crew-code-big {
+  font: 800 calc(40px * var(--t)) var(--sans);
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
+  background: var(--gold-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 4px 18px rgba(244, 180, 70, 0.35));
+  user-select: all;
+}
+
+.crew-link {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--u));
+  align-self: stretch;
+  padding: calc(5px * var(--u)) calc(5px * var(--u)) calc(5px * var(--u)) calc(12px * var(--u));
+  border-radius: 999px;
+  background: rgba(0, 10, 18, 0.4);
+  box-shadow: inset 0 0 0 1px var(--stroke);
+  color: var(--ink-3);
+}
+
+.crew-link .ico {
+  flex: none;
+  width: calc(16px * var(--u));
+  height: calc(16px * var(--u));
+}
+
+.crew-link input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: 500 calc(12.5px * var(--t)) var(--sans);
+  text-overflow: ellipsis;
+}
+
+.crew-link input:focus {
+  outline: none;
+}
+
+.crew-link .btn {
+  flex: none;
+}
+
+.crew-link .btn.done {
+  color: var(--aqua);
+  border-color: rgba(94, 227, 212, 0.4);
+}
+
+/* who's aboard */
+
+.crew-list {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6px * var(--u));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.crew-list li {
+  display: flex;
+  align-items: center;
+  gap: calc(11px * var(--u));
+  min-height: calc(48px * var(--u));
+  padding: calc(6px * var(--u)) calc(8px * var(--u)) calc(6px * var(--u)) calc(7px * var(--u));
+  border-radius: calc(14px * var(--u));
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px var(--stroke);
+  animation: rise 0.35s var(--ease);
+}
+
+.crew-list li.empty {
+  background: none;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  border: 0;
+  animation: none;
+  opacity: 0.6;
+}
+
+.crew-list li.empty .acct-av {
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.16);
+  background: none;
+  border: 1.5px dashed rgba(255, 255, 255, 0.2);
+}
+
+.crew-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: calc(8px * var(--u));
+  font: 500 calc(13px * var(--t)) var(--sans);
+  color: var(--ink-3);
+}
+
+.crew-who b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 700 calc(14.5px * var(--t)) var(--sans);
+  color: var(--ink);
+}
+
+.crew-who em {
+  flex: none;
+  padding: calc(2px * var(--u)) calc(7px * var(--u));
+  border-radius: 999px;
+  background: rgba(244, 199, 101, 0.16);
+  color: var(--gold-hi);
+  font: 700 normal calc(10.5px * var(--t)) var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* signal bars: how quickly their ship hears yours */
+.crew-ping {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: calc(14px * var(--u));
+}
+
+.crew-ping i {
+  width: calc(4px * var(--u));
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.crew-ping i:nth-child(1) {
+  height: 40%;
+}
+
+.crew-ping i:nth-child(2) {
+  height: 70%;
+}
+
+.crew-ping i:nth-child(3) {
+  height: 100%;
+}
+
+.crew-ping.good i,
+.crew-ping.ok i:nth-child(-n + 2),
+.crew-ping.slow i:nth-child(1) {
+  background: var(--aqua);
+}
+
+.crew-ping.ok i:nth-child(-n + 2) {
+  background: var(--gold);
+}
+
+.crew-ping.slow i:nth-child(1) {
+  background: var(--coral);
+}
+
+.crew-kick.round-btn {
+  width: calc(32px * var(--u));
+  height: calc(32px * var(--u));
+  color: var(--ink-3);
+}
+
+.crew-kick .ico {
+  width: 50%;
+  height: 50%;
+}
+
+.crew-kick:hover {
+  color: var(--coral);
+}
+
+.crew-foot {
+  display: flex;
+  justify-content: center;
+}
+
+.crew-wait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(14px * var(--u));
+  padding: calc(26px * var(--u)) 0;
+  color: var(--ink-2);
+  font: 600 calc(14px * var(--t)) var(--sans);
+}
+
+.crew-wait p {
+  margin: 0;
+}
+
+.crew-spin {
+  width: calc(38px * var(--u));
+  height: calc(38px * var(--u));
+  border-radius: 50%;
+  border: 3px solid rgba(244, 199, 101, 0.18);
+  border-top-color: var(--gold);
+  animation: crew-spin 0.9s linear infinite;
+}
+
+@keyframes crew-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ------------------------------------------------------------------ the buttons that open it */
+
+.tool.crew-tool.live {
+  color: var(--gold-hi);
+  box-shadow: var(--hi), 0 0 0 1px rgba(244, 199, 101, 0.5), 0 0 22px rgba(244, 190, 80, 0.3);
+}
+
+.icon-btn.crew-btn.live {
+  color: var(--gold-ink);
+  border-color: transparent;
+  background: var(--gold-grad);
+}
+
+/* how many captains share the sea */
+.icon-btn.crew-btn.live::after {
+  content: attr(data-n);
+  position: absolute;
+  right: -3px;
+  top: -3px;
+  display: grid;
+  place-items: center;
+  min-width: max(15px, calc(17px * var(--k)));
+  height: max(15px, calc(17px * var(--k)));
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #0b1d28;
+  box-shadow: 0 0 0 1.5px var(--gold);
+  color: var(--gold-hi);
+  font: 800 max(9px, calc(10px * var(--kt))) var(--sans);
+}
+
+.icon-btn.crew-btn.pulse {
+  animation: crew-pulse 1.1s var(--ease) 2;
+}
+
+@keyframes crew-pulse {
+  40% {
+    transform: scale(1.18);
+    box-shadow: 0 0 0 6px rgba(244, 199, 101, 0.28), 0 0 26px rgba(244, 199, 101, 0.5);
+  }
+}
+
+/* ------------------------------------------------------------------ crewmates at sea: a gold name tag over her */
+
+.ebar.mate {
+  background: rgba(30, 22, 4, 0.62);
+  box-shadow: 0 0 0 1px rgba(255, 220, 140, 0.35), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.ebar.mate i {
+  background: linear-gradient(90deg, #e0a443, #ffe7a8);
+  box-shadow: 0 0 8px rgba(244, 199, 101, 0.55);
+}
+
+.ebar.mate span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  bottom: 11px;
+  font: 700 10px var(--serif);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  color: rgba(255, 238, 200, 0.82);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
+.ebar.mate span em {
+  font: 800 normal 12.5px var(--sans);
+  letter-spacing: 0.02em;
+  color: #ffe7a8;
+  text-shadow: 0 0 10px rgba(244, 180, 70, 0.7), 0 1px 4px rgba(0, 0, 0, 0.9);
+}

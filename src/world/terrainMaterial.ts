@@ -17,6 +17,9 @@ import { GLSL_SURF, shoreUniforms } from './shore';
 //   aqAO    baked horizon AO
 //   aqCanopy  tree cover (0..1): mossy forest floor and leaf litter under crowns
 //   aqReef    open-sea coral reef (0..1): a dense living carpet of coral heads
+//   aqErode   what the rain carved (Terrain.erode): + bare spur, - green gully
+//   aqBiome   archipelago: 0 the home isles, 1 Las Brumas (pink coral sand,
+//             jade turf, pale limestone towers streaked grey by the rain)
 
 function lin(hex: number): string {
   const c = new THREE.Color(hex).convertSRGBToLinear();
@@ -50,12 +53,20 @@ const vec3 T_FLOWER_C = ${lin(0xff7aa8)};
 const vec3 T_ROCK = ${lin(0xaaa192)};
 const vec3 T_ROCK_DARK = ${lin(0x7a736a)};
 const vec3 T_MOSS = ${lin(0x5d8f3e)};
-const vec3 T_SANDSTONE = ${lin(0xdca06a)};
-const vec3 T_SANDSTONE_DARK = ${lin(0xb07a58)};
-const vec3 T_SANDSTONE_PALE = ${lin(0xf0c896)};
+const vec3 T_LIME = ${lin(0xe8d6b2)};
+const vec3 T_LIME_GREY = ${lin(0xbfae94)};
+const vec3 T_LIME_WARM = ${lin(0xdcaa76)};
+const vec3 T_LIME_STAIN = ${lin(0x6e665a)};
+const vec3 T_LIME_MOSS = ${lin(0x4f8a3a)};
 const vec3 T_BASALT = ${lin(0x7d726a)};
 const vec3 T_SCORIA = ${lin(0x8d5a44)};
 const vec3 T_ASH = ${lin(0x9a9186)};
+const vec3 T_SAND_PINK = ${lin(0xf6d9cf)};
+const vec3 T_SAND_ROSE = ${lin(0xe8b4a4)};
+const vec3 T_MIST_LIME = ${lin(0xdcd6c6)};
+const vec3 T_MIST_LIME_WARM = ${lin(0xe6d6b6)};
+const vec3 T_MIST_LIME_STAIN = ${lin(0x7f8078)};
+const vec3 T_MIST_LIME_MOSS = ${lin(0x557f45)};
 `;
 
 const FRAG_HEAD = /* glsl */ `
@@ -63,6 +74,8 @@ varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqCanopy;
 varying float vAqReef;
+varying float vAqErode;
+varying float vAqBiome;
 ${PALETTE}
 ${GLSL_SURF}
 // the swash cycle, as fractions of a wave period: the sheet runs up until
@@ -115,6 +128,8 @@ const FRAG_ALBEDO = /* glsl */ `
 
   // ---------------------------------------------------------------- sand
   vec3 sand = mix(T_SAND, T_SAND_WARM, smoothstep(0.38, 0.68, nS.g) * 0.75);
+  // Las Brumas: sand ground from pink coral and shell, rosier in drifts
+  sand = mix(sand, mix(T_SAND_PINK, T_SAND_ROSE, smoothstep(0.42, 0.7, nS.g) * 0.7), vAqBiome);
   sand *= 0.94 + nF.a * 0.12;
   // wind-combed ripples: strong in the shallows, a whisper on dry beach
   float rph = dot(xz, vec2(0.79, 0.61)) * 2.4 + (nD.g - 0.5) * 7.0 + (nS.r - 0.5) * 14.0;
@@ -172,10 +187,19 @@ const FRAG_ALBEDO = /* glsl */ `
   vec3 g = mix(T_GRASS, T_GRASS_LIGHT, smoothstep(0.46, 0.66, nS.r + (nD.g - 0.5) * 0.12) * 0.5);
   g = mix(g, T_GRASS_DRY, smoothstep(0.52, 0.66, nM.r + tint * 0.14 + (nD.g - 0.5) * 0.1) * 0.7);
   g = mix(g, T_GRASS_DEEP, smoothstep(0.5, 0.62, 1.0 - nS.g + (nD.r - 0.5) * 0.1) * 0.6);
+  // Las Brumas: wetter, bluer jade turf
+  g = mix(g, g * vec3(0.74, 1.0, 0.86), vAqBiome);
   float jungle = smoothstep(3.5, 10.0, h) * smoothstep(0.44, 0.58, nM.g + (nD.g - 0.5) * 0.08) * (1.0 - kA);
   g = mix(g, T_JUNGLE, jungle * 0.8);
   // sun-cured grass up on the high lush ridges
   g = mix(g, T_GRASS_GOLD, smoothstep(14.0, 32.0, h + (nM.g - 0.5) * 10.0) * 0.42 * kL);
+  // the rain's work: deep, damp green down every gully, sunlit and a little
+  // drier along the spurs between them, so each hillside reads as ribs
+  float ero = vAqErode;
+  float gully = smoothstep(-0.05, -0.6, ero + (nD.r - 0.5) * 0.2);
+  float spur = smoothstep(0.1, 0.65, ero + (nD.r - 0.5) * 0.2);
+  g = mix(g, T_JUNGLE * 0.9, gully * 0.5);
+  g = mix(g, mix(T_GRASS_LIGHT, T_GRASS_GOLD, 0.35 + kV * 0.4), spur * 0.32);
   // forest floor under the trees: deep moss with drifts of fallen leaves
   float under = smoothstep(0.15, 0.85, vAqCanopy + (nD.g - 0.5) * 0.35) * (1.0 - kA);
   vec3 floorC = mix(T_FOREST_FLOOR, T_LEAF_LITTER, smoothstep(0.52, 0.7, nF.r + (nD.a - 0.5) * 0.3) * 0.75);
@@ -214,10 +238,6 @@ const FRAG_ALBEDO = /* glsl */ `
   vec2 ruv = xz + vec2(0.0, h * 0.35); // a little height so stacked ledges differ
   vec4 nR = texture(uNoiseTex, ruv * 0.07 + vec2(0.27, 0.6)); // ~1 m crack cells
   vec4 nR2 = texture(uNoiseTex, ruv * 0.045 + (nW.rg - 0.5) * 0.4 + vec2(0.8, 0.4));
-  float strataPh = h * 1.9 + (nR2.g - 0.5) * 4.0;
-  float strata = sin(strataPh) * 0.5 + 0.5;
-  float sFade = 1.0 - smoothstep(0.8, 1.8, fwidth(strataPh));
-  strata = mix(0.5, strata, sFade);
   vec4 nCol = texture(uNoiseTex, ruv * 0.055 + vec2(0.13, 0.91)); // ~1.3 m basalt columns
   float cells = mix(nR.b, nCol.b, kV);
   float crack = smoothstep(0.55, 0.75, cells);
@@ -225,22 +245,52 @@ const FRAG_ALBEDO = /* glsl */ `
   vec3 rLush = mix(T_ROCK, T_ROCK_DARK, smoothstep(0.4, 0.7, nR2.g) * 0.65);
   rLush *= 1.0 - crack * 0.3;
   rLush = mix(rLush, T_MOSS, smoothstep(0.75, 0.9, wn.y + (nR.g - 0.5) * 0.35) * 0.7);
-  vec3 rSand = mix(T_SANDSTONE_DARK, T_SANDSTONE, smoothstep(0.25, 0.75, strata));
-  rSand = mix(rSand, T_SANDSTONE_PALE, smoothstep(0.82, 0.95, strata) * 0.7);
-  rSand *= 0.92 + nR.a * 0.16;
+  // Karst limestone: pale weathered stone in beds of uneven thickness (a 1D
+  // slice of the noise up the face, gently dipping across the isle), warm
+  // iron stains in places, dark rain streaks hanging down the walls and moss
+  // on every ledge and down the runnels.
+  float bedPh = (h + (nR2.g - 0.5) * 2.4 + (nM.b - 0.5) * 6.0 + dot(xz, vec2(0.05, 0.03))) * 0.012;
+  vec4 nB = texture(uNoiseTex, vec2(bedPh, 0.37 + tint * 0.1));
+  float beds = nB.a * 0.55 + nB.g * 0.45;
+  vec3 rSand = mix(T_LIME_GREY, T_LIME, smoothstep(0.32, 0.68, nM.g + (nS.r - 0.5) * 0.4));
+  rSand = mix(rSand, T_LIME_WARM, smoothstep(0.5, 0.74, nR2.r + (nS.b - 0.5) * 0.3) * (0.45 + 0.3 * tint));
+  rSand *= 0.86 + smoothstep(0.3, 0.7, beds) * 0.22 + nR.a * 0.06;
+  float streak = 0.0;
+  #ifndef AQ_TERRAIN_LITE
+  // streaks run down the face, so they follow the face's own horizontal axis
+  float wx = smoothstep(-0.2, 0.2, abs(wn.x) - abs(wn.z));
+  vec2 sk = vec2(mix(xz.x, xz.y, wx) * 0.21, h * 0.007);
+  streak = texture(uNoiseTex, sk + vec2(0.13, 0.57)).a * 0.55 + texture(uNoiseTex, sk * vec2(0.4, 1.0) + vec2(0.71, 0.2)).g * 0.45;
+  streak = smoothstep(0.5, 0.7, streak) * smoothstep(0.3, 0.6, slope);
+  rSand = mix(rSand, T_LIME_STAIN, streak * 0.32);
+  #endif
+  rSand = mix(rSand, T_LIME_MOSS, clamp(smoothstep(0.58, 0.8, wn.y + (nR.g - 0.5) * 0.3) * 0.8 + smoothstep(-0.2, -0.75, vAqErode) * 0.35, 0.0, 0.85));
   vec3 rVol = mix(T_ASH, T_BASALT, smoothstep(6.0, 30.0, h) * 0.7 + 0.3);
   rVol = mix(rVol, T_SCORIA, smoothstep(0.55, 0.7, nR2.r + vAqInfo.y * 0.25) * 0.7);
   rVol *= 0.92 + (1.0 - cells) * 0.14; // basalt column tops catch light
+  // weathered, ashy spurs between dark, damp ravines
+  rVol *= 0.88 + smoothstep(-0.6, 0.6, vAqErode) * 0.24;
   // streaks of ash washing downhill
   #ifndef AQ_TERRAIN_LITE
   rVol = mix(rVol, T_ASH, smoothstep(0.6, 0.75, texture(uNoiseTex, vec2(xz.x * 0.06 + xz.y * 0.02, h * 0.012)).g) * 0.35);
   #endif
   vec3 rock = rLush * kL + rLush * kA + rSand * kR + rVol * kV;
+  if (vAqBiome > 0.01) {
+    // limestone: pale stone in soft bands, long grey rain stains running down
+    // the walls (noise stretched along height), ferns and moss on every ledge
+    float stain = smoothstep(0.5, 0.78, texture(uNoiseTex, vec2(xz.x * 0.11 + xz.y * 0.07, h * 0.006 + xz.y * 0.013)).g + (nR.a - 0.5) * 0.2);
+    vec3 lime = mix(T_MIST_LIME, T_MIST_LIME_WARM, smoothstep(0.35, 0.75, beds) * 0.5);
+    lime = mix(lime, T_MIST_LIME_STAIN, stain * 0.62);
+    lime *= 1.0 - crack * 0.22;
+    lime = mix(lime, T_MIST_LIME_MOSS, smoothstep(0.62, 0.86, wn.y + (nR.g - 0.5) * 0.4) * 0.8);
+    rock = mix(rock, lime, vAqBiome * (1.0 - kV));
+  }
   float fineFade = 1.0 - smoothstep(0.1, 0.25, fp);
-  float bRock = mix(-crack * 0.2 * fineFade + nR.a * 0.08 * fineFade, (strata - 0.5) * 0.28 + nR.a * 0.05 * fineFade, kR)
+  float bRock = mix(-crack * 0.2 * fineFade + nR.a * 0.08 * fineFade, (beds - 0.5) * 0.2 - crack * 0.1 * fineFade + nR.a * 0.06 * fineFade - streak * 0.03, kR)
     + kV * ((1.0 - cells) * 0.22) * (1.0 - smoothstep(0.25, 0.6, fp));
 
-  float rn = (nD.g - 0.5) * 0.26;
+  // spurs go bare a little sooner, gullies hold their green on steeper ground
+  float rn = (nD.g - 0.5) * 0.26 + vAqErode * 0.09;
   float rockT = smoothstep(0.26, 0.33, slope + rn);
   rockT = max(rockT, smoothstep(0.32, 0.42, vAqInfo.y + rn));
   rockT = max(rockT, kR * smoothstep(0.18, 0.24, slope + rn)); // sandstone isles show more cliff
@@ -364,13 +414,17 @@ attribute vec3 aqInfo;
 attribute float aqAO;
 attribute float aqCanopy;
 attribute float aqReef;
+attribute float aqErode;
+attribute float aqBiome;
+varying float vAqBiome;
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqAO;
 varying float vAqCanopy;
-varying float vAqReef;`,
+varying float vAqReef;
+varying float vAqErode;`,
       )
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;\nvAqReef = aqReef;');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;\nvAqReef = aqReef;\nvAqErode = aqErode;\nvAqBiome = aqBiome;');
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', `${lite ? '#define AQ_TERRAIN_LITE\n' : ''}varying float vAqAO;\n${FRAG_HEAD}\nvoid main() {`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_ALBEDO}`)

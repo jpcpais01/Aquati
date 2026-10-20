@@ -147,6 +147,70 @@ const strand = (p: number[], r: number) => {
   return out;
 };
 
+// ------------------------------------------------- the second manifest's kit
+
+// A square ship's biscuit with its docking holes, lying a little askew.
+const bisc = (x: number, y: number, w: number, rot: number) => {
+  const h = w / 2;
+  let holes = '';
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) holes += `<circle cx="${n(i * w * 0.27)}" cy="${n(j * w * 0.27)}" r="0.55"/>`;
+  return `<g transform="translate(${x} ${y}) rotate(${rot})"><rect x="${-h}" y="${n(-h + 1.5)}" width="${w}" height="${w}" rx="2.2" fill="#8e5e26"/><rect x="${-h}" y="${-h}" width="${w}" height="${w}" rx="2.2" fill="${u('hb')}" ${sk('#7a4c1c', 0.45)}/><rect x="${n(-h + 1)}" y="${n(-h + 1)}" width="${w - 2}" height="${w - 2}" rx="1.6" ${ol('#fff2c8', 0.5)} opacity="0.45"/><g fill="#9a6428">${holes}</g></g>`;
+};
+
+const orange = (x: number, y: number, r: number, leaf = false) =>
+  `<circle cx="${x}" cy="${y}" r="${r}" fill="${u('or')}" ${sk('#a8440a', 0.4)}/><g fill="#c8580e" opacity="0.4"><circle cx="${n(x + r * 0.3)}" cy="${n(y + r * 0.2)}" r="0.3"/><circle cx="${n(x - r * 0.2)}" cy="${n(y + r * 0.45)}" r="0.3"/><circle cx="${n(x + r * 0.5)}" cy="${n(y - r * 0.15)}" r="0.25"/></g>${shine(x - r * 0.4, y - r * 0.42, r * 0.28, 0.55)}${leaf ? `<path d="M${x} ${n(y - r + 0.4)}q1.8-2.8 4.6-2q-1.2 2.8-4.6 2z" fill="#3a9a3a" ${sk('#1a5a1a', 0.35)}/><path d="M${x} ${n(y - r + 0.4)}l-.4-1.4" ${sk('#5a3a14', 0.6)}${RC}/>` : `<circle cx="${n(x + r * 0.1)}" cy="${n(y - r * 0.82)}" r="0.45" fill="#5a7a1a"/>`}`;
+
+// A cowrie: its spotted back, or flipped to show the toothed slit.
+const cowrie = (x: number, y: number, rot: number, s: number, belly = false) =>
+  `<g transform="translate(${x} ${y}) rotate(${rot}) scale(${s})"><ellipse cy="0.7" rx="4.4" ry="3" fill="#7a5226" opacity="0.6"/><ellipse rx="4.4" ry="3" fill="${u(belly ? 'cwb' : 'cw')}" ${sk('#8a5a2a', 0.35)}/>${
+    belly
+      ? `<path d="M-3.4 0.2Q0 -0.6 3.4 0.2" ${ol('#5a3410', 0.6)}${RC}/><path d="M-2.4 -0.5v.7M-1.2 -0.6v.7M0 -0.6v.7M1.2 -0.6v.7M2.4 -0.5v.7M-2 0.6v.6M-0.7 0.6v.6M0.7 0.6v.6M2 0.6v.6" ${sk('#a07a4a', 0.35)}/>`
+      : `<g fill="#a8682a" opacity="0.55"><circle cx="-1.6" cy="-0.6" r="0.5"/><circle cx="0.6" cy="-1.2" r="0.4"/><circle cx="1.8" cy="0.4" r="0.45"/><circle cx="-0.4" cy="0.9" r="0.35"/><circle cx="-2.6" cy="0.6" r="0.3"/></g><path d="M-4 0.3Q0 2.6 4 0.3" ${ol('#e8c890', 0.5)} opacity="0.7"/>`
+  }<ellipse cx="-1.4" cy="-1.3" rx="1.5" ry="0.6" fill="#fff" opacity="0.75" transform="rotate(-12 -1.4 -1.3)"/></g>`;
+
+// A stamped bar of silver, front, top and right faces.
+const ingot = (x: number, y: number, w: number) => {
+  const h = 4.4, t = 1.6, dx = 2.6, dy = -2.4;
+  const P = (pts: number[]) => pts.map(n).join(' ');
+  return `<polygon points="${P([x + w, y, x + w + dx, y + dy, x + w - t + dx, y - h + dy, x + w - t, y - h])}" fill="#5e6874" ${sk('#2e3640', 0.4)}${LJ}/><polygon points="${P([x + t, y - h, x + w - t, y - h, x + w - t + dx, y - h + dy, x + t + dx, y - h + dy])}" fill="${u('ig')}" ${sk('#2e3640', 0.4)}${LJ}/><polygon points="${P([x, y, x + w, y, x + w - t, y - h, x + t, y - h])}" fill="${u('if')}" ${sk('#2e3640', 0.45)}${LJ}/><ellipse cx="${n(x + w / 2 + dx / 2)}" cy="${n(y - h + dy / 2)}" rx="2" ry="0.8" ${ol('#6a7682', 0.45)}/><path d="M${n(x + t + 0.6)} ${n(y - h + 0.6)}H${n(x + w - t - 0.6)}" ${sk('#fff', 0.5)} opacity="0.8"/>`;
+};
+
+// A quaver for the music box.
+const note = (x: number, y: number, s: number, c: string) =>
+  `<g transform="translate(${x} ${y}) scale(${s})" fill="${c}"><ellipse cx="0" cy="0" rx="1.5" ry="1.1" transform="rotate(-20)"/><path d="M1.2 -0.3V-6.4q2.4 1 2.6 3.2q-.8-1.4-2-1.6V-0.3z"/></g>`;
+
+// The Heart of Aguadouro, face up: a heart-cut brilliant, lit from the upper left.
+const heart = (() => {
+  const N = 28, cx = 20, cy = 18.4, S = 0.86;
+  const at = (k: number, sc: number) => {
+    const t = (k / N) * Math.PI * 2;
+    const x = 16 * Math.sin(t) ** 3, y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+    return [cx + x * S * sc, cy + y * S * sc + (1 - sc) * 1.2];
+  };
+  const tone = (a: number, b: number[], lift: number) => {
+    // brightness by how much the facet faces the light, up and to the left
+    const mx = (a + b[0]) / 2 - cx, my = b[1] - cy;
+    const f = Math.max(0, Math.min(1, 0.5 - (mx * 0.6 + my * 0.8) / 22 + lift));
+    const c = [[10, 40, 110], [80, 150, 230], [190, 230, 255], [255, 255, 255]];
+    const i = Math.min(2, Math.floor(f * 3)), k = f * 3 - i;
+    return `rgb(${c[i].map((v, j) => Math.round(v + (c[i + 1][j] - v) * k)).join(',')})`;
+  };
+  let out = '';
+  const outer = Array.from({ length: N }, (_, k) => at(k, 1)), inner = Array.from({ length: N }, (_, k) => at(k, 0.55));
+  for (let k = 0; k < N; k++) {
+    const k2 = (k + 1) % N;
+    const [a, b, c, d] = [outer[k], outer[k2], inner[k2], inner[k]];
+    out += `<polygon points="${[a, b, c, d].map((p) => p.map(n).join(' ')).join(' ')}" fill="${tone(a[0], a, k % 2 ? 0.12 : -0.12)}"/>`;
+    out += `<polygon points="${[d, c, [cx, cy + 1]].map((p) => p.map(n).join(' ')).join(' ')}" fill="${tone(d[0], d, k % 2 ? 0.2 : 0.02)}" opacity="0.9"/>`;
+  }
+  const rim = outer.map((p) => p.map(n).join(' ')).join(' ');
+  return `${out}<polygon points="${inner.map((p) => p.map(n).join(' ')).join(' ')}" fill="#dff2ff" opacity="0.35"/><polygon points="${rim}" ${ol('#0a2a6a', 0.6)}${LJ}/><polygon points="${rim}" ${ol('#eaf6ff', 0.3)} opacity="0.7"${LJ}/>`;
+})();
+
+const PEARL: Stop[] = [[0, '#ffffff'], [0.55, '#f2ece4'], [1, '#a8a0b0']];
+const JADE: Stop[] = [[0, '#d8ffd6'], [0.35, '#6ad08a'], [0.75, '#228a54'], [1, '#0a4a2c']];
+const WOOD: Stop[] = [[0, '#b0683a'], [0.55, '#743818'], [1, '#3e1a08']];
+
 const ART: Record<LootId, string> = {
   // ---------------------------------------------------------------- common
   rum: `<defs>${lin('rb', [[0, '#dca060'], [0.45, '#9a5a2a'], [1, '#4a250e']])}${rad('rf', [[0, '#f4cc94'], [0.6, '#c48450'], [1, '#7a4620']], 0.42, 0.4, 0.7)}${lin('rh', [[0, '#9aa2ac'], [0.5, '#40464c'], [1, '#1c1f22']])}${rad('rd', [[0, '#ffe7a8'], [0.6, '#e8901a'], [1, '#8a3a06']], 0.35, 0.35, 0.8)}</defs>
@@ -543,6 +607,499 @@ const ART: Record<LootId, string> = {
   <path d="M16.4 26.6Q20 28.8 23.6 26.6Q20 26 16.4 26.6z" fill="#2a1404" ${sk('#8a5408', 0.4)}/>
   <path d="M14.6 29.6l.8 1.6M20 30.8v1.6M25.4 29.6l-.8 1.6" ${sk('#8a5408', 0.6)}${RC}/>
   ${shine(14.2, 12.4, 1.6, 0.65)}${spark(35, 5, 2.4)}${spark(5, 33, 1.6)}`,
+
+  // ================================================ the second manifest
+  // ---------------------------------------------------------------- common
+  hardtack: `<defs>${lin('hb', [[0, '#fbe6b0'], [0.55, '#e2b46a'], [1, '#b8803c']], 1, 1)}</defs>
+  ${shadow(20, 34.6, 15, 2.2)}
+  ${bisc(13, 26, 12, -9)}${bisc(27, 27.4, 11.4, 12)}${bisc(19.6, 17.6, 12.4, 5)}
+  <g fill="#d8a85a"><circle cx="7" cy="34" r="0.7"/><circle cx="33.6" cy="34.2" r="0.6"/><circle cx="31.4" cy="35" r="0.4"/></g>
+  <g transform="translate(23.4 13.4) rotate(-30)"><ellipse rx="1.3" ry="0.75" fill="#4a2a12"/><circle cx="1.3" r="0.5" fill="#4a2a12"/><path d="M1.6 -0.2l1.1-.5" ${sk('#4a2a12', 0.3)}${RC}/><path d="M-0.6 0.7l-.3.6M0.3 0.7l.1.7M-0.6 -0.7l-.3-.6M0.3 -0.7l.1-.7" ${sk('#4a2a12', 0.25)}/></g>
+  ${shine(15.6, 13.4, 1.2, 0.4)}`,
+
+  oranges: `<defs>${rad('or', [[0, '#ffd88a'], [0.45, '#ff9a1e'], [1, '#c8520a']], 0.38, 0.32, 0.8)}${lin('ow', [[0, '#e2b070'], [1, '#9a6430']])}</defs>
+  ${shadow(20, 35, 16, 2.2)}
+  <path d="M6.8 20.4H33.2L32.2 33.6H7.8z" fill="#5a3412"/>
+  ${orange(11.6, 19.4, 4.2)}${orange(28.4, 19.6, 4.2)}${orange(17, 17.4, 4.4)}${orange(23.4, 17, 4.4, true)}${orange(20, 21, 4)}
+  <path d="M6.4 22.4H33.6L33 26.6H7z" fill="${u('ow')}" ${sk('#5a3412', 0.5)}${LJ}/>
+  <path d="M7.2 27.6H32.8L32.2 33.6H7.8z" fill="${u('ow')}" ${sk('#5a3412', 0.5)}${LJ}/>
+  <path d="M7.4 23.6H32.6M8 28.8H32" ${sk('#f6d4a0', 0.5)} opacity="0.6"/>
+  <g fill="#4a2a0e"><circle cx="9.4" cy="24.4" r="0.45"/><circle cx="30.6" cy="24.4" r="0.45"/><circle cx="9.8" cy="30.6" r="0.45"/><circle cx="30.2" cy="30.6" r="0.45"/></g>
+  <path d="M15.4 29.4h9.2v2.8h-9.2z" fill="#f2e2b8" opacity="0.85"/><circle cx="20" cy="30.8" r="1" fill="#f58a1a"/>
+  ${orange(33.2, 32.4, 3.4, true)}`,
+
+  saltfish: `<defs>${lin('sf', [[0, '#f6efe0'], [0.5, '#d8c8a8'], [1, '#9a8462']], 0.2, 1)}${lin('sf2', [[0, '#e0d2b2'], [1, '#8a7452']], 0.2, 1)}</defs>
+  ${shadow(20, 35, 15, 2.2)}
+  <g transform="translate(21 26.4) rotate(4) scale(0.92)" ${sk('#6a5434', 0.5)}${LJ}>
+    <path d="M14 0Q8 -6.5 -2 -6Q-9 -5 -12 -1.5L-16 -6L-15 0L-16 6L-12 1.5Q-9 5 -2 6Q8 6.5 14 0z" fill="${u('sf2')}"/>
+    <path d="M6 -5Q4 0 6 5" fill="none"/><circle cx="9.6" cy="-1.4" r="0.9" fill="#3a2a14" stroke="none"/>
+  </g>
+  <g transform="translate(19.4 16.6) rotate(-14)" ${sk('#6a5434', 0.5)}${LJ}>
+    <path d="M14 0Q8 -6.5 -2 -6Q-9 -5 -12 -1.5L-16 -6L-15 0L-16 6L-12 1.5Q-9 5 -2 6Q8 6.5 14 0z" fill="${u('sf')}"/>
+    <path d="M-2 -6Q1 -8.6 4.6 -6.2M-1 6Q1.6 8 4 6" fill="#c8b48e"/>
+    <path d="M6 -5Q4 0 6 5" fill="none"/>
+    <path d="M-10 0H5" fill="none" stroke="#b8a27a" stroke-dasharray="1 1"/>
+    <circle cx="9.6" cy="-1.4" r="1" fill="#3a2a14" stroke="none"/><circle cx="9.3" cy="-1.7" r="0.3" fill="#fff" stroke="none"/>
+  </g>
+  <g fill="#fff">${Array.from({ length: 14 }, () => `<rect x="${n(8 + rnd() * 22)}" y="${n(13 + rnd() * 16)}" width="0.7" height="0.7" opacity="${n(0.5 + rnd() * 0.5)}"/>`).join('')}</g>
+  <g fill="#fff" ${sk('#c8d4dc', 0.25)}><rect x="27" y="32.4" width="1.6" height="1.6" transform="rotate(20 27.8 33.2)"/><rect x="30" y="33.4" width="1.2" height="1.2"/><rect x="9" y="33" width="1.3" height="1.3" transform="rotate(-15 9.6 33.6)"/></g>
+  ${shine(20.4, 12.4, 1.4, 0.45)}`,
+
+  coconuts: `<defs>${rad('cg', [[0, '#c8f08a'], [0.5, '#6aaa3a'], [1, '#2a5a16']], 0.36, 0.3, 0.8)}${rad('cbr', [[0, '#c89060'], [0.6, '#7a4a22'], [1, '#3a1e0a']], 0.38, 0.3, 0.8)}${lin('cfl', [[0, '#ffffff'], [1, '#e8e0cc']])}</defs>
+  ${shadow(20, 35, 16, 2.2)}
+  <circle cx="13.6" cy="22.4" r="8.4" fill="${u('cg')}" ${sk('#1e4a10', 0.5)}/>
+  <path d="M8 18Q13.6 14.4 19.4 18" ${ol('#a8d870', 0.6)} opacity="0.5"/>
+  <circle cx="13.6" cy="14.6" r="1.6" fill="#8a6a2a" ${sk('#4a3410', 0.35)}/>
+  <circle cx="27.2" cy="21.6" r="7.4" fill="${u('cg')}" ${sk('#1e4a10', 0.5)}/>
+  <circle cx="28" cy="14.8" r="1.4" fill="#8a6a2a" ${sk('#4a3410', 0.35)}/>
+  ${shine(10, 18.6, 2.2, 0.4)}${shine(24.4, 18, 1.8, 0.35)}
+  <path d="M14.4 28.6Q15.4 35.4 22.4 35.4Q29.4 35.4 30.4 28.6z" fill="${u('cbr')}" ${sk('#2a1406', 0.5)}/>
+  <path d="M17 31.4l1.2 1M21 32.4l.4 1.4M25.6 32l-.6 1.2M28 30.6l-1 .8" ${sk('#c8a070', 0.4)} opacity="0.7"/>
+  <ellipse cx="22.4" cy="28.6" rx="8" ry="2.4" fill="${u('cfl')}" ${sk('#5a3410', 0.5)}/>
+  <ellipse cx="22.4" cy="28.8" rx="6" ry="1.5" fill="#e6eef0"/><ellipse cx="21.4" cy="28.5" rx="2.6" ry="0.5" fill="#fff" opacity="0.9"/>`,
+
+  rope: `<defs>${lin('rr', [[0, '#e8c27a'], [1, '#9a6a2a']])}</defs>
+  ${shadow(20, 34.4, 16, 2.4)}
+  ${[0, 1].map((L) => [14.4, 11.2, 8, 4.8].map((R) => `<ellipse cx="20" cy="${26 - L * 3.2}" rx="${R}" ry="${n(R * 0.48)}" ${ol('#4a2e0e', 3.6)}/><ellipse cx="20" cy="${26 - L * 3.2}" rx="${R}" ry="${n(R * 0.48)}" ${ol(u('rr'), 2.6)}/><ellipse cx="20" cy="${26 - L * 3.2}" rx="${R}" ry="${n(R * 0.48)}" ${ol('#fbe2a8', 1.2)} stroke-dasharray="0.9 1.3" opacity="${L ? 0.85 : 0.5}"/>`).join('')).join('')}
+  <ellipse cx="20" cy="22.8" rx="2.6" ry="1.2" fill="#2a1804"/>
+  <path d="M5.6 26Q4 31 9.6 32.6T22 33.4Q28 34 33.6 31.8" ${ol('#4a2e0e', 3.6)}${RC}/>
+  <path d="M5.6 26Q4 31 9.6 32.6T22 33.4Q28 34 33.6 31.8" ${ol(u('rr'), 2.6)}${RC}/>
+  <path d="M5.6 26Q4 31 9.6 32.6T22 33.4Q28 34 33.6 31.8" ${ol('#fbe2a8', 1.2)} stroke-dasharray="0.9 1.3"/>
+  <path d="M33.6 31.8l2.6-1.6M33.8 32.4l2.8-.2M33.4 31.2l2-2.4" ${ol('#c8984e', 0.6)}${RC}/>
+  <path d="M10 18.4Q20 15.6 30 18.4" ${ol('#fff', 0.7)} opacity="0.4"${RC}/>`,
+
+  cider: `<defs>${lin('jc', [[0, '#fbf2dc'], [0.5, '#e8d6ae'], [1, '#a8906a']], 1, 0)}${lin('jg', [[0, '#c8783a'], [0.5, '#8a4a1c'], [1, '#4a2208']], 1, 0)}${rad('ap', [[0, '#ffb0a0'], [0.45, '#e2322a'], [1, '#7a0a0e']], 0.36, 0.3, 0.8)}${rad('ag2', [[0, '#f0ffb0'], [0.5, '#9ad040'], [1, '#4a7a10']], 0.36, 0.3, 0.8)}</defs>
+  ${shadow(19, 35, 15, 2.2)}
+  <path d="M24.4 13Q31.4 12.4 30.6 18.4Q30 22.4 25.6 23.6" ${ol('#4a2208', 3.6)}${RC}/><path d="M24.4 13Q31.4 12.4 30.6 18.4Q30 22.4 25.6 23.6" ${ol(u('jg'), 2.4)}${RC}/>
+  <path d="M14.4 8H21.6V11Q28 14 28 23Q28 32 24 34H12Q8 32 8 23Q8 14 14.4 11z" fill="${u('jc')}" ${sk('#5a4426', 0.55)}${LJ}/>
+  <path d="M14.4 8H21.6V11Q25.6 12.8 27 16.6Q25 18.6 23.4 17.2Q21.6 19.8 19.6 17.6Q17.4 19.4 15.6 17.4Q13 19.2 11.4 17.2Q10.2 18.2 9 17.4Q10.4 12.8 14.4 11z" fill="${u('jg')}" ${sk('#3a1a06', 0.5)}${LJ}/>
+  <path d="M12.6 25.4l2.6 3.6M15.2 25.4l-2.6 3.6M17.6 25.4l2.6 3.6M20.2 25.4l-2.6 3.6" ${sk('#6a3a14', 0.8)}${RC}/>
+  <rect x="14.6" y="5" width="6.8" height="3.6" rx="1" fill="#c8a06a" ${sk('#5a3a14', 0.45)}/>
+  <rect x="10" y="17.6" width="1.4" height="12.6" rx="0.7" fill="#fff" opacity="0.5"/>${shine(15.6, 12.4, 1.1, 0.45)}
+  <circle cx="33" cy="31.4" r="3.8" fill="${u('ap')}" ${sk('#5a0408', 0.4)}/><path d="M33 27.8q.2-1.6 1-2.2" ${sk('#5a3a14', 0.6)}${RC}/>${shine(31.6, 30, 0.9, 0.6)}
+  <circle cx="26.8" cy="32.8" r="2.8" fill="${u('ag2')}" ${sk('#3a5a08', 0.4)}/><path d="M26.8 30.2l-.2-1.2" ${sk('#5a3a14', 0.5)}${RC}/>`,
+
+  cowries: `<defs>${rad('cw', [[0, '#fffaf0'], [0.5, '#f0d8a8'], [1, '#b8864a']], 0.4, 0.3, 0.8)}${rad('cwb', [[0, '#ffffff'], [0.6, '#f6ead2'], [1, '#c8a878']], 0.4, 0.3, 0.8)}${rad('cp2', [[0, '#d8b080'], [0.55, '#9a6a3a'], [1, '#4a2a12']], 0.4, 0.35, 0.8)}</defs>
+  ${shadow(20, 35, 16, 2.2)}
+  <path d="M27.4 31Q34 31 34.2 25Q34.4 19 30 14.6L26.6 11.8Q24 10.6 22.4 12.4L20.4 15Q16.6 21.4 18.6 27Q21 31 27.4 31z" fill="${u('cp2')}" ${sk('#3a1e0a', 0.5)}/>
+  <path d="M22.6 12.6Q25.4 15 27.4 12.2" ${ol('#e8c890', 1.2)}${RC}/>
+  <path d="M21 20Q26 22 32 18.6" ${ol('#5a3410', 0.5)} opacity="0.5"/>
+  ${cowrie(24, 13.4, 10, 0.75)}${cowrie(28.6, 14.4, -20, 0.7, true)}
+  ${cowrie(9.6, 31.4, -12, 1)}${cowrie(18.8, 32.2, 8, 1, true)}${cowrie(28.4, 33, -6, 0.9)}${cowrie(13.6, 25.6, 24, 0.95)}${cowrie(6.6, 25, -40, 0.8, true)}${cowrie(34.4, 31.4, 30, 0.75)}
+  <path d="M10 20Q13 17 16.6 18.6" ${ol('#c8a06a', 0.6)} stroke-dasharray="1 0.8"/>`,
+
+  tankard: `<defs>${lin('pw', [[0, '#e8ecef'], [0.35, '#a8b0b8'], [0.8, '#6a737c'], [1, '#3e454c']], 1, 0)}${lin('pl2', [[0, '#d0d6dc'], [1, '#6a737c']])}${rad('fm', [[0, '#ffffff'], [0.7, '#fff6e2'], [1, '#e8d8b0']], 0.4, 0.3, 0.8)}</defs>
+  ${shadow(19, 35, 14, 2.2)}
+  <path d="M26.6 15Q34.4 14.4 33.4 22.4Q32.6 28.4 26.4 29.4" ${ol('#2e343a', 4)}${RC}/><path d="M26.6 15Q34.4 14.4 33.4 22.4Q32.6 28.4 26.4 29.4" ${ol(u('pw'), 2.6)}${RC}/>
+  <path d="M8.6 13.6H27.4L28.4 32.6Q18 35.4 7.6 32.6z" fill="${u('pw')}" ${sk('#2e343a', 0.55)}${LJ}/>
+  <path d="M8.4 17.4Q18 19 27.6 17.4M7.8 29.4Q18 31.6 28.2 29.4" ${ol('#3e454c', 1.1)} opacity="0.7"/>
+  <path d="M8.4 16.8Q18 18.4 27.6 16.8M7.8 28.8Q18 31 28.2 28.8" ${ol('#f2f4f6', 0.5)} opacity="0.6"/>
+  <path d="M19.6 22.4q1.6 1.4 1 3.4" ${ol('#3e454c', 0.8)}${RC}/><path d="M20.4 22.2q1.4 1.2.8 3" ${ol('#fff', 0.5)} opacity="0.6"${RC}/>
+  <rect x="10" y="18.6" width="1.6" height="10" rx="0.8" fill="#fff" opacity="0.6"/>
+  <path d="M8 14.4Q7.2 10.4 11 10.2Q11.8 7.4 15 8.4Q17 6 20 7.6Q23.4 6.4 24.8 9.2Q28.8 9.4 28 14Q26 13.4 26 15.4Q25.6 18.6 24.4 15.2Q18 15.8 8 14.4z" fill="${u('fm')}" ${sk('#c8b07a', 0.4)}/>
+  <ellipse cx="18" cy="13.6" rx="9.6" ry="1.6" fill="#fff" opacity="0.4"/>
+  <path d="M26.4 13.4L30 5.6Q31 4.4 32.6 5.2L33.4 7Q30.4 10.6 27.8 14.6z" fill="${u('pl2')}" ${sk('#2e343a', 0.5)}${LJ}/>
+  <circle cx="27.4" cy="14" r="1.2" fill="#8a929a" ${sk('#2e343a', 0.4)}/>
+  <circle cx="13" cy="11" r="0.8" fill="#fff"/><circle cx="21.4" cy="9.4" r="0.6" fill="#fff"/>`,
+
+  // -------------------------------------------------------------- uncommon
+  tea: `<defs>${lin('tr', [[0, '#e8484a'], [0.6, '#a81a22'], [1, '#5a080e']], 1, 0.4)}${lin('tsd', [[0, '#8a1018'], [1, '#3a0408']])}${rad('tgd', GOLD)}${lin('tcp', [[0, '#ffffff'], [1, '#c8d4e2']], 1, 0)}</defs>
+  ${shadow(19, 35, 15, 2.2)}
+  <path d="M24 13.6L29.4 10V30L24 33.6z" fill="${u('tsd')}" ${sk('#2a0206', 0.5)}${LJ}/>
+  <path d="M7 13.6L12.4 10H29.4L24 13.6z" fill="#c82a30" ${sk('#2a0206', 0.5)}${LJ}/>
+  <rect x="7" y="13.6" width="17" height="20" fill="${u('tr')}" ${sk('#2a0206', 0.55)}/>
+  <path d="M7 17.6H24M24 17.6L29.4 14" ${ol('#e8b040', 0.9)}/>
+  <path d="M7 31.4H24L29.4 27.8" ${ol('#e8b040', 0.7)}/>
+  <circle cx="18.8" cy="22.6" r="2.6" fill="#ffc83a" opacity="0.9"/>
+  <path d="M9.8 28.4Q12 24.6 15.4 23.4Q14 21 15 19.6M15.4 23.4Q19 22.4 21.8 24.6M15.4 23.4L11.4 20.4M13 25.2L12.4 29.2M13.8 25L15.4 28.8" ${ol(u('tgd'), 0.9)}${RC}${LJ}/>
+  <circle cx="15" cy="19.4" r="0.7" fill="#ffd84a"/><path d="M15.6 19.3l1.4-.2" ${sk('#ffd84a', 0.6)}${RC}/>
+  <path d="M8.4 15V30.6" ${sk('#fff', 0.9)} opacity="0.35"${RC}/>
+  <path d="M30.4 26.4H36L35.2 32Q33.2 34 31.2 32z" fill="${u('tcp')}" ${sk('#5a6a80', 0.45)}${LJ}/>
+  <ellipse cx="33.2" cy="26.4" rx="2.8" ry="0.8" fill="#8a5a1a" ${sk('#5a6a80', 0.4)}/>
+  <path d="M30.6 28.4Q33.2 29.4 35.8 28.4" ${ol('#3a6ad8', 0.5)}/>
+  <path d="M32.4 24.6q-.8-1.4.2-2.6t.2-2.6M34.2 24.4q-.6-1.2.2-2.2" ${ol('#fff', 0.5)} opacity="0.55"${RC}/>
+  <path d="M30.8 34.6l1.6-.8M28.6 35l.8.6" ${sk('#4a5a1a', 0.8)}${RC}/>`,
+
+  cacao: `<defs>${lin('cpd', [[0, '#ffd04a'], [0.45, '#f08a1a'], [1, '#a83a10']], 1, 0.6)}${lin('cpd2', [[0, '#e8682a'], [0.5, '#b8301a'], [1, '#5a1206']], 1, 0.6)}${rad('cbe', [[0, '#b07a54'], [0.6, '#6a3a1e'], [1, '#2e1408']], 0.38, 0.3, 0.8)}</defs>
+  ${shadow(20, 35, 16, 2.2)}
+  <g transform="translate(13.2 18.6) rotate(-28)" ${sk('#5a1e06', 0.5)}${LJ}>
+    <path d="M0 -13Q8 -9 8 0Q8 9 0 13Q-8 9 -8 0Q-8 -9 0 -13z" fill="${u('cpd2')}"/>
+    <path d="M0 -12.6Q-3 0 0 12.6M0 -12.6Q3 0 0 12.6M-4.6 -9.4Q-6.6 0 -4.6 9.4M4.6 -9.4Q6.6 0 4.6 9.4" fill="none" opacity="0.5"/>
+    <path d="M0 -13l-.6-2.6" stroke="#5a3a14" stroke-width="1.2"${RC}/>
+  </g>
+  <g transform="translate(25.4 22.6) rotate(22)" ${sk('#5a2a06', 0.5)}${LJ}>
+    <path d="M0 -12Q8 -8.4 8 0Q8 8.4 0 12Q-8 8.4 -8 0Q-8 -8.4 0 -12z" fill="${u('cpd')}"/>
+    <path d="M-5.6 -7.6Q-1.6 -10 4 -8.6Q7 -4 6.8 2Q4 6 -1.6 7.4Q-6 4 -6.8 -1.4z" fill="#f6ecd8"/>
+    <g fill="#fffaf0" stroke="#c8b48e" stroke-width="0.3">${[[-2.6, -5], [1.6, -5.6], [-4, -1], [0, -1.4], [3.8, -1.8], [-2.4, 3], [1.8, 2.6], [4.4, 1.6]].map(([x, y]) => `<ellipse cx="${x}" cy="${y}" rx="1.9" ry="1.5"/>`).join('')}</g>
+    <path d="M-5.6 -7.6Q-1.6 -10 4 -8.6Q7 -4 6.8 2Q4 6 -1.6 7.4Q-6 4 -6.8 -1.4z" fill="none" stroke="#a84a14" stroke-width="0.8"/>
+  </g>
+  <g transform="translate(9 32) rotate(-20)"><ellipse rx="2.2" ry="1.3" fill="${u('cbe')}"/><path d="M-1.6 0Q0 -0.5 1.6 0" ${ol('#2a1004', 0.35)}/></g>
+  <g transform="translate(14.4 33.4) rotate(15)"><ellipse rx="2.2" ry="1.3" fill="${u('cbe')}"/><path d="M-1.6 0Q0 -0.5 1.6 0" ${ol('#2a1004', 0.35)}/></g>
+  ${shine(9.6, 11, 1.8, 0.4)}${shine(21.6, 13.4, 1.2, 0.45)}`,
+
+  brandy: `<defs>${lin('bgl', [[0, '#ffffff', 0.7], [0.35, '#d8eef6', 0.15], [1, '#8ab0c0', 0.5]], 1, 0)}${lin('bam', [[0, '#ffc864'], [0.5, '#d8781a'], [1, '#7a3006']], 1, 0.4)}</defs>
+  ${shadow(18, 35, 15, 2.2)}
+  <path d="M8 20Q8 15.6 12.4 14.6V11.4H19.6V14.6Q24 15.6 24 20V31.6Q24 33.8 21.6 33.8H10.4Q8 33.8 8 31.6z" fill="#d8eef6" opacity="0.25"/>
+  <path d="M8.8 22.4H23.2V31.4Q23.2 33 21.6 33H10.4Q8.8 33 8.8 31.4z" fill="${u('bam')}"/>
+  <path d="M8.8 22.4H23.2" ${sk('#ffe6a8', 0.7)}/>
+  <path d="M8 20Q8 15.6 12.4 14.6V11.4H19.6V14.6Q24 15.6 24 20V31.6Q24 33.8 21.6 33.8H10.4Q8 33.8 8 31.6z" fill="${u('bgl')}" ${sk('#4a6a7a', 0.55)}${LJ}/>
+  <path d="M12 18.6V32.6M16 18V33M20 18.6V32.6M8.4 26.6H23.6" ${ol('#fff', 0.5)} opacity="0.5"/>
+  <path d="M8.6 20.4L12.4 17.6M23.4 20.4L19.6 17.6" ${ol('#4a6a7a', 0.4)} opacity="0.6"/>
+  <rect x="11.6" y="9.8" width="8.8" height="1.8" rx="0.8" fill="#e8f6fa" ${sk('#4a6a7a', 0.45)}/>
+  ${facets([['16,2.4 19.6,5 18.6,9.8 13.4,9.8 12.4,5', '#e8f8ff'], ['16,2.4 19.6,5 16,6.4', '#ffffff'], ['16,6.4 19.6,5 18.6,9.8', '#a8d0e0'], ['12.4,5 16,6.4 13.4,9.8', '#c8e6f2']], '#4a6a7a')}
+  <rect x="9.4" y="20" width="1.4" height="11" rx="0.7" fill="#fff" opacity="0.7"/>
+  <path d="M27 21.6Q26 27.6 30.6 28.6Q35.2 27.6 34.2 21.6z" fill="#d8eef6" opacity="0.3" ${sk('#4a6a7a', 0.5)}/>
+  <path d="M26.8 24.6Q30.6 25.6 34.4 24.6Q34 28 30.6 28.6Q27.2 28 26.8 24.6z" fill="${u('bam')}"/>
+  <path d="M30.6 28.6V33.2M27.8 33.6Q30.6 32.4 33.4 33.6" ${ol('#4a6a7a', 0.7)}${RC}/>
+  <path d="M27.8 22.6Q27.6 25 28.6 26.6" ${ol('#fff', 0.6)} opacity="0.8"${RC}/>
+  ${spark(25, 9, 1.6)}`,
+
+  lace: `<defs>${lin('lw', [[0, '#d8a46a'], [1, '#7a4a22']], 1, 0)}</defs>
+  ${shadow(19, 34, 16, 2.4)}
+  <g transform="translate(19 20) scale(1 0.78)">
+    <circle r="15.4" fill="#000" opacity="0.18" cy="1.6"/>
+    <g fill="#fffaf0" ${sk('#c8b896', 0.3)}>${Array.from({ length: 22 }, (_, i) => {
+      const a = (i / 22) * Math.PI * 2;
+      return `<circle cx="${n(Math.cos(a) * 13.4)}" cy="${n(Math.sin(a) * 13.4)}" r="2.3"/>`;
+    }).join('')}</g>
+    <circle r="13.4" fill="#fffaf0"/>
+    <circle r="12.2" ${ol('#c8b896', 0.4)} stroke-dasharray="0.6 0.6"/>
+    <g fill="#b8a888">${Array.from({ length: 22 }, (_, i) => {
+      const a = (i / 22) * Math.PI * 2;
+      return `<circle cx="${n(Math.cos(a) * 14)}" cy="${n(Math.sin(a) * 14)}" r="0.7"/>`;
+    }).join('')}${Array.from({ length: 16 }, (_, i) => {
+      const a = (i / 16) * Math.PI * 2;
+      return `<ellipse cx="${n(Math.cos(a) * 9.4)}" cy="${n(Math.sin(a) * 9.4)}" rx="1.5" ry="0.75" transform="rotate(${n((a * 180) / Math.PI)} ${n(Math.cos(a) * 9.4)} ${n(Math.sin(a) * 9.4)})"/>`;
+    }).join('')}${Array.from({ length: 10 }, (_, i) => {
+      const a = (i / 10) * Math.PI * 2 + 0.3;
+      return `<circle cx="${n(Math.cos(a) * 6)}" cy="${n(Math.sin(a) * 6)}" r="0.9"/>`;
+    }).join('')}</g>
+    <g ${ol('#c8b896', 0.5)}><circle r="7.4"/><circle r="11"/></g>
+    <g fill="#fffaf0" ${sk('#b8a888', 0.4)}>${Array.from({ length: 6 }, (_, i) => `<ellipse cy="-2.4" rx="1.3" ry="2.4" transform="rotate(${i * 60})"/>`).join('')}<circle r="1.2" fill="#f0e2c4"/></g>
+  </g>
+  <g ${sk('#3a1e08', 0.4)}>
+    <g transform="translate(30 27) rotate(-35)"><rect x="-0.8" y="-8" width="1.6" height="16" rx="0.8" fill="${u('lw')}"/><ellipse cy="5" rx="1.5" ry="1.9" fill="${u('lw')}"/><ellipse cy="-2" rx="1.2" ry="1.2" fill="#f0e2c4"/><circle cy="9" r="1" fill="#c8303a"/></g>
+    <g transform="translate(33.4 27.6) rotate(-15)"><rect x="-0.8" y="-8" width="1.6" height="16" rx="0.8" fill="${u('lw')}"/><ellipse cy="5" rx="1.5" ry="1.9" fill="${u('lw')}"/><ellipse cy="-2" rx="1.2" ry="1.2" fill="#f0e2c4"/><circle cy="9" r="1" fill="#2a6ad8"/></g>
+  </g>
+  <path d="M28.4 20.6Q24 16 21 18.6M31.6 20Q30 15 24.6 15" ${ol('#f6ecd6', 0.4)}/>`,
+
+  spyglass: `<defs>${lin('sb2', [[0, '#fff2b8'], [0.4, '#dcaa44'], [1, '#6a4410']])}${lin('sl2', [[0, '#a85a32'], [0.5, '#6a2e14'], [1, '#2e1006']])}${rad('slens', [[0, '#e8f8ff'], [0.5, '#5aa8d8'], [1, '#0a3a6a']], 0.35, 0.35, 0.8)}</defs>
+  ${shadow(20, 34.6, 15, 2)}
+  <g transform="translate(20 20.4) rotate(-32)" ${sk('#3a2406', 0.5)}${LJ}>
+    <rect x="-17.2" y="-4.2" width="14.6" height="8.4" rx="1" fill="${u('sl2')}"/>
+    <path d="M-15 -4.2v8.4M-12.6 -4.2v8.4M-10.2 -4.2v8.4M-7.8 -4.2v8.4" stroke="#2e1006" stroke-width="0.4" opacity="0.6"/>
+    <rect x="-18.6" y="-4.8" width="2.8" height="9.6" rx="0.8" fill="${u('sb2')}"/>
+    <rect x="-3.4" y="-4.6" width="2" height="9.2" rx="0.6" fill="${u('sb2')}"/>
+    <rect x="-1.4" y="-3.2" width="9.4" height="6.4" rx="0.6" fill="${u('sb2')}"/>
+    <rect x="7.4" y="-3.6" width="1.6" height="7.2" rx="0.5" fill="${u('sb2')}"/>
+    <rect x="9" y="-2.5" width="6.4" height="5" rx="0.5" fill="${u('sb2')}"/>
+    <rect x="15" y="-2.9" width="1.4" height="5.8" rx="0.5" fill="${u('sb2')}"/>
+    <rect x="16.4" y="-1.8" width="2.4" height="3.6" rx="1" fill="#3a2406"/>
+    <path d="M-1 -2.2H7.6M9.4 -1.6H15M-18 -3.8H-16.4" stroke="#fff" stroke-width="0.7" opacity="0.75"${RC}/>
+    <ellipse cx="-18.6" cy="0" rx="1.6" ry="4.4" fill="${u('slens')}"/>
+  </g>
+  ${shine(5.6, 27.6, 0.8, 0.85)}${spark(6.8, 22.6, 1.6, '#e8f8ff')}`,
+
+  coral: `<defs>${lin('crl', [[0, '#ff9a8a'], [0.4, '#f0303a'], [1, '#8a0a1a']], 0.6, 1)}${rad('crk', [[0, '#e8dcc0'], [0.6, '#a8987a'], [1, '#5a4e3a']], 0.4, 0.3, 0.9)}</defs>
+  ${shadow(20, 35, 13, 2.2)}
+  ${[
+    [[20, 33], [19.4, 26], [16, 19], [12, 13], [10.6, 7.6]],
+    [[19.6, 27], [23, 21], [26.6, 15.4], [27, 9]],
+    [[16.8, 20.4], [20.4, 15], [20.6, 8.6]],
+    [[13.4, 15], [8, 13.6], [5.6, 10]],
+    [[24.4, 19], [30, 18], [33, 14]],
+    [[19.4, 28.6], [13.4, 25], [8.6, 22.6]],
+    [[22.4, 25.6], [28.4, 25.4], [32, 23]],
+    [[26, 16.4], [22.8, 11.6]],
+  ].map((p, i) => tube(p, i ? (i < 3 ? 3.6 : 2.6) : 5.2, 1.2).d).map((d) => `<path d="${d}" fill="${u('crl')}" ${sk('#5a0410', 0.45)}${LJ}/>`).join('')}
+  <g fill="#ffb8b0">${[[10.6, 7.6], [27, 9], [20.6, 8.6], [5.6, 10], [33, 14], [8.6, 22.6], [32, 23], [22.8, 11.6]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="0.8"/>`).join('')}</g>
+  <path d="M18.8 31L18.4 25.4L15.4 19.2" ${ol('#ffc8c0', 0.7)} opacity="0.7"${RC}/>
+  <path d="M12 34.4Q13 30 20 30.6Q27 30 28 34.4Q20 36 12 34.4z" fill="${u('crk')}" ${sk('#3a3424', 0.45)}/>
+  ${spark(31, 6, 1.8)}${spark(6, 28, 1.3)}`,
+
+  pipe: `<defs>${rad('mm', [[0, '#fffaf0'], [0.55, '#f2dcb4'], [1, '#b8864e']], 0.36, 0.3, 0.85)}${lin('mam', [[0, '#ffd27a'], [0.5, '#d8861a'], [1, '#7a3a06']])}${lin('mst', [[0, '#5a3a1e'], [1, '#2a1406']])}</defs>
+  ${shadow(20, 35, 15, 2)}
+  <path d="M18 28.6Q26 29.4 31.4 23.6" ${ol('#1a0c04', 3.6)}${RC}/><path d="M18 28.6Q26 29.4 31.4 23.6" ${ol(u('mst'), 2.4)}${RC}/>
+  <path d="M30.6 24.4L35.6 19.4" ${ol('#5a2a04', 3)}${RC}/><path d="M30.6 24.4L35.6 19.4" ${ol(u('mam'), 2)}${RC}/>
+  <path d="M30.8 24.2l1 1" ${sk('#d8b060', 1)}/>
+  <path d="M7.4 20Q6.4 30 13.6 31.6Q20.8 32 20.4 22.4z" fill="${u('mm')}" ${sk('#7a5430', 0.5)}${LJ}/>
+  <path d="M8.4 25.4Q9.4 27.4 8.6 30M10.6 27Q11.6 29.6 10.8 31.4M13.4 27.6Q14 30 13.6 31.6M16.4 27Q17 29.4 16.6 31.2M19 25.4Q19.6 27.6 19 30" ${ol('#c8a070', 0.6)}${RC}/>
+  <ellipse cx="13.8" cy="19.6" rx="6.6" ry="6.8" fill="${u('mm')}" ${sk('#7a5430', 0.5)}/>
+  <path d="M10.8 24.2Q13.8 22.2 16.8 24.2Q13.8 23.4 10.8 24.2z" fill="#d8b888" ${sk('#7a5430', 0.4)}/>
+  <path d="M10.4 19.4q1.2-.8 2.4 0M15 19.4q1.2-.8 2.4 0" ${ol('#5a3a1e', 0.6)}${RC}/>
+  <path d="M13.8 19.4q.8 1.8-.4 2.6" ${ol('#a87a4a', 0.6)}${RC}/>
+  <path d="M5.4 14.6Q8 8.6 13.8 10.4Q19.6 8.6 22.4 14.6Q18 13.4 13.8 14.4Q9.6 13.4 5.4 14.6z" fill="${u('mm')}" ${sk('#7a5430', 0.5)}${LJ}/>
+  <ellipse cx="13.8" cy="10.8" rx="4" ry="1.3" fill="#3a1c08" ${sk('#7a5430', 0.4)}/>
+  <circle cx="13.8" cy="12.6" r="0.9" fill="#e8b84a"/>
+  <path d="M13.2 9.4Q11.4 6.6 13.6 5T13.4 1.4M15 9Q16.8 7 15.4 5" ${ol('#e6eef2', 0.7)} opacity="0.6"${RC}/>
+  ${shine(10.4, 16.6, 1.2, 0.55)}`,
+
+  // ------------------------------------------------------------------ rare
+  reserve: `<defs>${lin('rv', [[0, '#5a4a2a'], [0.3, '#2a1e0e'], [0.75, '#120a04'], [1, '#050200']], 1, 0)}${lin('rwx', [[0, '#ff6050'], [0.5, '#b8141e'], [1, '#5a040a']], 1, 0)}${lin('rlb', [[0, '#f8ecc8'], [1, '#d8c08a']])}${rad('rgd', GOLD)}</defs>
+  ${shadow(20, 35.4, 13, 2)}
+  <path d="M12.6 33.6V19Q12.6 14.6 17.2 13.2V7H22.8V13.2Q27.4 14.6 27.4 19V33.6Q20 35.6 12.6 33.6z" fill="${u('rv')}" ${sk('#000', 0.5)}${LJ}/>
+  <path d="M16.8 2.4H23.2V8.6Q23.6 10.6 22.8 12.4Q22.2 10.6 21.6 12Q21 10 20.2 13Q19.4 10.4 18.6 11.6Q18 10.2 17.2 12.8Q16.4 10.6 16.8 8.6z" fill="${u('rwx')}" ${sk('#3a0206', 0.45)}${LJ}/>
+  <ellipse cx="20" cy="2.6" rx="3.2" ry="0.9" fill="#d8303a"/><circle cx="20" cy="2.6" r="1.1" fill="#8a0a14"/>
+  <rect x="13.8" y="20.6" width="12.4" height="9.4" rx="0.8" fill="${u('rlb')}" ${sk('#6a4a14', 0.45)}/>
+  <rect x="14.6" y="21.4" width="10.8" height="7.8" rx="0.5" ${ol(u('rgd'), 0.7)}/>
+  <path d="M17 23.4q3-1.6 6 0" ${ol('#7a1a14', 0.7)}${RC}/>
+  <text x="20" y="27.8" text-anchor="middle" font-family="Georgia,serif" font-size="3.6" font-weight="700" fill="#5a2a0a">1702</text>
+  <path d="M13.6 32h12.8" ${sk('#e8c060', 0.8)}/>
+  <rect x="14" y="16" width="1.3" height="16" rx="0.65" fill="#fff" opacity="0.28"/>
+  <g fill="#d8c8a8" opacity="0.4">${Array.from({ length: 16 }, () => `<circle cx="${n(13.6 + rnd() * 12.8)}" cy="${n(14 + rnd() * 6 + (rnd() > 0.5 ? 12 : 0))}" r="${n(0.2 + rnd() * 0.3)}"/>`).join('')}</g>
+  <path d="M22.8 13.6L27.6 18.2M22.8 13.6L26 19.6M22.8 13.6L24.6 18.6M24 14.8Q25.4 15.4 25.6 16.8M25.2 16.2Q26.4 16.8 26.6 18.2" ${ol('#f4f4f4', 0.25)} opacity="0.7"/>
+  <path d="M31 27.4Q30.6 33 33 33.6Q35.4 33 35 27.4z" fill="#e8f2f6" opacity="0.3" ${sk('#5a6a70', 0.4)}/><path d="M30.9 30.2Q33 31 35.1 30.2Q34.6 33.2 33 33.6Q31.4 33.2 30.9 30.2z" fill="#6a2a10"/>
+  <path d="M33 33.6v1.4M31.6 35.2h2.8" ${ol('#5a6a70', 0.5)}${RC}/>
+  ${spark(31, 8, 2.2)}${spark(7.4, 16, 1.4)}`,
+
+  ingots: `<defs>${lin('if', SILV, 0.4, 1)}${lin('ig', [[0, '#ffffff'], [1, '#b8c2cc']], 1, 0)}</defs>
+  ${shadow(20, 34.8, 16, 2.4)}
+  ${ingot(3.4, 32.6, 15.6)}${ingot(19.4, 32.6, 15.6)}${ingot(11.4, 27, 15.6)}
+  ${spark(32, 10, 2.6)}${spark(6.4, 12, 1.6)}${spark(26, 22.4, 1.2)}`,
+
+  jade: `<defs>${rad('jd', JADE, 0.35, 0.3, 0.85)}${lin('jw', WOOD)}${lin('jt', [[0, '#ff6a5a'], [1, '#8a0a14']])}</defs>
+  ${shadow(20, 35.6, 13, 2)}
+  <path d="M8 31.6H32L30.6 34.4H9.4z" fill="${u('jw')}" ${sk('#1e0c04', 0.45)}${LJ}/>
+  <path d="M10 34.4V36M30 34.4V36" ${sk('#3e1a08', 1.4)}${RC}/>
+  <path d="M9.4 31.6Q20 29.6 30.6 31.6" ${ol('#d89a6a', 0.5)} opacity="0.6"/>
+  ${(() => {
+    const pts = Array.from({ length: 9 }, (_, i) => {
+      const a = (-60 + i * 33) * (Math.PI / 180);
+      return [20 + Math.cos(a) * 9.6, 19.6 + Math.sin(a) * 9.6];
+    });
+    const t = tube(pts, 7.6, 2.4);
+    const scales = t.c.filter((_, i) => i % 3 === 1 && i > 3).map(([x, y, nx, ny, w]) => `<path d="M${n(x + nx * w * 0.7)} ${n(y + ny * w * 0.7)}Q${n(x)} ${n(y)} ${n(x - nx * w * 0.7)} ${n(y - ny * w * 0.7)}" ${ol('#0e5a34', 0.45)} opacity="0.55"/>`).join('');
+    return `<path d="${t.d}" fill="${u('jd')}" ${sk('#0a3a20', 0.5)}${LJ}/>${scales}`;
+  })()}
+  <path d="M22.6 9.4L25 5.6 25.6 9.6 28.4 7 27.4 11.2" fill="${u('jd')}" ${sk('#0a3a20', 0.45)}${LJ}/>
+  <ellipse cx="25" cy="12.8" rx="5.2" ry="4.2" fill="${u('jd')}" ${sk('#0a3a20', 0.5)} transform="rotate(30 25 12.8)"/>
+  <path d="M27.4 16.2Q30.6 17.4 31.4 15.4Q30.4 13.6 28.8 14" fill="${u('jd')}" ${sk('#0a3a20', 0.45)}${LJ}/>
+  <circle cx="25.8" cy="12.2" r="1.3" fill="#e8ffe8" ${sk('#0a3a20', 0.4)}/><circle cx="26" cy="12.3" r="0.55" fill="#0a3a20"/>
+  <path d="M30 15.4Q33.6 16.6 34.4 20M29.4 16.8Q31.4 19 31 21.6" ${ol('#2a8a54', 0.6)}${RC}/>
+  <path d="M10 14.6Q8.4 17.6 8.8 21.4" ${ol('#e8fff0', 0.9)} opacity="0.65"${RC}/>
+  <path d="M15 27.6Q14.6 30 15.2 31.4" ${ol('#c8202a', 0.8)}/><path d="M14 31.2h2.4l.8 3.4h-4z" fill="${u('jt')}"/><circle cx="15.2" cy="31" r="0.8" fill="#e8b040"/>
+  ${spark(8, 8, 1.8)}${spark(33, 27, 1.3)}`,
+
+  cameo: `<defs>${rad('cmg', GOLD, 0.35, 0.3, 0.85)}${rad('cmb', [[0, '#f0a060'], [0.6, '#b8521e'], [1, '#5a1e08']], 0.42, 0.36, 0.75)}${rad('cmp', PEARL, 0.35, 0.3, 0.8)}${lin('cmw', [[0, '#ffffff'], [1, '#ecdcc8']], 1, 1)}<clipPath id="aql-cmc"><ellipse cx="20" cy="18.6" rx="8.6" ry="10.8"/></clipPath></defs>
+  ${shadow(20, 36.4, 10, 1.6)}
+  <ellipse cx="20" cy="18.6" rx="12.6" ry="14.8" fill="${u('cmg')}" ${sk('#6a3a04', 0.6)}/>
+  <g fill="${u('cmp')}" ${sk('#8a8090', 0.2)}>${Array.from({ length: 26 }, (_, i) => {
+    const a = (i / 26) * Math.PI * 2;
+    return `<circle cx="${n(20 + Math.cos(a) * 11)}" cy="${n(18.6 + Math.sin(a) * 13.1)}" r="1.05"/>`;
+  }).join('')}</g>
+  <ellipse cx="20" cy="18.6" rx="9.4" ry="11.6" fill="${u('cmg')}" ${sk('#6a3a04', 0.4)}/>
+  <ellipse cx="20" cy="18.6" rx="8.6" ry="10.8" fill="${u('cmb')}"/>
+  <g clip-path="${u('cmc')}">
+    <path d="M14.6 30C15 26.6 14.6 24.6 13.8 22.8C11.6 20.4 11.4 14.2 14.6 11.4C17.6 9 22.4 9.4 24 12.4C24.8 13.8 24.6 15 25 16.2L26.4 18.6L25.2 19.2C25.4 20 25.6 20.4 25 20.8C25.4 21.6 25 22.4 24 22.6C23.2 23 22.8 24.2 23 25.8C24.4 27.4 26.4 28.6 28 30z" fill="${u('cmw')}"/>
+    <path d="M24 12.6C22.6 9.4 17.6 8.6 14.6 11.2C11.6 13.8 11.8 19.6 14 22.4C15.6 21.6 16.6 20 16.8 18.2C18.6 17 20.4 14.2 24 12.6z" fill="#efe2cc" ${sk('#d0bc9c', 0.35)}/>
+    <circle cx="14.6" cy="12.6" r="2.8" fill="#efe2cc" ${sk('#d0bc9c', 0.35)}/>
+    <path d="M13 12.2q1.6-1.4 3.4-.4M12.8 14.4q2-.6 3.6.6M17.6 10.6q2.6-.6 4.6 1M14.4 18q1.6-.2 2.4-1.6M13.6 20.6q1.6-.2 2.6-1.4M18 13.4q1.6-.4 2.8.4" ${ol('#c8b08e', 0.45)}${RC}/>
+    <path d="M22.6 16q.8-.4 1.4 0" ${ol('#c8b08e', 0.45)}${RC}/>
+    <path d="M10.4 30.2Q14 27.6 20 28.4T29.6 30.2" ${ol('#fff', 1.6)}/>
+  </g>
+  <ellipse cx="20" cy="18.6" rx="8.6" ry="10.8" ${ol('#3a1004', 0.5)}/>
+  <circle cx="20" cy="3.4" r="1.6" ${ol(u('cmg'), 1)}/>
+  <path d="M20 33.4v1.6" ${sk('#a87a20', 0.7)}/><ellipse cx="20" cy="36.4" rx="1.3" ry="1.7" fill="${u('cmp')}"/>
+  ${shine(12.6, 9.6, 1.4, 0.65)}${spark(33.4, 6.4, 2)}${spark(6.6, 30, 1.4)}`,
+
+  musicBox: `<defs>${lin('mbg', [[0, '#fff1aa'], [0.45, '#e2aa32'], [1, '#7a4a08']])}${lin('mbl', [[0, '#c8902a'], [1, '#5a3404']], 0, 1)}${lin('mbv', [[0, '#c8283a'], [1, '#5a0a14']])}${rad('mbs', GOLD)}</defs>
+  ${shadow(20, 35.4, 15, 2)}
+  <path d="M8.6 20.6L11.6 6.4H28.4L31.4 20.6z" fill="${u('mbl')}" ${sk('#4a2a04', 0.5)}${LJ}/>
+  <path d="M10.4 19.2L12.8 8H27.2L29.6 19.2z" fill="#a8cce0" ${sk('#6a4a10', 0.4)}${LJ}/>
+  <path d="M14 10L13 15M16.2 9.4L15.6 12" ${ol('#fff', 0.8)} opacity="0.8"${RC}/>
+  <path d="M6.6 22.6L9 20.2H31L33.4 22.6z" fill="${u('mbv')}" ${sk('#3a0408', 0.45)}${LJ}/>
+  <ellipse cx="20" cy="21.4" rx="5.4" ry="1.2" fill="${u('mbs')}" ${sk('#6a3a04', 0.4)}/>
+  <path d="M16.6 20.2Q20 22 23.6 20.2L23 18.8H17.2z" fill="#4a2a10"/>
+  <path d="M20.2 18.8V10.6M18.4 18.4V12.6" ${sk('#4a2a10', 0.5)}/>
+  <path d="M20.6 11Q24 14 20.6 18.2zM18 12.8Q15.4 15.4 18 18.2z" fill="#fffaf0" ${sk('#a88a5a', 0.3)}/>
+  <path d="M20.2 10.6l2-.8-2-.6" fill="#c8283a"/>
+  <rect x="6.6" y="22.6" width="26.8" height="11.2" rx="0.8" fill="${u('mbg')}" ${sk('#5a3404', 0.55)}/>
+  <rect x="8.4" y="24.2" width="23.2" height="8" rx="0.5" ${ol('#7a4a08', 0.5)}/>
+  <path d="M11 30.4Q13 25 16.6 28T20 26Q22 29 24.6 27.4T29 30.4" ${ol('#fff4c0', 0.7)}${RC}/>
+  <circle cx="20" cy="28.2" r="1.4" fill="#2a6ad8" ${sk('#5a3404', 0.4)}/>
+  <path d="M33.4 27.4h2" ${sk('#5a3404', 1.4)}${RC}/><path d="M35.6 25.2v4.4Q37.4 29.6 37.4 27.4T35.6 25.2z" fill="${u('mbs')}" ${sk('#5a3404', 0.4)}/>
+  ${note(5.6, 13, 0.9, '#ffe6a0')}${note(33.4, 10, 0.75, '#fff2c8')}${note(4, 22, 0.6, '#ffe6a0')}
+  ${shine(10, 24.6, 1, 0.6)}${spark(36, 16, 1.4)}`,
+
+  chronometer: `<defs>${lin('chw', WOOD, 1, 0.6)}${rad('chb', [[0, '#fff3c0'], [0.45, '#deb04e'], [1, '#7c5416']], 0.4, 0.3, 0.9)}${rad('chd', [[0, '#ffffff'], [0.7, '#f6f2e8'], [1, '#c8c0ae']], 0.4, 0.35, 0.8)}</defs>
+  ${shadow(20, 35.6, 16, 2)}
+  <path d="M6.6 21.4L8.6 5.4H31.4L33.4 21.4z" fill="${u('chw')}" ${sk('#1e0a02', 0.5)}${LJ}/>
+  <path d="M10.4 18.6L11.8 8.4H28.2L29.6 18.6z" fill="#8a4422" ${sk('#3a1606', 0.4)}${LJ}/>
+  <rect x="15.6" y="10.6" width="8.8" height="3.6" rx="0.5" fill="${u('chb')}" ${sk('#5a3a06', 0.4)}/>
+  <path d="M17 12.4h6" ${sk('#6a4410', 0.4)} stroke-dasharray="1 0.6"/>
+  <path d="M5 23.6L6.6 21.4H33.4L35 23.6z" fill="#2e1206" ${sk('#1e0a02', 0.45)}${LJ}/>
+  <rect x="5" y="23.6" width="30" height="10.4" rx="0.8" fill="${u('chw')}" ${sk('#1e0a02', 0.55)}/>
+  <path d="M5.4 24h29.2" ${sk('#d8925a', 0.6)} opacity="0.7"/>
+  <g fill="${u('chb')}" ${sk('#5a3a06', 0.3)}><path d="M5 23.6h3.4v1.2h-2.2v2h-1.2z"/><path d="M35 23.6h-3.4v1.2h2.2v2h1.2z"/><path d="M5 34h3.4v-1.2h-2.2v-2h-1.2z"/><path d="M35 34h-3.4v-1.2h2.2v-2h1.2z"/></g>
+  <ellipse cx="20" cy="22.6" rx="12.4" ry="5.6" fill="${u('chb')}" ${sk('#5a3a06', 0.5)}/>
+  <ellipse cx="20" cy="22.4" rx="10.6" ry="4.6" fill="${u('chd')}" ${sk('#5a3a06', 0.4)}/>
+  <g ${sk('#2a2a3a', 0.4)}>${Array.from({ length: 12 }, (_, i) => {
+    const a = (i / 12) * Math.PI * 2;
+    return `<path d="M${n(20 + Math.cos(a) * 9.4)} ${n(22.4 + Math.sin(a) * 4)}L${n(20 + Math.cos(a) * 8.2)} ${n(22.4 + Math.sin(a) * 3.5)}"/>`;
+  }).join('')}</g>
+  <ellipse cx="20" cy="24.4" rx="2.2" ry="1" ${ol('#2a2a3a', 0.35)}/>
+  <path d="M20 22.4L16.4 20.6M20 22.4L25.6 21" ${sk('#1a2a6a', 0.7)}${RC}/>
+  <circle cx="20" cy="22.4" r="0.6" fill="#1a2a6a"/>
+  <path d="M12 20.8Q16 18.6 22 18.4" ${ol('#fff', 0.8)} opacity="0.8"${RC}/>
+  ${spark(33, 9, 1.8)}`,
+
+  // ------------------------------------------------------------------ epic
+  diamond: `<defs>${rad('dmg', [[0, '#bfe8ff', 0.7], [0.55, '#6ac0ff', 0.2], [1, '#6ac0ff', 0]], 0.5, 0.5, 0.5)}${rad('dmc', GOLD)}</defs>
+  <circle cx="20" cy="19" r="19" fill="${u('dmg')}"/>
+  ${shadow(20, 36.4, 10, 1.6, 0.3)}
+  ${heart}
+  <path d="M10.2 10.4Q12.4 7.4 15.6 8" ${ol('#fff', 1)} opacity="0.85"${RC}/>
+  ${spark(14, 13, 2.2)}${spark(33.6, 6, 2.6)}${spark(5.4, 28, 1.6)}${spark(27.4, 24, 1.4, '#e8f6ff')}`,
+
+  globe: `<defs>${rad('gn', [[0, '#4a6ad0'], [0.55, '#1a2a7a'], [1, '#060a2a']], 0.36, 0.3, 0.8)}${rad('ggd', GOLD, 0.35, 0.3, 0.85)}${lin('gw', WOOD)}</defs>
+  ${shadow(20, 36, 12, 1.9)}
+  <path d="M12 35.4Q12.4 31.4 20 31Q27.6 31.4 28 35.4z" fill="${u('ggd')}" ${sk('#6a3a04', 0.5)}/>
+  <path d="M18.6 31.4L19.2 27.6H20.8L21.4 31.4z" fill="${u('ggd')}" ${sk('#6a3a04', 0.45)}/>
+  <ellipse cx="20" cy="27.4" rx="5" ry="1.4" fill="${u('ggd')}" ${sk('#6a3a04', 0.45)}/>
+  <circle cx="20" cy="16.4" r="11.4" fill="${u('gn')}" ${sk('#04061a', 0.55)}/>
+  <path d="M8.8 18.8Q20 11 31.2 14" ${ol('#e2aa32', 1.6)} opacity="0.85"/>
+  <path d="M8.8 18.8Q20 11 31.2 14" ${ol('#7a4a08', 0.5)} stroke-dasharray="0.6 0.9"/>
+  <g ${ol('#8aa8ff', 0.4)} opacity="0.55"><path d="M12.4 9.6L15.6 12.4 18.4 10.4 22 12.6M14.6 20.8L18 23.4 21.6 21.4 24.4 24M24.6 8.2L27.4 10.8 25.6 13.6"/></g>
+  <g fill="#ffe7a0">${[[12.4, 9.6, 0.8], [15.6, 12.4, 0.6], [18.4, 10.4, 0.7], [22, 12.6, 0.8], [14.6, 20.8, 0.6], [18, 23.4, 0.8], [21.6, 21.4, 0.6], [24.4, 24, 0.7], [24.6, 8.2, 0.6], [27.4, 10.8, 0.8], [25.6, 13.6, 0.5]].map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}"/>`).join('')}</g>
+  <g fill="#fff" opacity="0.7">${Array.from({ length: 14 }, () => `<circle cx="${n(11 + rnd() * 18)}" cy="${n(7.4 + rnd() * 18)}" r="0.25"/>`).join('')}</g>
+  ${spark(27, 19.4, 1.4, '#ffe7a0')}${spark(11.6, 15.4, 1.1, '#ffe7a0')}
+  <path d="M20 3.6A12.8 12.8 0 0 1 20 29.2" ${ol('#5a3404', 2.4)}/><path d="M20 3.6A12.8 12.8 0 0 1 20 29.2" ${ol(u('ggd'), 1.6)}/>
+  <g fill="#7a4a08">${Array.from({ length: 9 }, (_, i) => {
+    const a = -Math.PI / 2 + ((i + 0.5) / 9) * Math.PI;
+    return `<circle cx="${n(20 + Math.cos(a) * 12.8)}" cy="${n(16.4 + Math.sin(a) * 12.8)}" r="0.3"/>`;
+  }).join('')}</g>
+  <circle cx="20" cy="3.6" r="1.1" fill="${u('ggd')}" ${sk('#5a3404', 0.4)}/>
+  ${shine(14.6, 10.4, 2.6, 0.35)}${spark(34, 5, 2)}${spark(5, 27, 1.4)}`,
+
+  helm: `<defs>${lin('hs', [[0, '#ffffff'], [0.35, '#c8d2dc'], [0.75, '#7a8694'], [1, '#3e4652']], 0.8, 1)}${lin('hs2', [[0, '#e8eef2'], [0.5, '#9aa6b2'], [1, '#4a5460']], 1, 0.4)}${rad('hgd', GOLD)}${lin('hpl', [[0, '#ff7a6a'], [1, '#a0101e']])}</defs>
+  ${shadow(20, 35.4, 15, 2)}
+  <path d="M10.4 22.6Q4.6 14.6 6.4 7.4Q9 12 12.4 14.8Q9.6 9.4 11.6 4.6Q14 10.4 16.6 13" fill="${u('hpl')}" ${sk('#5a0408', 0.45)}${LJ}/>
+  <path d="M7 9.4Q8 15.6 11.4 19.8M11.8 6.6Q12.4 11 15 13.4" ${ol('#ffb0a0', 0.5)} opacity="0.7"${RC}/>
+  <path d="M13.2 16.6Q13.8 5 20.4 4Q27 5 27.4 16.4Q24 14.4 20 14.4Q16.4 14.4 13.2 16.6z" fill="${u('hs2')}" ${sk('#2a3038', 0.55)}${LJ}/>
+  <path d="M8.8 25.6Q8 14.6 20 14.2Q32 14.6 31.2 25.6z" fill="${u('hs')}" ${sk('#2a3038', 0.55)}${LJ}/>
+  <path d="M13 16.8Q20 12.8 27.6 16.6" ${ol('#6a3a04', 1.8)}${RC}/><path d="M13 16.8Q20 12.8 27.6 16.6" ${ol(u('hgd'), 1.1)}${RC}/>
+  <path d="M15.4 12.6Q16.4 6.6 20.4 5.8" ${ol('#fff', 0.8)} opacity="0.7"${RC}/><path d="M13.4 16Q14 5.4 20.4 4.4Q26.8 5.4 27.2 15.8" ${ol('#e2aa32', 0.6)}/>
+  <path d="M12 23Q13 19.4 16.4 18.4Q15.2 20.6 17.4 21.6Q19 19.4 22 20Q20.6 22 23 23.4Q25.6 20.8 28.2 22.2" ${ol(u('hgd'), 0.9)}${RC}/>
+  <path d="M3.4 22.6Q6.4 28.4 20 28.6Q33.6 28.4 36.6 22.6Q35.4 30.4 20 31.6Q4.6 30.4 3.4 22.6z" fill="${u('hs')}" ${sk('#2a3038', 0.55)}${LJ}/>
+  <path d="M5.6 25.6Q10 29.6 20 29.8Q30 29.6 34.4 25.6" ${ol('#e2aa32', 0.8)}/>
+  <g fill="${u('hgd')}" ${sk('#6a3a04', 0.25)}>${[7.6, 11.4, 15.6, 20, 24.4, 28.6, 32.4].map((x) => `<circle cx="${x}" cy="${n(27.4 + 2.2 * Math.sin(((x - 3.4) / 33.2) * Math.PI))}" r="0.6"/>`).join('')}</g>
+  <path d="M24.8 18.8q1.8 1 1.6 3" ${ol('#2a3038', 0.8)}${RC}/><path d="M25.4 18.4q1.6 1 1.4 2.8" ${ol('#fff', 0.5)} opacity="0.8"${RC}/>
+  <path d="M11.6 22Q11.6 17.6 15 16.2" ${ol('#fff', 1)} opacity="0.8"${RC}/>
+  ${spark(33, 8.4, 2)}${spark(6.4, 33, 1.4)}`,
+
+  egg: `<defs>${rad('ege', [[0, '#ffd0dc'], [0.4, '#f0507a'], [0.8, '#a8143a'], [1, '#5a041a']], 0.36, 0.3, 0.8)}${rad('egd', GOLD, 0.35, 0.3, 0.85)}${rad('egp', PEARL, 0.35, 0.3, 0.8)}${rad('egs', SAPH, 0.35, 0.3, 0.8)}<clipPath id="aql-egc"><path d="M20 4C27.6 4 30.6 15 30.6 21C30.6 27.4 25.8 30.8 20 30.8C14.2 30.8 9.4 27.4 9.4 21C9.4 15 12.4 4 20 4z"/></clipPath></defs>
+  ${shadow(20, 36, 10, 1.6)}
+  <path d="M14 36L16.6 29.6M26 36L23.4 29.6M20 36.2V30.6" ${ol('#6a3a04', 2)}${RC}/><path d="M14 36L16.6 29.6M26 36L23.4 29.6M20 36.2V30.6" ${ol(u('egd'), 1.2)}${RC}/>
+  <path d="M20 4C27.6 4 30.6 15 30.6 21C30.6 27.4 25.8 30.8 20 30.8C14.2 30.8 9.4 27.4 9.4 21C9.4 15 12.4 4 20 4z" fill="${u('ege')}"/>
+  <g clip-path="${u('egc')}">
+    <g ${ol('#ff9ab4', 0.3)} opacity="0.6">${Array.from({ length: 9 }, (_, i) => `<path d="M${8 + i * 3} 4Q${10 + i * 3} 18 ${8 + i * 3} 32"/>`).join('')}</g>
+    <g ${ol(u('egd'), 0.9)}>${Array.from({ length: 6 }, (_, i) => `<path d="M${2 + i * 6} 2L${22 + i * 6} 34M${38 - i * 6} 2L${18 - i * 6} 34"/>`).join('')}</g>
+    <g fill="${u('egp')}">${[[20, 10.6], [14, 20.2], [26, 20.2], [20, 29.6], [16.8, 15.4], [23.2, 15.4], [16.8, 25], [23.2, 25]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="0.85"/>`).join('')}</g>
+    <path d="M8 18.6Q20 21.6 32 18.6L32 21.4Q20 24.4 8 21.4z" fill="${u('egd')}" ${sk('#6a3a04', 0.35)}/>
+    <g fill="${u('egs')}">${[11.6, 16, 20, 24, 28.4].map((x) => `<circle cx="${x}" cy="${n(20.4 + (1 - ((x - 20) / 12) ** 2) * 1.4)}" r="0.9"/>`).join('')}</g>
+  </g>
+  <path d="M20 4C27.6 4 30.6 15 30.6 21C30.6 27.4 25.8 30.8 20 30.8C14.2 30.8 9.4 27.4 9.4 21C9.4 15 12.4 4 20 4z" ${ol('#3a0210', 0.55)}/>
+  <circle cx="20" cy="4" r="1.6" fill="${u('egs')}" ${sk('#6a3a04', 0.45)}/><path d="M18.4 5.2Q20 6.4 21.6 5.2" ${ol(u('egd'), 0.9)}/>
+  <ellipse cx="15.6" cy="11.6" rx="1.8" ry="3.4" fill="#fff" opacity="0.5" transform="rotate(20 15.6 11.6)"/>
+  ${spark(33, 9, 2.2)}${spark(6, 15, 1.5)}${spark(31.6, 30, 1.3)}`,
+
+  carpet: `<defs>${lin('cr1', [[0, '#d83a3a'], [1, '#8a141e']])}${lin('crr', [[0, '#e85a4a'], [0.4, '#b8202a'], [1, '#5a0810']])}<clipPath id="aql-crc"><rect width="30" height="22" rx="0.6"/></clipPath></defs>
+  ${shadow(20, 35, 17, 2)}
+  <g transform="translate(9 14.4) matrix(1 0 -0.42 0.88 0 0)">
+    <rect width="30" height="22" rx="0.6" fill="${u('cr1')}" ${sk('#3a0408', 0.6)}/>
+    <g clip-path="${u('crc')}">
+      <rect x="1.6" y="1.6" width="26.8" height="18.8" ${ol('#1a2a6a', 2.2)}/>
+      <rect x="1.6" y="1.6" width="26.8" height="18.8" ${ol('#f2c04a', 0.5)} stroke-dasharray="1.2 0.8"/>
+      <rect x="3.8" y="3.8" width="22.4" height="14.4" ${ol('#f2c04a', 0.5)}/>
+      <path d="M15 4.6L24.4 11L15 17.4L5.6 11z" fill="#1a2a6a" ${sk('#f2c04a', 0.6)}/>
+      <path d="M15 7.2L20.4 11L15 14.8L9.6 11z" fill="#f2c04a"/>
+      <path d="M15 8.8L17.8 11L15 13.2L12.2 11z" fill="#d83a3a"/>
+      <g fill="#f2c04a">${[[5.6, 5.6], [24.4, 5.6], [5.6, 16.4], [24.4, 16.4]].map(([x, y]) => `<path d="M${x} ${y - 1.4}l1.4 1.4-1.4 1.4-1.4-1.4z"/>`).join('')}</g>
+    </g>
+    <path d="M1 22v1.6M3 22v1.6M5 22v1.6M7 22v1.6M9 22v1.6M11 22v1.6M13 22v1.6M15 22v1.6M17 22v1.6M19 22v1.6M21 22v1.6M23 22v1.6M25 22v1.6M27 22v1.6M29 22v1.6" ${sk('#f6ecd6', 0.7)}${RC}/>
+  </g>
+  <rect x="9.6" y="9.6" width="28" height="7.4" rx="3.7" fill="${u('crr')}" ${sk('#3a0408', 0.55)}/>
+  <path d="M12 11.4H35M12 15.2H35" ${ol('#f2c04a', 0.6)} stroke-dasharray="1.4 1"/>
+  <path d="M13 13.3H34" ${ol('#1a2a6a', 1.2)}/>
+  <ellipse cx="9.6" cy="13.3" rx="2.4" ry="3.7" fill="#a8202a" ${sk('#3a0408', 0.5)}/>
+  <path d="M9.6 13.3m-.6 0a.6 .9 0 1 1 1.2 .2a1.3 1.8 0 1 1-2.4-.4a2 2.8 0 1 1 3.4 1" ${ol('#f2c04a', 0.45)}/>
+  <path d="M11 10.6H36" ${sk('#fff', 0.6)} opacity="0.4"${RC}/>
+  ${spark(34, 5, 2)}${spark(5, 10, 1.4)}`,
+
+  // ------------------------------------------------------------- legendary
+  trident: `${halo('#ffd86a', '#4ad8e8')}<defs>${rad('tdg', GOLD, 0.36, 0.25, 0.9)}${lin('tdl', [[0, '#fff3b4'], [0.4, '#e8b030'], [1, '#7a4806']], 1, 0)}${rad('tdj', [[0, '#e8fffc'], [0.45, '#3ad8d0'], [1, '#0a5a6a']], 0.35, 0.3, 0.8)}</defs>
+  ${shadow(20, 36.4, 10, 1.6, 0.3)}
+  <g transform="rotate(14 20 20)" ${sk('#5a3204', 0.5)}${LJ}>
+    <rect x="18.8" y="16" width="2.4" height="21" rx="1" fill="${u('tdl')}"/>
+    <path d="M18.8 26l2.4 1.4M18.8 28l2.4 1.4M18.8 30l2.4 1.4" stroke="#7a4806" stroke-width="0.5"/>
+    <path d="M11 6L12.6 2.4 14.2 6 13.6 6V12Q13.6 15.4 20 15.4Q26.4 15.4 26.4 12V6L25.8 6 27.4 2.4 29 6 28.4 6V12.6Q28.4 18.6 20 18.6Q11.6 18.6 11.6 12.6V6z" fill="${u('tdg')}"/>
+    <path d="M18.6 15.4V3.6L17.4 3.6 20 -1.6 22.6 3.6 21.4 3.6V15.4z" fill="${u('tdg')}"/>
+    <path d="M13.6 8.6l-1.8 1.2M26.4 8.6l1.8 1.2M18.6 7.4l-1.6 1.2M21.4 7.4l1.6 1.2" stroke-width="0.8"${RC}/>
+    <circle cx="20" cy="17" r="2.6" fill="${u('tdj')}" stroke="#5a3204"/>
+    <path d="M14.6 13.6Q17 16.4 20 16.4" fill="none" stroke="#fff4b0" stroke-width="0.6" opacity="0.8"/>
+  </g>
+  <path d="M8.4 31.4Q9.4 26 15 26.6Q12 28 13.6 30.4Q15.6 32.6 20.6 31.4Q26.6 30 31 32.4Q26.4 35.8 18.6 35.2Q10.4 34.8 8.4 31.4z" fill="#3ad8d0" opacity="0.85" ${sk('#0a5a6a', 0.45)}/>
+  <path d="M10.4 31.6Q13 34 19 33.6" ${ol('#e8fffc', 0.7)} opacity="0.9"${RC}/>
+  <g fill="#e8fffc"><circle cx="31.4" cy="28.6" r="0.7"/><circle cx="33.4" cy="30.4" r="0.5"/><circle cx="7.6" cy="27.4" r="0.6"/></g>
+  ${shine(14, 6.6, 0.8, 0.8)}${spark(34, 6, 2.6)}${spark(5.4, 10, 1.8, '#e8fffc')}`,
+
+  bottleShip: `${halo('#ffd86a', '#5ac8ff')}<defs>${lin('bsg', [[0, '#ffffff', 0.55], [0.4, '#d8f2ff', 0.12], [1, '#7ab8d8', 0.45]], 0, 1)}${rad('bsd', GOLD, 0.36, 0.25, 0.9)}${lin('bsw', WOOD)}${lin('bss', [[0, '#5ac8e8'], [1, '#0a4a7a']])}</defs>
+  ${shadow(20, 35.6, 15, 1.9, 0.3)}
+  <path d="M5 33.4H33V35.2H5z" fill="${u('bsw')}" ${sk('#1e0c04', 0.4)}/>
+  <path d="M9 33.4Q9 29.4 12 28.6H14Q17 29.4 17 33.4zM23 33.4Q23 29.4 26 28.6H28Q31 29.4 31 33.4z" fill="${u('bsw')}" ${sk('#1e0c04', 0.4)}/>
+  <rect x="4.4" y="11.6" width="25.2" height="18.4" rx="8.4" fill="#d8f2ff" opacity="0.18"/>
+  <path d="M5.6 25Q12 22.6 18 24.6T28.6 24.4V26Q28 29.4 22 29.4H12Q6.2 29.4 5.4 26z" fill="${u('bss')}"/>
+  <path d="M6 25Q12 23 18 25T28.4 24.8" ${ol('#e8fbff', 0.5)} opacity="0.8"/>
+  <g ${sk('#6a3a04', 0.4)}${LJ}>
+    <path d="M9 22.4H26.6L24.4 26H11.4z" fill="${u('bsd')}"/>
+    <path d="M24.4 22.4L27.6 20.4L26.6 22.4z" fill="${u('bsd')}"/>
+    <path d="M12.6 22.4V12.4M17.6 22.4V10.6M22.4 22.4V13" stroke="#6a3a04" stroke-width="0.6"/>
+    <path d="M10.6 13.4Q12.6 14.6 14.6 13.4V20.6Q12.6 21.6 10.6 20.6z M15.4 11.6Q17.6 12.8 19.8 11.6V20.4Q17.6 21.4 15.4 20.4z M20.6 14Q22.4 15 24.2 14V20.4Q22.4 21.2 20.6 20.4z" fill="#fff6d8"/>
+    <path d="M17.6 10.6l2-.7-2-.6" fill="#c8283a"/>
+  </g>
+  <path d="M10.2 23.8h14.6" ${sk('#fff4b0', 0.5)} opacity="0.8"/>
+  <path d="M4.4 20.8A8.4 8.4 0 0 1 12.8 11.6H21.2A8.4 8.4 0 0 1 29.6 18V18.4H34.4V23.2H29.6A8.4 8.4 0 0 1 21.2 30H12.8A8.4 8.4 0 0 1 4.4 20.8z" fill="${u('bsg')}" ${sk('#4a7a92', 0.55)}${LJ}/>
+  <rect x="34" y="18" width="3.4" height="5.6" rx="0.8" fill="#c8a06a" ${sk('#5a3a14', 0.45)}/>
+  <path d="M8 15.4Q12 12.6 20 12.8" ${ol('#fff', 1.2)} opacity="0.85"${RC}/>
+  <path d="M30.4 19.4h3.4" ${ol('#fff', 0.6)} opacity="0.7"${RC}/>
+  ${spark(34.6, 9, 2.4)}${spark(5.6, 7.4, 1.6)}${spark(15, 18, 1.1)}`,
+
+  sceptre: `${halo('#7ab8ff', '#ffc84a')}<defs>${rad('scg', GOLD, 0.36, 0.25, 0.9)}${lin('scl', [[0, '#fff3b4'], [0.4, '#e8b030'], [1, '#7a4806']], 1, 0)}${rad('scs', [[0, '#e0f2ff'], [0.3, '#6ab0ff'], [0.7, '#1a48c8'], [1, '#08164a']], 0.36, 0.32, 0.75)}${rad('scr', RUBY, 0.35, 0.3, 0.8)}${rad('scp', PEARL, 0.35, 0.3, 0.8)}</defs>
+  ${shadow(20, 36.4, 11, 1.6, 0.3)}
+  <g transform="rotate(32 20 20)" ${sk('#5a3204', 0.5)}${LJ}>
+    <rect x="18.7" y="15" width="2.6" height="20" rx="1" fill="${u('scl')}"/>
+    <ellipse cx="20" cy="21" rx="2.4" ry="1" fill="${u('scg')}"/><ellipse cx="20" cy="28" rx="2.2" ry="0.9" fill="${u('scg')}"/>
+    <circle cx="20" cy="24.6" r="1" fill="${u('scr')}"/><circle cx="20" cy="31.4" r="0.9" fill="${u('scr')}"/>
+    <circle cx="20" cy="36" r="1.8" fill="${u('scg')}"/>
+    <path d="M15.6 15.6Q20 18.4 24.4 15.6L23 13.4H17z" fill="${u('scg')}"/>
+    <circle cx="20" cy="8.8" r="5.4" fill="${u('scs')}" stroke="#08164a"/>
+    <path d="M15.4 11.4Q16.6 15 20 15.4Q23.4 15 24.6 11.4M14.8 8.4Q15 4 17.6 3.6M25.2 8.4Q25 4 22.4 3.6M20 3.4V14.2" fill="none" stroke="#e8b030" stroke-width="0.9"/>
+    <path d="M20 3.4V0.2M18.6 1.4H21.4" fill="none" stroke="${u('scg')}" stroke-width="1.2"${RC}/>
+    <circle cx="20" cy="3.4" r="1" fill="${u('scp')}" stroke-width="0.3"/>
+    <ellipse cx="17.8" cy="6.8" rx="1.3" ry="1.8" fill="#fff" opacity="0.6" stroke="none" transform="rotate(30 17.8 6.8)"/>
+  </g>
+  <g fill="${u('scp')}"><circle cx="11.4" cy="14.6" r="0.9"/><circle cx="13.6" cy="17.4" r="0.8"/></g>
+  ${spark(34, 6, 2.6)}${spark(6, 26, 1.8)}${spark(33, 27.6, 1.4)}`,
+
+  sunstone: `${halo('#ffb83a', '#ff6a2a')}<defs>${rad('ssc', [[0, '#fffbe0'], [0.3, '#ffd86a'], [0.7, '#ff8a1a'], [1, '#a83a06']], 0.5, 0.45, 0.6)}${rad('ssb', [[0, '#fff3c0'], [0.45, '#deb04e'], [1, '#7c5416']], 0.4, 0.3, 0.9)}</defs>
+  ${shadow(20, 36.4, 11, 1.7, 0.3)}
+  <ellipse cx="20" cy="33" rx="10.6" ry="3" fill="${u('ssb')}" ${sk('#5a3a06', 0.5)}/>
+  <ellipse cx="20" cy="32.6" rx="8.6" ry="2.2" fill="#3a2406"/>
+  <path d="M20 30.6l1 1.8-1 1.8-1-1.8zM14.4 32.6l3.6-.6v1.2zM25.6 32.6l-3.6-.6v1.2z" fill="#e8b84a"/>
+  ${facets([
+    ['20,2.4 27.6,10.6 20,13.4', '#fff2b8'], ['20,2.4 12.4,10.6 20,13.4', '#ffd25a'],
+    ['12.4,10.6 20,13.4 20,24.4 12.4,21.4', '#ff9a24'], ['27.6,10.6 20,13.4 20,24.4 27.6,21.4', '#ffbe4a'],
+    ['12.4,21.4 20,24.4 20,30.4', '#d8620e'], ['27.6,21.4 20,24.4 20,30.4', '#b84a08'],
+  ], '#7a2a04')}
+  <circle cx="20" cy="17.4" r="5.4" fill="${u('ssc')}" opacity="0.9"/>
+  <g ${sk('#fffbe0', 0.6)}${RC} opacity="0.95">${Array.from({ length: 8 }, (_, i) => {
+    const a = (i / 8) * Math.PI * 2;
+    return `<path d="M${n(20 + Math.cos(a) * 2.6)} ${n(17.4 + Math.sin(a) * 2.6)}L${n(20 + Math.cos(a) * 4.2)} ${n(17.4 + Math.sin(a) * 4.2)}"/>`;
+  }).join('')}</g>
+  <circle cx="20" cy="17.4" r="1.9" fill="#fffbe0"/>
+  <path d="M14.2 11.6L18.6 4.6" ${ol('#fff', 0.8)} opacity="0.85"${RC}/>
+  <polygon points="20,2.4 27.6,10.6 27.6,21.4 20,30.4 12.4,21.4 12.4,10.6" ${ol('#5a1e02', 0.6)}${LJ}/>
+  ${spark(33.6, 6, 2.6)}${spark(5.4, 12, 1.8)}${spark(32, 25, 1.4)}${spark(8.4, 26.4, 1.2, '#fffbe0')}`,
 
   krakenInk: `${halo('#8a6aff', '#2ae0c8')}<defs>${rad('kig', [[0, '#ffffff', 0.55], [0.5, '#bfe6ff', 0.18], [1, '#6aa8d8', 0.35]], 0.34, 0.3, 0.8)}${lin('kik', [[0, '#4a2470'], [0.5, '#22093a'], [1, '#0a0212']])}${lin('kic', [[0, '#ecc28e'], [1, '#8a5a2a']])}${lin('kiw', [[0, '#c23a6a'], [1, '#5a0a2a']])}</defs>
   ${shadow(20, 36.4, 9.4, 1.8, 0.3)}

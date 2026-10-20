@@ -184,6 +184,15 @@ export class BufferPreloader {
     });
   }
 
+  /** Whether any of `root`'s geometries still wait their turn. */
+  holds(root: THREE.Object3D) {
+    let any = false;
+    root.traverse((o) => {
+      if (!any && this.queue.includes((o as THREE.Mesh).geometry)) any = true;
+    });
+    return any;
+  }
+
   /** Geometries still waiting to be uploaded. */
   get pending() {
     return this.queue.length;

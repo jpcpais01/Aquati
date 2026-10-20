@@ -5,7 +5,9 @@ import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { HOLD_ROOM } from '../game/treasure';
-import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
+import { WORLD_SIZE, Island } from '../world/terrain';
+import type { Seas } from '../world/seas';
+import { HIGH_SEAS_R, nearestRegion, REGIONS } from '../world/regions';
 import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark, fortMark, vortexMark, reefMark, HazardMark } from './chart';
 import { PIN_COLORS } from '../game/waypoints';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
@@ -17,6 +19,7 @@ import { ammoIcon } from './ammoArt';
 import { progressSaved } from '../core/progress';
 import { CAPTAIN } from '../game/bounty';
 import { Loadout, loadoutParts, refit, refitBars } from '../ships/parts';
+import { replay } from './replay';
 export type { VoyageEvent, WreckReport } from './wreck';
 
 const NOTES_SEEN_KEY = 'aquati.notesSeen';
@@ -52,7 +55,7 @@ export interface VoyageInfo {
 }
 
 /** Cards that sit over the menus and close on Esc or a tap outside; later ones stack on top. */
-const OVERLAYS = ['notes', 'controls', 'settings', 'graphics', 'account', 'bounties'];
+const OVERLAYS = ['notes', 'controls', 'settings', 'graphics', 'account', 'bounties', 'crew'];
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -69,7 +72,8 @@ export class UI {
   private bars = $('bars');
   private mapCanvas = $<HTMLCanvasElement>('minimap');
   private map = this.mapCanvas.getContext('2d')!;
-  private mapImage: HTMLCanvasElement | null = null;
+  /** Each archipelago's minimap, and the corner of its square. */
+  private mapImages: { img: HTMLCanvasElement; x0: number; z0: number }[] = [];
   readonly chart = new SeaChart($<HTMLCanvasElement>('chart-canvas'));
   private chartPlayer: Ship | null = null;
   private barEls = new Map<number, HTMLDivElement>();
@@ -95,6 +99,8 @@ export class UI {
   onClearPins: () => void = () => {};
   /** Photo mode, from the pause menu or the HUD's camera button. */
   onPhoto: () => void = () => {};
+  /** Sweeps the sea of sunken wrecks and floating wreckage. */
+  onSweep: () => void = () => {};
   onClick: () => void = () => {};
   /** Live settings changed (sound, music, shake…); the game applies what it owns. */
   onSettings: (s: Settings) => void = () => {};
@@ -229,6 +235,10 @@ export class UI {
       (e.currentTarget as HTMLElement).blur();
       this.onClick();
       this.onPhoto();
+    });
+    $('btn-sweep').addEventListener('click', (e) => {
+      (e.currentTarget as HTMLElement).blur();
+      this.onSweep();
     });
     $('btn-photo2').addEventListener('click', () => {
       this.onClick();
@@ -770,6 +780,11 @@ export class UI {
     this.wreck.end();
   }
 
+  /** The letterbox's depth gauge as she sinks (fathoms), settling when she rests. */
+  wreckDepth(fathoms: number, rested: boolean) {
+    this.wreck.depth(fathoms, rested);
+  }
+
   toast(kicker: string, title: string, life = 3.4) {
     const el = document.createElement('div');
     el.className = 'toast';
@@ -876,9 +891,15 @@ export class UI {
 
   /** Writes a HUD value only when it changes; `bump` pops the chip when a count goes up. */
   /** The hold chip: room used of room aboard, bumping as plunder comes in. */
-  setHold(used: number, cap: number) {
+  setHold(used: number, cap: number, fleet: { used: number; cap: number } | null = null) {
     this.hudSet('hud-hold', `${used}/${cap}`, true);
-    $('hud-hold-chip').classList.toggle('full', used >= cap);
+    const chip = $('hud-hold-chip');
+    chip.classList.toggle('full', used >= cap);
+    chip.classList.toggle('fleet', !!fleet);
+    chip.title = fleet ? "Ship's hold · escorts' holds" : "Ship's hold";
+    if (!fleet) return;
+    this.hudSet('hud-hold-fleet', `${fleet.used}/${fleet.cap}`, true);
+    $('hud-hold-fleet').classList.toggle('full', fleet.used >= fleet.cap);
   }
 
   private hudSet(id: string, v: string, bump = false) {
@@ -889,9 +910,7 @@ export class UI {
     el.textContent = v;
     if (bump && prev !== undefined && parseInt(v) > parseInt(prev)) {
       const chip = el.parentElement!;
-      chip.classList.remove('bump');
-      void chip.offsetWidth;
-      chip.classList.add('bump');
+      replay(chip, 'bump');
     }
   }
 
@@ -914,9 +933,7 @@ export class UI {
       $('hud-hull-ghost').style.transform = `scaleX(${f})`;
       if (frac < prev - 0.001) {
         const panel = fill.closest('.ship-panel')!;
-        panel.classList.remove('hit');
-        void (panel as HTMLElement).offsetWidth;
-        panel.classList.add('hit');
+        replay(panel, 'hit');
       }
     }
     const hp = `${Math.ceil(Math.max(0, p.hp))}`;
@@ -1065,9 +1082,7 @@ export class UI {
     if (flash) {
       this.tagT = window.setTimeout(() => this.hideTag(), 2400);
       for (const el of [this.ammoSlots.get(id)!, this.ammoBtn]) {
-        el.classList.remove('load');
-        void el.offsetWidth;
-        el.classList.add('load');
+        replay(el, 'load');
       }
     }
   }
@@ -1080,9 +1095,7 @@ export class UI {
   /** None of that shot left. */
   ammoDenied(id: AmmoId) {
     for (const el of [this.ammoSlots.get(id)!, this.fanChips.get(id)!]) {
-      el.classList.remove('deny');
-      void el.offsetWidth;
-      el.classList.add('deny');
+      replay(el, 'deny');
     }
   }
 
@@ -1091,9 +1104,7 @@ export class UI {
     for (const el of [this.ammoSlots.get(id)!, this.ammoBtn]) {
       const g = el.querySelector('.gain') as HTMLElement | null;
       if (g) g.textContent = `+${n}`;
-      el.classList.remove('gain-on');
-      void el.offsetWidth;
-      el.classList.add('gain-on');
+      replay(el, 'gain-on');
     }
   }
 
@@ -1119,9 +1130,7 @@ export class UI {
   gunsReady(side: 'port' | 'starboard') {
     const els: [HTMLElement, string][] = [[$(side === 'port' ? 't-port' : 't-star'), 'ping'], [this.rack, side === 'port' ? 'ping-p' : 'ping-s']];
     for (const [el, cls] of els) {
-      el.classList.remove(cls);
-      void el.offsetWidth;
-      el.classList.add(cls);
+      replay(el, cls);
       setTimeout(() => el.classList.remove(cls), 650);
     }
   }
@@ -1129,9 +1138,7 @@ export class UI {
   flashBroadside(side: 'port' | 'starboard') {
     const els: [HTMLElement, string][] = [[$(side === 'port' ? 't-port' : 't-star'), 'flash'], [this.rack, side === 'port' ? 'flash-p' : 'flash-s']];
     for (const [el, cls] of els) {
-      el.classList.remove(cls);
-      void el.offsetWidth;
-      el.classList.add(cls);
+      replay(el, cls);
     }
   }
 
@@ -1158,9 +1165,7 @@ export class UI {
   /** A soft ring ripples off the wind arrow as the wind comes round. */
   windShift() {
     const el = $('hud-wind');
-    el.classList.remove('shift');
-    void el.offsetWidth;
-    el.classList.add('shift');
+    replay(el, 'shift');
   }
 
   private skyKey = '';
@@ -1169,9 +1174,7 @@ export class UI {
   skyTag(text: string) {
     const el = $('hud-sky');
     el.dataset.tag = text;
-    el.classList.remove('tag');
-    void el.offsetWidth;
-    el.classList.add('tag');
+    replay(el, 'tag');
     clearTimeout(this.skyTagT);
     this.skyTagT = window.setTimeout(() => el.classList.remove('tag'), 1600);
   }
@@ -1202,7 +1205,7 @@ export class UI {
       seen.add(s.id);
       let el = this.barEls.get(s.id);
       // a prize that signs on changes sides: her bar is made afresh
-      const kind = s.team === 'player' ? 'ally' : s.hunter ? 'hunter' : s.ghost ? 'ghost' : '';
+      const kind = s.captain ? 'mate' : s.team === 'player' ? 'ally' : s.hunter ? 'hunter' : s.ghost ? 'ghost' : '';
       if (el && el.dataset.kind !== kind) {
         el.remove();
         el = undefined;
@@ -1211,7 +1214,7 @@ export class UI {
         el = document.createElement('div');
         el.className = kind ? `ebar ${kind}` : 'ebar';
         el.dataset.kind = kind;
-        const label = kind === 'ally' ? esc(s.name) : s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name;
+        const label = kind === 'mate' ? `<em>${esc(s.captain!)}</em>${esc(s.name)}` : kind === 'ally' ? esc(s.name) : s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name;
         el.innerHTML = `<i></i><span>${label}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
         this.bars.appendChild(el);
         this.barEls.set(s.id, el);
@@ -1241,7 +1244,12 @@ export class UI {
 
   // ------------------------------------------------------------- minimap
 
-  buildMap(terrain: Terrain) {
+  buildMap(seas: Seas) {
+    this.mapImages = seas.regions.map((t) => ({ img: this.mapOf(t), x0: t.x0, z0: t.z0 }));
+    this.chart.setTerrain(seas);
+  }
+
+  private mapOf(terrain: Seas['regions'][number]) {
     const res = 512;
     const c = document.createElement('canvas');
     c.width = c.height = res;
@@ -1249,8 +1257,8 @@ export class UI {
     const img = g.createImageData(res, res);
     for (let j = 0; j < res; j++) {
       for (let i = 0; i < res; i++) {
-        const x = -WORLD_SIZE / 2 + (i + 0.5) * (WORLD_SIZE / res);
-        const z = -WORLD_SIZE / 2 + (j + 0.5) * (WORLD_SIZE / res);
+        const x = terrain.x0 + (i + 0.5) * (WORLD_SIZE / res);
+        const z = terrain.z0 + (j + 0.5) * (WORLD_SIZE / res);
         const h = terrain.heightAt(x, z);
         let r: number, gg: number, b: number;
         if (h > 2.5) {
@@ -1276,8 +1284,7 @@ export class UI {
       }
     }
     g.putImageData(img, 0, 0);
-    this.mapImage = c;
-    this.chart.setTerrain(terrain);
+    return c;
   }
 
   /**
@@ -1360,14 +1367,50 @@ export class UI {
     g.beginPath();
     g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2);
     g.clip();
-    if (this.mapImage) {
-      const px = this.mapImage.width / WORLD_SIZE;
-      const sx = (cx - R + WORLD_SIZE / 2) * px;
-      const sz = (cz - R + WORLD_SIZE / 2) * px;
-      g.imageSmoothingEnabled = true;
-      g.drawImage(this.mapImage, sx, sz, R * 2 * px, R * 2 * px, 0, 0, S, S);
-    }
     const toMap = (x: number, z: number): [number, number] => [((x - cx) / R) * (S / 2) + S / 2, ((z - cz) / R) * (S / 2) + S / 2];
+    // the open ocean's deep blue, then each archipelago's square laid over it
+    g.fillStyle = 'rgb(14, 85, 140)';
+    g.fillRect(0, 0, S, S);
+    g.imageSmoothingEnabled = true;
+    const side = (WORLD_SIZE / R) * (S / 2);
+    for (const m of this.mapImages) {
+      const [x0, y0] = toMap(m.x0, m.z0);
+      if (x0 > S || y0 > S || x0 + side < 0 || y0 + side < 0) continue;
+      g.drawImage(m.img, x0, y0, side, side);
+    }
+    // out on the high seas: each archipelago pinned to the rim, named, to steer by
+    if (!walker && nearestRegion(cx, cz).dist > HIGH_SEAS_R) {
+      g.font = '700 15px Cinzel, serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      for (const r of REGIONS) {
+        const a = Math.atan2(r.z - cz, r.x - cx);
+        const rr = S / 2 - 16;
+        const x = S / 2 + Math.cos(a) * rr;
+        const y = S / 2 + Math.sin(a) * rr;
+        g.save();
+        g.translate(x, y);
+        g.rotate(a);
+        g.fillStyle = 'rgba(255, 231, 168, 0.95)';
+        g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(10, 0);
+        g.lineTo(-6, -7);
+        g.lineTo(-3, 0);
+        g.lineTo(-6, 7);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.restore();
+        const tx = S / 2 + Math.cos(a) * (rr - 30);
+        const ty = S / 2 + Math.sin(a) * (rr - 30);
+        g.lineWidth = 4;
+        g.strokeText(r.name, tx, ty);
+        g.fillText(r.name, tx, ty);
+      }
+      g.textBaseline = 'alphabetic';
+    }
     // undiscovered isles get a soft marker
     g.font = '600 18px Cinzel, serif';
     g.textAlign = 'center';
@@ -1482,6 +1525,29 @@ export class UI {
       if (s === player || !s.alive) continue;
       // your escorts in the fleet's aqua; a prize sailing off for port in faded parchment
       if (s.team === 'player') {
+        // a crewmate's flagship in gold, pinned to the rim while she's off the map
+        if (s.captain) {
+          const d = Math.hypot(s.pos.x - cx, s.pos.z - cz);
+          if (d > R - 18) {
+            const a = Math.atan2(s.pos.z - cz, s.pos.x - cx);
+            const rr = S / 2 - 14;
+            g.save();
+            g.translate(S / 2 + Math.cos(a) * rr, S / 2 + Math.sin(a) * rr);
+            g.rotate(a + Math.PI / 2);
+            g.fillStyle = '#ffd36a';
+            g.strokeStyle = 'rgba(0,0,0,0.55)';
+            g.lineWidth = 2;
+            g.beginPath();
+            g.moveTo(0, -10);
+            g.lineTo(7, 6);
+            g.lineTo(-7, 6);
+            g.closePath();
+            g.fill();
+            g.stroke();
+            g.restore();
+          } else tri(s, '#ffd36a', 13);
+          continue;
+        }
         tri(s, '#5ee3d4', 11);
         continue;
       }

@@ -20,6 +20,7 @@ const I = {
   aa: '<path d="M5 19 12 5l7 14"/><path d="M8 13h8"/>',
   bloom: '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="6.5" opacity=".45"/><circle cx="12" cy="12" r="9.5" opacity=".2"/>',
   tilt: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M3 14h18" opacity=".45"/>',
+  rays: '<circle cx="12" cy="4.5" r="2.2"/><path d="M9.5 8 5 20M12 8.5V20M14.5 8 19 20" opacity=".55"/><path d="M3 20h18"/>',
   res: '<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
 };
 
@@ -149,6 +150,7 @@ export class GraphicsPanel {
         </div>
         ${toggle({ key: 'antialias', name: 'Anti-aliasing', desc: 'Smooth edges on rigging and hulls', ico: I.aa })}
         ${toggle({ key: 'bloom', name: 'Bloom', desc: 'Sun glare and glowing lanterns', ico: I.bloom })}
+        ${toggle({ key: 'lightShafts', name: 'Sun shafts', desc: 'Beams through gaps in the clouds and the shallows', ico: I.rays })}
         ${toggle({ key: 'tiltShift', name: 'Tilt-shift', desc: 'Miniature-style focus blur', ico: I.tilt })}
       </section>
       <footer class="gfx-foot"><span id="gfx-stats"></span><span>Presets also set world detail from the next launch</span></footer>`;

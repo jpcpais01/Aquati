@@ -8,22 +8,29 @@ import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { freezeStatic, skipWhenHidden } from '../render/staticScene';
+import { initLod } from '../render/lod';
 import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDrawSliced } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
+import { Bubbles } from '../fx/bubbles';
 import { Birds } from '../fx/birds';
 import { ReefLife } from '../fx/fish';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
+import { Spirits, SpiritFrom } from '../fx/spirits';
 import { Rain } from '../fx/rain';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
-import { Terrain, WORLD_SIZE } from '../world/terrain';
+import { Terrain } from '../world/terrain';
+import { Seas } from '../world/seas';
+import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, REGIONS, seaEdge, STREAM_R } from '../world/regions';
+import { Dolphins } from '../fx/dolphins';
+import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
 import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
-import { buildShore, setSurf } from '../world/shore';
+import { buildShore, setShoreField, setSurf } from '../world/shore';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, turnWaves, Wave } from '../world/waves';
 import { Atmosphere, AtmosSnapshot, TIMES, WEATHER } from '../world/atmosphere';
@@ -52,11 +59,11 @@ import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, findTradeSites, portClearings } from '../port/site';
 import { TradePort, TradePorts } from '../port/tradePort';
-import { holdPeek, MarketUI } from '../ui/market';
+import { Aboard, holdPeek, MarketUI } from '../ui/market';
 import { lootIcon } from '../ui/lootArt';
-import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood } from './treasure';
+import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood, Stowed } from './treasure';
 import { Kraken } from './kraken';
-import { Hazards } from './hazards';
+import { BRUMAS_NAMES, Hazards, NAMES as MAELSTROM_NAMES } from './hazards';
 import { vortexDepth } from '../world/vortex';
 import { HazardHud, HazardView } from '../ui/hazard';
 import type { HazardMark } from '../ui/chart';
@@ -81,13 +88,15 @@ import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarn
 import { BountyBanner, BountyBoard, WantedHud } from '../ui/bounty';
 import { DigTarget, TreasureMaps } from './treasureMaps';
 import { TreasureMapUI } from '../ui/treasureMap';
-import { EscortAI, EscortRec, FleetStore, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
+import { EscortAI, EscortRec, FleetStore, holdCargo, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
 import { EscortRow, FleetHud } from '../ui/fleet';
 import { Fort, FORT_RANGE, Forts, FortStore, Gun, HAVEN_R, TRIBUTE_HOUR } from './forts';
-import { findFortSites, fortClearings } from '../shore/fortKit';
+import { BRUMAS_FORT_NAMES, findFortSites, fortClearings } from '../shore/fortKit';
 import { shoreMats } from '../shore/kit';
 import { FortHud } from '../ui/fort';
 import { gunRange } from '../ships/ship';
+import { Coop, CoopGame, Recipe, Role } from '../net/coop';
+import { CrewPanel } from '../ui/crew';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
@@ -122,6 +131,9 @@ const MAX_WRECKS = 3;
 const WRECK_REACH = 520;
 
 const _cineV = new THREE.Vector3();
+const _swayV = new THREE.Vector3();
+/** Planking torn from a sinking hull. */
+const WRECK_TIMBER = [new THREE.Color(0.42, 0.29, 0.18), new THREE.Color(0.55, 0.4, 0.26), new THREE.Color(0.33, 0.24, 0.16)];
 
 const BOARD_SEEN_KEY = 'aquati.boardSeen';
 /** Walking islands through the captain's eyes ('1', the default) or from above ('0'). */
@@ -135,10 +147,23 @@ const loadShoreEye = () => {
 };
 /** `?maelstrom` / `?reef` set sail a little way off the first maelstrom / reef (for trying them out). */
 const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(location.search) ? 'maelstrom' : /[?&]reef\b/.test(location.search) ? 'reef' : null) : null;
+/** `?brumas` / `?highseas` set sail off Las Brumas / out on the high seas between the archipelagos (for a look). */
+const SEA_TEST = typeof location !== 'undefined' ? (/[?&]brumas\b/.test(location.search) ? 'brumas' : /[?&]highseas\b/.test(location.search) ? 'highseas' : null) : null;
 /** `?kraken` brews a storm at once and sends the Kraken a few seconds into the voyage. */
 const KRAKEN_TEST = typeof location !== 'undefined' && /[?&]kraken\b/.test(location.search);
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+/** Every texture a model's materials use (uploaded a frame at a time before she's drawn). */
+function texturesOf(root: THREE.Object3D): THREE.Texture[] {
+  const out = new Set<THREE.Texture>();
+  root.traverse((o) => {
+    const m = (o as THREE.Mesh).material;
+    if (!m) return;
+    for (const mat of Array.isArray(m) ? m : [m]) for (const v of Object.values(mat)) if (v instanceof THREE.Texture) out.add(v);
+  });
+  return [...out];
+}
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
@@ -152,10 +177,27 @@ export class Game {
   private input: Input;
   private audio = new Audio();
   private ui = new UI();
-  private terrain!: Terrain;
+  private terrain!: Seas;
+  /**
+   * The archipelagos, one seamless sea (see world/regions.ts). Each keeps its
+   * land in a group of its own, drawn only within STREAM_R of it, and its own
+   * seabed and surf fields for the water shaders, swapped in out on the high
+   * seas where neither reaches (see updateSeas).
+   */
+  private regions: { region: Region; terrain: Terrain; land: THREE.Group; seabed: THREE.DataTexture; surf: THREE.DataTexture }[] = [];
+  private liveRegion = 0;
+  /** Out past every archipelago: no pirates, a calm theme and the dolphins. */
+  private onHighSeas = false;
+  private seasT = 0;
+  /** Seconds until the next dolphin pod may come. */
+  private dolphinT = 20;
+  private dolphins = new Dolphins();
+  private charts = new ChartStore();
   private ocean!: Ocean;
   private wake!: WakeField;
   private particles!: Particles;
+  /** Air beneath the waves and the drifting snow, for the farewell's dive. */
+  private bubbles!: Bubbles;
   private world!: World;
   private projectiles = new Projectiles();
   private loot = new Loot();
@@ -171,6 +213,8 @@ export class Game {
    */
   private shipyard: ShipModel[] = [];
   private keel: ShipModel | null = null;
+  /** World time until which the yard downs tools: a sinking is busy enough on its own. */
+  private yardIdleUntil = 0;
   /** One ghost hull kept ready (built like the pirates', a slice at a time), and the ghost who keeps her shaders compiled. */
   private ghostyard: ShipModel | null = null;
   ghostKeeper: Ship | null = null;
@@ -188,10 +232,13 @@ export class Game {
   /** The voyage's tally for the farewell screen. */
   private log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] as VoyageEvent[] };
   /** The farewell: real seconds since she was lost (-1 afloat), and its beats. */
-  private wreck = { t: -1, hud: true, plunged: false, dived: false, shown: false, skip: false, deep: -1, under: -1, rest: -1, camSet: false, az: 0, elev: 0, dist: 0 };
+  private wreck = { t: -1, hud: true, plunged: false, dived: false, shown: false, skip: false, deep: -1, under: -1, rest: -1, camSet: false, az: 0, elev: 0, dist: 0, burst: 0, fathoms: -1 };
+  /** Where her air leaks out (ship-local points: hatches, gunports, the breaches), and how hard each one is streaming. */
+  private leaks: { p: THREE.Vector3; rate: number; ph: number; acc: number }[] = [];
+  /** The boil of air breaking the surface over her (0..1, eased). */
+  private boil = 0;
   /** Where the camera hangs beneath the waves beside the sinking wreck (eased). */
   private underCam = new THREE.Vector3();
-  private bubbleT = 0;
   private isUnder = false;
   private report: WreckReport | null = null;
   /** Sim-time scale: the killing blow plays out in slow motion. */
@@ -214,6 +261,9 @@ export class Game {
   private reef!: ReefLife;
   private windField!: WindField;
   private wisps!: WindWisps;
+  /** Fallen pirates' ghosts on their way up. */
+  private spirits!: Spirits;
+  private spiritSoundT = -1;
   private atmos = new Atmosphere();
   private skyEnv: SkyEnvironment;
   private envT = 0;
@@ -384,6 +434,8 @@ export class Game {
   private markedFoe: Ship | null = null;
   /** The roster and colours the escorts moored in the harbour were built from. */
   private moorKey = '';
+  /** Countdown to the next look round for wreckage the escorts could sweep up. */
+  private salvageT = 0;
   // treasure maps: torn pieces from chests, an X on an island, and the dig
   private maps = new TreasureMaps();
   private mapUi = new TreasureMapUI();
@@ -399,6 +451,15 @@ export class Game {
   /** When the forts' tribute was last looked for, and the next hammer-knock under your own walls. */
   private tributeT = 0;
   private havenT = 0;
+  // sailing together: other captains' ships in this sea (see net/coop.ts)
+  private coop = new Coop(this.coopBridge());
+  private crewUi!: CrewPanel;
+  /** This frame's ships the pirates may hunt besides you: your escorts and the other captains'. */
+  private hunt: Ship[] = [];
+  /** Captains at sea the pirates gather round (you and your crewmates). */
+  private capList: Ship[] = [];
+  /** World time your side last struck each ship: a hand in her sinking earns a share. */
+  private myHits = new WeakMap<Ship, number>();
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -420,7 +481,7 @@ export class Game {
       shadow: this.sun.shadow.mapSize.x,
     }));
     this.settings = new Settings(this.quality.tier);
-    this.pipeline = new Pipeline(this.renderer, { msaa: this.quality.msaa, bloomLevels: this.quality.bloomLevels, tiltShift: this.quality.tiltShift });
+    this.pipeline = new Pipeline(this.renderer, { msaa: this.quality.msaa, bloomLevels: this.quality.bloomLevels, tiltShift: this.quality.tiltShift, shafts: 0 });
     this.pipeline.prof = this.prof;
     this.rig = new CameraRig(innerWidth / innerHeight);
     this.input = new Input(canvas);
@@ -473,6 +534,11 @@ export class Game {
     // the icon picks the weather, the clock picks the hour
     document.getElementById('hud-sky')!.addEventListener('click', (e) => {
       e.stopPropagation();
+      // in someone else's sea, their sky
+      if (this.coop.guest) {
+        this.ui.skyTag('The host sets the sky');
+        return;
+      }
       if ((e.target as HTMLElement).closest('#hud-clock')) {
         const t = times[(times.indexOf(this.atmos.timeMode) + 1) % times.length];
         this.atmos.setTimeMode(t);
@@ -516,6 +582,8 @@ export class Game {
   // ------------------------------------------------------------------ setup
 
   async init() {
+    // the mesh simplifier (WebAssembly) for the ships' levels of detail, before any ship is built
+    initLod();
     const ui = this.ui;
     const q = this.quality;
     // webfonts load on first use: fetch every weight now so a toast or banner
@@ -532,31 +600,54 @@ export class Game {
       return nextFrame();
     };
     await mark(0.12, 700);
-    this.terrain = new Terrain(20251019);
+    // the Fortunate Isles you sail from, and Las Brumas far out across the high seas
+    const [homeR, mistR] = REGIONS;
+    const home = new Terrain(homeR.seed);
+    const mist = new Terrain(mistR.seed, { ox: mistR.x, oz: mistR.z, style: 'brumas' });
+    this.terrain = new Seas([home, mist]);
     await mark(0.18, 300);
-    this.terrain.bakeAO(2);
+    home.bakeAO(2);
+    mist.bakeAO(2);
     await mark(0.24, 300);
-    const site = findPortSite(this.terrain, this.spawnPoint);
-    const tradeSites = findTradeSites(this.terrain, 4, [site]);
+    const site = findPortSite(home, this.spawnPoint);
+    // four markets at home, two in the mist (their quays look in toward their own archipelago's heart)
+    const tradeSites = [...findTradeSites(home, 4, [site]), ...findTradeSites(mist, 2, [], mistR)];
     const towns = [site, ...tradeSites].flatMap(portClearings);
     // the Brethren's forts: a stone square on a rise over the sea, on three isles (well clear of any town)
-    // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns)
-    const fortSites = findFortSites(this.terrain, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3);
+    // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns); two more hold the mist
+    const fortSites = [
+      ...findFortSites(home, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3),
+      ...findFortSites(mist, towns, [], 2, BRUMAS_FORT_NAMES),
+    ];
     const fortGround = fortSites.flatMap(fortClearings);
     // maelstroms in deep water, well clear of every harbour mouth, fort and the
     // waters you sail from (each bores an abyss into the seabed, so before the meshes)
-    this.hazards = new Hazards(this.terrain, [
+    const clear = [
       { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 },
       { x: 0, z: 150, r: 300 },
       ...[site, ...tradeSites].map((t) => ({ x: t.x, z: t.z, r: 260 })),
       ...fortSites.map((f) => ({ x: f.x, z: f.z, r: 280 })),
+    ];
+    this.hazards = new Hazards(this.terrain, [
+      { cx: homeR.x, cz: homeR.z, names: MAELSTROM_NAMES, avoid: clear, seed: 4242 },
+      { cx: mistR.x, cz: mistR.z, names: BRUMAS_NAMES, avoid: clear, seed: 5151 },
     ]);
     // the cutthroats' camps: a glade a short walk in from the beach on most isles
-    const camps = findCampSites(this.terrain, [...towns, ...fortGround], site.island);
+    const camps = [...findCampSites(home, [...towns, ...fortGround], site.island), ...findCampSites(mist, [...towns, ...fortGround], null)];
     this.digAvoid = [...towns, ...campClearings(camps), ...fortGround];
     const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps), ...fortGround], q.tier === 0));
     await mark(0.31, 700);
-    this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
+    for (const t of [home, mist]) {
+      const land = t.buildMeshes(q.terrainLod, q.tier === 0);
+      // the seabeds reach out under the high seas to meet, so they're always drawn
+      const bed = land.getObjectByName('seabed')!;
+      this.opaque.add(land, bed);
+      skipWhenHidden(land);
+      const region = REGIONS.find((r) => r.x === t.ox && r.z === t.oz)!;
+      this.regions.push({ region, terrain: t, land, seabed: t.createHeightTexture(512), surf: buildShore(t) });
+    }
+    // the far archipelago's land goes up to the GPU during the loading screen, not as it comes over the horizon
+    this.preload.add(this.regions[1].land);
     // the plants never move once placed (culling only repacks their instances)
     const plants = veg.build();
     this.opaque.add(plants);
@@ -580,8 +671,10 @@ export class Game {
         for (let i = 0; i < 5; i++) this.particles.sparkle(at, tint, 0.8);
       };
     }
-    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
+    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z), home.islands);
     this.opaque.add(this.birds.mesh);
+    // the high seas' dolphins: one mesh, empty until a pod comes (drawn once in the warm-up)
+    this.opaque.add(this.dolphins.mesh);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
     await mark(0.53, 900);
@@ -591,12 +684,13 @@ export class Game {
     this.baseWaves = waves.map((w) => ({ ...w }));
     this.swellAngle = this.baseAngle = windAngle;
     this.wake = new WakeField(q.wakeRes, 300);
-    const seaFloor = this.terrain.createHeightTexture(512);
-    this.wake.setTerrain(seaFloor);
-    buildShore(this.terrain);
+    const seaFloor = this.regions[0].seabed;
+    this.wake.setTerrain(seaFloor, home.rect);
     this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
+    for (const r of this.regions) for (const tex of [r.seabed, r.surf]) this.renderer.initTexture(tex);
     this.particles = new Particles(q.particles);
     this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
+    this.bubbles = new Bubbles(this.particles.uniforms);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.waypoints.buildFx(this.particles.uniforms, globalUniforms.uTime, globalUniforms.uLight);
     // the vault's chest and its light: built now so the warm-up draws them
@@ -614,7 +708,7 @@ export class Game {
       this.audio.explosion(vol * 0.18, pan, 160);
     };
     this.ocean.placeVortices(this.hazards.maelstroms.map((m) => ({ x: m.x, z: m.z, r: m.r0 })));
-    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.loot.fx, this.waypoints.fx);
+    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.bubbles.mesh, this.loot.fx, this.waypoints.fx);
     // the sea from beneath: hidden until the farewell follows a wreck under (the warm-up still draws it)
     this.opaque.add(this.ocean.underside);
     this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
@@ -625,6 +719,25 @@ export class Game {
     this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
     this.world.onStatus = (ship, st, by) => this.onStatus(ship as Ship, st, by as Ship | null);
     this.hazards.attach(this.world);
+    this.dolphins.onSplash = (at, size) => {
+      this.particles.splash(at, size);
+      const [vol, pan, d] = this.world.soundAt(at);
+      this.audio.splash(vol * 0.35 * size, pan, d);
+    };
+    // the breath: a little puff of spray from the blowhole, gone on the wind
+    this.dolphins.onBlow = (at) => {
+      const wd = this.world.wind;
+      for (let i = 0; i < 4; i++) {
+        this.particles.emit({
+          x: at.x, y: at.y, z: at.z, vx: wd.dirX * 0.8 + (Math.random() - 0.5) * 0.6, vy: 1.6 + Math.random() * 1.2, vz: wd.dirZ * 0.8 + (Math.random() - 0.5) * 0.6,
+          life: 0.9 + Math.random() * 0.5, size: 0.18, sizeEnd: 0.7, color: [1, 1, 1], alpha: 0.45, drag: 1.4, grav: 1.5, kind: 1, fadeIn: 0.05,
+        });
+      }
+    };
+    this.dolphins.onCall = (at, whistle) => {
+      const [vol, pan] = this.world.soundAt(at);
+      this.audio.dolphin(vol, pan, whistle);
+    };
     this.world.onHazard = (ship, kind, dmg, at) => this.onHazard(ship as Ship, kind, dmg, at);
     this.hzHud = new HazardHud(document.getElementById('hud')!);
     this.hzMarks = [
@@ -645,6 +758,16 @@ export class Game {
     await mark(0.6, 700);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
+    this.spirits = new Spirits(q.tier === 0 ? 14 : 28, this.particles);
+    this.water.add(this.spirits.mesh);
+    this.spirits.onRise = (at) => {
+      // a crew going up together is a little choir, not a wall of sound
+      if (this.world.time - this.spiritSoundT < 0.28) return;
+      this.spiritSoundT = this.world.time;
+      const [vol, pan, d] = this.world.soundAt(at);
+      this.audio.spirit(vol * 0.32, pan, d);
+    };
+    this.crew.onSoul = (f) => this.raiseSoul(f);
     this.ground = new Ground(this.terrain, veg, towns);
     this.forts = new Forts(fortSites, this.ground, shoreMats());
     this.opaque.add(this.forts.root);
@@ -665,6 +788,8 @@ export class Game {
       routed: (c) => this.onCampRouted(c),
       plunder: (c) => this.plunderCamp(c),
       defeat: () => this.onCaptainDown(),
+      // he rises once he has hit the ground
+      fallen: (w, boss) => this.raiseSoul({ x: w.x, y: w.y, z: w.z, hat: w.look.hat, girth: w.girth, height: w.height, boss, delay: 0.85 }),
       unearthed: (at) => this.onUnearthed(at),
       struck: (prize) => this.onStruck(prize),
       landed: (w, cap) => {
@@ -762,6 +887,7 @@ export class Game {
     this.cumulus.warm = true;
     this.warming = true;
     this.tradePorts.warm();
+    this.dolphins.warm(this.spawnPoint);
     this.shore.warm();
     this.forts.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
@@ -782,6 +908,7 @@ export class Game {
       (m) => (this.renderer.properties.get(m) as { currentProgram?: unknown }).currentProgram,
     );
     veg.hold = false;
+    this.dolphins.clear();
     this.clouds.warm = false;
     this.shore.unwarm();
     this.forts.unwarm();
@@ -795,6 +922,14 @@ export class Game {
     this.renderer.setAnimationLoop(() => this.frame());
     // sign-in loads once the harbour is up, off the critical path
     setTimeout(() => this.cloudSave.start(), 900);
+    // came by an invite link: the crew card opens, one tap from aboard
+    const join = new URLSearchParams(location.search).get('join');
+    if (join) {
+      const u = new URL(location.href);
+      u.searchParams.delete('join');
+      history.replaceState(null, '', u);
+      this.crewUi.invite(join);
+    }
   }
 
   /** The cloud rewrote some saves (another device's progress, or a sign-out). */
@@ -803,6 +938,7 @@ export class Game {
     if (parts.has('world')) this.waypoints.clear();
     if (parts.has('bounty')) this.bounty.reload();
     if (parts.has('fleet')) this.fleet.reload();
+    if (parts.has('charts')) this.charts.reload();
     if (parts.has('forts')) {
       this.fortStore.reload();
       // a fort taken on another device changes hands here too (between voyages)
@@ -857,6 +993,7 @@ export class Game {
       this.audio.click();
     };
     ui.onPhoto = () => this.openPhoto();
+    ui.onSweep = () => this.sweepWrecks();
     this.fleetHud.onOrder = (o) => {
       this.audio.click();
       this.giveOrder(o);
@@ -928,7 +1065,7 @@ export class Game {
     const b = this.settings.budget;
     const maxSamples = this.renderer.capabilities.maxSamples || 0;
     this.pipeline.configure(
-      { msaa: s.antialias ? Math.min(this.quality.mobile ? 2 : 4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift },
+      { msaa: s.antialias ? Math.min(this.quality.mobile ? 2 : 4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift, shafts: s.lightShafts ? b.shaftSteps : 0 },
       { ao: s.rtAO, gi: s.rtGI, shadows: s.rtShadows, aoSamples: b.aoSamples, shadowSteps: b.shadowSteps },
     );
     this.ocean?.setReflections(s.rtReflections ? b.ssrSteps : 0);
@@ -995,6 +1132,15 @@ export class Game {
       },
     );
     this.cloudSave.onWelcome = (w) => account.welcome(w);
+    this.crewUi = new CrewPanel(this.coop, {
+      open: () => this.ui.openOverlay('crew'),
+      click: () => {
+        this.audio.start();
+        this.audio.click();
+      },
+      atSea: () => this.state !== 'menu' && this.state !== 'port' && this.state !== 'loading',
+      suggest: () => this.cloudSave.user?.name.split(/\s+/)[0] || this.look.name.trim() || 'Captain',
+    });
     this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     this.cloudSave.onAdmin = () => {
       const parts = this.partStore.grantAll();
@@ -1452,8 +1598,9 @@ export class Game {
     peek.className = 'hold-peek';
     document.getElementById('hud')!.appendChild(peek);
     const draw = () => {
-      peek.innerHTML = `<h4>Ship's hold <span>${this.hold.used} / ${this.hold.capacity} room</span></h4>${holdPeek(this.hold)}`;
+      peek.innerHTML = holdPeek(this.holds());
     };
+    this.drawPeek = draw;
     chip.addEventListener('click', (e) => {
       e.stopPropagation();
       this.audio.click();
@@ -1463,10 +1610,77 @@ export class Game {
     addEventListener('pointerdown', (e) => {
       if (peek.classList.contains('on') && !peek.contains(e.target as Node) && !chip.contains(e.target as Node)) peek.classList.remove('on');
     });
-    this.hold.onChange = () => {
-      this.ui.setHold(this.hold.used, this.hold.capacity);
-      if (peek.classList.contains('on')) draw();
-    };
+    this.hold.onChange = () => this.refreshHold();
+  }
+
+  private drawPeek = () => {};
+
+  /** Every hold in the fleet: the flagship's, then each escort's still afloat (in the order they joined). */
+  private holds(): Aboard[] {
+    const out: Aboard[] = [{ name: this.player?.name ?? 'Your ship', hold: this.hold }];
+    for (const ai of this.carriers()) out.push({ name: ai.ship.name, hold: ai.hold, escort: true });
+    return out;
+  }
+
+  /** The escorts afloat that carry cargo, oldest hand first. */
+  private carriers(): EscortAI[] {
+    return [...this.escorts.values()].filter((a) => a.ship.alive && !a.ship.removed).sort((a, b) => a.rec.joined - b.rec.joined);
+  }
+
+  /** The hold chip (flagship, plus the escorts' share in aqua) and the peek, if it's open. */
+  private refreshHold() {
+    const es = this.carriers();
+    let used = 0;
+    let cap = 0;
+    for (const a of es) {
+      used += a.hold.used;
+      cap += a.hold.capacity;
+    }
+    this.ui.setHold(this.hold.used, this.hold.capacity, es.length ? { used, cap } : null);
+    if (this.peek.classList.contains('on')) this.drawPeek();
+  }
+
+  /** Goods come aboard the flagship; what she can't (or won't) keep goes across to an escort with room. */
+  private stowFleet(goods: LootId[]): Stowed & { across: { name: string; n: number }[] } {
+    const res = this.hold.stow(goods);
+    const across: { name: string; n: number }[] = [];
+    let spill = [...res.left, ...res.tossed];
+    const p = this.player;
+    if (spill.length && p && (this.state === 'playing' || this.state === 'docked')) {
+      const fresh = res.left.slice();
+      for (const ai of this.carriers()) {
+        if (!spill.length) break;
+        if (Math.hypot(ai.ship.pos.x - p.pos.x, ai.ship.pos.z - p.pos.z) > 520) continue;
+        const r = ai.hold.stow(spill);
+        if (r.kept.length) across.push({ name: ai.ship.name, n: r.kept.length });
+        // what she took of the new goods counts as kept
+        for (const id of r.kept) {
+          const i = fresh.indexOf(id);
+          if (i >= 0) {
+            fresh.splice(i, 1);
+            res.kept.push(id);
+          }
+        }
+        spill = [...r.left, ...r.tossed];
+      }
+      res.left = spill.filter((id) => {
+        const i = fresh.indexOf(id);
+        if (i < 0) return false;
+        fresh.splice(i, 1);
+        return true;
+      });
+      res.tossed = spill.slice();
+      for (const id of res.left) res.tossed.splice(res.tossed.indexOf(id), 1);
+    }
+    return { ...res, across };
+  }
+
+  /** Whether anyone in the fleet in reach of the flagship could take any of these. */
+  private fleetWouldKeep(goods: LootId[]) {
+    if (this.hold.wouldKeep(goods)) return true;
+    const p = this.player;
+    if (!p) return false;
+    return this.carriers().some((a) => Math.hypot(a.ship.pos.x - p.pos.x, a.ship.pos.z - p.pos.z) < 520 && a.hold.wouldKeep(goods));
   }
 
   /** Off a quay's seaward face: offer to come alongside (F or a tap), unless pirates are on her tail. */
@@ -1480,7 +1694,7 @@ export class Game {
     const hunted = this.huntedNear(p);
     const beast = this.kraken.fighting;
     const chased = !!this.lastFoe || hunted || beast;
-    const n = this.hold.count;
+    const n = this.holds().reduce((c, h) => c + h.hold.count, 0);
     const why = beast ? 'No harbour opens to a ship the Kraken hunts' : hunted && !this.lastFoe ? 'A hunter is on your tail: no harbour will let you in' : chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
     this.market.setDock({ name: port.name, ok: !chased, why });
     if (!chased && !this.fpv && this.input.state.helm) this.dock(port);
@@ -1685,8 +1899,8 @@ export class Game {
     this.vaultStore.earn(gold);
     const tier = fort ? rollTier(1.2, 3) : rollTier(0.5, 2);
     const goods = rollContents(tier);
-    const res = this.hold.stow(goods);
-    if (res.tossed.length) this.nagHold(res.tossed.length);
+    const res = this.stowFleet(goods);
+    if (res.tossed.length || res.across.length) this.nagHold(res.tossed.length, res.across);
     this.stockAmmo(fort ? { shell: 4, fire: 2, chain: 2, grape: 3 } : { shell: 2, fire: 1, chain: 1, grape: 2 }, null);
     this.log.chests++;
     this.log.best = Math.max(this.log.best, tier);
@@ -1851,7 +2065,10 @@ export class Game {
 
   /** Where a new map's X falls, from its seed. */
   private digTarget(seed: number): DigTarget | null {
-    const t = digSite(this.ground, seed, this.digAvoid, this.port.site.island);
+    // the X falls among the isles of whichever archipelago you're in
+    const p = this.player?.pos ?? this.spawnPoint;
+    const here = nearestRegion(p.x, p.z).region;
+    const t = digSite(this.ground, seed, this.digAvoid, this.port.site.island, (i) => nearestRegion(i.x, i.z).region === here);
     return t && { isle: t.island.name, x: t.x, z: t.z };
   }
 
@@ -1934,8 +2151,8 @@ export class Game {
     this.vaultStore.earn(gold);
     const tier = rollTier(0.9, 3);
     const goods = [...rollContents(tier), ...rollContents(rollTier(0.6, 2))];
-    const res = this.hold.stow(goods);
-    if (res.tossed.length) this.nagHold(res.tossed.length);
+    const res = this.stowFleet(goods);
+    if (res.tossed.length || res.across.length) this.nagHold(res.tossed.length, res.across);
     this.stockAmmo({ shell: 3, fire: 2, chain: 2, grape: 3 }, null);
     this.log.chests++;
     this.log.best = Math.max(this.log.best, tier);
@@ -2104,8 +2321,8 @@ export class Game {
     this.vaultStore.earn(gold);
     const tier = rollTier({ sloop: 0.35, brig: 0.55, galleon: 0.8 }[id] ?? 0.4, named ? 4 : 3);
     const goods = [...rollContents(tier), ...rollContents(rollTier(0.4, 2))];
-    const res = this.hold.stow(goods);
-    if (res.tossed.length) this.nagHold(res.tossed.length);
+    const res = this.stowFleet(goods);
+    if (res.tossed.length || res.across.length) this.nagHold(res.tossed.length, res.across);
     this.stockAmmo({ shell: 2, fire: 1, chain: 2, grape: 3 }, null);
     this.log.chests++;
     this.log.best = Math.max(this.log.best, tier);
@@ -2263,14 +2480,16 @@ export class Game {
     s.hp = Math.max(1, s.maxHp * rec.hp);
     const ai = new EscortAI(s, { ...rec });
     ai.order = this.fleet.state.order;
+    ai.hold.onChange = () => this.refreshHold();
     this.escorts.set(s, ai);
+    this.refreshHold();
     return s;
   }
 
   /** The roster, kept up to date from the ships themselves (hull and tally). */
   private syncFleet() {
-    const out: { id: string; hp: number; kills: number }[] = [];
-    for (const [s, ai] of this.escorts) if (s.alive) out.push({ id: ai.rec.id, hp: s.hp / s.maxHp, kills: ai.rec.kills });
+    const out: { id: string; hp: number; kills: number; cargo?: ReturnType<typeof holdCargo> }[] = [];
+    for (const [s, ai] of this.escorts) if (s.alive) out.push({ id: ai.rec.id, hp: s.hp / s.maxHp, kills: ai.rec.kills, cargo: holdCargo(ai.hold) });
     if (out.length) this.fleet.sync(out);
   }
 
@@ -2442,6 +2661,15 @@ export class Game {
     this.escorts.delete(s);
     this.fleet.remove(ai.rec.id, true);
     this.assignSlots();
+    // her hold breaks open: what she carried bobs up where she went down, for whoever sails through it
+    const cargo: LootId[] = [];
+    for (const { id, n } of ai.hold.list()) for (let i = 0; i < n; i++) cargo.push(id);
+    for (let i = 0; i < cargo.length; i += 3) {
+      const g = cargo.slice(i, i + 3);
+      const a = (i / 3) * 2.4;
+      this.loot.float(s.pos.x + Math.sin(a) * (4 + i), s.pos.z + Math.cos(a) * (4 + i), g, Math.max(...g.map((x) => LOOT[x].rarity)) as Item['tier']);
+    }
+    this.refreshHold();
     const by = s.lastAttacker && s.lastAttacker !== s ? ` · sunk by the ${s.lastAttacker.name}` : '';
     this.note('fleet', `Lost the ${s.name}`, `${s.cls.name}${by}`);
     this.ui.toast(`The ${s.name} is lost!`, `${ai.rec.master || 'Her captain'} and her crew go down fighting`, 4);
@@ -2477,7 +2705,9 @@ export class Game {
     this.fleet.add(rec);
     const ai = new EscortAI(e, { ...rec });
     ai.order = this.fleet.state.order;
+    ai.hold.onChange = () => this.refreshHold();
     this.escorts.set(e, ai);
+    this.refreshHold();
     this.assignSlots();
     this.markedFoe = null;
     p.kills++;
@@ -2503,6 +2733,7 @@ export class Game {
     if (!this.fleet.add(rec)) return;
     this.buildEscort(rec);
     this.moorAtPort(port);
+    this.market.reholds(this.holds());
     this.refreshFleetMarket(rec.id);
     port.cheer(o.cls === 'galleon' ? 2 : 1);
     this.audio.coin();
@@ -2516,6 +2747,25 @@ export class Game {
     if (!port || this.state !== 'docked') return;
     const rec = this.fleet.get(id);
     if (!rec) return;
+    // she settles up before she sails: her cargo goes ashore at today's prices
+    const ai = [...this.escorts.values()].find((a) => a.rec.id === id);
+    const p = this.player;
+    if (ai && ai.hold.count && p) {
+      const t = this.world.time;
+      const goods: LootId[] = [];
+      let total = 0;
+      for (const { id: g, n } of ai.hold.list()) {
+        total += port.market.price(g, t) * n;
+        for (let i = 0; i < n; i++) goods.push(g);
+      }
+      ai.hold.clear();
+      p.gold += total;
+      this.vaultStore.earn(total);
+      port.unload(goods);
+      this.audio.sale(total, 0);
+      this.note('trade', `The ${rec.name}'s cargo sold as she paid off`, `${goods.length} goods · +${total} gold`);
+      this.refreshServices();
+    }
     this.fleet.remove(id, false);
     for (const [s, ai] of this.escorts) {
       if (ai.rec.id !== id) continue;
@@ -2523,6 +2773,8 @@ export class Game {
       s.anchored = false;
       this.boarding.sendAway(s);
     }
+    this.refreshHold();
+    this.market.reholds(this.holds());
     this.refreshFleetMarket();
     this.audio.bell(1, 0.2);
     this.note('fleet', `Paid off the ${rec.name}`, `${SHIP_CLASSES[rec.cls].name} · ${port.name}`);
@@ -2627,7 +2879,7 @@ export class Game {
       p.root.updateMatrixWorld(true);
       this.syncFleet();
       this.moorAtPort(port);
-      this.market.open(port.name, port.spec.taste.tagline, port.market, this.hold, p.gold, this.world.time);
+      this.market.open(port.name, port.spec.taste.tagline, port.market, this.holds(), p.gold, this.world.time);
       this.refreshServices();
       this.refreshParts();
       // start wide and let the camera settle in on the quay
@@ -2669,25 +2921,30 @@ export class Game {
     this.market.setGold(this.player?.gold ?? 0);
   }
 
-  /** Sells one lot (or the whole hold) at today's prices. */
+  /** Sells one lot (or the whole fleet's cargo) at today's prices: the escorts' holds go ashore with yours. */
   private sell(id: LootId | null) {
     const port = this.dockPort;
     const p = this.player;
     if (!port || !p || this.state !== 'docked') return;
     const t = this.world.time;
-    const lots = id ? [{ id, n: this.hold.has(id) }] : this.hold.list();
     const goods: LootId[] = [];
     let total = 0;
     let best = 0;
-    for (const lot of lots) {
-      if (!lot.n) continue;
-      total += port.market.price(lot.id, t) * lot.n;
-      best = Math.max(best, LOOT[lot.id].rarity);
-      this.hold.take(lot.id, lot.n, false);
-      for (let i = 0; i < lot.n; i++) goods.push(lot.id);
+    let fromEscorts = 0;
+    for (const h of this.holds()) {
+      const lots = id ? [{ id, n: h.hold.has(id) }] : h.hold.list();
+      for (const lot of lots) {
+        if (!lot.n) continue;
+        total += port.market.price(lot.id, t) * lot.n;
+        best = Math.max(best, LOOT[lot.id].rarity);
+        h.hold.take(lot.id, lot.n, false);
+        for (let i = 0; i < lot.n; i++) goods.push(lot.id);
+        if (h.escort) fromEscorts += lot.n;
+      }
     }
     if (!total) return;
-    this.hold.onChange();
+    this.refreshHold();
+    this.syncFleet();
     p.gold += total;
     this.vaultStore.earn(total);
     if (id) this.market.sold(id, total);
@@ -2698,7 +2955,8 @@ export class Game {
     port.unload(goods);
     port.cheer(total >= 1500 || best >= 4 ? 2 : total >= 250 || best >= 2 ? 1 : 0.5);
     this.audio.sale(total, best);
-    this.note('trade', id ? `Sold ${goods.length > 1 ? `${goods.length} × ` : ''}${LOOT[id].name}` : `Sold the hold (${goods.length} goods)`, `${port.name} · +${total} gold`);
+    const fleetLine = fromEscorts ? ` · ${fromEscorts} from your escorts` : '';
+    this.note('trade', id ? `Sold ${goods.length > 1 ? `${goods.length} × ` : ''}${LOOT[id].name}` : fromEscorts ? `Sold the fleet's cargo (${goods.length} goods)` : `Sold the hold (${goods.length} goods)`, `${port.name} · +${total} gold${fleetLine}`);
   }
 
   private buyRepair() {
@@ -2821,6 +3079,127 @@ export class Game {
     return s;
   }
 
+  // ------------------------------------------------------------------ sailing together
+
+  /** What the crew layer may see and do (see net/coop.ts). */
+  private coopBridge(): CoopGame {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const g = this;
+    return {
+      get world() {
+        return g.world;
+      },
+      get quality() {
+        return g.quality.physicalHull ? 1 : 0;
+      },
+      shares: (out) => {
+        const atSea = g.state === 'playing' || g.state === 'paused' || g.state === 'docked' || g.state === 'dead';
+        const p = g.player;
+        if (atSea && p && !p.remote) out.set(p, 'flag');
+        if (atSea) for (const s of g.escorts.keys()) if (!s.removed) out.set(s, 'escort');
+        if (!g.coop.guest) for (const s of g.ais.keys()) if (!s.remote && !s.removed) out.set(s, 'ai');
+      },
+      recipe: (s, role) => g.recipe(s, role),
+      targetOf: (s) => g.ais.get(s)?.target ?? null,
+      prepare: (m) => {
+        g.preload.add(m.root);
+        g.texQueue.push(...texturesOf(m.root));
+      },
+      uploading: (m) => g.preload.holds(m.root),
+      scrap: (m) => g.scrapHull(m),
+      fromYard: (r) => {
+        if (r.team !== 'pirate' || r.hunter || r.livery.skin) return null;
+        if (r.livery.ghost) {
+          const m = g.ghostyard;
+          if (!m || m.cls.id !== r.cls) return null;
+          g.ghostyard = null;
+          return m;
+        }
+        const parts = JSON.stringify(r.livery.parts ?? {});
+        const i = g.shipyard.findIndex((m) => m.cls.id === r.cls && m.livery.id === r.livery.id && JSON.stringify(m.livery.parts ?? {}) === parts);
+        return i >= 0 ? g.shipyard.splice(i, 1)[0] : null;
+      },
+      launch: (r, m) => g.launchPuppet(r, m),
+      remove: (s) => {
+        s.removed = true;
+        g.removeShip(s);
+      },
+      adopt: (s) => {
+        // the host has gone: her pirates are ours to fight now
+        g.ais.set(s, new PirateAI(s, (g.player?.kills ?? 0) / 4));
+      },
+      struck: (s, by, dmg) => g.onHit(s, by as Ship, dmg, s.pos),
+      sunk: (s, by) => g.onRemoteSunk(s, by),
+      sky: () => ({ day: g.atmos.day, kind: g.atmos.kind, windTo: g.atmos.windTo, run: g.atmos.timeMode === 'auto' }),
+      follow: (sky) => (sky ? g.atmos.follow(sky.day, sky.kind, sky.windTo, sky.run) : g.atmos.unfollow()),
+      toast: (title, line, secs = 3) => g.ui.toast(title, line, secs),
+      clearSea: () => {
+        for (const s of [...g.ais.keys()]) {
+          s.removed = true;
+          g.removeShip(s);
+        }
+        g.hunters.clear();
+      },
+      changed: () => g.crewUi?.render(),
+    };
+  }
+
+  /** The captain's name the others see over your flagship. */
+  private captainName() {
+    return this.coop.session?.name || 'Captain';
+  }
+
+  /** One of our ships, for another game to build and launch. */
+  private recipe(s: Ship, role: Role): Recipe {
+    const flag = role === 'flag';
+    return {
+      cls: s.cls.id,
+      livery: s.livery,
+      team: s.team,
+      name: s.name,
+      role,
+      captain: flag ? this.captainName() : null,
+      hunter: s.hunter,
+      boost: s.hunter ? { ...s.boost } : null,
+      skin: flag ? this.vaultStore.equipped.skin : (s.livery.skin ?? null),
+      blast: s.cannonFx.blast,
+      trail: s.cannonFx.trail,
+      ammo: s.ammo,
+      x: s.pos.x,
+      z: s.pos.z,
+      h: s.heading,
+      hp: s.hp,
+      sail: s.sailLevel,
+    };
+  }
+
+  /** Another game's ship on our water: built from her recipe, steered by her owner. */
+  private launchPuppet(r: Recipe, model: ShipModel): Ship {
+    const s = new Ship(refit(SHIP_CLASSES[r.cls], r.livery.parts), r.livery, r.team, this.quality.physicalHull ? 1 : 0, model);
+    s.name = r.name;
+    s.captain = r.captain;
+    s.gold = 0;
+    if (r.hunter) {
+      s.hunter = r.hunter;
+      if (r.boost) s.setBoost(r.boost);
+    }
+    s.cannonFx.blast = r.blast;
+    s.cannonFx.trail = r.trail;
+    s.ammo = r.ammo;
+    s.sailTarget = s.sailLevel = r.sail;
+    if (s.ghost) Game.ghostify(s);
+    this.ships.push(s);
+    this.opaque.add(s.root);
+    this.water.add(s.bowWave.mesh);
+    // a phantom takes shape out of the mist here too
+    if (s.ghost && s.alive) {
+      s.place(r.x, r.z, r.h);
+      this.raiseGhost(s);
+    }
+    if (r.captain && this.state !== 'loading') this.ui.toast(`${r.captain} sails in`, `The ${r.name} joins your sea`, 3);
+    return s;
+  }
+
   /** A phantom casts no shadow, and her guns spit wraith-fire. */
   private static ghostify(s: Ship) {
     s.root.traverse((o) => {
@@ -2832,6 +3211,7 @@ export class Game {
   }
 
   private removeShip(s: Ship) {
+    this.coop.forget(s);
     this.preload.drop(s.root);
     this.opaque.remove(s.root);
     this.water.remove(s.bowWave.mesh);
@@ -2880,8 +3260,8 @@ export class Game {
     for (let i = 0; i < 80; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = rMin + Math.random() * (rMax - rMin);
-      const x = clamp(cx + Math.cos(a) * r, -900, 900);
-      const z = clamp(cz + Math.sin(a) * r, -900, 900);
+      // kept within the archipelago it's sought from (out on the high seas, anywhere)
+      const [x, z] = clampToRegion(cx + Math.cos(a) * r, cz + Math.sin(a) * r, cx, cz, 900);
       if (this.terrain.heightAt(x, z) > -9) continue;
       if (this.ships.some((s) => Math.hypot(s.pos.x - x, s.pos.z - z) < 80)) continue;
       return new THREE.Vector3(x, 0, z);
@@ -2915,6 +3295,13 @@ export class Game {
     return Math.random() < chance;
   }
 
+  /** A fallen pirate gives up the ghost (only where someone might see it). */
+  private raiseSoul(f: SpiritFrom) {
+    const t = this.rig.target;
+    if (Math.hypot(f.x - t.x, f.z - t.z) > Math.max(320, this.rig.distance * 2.2)) return;
+    this.spirits.release(f, this.world.time);
+  }
+
   /** A ghost takes shape out of the sea mist, and if she is near enough, you hear her. */
   private raiseGhost(s: Ship) {
     s.presence = 0;
@@ -2935,6 +3322,9 @@ export class Game {
   private static readonly STOCK: Record<ShipClassId, number> = { sloop: 3, brig: 3, galleon: 1 };
 
   private runShipyard() {
+    // the yard's slices are a few milliseconds each: not in the seconds a ship is going down
+    // (her spars coming apart, a hunter sailing in), when they'd all land on the same frames
+    if (this.world.time < this.yardIdleUntil) return;
     this.preload.step();
     const tex = this.texQueue.shift();
     if (tex) this.renderer.initTexture(tex);
@@ -3030,6 +3420,28 @@ export class Game {
     }
   }
 
+  /**
+   * The HUD broom: every sunken or sinking enemy hull, all drifting wreckage and
+   * the smoke over them are gone at once. Your ship, live foes, a prize your
+   * boarders hold and the floating loot (your plunder) are left alone.
+   */
+  sweepWrecks() {
+    if (this.state !== 'playing') return;
+    const lashed = this.boarding.prize;
+    let n = 0;
+    for (const s of this.ships.slice()) {
+      if (s.alive || s === this.player || s === lashed || s.prize) continue;
+      s.removed = true;
+      this.removeShip(s);
+      n++;
+    }
+    this.wrecks.length = 0;
+    this.debris.clear();
+    this.particles.clear();
+    this.audio.click();
+    this.ui.toast('Clear seas', n ? `${n} wreck${n > 1 ? 's' : ''} swept away` : 'Wreckage swept away', 2.2);
+  }
+
   /** A flotilla: a flagship with two or three escorts in a loose vee. */
   private spawnFlotilla(near: THREE.Vector3, rMin: number, rMax: number, size: number) {
     const kills = this.player?.kills ?? 0;
@@ -3061,6 +3473,7 @@ export class Game {
 
   private enterMenu() {
     this.state = 'menu';
+    this.leaveHighSeas(true);
     this.adoptCloud();
     this.cloudSave.flush();
     this.player = null;
@@ -3073,7 +3486,7 @@ export class Game {
     this.rig.snapTo(this.spawnPoint);
     this.frameMenu();
     // a couple of pirates on the horizon for life
-    if (!this.ships.some((s) => s.team === 'pirate')) {
+    if (!this.coop.guest && !this.ships.some((s) => s.team === 'pirate')) {
       this.spawnPirate(this.spawnPoint, 180, 300);
       this.spawnFlotilla(this.spawnPoint, 300, 420, 2);
     }
@@ -3097,6 +3510,7 @@ export class Game {
     this.hzHit = null;
     this.hzHud.set(null);
     if (HAZARD_TEST) this.testHazard(p);
+    this.seasT = 0;
     this.shore.resetCamps();
     // the Brethren re-man and re-arm their forts between voyages; yours stay yours
     this.forts.apply(this.fortStore.state.taken);
@@ -3113,6 +3527,10 @@ export class Game {
     this.rig.mode = 'follow';
     this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
+    if (SEA_TEST) {
+      this.testSea(p);
+      this.rig.snapTo(p.pos);
+    }
     this.spawnTimer = 4;
     this.resetHeat();
     if (KRAKEN_TEST) this.atmos.setWeather('storm');
@@ -3127,6 +3545,19 @@ export class Game {
     }
     this.assignSlots();
     this.fleetHud.setOrder(this.fleet.state.order, false);
+    // a guest sets sail beside the host's flagship, wherever she is
+    const lead = this.coop.guest ? this.coop.rally() : null;
+    if (lead) {
+      const at = this.findOpenWater(lead.pos.x, lead.pos.z, 90, 150);
+      p.place(at.x, at.z, lead.heading);
+      p.speed = p.cls.maxSpeed * 0.3;
+      for (const s of this.escorts.keys()) {
+        const o = this.findOpenWater(at.x, at.z, 85, 130);
+        s.place(o.x, o.z, lead.heading);
+      }
+      this.rig.snapTo(p.pos);
+      this.ui.toast('Weigh anchor', `The ${p.name} falls in with ${lead.captain ?? 'the host'}'s ${lead.name}`, 3.4);
+    } else
     this.ui.toast('Weigh anchor', fleet.length ? `The ${p.name} sets sail with ${fleet.join(' and ')}` : `The ${p.name} sets sail`, 3);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
@@ -3145,9 +3576,12 @@ export class Game {
     this.setView(false);
     this.rig.resetEye();
     this.syncFleet();
-    for (const s of this.ships.slice()) this.removeShip(s);
+    // in a shared sea the others' ships (and, hosting, your pirates) sail on without you
+    const keep = (s: Ship) => this.coop.live && s.alive && !s.removed && (s.remote || (this.coop.hosting && this.ais.has(s)));
+    for (const s of this.ships.slice()) if (!keep(s)) this.removeShip(s);
     this.escorts.clear();
     this.fleetHud.clear();
+    this.refreshHold();
     this.markedFoe = null;
     this.moorKey = '';
     this.projectiles.clear();
@@ -3157,6 +3591,7 @@ export class Game {
     this.loot.clear();
     this.debris.clear();
     this.crew.clear();
+    this.spirits.clear();
     this.kraken.reset();
     this.krHud.clear();
     this.audio.krakenMusic(false);
@@ -3187,6 +3622,7 @@ export class Game {
       this.maps.wipe();
       this.fortStore.wipe();
       this.fleet.wipe();
+      this.charts.wipe();
       this.waypoints.clear();
       try {
         localStorage.removeItem(BOARD_SEEN_KEY);
@@ -3225,6 +3661,9 @@ export class Game {
     if (on && this.state === 'playing') {
       this.input.releaseLook();
       this.state = 'paused';
+      // with a crew the sea sails on: the helm is let go, not the world
+      if (this.coop.live && this.player) this.player.rudder = 0;
+      document.querySelector('#pause .kicker')!.textContent = this.coop.live ? 'Your crew sails on' : 'Voyage paused';
       const p = this.player;
       this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime, ship: p.name, cls: p.cls.id } : undefined);
     } else if (!on && this.state === 'paused') {
@@ -3396,8 +3835,8 @@ export class Game {
       this.audio.click();
       return;
     }
-    const H = WORLD_SIZE / 2;
-    if (Math.abs(x) > H || Math.abs(z) > H) return;
+    // anywhere on the known sea: an archipelago's waters or the high seas between
+    if (seaEdge(x, z) > 0) return;
     this.waypoints.add(x, z, this.player?.pos);
     this.audio.knock();
   }
@@ -3429,11 +3868,15 @@ export class Game {
     const t = this.world.time;
     let best: Ship | null = null;
     let bd = Infinity;
-    for (const [s, ai] of this.ais) {
-      if (!s.alive || s.removed) continue;
+    for (const s of this.ships) {
+      if (!s.alive || s.removed || s.team !== 'pirate') continue;
+      const ai = this.ais.get(s);
+      if (!ai && !s.remote) continue;
       const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
       // a pirate tied up with an escort far off doesn't drag the camera over to her
-      const fighting = (ai.mode === 'engage' && (ai.target === p || d < 160)) || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
+      // (another game's pirate: by what her owner says she's hunting)
+      const engaged = ai ? ai.mode === 'engage' && (ai.target === p || d < 160) : this.coop.aims(s, p) || d < 160;
+      const fighting = engaged || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
       // a little hysteresis so the frame doesn't flicker at the edge of range
       if (fighting && d < (s === this.lastFoe ? 320 : 270) && d < bd) {
         bd = d;
@@ -3456,6 +3899,7 @@ export class Game {
 
   private onHit(ship: Ship, attacker: Ship, dmg: number, pos: THREE.Vector3) {
     const [x, y, ok] = this.screenOf(pos);
+    if (attacker && (attacker === this.player || this.escorts.has(attacker))) this.myHits.set(ship, this.world.time);
     if (attacker === this.player && ship !== this.player && this.state === 'playing') {
       this.log.hits++;
       this.log.dealt += dmg;
@@ -3504,6 +3948,9 @@ export class Game {
   }
 
   private onSunk(ship: Ship, attacker: Ship) {
+    this.yardIdleUntil = this.world.time + 3;
+    // word of it takes a moment to reach the Brethren: a hunter the kill earns sets out once she's under
+    this.heat.cool = Math.max(this.heat.cool, 2.5);
     if (ship.team === 'player') return this.onEscortLost(ship);
     // the replacement waits until the wreck has settled
     this.spawnTimer = Math.max(this.spawnTimer, 10);
@@ -3538,7 +3985,30 @@ export class Game {
       // whatever she had bolted on is yours to pull from the wreck
       const prize = Object.values(ship.livery.parts ?? {})[0];
       if (prize) setTimeout(() => this.findPart(prize, 'Salvaged from the wreck', ship.pos), 1400);
+    } else if (this.assisted(ship) && this.player) {
+      // another captain sank her, but our guns had a hand in it: a share of the bounty
+      const share = Math.round(bounty * 0.5);
+      this.player.gold += share;
+      this.vaultStore.earn(share);
+      this.ui.toast(`+${share} gold, a share`, `${attacker?.captain ?? 'Your crewmate'} sank the ${ship.name}`, 3.4);
+      this.audio.coin();
+      this.note('fleet', `Helped sink the ${ship.name}`, `${ship.cls.name} · +${share} gold`);
+    } else if (attacker?.captain && attacker.remote) this.ui.toast(`${attacker.captain} sinks her`, `The ${ship.name} goes down`, 2.6);
+  }
+
+  /** Whether our side had a hand in sinking her (struck her in the last half minute) while someone else dealt the last blow. */
+  private assisted(ship: Ship) {
+    const t = this.myHits.get(ship);
+    return this.coop.live && t !== undefined && this.world.time - t < 30;
+  }
+
+  /** Another game's ship went down (multiplayer): a crewmate lost, or a pirate sunk by someone in the crew. */
+  private onRemoteSunk(ship: Ship, by: Ship | null) {
+    if (ship.team === 'player') {
+      if (ship.captain) this.ui.toast(`The ${ship.name} is lost`, `${ship.captain}'s flagship goes down`, 3.6);
+      return;
     }
+    this.onSunk(ship, by as Ship);
   }
 
   // ------------------------------------------------------------------ bounties
@@ -3593,7 +4063,7 @@ export class Game {
       }
     }
     // one at a time, a breather after each claim, and only once her ship is ready on the slipway
-    if (!near && p.alive && h.cool <= 0 && this.hunterHull && huntersEarned(h.pts) > h.sent) this.sendHunter();
+    if (!near && p.alive && !this.onHighSeas && h.cool <= 0 && this.hunterHull && huntersEarned(h.pts) > h.sent) this.sendHunter();
     const c = near ? this.hunters.get(near) : undefined;
     this.wanted.update(h.pts, wantedLevel(h.pts), near && c ? { name: c.handle, dist: nd } : null);
     if (near && c && p.alive && !this.fpv) {
@@ -3669,7 +4139,8 @@ export class Game {
       p.kills++;
     }
     if ((attacker !== p && !escort) || !p || this.state !== 'playing') {
-      this.ui.toast('Her bounty goes unclaimed', `The ${ship.name} sank by another hand`, 3.4);
+      if (attacker?.captain && attacker.remote) this.ui.toast(`${attacker.captain} claims her bounty`, `The ${ship.name} goes down`, 3.4);
+      else this.ui.toast('Her bounty goes unclaimed', `The ${ship.name} sank by another hand`, 3.4);
       return;
     }
     const h = this.heat;
@@ -3690,23 +4161,29 @@ export class Game {
     this.note('bounty', `Claimed the bounty on ${c.epithet}`, `The ${ship.name} · +${gold.toLocaleString()} gold`);
   }
 
-  /** Salvage hauled aboard: its goods go into the hold, its shot into the racks, and it patches the hull. */
-  private haul(p: Ship, it: Item) {
+  /**
+   * Salvage hauled aboard: its goods go into the hold, its shot into the racks,
+   * and it patches the hull. `by` is an escort sweeping it into her own hold.
+   */
+  private haul(p: Ship, it: Item, by: EscortAI | null = null) {
     const w = this.world;
-    p.hp = Math.min(p.maxHp, p.hp + it.heal * p.maxHp);
+    const ship = by ? by.ship : p;
+    ship.hp = Math.min(ship.maxHp, ship.hp + it.heal * ship.maxHp);
     const at = new THREE.Vector3(it.x, 2, it.z);
+    // the fleet shares one magazine: shot she finds is sent across to the flagship's racks
     this.stockAmmo(ammoLoot(it.tier), at);
-    const res = this.hold.stow(it.goods);
+    const res = by ? { ...by.hold.stow(it.goods), across: [] } : this.stowFleet(it.goods);
     const [x, y] = this.screenOf(at);
     const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
     const best = kept[0];
-    if (res.tossed.length) this.nagHold(res.tossed.length);
+    if (!by && (res.tossed.length || res.across.length)) this.nagHold(res.tossed.length, res.across);
     if (!best) return;
     const k = LOOT[best];
     const more = kept.length > 1 ? ` +${kept.length - 1}` : '';
+    const who = by ? `${by.ship.name} · ` : '';
     if (it.tier === 0) {
-      this.ui.floater(`${k.name}${more}`, x, y, 'loot');
-      this.audio.coin();
+      this.ui.floater(`${who}${k.name}${more}`, x, y, by ? 'fleet' : 'loot');
+      this.audio.coin(0, by ? 0.3 : 0.5);
       return;
     }
     const R = RARITY[it.tier];
@@ -3715,12 +4192,12 @@ export class Game {
     if (!this.maps.complete && Math.random() < [0, 0.1, 0.25, 0.45, 0.7][it.tier] * fresh) setTimeout(() => this.foundPiece(at), 900);
     this.log.chests++;
     this.log.best = Math.max(this.log.best, it.tier);
-    if (it.tier >= 2) this.note('chest', `${R.name} chest`, kept.map((id) => LOOT[id].name).join(', '));
-    this.ui.floater(`${R.name} chest: ${k.name}${more}`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[it.tier]);
+    if (it.tier >= 2) this.note('chest', by ? `The ${by.ship.name} hauled up a ${R.name.toLowerCase()} chest` : `${R.name} chest`, kept.map((id) => LOOT[id].name).join(', '));
+    this.ui.floater(`${who}${R.name} chest: ${k.name}${more}`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[it.tier]);
     w.particles.treasure(new THREE.Vector3(it.x, w.waterHeight(it.x, it.z), it.z), R.glow, it.tier);
     this.audio.treasure(it.tier);
-    if (k.rarity >= 2) this.ui.lootToast(lootIcon(best), k.rarity, `${RARITIES[k.rarity].name} plunder`, k.name, k.rarity === 4 ? 3.8 : 3);
-    if (it.tier >= 3) this.rig.shake(it.tier === 4 ? 0.22 : 0.1);
+    if (k.rarity >= 2) this.ui.lootToast(lootIcon(best), k.rarity, by ? `${RARITIES[k.rarity].name} plunder · in the ${by.ship.name}'s hold` : `${RARITIES[k.rarity].name} plunder`, k.name, k.rarity === 4 ? 3.8 : 3);
+    if (it.tier >= 3 && !by) this.rig.shake(it.tier === 4 ? 0.22 : 0.1);
     this.chestPart(it.tier, at, 900);
   }
 
@@ -3752,13 +4229,53 @@ export class Game {
     if (p.tier >= 3) this.rig.shake(0.12);
   }
 
+  /**
+   * The escorts sweep the wreckage: each one with room bears away for the
+   * nearest floating salvage the flagship isn't about to take herself, and
+   * hauls up whatever passes under her bows into her own hold.
+   */
+  private sweepSalvage(p: Ship, dt: number) {
+    if (!this.escorts.size) return;
+    const es = this.carriers();
+    for (const ai of es) {
+      const s = ai.ship;
+      const got = this.loot.gather(dt, s.pos, (s.cls.beam * 0.5 + 5) * 2, (it) => !ai.hold.wouldKeep(it.goods));
+      for (const it of got) this.haul(p, it, ai);
+    }
+    this.salvageT -= dt;
+    if (this.salvageT > 0) return;
+    this.salvageT = 0.6;
+    const claimed = new Set<Item>();
+    const flagFree = this.hold.used < this.hold.capacity;
+    for (const ai of es) {
+      ai.salvage = null;
+      if (ai.order === 'hold' || ai.mode === 'fight' || ai.mode === 'fallback' || ai.hold.used >= ai.hold.capacity) continue;
+      const s = ai.ship;
+      const it = this.loot.nearestFor(s.pos.x, s.pos.z, 180, (it) => {
+        if (claimed.has(it)) return false;
+        const dp = Math.hypot(it.x - p.pos.x, it.z - p.pos.z);
+        // within the flagship's reach, and not right under her own bows when she has room for it
+        if (dp > 240 || (flagFree && dp < 60 && this.hold.wouldKeep(it.goods))) return false;
+        return ai.hold.wouldKeep(it.goods);
+      });
+      if (!it) continue;
+      claimed.add(it);
+      ai.salvage = { x: it.x, z: it.z };
+    }
+  }
+
   /** Says (now and then) that the hold is full and where to empty it. */
-  private nagHold(tossed = 0) {
+  private nagHold(tossed = 0, across: { name: string; n: number }[] = []) {
     if (this.holdNagT > 0) return;
     this.holdNagT = 9;
     const near = this.player && this.tradePorts.nearest(this.player.pos.x, this.player.pos.z);
     const where = near ? `Sell at ${near.port.name} to make room` : 'Sell at a trading port to make room';
-    this.ui.toast(tossed ? `Hold full · ${tossed} cheap ${tossed === 1 ? 'good' : 'goods'} over the side` : 'Hold full', where, 3.4);
+    if (across.length && !tossed) {
+      const n = across.reduce((c, a) => c + a.n, 0);
+      this.ui.toast('Hold full · the escorts take the rest', `${n} ${n === 1 ? 'good' : 'goods'} sent across to ${across.map((a) => `the ${a.name}`).join(' and ')} · sold with yours in port`, 3.6);
+      return;
+    }
+    this.ui.toast(tossed ? `Hold full · ${tossed} cheap ${tossed === 1 ? 'good' : 'goods'} over the side` : this.carriers().length ? 'Every hold in the fleet is full' : 'Hold full', where, 3.4);
   }
 
   /** A line in the ship's log, for the farewell. */
@@ -3781,6 +4298,8 @@ export class Game {
     this.syncFleet();
     if (this.escortShips.length) this.note('fleet', 'Your escorts broke off and ran for port', this.escortShips.map((s) => `the ${s.name}`).join(' and '));
     if (this.hold.count) this.note('trade', 'The hold went down with her', `${this.hold.count} goods worth about ${this.hold.worth} gold`);
+    const saved = this.carriers().filter((a) => a.hold.count);
+    if (saved.length) this.note('trade', 'Your escorts carry their holds safe to port', saved.map((a) => `the ${a.ship.name}: ${a.hold.count} goods`).join(' · '));
     this.state = 'dead';
     // your own ship founders in moments rather than lingering as a hulk
     p.wreckLife = 3;
@@ -3819,6 +4338,7 @@ export class Game {
       hunter: !sea && cause !== 'aground' && cause !== 'kraken' && cause !== 'fort' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
       bounties: this.heat.claimed,
       where: near ? (near.d < 60 ? `on the shoals of ${near.name}` : `off ${near.name}`) : null,
+      fathoms: Math.max(0, (w.waterHeight(p.pos.x, p.pos.z) - this.terrain.heightAt(p.pos.x, p.pos.z)) / 1.8288),
       events: this.log.events.slice(),
     };
     // remember where the camera was, so the farewell can glide out of it
@@ -3828,8 +4348,26 @@ export class Game {
     const dist = Math.hypot(dx, cam.y, dz);
     this.wreck = {
       t: 0, hud: true, plunged: false, dived: false, shown: false, skip: false, deep: -1, under: -1, rest: -1, camSet: false,
-      az: Math.atan2(dx, dz), elev: Math.asin(clamp(cam.y / Math.max(dist, 1), 0.1, 0.99)), dist: clamp(dist, 40, 320),
+      az: Math.atan2(dx, dz), elev: Math.asin(clamp(cam.y / Math.max(dist, 1), 0.1, 0.99)), dist: clamp(dist, 40, 320), burst: 0.6, fathoms: -1,
     };
+    // the hatches, gunports and torn seams her air will stream out of as she goes down
+    const L = p.cls.length;
+    const B = p.cls.beam;
+    const F = p.cls.freeboard;
+    this.leaks = [];
+    for (let i = 0; i < 7; i++) {
+      const side = i % 2 ? 1 : -1;
+      const along = (i / 6 - 0.5) * L * 0.78 + (Math.random() - 0.5) * L * 0.08;
+      const hatch = i % 3 === 0;
+      this.leaks.push({
+        p: new THREE.Vector3(hatch ? (Math.random() - 0.5) * B * 0.3 : side * B * 0.46, hatch ? F * 0.9 : F * (0.25 + Math.random() * 0.4), along),
+        rate: 9 + Math.random() * 12,
+        ph: Math.random() * 10,
+        acc: 0,
+      });
+    }
+    this.boil = 0;
+    this.bubbles.clear();
     this.timeScale = 0.22;
     this.krakenSlowT = 0;
     this.krHud.show(false);
@@ -3876,6 +4414,25 @@ export class Game {
       w.wake.stamp(c.x, c.z, L * 0.5, 1, true);
       w.wake.push(c.x, c.z, L * 0.4, -1);
       if (!k.deep) this.audio.submerge(true);
+      if (k.deep) {
+        // the water closing over her drives a great curtain of air out of every hatch and seam
+        const hx = Math.sin(p.heading);
+        const hz = Math.cos(p.heading);
+        const B = p.cls.beam;
+        for (let i = 0; i < 4; i++) {
+          const a = (Math.random() - 0.5) * L * 0.7;
+          this.bubbles.burst(c.x + hx * a + (Math.random() - 0.5) * B, Math.min(p.root.position.y + 1, y - 2), c.z + hz * a + (Math.random() - 0.5) * B, 1.2 + Math.random() * 0.5);
+        }
+        for (let i = 0; i < 220; i++) {
+          const a = (Math.random() - 0.5) * L * 0.9;
+          const sd = (Math.random() - 0.5) * B * 1.2;
+          const by = Math.min(p.root.position.y + Math.random() * 3, y - 1);
+          const r = Math.random() < 0.18 ? 0.15 + Math.random() * 0.3 : 0.035 + Math.random() * 0.1;
+          this.bubbles.emit(c.x + hx * a + hz * sd, by, c.z + hz * a - hx * sd, r, { vx: hz * sd * 0.5, vy: -Math.random() * 1.5, vz: -hx * sd * 0.5, delay: Math.random() * 1.2 });
+        }
+        // and tears loose what was lashed down: timber floats up past her, the heavy stuff goes down with her
+        this.debris.drown(_cineV.set(c.x, Math.min(p.root.position.y + p.cls.freeboard, y - 1.5), c.z), 7, WRECK_TIMBER);
+      }
     }
     // she comes to rest on the seabed in a cloud of sand
     const rested = p.dmg.restT >= 0;
@@ -3884,6 +4441,14 @@ export class Game {
       this.wreckLanding(p, bed);
     }
     if (k.deep && T > DIVE - 1) this.wreckBubbles(p, realDt * this.timeScale, rested ? T - k.rest : -1);
+    if (k.deep) {
+      // a depth gauge in the letterbox, counting her down
+      const fm = Math.max(0, (w.waterHeight(c.x, c.z) - p.root.position.y) / 1.8288);
+      if (T > DIVE - 0.5 && Math.round(fm) !== k.fathoms) {
+        k.fathoms = Math.round(fm);
+        this.ui.wreckDepth(k.fathoms, rested);
+      }
+    }
 
     // the post-grade: grey for the blow; underwater, a light swim and the sun shafts (heavy gloom on a reef)
     const shallowDepth = k.deep ? 0 : smoothstep(DIVE + 0.4, DIVE + 2.1, T);
@@ -3913,6 +4478,7 @@ export class Game {
     cp.y = Math.max(cp.y, w.waterHeight(cp.x, cp.z) + 1.6);
     this.cineLook.set(c.x, lerp(lerp(4, L * 0.3, settle), -6, dive), c.z);
     let fov = lerp(lerp(34, 29, settle), 44, dive);
+    let roll = 0;
     if (k.deep) {
       // ...and on down through the surface: alongside and a little below her as
       // she sinks, her hull dark against the bright window of the sky, then up
@@ -3941,43 +4507,66 @@ export class Game {
       }
       else u.lerp(_cineV.set(tx, ty, tz), 1 - Math.exp(-realDt * 2.4));
       cp.lerp(u, sink);
-      this.cineLook.lerp(_cineV.set(c.x, sy + lerp(5, 0.5, after), c.z), sink);
-      fov = lerp(fov, 48, sink);
+      // a diver's drift: down here the camera never quite holds still
+      const top = w.waterHeight(cp.x, cp.z);
+      cp.addScaledVector(_swayV.set(Math.sin(T * 0.37) * 0.7 + Math.sin(T * 0.83) * 0.22, Math.sin(T * 0.29 + 1) * 0.4, Math.cos(T * 0.31) * 0.6 + Math.sin(T * 0.71) * 0.2), sink);
+      if (sink > 0) cp.y = Math.min(cp.y, top - 1.2);
+      // once she's down, the gaze lifts slowly from her toward the light and the air still streaming up
+      const gaze = k.rest >= 0 ? smoothstep(k.rest + 2.5, k.rest + 12, T) : 0;
+      const ly = lerp(sy + lerp(5, 0.5, after), top - 3, gaze * 0.42);
+      this.cineLook.lerp(_cineV.set(c.x, ly, c.z), sink);
+      fov = lerp(fov, lerp(48, 55, gaze), sink);
+      roll = (Math.sin(T * 0.23) * 0.028 + Math.sin(T * 0.53 + 2) * 0.01) * sink;
     }
-    this.rig.cine = { pos: cp, look: this.cineLook, fov, w: smoothstep(0, 2.6, T) };
+    this.rig.cine = { pos: cp, look: this.cineLook, fov, w: smoothstep(0, 2.6, T), roll };
+    if (k.deep) this.bubbles.update(realDt * this.timeScale, w.waterHeight(c.x, c.z), this.rig.camera, this.pipeline.height);
   }
 
-  /** Air streaming out of her as she goes down, and splinters drifting after her. */
+  /**
+   * Air streaming out of her as she goes down: a sputtering train of bubbles
+   * from every hatch and seam, great gulps of trapped air breaking free (and
+   * shaking loose her timbers), and the boil they make of the surface above.
+   * It all chokes off slowly once she lies on the sand.
+   */
   private wreckBubbles(p: Ship, dt: number, sinceRest: number) {
     const w = this.world;
+    const k = this.wreck;
     const L = p.cls.length;
-    const rate = sinceRest < 0 ? 46 : 30 * Math.exp(-sinceRest * 0.25);
-    this.bubbleT += dt * rate;
-    const hx = Math.sin(p.heading);
-    const hz = Math.cos(p.heading);
     const top = w.waterHeight(p.pos.x, p.pos.z);
-    while (this.bubbleT > 1) {
-      this.bubbleT -= 1;
-      const a = (Math.random() - 0.5) * L * 0.85;
-      const x = p.pos.x + hx * a + (Math.random() - 0.5) * p.cls.beam;
-      const z = p.pos.z + hz * a + (Math.random() - 0.5) * p.cls.beam;
-      const y = p.root.position.y + Math.random() * 2.5;
-      if (y > top - 0.5) continue;
-      const big = Math.random() < 0.12;
-      const vy = 1 + Math.random() * 1.6;
-      w.particles.emit({
-        x, y, z, vx: (Math.random() - 0.5) * 0.5, vy, vz: (Math.random() - 0.5) * 0.5,
-        life: Math.min(7, (top - y) / (vy + 1.2) + 0.4), size: big ? 0.5 + Math.random() * 0.5 : 0.1 + Math.random() * 0.25,
-        color: [1.5, 1.75, 1.85], alpha: 0.75, grav: -1.4, drag: 0.35, kind: 4, fadeIn: 0.08,
-      });
-      if (sinceRest < 0 && Math.random() < 0.12) {
-        // a splinter of her timbers, tumbling slowly down after her
-        w.particles.emit({
-          x, y: y + 1.5, z, vx: (Math.random() - 0.5) * 0.4, vy: 0.4, vz: (Math.random() - 0.5) * 0.4,
-          life: 5 + Math.random() * 3, size: 0.18 + Math.random() * 0.25, color: [0.32, 0.22, 0.14], alpha: 1, grav: 0.35, drag: 1.4, spin: (Math.random() - 0.5) * 3, kind: 3, fadeIn: 0.2,
+    const life = sinceRest < 0 ? 1 : Math.exp(-sinceRest * 0.16);
+    p.root.updateMatrixWorld();
+    for (const lk of this.leaks) {
+      // each one chokes and gushes in its own rhythm
+      const pulse = 0.5 + 0.5 * Math.sin(k.t * (0.9 + lk.ph * 0.13) + lk.ph);
+      lk.acc += dt * lk.rate * life * (0.25 + pulse * pulse * 1.5);
+      if (lk.acc < 1) continue;
+      const at = p.root.localToWorld(_cineV.copy(lk.p));
+      for (; lk.acc >= 1; lk.acc -= 1) {
+        if (at.y > top - 0.6) continue;
+        const big = Math.random() < 0.1;
+        const r = big ? 0.14 + Math.random() * 0.18 : 0.035 + Math.random() * Math.random() * 0.1;
+        this.bubbles.emit(at.x + (Math.random() - 0.5) * 0.3, at.y + (Math.random() - 0.5) * 0.2, at.z + (Math.random() - 0.5) * 0.3, r, {
+          vx: (Math.random() - 0.5) * 0.6, vy: Math.random() * 0.4, vz: (Math.random() - 0.5) * 0.6, delay: Math.random() * dt,
         });
       }
     }
+    // trapped air breaking free in great gulps
+    k.burst -= dt;
+    if (k.burst <= 0 && life > 0.06) {
+      k.burst = sinceRest < 0 ? 0.45 + Math.random() * 1.0 : (1.6 + Math.random() * 2.8) / life;
+      const at = p.root.localToWorld(_cineV.set((Math.random() - 0.5) * p.cls.beam * 0.6, p.cls.freeboard * (0.3 + Math.random() * 0.6), (Math.random() - 0.5) * L * 0.8));
+      if (at.y < top - 1.5) {
+        const size = (0.8 + Math.random() * 0.8) * (0.45 + life * 0.55);
+        this.bubbles.burst(at.x, at.y, at.z, size);
+        const [vol, pan] = w.soundAt(at);
+        this.audio.airPocket(size, Math.max(vol, 0.5), pan);
+        // and now and then it shakes a piece of her loose
+        if (sinceRest < 0 && Math.random() < 0.4) this.debris.drown(at, 1 + (Math.random() < 0.3 ? 1 : 0), WRECK_TIMBER);
+      }
+    }
+    // the surface overhead churns white where it all breaks
+    this.boil += ((sinceRest < 0 ? 1 : life) - this.boil) * (1 - Math.exp(-dt * 1.2));
+    this.ocean.setBoil(p.pos.x + 1.2, p.pos.z + 0.5, L * 0.5 + 4, this.boil * 0.9);
   }
 
   /** She settles onto the sand: a slow billow of it, a muffled thud through the hull. */
@@ -4016,9 +4605,23 @@ export class Game {
       u.z = lerp(60, 34, deep) * (1 - this.atmos.storm * 0.35);
       const uc = globalUniforms.uUnderColor.value;
       this.pipeline.clearColor.setRGB(uc.x, uc.y, uc.z, THREE.LinearSRGBColorSpace);
+      // the sun's light bent down through the surface (Snell), and the colour of its shafts
+      const sd = globalUniforms.uSunDir.value;
+      const pu = (this.pipeline.under ??= { surf: 0, ray: new THREE.Vector3(), color: new THREE.Vector3() });
+      const eta = 1 / 1.333;
+      const ci = Math.max(sd.y, 0.05);
+      const kk = Math.sqrt(Math.max(0, 1 - eta * eta * (1 - ci * ci)));
+      pu.ray.set(-sd.x * eta, -kk, -sd.z * eta).normalize();
+      const sc = globalUniforms.uSunColor.value;
+      const open = (1 - globalUniforms.uCloudCover.value * 0.6) * (1 - this.atmos.storm * 0.5) * smoothstep(-0.05, 0.25, sd.y) * (1 - deep * 0.4);
+      pu.color.set(sc.x * 0.3, sc.y * 0.62, sc.z * 0.6).multiplyScalar(1.6 * open).addScaledVector(globalUniforms.uLight.value, 0.06);
+      const cam = this.rig.camera.position;
+      pu.surf = this.world.waterHeight(cam.x, cam.z);
     } else {
       this.pipeline.clearColor.set(0x0b2a3a);
+      this.pipeline.under = null;
     }
+    this.bubbles.mesh.visible = on;
   }
 
   /** Back to the surface: sail the same ship again, or pick another in the harbour. */
@@ -4035,6 +4638,9 @@ export class Game {
       this.audio.submerge(false);
       this.isUnder = false;
       this.setUnder(false);
+      this.bubbles.clear();
+      this.ocean.setBoil(0, 0, 1, 0);
+      this.boil = 0;
       this.ui.showDead(false);
       this.ui.endWreck();
       this.resetWorld();
@@ -4183,6 +4789,106 @@ export class Game {
     this.hzHud.set(v);
   }
 
+  /** `?brumas` / `?highseas`: set sail off Las Brumas' main isle, or far out on the open ocean between. */
+  private testSea(p: Ship) {
+    const [home, mist] = REGIONS;
+    const hero = this.terrain.islands.find((i) => nearestRegion(i.x, i.z).region === mist)!;
+    const at = SEA_TEST === 'brumas' ? this.findOpenWater(hero.x, hero.z, hero.r + 200, hero.r + 320) : _a.set(home.x + (mist.x - home.x) * 0.42, 0, home.z + (mist.z - home.z) * 0.42).clone();
+    p.place(at.x, at.z, Math.atan2(mist.x - at.x, mist.z - at.z));
+    p.speed = p.cls.maxSpeed * 0.5;
+    if (SEA_TEST === 'highseas') this.dolphinT = 3;
+    else this.atmos.climate = 'mist';
+  }
+
+  // ------------------------------------------------------------------ the one sea
+
+  /**
+   * The archipelagos and the high seas between them, a few times a second:
+   * which land is drawn, whose seabed and surf the water reads, and whether
+   * you've sailed out into the calm (or into an archipelago, perhaps for the
+   * first time).
+   */
+  private updateSeas(dt: number) {
+    if (this.dolphins.active || this.onHighSeas) this.dolphins.update(dt, this.world, this.player);
+    if (this.onHighSeas && this.player && this.state === 'playing') this.callDolphins(dt);
+    this.seasT -= dt;
+    if (this.seasT > 0) return;
+    this.seasT = 0.25;
+    const t = this.rig.target;
+    // land is drawn (and its matrices walked) only within reach of the view
+    for (const r of this.regions) r.land.visible = this.warming || Math.hypot(r.region.x - t.x, r.region.z - t.z) < STREAM_R;
+    // the water shaders read the nearer archipelago's seabed and surf: the swap
+    // falls far out on the high seas, where neither has a shoal to show
+    const near = nearestRegion(t.x, t.z).region;
+    const i = this.regions.findIndex((r) => r.region === near);
+    if (i >= 0 && i !== this.liveRegion) {
+      this.liveRegion = i;
+      const r = this.regions[i];
+      this.ocean.setSeabed(r.seabed, r.terrain.rect);
+      this.wake.setTerrain(r.seabed, r.terrain.rect);
+      setShoreField(r.surf, r.terrain.rect);
+      // the gulls nest wherever you're bound
+      this.birds.rehome(r.terrain.islands);
+    }
+    const p = this.player;
+    if (!p || this.state !== 'playing') return;
+    const { region, dist } = nearestRegion(p.pos.x, p.pos.z);
+    // a little hysteresis, so sailing along the edge doesn't flicker the music
+    if (!this.onHighSeas && dist > HIGH_SEAS_R + 60) this.enterHighSeas();
+    else if (this.onHighSeas && dist < HIGH_SEAS_R - 60) {
+      this.leaveHighSeas(false);
+      this.arrive(region, p);
+    }
+  }
+
+  private enterHighSeas() {
+    this.onHighSeas = true;
+    this.audio.highSeas(true);
+    this.atmos.climate = 'open';
+    // the storm blows itself out behind you
+    if (this.atmos.kind === 'storm' || this.atmos.kind === 'rain') this.atmos.hasten(25);
+    this.dolphinT = Math.min(this.dolphinT, 14 + Math.random() * 16);
+    this.ui.toast('The high seas · Mar Sereno', 'Open ocean, a fair trade wind and a long, easy swell. No pirate hunts this far out', 5);
+  }
+
+  /** Back among islands (or the voyage over: `quiet`, no fanfare). */
+  private leaveHighSeas(quiet: boolean) {
+    if (quiet) {
+      this.dolphins.clear();
+      this.atmos.climate = 'home';
+    } else this.dolphins.dismiss();
+    if (!this.onHighSeas) return;
+    this.onHighSeas = false;
+    this.audio.highSeas(false);
+  }
+
+  /** Sailing in among an archipelago's isles; the first time, it goes on the chart for good. */
+  private arrive(region: Region, p: Ship) {
+    this.atmos.climate = region.id === 'brumas' ? 'mist' : 'home';
+    if (this.charts.mark(region.id)) {
+      const reward = 600;
+      p.gold += reward;
+      this.vaultStore.earn(reward);
+      this.note('isle', `Reached ${region.name}`, `+${reward} gold`);
+      this.ui.toast(`${region.name} · ${region.motto}`, `New waters charted! +${reward} gold. Their isles, ports and forts are on your chart now`, 6.5);
+      this.audio.treasure(2);
+    } else {
+      this.ui.toast(region.name, region.motto, 4);
+      this.audio.chime();
+    }
+  }
+
+  /** Now and then a pod of dolphins comes racing in to ride along with you. */
+  private callDolphins(dt: number) {
+    const p = this.player!;
+    if (this.dolphins.active) return;
+    this.dolphinT -= dt;
+    if (this.dolphinT > 0 || !p.alive || p.speed < 2.5) return;
+    this.dolphins.summon(p);
+    this.dolphinT = 55 + Math.random() * 70;
+    this.ui.toast('Dolphins!', 'A pod comes racing in to ride your bow wave', 3.4);
+  }
+
   /** `?maelstrom` / `?reef`: set sail just off one, bows on. */
   private testHazard(p: Ship) {
     const m = this.hazards.maelstroms[0];
@@ -4327,6 +5033,8 @@ export class Game {
 
   /** Each storm gets one roll of the dice; if it comes, it waits for deep, lonely water. */
   private watchForKraken(dt: number, p: Ship) {
+    // the deep stays quiet while captains sail together
+    if (this.coop.live) return;
     if (KRAKEN_TEST && this.krakenCool <= 0 && this.voyageTime > 7) {
       this.summonKraken();
       this.krakenCool = 60;
@@ -4348,6 +5056,8 @@ export class Game {
 
   /** Deep water all round, and well clear of any harbour. */
   private krakenWaters(p: Ship) {
+    // the high seas are the one place it never comes
+    if (this.onHighSeas) return false;
     const x = p.pos.x, z = p.pos.z;
     if (Math.hypot(x - this.spawnPoint.x, z - this.spawnPoint.z) < 600) return false;
     const near = this.tradePorts.nearest(x, z);
@@ -4577,12 +5287,26 @@ export class Game {
     P.begin('Sinking & wrecks', 'sim');
     this.updateWreck(dt);
     P.end();
-    const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt * this.timeScale;
+    // a shared sea never stops or slows for one captain (photo mode still holds it, briefly)
+    const frozen = this.state === 'loading' || (this.state === 'paused' && (!this.coop.live || this.photo.active));
+    const simDt = frozen ? 0 : dt * (this.coop.live ? 1 : this.timeScale);
     this.update(simDt, dt);
     this.render(simDt);
+    if (import.meta.env.DEV) this.watchPrograms();
     this.input.consume();
     P.frameEnd();
     this.cpuMs = performance.now() - now;
+  }
+
+  private progCount = 0;
+  /** Dev builds: names any shader that compiles mid-voyage (each is a stall; see render/warmup.ts). */
+  private watchPrograms() {
+    const list = this.renderer.info.programs;
+    if (!list) return;
+    if (list.length > this.progCount && this.progCount && this.state === 'playing') {
+      for (const p of list.slice(this.progCount)) console.warn('[aquati] shader compiled mid-voyage:', p.name || p.cacheKey.slice(0, 120));
+    }
+    this.progCount = list.length;
   }
 
   /** Main-thread time the last frame took (ms): tells the resolution scaler whether pixels are the problem. */
@@ -4625,7 +5349,13 @@ export class Game {
     const lashed = this.boarding.prize;
     // your escorts stand guard even while you're ashore or on a prize's deck, and can be fought there
     this.updateFleet(dt);
-    for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships, this.state === 'playing' ? this.escortShips : []);
+    // the other captains' ships come and go, are steered onto their owners' tracks, and hear ours
+    this.coop.update(dt);
+    const hunt = this.hunt;
+    hunt.length = 0;
+    if (this.state === 'playing') for (const s of this.escortShips) hunt.push(s);
+    this.coop.mates(hunt);
+    for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships, hunt);
     P.end();
     P.begin('Maelstroms & reefs', 'ships');
     this.hazards.update(dt, w, this.ships, this.loot.all(), this.rig.target, globalUniforms.uStorm.value);
@@ -4703,20 +5433,20 @@ export class Game {
       if (p.alive && w.time - p.lastHit > 9) p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.01 * dt);
       // a full hold leaves what it can't take bobbing on the swell
       const refuse = (it: { goods: LootId[] }) => {
-        if (this.hold.wouldKeep(it.goods)) return false;
+        if (this.fleetWouldKeep(it.goods)) return false;
         this.nagHold();
         return true;
       };
       const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2, refuse);
       for (const it of got) this.haul(p, it);
+      if (p.alive) this.sweepSalvage(p, dt);
       this.holdNagT -= dt;
       if (!this.shore.active) {
         // with the grapnels flying, nothing else is on offer
         const docking = this.boarding.busy ? true : this.updateDockPrompt(p);
         if (this.boarding.busy || !this.updateBoardPrompt(p, dt)) this.updateLandPrompt(p, dt, docking);
-        // no fresh pirates while the captain's ashore: the sea fills again once you sail
-        this.directSpawns(dt);
-        this.updateHunters(dt);
+        // hunters follow the host's infamy (a guest's sea is the host's to fill)
+        if (!this.coop.guest) this.updateHunters(dt);
       }
       this.checkDiscoveries(p);
       this.updateForts(p, dt);
@@ -4727,6 +5457,8 @@ export class Game {
     } else {
       this.loot.update(dt, w, null, 0);
     }
+    // fresh pirates gather round every captain at sea (none round one who's ashore)
+    if (!this.coop.guest) this.directSpawns(dt);
     // on foot ashore, it is the captain who walks into a pin
     const onFoot = this.shore.active ? this.shore.captain : null;
     const reached = this.waypoints.update(dt, p && p.alive && this.state === 'playing' ? (onFoot ?? p.pos) : null, (x, z) => this.terrain.heightAt(x, z));
@@ -4789,6 +5521,7 @@ export class Game {
     }
     w.listenerZoom = this.rig.distance;
     this.hazards.sound(w);
+    this.updateSeas(dt);
     // ashore, the leaves between the camera and the captain thin away (not once you're behind their eyes)
     const see = globalUniforms.uSeeThru.value;
     if (walker && !this.photo.active && eb < 0.9) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5) * (1 - eb));
@@ -4801,7 +5534,7 @@ export class Game {
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
     this.crew.setView(this.rig.camera, this.toSun);
-    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position);
+    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position, this.rig.camera.fov / this.rig.camera.zoom);
     // laid rope, blocks and deck clutter only on ships big enough on screen to show them
     const cam = this.rig.camera;
     const pxK = innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) / cam.zoom);
@@ -4824,9 +5557,10 @@ export class Game {
     P.end();
     P.begin('Particles', 'fx');
     this.particles.update(dt);
+    this.spirits.update(dt, w.time);
     P.end();
     P.begin('Birds', 'fx');
-    this.birds.update(dt, w, this.ships);
+    this.birds.update(dt, w, this.ships, this.rig.camera);
     P.end();
     P.begin('Reef fish', 'fx');
     this.reef.update(dt, w, this.ships, this.rig.camera);
@@ -4883,6 +5617,7 @@ export class Game {
         treasure: this.maps.target,
         forts: this.fortMarks().map((f, i) => ({ ...f, name: this.forts.forts[i].name })),
         hazards: this.hzMarks,
+        charted: new Set(Object.keys(this.charts.state.seen)),
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });
     }
@@ -5042,6 +5777,7 @@ export class Game {
     fog.near = a.fogRange.x;
     fog.far = a.fogRange.y;
     this.pipeline.exposure = a.exposure;
+    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat);
   }
 
   /** Rain, lightning, thunder, spindrift and the clock badge. */
@@ -5118,12 +5854,22 @@ export class Game {
   }
 
   private directSpawns(dt: number) {
-    const p = this.player!;
-    // pirates left far astern while cruising are recycled so the seas around you stay busy
+    const caps = this.capList;
+    caps.length = 0;
+    const p = this.player;
+    if (p && this.state === 'playing' && !this.shore.active) caps.push(p);
+    this.coop.flagships(caps);
+    if (!caps.length) return;
+    // pirates left far astern of every captain while cruising are recycled so the seas stay busy
     for (const s of this.ships.slice()) {
-      if (s.team !== 'pirate' || !s.alive || s.hunter) continue;
+      if (s.team !== 'pirate' || !s.alive || s.hunter || s.remote) continue;
       const ai = this.ais.get(s);
-      if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
+      if (ai && ai.mode === 'patrol' && caps.every((c) => Math.hypot(s.pos.x - c.pos.x, s.pos.z - c.pos.z) > 820)) this.removeShip(s);
+    }
+    // nor out on the high seas: they keep to the archipelagos' waters
+    if (this.onHighSeas) {
+      this.spawnTimer = Math.max(this.spawnTimer, 10);
+      return;
     }
     // no pirate sails into the Kraken's water
     if (this.kraken.active) {
@@ -5131,14 +5877,25 @@ export class Game {
       return;
     }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive && !s.hunter).length;
-    // a fleet draws a bigger crowd
-    const want = Math.min(4, 2 + Math.floor(p.kills / 4)) + (this.escortShips.length ? 1 : 0);
+    // a fleet draws a bigger crowd, and so does a crew of captains
+    const kills = p?.kills ?? 0;
+    const want = Math.min(4, 2 + Math.floor(kills / 4)) + (this.escortShips.length ? 1 : 0) + Math.min(3, caps.length - 1);
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
       const room = want - alivePirates;
-      if (room >= 2 && this.voyageTime > 60 && Math.random() < 0.25) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, 3));
-      else this.spawnPirate(p.pos, 280, 480);
-      this.spawnTimer = 12 + Math.random() * 8;
+      // round whichever captain has the fewest pirates about her
+      let at = caps[0];
+      let few = Infinity;
+      for (const c of caps) {
+        const n = this.ships.filter((s) => s.team === 'pirate' && s.alive && Math.hypot(s.pos.x - c.pos.x, s.pos.z - c.pos.z) < 600).length + Math.random() * 0.5;
+        if (n < few) {
+          few = n;
+          at = c;
+        }
+      }
+      if (room >= 2 && (this.voyageTime > 60 || caps.length > 1) && Math.random() < 0.25) this.spawnFlotilla(at.pos, 360, 520, Math.min(room, 3));
+      else this.spawnPirate(at.pos, 280, 480);
+      this.spawnTimer = (12 + Math.random() * 8) / Math.sqrt(caps.length);
     }
   }
 
@@ -5235,6 +5992,7 @@ export class Game {
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.spirits.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.kraken.view.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     P.end();
@@ -5259,6 +6017,8 @@ export class Game {
     if (under && k.under < 0) {
       k.under = k.t;
       this.audio.submerge(true);
+      // the lens plunges through: a rush of air dragged down past it
+      this.bubbles.rush(cam, this.world.waterHeight(cam.position.x, cam.position.z));
     }
     if (under || this.isUnder) this.setUnder(under);
     this.isUnder = under;
@@ -5268,6 +6028,7 @@ export class Game {
       this.clouds.mesh.visible = false;
     }
     this.wisps.mesh.visible = !under;
+    if (under) this.spirits.mesh.visible = false;
     // (the loading screen's warm-up draws them all, so their shaders are ready for the deck)
     this.sky.visible = this.warming || (!under && (eb > 0.001 || port || cine > 0));
     this.sky.position.copy(cam.position);
@@ -5300,6 +6061,7 @@ export class Game {
     }
     this.cumulus.update(dt, cam, this.sky.visible);
     P.end();
+    this.pipeline.warm = this.warming;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);
   }

@@ -4,6 +4,7 @@ import { progressSaved } from '../core/progress';
 import { Ship, gunRange, windFactor } from '../ships/ship';
 import type { Livery, ShipClassId } from '../ships/shipTypes';
 import { dayNumber } from '../ships/parts';
+import { HOLD_ROOM, Hold, LOOT, LootId } from './treasure';
 import { World } from './world';
 
 // Your own fleet: up to two escorts that sail in formation on your quarters,
@@ -43,6 +44,34 @@ export interface EscortRec {
   kills: number;
   /** When she joined (ms since epoch): the roster's order. */
   joined: number;
+  /** What's in her own hold: salvage she picked up, sold with yours at the next port. */
+  cargo?: Cargo;
+}
+
+/** A hold's goods by kind (how an escort's cargo is kept between voyages). */
+export type Cargo = Partial<Record<LootId, number>>;
+
+/** Only goods that exist, in whole numbers, and no more than her class could ever stow. */
+export function cleanCargo(v: unknown, cls: ShipClassId): Cargo | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined;
+  const out: Cargo = {};
+  let room = HOLD_ROOM[cls] ?? 10;
+  for (const [id, n] of Object.entries(v as Record<string, unknown>)) {
+    if (!Object.prototype.hasOwnProperty.call(LOOT, id)) continue;
+    const k = LOOT[id as LootId];
+    const c = Math.min(Math.floor(Number(n) || 0), Math.floor(room / k.size));
+    if (c <= 0) continue;
+    out[id as LootId] = c;
+    room -= c * k.size;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** A hold's contents as a roster entry keeps them. */
+export function holdCargo(h: Hold): Cargo | undefined {
+  const out: Cargo = {};
+  for (const { id, n } of h.list()) out[id] = n;
+  return Object.keys(out).length ? out : undefined;
 }
 
 export interface FleetState {
@@ -91,6 +120,7 @@ function cleanRec(v: unknown): EscortRec | null {
     hp: clamp(n(o.hp, 1), 0.05, 1),
     kills: Math.max(0, Math.floor(n(o.kills))),
     joined: n(o.joined),
+    cargo: cleanCargo(o.cargo, o.cls as ShipClassId),
   };
 }
 
@@ -195,16 +225,18 @@ export class FleetStore {
     this.save();
   }
 
-  /** Writes back each escort's hull and tally (quietly unless something changed). */
-  sync(recs: { id: string; hp: number; kills: number }[]) {
+  /** Writes back each escort's hull, tally and cargo (quietly unless something changed). */
+  sync(recs: { id: string; hp: number; kills: number; cargo?: Cargo }[]) {
     let dirty = false;
     for (const u of recs) {
       const s = this.get(u.id);
       if (!s) continue;
       const hp = Math.round(clamp(u.hp, 0.05, 1) * 100) / 100;
-      if (s.hp !== hp || s.kills !== u.kills) {
+      if (s.hp !== hp || s.kills !== u.kills || !same(s.cargo ?? null, u.cargo ?? null)) {
         s.hp = hp;
         s.kills = u.kills;
+        if (u.cargo) s.cargo = u.cargo;
+        else delete s.cargo;
         dirty = true;
       }
     }
@@ -304,7 +336,7 @@ export function station(i: number, n: number, flagLength: number, length: number
 
 // ------------------------------------------------------------------ an escort's captain
 
-export type EscortMode = 'station' | 'fight' | 'hold' | 'fallback' | 'adrift';
+export type EscortMode = 'station' | 'fight' | 'hold' | 'fallback' | 'adrift' | 'salvage';
 
 const _st = { x: 0, z: 0 };
 
@@ -330,10 +362,18 @@ export class EscortAI {
   private leashT = 0;
   /** Her own pace; a ship out of station gets a little extra (every stitch set, the hands at the braces). */
   private readonly baseSpeed: number;
+  /** Her own hold, sized by her class: what she sweeps up is sold with yours in port. */
+  readonly hold: Hold;
+  /** Floating salvage the flagship has sent her to pick up (set by the game while the sea is quiet). */
+  salvage: { x: number; z: number } | null = null;
 
   constructor(readonly ship: Ship, readonly rec: EscortRec) {
     this.desired = ship.heading;
     this.baseSpeed = ship.boost.speed;
+    this.hold = new Hold(HOLD_ROOM[ship.cls.id] ?? 10);
+    const goods: LootId[] = [];
+    for (const [id, n] of Object.entries(cleanCargo(rec.cargo, ship.cls.id) ?? {})) for (let i = 0; i < (n ?? 0); i++) goods.push(id as LootId);
+    if (goods.length) this.hold.stow(goods);
   }
 
   /** How far her guns reach with round shot. */
@@ -353,6 +393,8 @@ export class EscortAI {
         return 'Badly holed · falling back';
       case 'adrift':
         return 'Hove to';
+      case 'salvage':
+        return 'Picking up salvage';
       default:
         return this.order === 'attack' ? 'No target · on station' : 'On station';
     }
@@ -477,7 +519,9 @@ export class EscortAI {
       pick = best;
     }
     this.target = pick;
-    this.mode = pick ? 'fight' : this.order === 'hold' ? 'hold' : 'station';
+    // a quiet sea and wreckage on the water: she bears away to sweep it up, then falls in again
+    const sweep = !pick && !!this.salvage && this.order !== 'hold' && this.leashT <= 0 && fromFlag < leash * 0.9;
+    this.mode = pick ? 'fight' : sweep ? 'salvage' : this.order === 'hold' ? 'hold' : 'station';
   }
 
   private steer(world: World, flag: Ship | null, range: number) {
@@ -491,6 +535,16 @@ export class EscortAI {
     if (this.mode === 'hold') {
       s.sailTarget = 0;
       this.desired = s.heading;
+      return;
+    }
+    if (this.mode === 'salvage' && this.salvage) {
+      // straight through the floating wreckage, easing off as she comes up to it
+      const dx = this.salvage.x - s.pos.x;
+      const dz = this.salvage.z - s.pos.z;
+      const d = Math.hypot(dx, dz);
+      this.desired = Math.atan2(dx, dz);
+      s.sailTarget = d > 70 ? 1 : d > 30 ? 2 / 3 : 0.45;
+      if (d > 50) s.boost.speed = this.baseSpeed * 1.15;
       return;
     }
     if (this.mode === 'fight' && this.target) {

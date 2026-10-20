@@ -186,6 +186,11 @@ export class Atmosphere {
   mode: WeatherKind | 'auto' = 'auto';
   /** Keeps the current weather from moving on (a storm holds while the Kraken is up). */
   hold = false;
+  /**
+   * Which waters' weather comes next: the Fortunate Isles', the misty isles'
+   * (sea mist at any hour, more rain) or the high seas' (fair and settled).
+   */
+  climate: 'home' | 'mist' | 'open' = 'home';
   /** Speeds up the blend for a moment after the player picks the weather by hand. */
   private rush = 0;
   /** 'auto' lets the day run; any other hour holds the clock there. */
@@ -220,6 +225,16 @@ export class Atmosphere {
   readonly fogRange = new THREE.Vector2(380, 1500);
   night = 0;
   exposure = 1;
+  /** Sun shafts: the lit haze colour (rgb, 0 none) and the glow lit haze adds on its own (w). */
+  readonly shaftAir = new THREE.Vector4(0, 0, 0, 0.12);
+  /** Colour of the beams swaying down through the shallows. */
+  readonly shaftSea = new THREE.Vector3();
+  /** Haze extinction at sea level (1/m), thicker on a misty morning; and how dark its shaded columns read. */
+  readonly shaftHaze = new THREE.Vector2(0.0014, 3);
+  /** The grade by the hour: split-tone tints for shade and light, and saturation. */
+  readonly gradeLo = new THREE.Vector3(0.94, 1.02, 1.06);
+  readonly gradeHi = new THREE.Vector3(1.05, 1.0, 0.94);
+  gradeSat = 1.12;
   /** Called when the weather turns, with a short title and a line of flavour. */
   onChange: (kind: WeatherKind, title: string, line: string) => void = () => {};
   /** Called as a marked wind shift gets under way, with a title and a line naming where it now blows from. */
@@ -343,6 +358,29 @@ export class Atmosphere {
     this.update(0);
   }
 
+  /** A guest's sky in a shared sea: the host's clock, weather and wind (see net/coop.ts). */
+  private following = false;
+  private followRun = true;
+
+  /** Keeps to the host's sky: the clock eased (or set, if far off), the weather turned, the wind sent round. */
+  follow(day: number, kind: WeatherKind, windTo: number, run: boolean) {
+    this.following = true;
+    this.followRun = run;
+    const dd = ((day - this.day + 1.5) % 1) - 0.5;
+    this.day = Math.abs(dd) > 0.02 ? day : (this.day + dd * 0.5 + 1) % 1;
+    if (kind !== this.kind && kind in WEATHER) {
+      this.setWeather(kind);
+      const a = WEATHER[kind].arrive;
+      if (a) this.onChange(kind, a[0], a[1]);
+    }
+    if (Number.isFinite(windTo)) this.windTo = windTo;
+  }
+
+  /** The guest sails alone again: their own sky. */
+  unfollow() {
+    this.following = false;
+  }
+
   /** Holds the clock at a chosen hour ('auto' lets the day run again). */
   setTimeMode(m: TimeMode) {
     this.timeMode = m;
@@ -358,7 +396,13 @@ export class Atmosphere {
   private nextWeather() {
     const h = this.hour;
     const dawn = h > 3.5 && h < 9;
-    const opts = WEATHER[this.kind].next.map(([k, w]) => [k, k === 'mist' ? (dawn ? w * 4 : w * 0.15) : w] as [WeatherKind, number]);
+    const c = this.climate;
+    const opts = WEATHER[this.kind].next.map(([k, w]) => {
+      if (k === 'mist') w *= c === 'mist' ? (dawn ? 5 : 2.2) : dawn ? 4 : 0.15;
+      if (c === 'mist' && (k === 'rain' || k === 'cloudy')) w *= 1.4;
+      if (c === 'open') w *= k === 'storm' ? 0.2 : k === 'rain' ? 0.35 : k === 'cloudy' ? 0.7 : k === 'mist' ? 0.5 : 1.6;
+      return [k, w] as [WeatherKind, number];
+    });
     const k = pick(opts);
     this.setWeather(k);
     // a change of weather brings the wind round with it: hardest into a storm
@@ -367,9 +411,16 @@ export class Atmosphere {
     if (a) this.onChange(k, a[0], a[1]);
   }
 
+  /** Brings the next turn of the weather within `s` seconds (out onto the calm of the high seas). */
+  hasten(s: number) {
+    this.stateDur = Math.min(this.stateDur, this.stateT + s);
+  }
+
   update(dt: number) {
     // ---------------------------------------------------------- clock
-    if (this.timeMode === 'auto') this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
+    if (this.following) {
+      if (this.followRun) this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
+    } else if (this.timeMode === 'auto') this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
     else {
       // sweep forward to the chosen hour, so the sun travels there rather than jumping
       const to = TIMES[this.timeMode].hour / 24;
@@ -379,7 +430,7 @@ export class Atmosphere {
 
     // ---------------------------------------------------------- weather
     this.stateT += dt;
-    if (!this.locked && !this.hold && this.stateT > this.stateDur) this.nextWeather();
+    if (!this.locked && !this.hold && !this.following && this.stateT > this.stateDur) this.nextWeather();
     const d = WEATHER[this.kind];
     // a hand-picked change rolls in over a few seconds instead of half a minute
     this.rush = Math.max(0, this.rush - dt / 12);
@@ -396,7 +447,7 @@ export class Atmosphere {
     // ---------------------------------------------------------- wind heading
     // now and then the breeze veers or backs; squalls shove it about more often
     this.veerT += dt;
-    if (this.veerT > this.veerDur) this.shiftWind(0.35 + this.storm * 0.6 + this.rain * 0.2, 0);
+    if (this.veerT > this.veerDur && !this.following) this.shiftWind(0.35 + this.storm * 0.6 + this.rain * 0.2, 0);
     // swing round to the new heading: a slow start and settle, never faster than a few degrees a second
     const left = this.windTo - this.windAngle;
     const maxRate = (0.045 + this.storm * 0.05) * fast;
@@ -493,6 +544,7 @@ export class Atmosphere {
     u.uStorm.value = this.storm;
     u.uWet.value = this.wet;
     u.uMist.value = this.fog;
+    this.updateLook(sy, sunVis);
     const hazeK = 1 - 0.85 * this.cover;
     if (sy > -0.03) {
       const g = smooth(0.0, 0.3, sy);
@@ -501,4 +553,44 @@ export class Atmosphere {
       u.uHaze.value.set(0.3, 0.38, 0.55).multiplyScalar(0.35 * moonVis * hazeK);
     }
   }
+
+  /** Sun shafts and the grade, from the hour and the weather. */
+  private updateLook(sy: number, sunVis: number) {
+    const k = this.keyColor;
+    // beams want gaps: a few puffs on a clear day give a few, a broken sky the
+    // most, a closed grey deck none. Mist thickens the air they show in.
+    const broken = 0.35 + 0.65 * smooth(0.05, 0.4, this.cover) * smooth(0.95, 0.62, this.cover);
+    const open = (1 - this.storm * 0.85) * (1 - this.rain * 0.5);
+    const lowSun = 1 + 0.6 * smooth(0.45, 0.08, sy) * sunVis; // long golden shafts at either end of the day
+    const amt = broken * open * lowSun * (sy > -0.03 ? 0.6 : 0.5);
+    // the haze glows a little warmer than the light itself: it scatters the
+    // sun's red end forward (cool and faint by moonlight)
+    this.shaftAir.set(k.x * amt * 1.06, k.y * amt, k.z * amt * 0.9, 0.05);
+    this.shaftHaze.set(0.0014 * (1 + this.fog * 2.5 + this.wet * 0.5), 10 * amt);
+    // in the shallows: sunlight through clear water, killed by a grey sky
+    const sea = (1 - smooth(0.55, 0.95, this.cover)) * (1 - this.storm);
+    this.shaftSea.set(k.x * 0.36, k.y * 0.84, k.z * 0.8).multiplyScalar(sea * (sy > -0.03 ? 1 : 0.6));
+
+    // the grade: crisp at noon, honeyed with violet shade at the golden hours,
+    // cool and blue after dark, flat and grey under a storm
+    const golden = smooth(-0.06, 0.04, sy) * smooth(0.36, 0.1, sy) * sunVis;
+    const dusk = smooth(0.06, -0.12, sy) * (1 - this.night * 0.5);
+    const grey = Math.max(this.storm, smooth(0.6, 1, this.cover) * 0.6, this.rain * 0.5, this.fog * 0.35);
+    const lo = this.gradeLo.set(0.94, 1.02, 1.06);
+    const hi = this.gradeHi.set(1.05, 1.0, 0.94);
+    let sat = 1.12;
+    lo.lerp(_lo.set(0.93, 0.95, 1.1), golden);
+    hi.lerp(_hi.set(1.12, 1.0, 0.84), golden);
+    sat += golden * 0.08;
+    lo.lerp(_lo.set(0.9, 0.97, 1.12), Math.max(dusk, this.night));
+    hi.lerp(_hi.set(0.97, 1.0, 1.06), Math.max(dusk, this.night));
+    sat -= this.night * 0.05;
+    lo.lerp(_lo.set(0.97, 1.0, 1.03), grey);
+    hi.lerp(_hi.set(1.0, 1.0, 0.99), grey);
+    sat -= grey * 0.16;
+    this.gradeSat = sat;
+  }
 }
+
+const _lo = new THREE.Vector3();
+const _hi = new THREE.Vector3();

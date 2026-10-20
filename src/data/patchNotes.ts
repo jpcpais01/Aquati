@@ -13,8 +13,171 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T18:00Z',
+    entries: [
+      {
+        title: 'Softer, slower clouds',
+        notes: [
+          'The little clouds you see from high above now change shape far more slowly. Their billows used to slide through them as the wind carried them along, so they seemed to boil; now each billow rides with its cloud and only gently swells and settles.',
+          'They also look fuller and fluffier: every lump casts a soft shade on the one behind it, the edges facing the sun glow with a silver lining, the hollows between billows sit in cooler shadow, and the billows shift with a hint of depth as your camera moves.',
+        ],
+      },
+      {
+        title: 'Dolphins that swim like dolphins',
+        notes: [
+          'The dolphins of the high seas move far more naturally. They swim the way they point, sweeping round in curves and banking into their turns instead of snapping onto a new heading, and they drift about their place beside you each at their own pace.',
+          'They come up to breathe: a slow roll of the back and dorsal fin through the surface, with a little puff of spray from the blowhole, before sliding back down.',
+          'Leaps now start below the surface with a steepening climb, the flukes driving hard, and follow a long, low porpoising arc with the whole body bending along it. They re-enter nose first and carry the dive on under the water before levelling out. Often a friend leaps alongside.',
+          'The tail beat swells toward the flukes, which feather against each stroke, and the head nods gently in time. Bow riders glide in your pressure wave with barely a flick, and now and then one rolls onto its side to look up at you.',
+        ],
+      },
+      {
+        title: 'The high seas, properly charted',
+        notes: [
+          'The open water on the Sea Chart is no longer a flat blue square. Mar Sereno is now engraved like a fine old nautical chart: the sea darkens from each archipelago\'s shelf into the deep, with depth contours, scattered soundings in fathoms and a long swell rolling across it.',
+          'A great gilt compass rose sits in the open water south of the lane, with its 32 rhumb lines running out across the whole chart.',
+          'The Corriente del Sereno and its counter-current are marked either side of the sailing lane, with drifting arrows showing which way they set, and the shallow Banco del Sereno is outlined under the lane.',
+          'Past the edge of the known sea the water turns dark and hatched, with a warning that the swell turns every keel back.',
+        ],
+      },
+      {
+        title: 'A smooth sea under sail',
+        notes: [
+          'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
+          'Zooming out or sailing into battle no longer makes the waves flicker as the sea switches to a lighter level of detail. The finer waves now fade smoothly into the lighter version as the camera rises, and back again as it comes down.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T17:00Z',
+    entries: [
+      {
+        title: 'No more freeze when a ship goes down',
+        notes: [
+          'Sinking a ship no longer stops the game for a moment. The kill that puts a new skull on your Wanted level sends a bounty hunter after you, and her colours used to make the game prepare fresh shaders on the spot. She now shares the ones every pirate uses, which were ready before you set sail.',
+          'A dying ship drops every mast, her bowsprit and finally her hull, and each break used to be cut in one go on back-to-back frames. The cuts are now worked out a sliver at a time and land all at once, so masts still crack and topple right on cue.',
+          'The gold, kills and Wanted chips, the hull bar and the gun badges no longer make the browser rework the whole page every time they flash.',
+          'The light the sky casts on your sails is prepared while the game loads, instead of a few seconds into your first voyage.',
+          'The shipyard building the next pirates pauses for a few seconds while a ship goes down, and the bounty hunter sets out a moment after the kill, so neither piles onto the same frames as the sinking.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T17:00Z',
+    entries: [
+      {
+        title: 'Las Brumas and the high seas',
+        notes: [
+          'The sea is bigger now. Far out to the east-north-east, past three archipelagos\' worth of open ocean, lie Las Brumas, the Isles of Mist: sheer limestone towers crowned with jungle, sea stacks standing in jade water, pink coral beaches and blossom trees. It\'s all one sea, with no loading screens: just keep sailing.',
+          'Las Brumas has its own ports (Vila Garoa\'s tea and silk bazaar and the jade carvers of Esmeraldeau), two Brethren forts to take, its own reefs, a maelstrom out among the stacks and cutthroat camps ashore. Mist rolls in there far more often, at any hour.',
+          'Between the archipelagos lies Mar Sereno, the high seas. Sail out into it and a calm, slow theme of harp, pad and ocarina takes over, a steady trade wind carries you half again as fast on any heading, and storms blow themselves out. No pirates, hunters or Kraken follow you this far out.',
+          'Every so often a pod of dolphins comes racing in to ride your bow wave and swim alongside, leaping and whistling, before peeling off back into the blue.',
+          'Until you\'ve been there, Las Brumas is only a rumour on your sea chart, a faint outline in the mist. Your first landfall pays 600 gold and charts it for good, synced with your cloud save. Zoom the chart out to see the whole sea and the route between, and out on the high seas your minimap points the way to each archipelago.',
+        ],
+      },
+      {
+        title: 'Less than half the triangles, same view',
+        notes: [
+          'A ship alone at sea now draws around a third of the triangles it used to at every zoom. Nothing you can see was taken away: detail is spent only where it can show on screen.',
+          'Hulls, decks and ironwork now have lighter versions that swap in as a ship gets smaller on screen, and ships cast their shadows from simple stand-ins. All of it is worked out in the background, so new ships never cause a stutter.',
+          'Sailors seen from the sea use a lighter figure that is identical at that size. Seabirds out of view, maelstroms that are still, and splinters on undamaged hulls no longer cost anything, and the ocean surface uses fewer, larger cells when you zoom out.',
+        ],
+      },
+      {
+        title: 'Sunbeams through the clouds',
+        notes: [
+          'The warm haze over the islands now catches the light. Where the sun slips between the clouds it lights the air in long slanting beams, and behind each cloud its shade hangs in the air as a dark column. Look down from high above and they lie across the sea as soft bands of light and shadow. The low sun of morning and evening stretches them longest, and misty mornings thicken them. By moonlight they turn faint and silver.',
+          'Look toward the sun from the deck or in photo mode and rays fan out from it through every gap in the clouds, and between the masts, yards and sails.',
+          'In the turquoise shallows, soft beams of sunlight sway down through the water, drifting with the ripples overhead and fading away as the water gets deeper.',
+          'The light now has its own colour at every hour: crisp at noon, honey-gold with violet shadows at sunrise and sunset, cool and blue after dark, and flat and grey under a storm.',
+          'Sun shafts have their own switch in Graphics, so you can turn them off. They are on from Medium up and cost very little, because they are worked out on a small quarter-size image.',
+        ],
+      },
+      {
+        title: 'Sail together: multiplayer is here',
+        notes: [
+          'Up to four captains can now share one sea. Open Sail together from the harbour\'s top bar, the pause menu or the crew button on the HUD, choose Host, and send your friends the link or read them the six-letter code. They join from the harbour and set sail right beside your flagship, wherever you are.',
+          'It really is one sea: the same pirates, ghost ships and bounty hunters, the same weather, hour and wind. Every broadside, splash, hit, fire and sinking shows in everyone\'s game, and pirates choose whichever captain is closest or hurting them most.',
+          'Crewmates fly a gold name tag over their ship. They show as gold arrows on the minimap, pinned to its edge when they\'re out of sight, and by name on the sea chart. Their escorts sail with them too.',
+          'Your shots count the moment you see them land, and you\'re only ever holed by balls you actually saw hit you. Whoever sinks a ship is paid her bounty, and any captain who hit her in the last half minute gets a share.',
+          'Plunder is never stolen: every wreck spills her goods into each captain\'s game separately. Your gold, ships, forts, treasure maps and trade stay your own. The sea doesn\'t stop while you sail with others, so pausing lets go of the helm without freezing the world. The Kraken stays in the deep while captains sail together.',
+        ],
+      },
+      {
+        title: 'Islands carved by rain',
+        notes: [
+          'The rocky isles have been rebuilt from the ground up. The stepped, stripy cones are gone: each is now a karst island where one to three sheer limestone crags rise out of wooded slopes. Their walls are fluted into buttresses and runnels and streaked dark where the rain runs down, there is moss on every ledge, and the jungle grows right up over their domed crowns.',
+          'Every hill and volcano has been worn down by the rain. Spurs and gullies run straight down the slopes and branch as they go, so each hillside reads as ribs of sunlit ridge and shadowed ravine. Morro Huracão is scored with deep ravines from rim to shore.',
+          'The forest follows the lie of the land: it crowds into the damp gullies, thins out along the bare spurs, and boulders weather out of the ridges. The rock looks like rock, too: pale, weathered limestone laid down in uneven beds, with warm iron stains where the old orange stripes used to be.',
+          'The pines are gone, since they never belonged in the tropics. Tree ferns now stand in the cloud forest up on the heights, each with a shaggy trunk, a lacy parasol of fronds, a skirt of dead ones and curled fiddleheads at its heart.',
+          'With the land reshaped, Kasteel do Morro now stands guard over Punta Belleau, and the Aguadouro trading post has moved to Perlabana.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T16:00Z',
+    entries: [
+      {
+        title: 'Fallen pirates give up the ghost',
+        notes: [
+          'When an enemy pirate dies, his spirit now slips out of him: a little glowing green ghost in his own likeness, wearing the same tricorn, bandana, knit cap or straw hat he had on, with two hollow eyes, a tiny smile and a curling wisp of a tail.',
+          'He pops up out of the water or off the sand, bobs there a moment and looks up at you, then does one last thing before he goes: a cheery wave, a twirl, a tip of his hat or a wide-mouthed "boo!". Then he drifts away into the sky trailing green motes and vanishes in a soft puff of sparkles, with a small, hollow "woo-oo" of his own.',
+          'It happens wherever pirates fall: the crew of a ship you sink as they go under one by one (her captain goes down with her), the cutthroats of an island camp, a fort\'s garrison, and the crew you cut down when you board a ship. A ghost ship\'s crew is freed too when you lay her to rest.',
+          'They glow softly and fit the light, gentle by day and brighter against the dark at night, and they cost next to nothing to draw.',
+        ],
+      },
+      {
+        title: 'Your escorts carry plunder too',
+        notes: [
+          'Every ship in your fleet now has her own hold, sized by her class: a sloop carries 10, a brig 16 and a galleon 26. Captured prizes and hired ships alike sweep up wreckage and chests as they sail through them.',
+          'When the sea is quiet your escorts break formation to pick up floating salvage nearby, leaving whatever is right under your own bows for you, then fall back in on your quarters.',
+          'A full hold no longer means leaving plunder behind: goods your ship has no room for are sent across to an escort with space. Only when every hold in the fleet is full does anything go over the side.',
+          'Dock at a trading port and the whole fleet\'s cargo goes ashore with yours. The market lays it all out on one counter, with each hull\'s room shown and which escort carries what, and "Sell the fleet\'s cargo" sells the lot.',
+          'The hold chip on the HUD shows your escorts\' cargo in aqua beside your own, and tapping it lists each ship\'s hold. Their holds are saved and sync between devices, so if you go down your escorts carry their cargo safe to port. If one is sunk, her cargo floats up where she went down.',
+        ],
+      },
+      {
+        title: 'Thirty new treasures in the deep',
+        notes: [
+          'The sea has twice as much to give up: thirty new kinds of plunder join the hold, each with its own hand-drawn portrait, spread across all five rarities.',
+          'Common: Ship\'s Biscuit, Crate of Oranges, Salted Cod, Green Coconuts, Coil of Hemp Rope, Jug of Cider, Cowrie Shells and a Pewter Tankard.',
+          'Uncommon: a Lacquered Tea Caddy, Cacao Pods, a Decanter of Brandy, Corália Lace, a Brass Spyglass, a Red Coral Branch and a Meerschaum Pipe carved as a grumpy old captain.',
+          'Rare: Ronvliet Reserve 1702, Silver Ingots from the Aguadouro mint, a Jade Dragon, a Cameo Brooch, a Gilded Music Box and a Marine Chronometer. Epic: the Heart of Aguadouro, a Celestial Globe, a Conquistador\'s Helm, a Jewelled Egg and a Sultan\'s Silk Carpet.',
+          'Legendary: the Trident of the Deep, a Golden Galleon in a Bottle, the Sceptre of Sainte-Corália and the Sunstone of the Lost Fleet. Every port still has its tastes, so Ronvliet pays best for that 1702 Reserve and the bankers of Aguadouro for the diamond.',
+        ],
+      },
+      {
+        title: 'Chain shot goes for the sails',
+        notes: [
+          'With chain shot loaded, your gun crews now raise their guns and lay them on the middle of the enemy\'s canvas instead of her waterline, so the chain scythes through sails and rigging the way it should. The lock and lead allow for the flatter, quicker flight.',
+          'Pirates who load chain do the same to you.',
+        ],
+      },
+      {
+        title: 'Going down with your ship, beautifully',
+        notes: [
+          'The bubbles are real now: every one is shaded as a sphere of air in water, with a mirror-bright rim where light can\'t escape, a glint of sun on its shoulder and the bright surface glowing upside down in its belly. Big ones rise faster than small ones, tiny ones zigzag and spiral, and they swell as they climb toward the surface before popping just beneath it.',
+          'Air streams out of every hatch, gunport and torn seam in sputtering trains, and pockets of trapped air burst free in great wobbling, jellyfish-like gulps with a deep, round glug you can hear. Overhead, the surface churns white where it all breaks.',
+          'Sunlight now pours down through the water in real god rays that stay put as the camera moves and sway with the waves above, the same dancing light that ripples across the sand. Things deep down lose their reds and fade into the blue-green gloom, and tiny specks of drifting matter catch the light around you.',
+          'Wreckage tears loose as she goes: planks and barrels drift up past the camera toward the light, crates of shot tumble down to the sand beside her. The camera plunges through the surface in a rush of bubbles, drifts like a diver, and once she has settled slowly lifts its gaze toward the light.',
+          'A depth gauge counts her down in fathoms as she sinks, the farewell screen tells you how deep she lies, and sunbeams and finer bubbles drift behind your voyage\'s tally.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T15:00Z',
     entries: [
+      {
+        title: 'Sweep the sea clean',
+        notes: [
+          'A new broom button sits in the small row under the map. One tap sends every sunken and sinking wreck to the bottom for good and clears the drifting planks, spars and smoke with them.',
+          'Your ship, live enemies, a prize you are boarding and all floating loot are left alone, so your plunder is still there to collect.',
+        ],
+      },
       {
         title: 'The maelstroms are real holes in the sea now',
         notes: [

@@ -92,6 +92,8 @@ export interface ShoreHooks {
   unearthed(at: THREE.Vector3): void;
   /** The captain is down. */
   defeat(): void;
+  /** A foe is cut down for good: his ghost slips out of him. */
+  fallen(w: Walker, boss: boolean): void;
   /** A boarded ship's crew is beaten: the survivors throw down their blades. */
   struck(prize: Ship): void;
   /** A boarder lands on her deck. */
@@ -1671,6 +1673,7 @@ export class Shore {
       return;
     }
     if (b.team === 'foe') {
+      this.hooks.fallen(b, b.maxHp > FOE_HP);
       const camp = this.camps.find((c) => c.gang.includes(b));
       if (camp && !camp.routed && camp.gang.every((w) => w.down)) this.rout(camp, world);
       if (this.crewFoes.includes(b)) this.morale(world);

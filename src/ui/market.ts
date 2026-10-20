@@ -14,6 +14,42 @@ import { FLEET_MAX, HireOffer } from '../game/fleet';
 // a bottom sheet on phones, leaving the quay (and the porters) in view.
 
 const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
+
+/** One hull's hold: the flagship's first, then each escort's. */
+export interface Aboard {
+  name: string;
+  hold: Hold;
+  escort?: boolean;
+}
+
+/** Every hold in the fleet laid out as one, finest first, with who carries how many. */
+export function pooled(holds: Aboard[]) {
+  const by = new Map<LootId, { id: LootId; n: number; in: { name: string; n: number; escort: boolean }[] }>();
+  for (const h of holds) {
+    for (const { id, n } of h.hold.list()) {
+      let e = by.get(id);
+      if (!e) by.set(id, (e = { id, n: 0, in: [] }));
+      e.n += n;
+      e.in.push({ name: h.name, n, escort: !!h.escort });
+    }
+  }
+  return [...by.values()].sort((a, b) => LOOT[b.id].price - LOOT[a.id].price || a.id.localeCompare(b.id));
+}
+
+/** Where a pooled lot is stowed, in a few words (only said when an escort carries some). */
+function carried(lot: ReturnType<typeof pooled>[number]) {
+  const es = lot.in.filter((x) => x.escort);
+  if (!es.length) return '';
+  return es.map((x) => `${lot.n > 1 || es.length > 1 ? `${x.n} in ` : 'in '}the ${esc(x.name)}`).join(', ');
+}
+
+/** The room line: each hull's room used, the escorts in the fleet's aqua. */
+function roomChips(holds: Aboard[]) {
+  if (holds.length < 2) return `${holds[0]?.hold.used ?? 0} / ${holds[0]?.hold.capacity ?? 0} room`;
+  return holds
+    .map((h) => `<span class="mk-hull${h.escort ? ' esc' : ''}${h.hold.used >= h.hold.capacity ? ' full' : ''}" title="${esc(h.escort ? `The ${h.name}` : h.name)}"><i></i>${h.hold.used}/${h.hold.capacity}</span>`)
+    .join('');
+}
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 const HAMMER = '<path d="M14.5 4.5 19.5 9.5 17 12l-5-5zM12 7 4 15a2 2 0 0 0 0 2.8l.2.2a2 2 0 0 0 2.8 0L15 10"/>';
@@ -62,7 +98,7 @@ export class MarketUI {
   private room: HTMLElement;
   private svcRepair: HTMLButtonElement;
   private svcShot: HTMLButtonElement;
-  private hold: Hold | null = null;
+  private holds: Aboard[] = [];
   private market: Market | null = null;
   private gold = 0;
   private shown = 0;
@@ -217,9 +253,9 @@ export class MarketUI {
     d.querySelector('small')!.textContent = s.why;
   }
 
-  open(name: string, tagline: string, market: Market, hold: Hold, gold: number, t: number) {
+  open(name: string, tagline: string, market: Market, holds: Aboard[], gold: number, t: number) {
     this.market = market;
-    this.hold = hold;
+    this.holds = holds;
     this.gold = this.shown = gold;
     this.time = t;
     this.root.querySelector('.mk-name')!.textContent = name;
@@ -231,6 +267,12 @@ export class MarketUI {
     void this.root.offsetWidth;
     this.root.classList.add('in');
     this.isOpen = true;
+  }
+
+  /** The fleet changed while docked (a ship signed on or paid off): lay out the holds afresh. */
+  reholds(holds: Aboard[]) {
+    this.holds = holds;
+    if (this.isOpen) this.render();
   }
 
   close() {
@@ -372,20 +414,24 @@ export class MarketUI {
   }
 
   private render() {
-    const hold = this.hold;
     const m = this.market;
-    if (!hold || !m) return;
-    const items = hold.list();
-    this.room.textContent = `${hold.used} / ${hold.capacity} room`;
+    if (!this.holds.length || !m) return;
+    const items = pooled(this.holds);
+    const fleet = this.holds.length > 1;
+    this.root.querySelector('.mk-body > .mk-label span')!.textContent = fleet ? 'Your fleet’s holds' : 'Your hold';
+    this.room.innerHTML = roomChips(this.holds);
+    this.sellAll.querySelector('.mk-all-l')!.textContent = fleet && items.some((x) => x.in.some((y) => y.escort)) ? 'Sell the fleet’s cargo' : 'Sell everything';
     if (!items.length) {
-      this.list.innerHTML = `<li class="mk-empty">${icon(ICONS.anchor)}<p><b>The hold is empty</b><small>Sink pirates and sail through their wreckage, then bring the plunder here to sell.</small></p></li>`;
+      this.list.innerHTML = `<li class="mk-empty">${icon(ICONS.anchor)}<p><b>${fleet ? 'The holds are empty' : 'The hold is empty'}</b><small>Sink pirates and sail through their wreckage${fleet ? ' (your escorts sweep it up too)' : ''}, then bring the plunder here to sell.</small></p></li>`;
     } else {
       this.list.innerHTML = items
-        .map(({ id, n }) => {
+        .map((lot) => {
+          const { id, n } = lot;
           const k = LOOT[id];
+          const where = carried(lot);
           return `<li class="mk-row r-${k.rarity}" data-id="${id}">
             <i class="mk-ico">${lootIcon(id)}</i>
-            <div class="mk-what"><b>${esc(k.name)}${n > 1 ? `<span class="mk-n">×${n}</span>` : ''}</b><small><em>${RARITIES[k.rarity].name}</em> · ${CATEGORIES[k.cat]}</small></div>
+            <div class="mk-what"><b>${esc(k.name)}${n > 1 ? `<span class="mk-n">×${n}</span>` : ''}</b><small><em>${RARITIES[k.rarity].name}</em> · ${CATEGORIES[k.cat]}${where ? `<span class="mk-esc"> · ${where}</span>` : ''}</small></div>
             <div class="mk-price"><b></b><small></small></div>
             <button class="mk-sell" data-id="${id}">Sell</button>
           </li>`;
@@ -398,11 +444,10 @@ export class MarketUI {
 
   /** Today's prices on every row; they drift while you watch. */
   private prices(force = false) {
-    const hold = this.hold;
     const m = this.market;
-    if (!hold || !m) return;
+    if (!this.holds.length || !m) return;
     let total = 0;
-    for (const { id, n } of hold.list()) {
+    for (const { id, n } of pooled(this.holds)) {
       const p = m.price(id, this.time);
       total += p * n;
       const row = this.list.querySelector<HTMLElement>(`.mk-row[data-id="${id}"]`);
@@ -443,13 +488,24 @@ export class MarketUI {
 }
 
 /** A peek into the hold from the HUD chip: what's aboard and roughly what it's worth. */
-export function holdPeek(hold: Hold): string {
-  const items = hold.list();
-  if (!items.length) return `<p class="hp-empty">Nothing aboard yet. Chests and wreckage fill the hold; trading ports buy it.</p>`;
-  return `<ul>${items
-    .map(({ id, n }) => {
-      const k = LOOT[id];
-      return `<li class="r-${k.rarity}"><i>${lootIcon(id)}</i><span>${esc(k.name)}</span><b>${n > 1 ? `×${n}` : ''}</b></li>`;
-    })
-    .join('')}</ul><p class="hp-worth"><span class="coin"></span>Worth about <b>${fmt(hold.worth)}</b> at market</p>`;
+export function holdPeek(holds: Aboard[]): string {
+  const [flag, ...escorts] = holds;
+  const head = `<h4>Ship's hold <span>${flag.hold.used} / ${flag.hold.capacity} room</span></h4>`;
+  const rows = (h: Hold) =>
+    `<ul>${h
+      .list()
+      .map(({ id, n }) => {
+        const k = LOOT[id];
+        return `<li class="r-${k.rarity}"><i>${lootIcon(id)}</i><span>${esc(k.name)}</span><b>${n > 1 ? `×${n}` : ''}</b></li>`;
+      })
+      .join('')}</ul>`;
+  let html = head + (flag.hold.count ? rows(flag.hold) : `<p class="hp-empty">Nothing aboard yet. Chests and wreckage fill the hold; trading ports buy it.</p>`);
+  // each escort's hold under her own name, folded to a line when she carries nothing
+  for (const e of escorts) {
+    html += `<h4 class="hp-esc">The ${esc(e.name)} <span>${e.hold.used} / ${e.hold.capacity} room</span></h4>`;
+    html += e.hold.count ? rows(e.hold) : `<p class="hp-empty">Her hold is empty. She sweeps up wreckage on her way.</p>`;
+  }
+  const worth = holds.reduce((w, h) => w + h.hold.worth, 0);
+  if (worth) html += `<p class="hp-worth"><span class="coin"></span>${escorts.length ? 'The fleet’s cargo is worth' : 'Worth'} about <b>${fmt(worth)}</b> at market</p>`;
+  return html;
 }

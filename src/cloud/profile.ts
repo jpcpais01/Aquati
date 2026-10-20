@@ -20,6 +20,7 @@ import { BOUNTY_KEY, cleanLedger, Ledger, mergeLedger, readLedger } from '../gam
 import { cleanMaps, freshMaps, MapState, MAPS_KEY, readMaps } from '../game/treasureMaps';
 import { cleanFleet, FLEET_KEY, FleetState, mergeFleet, readFleet } from '../game/fleet';
 import { cleanForts, FORTS_KEY, FortSave, mergeForts, readForts } from '../game/forts';
+import { ChartSave, CHARTS_KEY, cleanCharts, mergeCharts, readCharts } from '../game/charts';
 
 type Json = Record<string, unknown>;
 
@@ -47,6 +48,8 @@ export interface Profile {
   fleet: FleetState | null;
   /** The island forts you've taken, and their tribute. */
   forts: FortSave | null;
+  /** The archipelagos you've sailed into (the rest are rumours on the chart). */
+  charts: ChartSave | null;
   /**
    * When the captain last reset the world (ms since 1970, 0 for never). The
    * world's progress (infamy, maps, prizes, forts) from before a reset never
@@ -135,6 +138,7 @@ export function readLocal(): Profile {
     maps: readMaps(),
     fleet: readFleet(),
     forts: readForts(),
+    charts: readCharts(),
     world,
   };
 }
@@ -157,6 +161,7 @@ export function writeLocal(p: Profile) {
     setOrRemove(MAPS_KEY, p.maps ? JSON.stringify(p.maps) : null);
     setOrRemove(FLEET_KEY, p.fleet ? JSON.stringify(p.fleet) : null);
     setOrRemove(FORTS_KEY, p.forts ? JSON.stringify(p.forts) : null);
+    setOrRemove(CHARTS_KEY, p.charts ? JSON.stringify(p.charts) : null);
     setOrRemove(WORLD_KEY, p.world ? String(p.world) : null);
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -170,7 +175,7 @@ export function writeLocal(p: Profile) {
   }
 }
 
-export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null, forts: null, world: 0 });
+export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null, forts: null, charts: null, world: 0 });
 
 /** Back to a brand-new guest: what a sign-out leaves behind. */
 export function resetLocal() {
@@ -190,6 +195,7 @@ export function hasProgress(p: Profile) {
     (p.maps && (p.maps.pieces > 0 || p.maps.dug > 0)) ||
     (p.fleet && (p.fleet.ships.length > 0 || p.fleet.lost > 0)) ||
     (p.forts && Object.keys(p.forts.taken).length > 0) ||
+    (p.charts && Object.keys(p.charts.seen).length > 0) ||
     Object.keys(p.gifts).length
   );
 }
@@ -386,6 +392,7 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
     maps: pick ? pick.maps : mergeMaps(B.maps ?? null, local.maps ?? null, remote.maps ?? null, first),
     fleet: pick ? pick.fleet : mergeFleet(base ? B.fleet ?? null : null, local.fleet ?? null, remote.fleet ?? null),
     forts: pick ? pick.forts : mergeForts(B.forts ?? null, local.forts ?? null, remote.forts ?? null),
+    charts: pick ? pick.charts ?? null : mergeCharts(local.charts ?? null, remote.charts ?? null),
     world: Math.max(lw, rw),
   };
 }
@@ -395,7 +402,7 @@ export type Part = Exclude<keyof Profile, 'gifts'>;
 /** Which parts differ, so the game reloads only what it must. */
 export function changedParts(a: Profile, b: Profile): Set<Part> {
   const out = new Set<Part>();
-  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet', 'forts', 'world'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
+  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet', 'forts', 'charts', 'world'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
   return out;
 }
 
@@ -418,6 +425,7 @@ export function parseProfile(raw: unknown): Profile | null {
       maps: cleanMaps(p.maps),
       fleet: cleanFleet(p.fleet),
       forts: cleanForts(p.forts),
+      charts: cleanCharts(p.charts),
       world: stamp(p.world),
     };
   } catch {

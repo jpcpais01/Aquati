@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Terrain } from '../world/terrain';
+import { SeaFloor } from '../world/terrain';
 import { Wave, waveHeight } from '../world/waves';
 import { Particles } from '../fx/particles';
 import { WakeField } from '../world/wakeField';
@@ -56,7 +56,7 @@ export class World {
   onHazard: (ship: unknown, kind: 'reef' | 'maelstrom', damage: number, at: THREE.Vector3) => void = () => {};
 
   constructor(
-    readonly terrain: Terrain,
+    readonly terrain: SeaFloor,
     readonly waves: Wave[],
     readonly particles: Particles,
     readonly wake: WakeField,

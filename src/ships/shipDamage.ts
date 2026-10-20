@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/noise';
 import { patchInfo, patchMaterial } from '../render/environment';
 import type { World } from '../game/world';
-import { breakSplinters, Cut, disposeUnshared, filterLines, filterRopes, splitGeometry } from './breakApart';
+import { bounds, breakSplinters, Cut, disposeUnshared, filterLines, filterRopes, finish, splitGeometry, type SplitResult } from './breakApart';
 import { DAMAGE_MAX_HOLES } from './damageGlsl';
 import type { Ship } from './ship';
 import type { MastDef } from './shipTypes';
@@ -27,10 +27,14 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
 const cloneBase = new WeakMap<THREE.Material, THREE.Material>();
 
 // Snapping a spar off slices whole merged meshes, the heaviest thing a hit can
-// do. Breaks are queued and the fleet shares one per frame, so a broadside that
-// dismasts a ship (or a magazine that drops every mast at once) spreads its
-// work over a few frames instead of landing in one.
+// do. Breaks are queued and worked through a slice at a time: one ship's per
+// frame, fleet-wide, and only for BREAK_BUDGET ms of it. A sinking drops every
+// mast, the bowsprit and the hull at once: run a whole cut per frame, that was
+// several frames of 35-75 ms in a row (most of a second on a phone) right as
+// she went down. Now it costs a couple of milliseconds a frame for a few
+// dozen frames, hidden under the blast, and the masts still fall on cue.
 let heavyAt = -1;
+const BREAK_BUDGET = 2;
 
 /** Per-hull damage clones of a ship's patched materials, all sharing one uniform set. */
 class DamageSkin {
@@ -171,6 +175,8 @@ export class ShipDamage {
   private holes: Hole[] = [];
   private holeOrder = 0;
   private shards: THREE.InstancedMesh;
+  /** Bit per hole slot whose splinters are showing. */
+  private shardSlots = 0;
   private masts: MastState[];
   private bowsprit = false;
   private events = 0;
@@ -180,7 +186,9 @@ export class ShipDamage {
   private canvas = 0;
   private smokeT = 0;
   private hinges: Hinge[] = [];
-  private breakQueue: (() => void)[] = [];
+  private breakQueue: (() => Generator<void, unknown>)[] = [];
+  /** The break being worked on, a slice per frame. */
+  private job: Generator<void, unknown> | null = null;
   private originals = new Map<THREE.Mesh | THREE.LineSegments, THREE.BufferGeometry>();
   private hidden: THREE.Object3D[] = [];
   private caps: THREE.Mesh[] = [];
@@ -224,6 +232,8 @@ export class ShipDamage {
     }
     this.shards.castShadow = true;
     this.shards.frustumCulled = false;
+    this.shards.count = 0;
+    this.shards.visible = false;
     this.shards.userData.dmgSkip = true;
     model.root.add(this.shards);
     model.root.add(this.buildHold());
@@ -330,6 +340,11 @@ export class ShipDamage {
         this.shards.setColorAt(base + k, c.multiplyScalar(rand(0.85, 1.1)));
       }
     }
+    // draw only up to the last splintered hole: a sound hull draws none at all
+    if (h && !h.patched) this.shardSlots |= 1 << slot;
+    else this.shardSlots &= ~(1 << slot);
+    this.shards.count = (32 - Math.clz32(this.shardSlots)) * SHARDS_PER_HOLE;
+    this.shards.visible = this.shardSlots !== 0;
     this.shards.instanceMatrix.needsUpdate = true;
     if (this.shards.instanceColor) this.shards.instanceColor.needsUpdate = true;
   }
@@ -479,84 +494,115 @@ export class ShipDamage {
     return this.pieceSkin;
   }
 
-  /** Root-space bounding box of an object under the hull root. */
-  private rootBox(obj: THREE.Object3D, out: THREE.Box3) {
+  /** Root-space bounding box of an object under the hull root (sliced: see breakOff). */
+  private *rootBox(obj: THREE.Object3D, out: THREE.Box3): Generator<void, THREE.Box3> {
+    const parts: THREE.Object3D[] = [];
+    obj.traverse((o) => {
+      if ((o as THREE.Mesh).geometry) parts.push(o);
+    });
+    for (const o of parts) yield* bounds((o as THREE.Mesh).geometry);
     out.makeEmpty();
     const root = this.ship.model.root;
     _inv.copy(root.matrixWorld).invert();
     obj.updateMatrixWorld(true);
-    obj.traverse((o) => {
-      const g = (o as THREE.Mesh).geometry;
-      if (!g) return;
-      if (!g.boundingBox) g.computeBoundingBox();
-      _tb.copy(g.boundingBox!).applyMatrix4(_m.multiplyMatrices(_inv, o.matrixWorld));
+    for (const o of parts) {
+      _tb.copy((o as THREE.Mesh).geometry.boundingBox!).applyMatrix4(_m.multiplyMatrices(_inv, o.matrixWorld));
       out.union(_tb);
-    });
+    }
     return out;
   }
 
   /**
    * Snaps everything on the positive side of `cut` off the hull and hangs it
    * on a hinge at `pivot`; it then topples about `axis` and falls into the sea.
+   * Sliced (see drainBreaks): every cut is worked out first, a few thousand
+   * triangles per step, and only then applied all at once, so the ship never
+   * shows a half-broken spar. `at` is when the break was called for: the
+   * slicing comes out of the hinge's delay, so a mast still falls on cue.
    */
-  private breakOff(cut: Cut, pivot: THREE.Vector3, axis: THREE.Vector3, long: THREE.Vector3, len: number, delay: number, max: number, world: World) {
+  private *breakOff(cut: Cut, pivot: THREE.Vector3, axis: THREE.Vector3, long: THREE.Vector3, len: number, delay: number, max: number, world: World, at: number): Generator<void, boolean> {
     const model = this.ship.model;
+    // the cut works on the full meshes, each casting its own shadow
+    model.suspendLods();
     const root = model.root;
-    const skin = this.ensurePieceSkin();
-    const piece = new THREE.Group();
-    const rim: THREE.Vector3[] = [];
-    let capMat: THREE.Material | null = null;
     root.updateMatrixWorld(true);
+    // ---- work it all out
+    const moves: THREE.Object3D[] = [];
+    const swaps: [THREE.Mesh | THREE.LineSegments, THREE.BufferGeometry][] = [];
+    const splits: [THREE.Mesh, SplitResult][] = [];
     for (const child of [...root.children]) {
       // level-of-detail sets (laid rope / hairline rigging) are cut even while hidden
       if (child.userData.dmgSkip || child.userData.dmgOff || (!child.visible && !child.userData.lod)) continue;
+      yield;
       const mesh = child as THREE.Mesh;
       const line = child as THREE.LineSegments;
       if (!mesh.isMesh && !line.isLineSegments) {
         // a sub-assembly (yard pivot, pennant): goes with the spar it hangs from
-        this.rootBox(child, _box);
+        yield* this.rootBox(child, _box);
         if (_box.isEmpty()) continue;
         const c = _box.getCenter(_v);
         const test = _v2.set(child.position.x, Math.max(c.y, cut.plane.constant * -1 + 0.1), child.position.z);
         if (cut.plane.normal.y < 0.5) test.copy(c);
-        if (cut.plane.distanceToPoint(test) > 0 && cut.lateral(test)) {
-          const copy = child.clone();
-          skin.apply(copy);
-          piece.add(copy);
-          child.visible = false;
-          this.hidden.push(child);
-        }
+        if (cut.plane.distanceToPoint(test) > 0 && cut.lateral(test)) moves.push(child);
         continue;
       }
       if (line.isLineSegments) {
-        const g = filterLines(line.geometry, line.matrix, cut);
-        if (g) this.swapGeometry(line, g);
+        const g = yield* filterLines(line.geometry, line.matrix, cut);
+        if (g) swaps.push([line, g]);
         continue;
       }
       // laid rope goes slack with whatever it was made fast to, like the hairline rigging
       if (mesh.userData.rope) {
-        const g = filterRopes(mesh.geometry, mesh.matrix, cut);
-        if (g) this.swapGeometry(mesh, g);
+        const g = yield* filterRopes(mesh.geometry, mesh.matrix, cut);
+        if (g) swaps.push([mesh, g]);
         continue;
       }
       // small loose parts (a topsail on its own) move whole
-      this.rootBox(child, _box);
+      yield* this.rootBox(child, _box);
       const c = _box.getCenter(_v);
       const minAbove = cut.plane.normal.y > 0.5 ? _box.min.y > -cut.plane.constant - 0.3 : _box.min.z > -cut.plane.constant - 0.3;
       if (minAbove && cut.lateral(c)) {
-        const copy = mesh.clone();
-        skin.apply(copy);
-        piece.add(copy);
-        mesh.visible = false;
-        mesh.userData.dmgOff = true;
-        this.hidden.push(mesh);
+        moves.push(mesh);
         continue;
       }
       // the planked shell (textured hull, transom, deck) never slices
       const mat = mesh.material as THREE.MeshStandardMaterial;
       if (Array.isArray(mesh.material) || mat.map) continue;
-      const res = splitGeometry(mesh.geometry, mesh.matrix, cut);
-      if (!res) continue;
+      const res = yield* splitGeometry(mesh.geometry, mesh.matrix, cut);
+      if (res) splits.push([mesh, res]);
+    }
+    // the splinters are made before anything changes too
+    const rim: THREE.Vector3[] = [];
+    for (const [, res] of splits) rim.push(...res.rim);
+    let splinter: { cen: THREE.Vector3; stump: THREE.BufferGeometry; broken: THREE.BufferGeometry } | null = null;
+    if (rim.length > 2) {
+      const cen = new THREE.Vector3();
+      for (const p of rim) cen.add(p);
+      cen.divideScalar(rim.length);
+      let r = 0;
+      for (const p of rim) r += p.distanceTo(cen);
+      r = clamp(r / rim.length, 0.08, 0.6);
+      const stump = breakSplinters(new THREE.Vector3(), r, 1, Math.random() * 100);
+      yield;
+      splinter = { cen, stump, broken: breakSplinters(new THREE.Vector3(), r, -1, Math.random() * 100) };
+      yield;
+    }
+
+    // ---- and apply it in one go
+    const skin = this.ensurePieceSkin();
+    const piece = new THREE.Group();
+    let capMat: THREE.Material | null = null;
+    for (const child of moves) {
+      const copy = child.clone();
+      skin.apply(copy);
+      piece.add(copy);
+      child.visible = false;
+      if ((child as THREE.Mesh).isMesh) child.userData.dmgOff = true;
+      this.hidden.push(child);
+    }
+    for (const [obj, g] of swaps) this.swapGeometry(obj, g);
+    for (const [mesh, res] of splits) {
+      const mat = mesh.material as THREE.MeshStandardMaterial;
       this.swapGeometry(mesh, res.keep);
       if (res.keepEdge) {
         // the stump's side of the clipped seam, in the same material; as a child
@@ -567,7 +613,7 @@ export class ShipDamage {
         mesh.add(edge);
         this.caps.push(edge);
       }
-      const pm = new THREE.Mesh(res.piece, skin.material(mesh.material));
+      const pm = new THREE.Mesh(res.piece, skin.material(mesh.material as THREE.Material));
       pm.position.copy(mesh.position);
       pm.quaternion.copy(mesh.quaternion);
       pm.scale.copy(mesh.scale);
@@ -575,32 +621,20 @@ export class ShipDamage {
       pm.receiveShadow = true;
       pm.userData.dmgOwnGeo = true;
       piece.add(pm);
-      rim.push(...res.rim);
       if (!capMat && (mat.vertexColors || (cloneBase.get(mat) as THREE.MeshStandardMaterial | undefined)?.vertexColors)) capMat = mesh.material as THREE.Material;
     }
     if (!piece.children.length) return false;
     // an intact copy, before the splintered end goes on, for the crew to raise later
+    // (its own copies of the broken-off geometry are made after, a step at a time)
     const tpl = piece.clone();
-    tpl.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (m.isMesh && m.userData.dmgOwnGeo) m.geometry = m.geometry.clone();
-    });
     let cap: THREE.Mesh | null = null;
 
     // jagged splinters on the stump and on the broken end
-    if (rim.length > 2) {
-      const cen = new THREE.Vector3();
-      for (const p of rim) cen.add(p);
-      cen.divideScalar(rim.length);
-      let r = 0;
-      for (const p of rim) r += p.distanceTo(cen);
-      r = clamp(r / rim.length, 0.08, 0.6);
-      const dir = cut.plane.normal.y > 0.5 ? 1 : 1;
-      const stumpGeo = breakSplinters(new THREE.Vector3(), r, dir, Math.random() * 100);
-      const brokenGeo = breakSplinters(new THREE.Vector3(), r, -dir, Math.random() * 100);
+    if (splinter) {
+      const cen = splinter.cen;
       const orient = new THREE.Quaternion().setFromUnitVectors(UP, cut.plane.normal);
       const mat = capMat ?? this.skin.material(this.woodMaterial() ?? new THREE.MeshStandardMaterial());
-      const stump = new THREE.Mesh(stumpGeo, mat);
+      const stump = new THREE.Mesh(splinter.stump, mat);
       stump.position.copy(cen);
       stump.quaternion.copy(orient);
       stump.castShadow = true;
@@ -608,7 +642,7 @@ export class ShipDamage {
       root.add(stump);
       this.caps.push(stump);
       cap = stump;
-      const end = new THREE.Mesh(brokenGeo, skin.material(cloneBase.get(mat) ?? mat));
+      const end = new THREE.Mesh(splinter.broken, skin.material(cloneBase.get(mat) ?? mat));
       end.position.copy(cen);
       end.quaternion.copy(orient);
       end.userData.dmgOwnGeo = true;
@@ -622,9 +656,19 @@ export class ShipDamage {
     hinge.userData.dmgSkip = true;
     hinge.userData.dmgPart = true;
     root.add(hinge);
+    if (delay > 0) delay = Math.max(0.01, delay - (world.time - at));
     this.hinges.push({ group: hinge, axis: axis.clone(), long: long.clone(), len, angle: 0, vel: rand(0.12, 0.3), delay, max, gravity: (1.5 * 9.8) / Math.max(4, len), started: false });
     this.spars.push({ pivot: pivot.clone(), axis: axis.clone(), long: long.clone(), len, lean: Math.min(max * 0.62, 0.8), tpl, cap });
     if (delay <= 0) this.crack(hinge, world);
+    const own: THREE.Mesh[] = [];
+    tpl.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.userData.dmgOwnGeo) own.push(m);
+    });
+    for (const m of own) {
+      yield;
+      m.geometry = m.geometry.clone();
+    }
     return true;
   }
 
@@ -667,7 +711,8 @@ export class ShipDamage {
     dir.normalize();
     const axis = new THREE.Vector3().crossVectors(UP, dir).normalize();
     const max = rand(1.15, 1.35);
-    this.breakQueue.push(() => this.breakOff(cut, new THREE.Vector3(0, yCut, m.z), axis, UP, H - (yCut - m.y0), delay, max, world));
+    const at = world.time;
+    this.breakQueue.push(() => this.breakOff(cut, new THREE.Vector3(0, yCut, m.z), axis, UP, H - (yCut - m.y0), delay, max, world, at));
   }
 
   private breakBowsprit(world: World, delay: number) {
@@ -682,14 +727,30 @@ export class ShipDamage {
       lateral: (p) => p.y > yMin && Math.abs(p.x) < 1.6,
     };
     const long = new THREE.Vector3(0, Math.sin(0.32), Math.cos(0.32));
-    this.breakQueue.push(() => this.breakOff(cut, new THREE.Vector3(0, s.top(0.985) - 0.25, zc), new THREE.Vector3(1, 0, 0), long, c.bowsprit, delay, 0.95, world));
+    const at = world.time;
+    this.breakQueue.push(() => this.breakOff(cut, new THREE.Vector3(0, s.top(0.985) - 0.25, zc), new THREE.Vector3(1, 0, 0), long, c.bowsprit, delay, 0.95, world, at));
   }
 
-  /** Runs at most one queued break per frame, fleet-wide. */
+  /** Works on the queued breaks for a slice of the frame; one ship's per frame, fleet-wide. */
   private drainBreaks(world: World) {
-    if (!this.breakQueue.length || heavyAt === world.time) return;
+    if ((!this.job && !this.breakQueue.length) || heavyAt === world.time) return;
     heavyAt = world.time;
-    this.breakQueue.shift()!();
+    const end = performance.now() + BREAK_BUDGET;
+    do {
+      if (!this.job) {
+        const next = this.breakQueue.shift();
+        if (!next) return;
+        this.job = next();
+      }
+      if (this.job.next().done) this.job = null;
+    } while (performance.now() < end);
+  }
+
+  /** Finishes every break still in hand, right now (the crew is about to re-rig). */
+  private flushBreaks() {
+    if (this.job) finish(this.job);
+    this.job = null;
+    while (this.breakQueue.length) finish(this.breakQueue.shift()!());
   }
 
   private releaseHinge(h: Hinge, world: World) {
@@ -731,7 +792,7 @@ export class ShipDamage {
    * shower of sawdust before the rigging is made fast.
    */
   private repairRig(world: World) {
-    while (this.breakQueue.length) this.breakQueue.shift()!();
+    this.flushBreaks();
     for (const h of this.hinges) this.releaseHinge(h, world);
     this.hinges.length = 0;
     if (!this.spars.length) {
@@ -844,6 +905,8 @@ export class ShipDamage {
     }
     this.bowsprit = false;
     this.events = 0;
+    // whole again: the light levels and shadow stand-ins come back (unless she's sinking)
+    if (this.ship.alive) this.ship.model.resumeLods();
     if (world) {
       const root = this.ship.model.root;
       for (const m of this.masts) {
@@ -942,6 +1005,7 @@ export class ShipDamage {
 
   onDeath(world: World) {
     const s = this.ship;
+    s.model.suspendLods();
     const c = s.cls;
     const model = s.model;
     const shape = model.shape;
@@ -1025,8 +1089,9 @@ export class ShipDamage {
   }
 
   /** Breaks the hull in two: the bow becomes its own half with its own skin. */
-  private splitHull(world: World) {
+  private *splitHull(world: World): Generator<void, void> {
     const model = this.ship.model;
+    model.suspendLods();
     const root = model.root;
     // clone everything except the parts already snapping off
     const parts = root.children.filter((o) => o.userData.dmgPart);
@@ -1146,5 +1211,6 @@ export class ShipDamage {
     if (this.bowRoot) this.bowRoot.removeFromParent();
     this.hinges.length = 0;
     this.breakQueue.length = 0;
+    this.job = null;
   }
 }
