@@ -99,10 +99,17 @@ export const GLSL_WAVES = /* glsl */ `
 uniform vec4 uWaveA[${WAVE_COUNT}];
 uniform vec4 uWaveB[${WAVE_COUNT}];
 
+// The sea grid's spacing (m, along x and z) where this vertex sits, set by the
+// ocean before it calls gerstner (0: no grid, nothing to fit).
+vec2 aqGridSpan = vec2(0.0);
+
 // Returns displaced offset; accumulates analytic normal terms. Short trains
 // fade out with distance (lodDist, metres from the camera) before the grid gets
-// too coarse to carry them, which keeps the far sea from shimmering. Gameplay
-// sits well inside the fade, so CPU buoyancy still matches what you see.
+// too coarse to carry them, which keeps the far sea from shimmering. They also
+// fade wherever the grid itself spaces its vertices under about four to a
+// wavelength: there the stretched grid glides along with the ship, and a train
+// it can't carry would alias into ripples racing across the sea. Gameplay
+// sits well inside both fades, so CPU buoyancy still matches what you see.
 vec3 gerstner(vec2 p, float t, float damp, float lodDist, inout vec3 nrm, inout float crest) {
   vec3 o = vec3(0.0);
   vec3 n = vec3(0.0, 1.0, 0.0);
@@ -111,6 +118,8 @@ vec3 gerstner(vec2 p, float t, float damp, float lodDist, inout vec3 nrm, inout 
     vec4 a = uWaveA[i];
     vec4 b = uWaveB[i];
     float A = a.w * damp * (1.0 - smoothstep(14.0, 28.0, lodDist * a.z * 0.15915));
+    float span = length(aqGridSpan * a.xy);
+    if (span > 0.0) A *= smoothstep(2.8, 4.0, 6.28319 / (a.z * span));
     float th = a.z * dot(a.xy, p) - b.x * t + b.z;
     float s = sin(th);
     float co = cos(th);
