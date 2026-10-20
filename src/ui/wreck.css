@@ -610,7 +610,7 @@
 }
 
 .wk-crest .crest-rose {
-  transform-origin: 32px 32px;
+  will-change: transform;
   animation: turn 60s linear infinite;
 }
 

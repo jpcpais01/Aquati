@@ -16,6 +16,19 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T19:00Z',
     entries: [
       {
+        title: 'A compass that turns like clockwork while you load',
+        notes: [
+          'The compass on the loading screen now spins at a perfectly steady pace, with no speeding up, slowing down or hesitating, and its dotted inner dial slowly turns the other way.',
+          'It is drawn as its own layer that the browser animates on its own, so it keeps turning smoothly even while the islands, towns and ships are being built behind it.',
+          'Loading also now builds the two archipelagos, the six trading towns and your ship in the harbour in separate short steps instead of a few long ones, so the progress bar moves along steadily.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
         title: 'Las Brumas, carved by the weather',
         notes: [
           'The limestone towers of Las Brumas have been reshaped to look like real karst, the kind you find in Ha Long Bay or El Nido. They are no longer straight stone drums: each one narrows as it rises and leans a little to one side, steps back in ledges and rounds over into a lumpy, wooded crown.',
