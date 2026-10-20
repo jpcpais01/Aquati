@@ -114,6 +114,12 @@ export class FortStore {
     this.save();
   }
 
+  /** A fresh sea: the Brethren hold every fort again. */
+  wipe() {
+    this.state = freshForts();
+    this.save();
+  }
+
   /** Gold waiting at a fort of yours. */
   owed(id: string, now = Date.now()) {
     if (!(id in this.state.taken)) return 0;
