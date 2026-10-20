@@ -109,9 +109,10 @@ export class PirateAI {
       if (pk && pk.leader && !pk.leader.ship.alive) pk.leader = null;
       // the pack answers a sighting by any of its ships
       if (pk && target && world.time - pk.alertT < 20 && dist < 560) provoked = true;
+      // the dead don't run, and they sense the living from further off
       if (this.hunter) this.mode = target ? 'engage' : this.mode === 'engage' ? 'patrol' : this.mode;
-      else if (target && hpF < 0.22 && this.mode !== 'flee' && this.rnd() < 0.5) this.mode = 'flee';
-      else if (target && (dist < 230 || provoked) && this.mode !== 'flee') this.mode = 'engage';
+      else if (target && hpF < 0.22 && !s.ghost && this.mode !== 'flee' && this.rnd() < 0.5) this.mode = 'flee';
+      else if (target && (dist < (s.ghost ? 300 : 230) || provoked) && this.mode !== 'flee') this.mode = 'engage';
       else if (this.mode === 'engage' && (!target || dist > 340)) this.mode = 'patrol';
       else if (this.mode === 'flee' && (!target || dist > 300)) this.mode = 'patrol';
 
@@ -191,6 +192,8 @@ export class PirateAI {
   /** Now and then a pirate crew rams home something nastier, if it will reach and isn't wasted. */
   private pickAmmo(dist: number, target: Ship): AmmoId {
     const s = this.ship;
+    // a phantom's guns only ever spit ghost-fire
+    if (s.ghost) return 'wraith';
     let r = this.rnd();
     for (const [id, p] of this.ammoMix) {
       if (r < p) {

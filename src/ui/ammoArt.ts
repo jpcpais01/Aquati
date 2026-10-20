@@ -53,6 +53,13 @@ const ART: Record<AmmoId, string> = {
       .map(([x, y]) => `<circle cx="${x}" cy="${y}" r="3.3" fill="url(#aqa-grape)"/><circle cx="${x - 1}" cy="${y - 1.1}" r="0.9" fill="#fff" opacity="0.5"/>`)
       .join('')}
     <path d="M10 20.5c-1 6 3 10.5 10 10.8 7-.3 11-4.8 10-10.8" stroke="#b49a6c" stroke-width="0.9" fill="none" opacity="0.65" stroke-dasharray="1.6 1.4"/>`,
+
+  // a phantom's shot: a ball of cold green ghost-fire with a wisp curling off it
+  wraith: `<defs><radialGradient id="aqa-wraith" cx="0.4" cy="0.38" r="0.65"><stop offset="0" stop-color="#f2fff8"/><stop offset="0.35" stop-color="#7dffc4"/><stop offset="1" stop-color="#0c6b45"/></radialGradient><radialGradient id="aqa-wglow"><stop offset="0" stop-color="#5dffb5" stop-opacity="0.6"/><stop offset="1" stop-color="#5dffb5" stop-opacity="0"/></radialGradient></defs>
+    <circle cx="20" cy="22" r="17" fill="url(#aqa-wglow)"/>
+    <path d="M14 14c-2-4 1-8 5-9-1 3 1 4 3 5 1-3 4-5 7-5-2 3-1 6 0 9" fill="#7dffc4" opacity="0.55"/>
+    <circle cx="20" cy="22" r="11" fill="url(#aqa-wraith)"/>
+    ${shine(16, 18, 2.6)}`,
 };
 
 let uid = 0;

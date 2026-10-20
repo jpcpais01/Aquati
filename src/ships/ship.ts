@@ -148,9 +148,20 @@ export class Ship {
   name: string;
   /** Vault cannon cosmetics (style ids): the flash and smoke at the gun, the wake behind the ball. */
   readonly cannonFx = { blast: 'powder', trail: 'powder' };
+  /**
+   * A phantom: sails on whatever the wind does, slips half the sea's grip,
+   * shrugs off fire and grape, lets some shot pass clean through, and
+   * fades away instead of foundering.
+   */
+  readonly ghost: boolean;
+  /** How far a ghost has materialised (0 mist .. 1 there); she fades in from wherever it starts. */
+  presence = 1;
+  private flare = 0;
+  private mistT = 0;
 
   /** `model` may be one built ahead of time (see ShipModel's deferred build). */
   constructor(readonly cls: ShipClass, readonly livery: Livery, readonly team: Team, quality = 1, model?: ShipModel) {
+    this.ghost = !!livery.ghost;
     this.model = model ?? new ShipModel(cls, livery, quality);
     this.root.add(this.model.root);
     this.root.rotation.order = 'YXZ';
@@ -169,7 +180,7 @@ export class Ship {
 
   /** Fire shot struck home: she burns for longer with each ball. Returns true if she just caught. */
   ignite(by: Ship | null): boolean {
-    if (!this.alive) return false;
+    if (!this.alive || this.ghost) return false;
     const fresh = this.afire <= 0;
     this.afire = Math.min(EFFECT.burnMax, Math.max(0, this.afire) + EFFECT.burnPerHit);
     if (by) this.afireBy = by;
@@ -186,9 +197,17 @@ export class Ship {
 
   /** Grape shot swept the deck. Returns true if her crews were at full strength. */
   rake(): boolean {
-    if (!this.alive) return false;
+    if (!this.alive || this.ghost) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = EFFECT.crewTime;
+    return fresh;
+  }
+
+  /** Wraith-fire struck her: the crews shrink from their guns. Returns true if they were steady a moment ago. */
+  terrify(): boolean {
+    if (!this.alive || this.ghost) return false;
+    const fresh = this.crewHit <= 0;
+    this.crewHit = Math.max(this.crewHit, EFFECT.dreadTime);
     return fresh;
   }
 
@@ -312,14 +331,18 @@ export class Ship {
       world.wake.push(wx, wz, 2.2, -0.25);
     }
     const [vol, pan, d] = world.soundAt(pos);
-    world.audio.cannon(vol, pan, d, clamp((this.cls.length - 15) / 14, 0, 1));
+    // a phantom's guns: a hollow, muffled boom under a rising spectral howl
+    world.audio.cannon(this.ghost ? vol * 0.55 : vol, pan, d, clamp((this.cls.length - 15) / 14, 0, 1));
+    if (p.ammo === 'wraith') world.audio.wraith(vol, pan, d);
     world.onShake(this.team === 'player' ? 0.35 : 0.12 * vol, pos);
   }
 
-  /** `at` is the world impact point; `hull` false for shots that only hit the rig. */
-  damage(amount: number, attacker: Ship | null, world: World, at: THREE.Vector3 | null = null, hull = true) {
+  /** `at` is the world impact point; `hull` false for shots that only hit the rig; `pierce` ignores armour (wraith-fire). */
+  damage(amount: number, attacker: Ship | null, world: World, at: THREE.Vector3 | null = null, hull = true, pierce = false) {
     if (!this.alive) return 0;
-    const dmg = amount * (1 - this.cls.armor) * (0.85 + Math.random() * 0.3);
+    const dmg = amount * (pierce ? 1 : 1 - this.cls.armor) * (0.85 + Math.random() * 0.3);
+    // a phantom flares green where she is struck
+    if (this.ghost) this.flare = Math.min(1, this.flare + 0.45);
     this.hp -= dmg;
     if (hull) this.dmg.onHit(at, dmg, world);
     this.lastHit = world.time;
@@ -330,9 +353,15 @@ export class Ship {
       this.alive = false;
       this.sinkT = 0;
       if (attacker) attacker.kills++;
-      world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
       const [vol, pan, d] = world.soundAt(this.pos);
-      world.audio.explosion(vol, pan, d);
+      if (this.ghost) {
+        // no blast: the curse breaks, and she comes apart into the mist she came from
+        world.particles.exorcism(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), this.cls.length);
+        world.audio.exorcise(vol, pan, d);
+      } else {
+        world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
+        world.audio.explosion(vol, pan, d);
+      }
       world.onShake(this.team === 'player' ? 1.2 : 0.5 * vol, this.pos);
       this.dmg.onDeath(world);
     }
@@ -392,7 +421,9 @@ export class Ship {
       // shredded canvas (chain shot) draws far less wind, mending over the last few seconds
       const tornK = 1 - EFFECT.tornSlow * Math.min(1, this.torn / 3);
       const hpF = (0.72 + 0.28 * (this.hp / this.maxHp)) * this.dmg.speedFactor * tornK;
-      const target = c.maxSpeed * this.boost.speed * this.sailLevel * windFactor(relDeg) * (0.75 + 0.25 * w.strength) * hpF * (1 + gust * 0.08);
+      // a ghost sails on a wind of her own, dead into the eye of the real one if she likes
+      const wf = this.ghost ? 1.02 : windFactor(relDeg) * (0.75 + 0.25 * w.strength) * (1 + gust * 0.08);
+      const target = c.maxSpeed * this.boost.speed * this.sailLevel * wf * hpF;
       const rate = target > this.speed ? c.accel : c.accel * 1.4;
       this.speed += (target - this.speed) * damp(rate, dt);
       const steer = clamp(0.28 + 0.9 * (this.speed / c.maxSpeed), 0.28, 1.1);
@@ -483,6 +514,8 @@ export class Ship {
       pitchTarget = targetPitch * 0.3 * swell + wr.pitch;
       targetRoll = targetRoll * 0.3 * swell + wr.roll;
       if (wr.done) this.removed = true;
+      // a laid ghost is gone once the last of her has dissolved
+      if (this.ghost && this.sinkT > GHOST_FADE + 1) this.removed = true;
     } else {
       // flooding: she rides lower and lists toward her holes
       this.dmg.update(dt, world);
@@ -523,11 +556,14 @@ export class Ship {
     const lz = w.dirX * fx + w.dirZ * fz;
     const flagAng = Math.atan2(-lz, lx);
     // canvas spills and luffs while it crosses over, then fills again on the new side; gusts puff it out harder
-    const fill = clamp(windFactor(relDeg) * w.strength * (1.1 + gust * 0.45), 0.25, 1.25) * (0.3 + 0.7 * Math.min(1, Math.abs(leeSide)));
+    const fill = this.ghost
+      ? 0.95 + 0.25 * Math.sin(world.time * 0.7 + this.id)
+      : clamp(windFactor(relDeg) * w.strength * (1.1 + gust * 0.45), 0.25, 1.25) * (0.3 + 0.7 * Math.min(1, Math.abs(leeSide)));
     this.model.updateRig(this.sailLevel, -brace, leeSide, flagAng, fill);
 
     // ------------------------------------------------ wake & fx
-    const wakeK = this.alive ? 1 : Math.max(0, 1 - this.sinkT / 3);
+    // a ghost barely troubles the water
+    const wakeK = (this.alive ? 1 : Math.max(0, 1 - this.sinkT / 3)) * (this.ghost ? 0.3 * this.presence : 1);
     const spd = Math.abs(this.speed);
     if (spd > 0.3 && wakeK > 0) {
       // pressure every frame: the water field grows the Kelvin arms and transverse swell from it
@@ -588,7 +624,7 @@ export class Ship {
     this.bowWave.update(this.pos.x, this.heave, this.pos.z, this.heading, this.pitch * 0.8, bowAmp, spd, dt);
     // bow spray: fine droplets thrown off the crest of the sheet at speed, in bursts when
     // she buries her nose in a swell. Small, quick and falling: water, not puffs of smoke.
-    if (this.alive && spd > c.maxSpeed * 0.35) {
+    if (this.alive && !this.ghost && spd > c.maxSpeed * 0.35) {
       const fast = (spd / c.maxSpeed - 0.35) / 0.65;
       const slam = Math.max(0, this.pitch - 0.02) * 30; // positive pitch = bow down
       this.sprayT += dt * (fast * fast * 40 + slam * 50);
@@ -619,7 +655,8 @@ export class Ship {
     }
     // a lazy wisp from the galley stovepipe, carried off downwind
     const pipe = this.model.chimney;
-    if (pipe && this.alive) {
+    if (this.ghost) this.haunt(dt, world);
+    else if (pipe && this.alive) {
       this.galleyT += dt * 2.2;
       while (this.galleyT > 1) {
         this.galleyT -= 1;
@@ -642,7 +679,59 @@ export class Ship {
       this.fireT += dt * (2 + this.burning * 10);
       while (this.fireT > 1) {
         this.fireT -= 1;
-        if (this.dmg.firePoint(world, _fp)) world.particles.flame(_fp, 0.7 + this.burning * 0.6);
+        if (this.dmg.firePoint(world, _fp)) {
+          if (this.ghost) world.particles.spiritFlame(_fp, 0.7 + this.burning * 0.6);
+          else world.particles.flame(_fp, 0.7 + this.burning * 0.6);
+        }
+      }
+    }
+  }
+
+  /**
+   * A ghost's own weather: a cold mist pouring off her waterline and trailing
+   * astern, green motes rising off the deck, and her presence and hit-flare
+   * fed to the shaders.
+   */
+  private haunt(dt: number, world: World) {
+    if (this.alive) this.presence = Math.min(1, this.presence + dt / 3.2);
+    else this.presence = Math.max(0, 1 - this.sinkT / GHOST_FADE);
+    this.flare = Math.max(0, this.flare - dt * 2.2);
+    const g = this.dmg.ghost;
+    g.x = this.presence;
+    g.y = this.flare;
+    const pr = this.presence;
+    if (pr <= 0.02) return;
+    this.mistT += dt * (this.alive ? 14 : 30) * pr;
+    const L = this.cls.length;
+    const B = this.cls.beam;
+    const fwd = this.forward;
+    const fx = fwd.x;
+    const fz = fwd.z;
+    const pdx = fz;
+    const pdz = -fx;
+    while (this.mistT > 1) {
+      this.mistT -= 1;
+      const u = (Math.random() - 0.55) * L;
+      const side = Math.random() < 0.5 ? 1 : -1;
+      const x = this.pos.x + fx * u + pdx * side * B * 0.45;
+      const z = this.pos.z + fz * u + pdz * side * B * 0.45;
+      const wy = world.waterHeight(x, z);
+      if (Math.random() < 0.7) {
+        world.particles.emit({
+          x, y: wy + 0.3 + Math.random() * 0.6, z,
+          vx: this.vel.x * 0.25 + pdx * side * 0.6, vy: 0.15 + Math.random() * 0.25, vz: this.vel.z * 0.25 + pdz * side * 0.6,
+          life: 3 + Math.random() * 2, size: 1.6 + Math.random(), sizeEnd: 6 + Math.random() * 4,
+          color: [0.62, 0.82, 0.74], colorEnd: [0.78, 0.9, 0.86], alpha: 0.2 * pr, drag: 0.5, grav: -0.04, spin: (Math.random() - 0.5) * 0.3, kind: 1, fadeIn: 0.35,
+        });
+      } else {
+        // will-o'-wisps lifting off the rails
+        const deck = this.root.position.y + this.cls.freeboard + Math.random() * 2;
+        world.particles.emit({
+          x: x - pdx * side * B * 0.2, y: deck, z: z - pdz * side * B * 0.2,
+          vx: this.vel.x * 0.6 + (Math.random() - 0.5) * 0.6, vy: 0.6 + Math.random() * 1.2, vz: this.vel.z * 0.6 + (Math.random() - 0.5) * 0.6,
+          life: 1.2 + Math.random() * 1.4, size: 0.16 + Math.random() * 0.14, sizeEnd: 0.03,
+          color: [1.4 * pr, 5 * pr, 3 * pr], colorEnd: [0.12, 1.0, 0.55], drag: 0.8, grav: -0.3, kind: 2, fadeIn: 0.15,
+        }, true);
       }
     }
   }
@@ -652,3 +741,6 @@ export class Ship {
     this.bowWave.dispose();
   }
 }
+
+/** Seconds a laid ghost takes to dissolve. */
+const GHOST_FADE = 4.5;

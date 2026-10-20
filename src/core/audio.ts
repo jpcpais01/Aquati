@@ -501,6 +501,135 @@ export class Audio {
     } else if (vol > 0.45) this.duck(at, 0.25);
   }
 
+  private wraithAt = 0;
+
+  /**
+   * Wraith-fire leaving a phantom's gun: a hollow, falling howl with a
+   * shimmer on top, like wind across the mouth of a jar. Synthesised; one per
+   * ripple of the broadside at most, so a volley is a chorus, not a swarm.
+   */
+  wraith(vol: number, pan: number, dist = 0) {
+    if (vol < 0.03) return;
+    const v = this.voice(vol * 0.5, pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const now = ctx.currentTime;
+    if (now - this.wraithAt < 0.12) {
+      out.disconnect();
+      return;
+    }
+    this.wraithAt = now;
+    const at = now + Math.min(dist / SPEED_OF_SOUND, 1.1);
+    const send = ctx.createGain();
+    send.gain.value = 0.7;
+    out.connect(send).connect(this.reverbIn);
+    const f = 300 + Math.random() * 90;
+    for (const [mul, gain, type] of [[1, 0.32, 'triangle'], [1.505, 0.16, 'sine'], [2.01, 0.08, 'sine']] as const) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(f * mul * 1.35, at);
+      o.frequency.exponentialRampToValueAtTime(f * mul * 0.55, at + 0.9);
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 6 + Math.random() * 2;
+      const lg = ctx.createGain();
+      lg.gain.value = f * mul * 0.025;
+      lfo.connect(lg).connect(o.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.linearRampToValueAtTime(gain, at + 0.06);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 1.0);
+      o.connect(g).connect(out);
+      o.start(at);
+      lfo.start(at);
+      o.stop(at + 1.05);
+      lfo.stop(at + 1.05);
+    }
+  }
+
+  /**
+   * A ghost ship sighted: a far-off, wordless choir that swells out of the
+   * sea and drifts down a semitone before it dies away.
+   */
+  ghostWail(vol = 0.35, pan = 0) {
+    const v = this.voice(vol, pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const send = ctx.createGain();
+    send.gain.value = 1.2;
+    out.connect(send).connect(this.reverbIn);
+    // a minor chord of hollow "ooh" voices, each through a vowel formant
+    for (const semi of [0, 3, 7, 12]) {
+      for (const det of [-6, 5]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        const f = 196 * Math.pow(2, semi / 12);
+        o.frequency.setValueAtTime(f, t);
+        o.frequency.linearRampToValueAtTime(f * 0.944, t + 4.2);
+        o.detune.value = det + Math.random() * 4;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = 4.6 + Math.random() * 1.2;
+        const lg = ctx.createGain();
+        lg.gain.value = f * 0.012;
+        lfo.connect(lg).connect(o.frequency);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = 420 + Math.random() * 60;
+        bp.Q.value = 6;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(0.09, t + 1.6 + Math.random() * 0.5);
+        g.gain.setTargetAtTime(0.0001, t + 2.8, 0.7);
+        o.connect(bp).connect(g).connect(out);
+        o.start(t);
+        lfo.start(t);
+        o.stop(t + 5.5);
+        lfo.stop(t + 5.5);
+      }
+    }
+  }
+
+  /** A ghost ship laid to rest: a rising chord that opens out and fades like breath on glass. */
+  exorcise(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(1, vol * 0.8), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime + Math.min(dist / SPEED_OF_SOUND, 1.1);
+    const send = ctx.createGain();
+    send.gain.value = 1.1;
+    out.connect(send).connect(this.reverbIn);
+    for (const [semi, d] of [[0, 0], [7, 0.12], [12, 0.24], [16, 0.36], [19, 0.5]] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      const f = 220 * Math.pow(2, semi / 12);
+      o.frequency.setValueAtTime(f * 0.94, t + d);
+      o.frequency.exponentialRampToValueAtTime(f * 1.06, t + d + 2.4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + d);
+      g.gain.linearRampToValueAtTime(0.14, t + d + 0.25);
+      g.gain.exponentialRampToValueAtTime(0.001, t + d + 2.8);
+      o.connect(g).connect(out);
+      o.start(t + d);
+      o.stop(t + d + 2.9);
+    }
+    // a low rush of air as the shroud falls away
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'bandpass';
+    lp.frequency.setValueAtTime(260, t);
+    lp.frequency.exponentialRampToValueAtTime(1800, t + 2);
+    lp.Q.value = 0.8;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.linearRampToValueAtTime(0.35, t + 0.3);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 2.1);
+    n.connect(lp).connect(ng).connect(out);
+    n.start(t);
+    n.stop(t + 2.2);
+  }
+
+
   /**
    * A herring gull calling, synthesised on the spot: each note a nasal, raspy
    * "kyow" that leaps up then falls away; several in a row make the laughing call.

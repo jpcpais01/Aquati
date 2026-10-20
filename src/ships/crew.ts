@@ -137,7 +137,7 @@ const VESTS = {
   pirate: ['#3a2a22', '#5e1414', '#2d2a33', '#6b4a2b', '#4a3a5a'],
 };
 
-export function makeLook(team: 'player' | 'pirate', role: Role): Look {
+export function makeLook(team: 'player' | 'pirate', role: Role, ghost = false): Look {
   const T = TEAM_LOOK[team];
   const pirate = team === 'pirate';
   const chance = (p: number) => Math.random() < p;
@@ -205,6 +205,7 @@ export function makeLook(team: 'player' | 'pirate', role: Role): Look {
   slots[TINT.vest] = col(pick(VESTS[team]));
   slots[TINT.plume] = col(pirate ? pick(['#1a1616', '#a3241f', '#efe6d6']) : pick(['#f6f2ea', '#1fa3a0']));
   slots[TINT.leather] = col(pick(['#3b2a1e', '#2a1f18', '#5a3a24']));
+  slots[TINT.ghost] = [ghost ? 1 : 0, 0, 0, 0];
   if (role === 'captain') {
     const coat = col(pick(T.coat));
     hat = HAT.tricorn;
@@ -479,7 +480,7 @@ class ShipCrew {
     for (const role of roles) {
       const row = alloc();
       if (row < 0) break;
-      const look = makeLook(ship.team, role);
+      const look = makeLook(ship.team, role, ship.ghost);
       writeLook(row, look);
       const zone = role === 'helm' || role === 'captain' ? this.helmZone : this.main;
       const sl = new Sailor(role, look, row, zone);
@@ -602,6 +603,8 @@ class ShipCrew {
     }
     if (!sh.alive && !this.deadSeen) {
       this.deadSeen = true;
+      // the dead don't abandon ship: a laid ghost's crew are simply gone with the curse
+      if (sh.ghost) for (const sl of this.sailors) sl.mode = 'gone';
       for (const sl of this.sailors) {
         sl.panicDelay = sl.role === 'helm' ? rand(2.4, 3.2) : rand(0.15, 2.6);
         sl.flinch = 0;
@@ -2210,6 +2213,8 @@ export class CrewSystem {
       const far = Math.hypot(s.pos.x - focus.x, s.pos.z - focus.z) > viewR + s.cls.length;
       if (far) continue;
       if (dt > 0) c.update(dt, world, ships, splash);
+      // a phantom's crew only takes shape once she has
+      if (s.ghost && s.presence < 0.6) continue;
       for (const sl of c.sailors) {
         if (sl.mode === 'gone' || sl.mode === 'ashore') continue;
         if (c.pilot?.hidden && sl.role === 'captain' && sl.mode === 'aboard') continue;

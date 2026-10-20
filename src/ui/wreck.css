@@ -817,6 +817,16 @@
   font-size: 11px;
 }
 
+/* a ghost sighted or laid to rest: the entry glows a cold green */
+.wk-log li.k-ghost b {
+  color: #9dffd6;
+  text-shadow: 0 0 10px rgba(60, 255, 170, 0.45);
+}
+
+.wk-log li.k-ghost span {
+  filter: hue-rotate(95deg) saturate(1.4) drop-shadow(0 0 4px rgba(60, 255, 170, 0.6));
+}
+
 /* ------------------------------------------------------------------ actions */
 
 .wk-actions {

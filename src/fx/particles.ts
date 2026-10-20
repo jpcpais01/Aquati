@@ -284,6 +284,7 @@ const STREAKS: Record<string, [number, number, number, number, number, number]> 
   frost: [0.9, 1.8, 2.6, 1, 0.12, 0.44],
   comet: [3.0, 2.0, 0.6, 1, 0.17, 0.62],
   ghost: [0.6, 2.6, 1.4, 1, 0.13, 0.5],
+  wraith: [0.5, 2.4, 1.3, 1, 0.075, 0.4],
   rainbow: [1, 1, 1, 2, 0.2, 0.58],
   starfall: [2.2, 2.0, 3.2, 1, 0.16, 0.5],
   // shot types
@@ -611,6 +612,21 @@ export class Particles {
         this.smoke(pos, dir, carry, { tint: [1.02, 1.0, 1.1], jet: 7, bank: 3, wisps: 0 });
         break;
       }
+      case 'wraith': {
+        // a phantom's gun: a cold green flash, ghost-fire licking out of the port,
+        // and pale corpse-light smoke that hangs too long
+        this.flash(pos, 2.6, [1.2, 5.2, 3.1], [0.15, 1.6, 0.8]);
+        this.sparks(pos, dir, carry, 6, [2.4, 8, 5], [0.2, 1.8, 0.9]);
+        for (let i = 0; i < 16; i++) {
+          const sp = rand(7, 18);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rand(-1.6, 1.6) + carry.x, vy: rand(-0.3, 1.6), vz: dir.z * sp + rand(-1.6, 1.6) + carry.z,
+            life: rand(0.3, 0.6), size: rand(0.5, 0.9), sizeEnd: rand(1.6, 2.6), color: [1.6, 7.5, 4.2], colorEnd: [0.1, 1.2, 0.55], drag: 3, grav: -2.4, spin: rand(-2, 2), kind: 0, fadeIn: 0.001,
+          }, true);
+        }
+        this.smoke(pos, dir, carry, { tint: [0.74, 1.08, 0.94], jet: 7, bank: 4, wisps: 0, alpha: 0.75 });
+        break;
+      }
       default:
         this.flash(pos, 2.6, [9, 6, 2.6], [4, 1.4, 0.3]);
         this.sparks(pos, dir, carry, 5, [6, 3.2, 1.0], [2, 0.5, 0.1]);
@@ -758,6 +774,125 @@ export class Particles {
     }
   }
 
+  /** A ghost ship burning: cold green spirit-fire and no smoke, only a pale vapour. */
+  spiritFlame(pos: THREE.Vector3, intensity = 1) {
+    this.emit({
+      x: pos.x + rand(-0.5, 0.5), y: pos.y + rand(0, 0.4), z: pos.z + rand(-0.5, 0.5), vx: rand(-0.4, 0.4), vy: rand(2.4, 5), vz: rand(-0.4, 0.4),
+      life: rand(0.5, 0.9), size: rand(0.9, 1.5) * intensity, sizeEnd: 0.25, color: [1.2, 6, 3.4], colorEnd: [0.1, 1.2, 0.6], spin: rand(-2, 2), kind: 0, fadeIn: 0.05,
+    }, true);
+    if (Math.random() < 0.35) {
+      this.emit({
+        x: pos.x + rand(-0.4, 0.4), y: pos.y + 1.2, z: pos.z + rand(-0.4, 0.4), vx: rand(-0.3, 0.3), vy: rand(1.5, 3), vz: rand(-0.3, 0.3),
+        life: rand(2, 3.5), size: 1.1 * intensity, sizeEnd: rand(4, 6) * intensity, color: [0.6, 0.82, 0.74], colorEnd: [0.78, 0.9, 0.86], alpha: 0.25, drag: 0.35, grav: -0.3, spin: rand(-0.5, 0.5), kind: 1, fadeIn: 0.2,
+      });
+    }
+  }
+
+  /** Wraith-fire striking a hull: a burst of cold green flame and spectral motes, no splinters. */
+  wraithHit(pos: THREE.Vector3, normal?: THREE.Vector3) {
+    const nx = normal?.x ?? 0;
+    const nz = normal?.z ?? 0;
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.22, size: 4.2, sizeEnd: 7, color: [2, 9, 5.4], colorEnd: [0.2, 1.8, 0.9], kind: 0, fadeIn: 0.001 }, true);
+    for (let i = 0; i < 14; i++) {
+      this.emit({
+        x: pos.x + rand(-0.5, 0.5), y: pos.y + rand(-0.2, 0.4), z: pos.z + rand(-0.5, 0.5), vx: nx * rand(1, 4) + rand(-1.5, 1.5), vy: rand(2, 5.5), vz: nz * rand(1, 4) + rand(-1.5, 1.5),
+        life: rand(0.5, 0.9), size: rand(0.7, 1.3), sizeEnd: 0.25, color: [1.4, 6.5, 3.6], colorEnd: [0.1, 1.3, 0.6], spin: rand(-2, 2), drag: 1, grav: -1, kind: 0, fadeIn: 0.02,
+      }, true);
+    }
+    for (let i = 0; i < 18; i++) {
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: nx * rand(2, 7) + rand(-5, 5), vy: rand(1, 7), vz: nz * rand(2, 7) + rand(-5, 5),
+        life: rand(0.9, 1.7), size: rand(0.14, 0.26), sizeEnd: 0.03, color: [1.5, 5.5, 3.2], colorEnd: [0.12, 1.1, 0.55], grav: -0.6, drag: 1.4, kind: 2, fadeIn: 0.01,
+      }, true);
+    }
+    for (let i = 0; i < 3; i++) {
+      this.emit({
+        x: pos.x + rand(-0.6, 0.6), y: pos.y + rand(0, 1), z: pos.z + rand(-0.6, 0.6), vx: rand(-0.8, 0.8), vy: rand(0.6, 1.6), vz: rand(-0.8, 0.8),
+        life: rand(2, 3.2), size: 1.2, sizeEnd: rand(4, 6), color: [0.6, 0.84, 0.75], colorEnd: [0.8, 0.92, 0.88], alpha: 0.32, drag: 0.6, grav: -0.25, spin: rand(-0.4, 0.4), kind: 1, fadeIn: 0.08,
+      });
+    }
+  }
+
+  /** Wraith-fire into the sea: a green-lit spout and motes that drift up off the water. */
+  wraithSplash(pos: THREE.Vector3) {
+    this.splash(pos, 0.75);
+    this.emit({ x: pos.x, y: pos.y + 0.4, z: pos.z, life: 0.3, size: 3, sizeEnd: 5.5, color: [1.2, 5.5, 3.2], colorEnd: [0.1, 1, 0.5], kind: 0, fadeIn: 0.001 }, true);
+    for (let i = 0; i < 10; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = rand(0.5, 2.2);
+      this.emit({
+        x: pos.x + Math.cos(a) * r, y: pos.y + 0.2, z: pos.z + Math.sin(a) * r, vx: Math.cos(a) * 0.6, vy: rand(0.8, 2.4), vz: Math.sin(a) * 0.6,
+        life: rand(1.2, 2.2), size: rand(0.14, 0.24), sizeEnd: 0.03, color: [1.4, 5, 3], colorEnd: [0.1, 1, 0.5], drag: 0.8, grav: -0.2, kind: 2, fadeIn: 0.05,
+      }, true);
+    }
+  }
+
+  /** A ball struck a ghost ship: no wood to splinter, only a ripple of green light and a puff of ectoplasm. */
+  ectoHit(pos: THREE.Vector3, normal: THREE.Vector3) {
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.18, size: 2.6, sizeEnd: 4.4, color: [1.6, 6.5, 4], colorEnd: [0.2, 1.4, 0.8], kind: 0, fadeIn: 0.001 }, true);
+    for (let i = 0; i < 12; i++) {
+      const sp = rand(1.5, 5);
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: normal.x * sp + rand(-1.5, 1.5), vy: rand(0.5, 3.5), vz: normal.z * sp + rand(-1.5, 1.5),
+        life: rand(0.6, 1.2), size: rand(0.12, 0.22), sizeEnd: 0.03, color: [1.4, 5.5, 3.2], colorEnd: [0.1, 1.1, 0.55], drag: 1.6, grav: -0.4, kind: 2, fadeIn: 0.01,
+      }, true);
+    }
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, vx: normal.x * 1.2, vy: 0.6, vz: normal.z * 1.2, life: 2.2, size: 1, sizeEnd: 4, color: [0.62, 0.86, 0.76], alpha: 0.35, drag: 0.8, grav: -0.2, kind: 1, fadeIn: 0.05 });
+  }
+
+  /** A ball passing clean through a phantom: a shiver of light along its path. */
+  phaseShimmer(pos: THREE.Vector3, vel: THREE.Vector3) {
+    const l = Math.max(vel.length(), 1);
+    for (let i = 0; i < 10; i++) {
+      const k = rand(-1.6, 1.6);
+      this.emit({
+        x: pos.x + (vel.x / l) * k, y: pos.y + (vel.y / l) * k, z: pos.z + (vel.z / l) * k, vx: rand(-0.8, 0.8), vy: rand(0.3, 1.4), vz: rand(-0.8, 0.8),
+        life: rand(0.5, 1), size: rand(0.16, 0.3), sizeEnd: 0.03, color: [2.2, 6.5, 4.6], colorEnd: [0.2, 1.2, 0.8], drag: 1.2, kind: 2, fadeIn: 0.01,
+      }, true);
+    }
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.25, size: 1.8, sizeEnd: 3.6, color: [1, 3.5, 2.4], colorEnd: [0.1, 0.6, 0.4], kind: 0, fadeIn: 0.001 }, true);
+  }
+
+  /** A ghost ship laid to rest: a column of green light, a ring of spirits racing out over the water, a shroud of mist. */
+  exorcism(pos: THREE.Vector3, length: number) {
+    const s = 0.6 + length / 40;
+    this.emit({ x: pos.x, y: pos.y + 1, z: pos.z, life: 0.6, size: 10 * s, sizeEnd: 20 * s, color: [2.4, 9, 5.5], colorEnd: [0.2, 1.4, 0.7], fadeIn: 0.001 }, true);
+    // souls set free: motes spiralling up into the sky
+    for (let i = 0; i < 70; i++) {
+      const a = i * 0.61;
+      const r = rand(0.3, 1) * length * 0.4;
+      this.emit({
+        x: pos.x + Math.cos(a) * r * 0.35, y: pos.y + rand(0, 3), z: pos.z + Math.sin(a) * r, vx: -Math.sin(a) * 1.4, vy: rand(4, 13), vz: Math.cos(a) * 1.4,
+        life: rand(1.6, 3), size: rand(0.25, 0.5), sizeEnd: 0.05, color: [2, 7, 4.4], colorEnd: [0.6, 1.6, 1.2], drag: 0.5, grav: -0.5, kind: 2, fadeIn: 0.02,
+      }, true);
+    }
+    // a ring of light skimming out across the sea
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * Math.PI * 2;
+      this.emit({
+        x: pos.x, y: pos.y - 1.2, z: pos.z, vx: Math.cos(a) * 18 * s, vy: 0, vz: Math.sin(a) * 18 * s,
+        life: 0.9, size: 1.4, sizeEnd: 3.2, color: [1, 4.6, 2.8], colorEnd: [0.1, 0.8, 0.45], drag: 2.2, kind: 0, fadeIn: 0.001,
+      }, true);
+    }
+    // the shroud she dissolves into
+    for (let i = 0; i < 18; i++) {
+      this.emit({
+        x: pos.x + rand(-0.5, 0.5) * length * 0.5, y: pos.y + rand(0, 4), z: pos.z + rand(-0.5, 0.5) * length * 0.5, vx: rand(-1.4, 1.4), vy: rand(0.4, 1.8), vz: rand(-1.4, 1.4),
+        life: rand(4, 6.5), size: 3 * s, sizeEnd: rand(10, 16) * s, color: [0.6, 0.84, 0.75], colorEnd: [0.82, 0.92, 0.88], alpha: 0.32, drag: 0.6, grav: -0.15, spin: rand(-0.3, 0.3), kind: 1, fadeIn: 0.3,
+      });
+    }
+  }
+
+  /** A ghost ship materialising: mist welling up out of the sea where she will be. */
+  ghostRise(pos: THREE.Vector3, length: number) {
+    for (let i = 0; i < 22; i++) {
+      this.emit({
+        x: pos.x + rand(-0.5, 0.5) * length, y: pos.y + rand(0, 2), z: pos.z + rand(-0.5, 0.5) * length, vx: rand(-0.8, 0.8), vy: rand(0.3, 1.2), vz: rand(-0.8, 0.8),
+        life: rand(4, 6), size: 3, sizeEnd: rand(9, 14), color: [0.6, 0.82, 0.74], colorEnd: [0.8, 0.9, 0.86], alpha: 0.3, drag: 0.5, grav: -0.08, spin: rand(-0.3, 0.3), kind: 1, fadeIn: 0.6,
+      });
+    }
+  }
+
   explosion(pos: THREE.Vector3, scale = 1) {
     this.emit({ x: pos.x, y: pos.y + 1, z: pos.z, life: 0.35, size: 9 * scale, sizeEnd: 16 * scale, color: [12, 6, 2], colorEnd: [3, 0.8, 0.15], fadeIn: 0.001 }, true);
     for (let i = 0; i < 26; i++) {
@@ -803,7 +938,8 @@ export class Particles {
       case 'comet':
         if (Math.random() < 0.6) this.emit({ x: pos.x + j() * 2, y: pos.y + j() * 2, z: pos.z + j() * 2, vx: rand(-0.6, 0.6), vy: rand(-0.4, 0.6), vz: rand(-0.6, 0.6), life: rand(0.7, 1.2), size: rand(0.14, 0.24), sizeEnd: 0.03, color: [7, 5, 1.6], colorEnd: [3, 1.4, 0.2], grav: 1.5, kind: 2, fadeIn: 0.01 }, true);
         break;
-      case 'ghost': {
+      case 'ghost':
+      case 'wraith': {
         // will-o'-wisp motes drifting off the green ribbon (no puffs: the ribbon is the trace)
         const ph = performance.now() * 0.006;
         if (Math.random() < 0.6) this.emit({ x: pos.x + Math.sin(ph) * 0.25, y: pos.y + Math.cos(ph * 1.3) * 0.25, z: pos.z + j() * 2, vx: rand(-0.4, 0.4), vy: rand(0.3, 1.0), vz: rand(-0.4, 0.4), life: rand(0.6, 1.1), size: rand(0.12, 0.2), sizeEnd: 0.03, color: [1.5, 5, 3], colorEnd: [0.15, 1.1, 0.6], kind: 2, fadeIn: 0.02 }, true);

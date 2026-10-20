@@ -12,6 +12,7 @@ import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouet
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
 import { WreckReport, WreckScreen } from './wreck';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock } from '../game/ammo';
+import type { ShipStatus } from '../game/world';
 import { ammoIcon } from './ammoArt';
 import { progressSaved } from '../core/progress';
 import { CAPTAIN } from '../game/bounty';
@@ -759,7 +760,7 @@ export class UI {
     $('t-spy').classList.toggle('on', q > 0.5);
   }
 
-  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' | 'burn' | 'ablaze' | 'shredded' | 'crew' | 'ammo' = '') {
+  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' | 'burn' | 'ammo' | ShipStatus = '') {
     const f = this.floaterPool.find((p) => p.t >= p.life) ?? this.floaterPool[0];
     f.el.textContent = text;
     f.el.className = 'floater' + (kind ? ' ' + kind : '');
@@ -1105,7 +1106,7 @@ export class UI {
       let el = this.barEls.get(s.id);
       if (!el) {
         el = document.createElement('div');
-        el.className = s.hunter ? 'ebar hunter' : 'ebar';
+        el.className = s.hunter ? 'ebar hunter' : s.ghost ? 'ebar ghost' : 'ebar';
         el.innerHTML = `<i></i><span>${s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
         this.bars.appendChild(el);
         this.barEls.set(s.id, el);
@@ -1337,7 +1338,7 @@ export class UI {
     for (const s of ships) {
       if (s === player || !s.alive) continue;
       if (!s.hunter) {
-        tri(s, '#ff6a55', 11);
+        tri(s, s.ghost ? '#7dffc4' : '#ff6a55', 11);
         continue;
       }
       // a hunter: a pulsing crimson ring, and pinned to the rim while she's still over the horizon

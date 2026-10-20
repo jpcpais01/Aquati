@@ -10,6 +10,7 @@ import {
   GLSL_DAMAGE_VERTEX_PARS,
 } from '../ships/damageGlsl';
 import { GLSL_SKIN } from '../ships/skinGlsl';
+import { GLSL_GHOST_ALPHA, GLSL_GHOST_COLOR, GLSL_GHOST_EMISSIVE, GLSL_GHOST_FRAGMENT_PARS, GLSL_GHOST_VERTEX } from '../ships/ghostGlsl';
 
 // One global set of lighting / atmosphere uniforms. Every custom or patched
 // material references the very same uniform objects, so updating them once a
@@ -330,6 +331,7 @@ export interface PatchOptions {
   cut?: boolean; // damage holes cut clean through this surface
   solid?: boolean; // never cut by damage holes (inner surfaces)
   skin?: 1 | 2 | 3; // takes a vault skin: 1 hull planking, 2 painted woodwork, 3 sailcloth
+  ghost?: boolean; // a ghost ship's timber and canvas: spectral, rotting, half see-through (needs uGhost)
 }
 
 /** How each material was patched, so ships can re-patch per-hull damage clones. */
@@ -354,6 +356,7 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
     if (opts.damage) defs.push('#define AQ_DAMAGE');
     if (opts.cut) defs.push('#define AQ_DMG_CUT');
     if (opts.skin) defs.push(`#define AQ_SKIN ${opts.skin}`);
+    if (opts.ghost) defs.push('#define AQ_GHOST');
     const head = defs.join('\n') + '\n';
 
     shader.vertexShader = shader.vertexShader
@@ -463,6 +466,7 @@ ${GLSL_DAMAGE_VERTEX_PARS}`,
   }
 #endif
 ${GLSL_DAMAGE_VERTEX}
+${GLSL_GHOST_VERTEX}
 #ifdef AQ_FLAG
   {
     float a = uv.x;
@@ -498,6 +502,7 @@ uniform vec3 uUnderColor;
 ${GLSL_ATMOS}
 ${GLSL_AERIAL}
 ${GLSL_DAMAGE_FRAGMENT_PARS}
+${GLSL_GHOST_FRAGMENT_PARS}
 #ifdef AQ_SKIN
 ${GLSL_SKIN}
 uniform vec3 uSkinCloth;
@@ -546,6 +551,7 @@ varying float vSkinW;
         `#include <color_fragment>
 ${GLSL_SKIN_FRAGMENT}
 ${GLSL_DAMAGE_FRAGMENT}
+${GLSL_GHOST_COLOR}
 #ifdef AQ_DETAIL
   {
     vec4 nz = texture(uNoiseTex, vAqWorld.xz * 0.021);
@@ -578,8 +584,10 @@ ${GLSL_DAMAGE_SURFACE}`,
 #ifdef AQ_SKIN
   totalEmissiveRadiance += skEmis;
 #endif
-${GLSL_DAMAGE_EMISSIVE}`,
+${GLSL_DAMAGE_EMISSIVE}
+${GLSL_GHOST_EMISSIVE}`,
       )
+      .replace('#include <dithering_fragment>', `#include <dithering_fragment>\n${GLSL_GHOST_ALPHA}`)
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
