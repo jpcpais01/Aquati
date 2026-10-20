@@ -35,6 +35,8 @@ export type ShipStatus = 'ablaze' | 'shredded' | 'crew' | 'dread' | 'phased' | '
 /** Everything a ship / projectile needs to know about its surroundings. */
 export class World {
   time = 0;
+  /** Peaceful seas (see game/peace.ts): nobody in these waters fires first. In a shared sea, the host's word. */
+  peaceful = false;
   readonly wind: Wind;
   listener = new THREE.Vector3();
   listenerZoom = 140;

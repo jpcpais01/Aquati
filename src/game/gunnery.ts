@@ -44,6 +44,8 @@ export interface GunMark {
    * how far beyond the guns' usual reach it may lie, as a multiple of it.
    */
   reach?: number;
+  /** Peaceful seas: what it belongs to holds its fire (the guns lay on it last, and it's no fight yet). */
+  calm?: boolean;
 }
 
 const DEPTH_GLSL = /* glsl */ `
@@ -241,7 +243,8 @@ export class Gunnery {
       if (s === p || !s.alive || s.removed || s.team === p.team || s.prize) continue;
       const raw = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
       if (raw > R * 1.4) continue;
-      if (raw < focusD) {
+      // peaceful seas: a ship holding her fire is no fight yet (the guns still lay on her if she's all there is)
+      if (raw < focusD && !s.calm) {
         focusD = raw;
         focus = s;
       }
@@ -250,7 +253,7 @@ export class Gunnery {
       // a hair of grace at the edges: the hull's length of guns covers it
       if (Math.abs(b.u) > 1.08 || d > R) continue;
       const toPtr = this.pointerSide === b.side && this.pointer ? Math.hypot(this.pointer.x - s.pos.x, this.pointer.z - s.pos.z) : -1;
-      const score = toPtr >= 0 ? toPtr : d + Math.abs(b.u) * 60;
+      const score = (toPtr >= 0 ? toPtr : d + Math.abs(b.u) * 60) + (s.calm ? 1e4 : 0);
       if (score < best[b.side].score) best[b.side] = { s, m: null, score, d };
     }
     // and the marks that aren't ships: they stand still, so no leading
@@ -259,7 +262,7 @@ export class Gunnery {
       const m = this.marks[i];
       const raw = Math.hypot(m.x - p.pos.x, m.z - p.pos.z);
       if (raw > R * 1.4) continue;
-      if (raw < focusD) {
+      if (raw < focusD && !m.calm) {
         focusD = raw;
         focus = null;
         fm = m;
@@ -267,7 +270,7 @@ export class Gunnery {
       const b = this.bearing(p, m.x, m.z);
       if (Math.abs(b.u) > 1.08 || raw > R * (m.reach ?? 1) || raw < r0 + 3) continue;
       const toPtr = this.pointerSide === b.side && this.pointer ? Math.hypot(this.pointer.x - m.x, this.pointer.z - m.z) : -1;
-      const score = toPtr >= 0 ? toPtr : raw + Math.abs(b.u) * 60;
+      const score = (toPtr >= 0 ? toPtr : raw + Math.abs(b.u) * 60) + (m.calm ? 1e4 : 0);
       if (score < best[b.side].score) best[b.side] = { s: null, m, score, d: raw };
     }
     this.focus = focus;
@@ -315,7 +318,8 @@ export class Gunnery {
     // the glow only gathers on a foe the loaded guns are laid on: the moment to fire
     const auto = this.autoSide(p);
     const st = auto ? this.sides[auto] : null;
-    this.setGlow(st && st.ready ? st.target : null, dt, world, st && st.ready ? st.mark : null);
+    // (never on a ship that holds her fire: firing on her is your call, not the guns')
+    this.setGlow(st && st.ready && !st.target?.calm ? st.target : null, dt, world, st && st.ready && !st.mark?.calm ? st.mark : null);
   }
 
   private setGlow(mark: Ship | null, dt: number, world: World | null, gm: GunMark | null = null) {
