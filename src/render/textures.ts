@@ -107,7 +107,7 @@ function periodicFbm(size: number, baseCells: number, octaves: number, rnd: () =
 }
 
 /** Periodic Worley distances: returns F1 and F2 per texel. */
-function periodicWorley(size: number, cells: number, rnd: () => number): { f1: Float32Array; f2: Float32Array } {
+function periodicWorley(size: number, cells: number, rnd: () => number): { f1: Float32Array; f2: Float32Array; pts: Float32Array } {
   const pts = new Float32Array(cells * cells * 2);
   for (let i = 0; i < cells * cells; i++) {
     pts[i * 2] = rnd();
@@ -142,7 +142,7 @@ function periodicWorley(size: number, cells: number, rnd: () => number): { f1: F
       f2[y * size + x] = d2;
     }
   }
-  return { f1, f2 };
+  return { f1, f2, pts };
 }
 
 /**
@@ -154,7 +154,8 @@ export function createNoiseTexture(size = 256, seed = 11): THREE.DataTexture {
   const rnd = mulberry32(seed);
   const r = periodicFbm(size, 4, 5, rnd);
   const g = periodicFbm(size, 8, 4, rnd);
-  const w = periodicWorley(size, 14, rnd);
+  const wc = 14;
+  const w = periodicWorley(size, wc, rnd);
   const a = periodicFbm(size, 32, 2, rnd);
   const data = new Uint8Array(size * size * 4);
   for (let i = 0; i < size * size; i++) {
@@ -163,7 +164,14 @@ export function createNoiseTexture(size = 256, seed = 11): THREE.DataTexture {
     data[i * 4 + 2] = Math.round(Math.min(1, w.f1[i] * 1.25) * 255);
     data[i * 4 + 3] = Math.round(a[i] * 255);
   }
-  return makeDataTexture(data, size);
+  const tex = makeDataTexture(data, size);
+  // where the Worley cells' feature points sit (texture uv), for anything
+  // on the CPU that needs to find the cloud heaps the B channel draws
+  tex.userData.cells = Array.from({ length: wc * wc }, (_, i) => [
+    ((w.pts[i * 2] + (i % wc)) / wc + 0.5 / size) % 1,
+    ((w.pts[i * 2 + 1] + Math.floor(i / wc)) / wc + 0.5 / size) % 1,
+  ]);
+  return tex;
 }
 
 /** Tileable caustic web: bright thin lines where Worley cells meet. */

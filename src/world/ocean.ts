@@ -757,7 +757,11 @@ export class Ocean {
           }
 
           // ---- atmospheric haze
-          col = mix(col, hazeColor(-V), aerialAt(vViewDist, 0.0) * 0.88);
+          // the far sea lies under the haze a shade deeper and bluer than the
+          // sky just above it, so the horizon stays a crisp line instead of
+          // melting into one milky band (mist and a closing sky soften it)
+          vec3 seaHaze = hazeColor(-V) * mix(vec3(1.0), vec3(0.8, 0.88, 0.97), (1.0 - uMist * 0.85) * (1.0 - uCloudCover * 0.45));
+          col = mix(col, seaHaze, aerialAt(vViewDist, 0.0) * 0.88);
 
           gl_FragColor = ghostSee > 0.0 ? vec4(col * ghostSee, ghostSee) : vec4(col, 1.0);
         }`,

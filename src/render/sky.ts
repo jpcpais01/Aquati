@@ -1,14 +1,14 @@
 import * as THREE from 'three';
-import { GLSL_AERIAL, GLSL_ATMOS, globalUniforms } from './environment';
+import { CLOUD, GLSL_AERIAL, GLSL_ATMOS, globalUniforms } from './environment';
+import { CUMULUS_NEAR } from './cumulus';
 
 // The sky you only see from the deck. The top-down view never shows the
 // horizon, so this dome draws only in the captain's view: the scattering sky
 // (stars and all at night), a limb-darkened disc for the sun or moon that the
-// bloom catches, high cirrus on fair days, and a heaped cloud deck that follows
-// the weather, whose shadows are the very same ones drifting across the sea and
-// islands. Its horizon is the same air the distant world fades into.
-
-const CLOUD_ALT = 700;
+// bloom catches, high cirrus on fair days, and the bellies of the cumulus
+// overhead, whose shadows are the very same ones drifting across the sea and
+// islands. Toward the horizon the clouds are impostors standing on the same
+// field (see cumulus.ts). Its horizon is the same air the distant world fades into.
 
 export function createSkyDome(): THREE.Mesh {
   const mat = new THREE.ShaderMaterial({
@@ -31,6 +31,50 @@ export function createSkyDome(): THREE.Mesh {
       uniform vec2 uFogRange;
       ${GLSL_AERIAL}
       varying vec3 vDir;
+
+      // The cumulus overhead, seen from below as their flat bellies: grey
+      // and dense in the core, glowing at the thin rims where the sun gets
+      // through, with the sunlit crowns of the tall ones peeping past the
+      // rims. Toward the horizon the impostor clouds take over, so this deck
+      // fades out a kilometre or so off, except under a closing sky,
+      // where it becomes the grey ceiling running on to the horizon.
+      vec4 deck(vec3 ro, vec3 d, vec3 hz) {
+        float lo = cloudLo();
+        float H = heapTall();
+        float db, dt;
+        vec2 uvB = cloudUv(ro, d, AQ_CLOUD_ALT, db);
+        vec2 uvT = cloudUv(ro, d, AQ_CLOUD_ALT + H * 0.6, dt);
+        float fine = texture(uNoiseTex, uvB * 3.1 + vec2(0.29, 0.83)).g;
+        float nB = cloudField(uvB) + (fine - 0.5) * 0.14;
+        float kB = heapK(nB, lo);
+        // only the taller cores reach the crown slice, so it is narrower
+        float kT = heapK(cloudField(uvT), lo + 0.1);
+        // how much cloud stands between the belly and the sun
+        vec2 ls = uSunDir.xz / max(uSunDir.y, 0.12);
+        float kS = heapK(cloudField(uvB + ls * ${(CLOUD.uvPerM * 140).toFixed(4)}), lo);
+        float mu = dot(d, uSunDir);
+        float fwd = pow(max(mu, 0.0), 6.0);
+        vec3 skyAmb = mix(uSkyHorizon, uSkyZenith, 0.5) * 0.95 + uLight * 0.1;
+        vec3 seaAmb = vec3(0.1, 0.16, 0.2) * uLight + skyAmb * 0.42;
+        float dim = 1.0 - uStorm * 0.5 - uRain * 0.12;
+        float through = exp(-(kB + kS) * 2.2);
+        vec3 belly = (seaAmb * (1.15 - kB * 0.3) + uSunColor * (through * (0.16 + fwd * 1.1) + 0.05)) * dim;
+        // a closed deck still has its rolls: thicker under the heavy ones, thinner between
+        belly *= 1.0 - smoothstep(lo + 0.3, lo + 1.1, nB) * 0.6 * smoothstep(0.6, 1.0, uCloudCover);
+        vec3 crown = (skyAmb + uSunColor * (0.52 + fwd * 0.3)) * dim;
+        float night = 1.0 - uNight * 0.55;
+        belly = mix(belly * night, hz, 1.0 - exp(-db * 0.000042));
+        crown = mix(crown * night, hz, 1.0 - exp(-dt * 0.000042));
+        belly += vec3(0.62, 0.7, 0.95) * uFlash * 0.7;
+        // near only, unless the sky is closing over
+        float keep = max(1.0 - smoothstep(${CUMULUS_NEAR.toFixed(1)}, ${(CUMULUS_NEAR * 1.5).toFixed(1)}, db), smoothstep(0.5, 0.85, uCloudCover));
+        float fade = smoothstep(0.0, 0.06, d.y) * keep;
+        float aT = smoothstep(0.0, 0.15, kT) * fade * (1.0 - smoothstep(0.6, 0.95, uCloudCover));
+        float aB = smoothstep(0.0, 0.16, kB) * fade;
+        vec3 col = mix(crown, belly, aB);
+        return vec4(col, 1.0 - (1.0 - aT) * (1.0 - aB));
+      }
+
       void main() {
         vec3 d = normalize(vDir);
         float h = d.y;
@@ -49,26 +93,9 @@ export function createSkyDome(): THREE.Mesh {
           float cirrus = smoothstep(0.55, 0.85, ci) * patchy * (1.0 - smoothstep(0.3, 0.7, uCloudCover)) * smoothstep(0.04, 0.35, h);
           col = mix(col, uLight * 0.95 + uSunColor * 0.1 * (0.6 + pow(sd, 6.0)), cirrus * 0.3 * (1.0 - uNight * 0.6));
 
-          // the cloud deck as two slices of the same columns, base and crown:
-          // overhead they stack, toward the horizon the crowns rise behind the
-          // bases, so the clouds read as heaped volumes rather than a flat sheet
-          float dt, db;
-          vec2 uvT = cloudUv(cameraPosition, d, ${(CLOUD_ALT + 260).toFixed(1)}, dt);
-          vec2 uvB = cloudUv(cameraPosition, d, ${CLOUD_ALT.toFixed(1)}, db);
-          vec3 cT = cloudSample(uvT);
-          vec3 cB = cloudSample(uvB);
-          cT.y *= 0.3; // crowns are the thin, sunlit tops
-          vec3 colT = cloudColor(cT, d) * 1.06;
-          vec3 colB = cloudColor(cB, d);
-          // far cloud dissolves into the haze along the horizon
-          colT = mix(colT, hz, 1.0 - exp(-dt * 0.00006));
-          colB = mix(colB, hz, 1.0 - exp(-db * 0.00006));
-          float fade = smoothstep(0.0, 0.12, h);
-          float aT = cT.x * fade;
-          float aB = cB.x * fade;
-          col = mix(col, colT, aT);
-          col = mix(col, colB, aB);
-          cover = 1.0 - (1.0 - aT) * (1.0 - aB);
+          vec4 cu = deck(cameraPosition, d, hz);
+          col = mix(col, cu.rgb, cu.a);
+          cover = cu.a;
         }
         col += starField(d) * (1.0 - cover) * (1.0 - cover);
         // the key light itself (the sun by day, the moon by night): a hot disc

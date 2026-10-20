@@ -55,6 +55,7 @@ import { CameraRig } from './cameraRig';
 import { Gunnery, Side } from './gunnery';
 import { Captain } from './captain';
 import { createSkyDome } from '../render/sky';
+import { SkyCumulus } from '../render/cumulus';
 import { Projectiles } from './projectiles';
 import { Item, Loot, RARITY } from './loot';
 import { PIN_COLORS, Waypoints } from './waypoints';
@@ -236,6 +237,8 @@ export class Game {
   /** Pixel ratio forced for one high-resolution capture (0 in play). */
   private captureDpr = 0;
   private fpv = false;
+  /** True while the loading screen force-draws every shader once. */
+  private warming = false;
   // the trading ports: the hold you fill at sea and the markets that buy it
   private tradePorts!: TradePorts;
   private market = new MarketUI();
@@ -277,6 +280,7 @@ export class Game {
   private keelFor: NamedCaptain | null = null;
   /** A dressed captain's own cloth and flag, uploaded one a frame before she sails in. */
   private texQueue: THREE.Texture[] = [];
+  private cumulus = new SkyCumulus();
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -367,7 +371,7 @@ export class Game {
       this.ui.windShift();
       if (this.state === 'playing') this.ui.toast(title, line, 3);
     };
-    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group, this.sky);
+    this.opaque.add(this.projectiles.mesh, this.loot.group, this.debris.group, this.sky, this.cumulus.mesh);
 
     this.wireUI();
     this.wireShipwright();
@@ -486,6 +490,7 @@ export class Game {
     this.lightning = new Lightning();
     this.water.add(this.rain.mesh, this.lightning.mesh);
     this.clouds = new LowClouds(this.terrain.islands, q.tier);
+    this.cumulus.budget = q.tier === 0 ? 1600 : 4200;
     this.water.add(this.clouds.mesh);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
@@ -554,6 +559,8 @@ export class Game {
     // Plants stay unculled so every one of their batches is drawn too.
     veg.hold = true;
     this.clouds.warm = true;
+    this.cumulus.warm = true;
+    this.warming = true;
     this.tradePorts.warm();
     this.shore.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
@@ -567,6 +574,8 @@ export class Game {
     this.clouds.warm = false;
     this.shore.unwarm();
     this.opaque.remove(keeper.root);
+    this.cumulus.warm = false;
+    this.warming = false;
     await fonts;
     ui.progress(1);
     await nextFrame();
@@ -3354,9 +3363,10 @@ export class Game {
       this.clouds.mesh.visible = false;
     }
     this.wisps.mesh.visible = !under;
-    this.sky.visible = !under && (eb > 0.001 || port || cine > 0);
+    // (the loading screen's warm-up draws them all, so their shaders are ready for the deck)
+    this.sky.visible = this.warming || (!under && (eb > 0.001 || port || cine > 0));
     this.sky.position.copy(cam.position);
-    this.ocean.apron.visible = !under && (eb > 0.001 || port || cine > 0);
+    this.ocean.apron.visible = this.warming || (!under && (eb > 0.001 || port || cine > 0));
     const rr = this.pipeline.rtRefl;
     this.ocean.setReflectionTarget(rr.texture, rr.width, rr.height);
     this.pipeline.refl = this.ocean.reflecting ? this.ocean.reflScene : null;
@@ -3370,6 +3380,7 @@ export class Game {
       this.pipeline.photo = this.photo.look(0);
       this.pipeline.exposure = this.atmos.exposure * Math.pow(2, this.photo.exposure);
     }
+    this.cumulus.update(dt, cam, this.sky.visible);
     P.end();
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);

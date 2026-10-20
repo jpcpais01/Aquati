@@ -24,6 +24,16 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Sink one and she dissolves back into the mist, leaving a doubled cursed bounty, extra loot and a little luck. Her ghostly crew fade with her.',
         ],
       },
+      {
+        title: 'Real clouds on the horizon',
+        notes: [
+          'Look out from the deck and the sky is now full of proper cumulus: flat grey bases all at the same height, heaped up into rounded, sunlit cauliflower tops. They replace the scatter of tiny white flecks that used to cover the sky.',
+          'Clouds now gather the way they do over real tropical seas. Some parts of the sky fill with clusters of clouds and others stay wide open and blue. Clear days bring a few small heaps, fair days more, and a cloudy sky fills with big rolling banks. Rain and storms close it into a heavy grey ceiling with darker rolls in it.',
+          'They are lit by the real sun and moon. Sides that face the sun are bright white, the far sides and bellies sink into soft blue-grey shade, and when you look toward the sun the thin edges glow silver. At sunset they turn gold and rose, and at night they show up as dim silvery heaps against the stars.',
+          'Every cloud is the same one that casts its shadow on the sea, and they all drift with the wind. The far ones fade into the haze at the horizon.',
+          'The midday sky is a deeper blue above the horizon haze, the glare around the sun is tighter, and the far sea now meets the sky in a crisp, slightly darker line instead of blending into one milky band.',
+        ],
+      },
     ],
   },
   {
