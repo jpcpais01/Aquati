@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T19:00Z',
     entries: [
       {
+        title: 'A cinematic view past the farthest zoom',
+        notes: [
+          'Zooming all the way out still stops where it always did, so a quick flick of the wheel never throws the camera somewhere unexpected.',
+          'But rest at the farthest zoom for a second and then keep zooming out, and the camera swings down low over the water toward the horizon: the sea runs on to the skyline, distant islands rise out of the haze and the open sky and its clouds fill the top of the screen.',
+          'Each push tips it a little further, in a slow, weighty glide, until you are sailing in a proper cinematic shot. Zoom back in and the camera levels out first, then closes in as usual.',
+          'Works with a mouse wheel, a trackpad and a two-finger pinch on phones and tablets.',
+        ],
+      },
+      {
         title: 'A treasure map at the helm',
         notes: [
           'Your treasure map has moved from the top corner down to the helm console, right after your shot, and it is bigger and much easier to read and tap. It is a little parchment tile: a rolled chart with three torn slots that fill in as you find the pieces, and a count of how many you have.',
