@@ -150,6 +150,34 @@ export class CameraRig {
     this.tilt = Math.min(1, this.tilt + step * 1.6);
   }
 
+  /**
+   * The views the zoom button steps through: close, mid, far, and far leaned
+   * over (the cinematic angle past the farthest zoom).
+   */
+  static readonly VIEWS = [
+    { zoom: 0.12, tilt: 0, name: 'Close' },
+    { zoom: 0.48, tilt: 0, name: 'Mid' },
+    { zoom: 1, tilt: 0, name: 'Far' },
+    { zoom: 1, tilt: 1, name: 'Cinematic' },
+  ] as const;
+
+  /** Which of `VIEWS` the camera is at (or nearest to, after a pinch). */
+  get view() {
+    if (this.tilt > 0.5) return 3;
+    let best = 0;
+    CameraRig.VIEWS.forEach((v, i) => {
+      if (i < 3 && Math.abs(v.zoom - this.zoom) < Math.abs(CameraRig.VIEWS[best].zoom - this.zoom)) best = i;
+    });
+    return best;
+  }
+
+  /** Glide to a zoom and lean (a saved view, or a step of the zoom button). */
+  setView(zoom: number, tilt: number) {
+    this.zoom = clamp(zoom, 0, 1);
+    this.tilt = this.zoom >= 1 ? clamp(tilt, 0, 1) : 0;
+    this.tiltOpen = this.tilt > 0;
+  }
+
   /** Back to the plain high view (new voyage, ashore). */
   resetTilt() {
     this.tilt = this.tiltSmooth = 0;
