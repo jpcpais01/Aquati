@@ -152,8 +152,9 @@
 /* the pill: row back, open a chest, or "not with them on your heels" */
 .shore-prompt .dp-ico {
   display: flex;
-  width: 22px;
-  height: 22px;
+  flex: none;
+  width: max(15px, calc(17px * var(--k)));
+  height: max(15px, calc(17px * var(--k)));
   color: var(--gold);
 }
 
@@ -167,11 +168,11 @@
 }
 
 #hud.ashore .shore-prompt {
-  bottom: calc(var(--g, 16px) + var(--safe-b) + 46px * var(--k));
+  bottom: calc(var(--mb) + 46px * var(--k));
 }
 
 .is-touch #hud.ashore .shore-prompt {
-  bottom: calc(var(--g, 16px) + var(--safe-b) + 150px * var(--kt, 1));
+  bottom: calc(var(--mb) + 150px * var(--kt, 1));
 }
 
 /* keys, once, along the bottom */
@@ -179,7 +180,7 @@
   display: block;
   position: absolute;
   left: 50%;
-  bottom: calc(var(--g) + var(--safe-b));
+  bottom: var(--mb);
   transform: translateX(-50%);
   padding: 7px 16px;
   border-radius: 999px;
@@ -224,8 +225,8 @@
 /* touch: the cutlass, with the pistol beside it */
 .is-touch #hud.ashore .shore-pad {
   position: absolute;
-  right: calc(var(--g) + var(--safe-r));
-  bottom: calc(var(--g) + var(--safe-b));
+  right: var(--mr);
+  bottom: var(--mb);
   display: flex;
   align-items: flex-end;
   gap: calc(12px * var(--kt));
@@ -256,7 +257,7 @@
 .prize-card {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--g, 16px) + var(--safe-b) + 56px * var(--k));
+  bottom: calc(var(--mb) + 56px * var(--k));
   width: min(calc(100% - 32px), calc(440px * var(--k)));
   transform: translateX(-50%);
   display: none;
@@ -400,5 +401,5 @@
 }
 
 .is-touch .prize-card {
-  bottom: calc(var(--g, 16px) + var(--safe-b) + 150px * var(--kt, 1));
+  bottom: calc(var(--mb) + 150px * var(--kt, 1));
 }

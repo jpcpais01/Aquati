@@ -597,12 +597,12 @@
 #bounty-banner {
   position: absolute;
   left: 50%;
-  top: max(calc(var(--g) + var(--safe-t) + 150px * var(--k)), 21vh);
+  top: max(calc(var(--mt) + 150px * var(--k)), 21vh);
   display: none;
   align-items: center;
   gap: calc(14px * var(--k));
   width: max-content;
-  max-width: min(calc(520px * var(--k)), calc(100% - 2 * var(--g)));
+  max-width: min(calc(520px * var(--k)), calc(100% - var(--ml) - var(--mr)));
   padding: calc(12px * var(--k)) calc(22px * var(--k)) calc(12px * var(--k)) calc(12px * var(--k));
   border-radius: calc(22px * var(--k));
   background: linear-gradient(180deg, rgba(48, 10, 8, 0.94), rgba(16, 6, 6, 0.9));
@@ -764,6 +764,6 @@
 @media (orientation: portrait) and (max-width: 600px) {
   #bounty-banner {
     top: auto;
-    bottom: calc(var(--safe-b) + 150px);
+    bottom: calc(var(--mb) + 150px);
   }
 }

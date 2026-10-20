@@ -13,9 +13,9 @@
 
 .kr-bar {
   position: absolute;
-  top: calc(var(--g) + var(--safe-t) + 2px);
+  top: calc(var(--mt) + 2px);
   left: 50%;
-  width: min(calc(460px * var(--k)), calc(100% - 2 * (var(--g) + 286px * var(--k))));
+  width: min(calc(460px * var(--k)), calc(100% - var(--ml) - var(--mr) - 572px * var(--k)));
   min-width: 220px;
   padding: calc(9px * var(--k)) calc(16px * var(--k)) calc(9px * var(--k));
   border-radius: calc(16px * var(--k));
@@ -181,7 +181,7 @@
 
 /* toasts step down under the bar */
 #hud.kr-on #toasts {
-  top: calc(var(--g) + var(--safe-t) + 92px * var(--k));
+  top: calc(var(--mt) + 92px * var(--k));
 }
 
 /* ---- the sea's edge closing in: rage, and the grip */
@@ -585,12 +585,12 @@
 
 @media (orientation: portrait) and (max-width: 600px) {
   .kr-bar {
-    top: calc(var(--g) + var(--safe-t) + 214px * var(--k));
+    top: calc(var(--mt) + 214px * var(--k));
     width: calc(100% - 24px);
   }
 
   #hud.kr-on #toasts {
-    top: calc(var(--g) + var(--safe-t) + 300px * var(--k));
+    top: calc(var(--mt) + 300px * var(--k));
   }
 
   .kr-title h2 {

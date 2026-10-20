@@ -38,6 +38,13 @@
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
   --safe-r: env(safe-area-inset-right, 0px);
+  /* The in-game HUD's frame. The game runs fullscreen, so the HUD ignores the
+     system bars and notch and instead keeps a clean 3% margin on every side:
+     nothing in the HUD sits closer to an edge than this. */
+  --mt: 3vh;
+  --mb: 3vh;
+  --ml: 3vw;
+  --mr: 3vw;
   --gold-grad: linear-gradient(180deg, #ffeab0 0%, #f6c766 52%, #e0a443 100%);
   /* HUD scale; #hud overrides these per screen size */
   --k: 1;
@@ -2638,17 +2645,17 @@ body[data-hud='large'] #hud {
 
 .status {
   position: absolute;
-  left: calc(var(--g) + var(--safe-l));
-  top: calc(var(--g) + var(--safe-t));
-  width: calc(272px * var(--k));
+  left: var(--ml);
+  top: var(--mt);
+  width: calc(228px * var(--k));
   display: flex;
   flex-direction: column;
-  gap: calc(7px * var(--k));
+  gap: calc(5px * var(--k));
 }
 
 .ship-panel {
-  padding: calc(10px * var(--k)) calc(13px * var(--k)) calc(11px * var(--k)) calc(11px * var(--k));
-  border-radius: calc(18px * var(--k));
+  padding: calc(7px * var(--k)) calc(11px * var(--k)) calc(8px * var(--k)) calc(9px * var(--k));
+  border-radius: calc(14px * var(--k));
 }
 
 .ship-panel.hit {
@@ -2669,12 +2676,12 @@ body[data-hud='large'] #hud {
 .ship-id {
   display: flex;
   align-items: center;
-  gap: calc(9px * var(--k));
+  gap: calc(7px * var(--k));
 }
 
 .hud-ship {
-  width: calc(42px * var(--k));
-  height: calc(28px * var(--k));
+  width: calc(34px * var(--k));
+  height: calc(22px * var(--k));
   flex: none;
   display: flex;
   align-items: flex-end;
@@ -2694,16 +2701,16 @@ body[data-hud='large'] #hud {
 }
 
 .ship-name span {
-  font: 700 max(12px, calc(16px * var(--k))) var(--serif);
-  letter-spacing: 0.06em;
+  font: 700 max(10px, calc(13px * var(--k))) var(--serif);
+  letter-spacing: 0.05em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .ship-name small {
-  font: 700 max(8px, calc(9px * var(--k))) var(--sans);
-  letter-spacing: 0.22em;
+  font: 700 max(6.5px, calc(7.5px * var(--k))) var(--sans);
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--gold);
 }
@@ -2716,12 +2723,12 @@ body[data-hud='large'] #hud {
 }
 
 .hull-num b {
-  font: 800 max(11px, calc(15px * var(--k))) var(--sans);
+  font: 800 max(9.5px, calc(12px * var(--k))) var(--sans);
   letter-spacing: -0.01em;
 }
 
 .hull-num small {
-  font: 600 max(8.5px, calc(10px * var(--k))) var(--sans);
+  font: 600 max(7px, calc(8.5px * var(--k))) var(--sans);
   color: var(--ink-3);
 }
 
@@ -2732,14 +2739,14 @@ body[data-hud='large'] #hud {
 .hull-row {
   display: flex;
   align-items: center;
-  gap: calc(9px * var(--k));
-  margin-top: calc(8px * var(--k));
+  gap: calc(7px * var(--k));
+  margin-top: calc(5px * var(--k));
 }
 
 .hull {
   position: relative;
   flex: 1;
-  height: max(5px, calc(7px * var(--k)));
+  height: max(4px, calc(5px * var(--k)));
   border-radius: 99px;
   background: rgba(0, 0, 0, 0.36);
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -2788,20 +2795,20 @@ body[data-hud='large'] #hud {
 
 .stats-row {
   display: flex;
-  flex-wrap: nowrap;
-  gap: calc(6px * var(--k));
+  flex-wrap: wrap;
+  gap: calc(4px * var(--k));
 }
 
 .chip {
   display: flex;
   align-items: center;
-  gap: calc(6px * var(--k));
-  height: max(20px, calc(26px * var(--k)));
-  padding: 0 calc(10px * var(--k)) 0 calc(7px * var(--k));
+  gap: calc(5px * var(--k));
+  height: max(17px, calc(21px * var(--k)));
+  padding: 0 calc(8px * var(--k)) 0 calc(5px * var(--k));
   border-radius: 99px;
   background: rgba(8, 22, 32, 0.7);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  font: 700 max(10.5px, calc(12.5px * var(--k))) var(--sans);
+  font: 700 max(9px, calc(10.5px * var(--k))) var(--sans);
 }
 
 .chip b {
@@ -2822,8 +2829,8 @@ body[data-hud='large'] #hud {
 .coin,
 .skull,
 .isle {
-  width: max(11px, calc(14px * var(--k)));
-  height: max(11px, calc(14px * var(--k)));
+  width: max(9px, calc(11px * var(--k)));
+  height: max(9px, calc(11px * var(--k)));
   border-radius: 50%;
   display: inline-block;
   flex: none;
@@ -2844,21 +2851,33 @@ body[data-hud='large'] #hud {
   background: radial-gradient(circle at 50% 60%, #6fb043 35%, #f3e6c4 36%, #f3e6c4 55%, #2bb5ad 56%);
 }
 
-/* nav: minimap with its wind & sky strip, pause and view beside it */
+/* nav: minimap with its wind & sky strip, and a small row of pause / view /
+   photo under the strip so the corner stays one tidy column */
 
 .nav {
   position: absolute;
-  right: calc(var(--g) + var(--safe-r));
-  top: calc(var(--g) + var(--safe-t));
+  right: var(--mr);
+  top: var(--mt);
   display: flex;
-  align-items: flex-start;
-  gap: calc(10px * var(--k));
+  flex-direction: column;
+  align-items: center;
+  gap: calc(7px * var(--k));
 }
 
 .nav-btns {
+  order: 2;
   display: flex;
-  flex-direction: column;
   gap: calc(8px * var(--k));
+}
+
+.nav-btns .icon-btn {
+  width: max(28px, calc(32px * var(--k)));
+  height: max(28px, calc(32px * var(--k)));
+}
+
+.nav-btns .icon-btn .ico {
+  width: max(13px, calc(15px * var(--k)));
+  height: max(13px, calc(15px * var(--k)));
 }
 
 .icon-btn {
@@ -2911,8 +2930,8 @@ body[data-hud='large'] #hud {
 
 .map-wrap {
   position: relative;
-  width: calc(158px * var(--k));
-  height: calc(158px * var(--k));
+  width: calc(126px * var(--k));
+  height: calc(126px * var(--k));
 }
 
 #minimap {
@@ -3103,7 +3122,7 @@ body[data-hud='large'] #hud {
 .bottom {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--g) + var(--safe-b));
+  bottom: var(--mb);
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -3502,29 +3521,19 @@ body[data-hud='large'] #hud {
 
 @media (orientation: portrait) and (max-width: 600px) {
   .is-touch .bottom {
-    left: calc(var(--g) + var(--safe-l));
+    left: var(--ml);
     transform: none;
-    bottom: calc(var(--g) + var(--safe-b) + 6px);
-  }
-
-  .nav {
-    flex-direction: column-reverse;
-    align-items: flex-end;
-  }
-
-  .nav-btns {
-    flex-direction: row;
-    align-self: flex-end;
+    bottom: calc(var(--mb) + 6px);
   }
 
   .status {
-    width: calc(252px * var(--k));
+    width: calc(216px * var(--k));
   }
 }
 
 @media (max-width: 760px) and (hover: hover) {
   .bottom {
-    left: calc(var(--g) + var(--safe-l));
+    left: var(--ml);
     transform: none;
   }
 }
@@ -3533,22 +3542,23 @@ body[data-hud='large'] #hud {
 
 #toasts {
   position: absolute;
-  top: calc(var(--g) + var(--safe-t) + 2px);
+  top: var(--mt);
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
-  max-width: max(240px, calc(100% - 2 * (var(--g) + 250px * var(--k))));
+  max-width: max(220px, calc(100% - var(--ml) - var(--mr) - 500px * var(--k)));
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(8px * var(--k));
+  gap: calc(5px * var(--k));
+  transition: top 0.45s var(--spring);
 }
 
 .toast {
   max-width: 100%;
   text-align: center;
-  padding: calc(9px * var(--k)) calc(24px * var(--k)) calc(10px * var(--k));
-  border-radius: calc(20px * var(--k));
+  padding: calc(5px * var(--k)) calc(14px * var(--k)) calc(6px * var(--k));
+  border-radius: 999px;
   /* no backdrop blur: re-blurring the live 3D view under a sliding card hitches the frame */
   background: linear-gradient(180deg, rgba(12, 32, 44, 0.92), rgba(6, 20, 30, 0.86));
   border: 1px solid rgba(244, 199, 101, 0.38);
@@ -3559,17 +3569,17 @@ body[data-hud='large'] #hud {
 
 .toast small {
   display: block;
-  font: 700 max(9px, calc(10px * var(--k))) var(--sans);
-  letter-spacing: 0.22em;
+  font: 700 max(7.5px, calc(8.5px * var(--k))) var(--sans);
+  letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--gold);
 }
 
 .toast b {
   display: block;
-  margin-top: 2px;
-  font: 700 max(14px, calc(19px * var(--k))) var(--serif);
-  letter-spacing: 0.06em;
+  margin-top: 1px;
+  font: 700 max(11px, calc(13.5px * var(--k))) var(--serif);
+  letter-spacing: 0.05em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3591,7 +3601,7 @@ body[data-hud='large'] #hud {
 
 @media (orientation: portrait) and (max-width: 600px) {
   #toasts {
-    top: calc(var(--g) + var(--safe-t) + 214px * var(--k));
+    top: calc(var(--mt) + 214px * var(--k));
     max-width: calc(100% - 24px);
   }
 }
@@ -3904,8 +3914,8 @@ body[data-hud='large'] #hud {
   --pos: 0;
   --lv: 0;
   position: absolute;
-  left: calc(var(--g) + var(--safe-l) - 6px);
-  bottom: calc(var(--g) + var(--safe-b) - 6px);
+  left: calc(var(--ml) - 6px);
+  bottom: calc(var(--mb) - 6px);
   padding: 6px;
   pointer-events: auto;
   touch-action: none;
@@ -4106,15 +4116,15 @@ body[data-hud='large'] #hud {
 
 @media (orientation: portrait) and (max-width: 600px) {
   .sail-lever {
-    bottom: calc(var(--g) + var(--safe-b) + 6px + 52px * var(--k));
+    bottom: calc(var(--mb) + 6px + 52px * var(--k));
   }
 }
 
 /* the guns: a big gold Fire with port & starboard riding either side */
 .fire-pad {
   position: absolute;
-  right: calc(var(--g) + var(--safe-r));
-  bottom: calc(var(--g) + var(--safe-b));
+  right: var(--mr);
+  bottom: var(--mb);
   display: flex;
   align-items: flex-end;
   gap: calc(10px * var(--kt));
@@ -4478,7 +4488,7 @@ body[data-hud='large'] #hud {
 .fpv-prompt.held {
   /* at the wheel the prompt steps aside: a small tag just above the helm console */
   top: auto;
-  bottom: calc(var(--g) + var(--safe-b) + 66px * var(--k));
+  bottom: calc(var(--mb) + 66px * var(--k));
   gap: 6px;
   padding: 4px 12px 4px 6px;
   border-color: rgba(244, 199, 101, 0.5);
@@ -4512,7 +4522,7 @@ body[data-hud='large'] #hud {
 .fpv-hint {
   position: absolute;
   left: 50%;
-  top: calc(28% + var(--safe-t));
+  top: 28%;
   transform: translateX(-50%);
   align-items: center;
   gap: 6px;

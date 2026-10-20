@@ -13,12 +13,17 @@
 
 .ft-bar {
   position: absolute;
-  top: calc(var(--g) + var(--safe-t) + 2px);
+  top: var(--mt);
   left: 50%;
-  width: min(calc(400px * var(--k)), calc(100% - 2 * (var(--g) + 286px * var(--k))));
-  min-width: 210px;
-  padding: calc(8px * var(--k)) calc(15px * var(--k)) calc(8px * var(--k));
-  border-radius: calc(15px * var(--k));
+  /* one slim strip: crest, name, guns and garrison on a line, the order under it */
+  display: grid;
+  grid-template-columns: minmax(0, auto) auto;
+  align-items: center;
+  column-gap: calc(12px * var(--k));
+  width: max-content;
+  max-width: max(220px, calc(100% - var(--ml) - var(--mr) - 520px * var(--k)));
+  padding: calc(5px * var(--k)) calc(12px * var(--k)) calc(5px * var(--k));
+  border-radius: calc(12px * var(--k));
   background: linear-gradient(180deg, rgba(44, 32, 20, 0.9), rgba(18, 12, 7, 0.88));
   border: 1px solid rgba(240, 210, 150, 0.3);
   box-shadow: 0 14px 40px rgba(10, 4, 0, 0.42), inset 0 1px 0 rgba(255, 240, 210, 0.1);
@@ -53,15 +58,16 @@
 }
 
 .ft-top {
+  min-width: 0;
   display: flex;
   align-items: center;
-  gap: calc(8px * var(--k));
+  gap: calc(6px * var(--k));
   line-height: 1;
 }
 
 .ft-sig {
-  width: max(14px, calc(18px * var(--k)));
-  height: max(14px, calc(18px * var(--k)));
+  width: max(11px, calc(13px * var(--k)));
+  height: max(11px, calc(13px * var(--k)));
   color: var(--fs);
   flex: none;
 }
@@ -75,8 +81,8 @@
 }
 
 .ft-top b {
-  font: 700 max(12px, calc(15px * var(--k))) var(--serif);
-  letter-spacing: 0.1em;
+  font: 700 max(10.5px, calc(12px * var(--k))) var(--serif);
+  letter-spacing: 0.08em;
   color: #fff6e2;
   white-space: nowrap;
   overflow: hidden;
@@ -84,6 +90,7 @@
 }
 
 .ft-top small {
+  display: none;
   margin-left: auto;
   font: 700 max(8px, calc(9px * var(--k))) var(--sans);
   letter-spacing: 0.22em;
@@ -99,18 +106,17 @@
 .ft-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-top: calc(7px * var(--k));
+  gap: calc(8px * var(--k));
 }
 
 .ft-guns {
   display: flex;
-  gap: calc(6px * var(--k));
+  gap: calc(3px * var(--k));
 }
 
 .ft-guns i {
-  width: max(20px, calc(26px * var(--k)));
-  height: max(12px, calc(15px * var(--k)));
+  width: max(13px, calc(15px * var(--k)));
+  height: max(8px, calc(9px * var(--k)));
   color: #e8b85a;
   filter: drop-shadow(0 0 4px rgba(240, 180, 80, 0.45));
   transition: color 0.4s ease, filter 0.4s ease, opacity 0.4s ease, transform 0.5s var(--spring);
@@ -129,9 +135,10 @@
 }
 
 .ft-garr {
-  font: 700 max(9px, calc(10.5px * var(--k))) var(--sans);
-  letter-spacing: 0.14em;
+  font: 700 max(8px, calc(9px * var(--k))) var(--sans);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  white-space: nowrap;
   color: rgba(255, 228, 190, 0.82);
 }
 
@@ -140,9 +147,10 @@
 }
 
 .ft-hint {
-  margin-top: calc(6px * var(--k));
-  font: 600 max(9px, calc(10.5px * var(--k))) var(--sans);
-  letter-spacing: 0.13em;
+  grid-column: 1 / -1;
+  margin-top: calc(3px * var(--k));
+  font: 600 max(7.5px, calc(8.5px * var(--k))) var(--sans);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   text-align: center;
   color: rgba(240, 220, 180, 0.78);
@@ -163,7 +171,17 @@
 
 /* toasts step down under the bar */
 #hud.ft-on #toasts {
-  top: calc(var(--g) + var(--safe-t) + 92px * var(--k));
+  top: calc(var(--mt) + max(40px, 46px * var(--k)));
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .ft-bar {
+    top: calc(var(--mt) + 214px * var(--k));
+  }
+
+  #hud.ft-on #toasts {
+    top: calc(var(--mt) + 214px * var(--k) + max(40px, 46px * var(--k)));
+  }
 }
 
 /* ---- the title card */
