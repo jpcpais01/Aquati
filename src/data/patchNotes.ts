@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T19:30Z',
     entries: [
       {
+        title: 'Smoother sailing and zooming',
+        notes: [
+          'The view no longer judders while you sail or zoom. The game used to time each frame by when it got round to drawing it, and that wobbles a little from frame to frame, so the camera moved a touch too far on some frames and too little on others. Frames are now timed by your screen\'s own refresh, so the sea, the islands and your ship all glide past evenly.',
+          'Spinning the mouse wheel now zooms in one smooth glide. Each click used to give the camera a little shove and then let it coast, so a fast spin zoomed in surges that were most noticeable at the edges of the screen.',
+        ],
+      },
+      {
         title: 'A farewell worthy of your ship',
         notes: [
           'The "Lost to the Depths" screen is rebuilt bigger and bolder. The title is huge and lit from above, white where the light catches it and sinking to sea-green, and its letters tumble down into place.',
