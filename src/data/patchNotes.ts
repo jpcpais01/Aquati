@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T15:00Z',
     entries: [
       {
+        title: 'Sweep the sea clean',
+        notes: [
+          'A new broom button sits in the small row under the map. One tap sends every sunken and sinking wreck to the bottom for good and clears the drifting planks, spars and smoke with them.',
+          'Your ship, live enemies, a prize you are boarding and all floating loot are left alone, so your plunder is still there to collect.',
+        ],
+      },
+      {
         title: 'The maelstroms are real holes in the sea now',
         notes: [
           'The maelstroms have been rebuilt from the water up. The sea itself now sinks into a vast funnel: a wide bowl that falls away down steep walls into a throat over thirty metres deep, with an abyss opening in the seabed beneath it. Spiral ridges of water wind round and down the walls, and white streaks are drawn out along the flow as it pours toward the eye.',

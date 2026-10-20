@@ -95,6 +95,8 @@ export class UI {
   onClearPins: () => void = () => {};
   /** Photo mode, from the pause menu or the HUD's camera button. */
   onPhoto: () => void = () => {};
+  /** Sweeps the sea of sunken wrecks and floating wreckage. */
+  onSweep: () => void = () => {};
   onClick: () => void = () => {};
   /** Live settings changed (sound, music, shake…); the game applies what it owns. */
   onSettings: (s: Settings) => void = () => {};
@@ -229,6 +231,10 @@ export class UI {
       (e.currentTarget as HTMLElement).blur();
       this.onClick();
       this.onPhoto();
+    });
+    $('btn-sweep').addEventListener('click', (e) => {
+      (e.currentTarget as HTMLElement).blur();
+      this.onSweep();
     });
     $('btn-photo2').addEventListener('click', () => {
       this.onClick();

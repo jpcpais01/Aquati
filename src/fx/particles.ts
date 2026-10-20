@@ -193,6 +193,11 @@ class Pool {
     this.mesh.renderOrder = additive ? 20 : 10;
   }
 
+  /** Ends every live particle at once; the next update draws none. */
+  clear() {
+    for (const p of this.ps) p.life = p.max;
+  }
+
   spawn(e: Emit) {
     const p = this.ps[this.next];
     this.next = (this.next + 1) % this.cap;
@@ -485,6 +490,12 @@ export class Particles {
     this.alpha.update(dt);
     this.add.update(dt);
     this.ribbons.update(dt);
+  }
+
+  /** Snuffs all smoke, fire and spray in flight. */
+  clear() {
+    this.alpha.clear();
+    this.add.clear();
   }
 
   emit(e: Emit, additive = false) {
