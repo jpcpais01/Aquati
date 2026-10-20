@@ -3118,7 +3118,11 @@ body[data-hud='large'] #hud {
 .nav-btns {
   order: 2;
   display: flex;
-  gap: calc(8px * var(--k));
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(6px * var(--k)) calc(8px * var(--k));
+  /* three to a row, centred under the chart */
+  width: calc(3 * max(28px, calc(32px * var(--k))) + 16px * var(--k));
 }
 
 .nav-btns .icon-btn {
@@ -3816,12 +3820,98 @@ body[data-hud='large'] #hud {
   border: 0;
 }
 
+/* touch: the knots sit on top of the sail lever, the number big, the unit a small "kn" */
+.is-touch .bottom {
+  left: var(--ml);
+  transform: none;
+  bottom: calc(var(--mb) + 164px * var(--kt) + 8px);
+  padding: calc(3px * var(--k)) calc(10px * var(--k)) calc(3px * var(--k)) calc(9px * var(--k));
+  background: rgba(6, 20, 30, 0.5);
+  box-shadow: none;
+}
+
+.is-touch .speed b {
+  font-size: max(17px, calc(22px * var(--k)));
+}
+
+.is-touch .speed small {
+  margin-left: 2px;
+  font-size: 0;
+  letter-spacing: 0;
+}
+
+.is-touch .speed small::after {
+  content: 'kn';
+  font: 700 max(8.5px, calc(9.5px * var(--k))) var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.is-touch #hud.ashore .bottom {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: var(--mb);
+}
+
+/* touch: the ship card loses its box: a small name over a slim hull bar,
+   straight on the sea with a soft shade behind for legibility */
+.is-touch .status {
+  width: calc(196px * var(--k));
+}
+
+.is-touch .ship-panel {
+  padding: calc(3px * var(--k)) calc(8px * var(--k)) calc(4px * var(--k)) calc(4px * var(--k));
+  border-color: transparent;
+  border-radius: calc(10px * var(--k));
+  background: linear-gradient(90deg, rgba(4, 16, 24, 0.5), rgba(4, 16, 24, 0.12));
+  box-shadow: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.is-touch .hud-ship {
+  width: calc(22px * var(--k));
+  height: calc(15px * var(--k));
+}
+
+.is-touch .ship-id {
+  gap: calc(5px * var(--k));
+}
+
+/* type and name on one line */
+.is-touch .ship-name {
+  flex-direction: row;
+  align-items: baseline;
+  gap: calc(6px * var(--k));
+}
+
+.is-touch .ship-name span {
+  font-size: max(10px, calc(12px * var(--k)));
+}
+
+.is-touch .ship-name small {
+  flex: none;
+  font-size: max(6.5px, calc(7px * var(--k)));
+}
+
+.is-touch .hull-row {
+  margin-top: calc(3px * var(--k));
+  gap: calc(6px * var(--k));
+}
+
+.is-touch .hull {
+  height: max(3px, calc(4px * var(--k)));
+}
+
+.is-touch .hull-num b {
+  font-size: max(9px, calc(10.5px * var(--k)));
+}
+
+.is-touch .stats-row .chip {
+  height: max(16px, calc(19px * var(--k)));
+  background: rgba(6, 20, 30, 0.45);
+}
+
 @media (orientation: portrait) and (max-width: 600px) {
-  .is-touch .bottom {
-    left: var(--ml);
-    transform: none;
-    bottom: calc(var(--mb) + 6px);
-  }
 
   .status {
     width: calc(216px * var(--k));
@@ -3857,9 +3947,10 @@ body[data-hud='large'] #hud {
   padding: calc(5px * var(--k)) calc(14px * var(--k)) calc(6px * var(--k));
   border-radius: 999px;
   /* no backdrop blur: re-blurring the live 3D view under a sliding card hitches the frame */
-  background: linear-gradient(180deg, rgba(12, 32, 44, 0.92), rgba(6, 20, 30, 0.86));
-  border: 1px solid rgba(244, 199, 101, 0.38);
-  box-shadow: 0 14px 40px rgba(0, 8, 14, 0.35), var(--hi);
+  background: linear-gradient(180deg, rgba(12, 32, 44, 0.7), rgba(6, 20, 30, 0.6));
+  border: 1px solid rgba(244, 199, 101, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 8, 14, 0.22), var(--hi);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   animation: toastIn 0.55s var(--spring), toastOut 0.6s ease forwards;
   animation-delay: 0s, var(--life, 3.4s);
 }
@@ -4413,7 +4504,7 @@ body[data-hud='large'] #hud {
 
 @media (orientation: portrait) and (max-width: 600px) {
   .sail-lever {
-    bottom: calc(var(--mb) + 6px + 52px * var(--k));
+    bottom: calc(var(--mb) - 6px);
   }
 }
 

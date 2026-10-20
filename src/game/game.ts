@@ -480,7 +480,7 @@ export class Game {
   // peaceful seas: nobody fires first (see game/peace.ts)
   /** The host's rule while we sail in their sea (null: our own setting). */
   private roomPeace: boolean | null = null;
-  private peaceHud = new PeaceHud(document.getElementById('hud-wanted')!);
+  private peaceHud = new PeaceHud(document.querySelector<HTMLElement>('#hud .map-wrap')!);
   /** When each ship last called out that you'd provoked her. */
   private provokedAt = new WeakMap<Ship, number>();
   private provokeToastT = -100;

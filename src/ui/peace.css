@@ -1,110 +1,100 @@
-/* ------------------------------------------------------------------ peaceful seas: the HUD badge */
+/* ------------------------------------------------------------------ peaceful seas: the minimap's halo
+   No badge over the sea. Behind the chart a soft blue-white light breathes
+   while the seas are calm; provoked, it turns ember red and fades with the
+   quarrel (--cool 1..0), and a little crossed-blades tag on the rim counts
+   who has taken up arms. */
 
 .peace {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: none;
-  align-items: center;
-  gap: calc(7px * var(--k));
-  align-self: flex-start;
-  max-width: 100%;
-  height: max(20px, calc(26px * var(--k)));
-  padding: 0 calc(12px * var(--k)) 0 calc(8px * var(--k));
-  overflow: hidden;
-  border-radius: 99px;
-  background: linear-gradient(90deg, rgba(14, 64, 62, 0.72), rgba(8, 22, 32, 0.66));
-  border: 1px solid rgba(170, 255, 236, 0.22);
-  color: #dffcf4;
-  transition: background 0.5s ease, border-color 0.5s ease, color 0.5s ease;
+  pointer-events: none;
+  --cool: 1;
 }
 
 .peace.on {
-  display: flex;
-  animation: peaceIn 0.6s var(--spring);
+  display: block;
+}
+
+.pc-halo {
+  position: absolute;
+  z-index: -1;
+  inset: calc(-9px * var(--k));
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(200, 236, 255, 0) 70%, rgba(186, 230, 255, 0.34) 84%, rgba(160, 215, 255, 0) 100%);
+  box-shadow: 0 0 calc(18px * var(--k)) rgba(176, 226, 255, 0.4);
+  animation: peaceIn 0.8s ease both, peaceBreathe 5s ease-in-out 0.8s infinite;
+  transition: background 0.6s ease, box-shadow 0.6s ease, opacity 0.4s ease;
 }
 
 @keyframes peaceIn {
   from {
     opacity: 0;
-    transform: translateX(calc(-12px * var(--k)));
+    transform: scale(0.9);
   }
+}
+
+@keyframes peaceBreathe {
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.peace.war .pc-halo {
+  background: radial-gradient(closest-side, rgba(255, 120, 90, 0) 70%, rgba(255, 110, 80, 0.4) 84%, rgba(255, 90, 60, 0) 100%);
+  box-shadow: 0 0 calc(18px * var(--k)) rgba(255, 100, 70, 0.45);
+  opacity: calc(0.35 + 0.65 * var(--cool));
+  animation: none;
+}
+
+/* provoked: who has taken up arms, a tiny tag on the rim (bottom left) */
+.pc-tag {
+  position: absolute;
+  z-index: 3;
+  left: calc(-2px * var(--k));
+  bottom: calc(4px * var(--k));
+  display: none;
+  align-items: center;
+  gap: calc(3px * var(--k));
+  height: max(16px, calc(18px * var(--k)));
+  padding: 0 calc(6px * var(--k)) 0 calc(4px * var(--k));
+  border-radius: 99px;
+  background: rgba(70, 16, 10, 0.9);
+  border: 1px solid rgba(255, 130, 100, 0.45);
+  color: #ffe0d6;
+}
+
+.peace.war .pc-tag {
+  display: flex;
 }
 
 .pc-ico {
   display: grid;
   place-items: center;
-  width: max(14px, calc(17px * var(--k)));
-  height: max(14px, calc(17px * var(--k)));
-  color: #b6fff0;
-  filter: drop-shadow(0 0 5px rgba(120, 255, 220, 0.55));
+  width: max(10px, calc(11px * var(--k)));
+  height: max(10px, calc(11px * var(--k)));
+  color: #ff9a7a;
 }
 
 .pc-ico svg {
   width: 100%;
   height: 100%;
-  stroke-width: 1.9;
-}
-
-/* the dove bobs, as on a breeze */
-.peace:not(.war) .pc-ico svg {
-  animation: dove 3.6s ease-in-out infinite;
-}
-
-@keyframes dove {
-  50% {
-    transform: translateY(-1.5px) rotate(-5deg);
-  }
+  stroke-width: 2;
 }
 
 .pc-lbl {
-  white-space: nowrap;
   font: 800 max(9px, calc(10px * var(--k))) var(--sans);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.pc-lbl span {
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.06em;
-  opacity: 0.75;
 }
 
-/* how long until tempers cool: a wick along the foot of the badge */
-.pc-wick {
-  position: absolute;
-  left: calc(10px * var(--k));
-  right: calc(10px * var(--k));
-  bottom: 2px;
-  height: 2px;
-  border-radius: 2px;
-  background: linear-gradient(90deg, #ff6a4d, #ffcf7a);
-  transform-origin: left;
-  opacity: 0;
-  transition: opacity 0.4s ease, transform 0.25s linear;
-}
-
-.peace.war {
-  background: linear-gradient(90deg, rgba(92, 20, 12, 0.82), rgba(8, 22, 32, 0.7));
-  border-color: rgba(255, 130, 100, 0.4);
-  color: #ffe0d6;
-}
-
-.peace.war .pc-ico {
-  color: #ff9a7a;
-  filter: drop-shadow(0 0 5px rgba(255, 90, 60, 0.8));
-}
-
-.peace.war .pc-wick {
-  opacity: 1;
-}
-
-.peace.flip {
+.peace.flip .pc-halo {
   animation: peaceFlip 0.9s var(--spring);
 }
 
 @keyframes peaceFlip {
   30% {
-    transform: scale(1.14);
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.12), 0 0 24px currentColor;
+    transform: scale(1.12);
+    opacity: 1;
   }
 }
 
