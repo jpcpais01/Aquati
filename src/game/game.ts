@@ -702,6 +702,16 @@ export class Game {
       const [vol, pan, d] = this.world.soundAt(at);
       this.audio.splash(vol * 0.35 * size, pan, d);
     };
+    // the breath: a little puff of spray from the blowhole, gone on the wind
+    this.dolphins.onBlow = (at) => {
+      const wd = this.world.wind;
+      for (let i = 0; i < 4; i++) {
+        this.particles.emit({
+          x: at.x, y: at.y, z: at.z, vx: wd.dirX * 0.8 + (Math.random() - 0.5) * 0.6, vy: 1.6 + Math.random() * 1.2, vz: wd.dirZ * 0.8 + (Math.random() - 0.5) * 0.6,
+          life: 0.9 + Math.random() * 0.5, size: 0.18, sizeEnd: 0.7, color: [1, 1, 1], alpha: 0.45, drag: 1.4, grav: 1.5, kind: 1, fadeIn: 0.05,
+        });
+      }
+    };
     this.dolphins.onCall = (at, whistle) => {
       const [vol, pan] = this.world.soundAt(at);
       this.audio.dolphin(vol, pan, whistle);
