@@ -13,18 +13,6 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-20T20:00Z',
-    entries: [
-      {
-        title: 'A new app icon',
-        notes: [
-          'Shores of Fortune has a new face on your home screen: a galleon in silhouette sailing across a huge golden-hour sun, her sails rimmed in gold light, a red pennant at the masthead, palm isles on the horizon and the sun\'s path glittering across a turquoise sea.',
-          'It is drawn to stay clear at every size, from a full home-screen icon down to the little browser-tab icon, and Android\'s round and squircle icon shapes now crop it neatly without clipping the ship. Reinstall or re-add the game to your home screen if your device keeps showing the old one.',
-        ],
-      },
-    ],
-  },
-  {
     hour: '2026-10-20T19:30Z',
     entries: [
       {
