@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T12:00Z',
     entries: [
       {
+        title: 'A smaller, tidier HUD that keeps the sea in view',
+        notes: [
+          'Fort alerts, warnings like "opens fire!" and the "Go ashore" button were far too big and sat right over the middle of the screen. They are now slim pills: the fort\'s name, guns and garrison fit on one short strip at the top, alerts stack neatly under it, and the "Go ashore" button sits low, just above your speed, out of your ship\'s way.',
+          'The ship card in the top left is slimmer, with smaller type, and your gold, hold and tallies sit in neater chips beneath it.',
+          'The minimap is a fifth smaller, and the pause, captain\'s view and photo buttons are now a small row tucked under the wind and clock instead of a column beside the map.',
+          'The game is fullscreen, so the HUD no longer leaves a wide gap for the notch and system bars. Instead everything keeps a clean, even 3% margin from every edge of the screen.',
+        ],
+      },
+      {
         title: 'The port market fits on every phone, and the loading compass spins true',
         notes: [
           'On phones, especially held sideways, the trading port panel no longer runs off the bottom of the screen. Everything between the port\'s name and Cast off now scrolls as one smooth list, so the Chandlery, the Shipwright and the Harbour master are always a swipe away.',

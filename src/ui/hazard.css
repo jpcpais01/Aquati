@@ -8,12 +8,12 @@
   --hz-glow: rgba(255, 180, 80, 0.45);
   --hz-spin: 6s;
   position: absolute;
-  top: calc(var(--g) + var(--safe-t) + 2px);
+  top: calc(var(--mt) + 2px);
   left: 50%;
   display: flex;
   align-items: center;
   gap: calc(10px * var(--k));
-  max-width: calc(100% - 2 * var(--g) - 24px);
+  max-width: calc(100% - var(--ml) - var(--mr) - 24px);
   padding: calc(7px * var(--k)) calc(14px * var(--k)) calc(7px * var(--k)) calc(8px * var(--k));
   border-radius: 999px;
   background: linear-gradient(180deg, rgba(30, 24, 14, 0.9), rgba(14, 10, 6, 0.88));
@@ -166,19 +166,19 @@
 
 /* make room: under the fort's bar or the Kraken's, and the toasts under the pill */
 #hud.ft-on .hz {
-  top: calc(var(--g) + var(--safe-t) + 92px * var(--k));
+  top: calc(var(--mt) + max(40px, 46px * var(--k)));
 }
 
 #hud.kr-on .hz {
-  top: calc(var(--g) + var(--safe-t) + 70px * var(--k));
+  top: calc(var(--mt) + 70px * var(--k));
 }
 
 #hud.hz-on #toasts {
-  top: calc(var(--g) + var(--safe-t) + 58px * var(--k));
+  top: calc(var(--mt) + 58px * var(--k));
 }
 
 #hud.hz-on.ft-on #toasts {
-  top: calc(var(--g) + var(--safe-t) + 148px * var(--k));
+  top: calc(var(--mt) + max(40px, 46px * var(--k)) + 58px * var(--k));
 }
 
 #hud.ashore .hz {
@@ -187,16 +187,16 @@
 
 @media (orientation: portrait) and (max-width: 600px) {
   .hz {
-    top: calc(var(--g) + var(--safe-t) + 214px * var(--k));
+    top: calc(var(--mt) + 214px * var(--k));
   }
 
   #hud.ft-on .hz,
   #hud.kr-on .hz {
-    top: calc(var(--g) + var(--safe-t) + 300px * var(--k));
+    top: calc(var(--mt) + 300px * var(--k));
   }
 
   #hud.hz-on #toasts {
-    top: calc(var(--g) + var(--safe-t) + 270px * var(--k));
+    top: calc(var(--mt) + 270px * var(--k));
   }
 }
 

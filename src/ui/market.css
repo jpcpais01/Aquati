@@ -567,12 +567,14 @@
 .dock-prompt {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--g, 16px) + var(--safe-b) + 120px * var(--k));
+  bottom: calc(var(--mb) + 104px * var(--k));
   transform: translateX(-50%);
   display: none;
   align-items: center;
-  gap: 12px;
-  padding: 10px 22px 10px 12px;
+  gap: calc(8px * var(--k));
+  width: max-content;
+  max-width: max(220px, min(calc(380px * var(--k)), calc(100% - var(--ml) - var(--mr) - 440px * var(--kt, 1))));
+  padding: calc(5px * var(--k)) calc(14px * var(--k)) calc(5px * var(--k)) calc(7px * var(--k));
   border-radius: 999px;
   border: 1px solid var(--stroke-2);
   background: var(--glass-3);
@@ -593,14 +595,24 @@
   box-shadow: 0 10px 34px rgba(244, 180, 70, 0.3), var(--hi);
 }
 
+.dock-prompt .dp-t {
+  min-width: 0;
+}
+
 .dock-prompt .dp-t b {
   display: block;
-  font: 700 15px var(--sans);
+  font: 700 max(11px, calc(13px * var(--k))) var(--sans);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dock-prompt .dp-t small {
-  display: block;
-  font: 600 11.5px var(--sans);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font: 600 max(9px, calc(10px * var(--k))) / 1.25 var(--sans);
   color: var(--ink-2);
 }
 
@@ -619,7 +631,17 @@
 }
 
 .is-touch .dock-prompt {
-  padding: 12px 24px;
+  /* just above the speed console, between the thumbs */
+  bottom: calc(var(--mb) + max(44px, 52px * var(--k)));
+  padding: calc(6px * var(--k)) calc(16px * var(--k)) calc(6px * var(--k)) calc(9px * var(--k));
+}
+
+/* upright phones: the speed console moves left, so the prompt rides above the guns */
+@media (orientation: portrait) and (max-width: 600px) {
+  .is-touch .dock-prompt {
+    bottom: calc(var(--mb) + 160px * var(--kt, 1));
+    max-width: calc(100% - var(--ml) - var(--mr) - 130px);
+  }
 }
 
 #hud.fpv .dock-prompt,
@@ -641,8 +663,8 @@
 }
 
 .chip.hold-chip .crate {
-  width: max(11px, calc(14px * var(--k)));
-  height: max(11px, calc(14px * var(--k)));
+  width: max(9px, calc(11px * var(--k)));
+  height: max(9px, calc(11px * var(--k)));
   border-radius: 3px;
   background: linear-gradient(135deg, transparent 44%, #6e4a28 45%, #6e4a28 55%, transparent 56%), linear-gradient(180deg, #d2a160, #9a6a3c);
   box-shadow: inset 0 0 0 1.5px #6e4a28;
@@ -651,8 +673,8 @@
 
 .hold-peek {
   position: absolute;
-  left: calc(var(--g, 16px) + var(--safe-l));
-  top: calc(var(--g, 16px) + var(--safe-t) + 130px * var(--k));
+  left: var(--ml);
+  top: calc(var(--mt) + 130px * var(--k));
   width: min(300px, 80vw);
   padding: 10px 12px;
   border-radius: 18px;
