@@ -23,12 +23,32 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Loading also now builds the two archipelagos, the six trading towns and your ship in the harbour in separate short steps instead of a few long ones, so the progress bar moves along steadily.',
         ],
       },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'Las Brumas, carved by the weather',
+        notes: [
+          'The limestone towers of Las Brumas have been reshaped to look like real karst, the kind you find in Ha Long Bay or El Nido. They are no longer straight stone drums: each one narrows as it rises and leans a little to one side, steps back in ledges and rounds over into a lumpy, wooded crown.',
+          'Their outlines are uneven, with bays and buttresses, and their heights vary a lot more, from squat stumps to tall pinnacles. Towers that stand close together now merge into one massif over a saddle.',
+          'The jungle clings to them: shrubs, ferns and stunted trees grow on the ledges and hang down the walls, with long green tongues of creepers between the grey, rain-streaked and ochre-stained stone.',
+          'The sea has gnawed a dark notch into the foot of every wall, and fallen blocks lie just under the water round the sea stacks. Every port, fort and island is still where it was.',
+        ],
+      },
+      {
+        title: 'A gentler cinematic angle',
+        notes: [
+          'The cinematic view past the farthest zoom no longer swoops down to the horizon. It now keeps exactly the same distance and framing as your farthest zoom and only leans the camera over a little more.',
+        ],
+      },
       {
         title: 'A cinematic view past the farthest zoom',
         notes: [
           'Zooming all the way out still stops where it always did, so a quick flick of the wheel never throws the camera somewhere unexpected.',
-          'But rest at the farthest zoom for a second and then keep zooming out, and the camera swings down low over the water toward the horizon: the sea runs on to the skyline, distant islands rise out of the haze and the open sky and its clouds fill the top of the screen.',
-          'Each push tips it a little further, in a slow, weighty glide, until you are sailing in a proper cinematic shot. Zoom back in and the camera levels out first, then closes in as usual.',
+          'But rest at the farthest zoom for a second and then keep zooming out, and the camera leans over a little further, for a more cinematic angle on your ship.',
+          'Each push leans it a touch more, in a slow, weighty glide. Zoom back in and the camera straightens up first, then closes in as usual.',
           'Works with a mouse wheel, a trackpad and a two-finger pinch on phones and tablets.',
         ],
       },

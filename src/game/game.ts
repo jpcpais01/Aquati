@@ -6022,9 +6022,10 @@ export class Game {
     const port = this.rig.mode === 'port';
     this.pipeline.tilt = port ? 0.25 : (this.rig.mode === 'orbit' ? 0.55 : 0.35) * (1 - eb);
     // the horizon only exists from the deck (and in the shipwright's harbour)
-    // (and when the player tips the camera down toward the skyline past the farthest zoom)
-    const cine = Math.max(this.rig.cine ? this.rig.cine.w : 0, this.rig.mode === 'follow' && this.rig.tiltBlend > 0.02 ? this.rig.tiltBlend : 0);
+    const cine = this.rig.cine ? this.rig.cine.w : 0;
     if (cine > 0) this.pipeline.tilt *= 1 - cine * 0.7;
+    // leaned over past the farthest zoom: ease the diorama blur a little
+    if (this.rig.mode === 'follow') this.pipeline.tilt *= 1 - this.rig.tiltBlend * 0.4;
     // only the farewell ever takes the camera below the waves
     const k = this.wreck;
     const under = k.t >= 0 && cam.position.y < this.world.waterHeight(cam.position.x, cam.position.z) - 0.2;
