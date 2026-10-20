@@ -435,7 +435,7 @@ export class Game {
       shadow: this.sun.shadow.mapSize.x,
     }));
     this.settings = new Settings(this.quality.tier);
-    this.pipeline = new Pipeline(this.renderer, { msaa: this.quality.msaa, bloomLevels: this.quality.bloomLevels, tiltShift: this.quality.tiltShift });
+    this.pipeline = new Pipeline(this.renderer, { msaa: this.quality.msaa, bloomLevels: this.quality.bloomLevels, tiltShift: this.quality.tiltShift, shafts: 0 });
     this.pipeline.prof = this.prof;
     this.rig = new CameraRig(innerWidth / innerHeight);
     this.input = new Input(canvas);
@@ -970,7 +970,7 @@ export class Game {
     const b = this.settings.budget;
     const maxSamples = this.renderer.capabilities.maxSamples || 0;
     this.pipeline.configure(
-      { msaa: s.antialias ? Math.min(this.quality.mobile ? 2 : 4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift },
+      { msaa: s.antialias ? Math.min(this.quality.mobile ? 2 : 4, maxSamples) : 0, bloomLevels: s.bloom ? Math.max(4, this.quality.bloomLevels) : 0, tiltShift: s.tiltShift, shafts: s.lightShafts ? b.shaftSteps : 0 },
       { ao: s.rtAO, gi: s.rtGI, shadows: s.rtShadows, aoSamples: b.aoSamples, shadowSteps: b.shadowSteps },
     );
     this.ocean?.setReflections(s.rtReflections ? b.ssrSteps : 0);
@@ -5440,6 +5440,7 @@ export class Game {
     fog.near = a.fogRange.x;
     fog.far = a.fogRange.y;
     this.pipeline.exposure = a.exposure;
+    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat);
   }
 
   /** Rain, lightning, thunder, spindrift and the clock badge. */
@@ -5716,6 +5717,7 @@ export class Game {
     }
     this.cumulus.update(dt, cam, this.sky.visible);
     P.end();
+    this.pipeline.warm = this.warming;
     this.pipeline.render(this.opaque, this.water, cam, this.world.time);
     this.ocean.enableShadows(this.sun);
   }

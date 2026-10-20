@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import type { Profiler } from '../core/profiler';
 import { GLSL_SS_APPLY, ScreenSpaceLighting, TraceConfig } from './screenSpace';
+import { GLSL_SHAFT_APPLY, LightShafts } from './lightShafts';
 import { getSharedTextures } from './textures';
 
 // Frame graph:
 //   1. opaque scene  -> rtOpaque (HDR colour + depth texture, MSAA)
 //   2. screen-space ray tracing over rtOpaque -> AO, bounce light, contact
 //      shadows (half res, see screenSpace.ts), lit into the opaque colour below
+//   2b. sun shafts (quarter res): how much of the haze along each view ray the
+//      sun reaches past the clouds, and the beams down through the shallows (lightShafts.ts)
 //   3. ocean reflections -> rtRefl (half res: each water pixel marches its
 //      reflected ray through rtOpaque's depth, see ocean.ts)
 //   4. water + fx    -> rtWater  (premultiplied HDR over transparent, own depth)
@@ -27,6 +30,8 @@ export interface PipelineSettings {
   msaa: number;
   bloomLevels: number;
   tiltShift: boolean;
+  /** Steps per ray for the sun shafts (0 off). */
+  shafts: number;
 }
 
 /** Photo mode's look, fed straight into the final pass. */
@@ -83,6 +88,9 @@ export class Pipeline {
   private ssOn = false;
   sun: THREE.DirectionalLight | null = null;
   sunDir = new THREE.Vector3(0, 1, 0);
+  /** Sun shafts through the haze and the shallows. */
+  readonly shafts = new LightShafts();
+  private shaftsOn = false;
   /** Times each pass when the frame profiler is open. */
   prof: Profiler | null = null;
 
@@ -174,9 +182,14 @@ export class Pipeline {
       uniform vec4 uDof; uniform sampler2D uDofDepth; uniform vec2 uDofNearFar; uniform mat4 uInvProj; uniform mat3 uCamRot; uniform float uCamY;
       // beneath the waves: the eye (xyz) and the surface over it (w), the sun's light bent down through it, its colour
       uniform vec4 uEye; uniform vec3 uSunRay; uniform vec3 uShaftColor; uniform sampler2D uCausticTex;
+      // grade by the hour: split-tone tints for the shade and the light, and saturation
+      uniform vec3 uSplitLo; uniform vec3 uSplitHi; uniform float uSat;
       varying vec2 vUv;
       #if SS
       ${GLSL_SS_APPLY}
+      #endif
+      #if SHAFTS
+      ${GLSL_SHAFT_APPLY}
       #endif
 
       vec3 aces(vec3 x) {
@@ -278,6 +291,23 @@ export class Pipeline {
           }
         }
 
+        #if SHAFTS
+        // sunbeams in the haze between the clouds, and swaying down through the shallows
+        if (uEye.w < -1e8 && uEye.y > 0.0) {
+          vec4 vp = uInvProj * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+          vec3 rv = normalize(vp.xyz / vp.w);
+          vec3 rw = uCamRot * rv;
+          float dz = texture2D(uDofDepth, vUv).r;
+          float zn = uDofNearFar.x, zf = uDofNearFar.y;
+          float tScene = dz >= 0.99999 ? 1e9 : (zn * zf) / (zf - (zf - zn) * dz) / max(-rv.z, 1e-4);
+          col = applyShafts(col, uEye.xyz, rw, tScene, texture2D(uWater, vUv).a);
+        }
+        #ifdef SHAFT_DEBUG
+          // ?shaftdebug: the lit share of the haze (red), the beams in the water (green), the rays from the sun (blue)
+          { vec2 sd = texture2D(uShaft, vUv).rg; gl_FragColor = vec4(sd.r, sd.g * 8.0, texture2D(uRays, vUv).r * 4.0, 1.0); return; }
+        #endif
+        #endif
+
         vec3 bloom = texture2D(uBloom, vUv).rgb;
         col += bloom * uBloomStrength;
         col += uFlashColor * uFlash;
@@ -346,8 +376,8 @@ export class Pipeline {
 
         // gentle split-tone grade: teal shadows, warm highlights
         float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-        col = mix(col, col * vec3(0.94, 1.02, 1.06), (1.0 - smoothstep(0.0, 0.6, lum)) * 0.35);
-        col = mix(col, col * vec3(1.05, 1.0, 0.94), smoothstep(0.5, 2.0, lum) * 0.3);
+        col = mix(col, col * uSplitLo, (1.0 - smoothstep(0.0, 0.6, lum)) * 0.35);
+        col = mix(col, col * uSplitHi, smoothstep(0.5, 2.0, lum) * 0.3);
 
         col = aces(col);
         // a gentle S-curve: deeper shade and cleaner highlights, so a hazy
@@ -355,7 +385,7 @@ export class Pipeline {
         col = mix(col, col * col * (3.0 - 2.0 * col), 0.14);
         // saturation lift for that sun-drenched toy palette
         float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
-        col = mix(vec3(l2), col, 1.12 - uDesat);
+        col = mix(vec3(l2), col, uSat - uDesat);
 
         // photo mode filter: white balance, saturation, contrast, a toned
         // monochrome and lifted, faded blacks
@@ -409,12 +439,24 @@ export class Pipeline {
         uSunRay: { value: new THREE.Vector3(0, -1, 0) },
         uShaftColor: { value: new THREE.Vector3() },
         uCausticTex: { value: getSharedTextures().caustics as THREE.Texture },
+        uSplitLo: { value: new THREE.Vector3(0.94, 1.02, 1.06) },
+        uSplitHi: { value: new THREE.Vector3(1.05, 1.0, 0.94) },
+        uSat: { value: 1.12 },
+        uShaft: { value: null },
+        uShaftAir: { value: new THREE.Vector4(0, 0, 0, 0.12) },
+        uShaftSea: { value: new THREE.Vector3() },
+        uShaftHaze: { value: new THREE.Vector2(0.0014, 3) },
+        uShaftSun: { value: new THREE.Vector3(0, 1, 0) },
+        uRays: { value: null },
+        uRayColor: { value: new THREE.Vector3() },
         ...SS_UNIFORMS(),
       },
     );
     this.finalMat.defines.SS = 0;
+    this.finalMat.defines.SHAFTS = 0;
     const dbg = Number(new URLSearchParams(location.search).get('ssdebug'));
     if (dbg) this.finalMat.defines.SS_DEBUG = dbg;
+    if (new URLSearchParams(location.search).has('shaftdebug')) this.finalMat.defines.SHAFT_DEBUG = 1;
   }
 
   /** Live graphics changes. Targets are rebuilt only when MSAA or bloom depth change. */
@@ -428,6 +470,12 @@ export class Pipeline {
       this.setSize(w, h);
     }
     this.ss.configure(trace);
+    this.shafts.configure(next.shafts);
+    if (this.shafts.enabled !== this.shaftsOn) {
+      this.shaftsOn = this.shafts.enabled;
+      this.finalMat.defines.SHAFTS = this.shaftsOn ? 1 : 0;
+      this.finalMat.needsUpdate = true;
+    }
     const on = this.ss.enabled;
     if (on !== this.ssOn) {
       this.ssOn = on;
@@ -513,6 +561,19 @@ export class Pipeline {
       P?.end(true);
     }
 
+    const fu = this.finalMat.uniforms;
+    const air = fu.uShaftAir.value as THREE.Vector4;
+    const sea = fu.uShaftSea.value as THREE.Vector3;
+    // (always behind the loading screen, so their shaders compile there and not when the sky clears)
+    const beams = this.shaftsOn && !this.under && (this.warm || air.x + air.y + air.z > 1e-3 || sea.x + sea.y + sea.z > 1e-3);
+    if (beams) {
+      P?.begin('Sun shafts (quarter res)', 'render', true);
+      this.shafts.render(r, this.rtOpaque.depthTexture!, this.width, this.height, camera as THREE.PerspectiveCamera, sea.x + sea.y + sea.z > 1e-3);
+      fu.uShaft.value = this.shafts.rt.texture;
+      fu.uShaftSun.value.copy(this.sunDir);
+      P?.end(true);
+    }
+
     if (this.refl) {
       P?.begin('Water reflections (half res)', 'ocean', true);
       this.onRefl?.(this.ssOn && this.sun ? this.ss.textures![1] : null);
@@ -538,6 +599,27 @@ export class Pipeline {
     cu.uTexel.value.set(1 / this.width, 1 / this.height);
     this.blit(this.combineMat, this.rtHalf);
 
+    // the sun in view: rays through every gap in the clouds and the rigging
+    const rc = fu.uRayColor.value as THREE.Vector3;
+    rc.set(0, 0, 0);
+    if (beams) {
+      const cam = camera as THREE.PerspectiveCamera;
+      // (a point well inside the far plane: only its direction matters)
+      const ahead = cam.getWorldDirection(_fwd).dot(this.sunDir) > 0.05 && this.sunDir.y > -0.03;
+      _sun.copy(this.sunDir).multiplyScalar(Math.min(100, cam.far * 0.5)).add(cam.position).project(cam);
+      const off = Math.max(Math.abs(_sun.x), Math.abs(_sun.y)) - 1;
+      const fade = ahead ? Math.min(1, Math.max(0, 1 - off / 0.35)) * Math.min(1, (this.sunDir.y + 0.03) / 0.08) : 0;
+      if (fade > 0.001 || this.warm) {
+        P?.begin('Sun rays (quarter res)', 'render', true);
+        if (fade > 0.001) _uv.set(_sun.x * 0.5 + 0.5, _sun.y * 0.5 + 0.5);
+        else _uv.set(0.5, 1.2);
+        this.shafts.renderRays(r, this.rtHalf.texture, this.rtOpaque.depthTexture!, this.rtWater.texture, this.width, this.height, _uv);
+        fu.uRays.value = this.shafts.rtRays.texture;
+        rc.set(air.x, air.y, air.z).multiplyScalar(1.1 * fade);
+        P?.end(true);
+      }
+    }
+
     // bloom down
     const du = this.downMat.uniforms;
     let src = this.rtHalf;
@@ -561,7 +643,6 @@ export class Pipeline {
     P?.end(true);
 
     P?.begin('Final grade & sharpen', 'render', true);
-    const fu = this.finalMat.uniforms;
     fu.uOpaque.value = this.rtOpaque.texture;
     fu.uWater.value = this.rtWater.texture;
     fu.uHalf.value = this.rtHalf.texture;
@@ -586,7 +667,7 @@ export class Pipeline {
     const cam = camera as THREE.PerspectiveCamera;
     const eye = fu.uEye.value as THREE.Vector4;
     eye.set(cam.position.x, cam.position.y, cam.position.z, this.under ? this.under.surf : -1e9);
-    if (dof || this.under) {
+    if (dof || this.under || this.shaftsOn) {
       fu.uDofDepth.value = this.rtOpaque.depthTexture;
       fu.uDofNearFar.value.set(cam.near, cam.far);
       fu.uInvProj.value.copy(cam.projectionMatrixInverse);
@@ -602,6 +683,8 @@ export class Pipeline {
   }
 
   tilt = 1;
+  /** Set while the loading screen warms every shader up: the sun passes run whatever the weather. */
+  warm = false;
   /** Photo mode's lens and filter, or null in play. Uniforms only: the same program draws it. */
   photo: PhotoLook | null = null;
   /** What shows where nothing is drawn (the deep sea colour; the water itself when the camera is under). */
@@ -619,6 +702,20 @@ export class Pipeline {
    * light bent down through it and the colour of its shafts. Uniforms only.
    */
   under: { surf: number; ray: THREE.Vector3; color: THREE.Vector3 } | null = null;
+  /**
+   * The hour's look, from the atmosphere: the sun shafts' lit haze colour (rgb,
+   * 0 = none) and the glow lit haze adds on its own (w), the beams' colour
+   * in the shallows, the haze's density and how dark its shaded columns read, and the grade. Uniforms only.
+   */
+  setLook(air: THREE.Vector4, sea: THREE.Vector3, haze: THREE.Vector2, lo: THREE.Vector3, hi: THREE.Vector3, sat: number) {
+    const u = this.finalMat.uniforms;
+    u.uShaftAir.value.copy(air);
+    u.uShaftSea.value.copy(sea);
+    u.uShaftHaze.value.copy(haze);
+    u.uSplitLo.value.copy(lo);
+    u.uSplitHi.value.copy(hi);
+    u.uSat.value = sat;
+  }
   /** Drains colour and deepens the vignette for a sombre beat (0 none .. 1 grey). */
   set desat(v: number) {
     this.finalMat.uniforms.uDesat.value = v;
@@ -636,3 +733,7 @@ export class Pipeline {
     this.finalMat.uniforms.uFlash.value *= Math.exp(-dt * 9);
   }
 }
+
+const _sun = new THREE.Vector3();
+const _uv = new THREE.Vector2();
+const _fwd = new THREE.Vector3();

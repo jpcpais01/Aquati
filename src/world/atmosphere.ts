@@ -220,6 +220,16 @@ export class Atmosphere {
   readonly fogRange = new THREE.Vector2(380, 1500);
   night = 0;
   exposure = 1;
+  /** Sun shafts: the lit haze colour (rgb, 0 none) and the glow lit haze adds on its own (w). */
+  readonly shaftAir = new THREE.Vector4(0, 0, 0, 0.12);
+  /** Colour of the beams swaying down through the shallows. */
+  readonly shaftSea = new THREE.Vector3();
+  /** Haze extinction at sea level (1/m), thicker on a misty morning; and how dark its shaded columns read. */
+  readonly shaftHaze = new THREE.Vector2(0.0014, 3);
+  /** The grade by the hour: split-tone tints for shade and light, and saturation. */
+  readonly gradeLo = new THREE.Vector3(0.94, 1.02, 1.06);
+  readonly gradeHi = new THREE.Vector3(1.05, 1.0, 0.94);
+  gradeSat = 1.12;
   /** Called when the weather turns, with a short title and a line of flavour. */
   onChange: (kind: WeatherKind, title: string, line: string) => void = () => {};
   /** Called as a marked wind shift gets under way, with a title and a line naming where it now blows from. */
@@ -518,6 +528,7 @@ export class Atmosphere {
     u.uStorm.value = this.storm;
     u.uWet.value = this.wet;
     u.uMist.value = this.fog;
+    this.updateLook(sy, sunVis);
     const hazeK = 1 - 0.85 * this.cover;
     if (sy > -0.03) {
       const g = smooth(0.0, 0.3, sy);
@@ -526,4 +537,44 @@ export class Atmosphere {
       u.uHaze.value.set(0.3, 0.38, 0.55).multiplyScalar(0.35 * moonVis * hazeK);
     }
   }
+
+  /** Sun shafts and the grade, from the hour and the weather. */
+  private updateLook(sy: number, sunVis: number) {
+    const k = this.keyColor;
+    // beams want gaps: a few puffs on a clear day give a few, a broken sky the
+    // most, a closed grey deck none. Mist thickens the air they show in.
+    const broken = 0.35 + 0.65 * smooth(0.05, 0.4, this.cover) * smooth(0.95, 0.62, this.cover);
+    const open = (1 - this.storm * 0.85) * (1 - this.rain * 0.5);
+    const lowSun = 1 + 0.6 * smooth(0.45, 0.08, sy) * sunVis; // long golden shafts at either end of the day
+    const amt = broken * open * lowSun * (sy > -0.03 ? 0.6 : 0.5);
+    // the haze glows a little warmer than the light itself: it scatters the
+    // sun's red end forward (cool and faint by moonlight)
+    this.shaftAir.set(k.x * amt * 1.06, k.y * amt, k.z * amt * 0.9, 0.05);
+    this.shaftHaze.set(0.0014 * (1 + this.fog * 2.5 + this.wet * 0.5), 10 * amt);
+    // in the shallows: sunlight through clear water, killed by a grey sky
+    const sea = (1 - smooth(0.55, 0.95, this.cover)) * (1 - this.storm);
+    this.shaftSea.set(k.x * 0.36, k.y * 0.84, k.z * 0.8).multiplyScalar(sea * (sy > -0.03 ? 1 : 0.6));
+
+    // the grade: crisp at noon, honeyed with violet shade at the golden hours,
+    // cool and blue after dark, flat and grey under a storm
+    const golden = smooth(-0.06, 0.04, sy) * smooth(0.36, 0.1, sy) * sunVis;
+    const dusk = smooth(0.06, -0.12, sy) * (1 - this.night * 0.5);
+    const grey = Math.max(this.storm, smooth(0.6, 1, this.cover) * 0.6, this.rain * 0.5, this.fog * 0.35);
+    const lo = this.gradeLo.set(0.94, 1.02, 1.06);
+    const hi = this.gradeHi.set(1.05, 1.0, 0.94);
+    let sat = 1.12;
+    lo.lerp(_lo.set(0.93, 0.95, 1.1), golden);
+    hi.lerp(_hi.set(1.12, 1.0, 0.84), golden);
+    sat += golden * 0.08;
+    lo.lerp(_lo.set(0.9, 0.97, 1.12), Math.max(dusk, this.night));
+    hi.lerp(_hi.set(0.97, 1.0, 1.06), Math.max(dusk, this.night));
+    sat -= this.night * 0.05;
+    lo.lerp(_lo.set(0.97, 1.0, 1.03), grey);
+    hi.lerp(_hi.set(1.0, 1.0, 0.99), grey);
+    sat -= grey * 0.16;
+    this.gradeSat = sat;
+  }
 }
+
+const _lo = new THREE.Vector3();
+const _hi = new THREE.Vector3();
