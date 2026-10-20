@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T02:00Z',
     entries: [
       {
+        title: 'Full screen, sideways, at the first tap',
+        notes: [
+          'On phones and tablets, your first tap now takes the game full screen and turns it to landscape, so the whole sea fills your screen.',
+          'Installed to your home screen, the game now always opens in landscape. (iPhone Safari does not allow websites to do this, so turn your phone sideways there.)',
+        ],
+      },
+      {
         title: 'Pirate ports that sound the part',
         notes: [
           'Coins now sound like real gold: every doubloon rings with a heavy, warm chink, bounces on the counter and sometimes spins down on its rim before it lies flat.',
