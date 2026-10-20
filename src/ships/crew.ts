@@ -378,6 +378,9 @@ class Sailor {
 
 class ShipCrew implements DeckPlan {
   readonly sailors: Sailor[] = [];
+  /** Off screen the crew thinks every few frames: the time they're owed, and frames since. */
+  lag = 0;
+  skipped = 0;
   readonly shape: HullShape;
   readonly L: number;
   readonly main: Zone;
@@ -2151,6 +2154,17 @@ export class CrewSystem {
     return false;
   }
 
+  /** Whether any of a ship's deck, or the shadows its crew cast, can be in the picture. */
+  private shipInView(s: Ship) {
+    const sp = this._sph;
+    const d = this.shadowDir;
+    sp.radius = s.cls.length * 0.6 + 6;
+    sp.center.set(s.pos.x + d.x * 6, s.pos.y + 3 + d.y * 6, s.pos.z + d.z * 6);
+    if (this.frustum.intersectsSphere(sp)) return true;
+    sp.center.set(s.pos.x, s.pos.y + 3, s.pos.z);
+    return this.frustum.intersectsSphere(sp);
+  }
+
   private writeLook = (row: number, look: Look) => this.view.setRow(row, look.slots);
 
   private release(sl: Sailor) {
@@ -2249,7 +2263,18 @@ export class CrewSystem {
       const s = c.ship;
       const far = Math.hypot(s.pos.x - focus.x, s.pos.z - focus.z) > viewR + s.cls.length;
       if (far) continue;
-      if (dt > 0) c.update(dt, world, ships, splash);
+      // a crew nobody can see (nor their shadows) works on at a third of the
+      // rate, in bigger steps: the same deck, a fraction of the thinking
+      const seen = !this.culling || this.shipInView(s);
+      if (dt > 0) {
+        c.lag += dt;
+        if (seen || ++c.skipped >= 3) {
+          c.update(Math.min(c.lag, 0.1), world, ships, splash);
+          c.lag = 0;
+          c.skipped = 0;
+        }
+      }
+      if (!seen) continue;
       // a phantom's crew only takes shape once she has
       if (s.ghost && s.presence < 0.6) continue;
       for (const sl of c.sailors) {

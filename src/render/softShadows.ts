@@ -91,7 +91,10 @@ export function installSoftShadows() {
 				float radius = shadowRadius * texelSize.x;
 
 				#ifdef AQ_PCSS
-				if ( uAqPcss.x > 0.5 ) {
+				// a few metres down, the water's ripple and haze blur any shadow
+				// far beyond what contact hardening can show: the plain filter
+				// below does there, at a fraction of the taps
+				if ( uAqPcss.x > 0.5 && vAqWorld.y > - 3.5 ) {
 
 					// 1. blocker search: mean depth of whatever sits between us and the sun
 					ivec2 size = ivec2( shadowMapSize );
@@ -105,13 +108,24 @@ export function installSoftShadows() {
 						if ( d < z ) { sum += d; count += 1.0; }
 					}
 					if ( count < 0.5 ) return 1.0;
+					// every tap of the widest disc is blocked, so any smaller one
+					// is too: deep in the umbra, no filter needed
+					if ( count > 9.5 ) return 1.0 - shadowIntensity;
 
 					// 2. penumbra grows with the gap between blocker and receiver
 					float gap = shadowCoord.z - sum / count;
 					radius = clamp( gap * uAqPcss.z, uAqPcss.w, uAqPcss.y );
 
-					// 3. hardware-filtered PCF over that disc
+					// 3. hardware-filtered PCF over that disc: a tight penumbra a few
+					// texels wide is already smooth with 8 bilinear taps, a wide one takes 16
 					float s = 0.0;
+					if ( radius * shadowMapSize.x < 3.0 ) {
+						for ( int i = 0; i < 8; i ++ ) {
+							vec2 o = vogelDiskSample( i, 8, phi ) * radius;
+							s += texture( shadowMap, vec3( shadowCoord.xy + o, shadowCoord.z + clamp( dot( o, dzUv ), - 0.003, 0.003 ) ) );
+						}
+						return mix( 1.0, s / 8.0, shadowIntensity );
+					}
 					for ( int i = 0; i < 16; i ++ ) {
 						vec2 o = vogelDiskSample( i, 16, phi ) * radius;
 						s += texture( shadowMap, vec3( shadowCoord.xy + o, shadowCoord.z + clamp( dot( o, dzUv ), - 0.003, 0.003 ) ) );

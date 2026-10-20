@@ -516,8 +516,11 @@ export class Ocean {
           r3 = r3 * mat2(0.276, 0.961, -0.961, 0.276);
           vec2 rip = r1 * (0.45 + 0.75 * mac.r) + r2 * (0.4 + 0.6 * mac2.g) + r3 * (0.25 + 0.4 * (1.0 - mac.g)) * detailFade;
           #if HQ
-            vec2 r4 = texture(uNormalTex, p * 0.331 + wpdrift * 0.061 + 0.19).xy * 2.0 - 1.0;
-            rip += r4 * 0.22 * detailFade;
+            // (past the detail range it would be multiplied away: don't fetch it)
+            if (detailFade > 0.0) {
+              vec2 r4 = texture(uNormalTex, p * 0.331 + wpdrift * 0.061 + 0.19).xy * 2.0 - 1.0;
+              rip += r4 * 0.22 * detailFade;
+            }
           #endif
           rip *= (0.6 + 0.4 * detailFade) * (1.0 + uStorm * 0.9);
 
@@ -538,9 +541,11 @@ export class Ocean {
             vec4 gn2 = texture(uNoiseTex, p * 0.053 - wdrift * 0.33 + 0.41);
             float rag = smoothstep(0.32, 0.78, gn.g * 0.65 + gn2.a * 0.35 + gust * 0.3 - 0.08);
             gust *= rag;
-            vec2 rg = texture(uNormalTex, p2 * 0.21 - wdrift * 0.09 + 0.23).xy * 2.0 - 1.0;
-            vec2 rg2 = texture(uNoiseTex, p * 0.41 - wdrift * 0.17).xy - 0.5;
-            gustRip = (rg * 0.8 + rg2 * 1.4) * gust * detailFade;
+            if (detailFade > 0.0) {
+              vec2 rg = texture(uNormalTex, p2 * 0.21 - wdrift * 0.09 + 0.23).xy * 2.0 - 1.0;
+              vec2 rg2 = texture(uNoiseTex, p * 0.41 - wdrift * 0.17).xy - 0.5;
+              gustRip = (rg * 0.8 + rg2 * 1.4) * gust * detailFade;
+            }
             calm = mix(calm, 1.0, gust);
           }
 
@@ -551,7 +556,7 @@ export class Ocean {
 
           // ---- rain: rings and splashes up close, a matt stippled sheen further out
           float rainSplash = 0.0;
-          if (uRain > 0.01) {
+          if (uRain > 0.01 && detailFade > 0.0) {
             vec3 rr = rainRipples(p, t, uRain);
             float rf = detailFade * detailFade;
             N = normalize(N + vec3(rr.x, 0.0, rr.y) * 0.5 * rf);
@@ -561,25 +566,39 @@ export class Ocean {
           // ---- ship wakes: height-field normals so every V-arm and ring catches the light.
           // The lookup is domain-warped by two drifting noise scales so the arms wander,
           // kink and fray instead of reading as ruled lines.
-          vec4 wn = texture(uNoiseTex, p * 0.031 + vec2(t * 0.013, -t * 0.009));
-          vec4 wn2 = texture(uNoiseTex, p * 0.11 - vec2(t * 0.021, t * 0.017) + 0.37);
-          vec2 wWarp = (wn.ga - 0.5) * 3.2 + (wn2.ga - 0.5) * 1.1;
-          vec2 wuv = (vWorld.xz + wWarp - uWakeRect.xy) * uWakeRect.w + 0.5;
-          vec4 wk = texture(uWakeTex, wuv);
-          float wtx = uWakeTexel;
-          vec2 wGrad = vec2(
-            texture(uWakeTex, wuv + vec2(wtx, 0.0)).g - texture(uWakeTex, wuv - vec2(wtx, 0.0)).g,
-            texture(uWakeTex, wuv + vec2(0.0, wtx)).g - texture(uWakeTex, wuv - vec2(0.0, wtx)).g
-          ) / (2.0 * wtx * uWakeRect.z);
-          vec2 wb = min(wuv, 1.0 - wuv);
-          float wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
-          // strength comes and goes in patches along the arms
-          wGrad *= wIn * (0.45 + 0.9 * smoothstep(0.25, 0.75, wn.r * 0.7 + wn2.g * 0.45));
-          float wakeH = wk.g * wIn;
-          // disturbed water is choppy, not glassy: roughen the ripples where the wake is busy
-          float wChop = clamp(length(wGrad) * 5.0 + wk.r * wIn * 0.6, 0.0, 1.4);
-          vec2 wRip = (texture(uNormalTex, p * 0.29 - vec2(t * 0.07, -t * 0.05) + 0.61).xy * 2.0 - 1.0) + (wn2.rb - 0.5) * 1.2;
-          N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 1.9 + vec3(wRip.x, 0.0, wRip.y) * 0.22 * wChop);
+          // Outside the wake field (it only covers the sea round the player)
+          // every term below comes to zero: skip its nine texture reads. The
+          // warp shifts the lookup ~2 m at most, hence the margin.
+          vec4 wn = vec4(0.5);
+          vec4 wn2 = vec4(0.5);
+          vec4 wk = vec4(0.0);
+          vec2 wGrad = vec2(0.0);
+          float wIn = 0.0;
+          float wakeH = 0.0;
+          float wChop = 0.0;
+          vec2 wuv0 = (vWorld.xz - uWakeRect.xy) * uWakeRect.w + 0.5;
+          vec2 wb0 = min(wuv0, 1.0 - wuv0);
+          if (min(wb0.x, wb0.y) > -3.0 * uWakeRect.w) {
+            wn = texture(uNoiseTex, p * 0.031 + vec2(t * 0.013, -t * 0.009));
+            wn2 = texture(uNoiseTex, p * 0.11 - vec2(t * 0.021, t * 0.017) + 0.37);
+            vec2 wWarp = (wn.ga - 0.5) * 3.2 + (wn2.ga - 0.5) * 1.1;
+            vec2 wuv = (vWorld.xz + wWarp - uWakeRect.xy) * uWakeRect.w + 0.5;
+            wk = texture(uWakeTex, wuv);
+            float wtx = uWakeTexel;
+            wGrad = vec2(
+              texture(uWakeTex, wuv + vec2(wtx, 0.0)).g - texture(uWakeTex, wuv - vec2(wtx, 0.0)).g,
+              texture(uWakeTex, wuv + vec2(0.0, wtx)).g - texture(uWakeTex, wuv - vec2(0.0, wtx)).g
+            ) / (2.0 * wtx * uWakeRect.z);
+            vec2 wb = min(wuv, 1.0 - wuv);
+            wIn = smoothstep(0.0, 0.04, min(wb.x, wb.y));
+            // strength comes and goes in patches along the arms
+            wGrad *= wIn * (0.45 + 0.9 * smoothstep(0.25, 0.75, wn.r * 0.7 + wn2.g * 0.45));
+            wakeH = wk.g * wIn;
+            // disturbed water is choppy, not glassy: roughen the ripples where the wake is busy
+            wChop = clamp(length(wGrad) * 5.0 + wk.r * wIn * 0.6, 0.0, 1.4);
+            vec2 wRip = (texture(uNormalTex, p * 0.29 - vec2(t * 0.07, -t * 0.05) + 0.61).xy * 2.0 - 1.0) + (wn2.rb - 0.5) * 1.2;
+            N = normalize(N - vec3(wGrad.x, 0.0, wGrad.y) * 1.9 + vec3(wRip.x, 0.0, wRip.y) * 0.22 * wChop);
+          }
 
           // ---- surf: the breaker under this pixel and the one rolling in behind it
           float fp = length(fwidth(p));

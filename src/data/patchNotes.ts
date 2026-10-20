@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T13:00Z',
+    entries: [
+      {
+        title: 'A much smoother game: big performance gains, aiming for 120 fps',
+        notes: [
+          'The game now works out your screen\'s refresh rate and aims for it, so a 120 Hz phone or monitor gets 120 frames a second instead of being treated like a 60 Hz one. If frames start to slip, the picture quietly drops a little resolution to keep the motion silky, and it no longer gets stuck at a lower sharpness after a busy moment.',
+          'On high-resolution screens the 3D view no longer renders millions of pixels nobody can tell apart. It is sharpened slightly to match, and the HUD stays perfectly crisp.',
+          'The sea floor under deep water was being lit, shadowed and ray traced every frame even though the water hid it completely. That work is skipped now, along with the finest wake and ripple detail in water too far away to show it, and soft shadows take far fewer samples wherever they are fully lit or fully dark.',
+          'Fort cannons all over the map were being drawn twice a frame wherever you sailed. Now only forts in view are drawn. Ship crews out of sight think less often, the minimap redraws 20 times a second instead of every frame, and the sky\'s lighting is only rebuilt when the sky actually changes, which removes a small stutter that came several times a second.',
+          'Water reflections and effects use a lighter anti-aliasing setup, and phones use 2x instead of 4x anti-aliasing for the world, which saves a lot of memory bandwidth on mobile graphics chips.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T12:00Z',
     entries: [
       {

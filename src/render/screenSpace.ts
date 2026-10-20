@@ -54,6 +54,7 @@ uniform mat4 uInvView;
 uniform vec3 uSunView;
 uniform vec4 uAo;   // radius base, radius per metre of depth, bias base, bias per metre
 uniform vec4 uCs;   // length base, length per metre, thickness base, thickness per metre
+uniform float uSeaCut; // world height below which the sea surely covers the pixel
 #if CS_STEPS > 0
 uniform sampler2DShadow uShadowMap;
 uniform mat4 uShadowMatrix;
@@ -84,6 +85,11 @@ void main() {
   if (d >= 0.99999) { oA = vec4(0.0, 0.0, 0.0, 1.0); oB = vec4(0.0, 1e4, 0.0, 1.0); return; }
   vec3 P = viewPos(uv, d);
   float z = -P.z;
+  // Below the lowest trough the opaque sea paints over this pixel, and the
+  // traced light only ever lands where the world shows through the water:
+  // skip it (b = 1 tells the denoiser to as well). Depth still goes out, the
+  // reflection march reads it.
+  if ((uInvView * vec4(P, 1.0)).y < uSeaCut) { oA = vec4(0.0, 0.0, 0.0, 1.0); oB = vec4(0.0, z, 1.0, 1.0); return; }
 
   // normal from depth: per axis, take whichever neighbour sits on the same
   // surface (smaller step) so silhouettes don't smear the normal
@@ -202,7 +208,7 @@ layout(location = 1) out highp vec4 oB;
 void main() {
   vec4 c = texture(uB, vUv);
   float z0 = c.g;
-  if (z0 > 9e3) { oA = vec4(0.0, 0.0, 0.0, 1.0); oB = c; return; }
+  if (z0 > 9e3 || c.b > 0.5) { oA = vec4(0.0, 0.0, 0.0, 1.0); oB = c; return; }
   // depth tolerance grows with how steeply the surface recedes per texel, so a
   // slanted plane still averages across rows instead of keeping each row's
   // own noise (one-sided steps per axis, so silhouettes stay sharp)
@@ -311,6 +317,8 @@ export class ScreenSpaceLighting {
   config: TraceConfig = { ao: true, gi: false, shadows: true, aoSamples: 8, shadowSteps: 12 };
   width = 0;
   height = 0;
+  /** World height below which the opaque sea covers everything (-Infinity: never, e.g. from beneath the waves). */
+  seaCut = -1e9;
 
   constructor() {
     this.trace = mrtMaterial(
@@ -326,6 +334,7 @@ export class ScreenSpaceLighting {
         uSunView: { value: new THREE.Vector3(0, 1, 0) },
         uAo: { value: new THREE.Vector4(1.6, 0.012, 0.03, 0.0015) },
         uCs: { value: new THREE.Vector4(3.5, 0.03, 0.45, 0.012) },
+        uSeaCut: { value: -1e9 },
         uShadowMap: { value: null },
         uShadowMatrix: { value: new THREE.Matrix4() },
         uShadowTexel: { value: new THREE.Vector2(1 / 2048, 1 / 2048) },
@@ -385,6 +394,7 @@ export class ScreenSpaceLighting {
     u.uProj.value.copy(camera.projectionMatrix);
     u.uInvProj.value.copy(camera.projectionMatrixInverse);
     u.uInvView.value.copy(camera.matrixWorld);
+    u.uSeaCut.value = Math.max(this.seaCut, -1e9);
     this.sunView.copy(sunDir).transformDirection(camera.matrixWorldInverse);
     u.uSunView.value.copy(this.sunView);
     const sh = sun.shadow;

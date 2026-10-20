@@ -706,6 +706,29 @@ ${GLSL_GHOST_EMISSIVE}`,
  * reuses the same targets every time: the texture object never changes, so no
  * material ever recompiles.
  */
+/** Everything the baked sky depends on, flattened. */
+function skySignature(out: number[]): number[] {
+  const u = globalUniforms;
+  out.length = 0;
+  for (const v of [u.uSunDir.value, u.uSunColor.value, u.uSkyZenith.value, u.uSkyHorizon.value, u.uFogColor.value] as (THREE.Vector3 | THREE.Color)[]) {
+    if ('r' in v) out.push(v.r, v.g, v.b);
+    else out.push(v.x, v.y, v.z);
+  }
+  for (const k of ['uLight', 'uNight', 'uCloudCover', 'uStorm', 'uMist', 'uHaze'] as const) {
+    const v = u[k].value as unknown;
+    if (typeof v === 'number') out.push(v);
+    else if (v && typeof v === 'object' && 'x' in v) {
+      const w = v as THREE.Vector3;
+      out.push(w.x, w.y, w.z);
+    } else if (v && typeof v === 'object' && 'r' in v) {
+      const c = v as THREE.Color;
+      out.push(c.r, c.g, c.b);
+    }
+  }
+  return out;
+}
+const _sig: number[] = [];
+
 /** Prefilter samples per texel for the sky's image-based light. */
 const GGX_SAMPLES = 64;
 
@@ -715,6 +738,9 @@ export class SkyEnvironment {
   private cubeCam = new THREE.CubeCamera(0.1, 100, this.cubeRT);
   private pmrem: THREE.PMREMGenerator;
   private rt: THREE.WebGLRenderTarget | null = null;
+  /** The sky's inputs at the last bake, and how long ago that was (s). */
+  private baked: number[] = [];
+  private age = Infinity;
 
   constructor(private renderer: THREE.WebGLRenderer) {
     const mat = new THREE.ShaderMaterial({
@@ -745,8 +771,26 @@ export class SkyEnvironment {
     this.pmrem = new THREE.PMREMGenerator(renderer);
   }
 
+  /**
+   * Whether the sky has drifted enough since the last bake to show in the
+   * light it casts. The bake is a cube render plus a chain of ~20 blur passes:
+   * a regular GPU bump if run blindly a few times a second, while the sun and
+   * the weather move far too slowly to see between most of them.
+   */
+  stale(dt: number): boolean {
+    this.age += dt;
+    if (this.age > 4) return true;
+    const now = skySignature(_sig);
+    const was = this.baked;
+    if (was.length !== now.length) return true;
+    for (let i = 0; i < now.length; i++) if (Math.abs(now[i] - was[i]) > 0.004 * (1 + Math.abs(was[i]))) return true;
+    return false;
+  }
+
   /** Re-renders the sky into the environment map. Returns the (stable) texture. */
   update(): THREE.Texture {
+    this.age = 0;
+    this.baked = skySignature([]);
     const r = this.renderer;
     const prev = r.getRenderTarget();
     this.cubeCam.update(r, this.scene);
