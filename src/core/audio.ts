@@ -215,6 +215,7 @@ export class Audio {
   setMusicEnabled(on: boolean) {
     this.musicEnabled = on;
     this.syncMusic(0.6);
+    this.syncBoss();
   }
 
   /** Volume sliders (0..1 each). Music skips the effects compressor, so it takes master directly. */
@@ -231,6 +232,7 @@ export class Audio {
     this.ambBus.gain.setTargetAtTime(v.ambience, t, 0.04);
     this.musicBus?.gain.setTargetAtTime(v.music * v.master, t, 0.04);
     if (this.music && !this.musicGain) this.syncMusic(0.1);
+    this.syncBoss();
   }
 
   setMuted(m: boolean) {
@@ -1817,5 +1819,429 @@ export class Audio {
       n.start(t, Math.random() * 2);
       n.stop(t + 0.06);
     }
+  }
+
+  // ------------------------------------------------------------------ the Kraken
+
+  /** A synth voice routed through the reverb as well, arriving late from far off. */
+  private bigVoice(vol: number, pan: number, dist: number, delay = 0): [AudioContext, GainNode, number] | null {
+    const v = this.voice(Math.min(1.2, vol), pan);
+    if (!v) return null;
+    const [ctx, out] = v;
+    const send = ctx.createGain();
+    send.gain.value = 0.55;
+    out.connect(send).connect(this.reverbIn);
+    return [ctx, out, ctx.currentTime + delay + Math.min(dist / SPEED_OF_SOUND, 1.1)];
+  }
+
+  private noiseSrc(ctx: AudioContext, at: number, dur: number, rate = 1) {
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    n.playbackRate.value = rate;
+    n.start(at, Math.random() * 1.5);
+    n.stop(at + dur);
+    return n;
+  }
+
+  /**
+   * The Kraken's roar: a vast, wet bellow. Detuned saws growl through a vocal
+   * formant that opens and closes, a rasping fry of filtered noise rides on
+   * top and a sub-bass sits under it all, washed out across the sea.
+   */
+  krakenRoar(vol: number, pan: number, dist = 0, delay = 0, rage = 0, len = 3.2, low = 1) {
+    const v = this.bigVoice(vol * 0.85, pan, dist, delay);
+    if (!v) return;
+    const [ctx, out, t] = v;
+    const dur = len;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.exponentialRampToValueAtTime(1, t + 0.3);
+    env.gain.linearRampToValueAtTime(0.75, t + dur * 0.55);
+    env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    env.connect(out);
+    const form = ctx.createBiquadFilter();
+    form.type = 'bandpass';
+    form.Q.value = 1.8;
+    form.frequency.setValueAtTime(200, t);
+    form.frequency.linearRampToValueAtTime(640 + rage * 120, t + 0.55);
+    form.frequency.linearRampToValueAtTime(380, t + dur * 0.6);
+    form.frequency.linearRampToValueAtTime(150, t + dur);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1500;
+    form.connect(lp).connect(env);
+    const f0 = (44 + rage * 7) * low;
+    const vib = ctx.createOscillator();
+    vib.frequency.value = 6.2;
+    const vg = ctx.createGain();
+    vg.gain.value = f0 * 0.05;
+    vib.connect(vg);
+    vib.start(t);
+    vib.stop(t + dur);
+    for (const det of [-0.012, 0, 0.009, 0.5]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      const f = f0 * (1 + det);
+      o.frequency.setValueAtTime(f * 0.75, t);
+      o.frequency.exponentialRampToValueAtTime(f * 1.25, t + 0.45);
+      o.frequency.exponentialRampToValueAtTime(f, t + dur * 0.6);
+      o.frequency.exponentialRampToValueAtTime(f * 0.62, t + dur);
+      vg.connect(o.frequency);
+      const g = ctx.createGain();
+      g.gain.value = det === 0.5 ? 0.25 : 0.42;
+      o.connect(g).connect(form);
+      o.start(t);
+      o.stop(t + dur);
+    }
+    // the rasp: noise chopped by a low buzz, like air forced through a throat
+    const n = this.noiseSrc(ctx, t, dur, 0.8);
+    const nb = ctx.createBiquadFilter();
+    nb.type = 'bandpass';
+    nb.frequency.value = 850;
+    nb.Q.value = 1.2;
+    const am = ctx.createGain();
+    am.gain.value = 0.5;
+    const fry = ctx.createOscillator();
+    fry.type = 'square';
+    fry.frequency.value = 29;
+    const fg = ctx.createGain();
+    fg.gain.value = 0.5;
+    fry.connect(fg).connect(am.gain);
+    fry.start(t);
+    fry.stop(t + dur);
+    n.connect(nb).connect(am).connect(env);
+    // and the sub, felt more than heard
+    const sub = ctx.createOscillator();
+    sub.frequency.setValueAtTime(34 * low, t);
+    sub.frequency.exponentialRampToValueAtTime(24 * low, t + dur);
+    const sg = ctx.createGain();
+    sg.gain.value = 0.7;
+    sub.connect(sg).connect(env);
+    sub.start(t);
+    sub.stop(t + dur);
+    this.duck(t, 0.4);
+  }
+
+  /** An arm whipping down across the sea: a crack of water and a deep, rolling boom. */
+  krakenSlam(vol: number, pan: number, dist = 0) {
+    const v = Math.max(vol, 0.35);
+    const at = this.emit(pick(this.bank.blast), { vol: v * 0.7, pan, dist, rate: 0.48 + Math.random() * 0.06, wet: 0.8 });
+    this.emit(pick(this.bank.water), { vol: v * 0.95, pan, dist, rate: 0.5 + Math.random() * 0.1, wet: 0.6 });
+    this.emit(pick(this.bank.water), { vol: v * 0.7, pan: pan * 0.6, dist, rate: 0.72, wet: 0.5, delay: 0.06 });
+    const b = this.bigVoice(v * 0.9, pan, dist);
+    if (b) {
+      const [ctx, out, t] = b;
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(64, t);
+      o.frequency.exponentialRampToValueAtTime(21, t + 1.1);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.95, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.3);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 1.35);
+    }
+    if (at >= 0) this.duck(at, dist < 60 ? 0.6 : 0.3);
+  }
+
+  /** Something vast breaking the surface: a heavy rush of water over a low rumble. */
+  krakenRise(vol: number, pan: number, dist = 0, size = 1) {
+    const v = Math.max(vol, 0.3) * size;
+    this.emit(pick(this.bank.water), { vol: v * 0.8, pan, dist, rate: 0.42 / size, wet: 0.6 });
+    this.emit(pick(this.bank.water), { vol: v * 0.55, pan, dist, rate: 0.6 / size, wet: 0.5, delay: 0.12 });
+    const b = this.bigVoice(v * 0.7, pan, dist);
+    if (!b) return;
+    const [ctx, out, t] = b;
+    const n = this.noiseSrc(ctx, t, 2.2, 0.5);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900, t);
+    lp.frequency.exponentialRampToValueAtTime(120, t + 2);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 2.1);
+    n.connect(lp).connect(g).connect(out);
+  }
+
+  /** An arm rearing or lashing through the air: a heavy, slow swoosh. */
+  krakenWhip(vol: number, pan: number, dist = 0, k = 1) {
+    this.emit(pick(this.bank.whoosh), { vol: Math.max(vol, 0.3) * 0.7 * k, pan, panTo: -pan, dist, rate: 0.38 + Math.random() * 0.08, wet: 0.3 });
+  }
+
+  /** Shot into its flesh: a wet, meaty slap. */
+  krakenFlesh(vol: number, pan: number, dist = 0) {
+    this.emit(pick(this.bank.water), { vol: vol * 0.45, pan, dist, rate: 1.5 + Math.random() * 0.3, wet: 0.3 });
+    const v = this.voice(vol * 0.5, pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime + Math.min(dist / SPEED_OF_SOUND, 1.1);
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.8, t + 0.005);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.2);
+  }
+
+  /** Pain: a low moan from a beaten arm, or a piercing shriek when it's shot in the eye. */
+  krakenHurt(vol: number, pan: number, dist = 0, shriek = false) {
+    const v = this.bigVoice(Math.max(vol, 0.35) * (shriek ? 0.55 : 0.6), pan, dist);
+    if (!v) return;
+    const [ctx, out, t] = v;
+    const dur = shriek ? 1.1 : 1.6;
+    const f = shriek ? 380 : 120;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = shriek ? 1500 : 520;
+    bp.Q.value = 2.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    bp.connect(g).connect(out);
+    const vib = ctx.createOscillator();
+    vib.frequency.value = shriek ? 11 : 5;
+    const vg = ctx.createGain();
+    vg.gain.value = f * 0.04;
+    vib.connect(vg);
+    vib.start(t);
+    vib.stop(t + dur);
+    for (const det of [0, 0.013]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f * (1 + det), t);
+      o.frequency.exponentialRampToValueAtTime(f * 1.45 * (1 + det), t + dur * 0.25);
+      o.frequency.exponentialRampToValueAtTime(f * 0.6, t + dur);
+      vg.connect(o.frequency);
+      o.connect(bp);
+      o.start(t);
+      o.stop(t + dur);
+    }
+  }
+
+  /** Its death: a long, falling howl, then the brass of a victory swelling over the sea. */
+  krakenDeath(vol: number, pan: number, dist = 0) {
+    this.krakenRoar(vol, pan, dist, 0, 1, 5.5, 0.85);
+    this.krakenHurt(vol, pan, dist, true);
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const t = ctx.currentTime + 4.2;
+    const out = ctx.createGain();
+    out.gain.value = 0.5;
+    out.connect(this.bossOut());
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(400, t);
+    lp.frequency.linearRampToValueAtTime(2600, t + 1.2);
+    lp.frequency.linearRampToValueAtTime(900, t + 6);
+    lp.connect(out);
+    // D major, rising: a fanfare's last chord
+    const notes = [73.42, 146.83, 185, 220, 293.66, 369.99];
+    notes.forEach((f, i) => {
+      const at = t + i * 0.09;
+      for (const det of [-5, 5]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        o.detune.value = det;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.07 - i * 0.006, at + 0.25);
+        g.gain.setTargetAtTime(0.0001, at + 2.4, 1.2);
+        o.connect(g).connect(lp);
+        o.start(at);
+        o.stop(at + 7);
+      }
+    });
+    // and two great timpani strokes under it
+    for (const [dt, f] of [[0, 55], [0.42, 73.4]] as const) {
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(f * 1.6, t + dt);
+      o.frequency.exponentialRampToValueAtTime(f, t + dt + 0.08);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + dt);
+      g.gain.exponentialRampToValueAtTime(0.6, t + dt + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dt + 1.6);
+      o.connect(g).connect(out);
+      o.start(t + dt);
+      o.stop(t + dt + 1.7);
+    }
+  }
+
+  /** The omen: the sea's sounds sink under a swelling drone and a slow, huge heartbeat, with bubbles rising. */
+  krakenOmen(len: number) {
+    const ctx = this.ctx;
+    if (!ctx || this.muted) return;
+    const t = ctx.currentTime;
+    const out = ctx.createGain();
+    out.gain.value = 0.55;
+    out.connect(this.bossOut());
+    const n = this.noiseSrc(ctx, t, len + 1.5, 0.35);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(90, t);
+    lp.frequency.linearRampToValueAtTime(260, t + len);
+    lp.Q.value = 4;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9, t + len * 0.8);
+    g.gain.exponentialRampToValueAtTime(0.001, t + len + 1.4);
+    n.connect(lp).connect(g).connect(out);
+    for (let k = 0; k * 1.25 < len; k++) {
+      const at = t + 0.8 + k * Math.max(0.55, 1.4 - k * 0.09);
+      if (at > t + len) break;
+      for (const [dt, f] of [[0, 52], [0.24, 44]] as const) {
+        const o = ctx.createOscillator();
+        o.frequency.setValueAtTime(f * 1.4, at + dt);
+        o.frequency.exponentialRampToValueAtTime(f * 0.7, at + dt + 0.3);
+        const hg = ctx.createGain();
+        hg.gain.setValueAtTime(0.0001, at + dt);
+        hg.gain.exponentialRampToValueAtTime(0.25 + k * 0.05, at + dt + 0.02);
+        hg.gain.exponentialRampToValueAtTime(0.001, at + dt + 0.45);
+        o.connect(hg).connect(out);
+        o.start(at + dt);
+        o.stop(at + dt + 0.5);
+      }
+    }
+    for (let i = 0; i < 14; i++) this.bubble(t + Math.random() * len);
+  }
+
+  // the battle music: a drone, dissonant tremolo strings and war drums, louder with each stage
+  private bossBus: GainNode | null = null;
+  private boss: { nodes: AudioScheduledSourceNode[]; gain: GainNode; strings: GainNode; timer: number; next: number; beat: number } | null = null;
+  private bossStage = 0;
+
+  private bossOut() {
+    const ctx = this.ctx!;
+    if (!this.bossBus) {
+      this.bossBus = ctx.createGain();
+      this.bossBus.connect(this.master);
+      this.syncBoss();
+    }
+    return this.bossBus;
+  }
+
+  private syncBoss() {
+    if (!this.ctx || !this.bossBus) return;
+    this.bossBus.gain.setTargetAtTime(this.musicEnabled ? this.vol.music * 1.25 : 0, this.ctx.currentTime, 0.1);
+  }
+
+  /** Starts, raises (stage 0..2) or stops the Kraken's battle music. */
+  krakenMusic(on: boolean, stage = 0) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    this.bossStage = stage;
+    if (!on) {
+      const b = this.boss;
+      if (!b) return;
+      this.boss = null;
+      clearInterval(b.timer);
+      b.gain.gain.setTargetAtTime(0, t, 0.9);
+      for (const n of b.nodes) n.stop(t + 4);
+      return;
+    }
+    if (this.boss) {
+      this.boss.strings.gain.setTargetAtTime(0.012 + stage * 0.012, t, 1.5);
+      return;
+    }
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(1, t + 2.5);
+    gain.connect(this.bossOut());
+    const nodes: AudioScheduledSourceNode[] = [];
+    // the drone: A and E, deep, breathing through a slowly moving filter
+    const dl = ctx.createBiquadFilter();
+    dl.type = 'lowpass';
+    dl.frequency.value = 260;
+    dl.Q.value = 3;
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 0.13;
+    const lg = ctx.createGain();
+    lg.gain.value = 120;
+    lfo.connect(lg).connect(dl.frequency);
+    nodes.push(lfo);
+    const dg = ctx.createGain();
+    dg.gain.value = 0.11;
+    dl.connect(dg).connect(gain);
+    for (const [f, det] of [[55, -6], [55, 6], [82.41, 0], [41.2, 0]] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = f;
+      o.detune.value = det;
+      o.connect(dl);
+      nodes.push(o);
+    }
+    // the strings: a trembling minor second high above, the dread in it
+    const strings = ctx.createGain();
+    strings.gain.value = 0.012 + stage * 0.012;
+    const sl = ctx.createBiquadFilter();
+    sl.type = 'lowpass';
+    sl.frequency.value = 1700;
+    const trem = ctx.createGain();
+    trem.gain.value = 0.6;
+    const tl = ctx.createOscillator();
+    tl.frequency.value = 9;
+    const tg = ctx.createGain();
+    tg.gain.value = 0.4;
+    tl.connect(tg).connect(trem.gain);
+    nodes.push(tl);
+    sl.connect(trem).connect(strings).connect(gain);
+    for (const f of [220, 233.08, 329.63, 440]) {
+      for (const det of [-7, 7]) {
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        o.detune.value = det;
+        o.connect(sl);
+        nodes.push(o);
+      }
+    }
+    for (const n of nodes) n.start(t);
+    // war drums, scheduled a little ahead on a timer
+    const b = { nodes, gain, strings, timer: 0, next: t + 0.4, beat: 0 };
+    const spb = 60 / 96;
+    const drum = (at: number, f: number, v: number) => {
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(f * 1.8, at);
+      o.frequency.exponentialRampToValueAtTime(f, at + 0.05);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(v, at + 0.006);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 0.55);
+      o.connect(g).connect(gain);
+      o.start(at);
+      o.stop(at + 0.6);
+      // the skin's slap
+      const n = this.noiseSrc(ctx, at, 0.08, 1.4);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'bandpass';
+      hp.frequency.value = 1200;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(v * 0.25, at);
+      ng.gain.exponentialRampToValueAtTime(0.001, at + 0.07);
+      n.connect(hp).connect(ng).connect(gain);
+    };
+    b.timer = window.setInterval(() => {
+      const now = ctx.currentTime;
+      while (b.next < now + 0.5) {
+        const i = b.beat % 16;
+        const st = this.bossStage;
+        // a heavy four, a pickup into each bar, and more and more of it as it rages
+        if (i % 4 === 0) drum(b.next, 52, 0.55);
+        if (i === 14 || i === 15) drum(b.next, 70, 0.35);
+        if (st >= 1 && (i === 6 || i === 10)) drum(b.next, 64, 0.32);
+        if (st >= 2 && i % 2 === 1) drum(b.next, 92, 0.18);
+        b.next += spb / 2;
+        b.beat++;
+      }
+    }, 120);
+    this.boss = b;
   }
 }

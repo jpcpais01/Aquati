@@ -34,6 +34,16 @@ export const PATCH_NOTES: PatchGroup[] = [
           'The midday sky is a deeper blue above the horizon haze, the glare around the sun is tighter, and the far sea now meets the sky in a crisp, slightly darker line instead of blending into one milky band.',
         ],
       },
+      {
+        title: 'The Kraken rises',
+        notes: [
+          'Something lives beneath the storms. Out in deep, open water, far from any harbour, a storm may now bring the Kraken. It is rare: a storm gives it one chance at most, and it never comes twice in quick succession.',
+          'You get a warning. The sea goes dark and starts to boil, a deep heartbeat sounds below the waves, and a huge shape passes under your keel. A few seconds later its arms burst out of the water all around you.',
+          'Each arm rears up before it strikes. A glowing mark appears on the water where it will land and a warning shows over the arm, so turn hard to get out from under it. If an arm catches you, it wraps around the hull and holds the ship still while it squeezes. Fire into that arm or put on full sail to break free.',
+          'Your guns lock onto its arms the same way they lock onto ships. Chain shot cuts through arms, shells do the most damage to the head, and grape and fire shot work too. Sever its arms and it brings its head up out of the water. That is your chance: a hit to its great gold eye does more than double damage.',
+          'The fight has three stages. Wound it badly and it sprays ink and goes into a fury. Near the end the sea turns into a maelstrom that drags your ship toward it. Pirates want no part of any of this and flee as soon as it appears, and no harbour will let you dock while it hunts you. Kill it for a 1,500 gold bounty, the Kraken Ink ship skin, and a hoard that floats up from the deep, including two trophies you can only get from the Kraken: the legendary Beak of the Kraken and the Vial of Kraken Ink. It has its own battle music and its own sounds, and if it drags you under, your farewell screen will say so.',
+        ],
+      },
     ],
   },
   {

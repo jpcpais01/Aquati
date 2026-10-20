@@ -61,6 +61,12 @@ export class Projectiles {
   private rakes = new Map<Ship, Rake>();
   private soundT = new Map<number, number>();
   onHit: (e: HitEvent) => void = () => {};
+  /** Anything else in the sea a ball can strike (the Kraken); true if it took the ball. */
+  strike: ((b: { pos: THREE.Vector3; prev: THREE.Vector3; vel: THREE.Vector3; damage: number; owner: Ship; ammo: AmmoId }) => boolean) | null = null;
+  /** A shell burst's reach beyond the ships (the Kraken's arms and head). */
+  onBlast: ((at: THREE.Vector3, radius: number, damage: number, owner: Ship) => void) | null = null;
+  private prev = new THREE.Vector3();
+  private probe = { pos: new THREE.Vector3(), prev: this.prev, vel: new THREE.Vector3(), damage: 0, owner: null as unknown as Ship, ammo: 'round' as AmmoId };
 
   constructor() {
     const geo = new THREE.SphereGeometry(0.2, 10, 8);
@@ -112,8 +118,21 @@ export class Projectiles {
       let dead = false;
       for (let st = 0; st < steps && !dead; st++) {
         b.vel.y -= GRAVITY * h;
+        this.prev.copy(b.pos);
         b.pos.addScaledVector(b.vel, h);
         b.age += h;
+        if (this.strike) {
+          const pr = this.probe;
+          pr.pos = b.pos;
+          pr.vel = b.vel;
+          pr.damage = b.damage;
+          pr.owner = b.owner;
+          pr.ammo = b.ammo;
+          if (this.strike(pr)) {
+            dead = true;
+            break;
+          }
+        }
         // ships: test in each hull's local frame (oriented box)
         for (const s of ships) {
           // settled wrecks sit too low and twisted to stop a ball
@@ -446,6 +465,7 @@ export class Projectiles {
     world.onShake(0.45 * vol * vol, at);
     const base = b.damage / AMMO.shell.damage;
     const R = EFFECT.blastRadius;
+    this.onBlast?.(at, R, base * EFFECT.blastDamage, b.owner);
     for (const s of ships) {
       if (s === b.owner || !s.alive || s.removed || s.team === b.owner.team) continue;
       const dx = at.x - s.pos.x;

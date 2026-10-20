@@ -50,7 +50,9 @@ import { findPortSite, findTradeSites, portClearings } from '../port/site';
 import { TradePort, TradePorts } from '../port/tradePort';
 import { holdPeek, MarketUI } from '../ui/market';
 import { lootIcon } from '../ui/lootArt';
-import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES } from './treasure';
+import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood } from './treasure';
+import { Kraken } from './kraken';
+import { KrakenHud, KrakenReward } from '../ui/kraken';
 import { CameraRig } from './cameraRig';
 import { Gunnery, Side } from './gunnery';
 import { Captain } from './captain';
@@ -65,7 +67,6 @@ import { campClearings, findCampSites, Ground, Landing } from '../shore/ground';
 import { Camp, Shore, ShoreInput } from '../shore/shore';
 import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
 import { rollTier } from './loot';
-import { rollContents } from './treasure';
 import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarned, KILL_INFAMY, NamedCaptain, REPUTE, wantedLevel } from './bounty';
 import { BountyBanner, BountyBoard, WantedHud } from '../ui/bounty';
 
@@ -103,6 +104,8 @@ const WRECK_REACH = 520;
 const _cineV = new THREE.Vector3();
 
 const BOARD_SEEN_KEY = 'aquati.boardSeen';
+/** `?kraken` brews a storm at once and sends the Kraken a few seconds into the voyage. */
+const KRAKEN_TEST = typeof location !== 'undefined' && /[?&]kraken\b/.test(location.search);
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
@@ -281,6 +284,21 @@ export class Game {
   /** A dressed captain's own cloth and flag, uploaded one a frame before she sails in. */
   private texQueue: THREE.Texture[] = [];
   private cumulus = new SkyCumulus();
+  // the Kraken: rises (rarely) out of a storm to drag her under; see game/kraken.ts
+  private kraken = new Kraken();
+  private krHud!: KrakenHud;
+  /** Seconds before another may rise. */
+  private krakenCool = 0;
+  /** This storm's one roll of the dice: not yet rolled, rolled and spared, or coming. */
+  private krakenStorm: 'none' | 'rolled' | 'coming' = 'none';
+  private krakenWait = 0;
+  /** When it last struck her, so a sinking can be laid at its door. */
+  private krakenHitT = -100;
+  /** Real seconds left of the slow beat as it bursts up. */
+  private krakenSlowT = 0;
+  private krWarn: THREE.Vector3[] = [];
+  private krWarnPx = Array.from({ length: 8 }, () => ({ x: 0, y: 0 }));
+  private krFocus = new THREE.Vector3();
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -525,6 +543,10 @@ export class Game {
     this.gunnery = new Gunnery();
     this.gunnery.onReady = (side) => this.onGunsReady(side);
     this.water.add(this.gunnery.group);
+    // the Kraken lies built and hidden from the start, so the warm-up compiles it
+    this.opaque.add(this.kraken.view.group);
+    this.water.add(this.kraken.view.fx);
+    this.wireKraken();
     ui.progress(0.88);
     await nextFrame();
 
@@ -1154,9 +1176,10 @@ export class Game {
       return false;
     }
     const hunted = this.huntedNear(p);
-    const chased = !!this.lastFoe || hunted;
+    const beast = this.kraken.fighting;
+    const chased = !!this.lastFoe || hunted || beast;
     const n = this.hold.count;
-    const why = hunted && !this.lastFoe ? 'A hunter is on your tail: no harbour will let you in' : chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
+    const why = beast ? 'No harbour opens to a ship the Kraken hunts' : hunted && !this.lastFoe ? 'A hunter is on your tail: no harbour will let you in' : chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
     this.market.setDock({ name: port.name, ok: !chased, why });
     if (!chased && !this.fpv && this.input.state.helm) this.dock(port);
     return true;
@@ -1183,9 +1206,10 @@ export class Game {
       return;
     }
     const hunted = this.huntedNear(p);
-    const chased = !!this.lastFoe || hunted;
+    const beast = this.kraken.active;
+    const chased = !!this.lastFoe || hunted || beast;
     const camp = this.shore.camps.find((c) => c.site.island === L.island && !c.routed);
-    const sub = hunted && !this.lastFoe ? 'A hunter is on your tail: no time to row ashore' : chased ? 'Shake off your pursuers first' : camp ? 'Cutthroats are camped on this isle: bring blades' : 'The captain and four hands row in';
+    const sub = beast ? 'Not with the Kraken in these waters' : hunted && !this.lastFoe ? 'A hunter is on your tail: no time to row ashore' : chased ? 'Shake off your pursuers first' : camp ? 'Cutthroats are camped on this isle: bring blades' : 'The captain and four hands row in';
     this.shoreHud.setPrompt({ key: 'land', title: `Go ashore on ${L.island.name}`, sub, ok: !chased });
     if (!chased && this.input.state.helm) this.goAshore();
   }
@@ -1194,7 +1218,7 @@ export class Game {
   private goAshore() {
     const p = this.player;
     const L = this.landing;
-    if (!p || !L || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.shore.active || this.wreck.t >= 0) return;
+    if (!p || !L || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.kraken.active || this.shore.active || this.wreck.t >= 0) return;
     this.setChart(false);
     this.setView(false);
     this.input.releaseLook();
@@ -1356,7 +1380,7 @@ export class Game {
   /** Comes alongside: the ship ties up, the porters wake and the market opens. */
   private dock(port: TradePort) {
     const p = this.player;
-    if (!p || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe) return;
+    if (!p || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.kraken.fighting) return;
     this.wanted.hideMark();
     this.setChart(false);
     this.setView(false);
@@ -1831,6 +1855,7 @@ export class Game {
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
     this.spawnTimer = 4;
     this.resetHeat();
+    if (KRAKEN_TEST) this.atmos.setWeather('storm');
     this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
@@ -1854,6 +1879,14 @@ export class Game {
     this.loot.clear();
     this.debris.clear();
     this.crew.clear();
+    this.kraken.reset();
+    this.krHud.clear();
+    this.audio.krakenMusic(false);
+    this.atmos.hold = false;
+    this.krakenStorm = 'none';
+    this.krakenCool = 0;
+    this.krakenSlowT = 0;
+    this.gunnery.nMarks = 0;
     this.player = null;
     this.preview = null;
   }
@@ -2075,6 +2108,12 @@ export class Game {
   private battleFoe(): THREE.Vector3 | null {
     const p = this.player;
     if (!p || !p.alive) return null;
+    // nothing else matters while the Kraken is up
+    const kf = this.kraken.focus(this.krFocus);
+    if (kf && Math.hypot(kf.x - p.pos.x, kf.z - p.pos.z) < 220) {
+      this.lastFoe = null;
+      return kf;
+    }
     const t = this.world.time;
     let best: Ship | null = null;
     let bd = Infinity;
@@ -2377,7 +2416,8 @@ export class Game {
     // who did it: a broadside, a ram, or the reef
     const foe = p.lastAttacker && p.lastAttacker !== p && w.time - p.lastHit < 20 ? p.lastAttacker : null;
     const aground = this.terrain.heightAt(p.pos.x, p.pos.z) > -p.cls.draft * 1.6;
-    const cause: WreckReport['cause'] = how === 'shot' ? (foe ? 'shot' : 'aground') : aground || !foe ? 'aground' : 'rammed';
+    const beast = this.kraken.active && w.time - this.krakenHitT < 20;
+    const cause: WreckReport['cause'] = beast ? 'kraken' : how === 'shot' ? (foe ? 'shot' : 'aground') : aground || !foe ? 'aground' : 'rammed';
     let near: { name: string; d: number } | null = null;
     for (const isl of this.terrain.islands) {
       const d = Math.hypot(isl.x - p.pos.x, isl.z - p.pos.z) - isl.r;
@@ -2398,9 +2438,9 @@ export class Game {
       best: this.log.best,
       miles: this.log.metres / 1852,
       cause,
-      killer: cause === 'aground' ? undefined : foe?.name,
-      killerCls: cause === 'aground' ? undefined : foe?.cls.id,
-      hunter: cause !== 'aground' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
+      killer: cause === 'aground' || cause === 'kraken' ? undefined : foe?.name,
+      killerCls: cause === 'aground' || cause === 'kraken' ? undefined : foe?.cls.id,
+      hunter: cause !== 'aground' && cause !== 'kraken' && foe?.hunter ? CAPTAIN.get(foe.hunter)?.epithet : undefined,
       bounties: this.heat.claimed,
       where: near ? (near.d < 60 ? `on the shoals of ${near.name}` : `off ${near.name}`) : null,
       events: this.log.events.slice(),
@@ -2415,6 +2455,9 @@ export class Game {
       az: Math.atan2(dx, dz), elev: Math.asin(clamp(cam.y / Math.max(dist, 1), 0.1, 0.99)), dist: clamp(dist, 40, 320),
     };
     this.timeScale = 0.22;
+    this.krakenSlowT = 0;
+    this.krHud.show(false);
+    this.audio.krakenMusic(false);
     this.rig.shake(0.95);
     this.pipeline.flash(0.5);
     this.audio.founder();
@@ -2625,6 +2668,207 @@ export class Game {
         this.startVoyage();
       }
     });
+  }
+
+
+  // ------------------------------------------------------------------ the Kraken
+
+  private wireKraken() {
+    const k = this.kraken;
+    this.krHud = new KrakenHud(document.getElementById('hud')!);
+    this.projectiles.strike = (b) => k.active && k.strike(b, this.world);
+    this.projectiles.onBlast = (at, r, dmg, owner) => {
+      if (k.active) k.blast(at, r, dmg, owner, this.world);
+    };
+    k.onHurt = (dmg, at, crit, part, mine) => {
+      if (!mine) return;
+      if (this.state === 'playing') {
+        this.log.hits++;
+        this.log.dealt += dmg;
+      }
+      const [x, y, ok] = this.screenOf(at);
+      if (ok) this.ui.floater(part === 'eye' ? `${Math.round(dmg)}!` : `${Math.round(dmg)}`, x, y, part === 'eye' || crit ? 'epic' : '');
+    };
+    k.onPlayerHit = (dmg, at, kind) => {
+      const p = this.player;
+      if (!p || !p.alive || this.state !== 'playing') return;
+      const dealt = p.damage(dmg, null, this.world, at);
+      this.krakenHitT = this.world.time;
+      const [x, y, ok] = this.screenOf(at);
+      if (ok && dealt >= 1) this.ui.floater(`-${Math.round(dealt)}`, x, y, 'bad');
+      if (kind === 'slam') {
+        this.rig.shake(0.75);
+        this.pipeline.flash(0.14);
+      } else this.rig.shake(0.14);
+      if (!p.alive) this.onPlayerSunk('hull');
+    };
+    k.onRise = () => {
+      this.krHud.show(true);
+      this.krHud.rise();
+      this.audio.krakenMusic(true, 0);
+      // the moment it breaks the surface plays out slowly
+      this.krakenSlowT = 1.8;
+      this.pipeline.flash(0.2);
+    };
+    k.onStage = (n) => {
+      this.audio.krakenMusic(true, n);
+      this.ui.toast('The Kraken', n === 1 ? 'It thrashes in fury' : 'The sea begins to turn', 3.4);
+      this.rig.shake(0.5);
+    };
+    k.onHead = (up) => {
+      if (up) this.ui.toast('Its head breaks the surface', 'Strike the eye!', 2.6);
+    };
+    k.onGrab = (on, freed) => {
+      if (on) {
+        this.rig.shake(0.6);
+        this.pipeline.flash(0.1);
+      } else if (freed && this.player?.alive) this.ui.toast('Torn free', 'The arm lets her go', 2.4);
+    };
+    k.onArmBeaten = (at) => {
+      const [x, y, ok] = this.screenOf(at);
+      if (ok) this.ui.floater('Arm severed!', x, y - 26, 'rare');
+      this.rig.shake(0.3);
+    };
+    k.onDefeated = (at) => this.slainKraken(at);
+    k.onGone = (slain) => {
+      this.krHud.show(false);
+      this.audio.krakenMusic(false);
+      this.atmos.hold = false;
+      // a slain beast leaves the seas quiet for longer
+      this.krakenCool = slain ? 900 : 480;
+      for (const ai of this.ais.values()) ai.fear = null;
+      if (!slain && this.player?.alive && this.state === 'playing') this.ui.toast('The Kraken', 'It sinks back into the deep', 3.6);
+    };
+  }
+
+  /** Summons it on the player now (the omen first). Also handy from the console with `?debug`. */
+  summonKraken() {
+    const p = this.player;
+    if (!p || !p.alive || this.state !== 'playing' || this.kraken.active) return false;
+    this.krakenStorm = 'rolled';
+    this.kraken.summon(p, 9);
+    this.audio.krakenOmen(9);
+    this.ui.toast('The sea grows dark', 'Something vast stirs beneath the hull', 4.4);
+    return true;
+  }
+
+  private updateKraken(dt: number, realDt: number) {
+    const k = this.kraken;
+    const w = this.world;
+    const p = this.player;
+    const playing = this.state === 'playing' && !!p && p.alive;
+    if (dt > 0) this.krakenCool -= dt;
+    if (!k.active) {
+      this.gunnery.nMarks = 0;
+      if (playing && dt > 0 && !this.shore.active) this.watchForKraken(dt, p!);
+      return;
+    }
+    k.update(dt, w, playing ? p : null);
+    // the guns lay on its arms and eye like on any ship
+    this.gunnery.nMarks = k.marks(this.gunnery.marks);
+    // every pirate in these waters runs for it
+    const dread = k.phase === 'omen' || k.phase === 'fight' ? k.body : null;
+    for (const ai of this.ais.values()) ai.fear = dread;
+    // the storm won't blow over while it fights
+    this.atmos.hold = k.fighting;
+    if (this.krakenSlowT > 0 && this.wreck.t < 0) {
+      this.krakenSlowT = Math.max(0, this.krakenSlowT - realDt);
+      this.timeScale = lerp(1, 0.42, smoothstep(0, 0.5, this.krakenSlowT));
+    }
+    if (!k.fighting || !playing || this.photo.active) {
+      this.krHud.setGrab(null);
+      this.krHud.warnings(this.krWarnPx, 0);
+      return;
+    }
+    this.krHud.setHp(k.hp / k.maxHp, k.stage);
+    const grip = k.grip;
+    this.krHud.setGrab(grip);
+    this.krHud.setHint(
+      grip !== null ? 'Break its grip' : k.headUp ? 'Strike the eye!' : k.stage === 2 ? 'Fight the maelstrom · sever its arms' : 'Sever its arms',
+      grip !== null || k.headUp,
+    );
+    const n = k.warnings(this.krWarn);
+    let m = 0;
+    for (let i = 0; i < n && m < this.krWarnPx.length; i++) {
+      const [x, y, ok] = this.screenOf(this.krWarn[i]);
+      if (!ok) continue;
+      this.krWarnPx[m].x = x;
+      this.krWarnPx[m].y = y;
+      m++;
+    }
+    this.krHud.warnings(this.krWarnPx, m);
+  }
+
+  /** Each storm gets one roll of the dice; if it comes, it waits for deep, lonely water. */
+  private watchForKraken(dt: number, p: Ship) {
+    if (KRAKEN_TEST && this.krakenCool <= 0 && this.voyageTime > 7) {
+      this.summonKraken();
+      this.krakenCool = 60;
+      return;
+    }
+    const a = this.atmos;
+    if (a.kind !== 'storm') {
+      this.krakenStorm = 'none';
+      return;
+    }
+    if (this.krakenStorm === 'none' && a.storm > 0.55) {
+      this.krakenStorm = this.krakenCool <= 0 && this.voyageTime > 150 && Math.random() < 0.5 ? 'coming' : 'rolled';
+      this.krakenWait = 8 + Math.random() * 40;
+    }
+    if (this.krakenStorm !== 'coming') return;
+    this.krakenWait -= dt;
+    if (this.krakenWait <= 0 && this.krakenWaters(p)) this.summonKraken();
+  }
+
+  /** Deep water all round, and well clear of any harbour. */
+  private krakenWaters(p: Ship) {
+    const x = p.pos.x, z = p.pos.z;
+    if (Math.hypot(x - this.spawnPoint.x, z - this.spawnPoint.z) < 600) return false;
+    const near = this.tradePorts.nearest(x, z);
+    if (near && near.d < 520) return false;
+    const t = this.terrain;
+    if (t.heightAt(x, z) > -14) return false;
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2;
+      if (t.heightAt(x + Math.sin(ang) * 70, z + Math.cos(ang) * 70) > -12) return false;
+    }
+    return true;
+  }
+
+  /** It's dead: the bounty, the trophies and its hoard rising round the wreckage. */
+  private slainKraken(at: THREE.Vector3) {
+    const p = this.player;
+    this.krHud.show(false);
+    this.audio.krakenMusic(false);
+    if (!p || !p.alive || this.state !== 'playing') return;
+    const x = at.x, z = at.z;
+    // a legendary chest with the beak, epics with its ink, and a ring of rares
+    this.loot.float(x, z, ['krakenBeak', 'krakenPearl', rollGood(4)], 4);
+    this.loot.float(x + 7, z - 5, ['krakenInk', rollGood(3), rollGood(2)], 3);
+    this.loot.float(x - 6, z + 6, [rollGood(3), rollGood(3), rollGood(2)], 3);
+    for (let i = 0; i < 5; i++) {
+      const ang = (i / 5) * Math.PI * 2 + Math.random() * 0.5;
+      this.loot.float(x + Math.sin(ang) * 15, z + Math.cos(ang) * 15, rollContents(2), 2);
+    }
+    const bounty = 1500;
+    p.gold += bounty;
+    p.kills++;
+    this.vaultStore.earn(bounty);
+    const skin = this.vaultStore.award('skin:kraken');
+    p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.35);
+    this.stockAmmo({ shell: 3, fire: 3, chain: 3, grape: 3 }, p.pos.clone().setY(p.root.position.y + 6));
+    this.note('kill', 'Slew the Kraken', `+${bounty} gold · its hoard rose from the deep`);
+    const rewards: KrakenReward[] = [
+      { art: '', label: `+${bounty.toLocaleString()} gold bounty`, rarity: -1 },
+      { art: lootIcon('krakenBeak'), label: LOOT.krakenBeak.name, rarity: 4 },
+      { art: lootIcon('krakenInk'), label: LOOT.krakenInk.name, rarity: 3 },
+    ];
+    if (skin) rewards.push({ art: '<span class="kr-skin"></span>', label: skin.fresh ? 'Kraken Ink skin unlocked' : `Kraken Ink skin · +${skin.refund} gold`, rarity: 3 });
+    this.krHud.victory(rewards);
+    this.audio.treasure(4);
+    this.audio.coin();
+    this.world.particles.treasure(new THREE.Vector3(x, this.world.waterHeight(x, z), z), RARITY[4].glow, 4);
+    this.rig.shake(0.4);
   }
 
   // ------------------------------------------------------------------ player
@@ -2846,6 +3090,9 @@ export class Game {
     P.end();
     P.begin('Cannonballs', 'ships');
     this.projectiles.update(dt, w, this.ships);
+    P.end();
+    P.begin('Kraken', 'ships');
+    this.updateKraken(dt, realDt);
     P.end();
     P.begin('Debris & flotsam', 'fx');
     this.pushers.length = 0;
@@ -3232,6 +3479,11 @@ export class Game {
       const ai = this.ais.get(s);
       if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
     }
+    // no pirate sails into the Kraken's water
+    if (this.kraken.active) {
+      this.spawnTimer = Math.max(this.spawnTimer, 18);
+      return;
+    }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive && !s.hunter).length;
     const want = Math.min(4, 2 + Math.floor(p.kills / 4));
     this.spawnTimer -= dt;
@@ -3332,6 +3584,7 @@ export class Game {
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.kraken.view.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     P.end();
     // the low puffs (seen only from high up) and the shadows they drift over the sea
     P.begin('Low clouds', 'fx', true);

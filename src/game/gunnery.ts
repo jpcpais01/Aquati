@@ -23,6 +23,8 @@ export interface Broadside {
   progress: number;
   /** The foe these guns are laid on, if one sits inside the fan. */
   target: Ship | null;
+  /** Or a mark on the sea that isn't a ship (an arm of the Kraken, its head). */
+  mark: GunMark | null;
   /** Where the balls will fall (led), valid while `aimDist` >= 0. */
   impact: THREE.Vector3;
   aimDist: number;
@@ -31,6 +33,13 @@ export interface Broadside {
 }
 
 const GRAVITY = 14;
+
+/** A target that isn't a ship: a point on the sea and its size. */
+export interface GunMark {
+  x: number;
+  z: number;
+  r: number;
+}
 
 const DEPTH_GLSL = /* glsl */ `
   uniform sampler2D uSceneDepth; uniform vec2 uResolution; uniform vec2 uCamNearFar;
@@ -57,6 +66,10 @@ export class Gunnery {
   focus: Ship | null = null;
   /** Called when a side finishes reloading during a fight. */
   onReady: (side: Side) => void = () => {};
+  /** Marks besides ships this frame (the first `nMarks`), filled in by the game. */
+  readonly marks: GunMark[] = [];
+  nMarks = 0;
+  private focusMark: GunMark | null = null;
 
   private glow: THREE.Mesh;
   private glowAlpha = 0;
@@ -70,7 +83,7 @@ export class Gunnery {
   private pointerSide: Side | null = null;
 
   constructor() {
-    const mk = (side: Side): Broadside => ({ side, ready: true, progress: 1, target: null, impact: new THREE.Vector3(), aimDist: -1, hover: false });
+    const mk = (side: Side): Broadside => ({ side, ready: true, progress: 1, target: null, mark: null, impact: new THREE.Vector3(), aimDist: -1, hover: false });
     this.sides = { port: mk('port'), starboard: mk('starboard') };
     this.glow = this.buildGlow();
     this.group.add(this.glow);
@@ -190,7 +203,11 @@ export class Gunnery {
       this.setGlow(null, dt, null);
       this.combat = false;
       this.focus = null;
-      for (const s of SIDES) this.sides[s].target = null;
+      this.focusMark = null;
+      for (const s of SIDES) {
+        this.sides[s].target = null;
+        this.sides[s].mark = null;
+      }
       return;
     }
     const R = this.range(p);
@@ -208,9 +225,9 @@ export class Gunnery {
     // lay each side on the best foe inside its fan
     let focus: Ship | null = null;
     let focusD = R * 1.3;
-    const best: Record<Side, { s: Ship | null; score: number; d: number }> = {
-      port: { s: null, score: Infinity, d: 0 },
-      starboard: { s: null, score: Infinity, d: 0 },
+    const best: Record<Side, { s: Ship | null; m: GunMark | null; score: number; d: number }> = {
+      port: { s: null, m: null, score: Infinity, d: 0 },
+      starboard: { s: null, m: null, score: Infinity, d: 0 },
     };
     for (const s of ships) {
       if (s === p || !s.alive || s.removed || s.team === p.team) continue;
@@ -226,10 +243,28 @@ export class Gunnery {
       if (Math.abs(b.u) > 1.08 || d > R) continue;
       const toPtr = this.pointerSide === b.side && this.pointer ? Math.hypot(this.pointer.x - s.pos.x, this.pointer.z - s.pos.z) : -1;
       const score = toPtr >= 0 ? toPtr : d + Math.abs(b.u) * 60;
-      if (score < best[b.side].score) best[b.side] = { s, score, d };
+      if (score < best[b.side].score) best[b.side] = { s, m: null, score, d };
+    }
+    // and the marks that aren't ships: they stand still, so no leading
+    let fm: GunMark | null = null;
+    for (let i = 0; i < this.nMarks; i++) {
+      const m = this.marks[i];
+      const raw = Math.hypot(m.x - p.pos.x, m.z - p.pos.z);
+      if (raw > R * 1.4) continue;
+      if (raw < focusD) {
+        focusD = raw;
+        focus = null;
+        fm = m;
+      }
+      const b = this.bearing(p, m.x, m.z);
+      if (Math.abs(b.u) > 1.08 || raw > R || raw < r0 + 3) continue;
+      const toPtr = this.pointerSide === b.side && this.pointer ? Math.hypot(this.pointer.x - m.x, this.pointer.z - m.z) : -1;
+      const score = toPtr >= 0 ? toPtr : raw + Math.abs(b.u) * 60;
+      if (score < best[b.side].score) best[b.side] = { s: null, m, score, d: raw };
     }
     this.focus = focus;
-    this.combat = !!focus;
+    this.focusMark = fm;
+    this.combat = !!focus || !!fm;
 
     for (const side of SIDES) {
       const st = this.sides[side];
@@ -237,11 +272,15 @@ export class Gunnery {
       st.ready = rl <= 0;
       st.progress = clamp(1 - rl / p.reloadFull[side], 0, 1);
       st.target = best[side].s;
+      st.mark = best[side].m;
       st.hover = this.pointerSide === side;
       st.aimDist = -1;
       if (st.target) {
         this.predict(p, st.target, st.impact);
         st.aimDist = Math.hypot(st.impact.x - p.pos.x, st.impact.z - p.pos.z);
+      } else if (st.mark) {
+        st.impact.set(st.mark.x, 0, st.mark.z);
+        st.aimDist = best[side].d;
       } else if (st.hover && this.pointer) {
         this.clampPoint(p, side, this.pointer, R, r0, st.impact);
         st.aimDist = Math.hypot(st.impact.x - p.pos.x, st.impact.z - p.pos.z);
@@ -268,15 +307,27 @@ export class Gunnery {
     // the glow only gathers on a foe the loaded guns are laid on: the moment to fire
     const auto = this.autoSide(p);
     const st = auto ? this.sides[auto] : null;
-    this.setGlow(st && st.ready ? st.target : null, dt, world);
+    this.setGlow(st && st.ready ? st.target : null, dt, world, st && st.ready ? st.mark : null);
   }
 
-  private setGlow(mark: Ship | null, dt: number, world: World | null) {
-    this.glowAlpha = mark ? Math.min(1, this.glowAlpha + dt * 2.5) : Math.max(0, this.glowAlpha - dt * 2.5);
+  private setGlow(mark: Ship | null, dt: number, world: World | null, gm: GunMark | null = null) {
+    const on = mark || gm;
+    this.glowAlpha = on ? Math.min(1, this.glowAlpha + dt * 2.5) : Math.max(0, this.glowAlpha - dt * 2.5);
     const u = (this.glow.material as THREE.ShaderMaterial).uniforms;
     u.uAlpha.value = this.glowAlpha * this.glowAlpha * (3 - 2 * this.glowAlpha);
     this.glow.visible = this.glowAlpha > 0.01;
-    if (!mark || !world) return;
+    if (!world) return;
+    if (gm) {
+      // a round pool of light where the arm meets the sea
+      const size = gm.r * 4;
+      u.uSize.value = size;
+      u.uHalf.value.set(gm.r + 0.4, gm.r + 0.4);
+      this.glow.scale.setScalar(size);
+      this.glow.rotation.y = 0;
+      this.glow.position.set(gm.x, world.waterHeight(gm.x, gm.z) + 0.2, gm.z);
+      return;
+    }
+    if (!mark) return;
     const size = mark.cls.length * 0.95;
     u.uSize.value = size;
     u.uHalf.value.set(mark.cls.beam * 0.5 + 0.4, mark.cls.length * 0.5 + 0.4);
@@ -288,15 +339,18 @@ export class Gunnery {
   /** The broadside that the one-button fire (Space, the touch Fire button) should loose. */
   autoSide(p: Ship): Side | null {
     const { port, starboard } = this.sides;
-    const pd = port.target ? port.aimDist : Infinity;
-    const sd = starboard.target ? starboard.aimDist : Infinity;
+    const pt = !!(port.target || port.mark);
+    const stt = !!(starboard.target || starboard.mark);
+    const pd = pt ? port.aimDist : Infinity;
+    const sd = stt ? starboard.aimDist : Infinity;
     // a loaded side with a foe in it beats everything
-    if (port.target && port.ready && (!starboard.target || !starboard.ready || pd <= sd)) return 'port';
-    if (starboard.target && starboard.ready) return 'starboard';
+    if (pt && port.ready && (!stt || !starboard.ready || pd <= sd)) return 'port';
+    if (stt && starboard.ready) return 'starboard';
     // a foe in a fan that's still loading: that side (it'll say it's reloading)
-    if (port.target || starboard.target) return pd <= sd ? 'port' : 'starboard';
+    if (pt || stt) return pd <= sd ? 'port' : 'starboard';
     // nobody in the fans: the side facing the nearest foe
     if (this.focus) return this.bearing(p, this.focus.pos.x, this.focus.pos.z).side;
+    if (this.focusMark) return this.bearing(p, this.focusMark.x, this.focusMark.z).side;
     return null;
   }
 
@@ -308,7 +362,7 @@ export class Gunnery {
   /** Target or point to lay a broadside on. */
   aim(p: Ship, side: Side): { target: Ship | null; point: THREE.Vector3 } {
     const st = this.sides[side];
-    if (st.target) return { target: st.target, point: st.impact.clone() };
+    if (st.target || st.mark) return { target: st.target, point: st.impact.clone() };
     if (st.hover && st.aimDist > 0) return { target: null, point: st.impact.clone() };
     // no mark: square off the beam at a good fighting range
     const R = this.range(p);

@@ -125,6 +125,8 @@ export class Ship {
   /** The named captain aboard (see game/bounty.ts), if she is a hunter. */
   hunter: string | null = null;
   anchored = false;
+  /** Held fast (0 free .. 1): the Kraken's coils round her hull stop her in the water. */
+  held = 0;
   /** Sideways drift (x, z m/s) from being shoved by another hull; bleeds off against the water. */
   readonly drift = new THREE.Vector2();
   /** World time each gun last fired, by muzzle index (crews time their drill to it). */
@@ -423,11 +425,11 @@ export class Ship {
       const hpF = (0.72 + 0.28 * (this.hp / this.maxHp)) * this.dmg.speedFactor * tornK;
       // a ghost sails on a wind of her own, dead into the eye of the real one if she likes
       const wf = this.ghost ? 1.02 : windFactor(relDeg) * (0.75 + 0.25 * w.strength) * (1 + gust * 0.08);
-      const target = c.maxSpeed * this.boost.speed * this.sailLevel * wf * hpF;
-      const rate = target > this.speed ? c.accel : c.accel * 1.4;
+      const target = c.maxSpeed * this.boost.speed * this.sailLevel * wf * hpF * (1 - this.held * 0.92);
+      const rate = target > this.speed ? c.accel : c.accel * (1.4 + this.held * 3);
       this.speed += (target - this.speed) * damp(rate, dt);
       const steer = clamp(0.28 + 0.9 * (this.speed / c.maxSpeed), 0.28, 1.1);
-      const targetAng = this.rudder * c.turnRate * steer;
+      const targetAng = this.rudder * c.turnRate * steer * (1 - this.held * 0.8);
       this.angVel += (targetAng - this.angVel) * damp(2.6 / Math.sqrt(c.mass), dt);
       this.speed *= 1 - Math.abs(this.angVel) * 0.08 * dt;
     } else {

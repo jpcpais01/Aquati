@@ -397,6 +397,8 @@ export class Ocean {
         uniform vec4 uWorldRect;
         uniform vec3 uFogColor;
         uniform vec2 uFogRange;
+        uniform vec4 uKraken;
+        uniform float uKrakenInk;
         ${GLSL_AERIAL}
         ${GLSL_SURF}
         varying vec3 vWorld;
@@ -648,6 +650,25 @@ export class Ocean {
           // under a grey sky the sea loses its blue and turns pewter
           body = mix(body, vec3(dot(body, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), uCloudCover * uCloudCover * 0.4);
 
+          // ---- the Kraken's maelstrom: the sea over it goes dark and begins to turn
+          float krSpiral = 0.0;
+          if (uKraken.w > 0.001) {
+            vec2 kq = p - uKraken.xy;
+            float kd = length(kq);
+            float kr = kd / uKraken.z;
+            float krIn = (1.0 - smoothstep(0.25, 1.25, kr)) * uKraken.w;
+            if (krIn > 0.001) {
+              float ka = atan(kq.y, kq.x);
+              // arms of a log spiral winding in, turning faster toward the eye of it
+              float arm = sin(ka * 3.0 + log(kd + 2.0) * 9.0 - t * (1.2 + 2.0 * uKraken.w) - 4.0 / (kr + 0.3));
+              vec4 kn = texture(uNoiseTex, p * 0.045 + vec2(t * 0.02, -t * 0.015));
+              krSpiral = smoothstep(0.35, 0.95, arm + (kn.g - 0.5) * 0.9) * krIn * smoothstep(0.05, 0.3, kr);
+              body *= 1.0 - krIn * 0.6;
+              // its ink: a violet-black stain spreading over the water
+              body = mix(body, vec3(0.025, 0.004, 0.04) * light, clamp(uKrakenInk * krIn * 1.4, 0.0, 0.8));
+            }
+          }
+
           // ---- reflection
           vec3 R = reflect(-V, N);
           R.y = abs(R.y);
@@ -744,13 +765,14 @@ export class Ocean {
           float capBreak = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
           foam += crestFoam * mix(capBreak, bubbles, 0.3);
           foam += spume * (0.5 + 0.5 * bubbles) + rainSplash * 0.7;
+          foam += foamCut(fv, clamp(krSpiral, 0.0, 0.95), fp) * 0.9;
           foam = clamp(foam, 0.0, 1.0);
           vec3 foamCol = vec3(0.96, 0.98, 1.0) * (uSunColor * (0.25 + 0.75 * ndl) * cloud * 0.42 + uSkyZenith * 0.55);
           col = mix(col, foamCol, foam * 0.9);
 
           // ---- bioluminescence: on dark nights churned water glows blue-green
           if (uNight > 0.05) {
-            float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5
+            float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5 + krSpiral * 0.45
               + (crestFoam * 0.18 * capBreak + spume * 0.08) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;

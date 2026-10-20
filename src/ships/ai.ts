@@ -42,6 +42,9 @@ export class PirateAI {
    */
   readonly hunter: boolean;
   private ammoMix: [AmmoId, number][];
+  /** Something in the sea even pirates run from (the Kraken): they flee it while it's near. */
+  fear: { x: number; z: number } | null = null;
+  private scared = false;
 
   constructor(readonly ship: Ship, difficulty: number, hunt?: { ammo: [AmmoId, number][] }) {
     this.hunter = !!hunt;
@@ -117,6 +120,16 @@ export class PirateAI {
       else if (this.mode === 'flee' && (!target || dist > 300)) this.mode = 'patrol';
 
       if (pk && this.mode === 'engage' && target) pk.alertT = world.time;
+      const dread = this.fear;
+      this.scared = !!dread && Math.hypot(dread.x - s.pos.x, dread.z - s.pos.z) < 520;
+      if (dread && this.scared) {
+        // every hand to the braces: away from it, guns forgotten
+        this.mode = 'flee';
+        this.desired = Math.atan2(s.pos.x - dread.x, s.pos.z - dread.z) + Math.sin(world.time * 0.3 + s.id) * 0.25;
+        s.sailTarget = 1;
+        s.rudder = clamp(angleDelta(s.heading, this.avoid(world, this.desired)) * 2.2, -1, 1);
+        return;
+      }
 
       const lead = pk && pk.leader && pk.leader !== this ? pk.leader.ship : null;
       if (this.mode === 'patrol' && lead) {
@@ -171,7 +184,7 @@ export class PirateAI {
     s.rudder = clamp(angleDelta(s.heading, steerTo) * 2.2, -1, 1);
 
     // gunnery
-    if (target && this.mode !== 'patrol' && dist < range * 1.05) {
+    if (target && this.mode !== 'patrol' && !this.scared && dist < range * 1.05) {
       const rel = angleDelta(s.heading, Math.atan2(dx, dz));
       const arc = 0.32 + this.aggression * 0.1;
       this.aimDelay -= dt;
