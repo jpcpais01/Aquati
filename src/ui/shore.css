@@ -1,0 +1,237 @@
+/* ------------------------------------------------------------------ ashore
+   The landing party's HUD: their health where the hull was, a pill to row
+   back or open a chest, bars over the cutthroats, and the touch cutlass. */
+
+.party-panel,
+.shore-hint,
+.shore-pad {
+  display: none;
+}
+
+#hud.ashore .ship-panel,
+#hud.ashore .bottom,
+#hud.ashore .fire-pad,
+#hud.ashore #btn-view,
+#hud.ashore .reticle,
+#hud.ashore .spyglass,
+#hud.ashore .fpv-prompt,
+#hud.ashore .fpv-hint,
+#hud.ashore #dock-prompt {
+  display: none !important;
+}
+
+#hud.ashore .party-panel {
+  display: block;
+}
+
+.party-panel {
+  padding: calc(9px * var(--k)) calc(12px * var(--k)) calc(10px * var(--k));
+  border-radius: calc(18px * var(--k));
+  animation: prompt-in 0.35s var(--spring);
+}
+
+.pp-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: calc(6px * var(--k));
+}
+
+.pp-head small {
+  font: 700 max(8px, calc(9px * var(--k))) var(--sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.pp-isle {
+  font: 700 max(10px, calc(12px * var(--k))) var(--serif);
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pp-rows {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4px * var(--k));
+}
+
+.pm {
+  display: grid;
+  grid-template-columns: calc(68px * var(--k)) 1fr calc(44px * var(--k));
+  align-items: center;
+  gap: calc(8px * var(--k));
+  font: 600 max(9.5px, calc(11px * var(--k))) var(--sans);
+  color: var(--ink-2);
+}
+
+.pm-n {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pm-s {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.pm-bar {
+  position: relative;
+  height: max(4px, calc(5px * var(--k)));
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.36);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.pm-bar i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left;
+  background: linear-gradient(90deg, #22b8ad, #8ff2d7);
+  transition: transform 0.2s ease;
+}
+
+.pm.cap {
+  margin-bottom: calc(3px * var(--k));
+  font: 700 max(11px, calc(13.5px * var(--k))) var(--serif);
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+
+.pm.cap .pm-bar {
+  height: max(6px, calc(8px * var(--k)));
+}
+
+.pm.cap .pm-bar i {
+  background: linear-gradient(90deg, #e2a63a, #ffe39a);
+  box-shadow: 0 0 10px rgba(244, 199, 101, 0.5);
+}
+
+.pm.cap .pm-s {
+  font: 800 max(10.5px, calc(13px * var(--k))) var(--sans);
+  color: var(--ink);
+}
+
+.pm.low .pm-bar i {
+  background: linear-gradient(90deg, #d8402f, #ff9d6a);
+  animation: lowHull 1s ease-in-out infinite;
+}
+
+.pm.ko {
+  opacity: 0.55;
+}
+
+.pm.ko .pm-s {
+  color: #ffb3a6;
+  font-style: italic;
+}
+
+.pm.hit {
+  animation: pm-hit 0.4s ease;
+}
+
+@keyframes pm-hit {
+  25% {
+    color: #ffb3a6;
+    transform: translateX(-2px);
+  }
+  55% {
+    transform: translateX(2px);
+  }
+}
+
+/* the pill: row back, open a chest, or "not with them on your heels" */
+.shore-prompt .dp-ico {
+  display: flex;
+  width: 22px;
+  height: 22px;
+  color: var(--gold);
+}
+
+.shore-prompt .dp-ico .ico {
+  width: 100%;
+  height: 100%;
+}
+
+.shore-prompt:not(.ok) .dp-ico {
+  color: #ff9d8a;
+}
+
+#hud.ashore .shore-prompt {
+  bottom: calc(var(--g, 16px) + var(--safe-b) + 46px * var(--k));
+}
+
+.is-touch #hud.ashore .shore-prompt {
+  bottom: calc(var(--g, 16px) + var(--safe-b) + 150px * var(--kt, 1));
+}
+
+/* keys, once, along the bottom */
+#hud.ashore .shore-hint {
+  display: block;
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--g) + var(--safe-b));
+  transform: translateX(-50%);
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: var(--glass-3);
+  border: 1px solid var(--stroke);
+  font: 600 12px var(--sans);
+  color: var(--ink-2);
+  white-space: nowrap;
+  transition: opacity 1.2s ease;
+}
+
+#hud.ashore .shore-hint.gone {
+  opacity: 0;
+}
+
+.is-touch #hud.ashore .shore-hint {
+  display: none;
+}
+
+/* foes' bars: a touch narrower than a ship's, the camp's captain in gold */
+.ebar.foe-bar {
+  width: 46px;
+  height: 5px;
+  margin-left: -23px;
+}
+
+.ebar.foe-bar.boss {
+  width: 64px;
+  margin-left: -32px;
+}
+
+.ebar.foe-bar.boss span {
+  display: block;
+  color: #ffe1a0;
+  font-size: 9px;
+}
+
+.ebar.foe-bar.boss i {
+  background: linear-gradient(90deg, #c2701d, #ffd27a);
+}
+
+/* touch: the cutlass, with the pistol beside it */
+.is-touch #hud.ashore .shore-pad {
+  position: absolute;
+  right: calc(var(--g) + var(--safe-r));
+  bottom: calc(var(--g) + var(--safe-b));
+  display: flex;
+  align-items: flex-end;
+  gap: calc(12px * var(--kt));
+  pointer-events: auto;
+}
+
+.shore-pad .fbtn.side {
+  margin-bottom: calc(30px * var(--kt));
+}

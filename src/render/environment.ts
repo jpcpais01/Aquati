@@ -59,6 +59,8 @@ export const globalUniforms = {
   uWet: { value: 0 }, // surface wetness, lags the rain
   uFlash: { value: 0 }, // lightning
   uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
+  // ashore: leaves between the camera and the captain thin away (xyz the captain, w the radius; 0 off)
+  uSeeThru: { value: new THREE.Vector4() },
   // shadows of the low fair-weather puffs (see world/clouds.ts): a small
   // top-down map around the view; xy its centre, z 1 / its width (m), w strength
   uLowCloudTex: { value: BLANK as THREE.Texture },
@@ -488,6 +490,9 @@ ${GLSL_DAMAGE_VERTEX}
 varying vec3 vAqWorld;
 uniform vec3 uFogColor;
 uniform vec2 uFogRange;
+#ifdef AQ_FOLIAGE
+uniform vec4 uSeeThru;
+#endif
 uniform vec4 uUnder;
 uniform vec3 uUnderColor;
 ${GLSL_ATMOS}
@@ -521,6 +526,20 @@ varying float vSkinW;
       gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), aerialAt(length(aqView), vAqWorld.y));
     }
   }`,
+      )
+      .replace(
+        '#include <clipping_planes_fragment>',
+        `#include <clipping_planes_fragment>
+#ifdef AQ_FOLIAGE
+  if (uSeeThru.w > 0.0) {
+    // a dithered window through the canopy along the line from the eye to the captain
+    vec3 aqAB = uSeeThru.xyz - cameraPosition;
+    float aqT = clamp(dot(vAqWorld - cameraPosition, aqAB) / dot(aqAB, aqAB), 0.0, 1.0);
+    float aqD = distance(vAqWorld, cameraPosition + aqAB * aqT);
+    float aqK = (1.0 - smoothstep(uSeeThru.w * 0.45, uSeeThru.w, aqD)) * (1.0 - smoothstep(0.82, 0.96, aqT));
+    if (fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) < aqK * 0.88) discard;
+  }
+#endif`,
       )
       .replace(
         '#include <color_fragment>',

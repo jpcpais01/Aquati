@@ -19,7 +19,7 @@ type Role = 'captain' | 'helm' | 'gunner' | 'hand' | 'lookout';
 type Act =
   | 'stand' | 'helm' | 'pace' | 'glass' | 'point' | 'rail' | 'gun' | 'haul' | 'swab' | 'lean' | 'sit' | 'coil' | 'chat'
   | 'powder' | 'bucket' | 'panic' | 'salute' | 'lookout' | 'fiddle' | 'jig';
-type Mode = 'aboard' | 'air' | 'swim' | 'gone';
+type Mode = 'aboard' | 'air' | 'swim' | 'gone' | 'ashore';
 
 interface Spot {
   x: number;
@@ -123,7 +123,7 @@ const TEAM_LOOK = {
   },
 };
 
-interface Look {
+export interface Look {
   slots: RGBA[];
   hat: number;
   flags: number;
@@ -232,7 +232,7 @@ export function makeLook(team: 'player' | 'pirate', role: Role): Look {
 
 // ------------------------------------------------------------------ poses
 
-function rest(o: Float32Array) {
+export function rest(o: Float32Array) {
   o.fill(0);
   o[P.armLZ] = 0.1;
   o[P.armRZ] = 0.1;
@@ -244,7 +244,7 @@ function rest(o: Float32Array) {
   o[P.handR] = 0.3;
 }
 
-function walk(o: Float32Array, ph: number, run: number, armsBusy = false) {
+export function walk(o: Float32Array, ph: number, run: number, armsBusy = false) {
   const s = Math.sin(ph);
   const c = Math.cos(ph);
   const legA = 0.5 + 0.3 * run;
@@ -266,7 +266,7 @@ function walk(o: Float32Array, ph: number, run: number, armsBusy = false) {
   o[P.rootY] = -0.015 - 0.05 * run - (0.035 + 0.04 * run) * s * s;
 }
 
-function crouch(o: Float32Array, k: number) {
+export function crouch(o: Float32Array, k: number) {
   // keeps both feet planted: thighs forward, knees back, hips drop
   const th = 0.55 * k;
   const kn = 1.1 * k;
@@ -618,7 +618,7 @@ class ShipCrew {
 
     for (const sl of this.sailors) {
       if (sl.mode === 'aboard') this.think(sl, dt, world, onSplash);
-      else updateLoose(sl, dt, world);
+      else if (sl.mode !== 'ashore') updateLoose(sl, dt, world);
     }
     // keep folk from standing inside each other
     const n = this.sailors.length;
@@ -1350,6 +1350,44 @@ class ShipCrew {
     return c && c.mode === 'aboard' ? { x: c.x, z: c.z, yaw: c.yaw } : null;
   }
 
+  /**
+   * The captain and up to `n` hands climb down into the boat: they leave the
+   * deck (the guns they served stand idle) and are walked ashore from outside.
+   * Hands go before gunners, and the helmsman always stays aboard.
+   */
+  muster(n: number): { row: number; look: Look; girth: number; height: number; captain: boolean }[] {
+    const out: { row: number; look: Look; girth: number; height: number; captain: boolean }[] = [];
+    const pool = this.sailors.filter((o) => o.mode === 'aboard');
+    const pickRole = (r: Role) => pool.filter((o) => o.role === r);
+    const chosen = [...pickRole('captain').slice(0, 1), ...[...pickRole('hand'), ...pickRole('gunner')].slice(0, n)];
+    for (const sl of chosen) {
+      sl.mode = 'ashore';
+      sl.goal = null;
+      sl.seat = null;
+      sl.flight = null;
+      for (const o of this.sailors) {
+        if (o.partner === sl) {
+          o.partner = null;
+          o.actDur = 0;
+        }
+      }
+      sl.partner = null;
+      out.push({ row: sl.row, look: sl.look, girth: sl.girth, height: sl.height, captain: sl.role === 'captain' });
+    }
+    return out;
+  }
+
+  /** The landing party climbs back over the rail and goes about the ship's business. */
+  welcomeBack() {
+    for (const sl of this.sailors) {
+      if (sl.mode !== 'ashore') continue;
+      sl.mode = 'aboard';
+      this.place(sl);
+      sl.cheer = 0;
+      sl.flinch = 0;
+    }
+  }
+
   private captainPlan(sl: Sailor, time: number) {
     const e = this.enemy;
     const zone = sl.zone;
@@ -2023,6 +2061,16 @@ function looseMatrix(sl: Sailor, out: THREE.Matrix4) {
 
 // ------------------------------------------------------------------ system
 
+/** A sailor posed from outside the crews: world matrix (feet at the origin), pose channels and kit. */
+export interface CrewFigure {
+  row: number;
+  look: Look;
+  readonly pose: Float32Array;
+  readonly matrix: THREE.Matrix4;
+  prop: number;
+  visible: boolean;
+}
+
 export class CrewSystem {
   readonly mesh: THREE.Group;
   private readonly crews = new Map<Ship, ShipCrew>();
@@ -2088,6 +2136,33 @@ export class CrewSystem {
     return this.crews.get(ship)?.captainAt() ?? null;
   }
 
+  /** The captain and `n` hands go over the side into the boat (see ShipCrew.muster). */
+  muster(ship: Ship, n: number) {
+    return this.crews.get(ship)?.muster(n) ?? [];
+  }
+
+  /** ...and come back aboard. */
+  welcomeBack(ship: Ship) {
+    this.crews.get(ship)?.welcomeBack();
+  }
+
+  /**
+   * Figures walked by someone else in world space (the landing party ashore,
+   * island cutthroats): drawn and culled with the crews, from the same palette.
+   */
+  readonly figures = new Set<CrewFigure>();
+
+  /** A palette row for a figure of its own (released with `freeRow`); -1 when the sea is full. */
+  takeRow(look: Look): number {
+    const row = this.alloc();
+    if (row >= 0) this.writeLook(row, look);
+    return row;
+  }
+
+  freeRow(row: number) {
+    if (row >= 0) this.free.push(row);
+  }
+
   clear() {
     for (const c of this.crews.values()) for (const sl of c.sailors) this.release(sl);
     for (const sl of this.orphans) this.release(sl);
@@ -2136,12 +2211,19 @@ export class CrewSystem {
       if (far) continue;
       if (dt > 0) c.update(dt, world, ships, splash);
       for (const sl of c.sailors) {
-        if (sl.mode === 'gone') continue;
+        if (sl.mode === 'gone' || sl.mode === 'ashore') continue;
         if (c.pilot?.hidden && sl.role === 'captain' && sl.mode === 'aboard') continue;
         if (sl.mode === 'aboard') c.matrixOf(sl, m);
         else looseMatrix(sl, m);
         emit(sl, m);
       }
+    }
+    for (const f of this.figures) {
+      if (!f.visible || f.row < 0) continue;
+      const e = f.matrix.elements;
+      if (this.culling && !this.inView(e[12], e[13], e[14])) continue;
+      const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
+      view.push(f.matrix, f.pose, f.row, f.look.hat, f.prop, f.look.flags, near);
     }
     for (let i = this.orphans.length - 1; i >= 0; i--) {
       const sl = this.orphans[i];

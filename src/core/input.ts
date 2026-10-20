@@ -57,6 +57,11 @@ export class Input {
   fpv = false;
   /** In the captain's view with hands on the wheel: WASD and the stick sail the ship again. */
   helmMode = false;
+  /**
+   * Ashore: WASD, the arrows and the stick walk the captain (relative to the
+   * screen), Space or a click swings the cutlass, Q / E fire the pistol, F acts.
+   */
+  foot = false;
   private locked = false;
   private rmb = false;
   private spyToggle = false;
@@ -84,8 +89,10 @@ export class Input {
       if (e.repeat) return;
       this.keys.add(k);
       const walking = this.fpv && !this.helmMode;
-      if ((k === 'w' && !walking) || k === 'arrowup') this.state.sailDelta += 1;
-      if ((k === 's' && !walking) || k === 'arrowdown') this.state.sailDelta -= 1;
+      if (!this.foot) {
+        if ((k === 'w' && !walking) || k === 'arrowup') this.state.sailDelta += 1;
+        if ((k === 's' && !walking) || k === 'arrowdown') this.state.sailDelta -= 1;
+      }
       if (k === 'v') this.state.view = true;
       if (k === 'f') this.state.helm = true;
       if (k === 'q') this.state.firePort = true;
@@ -198,7 +205,7 @@ export class Input {
             const len = Math.hypot(dx, dy);
             const max = 60;
             const k = Math.min(1, len / max);
-            if (this.fpv) {
+            if (this.fpv || this.foot) {
               // walk (or, at the wheel, steer and trim) relative to where you look
               const live = len > 8 ? k / Math.max(len, 1e-3) : 0;
               this.joyVec = { x: dx * live, y: -dy * live, on: true };
@@ -288,6 +295,22 @@ export class Input {
     tap(spy, () => (this.spyToggle = !this.spyToggle));
   }
 
+  /** Ashore on touch: the cutlass (a tap swings, the next tap chains the combo) and the pistol. */
+  bindShoreButtons(strike: HTMLElement, pistol: HTMLElement) {
+    const bind = (el: HTMLElement, key: 'fireAuto' | 'firePort') => {
+      el.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.enabled) return;
+        this.state[key] = true;
+        navigator.vibrate?.(10);
+      });
+      el.addEventListener('contextmenu', (e) => e.preventDefault());
+    };
+    bind(strike, 'fireAuto');
+    bind(pistol, 'firePort');
+  }
+
   /** Lets go of the mouse and lowers the glass when leaving the captain's view or pausing. */
   releaseLook() {
     if (this.locked) document.exitPointerLock?.();
@@ -314,15 +337,29 @@ export class Input {
   /** Call once per frame after reading pulses. */
   poll() {
     const k = this.keys;
+    const st = this.state;
+    const j = this.joyVec;
+    if (this.foot) {
+      // ashore every key walks: up the screen is up the screen
+      st.rudder = 0;
+      st.walkX = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
+      st.walkY = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
+      st.run = k.has('shift');
+      if (j.on) {
+        st.walkX = j.x;
+        st.walkY = j.y;
+        st.run = st.run || Math.hypot(j.x, j.y) > 0.94;
+      }
+      st.spy = false;
+      return;
+    }
     const walking = this.fpv && !this.helmMode;
     const left = (k.has('a') && !walking) || k.has('arrowleft');
     const right = (k.has('d') && !walking) || k.has('arrowright');
-    this.state.rudder = (left ? 1 : 0) - (right ? 1 : 0);
-    const st = this.state;
+    st.rudder = (left ? 1 : 0) - (right ? 1 : 0);
     st.walkX = walking ? (k.has('d') ? 1 : 0) - (k.has('a') ? 1 : 0) : 0;
     st.walkY = walking ? (k.has('w') ? 1 : 0) - (k.has('s') ? 1 : 0) : 0;
     st.run = k.has('shift');
-    const j = this.joyVec;
     if (this.fpv && j.on) {
       if (walking) {
         st.walkX = j.x;
