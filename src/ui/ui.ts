@@ -887,9 +887,15 @@ export class UI {
 
   /** Writes a HUD value only when it changes; `bump` pops the chip when a count goes up. */
   /** The hold chip: room used of room aboard, bumping as plunder comes in. */
-  setHold(used: number, cap: number) {
+  setHold(used: number, cap: number, fleet: { used: number; cap: number } | null = null) {
     this.hudSet('hud-hold', `${used}/${cap}`, true);
-    $('hud-hold-chip').classList.toggle('full', used >= cap);
+    const chip = $('hud-hold-chip');
+    chip.classList.toggle('full', used >= cap);
+    chip.classList.toggle('fleet', !!fleet);
+    chip.title = fleet ? "Ship's hold · escorts' holds" : "Ship's hold";
+    if (!fleet) return;
+    this.hudSet('hud-hold-fleet', `${fleet.used}/${fleet.cap}`, true);
+    $('hud-hold-fleet').classList.toggle('full', fleet.used >= fleet.cap);
   }
 
   private hudSet(id: string, v: string, bump = false) {

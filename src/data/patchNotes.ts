@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T16:00Z',
     entries: [
       {
+        title: 'Your escorts carry plunder too',
+        notes: [
+          'Every ship in your fleet now has her own hold, sized by her class: a sloop carries 10, a brig 16 and a galleon 26. Captured prizes and hired ships alike sweep up wreckage and chests as they sail through them.',
+          'When the sea is quiet your escorts break formation to pick up floating salvage nearby, leaving whatever is right under your own bows for you, then fall back in on your quarters.',
+          'A full hold no longer means leaving plunder behind: goods your ship has no room for are sent across to an escort with space. Only when every hold in the fleet is full does anything go over the side.',
+          'Dock at a trading port and the whole fleet\'s cargo goes ashore with yours. The market lays it all out on one counter, with each hull\'s room shown and which escort carries what, and "Sell the fleet\'s cargo" sells the lot.',
+          'The hold chip on the HUD shows your escorts\' cargo in aqua beside your own, and tapping it lists each ship\'s hold. Their holds are saved and sync between devices, so if you go down your escorts carry their cargo safe to port. If one is sunk, her cargo floats up where she went down.',
+        ],
+      },
+      {
         title: 'Thirty new treasures in the deep',
         notes: [
           'The sea has twice as much to give up: thirty new kinds of plunder join the hold, each with its own hand-drawn portrait, spread across all five rarities.',
