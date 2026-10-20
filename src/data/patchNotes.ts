@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T16:00Z',
     entries: [
       {
+        title: 'Thirty new treasures in the deep',
+        notes: [
+          'The sea has twice as much to give up: thirty new kinds of plunder join the hold, each with its own hand-drawn portrait, spread across all five rarities.',
+          'Common: Ship\'s Biscuit, Crate of Oranges, Salted Cod, Green Coconuts, Coil of Hemp Rope, Jug of Cider, Cowrie Shells and a Pewter Tankard.',
+          'Uncommon: a Lacquered Tea Caddy, Cacao Pods, a Decanter of Brandy, Corália Lace, a Brass Spyglass, a Red Coral Branch and a Meerschaum Pipe carved as a grumpy old captain.',
+          'Rare: Ronvliet Reserve 1702, Silver Ingots from the Aguadouro mint, a Jade Dragon, a Cameo Brooch, a Gilded Music Box and a Marine Chronometer. Epic: the Heart of Aguadouro, a Celestial Globe, a Conquistador\'s Helm, a Jewelled Egg and a Sultan\'s Silk Carpet.',
+          'Legendary: the Trident of the Deep, a Golden Galleon in a Bottle, the Sceptre of Sainte-Corália and the Sunstone of the Lost Fleet. Every port still has its tastes, so Ronvliet pays best for that 1702 Reserve and the bankers of Aguadouro for the diamond.',
+        ],
+      },
+      {
         title: 'Chain shot goes for the sails',
         notes: [
           'With chain shot loaded, your gun crews now raise their guns and lay them on the middle of the enemy\'s canvas instead of her waterline, so the chain scythes through sails and rigging the way it should. The lock and lead allow for the flatter, quicker flight.',
