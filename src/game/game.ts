@@ -806,6 +806,10 @@ export class Game {
     ui.onPause = () => this.setPaused(true);
     ui.onMap = (on) => this.setChart(on);
     ui.onPin = (x, z, pick) => this.tapPin(x, z, pick);
+    ui.onClearPins = () => {
+      this.waypoints.clear();
+      this.audio.click();
+    };
     ui.onPhoto = () => this.openPhoto();
     this.fleetHud.onOrder = (o) => {
       this.audio.click();
