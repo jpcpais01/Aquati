@@ -111,6 +111,8 @@ export class UI {
   /** The reset card is unfolded (and asking to be confirmed). */
   private resetOpen = false;
   readonly settings: Settings = loadSettings();
+  /** In someone else's sea: the host's word on peaceful seas (null: ours to choose). */
+  private seaRule: boolean | null = null;
   private get soundOn() {
     return this.settings.sound;
   }
@@ -138,6 +140,7 @@ export class UI {
     this.stopScenes = startLoadScenes();
     this.buildShipPicker();
     this.buildRack();
+    this.buildSeaMode();
     this.syncSound();
     this.markNotes();
     $('btn-sail').addEventListener('click', () => {
@@ -347,6 +350,48 @@ export class UI {
     document.body.dataset.hud = this.settings.hud;
     document.body.classList.toggle('no-fps', !this.settings.fps);
     this.syncSound();
+    this.syncSeaMode();
+  }
+
+  // ------------------------------------------------------------- which seas
+
+  /** The harbour's Adventure / Peaceful choice, under the ship. */
+  private buildSeaMode() {
+    $('sea-mode').querySelectorAll<HTMLElement>('button[data-sea]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.onClick();
+        if (this.seaRule !== null) {
+          this.toast("Your host's rule", `${this.seaRule ? 'Peaceful seas' : 'Adventure'} for everyone in their voyage`, 2.6);
+          return;
+        }
+        this.setSetting('peaceful', b.dataset.sea === 'peaceful');
+      }),
+    );
+  }
+
+  /** Peaceful seas as they stand: the host's rule in a shared sea, else ours. */
+  get peaceful() {
+    return this.seaRule ?? this.settings.peaceful;
+  }
+
+  /** A guest keeps the host's rule (null: their own again). */
+  setSeaRule(rule: boolean | null) {
+    if (this.seaRule === rule) return;
+    this.seaRule = rule;
+    this.syncSeaMode();
+    if (!$('settings').classList.contains('hidden')) this.renderSettings();
+  }
+
+  private syncSeaMode() {
+    const el = $('sea-mode');
+    const v = this.peaceful ? 'peaceful' : 'adventure';
+    el.dataset.sea = v;
+    el.classList.toggle('ruled', this.seaRule !== null);
+    el.querySelectorAll<HTMLElement>('button[data-sea]').forEach((b) => {
+      const on = b.dataset.sea === v;
+      b.classList.toggle('sel', on);
+      b.setAttribute('aria-checked', String(on));
+    });
   }
 
   private renderSettings() {
@@ -389,12 +434,17 @@ export class UI {
         ])}
       </section>
       <section class="set-group"><h4>World</h4>
+        ${this.peaceRow()}
         ${this.resetCard()}
       </section>`;
     body.querySelectorAll<HTMLElement>('[data-key]').forEach((b) =>
       b.addEventListener('click', () => {
         const k = b.dataset.key as keyof Settings;
         this.onClick();
+        if (b.dataset.ruled) {
+          this.toast("Your host's rule", 'Only the host can change the seas of a shared voyage', 2.6);
+          return;
+        }
         if (b.dataset.v !== undefined) this.setSetting(k, b.dataset.v as never);
         else this.setSetting(k, !this.settings[k] as never);
       }),
@@ -441,6 +491,16 @@ export class UI {
     }
   }
 
+  /** Peaceful seas: a switch of our own, or (a guest) the host's rule, shown and locked. */
+  private peaceRow() {
+    const on = this.peaceful;
+    const ruled = this.seaRule !== null;
+    const desc = ruled
+      ? `Your host's rule for this voyage: ${on ? 'nobody fires first' : 'pirates hunt on sight'}`
+      : 'Pirates, hunters, ghosts, forts and the Kraken all still sail, but none of them fires until you do';
+    return `<button class="set-row" data-key="peaceful" role="switch" aria-checked="${on}"${ruled ? ' aria-disabled="true" data-ruled="1"' : ''}><span class="set-txt"><b>Peaceful seas</b><small>${desc}</small></span><i class="switch${on ? ' on' : ''}"></i></button>`;
+  }
+
   /** The world reset row, or (unfolded) what goes, what stays and the confirm. */
   private resetCard() {
     if (!this.resetOpen)
@@ -484,7 +544,7 @@ export class UI {
     const ids = Object.keys(SHIP_CLASSES) as ShipClassId[];
     const i = ids.indexOf(this.selected);
     const k = e.key.toLowerCase();
-    if (document.activeElement?.closest('.menu-tools, .dock-actions') && (k === 'enter' || k === ' ')) return;
+    if (document.activeElement?.closest('.menu-tools, .dock-actions, .sea-mode') && (k === 'enter' || k === ' ')) return;
     if (k === 'arrowleft' || k === 'a') this.select(ids[(i + ids.length - 1) % ids.length]);
     else if (k === 'arrowright' || k === 'd') this.select(ids[(i + 1) % ids.length]);
     else if (k >= '1' && k <= String(ids.length)) this.select(ids[+k - 1]);
@@ -1360,6 +1420,14 @@ export class UI {
       }
       const mk = s === marked;
       if (el.classList.contains('marked') !== mk) el.classList.toggle('marked', mk);
+      // peaceful seas: a quiet bar while she holds her fire, a flare of blades the moment she's provoked
+      const calm = s.calm ? '1' : '';
+      if (el.dataset.calm !== calm) {
+        const roused = el.dataset.calm === '1';
+        el.dataset.calm = calm;
+        el.classList.toggle('calm', !!calm);
+        if (roused) replay(el, 'roused');
+      }
       const x = (v.x * 0.5 + 0.5) * w;
       const y = (-v.y * 0.5 + 0.5) * h - 18;
       el.style.transform = `translate(${x}px, ${y}px)`;
@@ -1697,7 +1765,8 @@ export class UI {
         continue;
       }
       if (!s.hunter) {
-        tri(s, s.ghost ? '#7dffc4' : '#ff6a55', 11);
+        // peaceful seas: a pale mark for a ship that holds her fire
+        tri(s, s.calm ? (s.ghost ? '#c8f5e2' : '#f2ece0') : s.ghost ? '#7dffc4' : '#ff6a55', 11);
         continue;
       }
       // a hunter: a pulsing crimson ring, and pinned to the rim while she's still over the horizon

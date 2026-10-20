@@ -156,6 +156,8 @@ export interface Camp {
   strike: number;
   live: boolean;
   fireT: number;
+  /** Peaceful seas: the party is close, and the camp is on its feet watching them (but has drawn no blade). */
+  wary?: boolean;
   /** Seat or post each cutthroat keeps when at ease. */
   spots: { x: number; z: number; yaw: number; idle: 'sit' | 'warm' | 'watch' | 'lean' | 'chat' | 'stand'; seatH: number }[];
 }
@@ -292,6 +294,9 @@ export class Shore {
 
   /** Forts' walls, for walking round them to the gate. */
   private walls: FortWalls[] = [];
+
+  /** Peaceful seas: a camp that holds its blades until the party strikes first (the game decides, per camp). */
+  calm: (c: Camp) => boolean = () => false;
 
   constructor(
     readonly ground: Ground,
@@ -1365,7 +1370,8 @@ export class Shore {
     const f = c.layout.fire;
     const alarm = c.fort ? FORT_ALARM : CAMP_ALARM;
     const leash = c.fort ? FORT_LEASH : LEASH;
-    // the party comes too close: up and at them
+    // the party comes too close: up and at them (on peaceful seas, up and watching)
+    c.wary = false;
     if (!c.alert && !c.routed && cap && !this.defeated) {
       let near = Infinity;
       for (const p of this.party) {
@@ -1373,7 +1379,10 @@ export class Shore {
         near = Math.min(near, Math.hypot(w.x - f.x, w.z - f.z) - alarm);
         for (const g of c.gang) if (g.alive && !g.down) near = Math.min(near, Math.hypot(w.x - g.x, w.z - g.z) - 9);
       }
-      if (near < 0) this.raise(c, world);
+      if (near < 0) {
+        if (this.calm(c)) c.wary = true;
+        else this.raise(c, world);
+      }
     }
     const party = this.active ? this.party.map((p) => p.walker) : [];
     c.gang.forEach((w, k) => {
@@ -1448,6 +1457,9 @@ export class Shore {
       w.idle = s.idle;
       w.seatH = s.seatH;
       w.wantYaw = s.yaw;
+      // wary: those on their feet keep an eye on the captain
+      const cap = this.captain;
+      if (c.wary && cap && s.idle !== 'sit') w.wantYaw = Math.atan2(cap.x - w.x, cap.z - w.z);
       if (!c.alert) w.armed = false;
     }
     w.turn(dt, 6);
@@ -1645,6 +1657,11 @@ export class Shore {
     b.kx += (dx / d) * push;
     b.kz += (dz / d) * push;
     if (b.team === 'foe' && !b.target) b.target = a;
+    // a blade drawn on one of them is drawn on them all (peaceful seas: this is how it starts)
+    if (b.team === 'foe' && a.team !== 'foe') {
+      const camp = this.camps.find((c) => c.gang.includes(b));
+      if (camp && !camp.alert && !camp.routed) this.raise(camp, world);
+    }
     const at = _v.set(b.x, b.y + 1.2, b.z);
     const [vol, pan, dd] = world.soundAt(at);
     world.audio.thwack(vol, pan, dd, heavy);

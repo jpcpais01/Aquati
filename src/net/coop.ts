@@ -62,6 +62,8 @@ export interface SkyState {
   windTo: number;
   /** False while the host holds the clock at an hour. */
   run: boolean;
+  /** Peaceful seas: the host's rule for everyone aboard (absent from older builds: adventure). */
+  calm?: boolean;
 }
 
 /** What the game lends the crew layer. */
@@ -127,6 +129,8 @@ interface NetState {
   crew: number;
   held: number;
   tgt: number;
+  /** Peaceful seas: the captains she's at war with, a bit each (see game/peace.ts). */
+  wrath: number;
 }
 
 /** Another game's ship: her recipe, her latest state and (once built) the ship herself. */
@@ -153,7 +157,7 @@ const _p = new THREE.Vector3();
 function stateOf(r: Recipe): NetState {
   return {
     x: r.x, z: r.z, h: r.h, spd: 0, av: 0, hp: r.hp, rud: 0, sail: r.sail, sl: r.sail, alive: true, prize: false, team: r.team,
-    anchored: false, afire: 0, torn: 0, crew: 0, held: 0, tgt: 0,
+    anchored: false, afire: 0, torn: 0, crew: 0, held: 0, tgt: 0, wrath: 0,
   };
 }
 
@@ -318,6 +322,16 @@ export class Coop implements NetRules {
     return out;
   }
 
+  /** The host's sea changed its rules: tell the crew at once rather than at the next sky beat. */
+  skyNow() {
+    this.skyT = 0;
+  }
+
+  /** Whose side a ship sails for: her owner's place in the crew (ours, for our own ships). */
+  ownerOf(s: Ship) {
+    return this.ofShip.get(s)?.owner ?? this.me;
+  }
+
   /** The other captains' flagships afloat. */
   flagships(out: Ship[]) {
     for (const p of this.puppets.values()) if (p.r.role === 'flag' && p.ship && p.ship.alive && !p.ship.removed) out.push(p.ship);
@@ -450,7 +464,8 @@ export class Coop implements NetRules {
       v.setUint8(o + 35, Math.round(s.held * 255));
       const t = m.role === 'ai' ? this.g.targetOf(s) : null;
       v.setUint32(o + 36, t ? this.idOf(t) : 0);
-      v.setFloat32(o + 40, 0);
+      v.setUint32(o + 40, 0);
+      v.setUint8(o + 40, m.role === 'ai' ? s.wrath & 0xff : 0);
       o += ENTRY;
       n++;
     }
@@ -497,6 +512,7 @@ export class Coop implements NetRules {
       st.crew = v.getUint8(o + 34) / 4;
       st.held = v.getUint8(o + 35) / 255;
       st.tgt = v.getUint32(o + 36);
+      st.wrath = v.getUint8(o + 40);
       p.rx = now;
     }
   }
@@ -551,6 +567,7 @@ export class Coop implements NetRules {
       s.torn = st.torn;
       s.crewHit = st.crew;
       s.held = st.held;
+      s.wrath = st.wrath;
     }
   }
 

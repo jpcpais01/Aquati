@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T19:30Z',
     entries: [
       {
+        title: 'Peaceful seas',
+        notes: [
+          'A new way to sail: pick Peaceful under your ship in the harbour (or in Settings, under World). Every pirate, bounty hunter, ghost ship, fort, camp and even the Kraken is still out there, but none of them fires until you do. Adventure plays exactly as before.',
+          'Fire first and you have a fight. The ship you hit comes about, and so do her flotilla, any Brethren within hail and any fort whose guns cover her. A blow on a fort\'s walls brings out the ships under them, and a cutlass drawn on one cutthroat ashore brings the whole camp running. The dead only stand by their own.',
+          'Bounty hunters still come after a big enough infamy, but they shadow you just out of reach of their guns, waiting for an excuse. Give one and she comes at you, along with any hunter within earshot.',
+          'The Kraken still rises in storms, but it only watches. Leave it be and it sinks away; strike it and it fights. Your escorts never fire first either, and calm forts no longer stop you going ashore.',
+          'You can always see who is calm: ships at peace carry a pale bar with a little dove and a pale mark on the minimap and chart. The HUD shows a dove while all is quiet, or crossed blades with a count and a burning wick once you have provoked someone. Sail clear and the wick burns down until tempers cool. In a shared voyage the host\'s choice holds for the whole crew, and each captain\'s quarrel is their own: a ship you provoke comes after you and your escorts, not your crewmates.',
+        ],
+      },
+      {
         title: 'Smoother sailing and zooming',
         notes: [
           'The view no longer judders while you sail or zoom. The game used to time each frame by when it got round to drawing it, and that wobbles a little from frame to frame, so the camera moved a touch too far on some frames and too little on others. Frames are now timed by your screen\'s own refresh, so the sea, the islands and your ship all glide past evenly.',

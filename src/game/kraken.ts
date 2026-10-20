@@ -38,6 +38,8 @@ export interface KrakenMark {
   x: number;
   z: number;
   r: number;
+  /** Peaceful seas: it hasn't been struck yet (no fight until you make one). */
+  calm?: boolean;
 }
 
 interface Arm {
@@ -121,6 +123,8 @@ const VS: Record<AmmoId, [number, number]> = {
 };
 /** How far the head lurks from its prey while submerged. */
 const LURK = 48;
+/** Peaceful seas: seconds it lingers, looking, before it loses interest and sinks away. */
+const LINGER = 48;
 const DEEP = -17;
 const SURFACED = 2.4;
 
@@ -222,6 +226,10 @@ export class Kraken {
   private gaze = new THREE.Vector2();
   /** Seconds the player has been out of its reach (it gives up eventually). */
   private lostT = 0;
+  /** Peaceful seas (set by the game each frame): it rises, and looks, and only fights if it's struck. */
+  calm = false;
+  /** Something of yours has struck it this time up. */
+  provoked = false;
 
   // reported to the game
   onHurt: (dmg: number, at: THREE.Vector3, crit: boolean, part: Part, byPlayer: boolean) => void = () => {};
@@ -233,6 +241,8 @@ export class Kraken {
   onArmBeaten: (at: THREE.Vector3) => void = () => {};
   onDefeated: (at: THREE.Vector3) => void = () => {};
   onGone: (slain: boolean) => void = () => {};
+  /** Peaceful seas: the first blow wakes its fury. */
+  onProvoked: () => void = () => {};
 
   constructor() {
     this.view = new KrakenView(SPECS);
@@ -258,6 +268,11 @@ export class Kraken {
   /** Arms up and fighting (or the death throes), not the omen or its leaving. */
   get fighting() {
     return this.phase === 'fight';
+  }
+
+  /** Peaceful seas, and nobody has struck it: its arms sway and watch, and nothing comes down on her. */
+  get docile() {
+    return this.calm && !this.provoked;
   }
 
   get headUp() {
@@ -319,6 +334,7 @@ export class Kraken {
     this.grabCool = 12;
     this.dropped = false;
     this.lostT = 0;
+    this.provoked = false;
     this.tallies.clear();
     if (this.prey) this.prey.held = 0;
     this.prey = null;
@@ -471,6 +487,11 @@ export class Kraken {
       this.leave();
       return;
     }
+    // left in peace, it loses interest and slips back down
+    if (this.docile && this.t > LINGER) {
+      this.leave();
+      return;
+    }
     // keep enough arms in the fight
     const want = ACTIVE[this.stage];
     let up = 0;
@@ -490,7 +511,7 @@ export class Kraken {
     // attacks
     this.grabCool -= dt;
     this.attackT -= dt;
-    if (this.attackT <= 0) {
+    if (this.attackT <= 0 && !this.docile) {
       const gap = ATTACK_GAP[this.stage] * (this.head === 'up' ? 1.45 : 1);
       this.attackT = gap * rand(0.75, 1.25);
       this.attack(p, world);
@@ -1214,8 +1235,23 @@ export class Kraken {
 
   // ---------------------------------------------------------------- being hit
 
-  /** Tests a ball's flight against every arm above the water and the head. True if it struck. */
+  /** A ball in flight: true if it struck an arm or the head (and, on peaceful seas, that is a quarrel). */
   strike(b: StrikeBall, world: World): boolean {
+    if (!this.strikeAt(b, world)) return false;
+    if (!this.provoked) {
+      this.provoked = true;
+      if (this.calm && this.phase === 'fight') {
+        // it was only looking: now it fights
+        this.attackT = Math.min(this.attackT, 1.1);
+        this.roar(world, 1);
+        this.onProvoked();
+      }
+    }
+    return true;
+  }
+
+  /** Tests a ball's flight against every arm above the water and the head. True if it struck. */
+  private strikeAt(b: StrikeBall, world: World): boolean {
     if (this.phase !== 'fight' && this.phase !== 'dying') return false;
     if (b.owner.team !== 'player' && b.owner !== this.prey) return false;
     for (const a of this.arms) {
@@ -1401,6 +1437,7 @@ export class Kraken {
       m.x = a.pts[k];
       m.z = a.pts[k + 2];
       m.r = a.R0 * 1.3;
+      m.calm = this.docile;
     }
     if (this.headUp) {
       if (!out[n]) out[n] = { x: 0, z: 0, r: 0 };
@@ -1408,6 +1445,7 @@ export class Kraken {
       m.x = this.body.x + Math.sin(this.headYaw) * 3;
       m.z = this.body.z + Math.cos(this.headYaw) * 3;
       m.r = 7;
+      m.calm = this.docile;
     }
     return n;
   }

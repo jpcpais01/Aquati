@@ -55,6 +55,11 @@
         <div class="dock-label"><span>Choose your ship</span><span class="dock-count" id="dock-count"></span></div>
         <div class="ship-tabs" id="ship-tabs" role="tablist"></div>
         <div class="ship-detail" id="ship-detail"></div>
+        <div class="sea-mode" id="sea-mode" role="radiogroup" aria-label="Seas" data-sea="adventure">
+          <button data-sea="adventure" role="radio" aria-checked="true" class="sel"><span class="ti" data-icon="swords"></span><b>Adventure</b><small>Pirates hunt on sight</small></button>
+          <button data-sea="peaceful" role="radio" aria-checked="false"><span class="ti" data-icon="dove"></span><b>Peaceful</b><small>Nobody fires first</small></button>
+          <em class="sea-rule">Host's rule</em>
+        </div>
         <div class="dock-actions" id="dock-actions">
           <button class="btn primary big sail-btn" id="btn-sail"><span class="ti" data-icon="anchor"></span><span>Set Sail</span><kbd class="kd">Enter</kbd></button>
         </div>

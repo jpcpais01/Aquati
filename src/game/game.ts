@@ -98,6 +98,8 @@ import { Fort, FORT_RANGE, Forts, FortStore, Gun, HAVEN_R, TRIBUTE_HOUR } from '
 import { BRUMAS_FORT_NAMES, findFortSites, fortClearings } from '../shore/fortKit';
 import { shoreMats } from '../shore/kit';
 import { FortHud } from '../ui/fort';
+import { PeaceHud } from '../ui/peace';
+import { FORGET, FORT_RALLY, HUNTER_RALLY, RALLY, setSideOf, sideOf } from './peace';
 import { gunRange } from '../ships/ship';
 import { Coop, CoopGame, Recipe, Role } from '../net/coop';
 import { CrewPanel } from '../ui/crew';
@@ -465,6 +467,18 @@ export class Game {
   // sailing together: other captains' ships in this sea (see net/coop.ts)
   private coop = new Coop(this.coopBridge());
   private crewUi!: CrewPanel;
+  // peaceful seas: nobody fires first (see game/peace.ts)
+  /** The host's rule while we sail in their sea (null: our own setting). */
+  private roomPeace: boolean | null = null;
+  private peaceHud = new PeaceHud(document.getElementById('hud-wanted')!);
+  /** When each ship last called out that you'd provoked her. */
+  private provokedAt = new WeakMap<Ship, number>();
+  private provokeToastT = -100;
+  /** How many ships and forts were at war with you last frame (for "tempers cool"). */
+  private warN = 0;
+  /** How many of the gunnery's marks this frame are the Kraken's (the rest are forts'). */
+  private krMarkN = 0;
+  private calmMarks: SeaMark[] = [];
   /** This frame's ships the pirates may hunt besides you: your escorts and the other captains'. */
   private hunt: Ship[] = [];
   /** Captains at sea the pirates gather round (you and your crewmates). */
@@ -804,12 +818,15 @@ export class Game {
       },
       shake: (a) => this.rig.shake(a),
       alarm: (c) => {
+        const calm = this.world.peaceful;
+        // a garrison at arms is its fort at war with you (on peaceful seas, this is the quarrel)
+        const f = c.fort ? this.forts.forts.find((o) => o.garrison === c) : undefined;
+        if (f) this.forts.rile(f, this.coop.me, this.world.time);
         if (!this.shore.active) return;
         if (c.fort) {
-          const f = this.forts.forts.find((o) => o.garrison === c);
-          this.ui.toast('The garrison sallies!', `Soldiers pour out of the gate of ${f?.name ?? 'the fort'}`, 3.2);
+          this.ui.toast('The garrison sallies!', calm ? `You drew first: soldiers pour out of the gate of ${f?.name ?? 'the fort'}` : `Soldiers pour out of the gate of ${f?.name ?? 'the fort'}`, 3.2);
           this.audio.wanted(3);
-        } else this.ui.toast('To arms!', 'Cutthroats come running from their camp', 2.8);
+        } else this.ui.toast('To arms!', calm ? 'You drew first: the whole camp comes for you' : 'Cutthroats come running from their camp', 2.8);
       },
       routed: (c) => this.onCampRouted(c),
       plunder: (c) => this.plunderCamp(c),
@@ -828,6 +845,12 @@ export class Game {
       step: (k, wet, deck) => (deck || this.ground.lifted(this.shore.captain?.x ?? 0, this.shore.captain?.z ?? 0) !== null ? this.audio.footstep(k) : this.audio.sandStep(k, wet)),
     }, this.forts.garrisons());
     this.opaque.add(this.shore.group);
+    // peaceful seas: a camp keeps its blades sheathed unless you strike first (a garrison, unless its fort is at war with you)
+    this.shore.calm = (c) => {
+      if (!this.world.peaceful) return false;
+      const f = c.fort ? this.forts.forts.find((o) => o.garrison === c) : undefined;
+      return !f || !f.grudge.holds(this.coop.me, this.world.time);
+    };
     // each fort's garrison is a camp ashore: they're appended after the cutthroats' camps
     const g0 = this.shore.camps.length - this.forts.forts.length;
     this.forts.forts.forEach((f, i) => (f.garrison = this.shore.camps[g0 + i]));
@@ -1055,7 +1078,11 @@ export class Game {
       this.audio.setMusicEnabled(st.music);
       this.audio.setVolumes({ master: st.volMaster, music: st.volMusic, effects: st.volEffects, ambience: st.volAmbience });
       this.rig.shakeScale = SHAKE_SCALE[st.shake];
+      this.applyPeace();
     };
+    // peaceful seas: a blow from our side is how every quarrel starts, and a grudge is held against a captain's whole side
+    Ship.onStruck = (s, by) => this.quarrel(s, by);
+    setSideOf((s) => this.coop.ownerOf(s));
     this.audio.setMuted(!ui.settings.sound);
     ui.onSettings(ui.settings);
     const openBoard = () => {
@@ -1175,6 +1202,7 @@ export class Game {
       },
       atSea: () => this.state !== 'menu' && this.state !== 'port' && this.state !== 'loading',
       suggest: () => this.cloudSave.user?.name.split(/\s+/)[0] || this.look.name.trim() || 'Captain',
+      peaceful: () => this.world.peaceful,
     });
     this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     this.cloudSave.onAdmin = () => {
@@ -1729,7 +1757,7 @@ export class Game {
       return false;
     }
     const hunted = this.huntedNear(p);
-    const beast = this.kraken.fighting;
+    const beast = this.kraken.fighting && !this.kraken.docile;
     const chased = !!this.lastFoe || hunted || beast;
     const n = this.holds().reduce((c, h) => c + h.hold.count, 0);
     const why = beast ? 'No harbour opens to a ship the Kraken hunts' : hunted && !this.lastFoe ? 'A hunter is on your tail: no harbour will let you in' : chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
@@ -1740,7 +1768,8 @@ export class Game {
 
   /** A named hunter closing in: she won't wait politely outside a harbour or off a beach. */
   private huntedNear(p: Ship) {
-    for (const s of this.hunters.keys()) if (s.alive && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) < 380) return true;
+    // (on peaceful seas, only one you've given cause)
+    for (const s of this.hunters.keys()) if (s.alive && !s.calm && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) < 380) return true;
     return false;
   }
 
@@ -1764,7 +1793,8 @@ export class Game {
     const camp = this.shore.camps.find((c) => c.site.island === L.island && !c.routed && !c.fort);
     const fort = this.forts.forts.find((f) => f.site.island === L.island && f.owner === 'brethren');
     // no boat lives long under a fort's guns: silence them, or land out of their reach
-    const guns = this.forts.covering(L.x, L.z) ?? this.forts.covering(p.pos.x, p.pos.z);
+    const calm = this.world.peaceful ? { side: this.coop.me, now: this.world.time } : null;
+    const guns = this.forts.covering(L.x, L.z, calm) ?? this.forts.covering(p.pos.x, p.pos.z, calm);
     const blocked = chased || !!guns;
     const sub = beast
       ? 'Not with the Kraken in these waters'
@@ -1777,7 +1807,7 @@ export class Game {
       : fort
       ? `${fort.name} holds this isle: storm its gate`
       : camp
-      ? 'Cutthroats are camped on this isle: bring blades'
+      ? this.world.peaceful ? 'Cutthroats are camped on this isle: they won\'t draw first' : 'Cutthroats are camped on this isle: bring blades'
       : 'The captain and four hands row in';
     this.shoreHud.setPrompt({ key: 'land', title: `Go ashore on ${L.island.name}`, sub, ok: !blocked });
     if (!blocked && this.input.state.helm) this.goAshore();
@@ -1788,7 +1818,8 @@ export class Game {
     const p = this.player;
     const L = this.landing;
     if (!p || !L || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.kraken.active || this.shore.active || this.wreck.t >= 0) return;
-    if (this.forts.covering(L.x, L.z) || this.forts.covering(p.pos.x, p.pos.z)) return;
+    const calm = this.world.peaceful ? { side: this.coop.me, now: this.world.time } : null;
+    if (this.forts.covering(L.x, L.z, calm) || this.forts.covering(p.pos.x, p.pos.z, calm)) return;
     this.setChart(false);
     this.setView(false);
     this.input.releaseLook();
@@ -1977,6 +2008,7 @@ export class Game {
         if (ok) this.ui.floater(`${Math.round(dmg)}`, x, y);
       },
       silenced: (f, g, last) => this.gunSilenced(f, g, last),
+      riled: (f, side, by) => this.fortRiled(f, side, by),
     };
   }
 
@@ -2047,6 +2079,10 @@ export class Game {
         const near = Math.hypot(f.site.x - p.pos.x, f.site.z - p.pos.z) < FORT_RANGE + 30;
         hint = near ? (this.gunnery.combat ? 'Silence its guns' : 'Close in: its walls stand high') : 'Silence its guns';
         hot = near && f.alert;
+        if (this.world.peaceful && !f.grudge.holds(this.coop.me, this.world.time)) {
+          hint = 'Holding its fire · fire first and it answers';
+          hot = false;
+        }
       } else if (ashore) {
         hint = f.garrison?.alert ? 'Beat the garrison' : 'Storm the gate';
         hot = true;
@@ -2670,10 +2706,16 @@ export class Game {
     foes.length = es.length = 0;
     // the ship your boarders are fighting on is nobody's target
     const lashed = this.boarding.prize;
+    const w = this.world;
+    // peaceful seas: who holds her fire against us (her own captain's word, or her owner's for another game's pirate)
+    const bit = 1 << this.coop.me;
     for (const s of this.ships) {
+      if (s.team === 'pirate') s.calm = w.peaceful && !s.prize && !(s.wrath & bit);
       if (!s.alive || s.removed || s === lashed) continue;
-      if (s.team === 'pirate' && !s.prize) foes.push(s);
-      else if (this.escorts.has(s)) es.push(s);
+      // and your escorts never fire first either
+      if (s.team === 'pirate' && !s.prize) {
+        if (!s.calm) foes.push(s);
+      } else if (this.escorts.has(s)) es.push(s);
     }
     if (!this.escorts.size || dt <= 0) return;
     if (this.state !== 'playing' && this.state !== 'dead') return;
@@ -2682,8 +2724,15 @@ export class Game {
     if (this.markedFoe && (!this.markedFoe.alive || this.markedFoe.removed || this.markedFoe.team !== 'pirate')) this.markedFoe = null;
     const marks = this.seaMarks;
     marks.length = 0;
-    for (let i = 0; i < this.gunnery.nMarks; i++) marks.push(this.gunnery.marks[i]);
-    const w = this.world;
+    if (!w.peaceful) for (let i = 0; i < this.gunnery.nMarks; i++) marks.push(this.gunnery.marks[i]);
+    else {
+      // peaceful seas: only a Kraken that's been woken, and forts already at war with you
+      if (!this.kraken.docile) for (let i = 0; i < this.krMarkN; i++) marks.push(this.gunnery.marks[i]);
+      if (flag && !this.shore.active) {
+        const n = this.forts.marks(this.calmMarks, 0, flag, gunRange(flag.muzzleSpeed), { now: w.time, riledOnly: true });
+        for (let i = 0; i < n; i++) marks.push(this.calmMarks[i]);
+      }
+    }
     for (const [s, ai] of this.escorts) {
       ai.update(dt, w, flag, foes, this.markedFoe, this.ships, marks);
       // a quiet spell lets her carpenters get to work (more slowly than the flagship's)
@@ -3142,6 +3191,149 @@ export class Game {
     return s;
   }
 
+  // ------------------------------------------------------------------ peaceful seas
+
+  /** Peaceful seas as they stand (the host's rule in a shared sea), put to everything that might fire first. */
+  private applyPeace() {
+    const w = this.world;
+    if (!w) return;
+    const guest = this.coop.guest;
+    const on = guest ? this.roomPeace ?? false : this.ui.settings.peaceful;
+    this.ui.setSeaRule(guest ? on : null);
+    if (w.peaceful === on) return;
+    w.peaceful = on;
+    this.kraken.calm = on;
+    // the crew hears the host's new rule at once
+    if (this.coop.hosting) this.coop.skyNow();
+    this.crewUi?.render();
+    if (this.state === 'playing' || this.state === 'paused' || this.state === 'docked')
+      this.ui.toast(on ? 'Peaceful seas' : 'Adventure', on ? (guest ? 'Your host calls a truce: nobody fires unless you fire first' : 'Nobody fires on you unless you fire first') : guest ? 'Your host lets the Brethren loose: they hunt on sight' : 'The Brethren hunt on sight again', 3.4);
+  }
+
+  /**
+   * Someone of another team laid a blow on `s` (Ship.onStruck). When it's our
+   * side striking a pirate, that's a quarrel: with her, her flotilla and the
+   * company she keeps. Another game's pirate is her owner's to rouse; we only
+   * say so.
+   */
+  private quarrel(s: Ship, by: Ship) {
+    if (by.team !== 'player' || s.team !== 'pirate' || s.prize) return;
+    const now = this.world.time;
+    const side = sideOf(by);
+    const ai = this.ais.get(s);
+    if (!ai) {
+      if (s.remote && s.calm && side === this.coop.me) this.provoked(s, 0, null);
+      return;
+    }
+    const fresh = !ai.grudge.holds(side, now);
+    ai.grudge.mark(side, now);
+    s.wrath = ai.grudge.mask(now);
+    if (!fresh) return;
+    const { n, fort } = this.rally(s, ai, side, now);
+    if (side === this.coop.me) this.provoked(s, n, fort);
+  }
+
+  /** Her flotilla, the Brethren in hail (a hunter from further off) and any fort covering her take up her quarrel with captain `side`. The dead keep to their own. */
+  private rally(s: Ship, ai: PirateAI, side: number, now: number): { n: number; fort: Fort | null } {
+    let n = 0;
+    for (const [o, oa] of this.ais) {
+      if (oa === ai || !o.alive || o.removed || o.prize || o.ghost !== s.ghost || oa.grudge.holds(side, now)) continue;
+      const d = Math.hypot(o.pos.x - s.pos.x, o.pos.z - s.pos.z);
+      if (!((!!ai.pack && oa.pack === ai.pack) || d < RALLY || (!!oa.hunter && d < HUNTER_RALLY))) continue;
+      oa.grudge.mark(side, now);
+      o.wrath = oa.grudge.mask(now);
+      n++;
+    }
+    let fort: Fort | null = null;
+    if (!s.ghost) {
+      for (const f of this.forts.forts) {
+        if (f.owner !== 'brethren' || f.grudge.holds(side, now) || f.guns.every((g) => g.dead)) continue;
+        if (Math.hypot(f.site.x - s.pos.x, f.site.z - s.pos.z) > FORT_RALLY) continue;
+        this.forts.rile(f, side, now);
+        fort = f;
+      }
+    }
+    return { n, fort };
+  }
+
+  /** A fort has cause to fight captain `side`: the Brethren lying under its guns come about with it. */
+  private fortRiled(f: Fort, side: number, by: Ship | null) {
+    const now = this.world.time;
+    let n = 0;
+    for (const [o, oa] of this.ais) {
+      if (!o.alive || o.removed || o.prize || o.ghost || oa.grudge.holds(side, now)) continue;
+      if (Math.hypot(o.pos.x - f.site.x, o.pos.z - f.site.z) > FORT_RALLY) continue;
+      oa.grudge.mark(side, now);
+      o.wrath = oa.grudge.mask(now);
+      n++;
+    }
+    // a ball of ours on its walls: say so (a ship's quarrel or a garrison's says its own)
+    if (!by || side !== this.coop.me || !this.world.peaceful || this.state !== 'playing') return;
+    this.ui.toast('You fired first', `${f.name} runs out its guns${n ? `, and ${n} ${n === 1 ? 'ship' : 'ships'} under them come about` : ''}`, 3.4);
+    this.audio.wanted(2);
+  }
+
+  /** Peaceful seas: you fired first. Say so over her, and who comes with her. */
+  private provoked(s: Ship, n: number, fort: Fort | null) {
+    if (!this.world.peaceful || this.state !== 'playing') return;
+    const t = this.world.time;
+    if (t - (this.provokedAt.get(s) ?? -100) < 10) return;
+    this.provokedAt.set(s, t);
+    const [x, y, ok] = this.screenOf(_a.set(s.pos.x, s.root.position.y + s.cls.freeboard + 6, s.pos.z));
+    if (ok) this.ui.floater('Provoked!', x, y - 30, 'bad');
+    // one call for a broadside that rouses a whole flotilla
+    if (t - this.provokeToastT < 5) return;
+    this.provokeToastT = t;
+    const named = s.hunter ? CAPTAIN.get(s.hunter) : undefined;
+    const more = n ? ` and ${n} ${n === 1 ? 'ship' : 'ships'} in hail` : '';
+    const guns = fort ? `${n ? ',' : ''} with the guns of ${fort.name}` : '';
+    const line = named
+      ? `${named.epithet} has the excuse she was waiting for${guns}`
+      : s.ghost
+      ? `The ${s.name} turns her dead eyes on you${n ? `, and ${n} more of the dead with her` : ''}`
+      : n || fort
+      ? `The ${s.name}${more} come about to fight${guns}`
+      : `The ${s.name} runs out her guns`;
+    this.ui.toast('You fired first', line, 3.6);
+    if (named) this.audio.horn();
+    else this.audio.wanted(1);
+  }
+
+  /** The HUD's dove (or blades, and how long until tempers cool), and word when the last quarrel is forgotten. */
+  private updatePeace(p: Ship) {
+    const w = this.world;
+    if (!w.peaceful) {
+      this.peaceHud.set(false, 0, 0);
+      this.warN = 0;
+      return;
+    }
+    const now = w.time;
+    const me = this.coop.me;
+    let war = 0;
+    let left = 0;
+    for (const s of this.ships) {
+      if (s.team !== 'pirate' || !s.alive || s.removed || s.prize || s.calm) continue;
+      war++;
+      const ai = this.ais.get(s);
+      left = Math.max(left, ai ? ai.grudge.left(me, now) : FORGET);
+    }
+    for (const f of this.forts.forts) {
+      if (f.owner !== 'brethren' || !f.grudge.holds(me, now) || f.guns.every((g) => g.dead)) continue;
+      war++;
+      left = Math.max(left, f.grudge.left(me, now));
+    }
+    if (this.kraken.fighting && this.kraken.calm && this.kraken.provoked) {
+      war++;
+      left = FORGET;
+    }
+    this.peaceHud.set(true, war, left / FORGET);
+    if (this.warN && !war && p.alive && !this.shore.active) {
+      this.ui.toast('Tempers cool', 'The sea is at peace with you again', 3);
+      this.audio.chime();
+    }
+    this.warN = war;
+  }
+
   // ------------------------------------------------------------------ sailing together
 
   /** What the crew layer may see and do (see net/coop.ts). */
@@ -3189,12 +3381,21 @@ export class Game {
       },
       adopt: (s) => {
         // the host has gone: her pirates are ours to fight now
-        g.ais.set(s, new PirateAI(s, (g.player?.kills ?? 0) / 4));
+        const ai = new PirateAI(s, (g.player?.kills ?? 0) / 4);
+        // whoever she was at war with, the quarrel is ours now
+        if (s.wrath) ai.grudge.mark(g.coop.me, g.world.time);
+        g.ais.set(s, ai);
       },
       struck: (s, by, dmg) => g.onHit(s, by as Ship, dmg, s.pos),
       sunk: (s, by) => g.onRemoteSunk(s, by),
-      sky: () => ({ day: g.atmos.day, kind: g.atmos.kind, windTo: g.atmos.windTo, run: g.atmos.timeMode === 'auto' }),
-      follow: (sky) => (sky ? g.atmos.follow(sky.day, sky.kind, sky.windTo, sky.run) : g.atmos.unfollow()),
+      sky: () => ({ day: g.atmos.day, kind: g.atmos.kind, windTo: g.atmos.windTo, run: g.atmos.timeMode === 'auto', calm: g.world.peaceful }),
+      follow: (sky) => {
+        if (sky) g.atmos.follow(sky.day, sky.kind, sky.windTo, sky.run);
+        else g.atmos.unfollow();
+        // the host's word on peaceful seas holds for everyone aboard
+        g.roomPeace = sky ? !!sky.calm : null;
+        g.applyPeace();
+      },
       toast: (title, line, secs = 3) => g.ui.toast(title, line, secs),
       clearSea: () => {
         for (const s of [...g.ais.keys()]) {
@@ -4269,6 +4470,8 @@ export class Game {
     const gold = Math.round(c.bounty * this.bounty.bonus);
     this.banner.hunt(c, gold);
     this.audio.horn();
+    // peaceful seas: she won't fire first, but she won't let you out of her sight
+    if (this.world.peaceful) setTimeout(() => this.state === 'playing' && s.alive && s.calm && this.ui.toast('She shadows you', `${c.epithet} won't fire first, but she's waiting for an excuse`, 4.2), 4600);
     this.note('bounty', `${c.epithet} came hunting`, `${c.ship} · ${gold.toLocaleString()} gold on her`);
   }
 
@@ -5087,6 +5290,12 @@ export class Game {
       // the moment it breaks the surface plays out slowly
       this.krakenSlowT = 1.8;
       this.pipeline.flash(0.2);
+      if (k.docile) setTimeout(() => k.docile && k.fighting && this.ui.toast('It watches you, and waits', 'Leave it be and it sinks away. Fire, and it fights', 4.4), 2600);
+    };
+    k.onProvoked = () => {
+      this.ui.toast('You woke the Kraken', 'Now it fights', 3);
+      this.rig.shake(0.5);
+      this.pipeline.flash(0.12);
     };
     k.onStage = (n) => {
       this.audio.krakenMusic(true, n);
@@ -5094,7 +5303,7 @@ export class Game {
       this.rig.shake(0.5);
     };
     k.onHead = (up) => {
-      if (up) this.ui.toast('Its head breaks the surface', 'Strike the eye!', 2.6);
+      if (up) this.ui.toast('Its head breaks the surface', k.docile ? 'It looks you over, unblinking' : 'Strike the eye!', 2.6);
     };
     k.onGrab = (on, freed) => {
       if (on) {
@@ -5137,13 +5346,13 @@ export class Game {
     const playing = this.state === 'playing' && !!p && p.alive;
     if (dt > 0) this.krakenCool -= dt;
     if (!k.active) {
-      this.gunnery.nMarks = 0;
+      this.gunnery.nMarks = this.krMarkN = 0;
       if (playing && dt > 0 && !this.shore.active) this.watchForKraken(dt, p!);
       return;
     }
     k.update(dt, w, playing ? p : null);
     // the guns lay on its arms and eye like on any ship
-    this.gunnery.nMarks = k.marks(this.gunnery.marks);
+    this.gunnery.nMarks = this.krMarkN = k.marks(this.gunnery.marks);
     // every pirate in these waters runs for it
     const dread = k.phase === 'omen' || k.phase === 'fight' ? k.body : null;
     for (const ai of this.ais.values()) ai.fear = dread;
@@ -5162,8 +5371,8 @@ export class Game {
     const grip = k.grip;
     this.krHud.setGrab(grip);
     this.krHud.setHint(
-      grip !== null ? 'Break its grip' : k.headUp ? 'Strike the eye!' : k.stage === 2 ? 'Fight the maelstrom · sever its arms' : 'Sever its arms',
-      grip !== null || k.headUp,
+      k.docile ? 'It watches you · fire, and it fights' : grip !== null ? 'Break its grip' : k.headUp ? 'Strike the eye!' : k.stage === 2 ? 'Fight the maelstrom · sever its arms' : 'Sever its arms',
+      !k.docile && (grip !== null || k.headUp),
     );
     const n = k.warnings(this.krWarn);
     let m = 0;
@@ -5647,7 +5856,7 @@ export class Game {
     const target = this.player && this.player.alive && this.state === 'playing' && this.wreck.t < 0 ? this.player : null;
     if (dt > 0) this.forts.update(dt, w, target, this.ships, this.rig.target);
     // her guns lay on the forts' guns too, wherever she can reach them
-    if (target && !this.shore.active) this.gunnery.nMarks = this.forts.marks(this.gunnery.marks, this.gunnery.nMarks, target, gunRange(target.muzzleSpeed));
+    if (target && !this.shore.active) this.gunnery.nMarks = this.forts.marks(this.gunnery.marks, this.gunnery.nMarks, target, gunRange(target.muzzleSpeed), w.peaceful ? { now: w.time, riledOnly: false } : null);
     P.end();
     P.begin('Debris & flotsam', 'fx');
     this.pushers.length = 0;
@@ -5719,6 +5928,7 @@ export class Game {
       this.checkDiscoveries(p);
       this.updateForts(p, dt);
       this.updateHazards(p, dt);
+      this.updatePeace(p);
       // rammed or holed on a reef: no cannonball to report it
       if (!p.alive) this.onPlayerSunk('hull');
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));

@@ -2,7 +2,7 @@ import './crew.css';
 import type { Coop } from '../net/coop';
 import { getSignal, signalReady } from '../net/signal';
 import { cleanCode, MAX_CREW } from '../net/transport';
-import { icon } from './art';
+import { icon, ICONS } from './art';
 
 // "Sail together": the crew card. Host a voyage (a code and a link to share)
 // or join one by code, see who's aboard and how far their ships are on the
@@ -37,6 +37,8 @@ export interface CrewHost {
   atSea(): boolean;
   /** A name to start from: the signed-in captain's. */
   suggest(): string;
+  /** Peaceful seas, as the voyage stands (the host's rule for everyone aboard). */
+  peaceful(): boolean;
 }
 
 export class CrewPanel {
@@ -229,6 +231,7 @@ export class CrewPanel {
             <button class="btn small${this.copied ? ' done' : ''}" data-act="copy">${this.copied ? 'Copied' : 'Copy link'}</button>${shareBtn}</div>
         </div>
         ${this.list(roster, true)}
+        ${this.rule(true)}
         <p class="acct-fine">Friends join from the harbour and set sail right beside you. Your game runs this sea, so keep it open while you sail together.</p>
         <div class="crew-foot"><button class="btn small ${this.endArmed ? 'warn' : 'ghost'}" data-act="end"><span class="ti">${icon(OUT)}</span>${this.endArmed ? 'Press again to end it for everyone' : 'End the voyage'}</button></div>`;
     } else if (live) {
@@ -238,6 +241,7 @@ export class CrewPanel {
       html = `
         <p class="crew-lede">${this.h.atSea() ? 'You\'re sailing in their sea: their pirates, their weather, every broadside shared.' : 'Pick your ship and set sail: you\'ll fall in right beside them.'}</p>
         ${this.list(roster, false)}
+        ${this.rule(false)}
         <div class="crew-foot"><button class="btn small ghost" data-act="leave"><span class="ti">${icon(OUT)}</span>Leave the crew</button></div>`;
     } else {
       kicker.textContent = 'Up to four captains';
@@ -279,6 +283,14 @@ export class CrewPanel {
         if (caret !== null) el.setSelectionRange(caret, caret);
       }
     }
+  }
+
+  /** Whose rule the shared sea keeps: the host's, for everyone aboard. */
+  private rule(host: boolean) {
+    const calm = this.h.peaceful();
+    const what = calm ? '<b>Peaceful seas</b> · nobody fires first' : '<b>Adventure</b> · pirates hunt on sight';
+    const who = host ? 'your rule for the whole crew' : "your host's rule";
+    return `<p class="crew-rule ${calm ? 'calm' : 'war'}"><span class="ti">${icon(calm ? ICONS.dove : ICONS.swords)}</span><span>${what} <small>(${who})</small></span></p>`;
   }
 
   private list(roster: ReturnType<Coop['roster']>, host: boolean) {

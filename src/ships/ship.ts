@@ -113,6 +113,8 @@ let SHIP_ID = 0;
 export class Ship {
   /** Set while other captains share the sea; null sailing alone. */
   static net: NetRules | null = null;
+  /** Someone of another team laid a blow (or a special shot) on her: how a quarrel starts on peaceful seas. */
+  static onStruck: (s: Ship, by: Ship) => void = () => {};
   readonly id = ++SHIP_ID;
   /** Another captain's game sails her: she goes where it says, and only it decides her fate. */
   remote = false;
@@ -164,6 +166,10 @@ export class Ship {
   private burnT = 0;
   lastHit = -100;
   lastAttacker: Ship | null = null;
+  /** Peaceful seas: bit `i` set while she is at war with captain `i` of the crew (see game/peace.ts). */
+  wrath = 0;
+  /** Peaceful seas: she holds her fire against you (for the bars, the minimap and the chart). */
+  calm = false;
   burning = 0;
   gold = 0;
   kills = 0;
@@ -251,6 +257,7 @@ export class Ship {
     const fresh = this.afire <= 0;
     this.afire = Math.min(EFFECT.burnMax, Math.max(0, this.afire) + EFFECT.burnPerHit);
     if (by) this.afireBy = by;
+    this.struck(by);
     return fresh;
   }
 
@@ -259,6 +266,7 @@ export class Ship {
     if (!this.alive || !this.effect(by, 'chain')) return false;
     const fresh = this.torn <= 0;
     this.torn = EFFECT.tornTime;
+    this.struck(by);
     return fresh;
   }
 
@@ -267,6 +275,7 @@ export class Ship {
     if (!this.alive || this.ghost || !this.effect(by, 'grape')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = EFFECT.crewTime;
+    this.struck(by);
     return fresh;
   }
 
@@ -275,6 +284,7 @@ export class Ship {
     if (!this.alive || this.ghost || !this.effect(by, 'dread')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = Math.max(this.crewHit, EFFECT.dreadTime);
+    this.struck(by);
     return fresh;
   }
 
@@ -452,6 +462,7 @@ export class Ship {
     if (hull) this.dmg.onHit(at, dmg, world);
     this.lastHit = world.time;
     if (attacker) this.lastAttacker = attacker;
+    this.struck(attacker);
     this.rollKick += (Math.random() - 0.5) * 0.04;
     if (this.hp <= 0) this.die(attacker, world);
     return dmg;
@@ -463,7 +474,12 @@ export class Ship {
     this.hp -= dmg;
     this.lastHit = world.time;
     if (attacker) this.lastAttacker = attacker;
+    this.struck(attacker);
     if (this.hp <= 0) this.die(attacker, world);
+  }
+
+  private struck(by: Ship | null) {
+    if (by && by !== this && by.team !== this.team) Ship.onStruck(this, by);
   }
 
   /** She's done for: the blast (or the curse breaking), and the wreck begins to settle. */
