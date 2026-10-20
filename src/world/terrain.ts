@@ -976,7 +976,10 @@ export class Terrain implements SeaFloor {
     }
     const floorMat = (Terrain.mats.floor ??= patchMaterial(new THREE.MeshStandardMaterial({ color: DEEP_SAND, roughness: 1 }), { caustics: true, detail: true }));
     const floor = new THREE.Mesh(floorGeo, floorMat);
-    floor.position.set(this.ox, FLOOR_DEPTH - 1.2, this.oz);
+    floor.name = 'seabed';
+    // where two archipelagos' seabeds overlap out on the high seas, the home one
+    // lies a hand's breadth higher so they never fight over the same depth
+    floor.position.set(this.ox, FLOOR_DEPTH - 1.2 - (this.style === 'home' ? 0 : 0.35), this.oz);
     floor.receiveShadow = false;
     floor.matrixAutoUpdate = false;
     floor.updateMatrix();

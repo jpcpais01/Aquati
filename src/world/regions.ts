@@ -58,6 +58,38 @@ export function clampToRegion(x: number, z: number, fromX: number, fromZ: number
   return [Math.min(region.x + reach, Math.max(region.x - reach, x)), Math.min(region.z + reach, Math.max(region.z - reach, z))];
 }
 
+/**
+ * The edge of the known sea: a long oval reaching EDGE_R round every
+ * archipelago and the lane between them (beyond, the swell turns you back).
+ */
+export const EDGE_R = 1700;
+
+/** How far (x, z) lies past the edge of the known sea (negative inside), and which way is back. */
+export function seaEdge(x: number, z: number, back?: { x: number; z: number }): number {
+  let best = Infinity;
+  for (let i = 0; i < REGIONS.length; i++) {
+    for (let j = i; j < REGIONS.length; j++) {
+      const a = REGIONS[i];
+      const b = REGIONS[j];
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const L2 = dx * dx + dz * dz;
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / L2)) : 0;
+      const px = a.x + dx * t;
+      const pz = a.z + dz * t;
+      const d = Math.hypot(x - px, z - pz);
+      if (d < best) {
+        best = d;
+        if (back) {
+          back.x = (px - x) / (d || 1);
+          back.z = (pz - z) / (d || 1);
+        }
+      }
+    }
+  }
+  return best - EDGE_R;
+}
+
 /** Distance from (x, z) to the nearest archipelago's edge of land (negative inside it). */
 export function seaReach(x: number, z: number) {
   return nearestRegion(x, z).dist - REGION_R;

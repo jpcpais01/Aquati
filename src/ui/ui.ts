@@ -5,7 +5,9 @@ import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { HOLD_ROOM } from '../game/treasure';
-import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
+import { WORLD_SIZE, Island } from '../world/terrain';
+import type { Seas } from '../world/seas';
+import { HIGH_SEAS_R, nearestRegion, REGIONS } from '../world/regions';
 import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark, fortMark, vortexMark, reefMark, HazardMark } from './chart';
 import { PIN_COLORS } from '../game/waypoints';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
@@ -69,7 +71,8 @@ export class UI {
   private bars = $('bars');
   private mapCanvas = $<HTMLCanvasElement>('minimap');
   private map = this.mapCanvas.getContext('2d')!;
-  private mapImage: HTMLCanvasElement | null = null;
+  /** Each archipelago's minimap, and the corner of its square. */
+  private mapImages: { img: HTMLCanvasElement; x0: number; z0: number }[] = [];
   readonly chart = new SeaChart($<HTMLCanvasElement>('chart-canvas'));
   private chartPlayer: Ship | null = null;
   private barEls = new Map<number, HTMLDivElement>();
@@ -1258,7 +1261,12 @@ export class UI {
 
   // ------------------------------------------------------------- minimap
 
-  buildMap(terrain: Terrain) {
+  buildMap(seas: Seas) {
+    this.mapImages = seas.regions.map((t) => ({ img: this.mapOf(t), x0: t.x0, z0: t.z0 }));
+    this.chart.setTerrain(seas);
+  }
+
+  private mapOf(terrain: Seas['regions'][number]) {
     const res = 512;
     const c = document.createElement('canvas');
     c.width = c.height = res;
@@ -1266,8 +1274,8 @@ export class UI {
     const img = g.createImageData(res, res);
     for (let j = 0; j < res; j++) {
       for (let i = 0; i < res; i++) {
-        const x = -WORLD_SIZE / 2 + (i + 0.5) * (WORLD_SIZE / res);
-        const z = -WORLD_SIZE / 2 + (j + 0.5) * (WORLD_SIZE / res);
+        const x = terrain.x0 + (i + 0.5) * (WORLD_SIZE / res);
+        const z = terrain.z0 + (j + 0.5) * (WORLD_SIZE / res);
         const h = terrain.heightAt(x, z);
         let r: number, gg: number, b: number;
         if (h > 2.5) {
@@ -1293,8 +1301,7 @@ export class UI {
       }
     }
     g.putImageData(img, 0, 0);
-    this.mapImage = c;
-    this.chart.setTerrain(terrain);
+    return c;
   }
 
   /**
@@ -1377,14 +1384,50 @@ export class UI {
     g.beginPath();
     g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2);
     g.clip();
-    if (this.mapImage) {
-      const px = this.mapImage.width / WORLD_SIZE;
-      const sx = (cx - R + WORLD_SIZE / 2) * px;
-      const sz = (cz - R + WORLD_SIZE / 2) * px;
-      g.imageSmoothingEnabled = true;
-      g.drawImage(this.mapImage, sx, sz, R * 2 * px, R * 2 * px, 0, 0, S, S);
-    }
     const toMap = (x: number, z: number): [number, number] => [((x - cx) / R) * (S / 2) + S / 2, ((z - cz) / R) * (S / 2) + S / 2];
+    // the open ocean's deep blue, then each archipelago's square laid over it
+    g.fillStyle = 'rgb(14, 85, 140)';
+    g.fillRect(0, 0, S, S);
+    g.imageSmoothingEnabled = true;
+    const side = (WORLD_SIZE / R) * (S / 2);
+    for (const m of this.mapImages) {
+      const [x0, y0] = toMap(m.x0, m.z0);
+      if (x0 > S || y0 > S || x0 + side < 0 || y0 + side < 0) continue;
+      g.drawImage(m.img, x0, y0, side, side);
+    }
+    // out on the high seas: each archipelago pinned to the rim, named, to steer by
+    if (!walker && nearestRegion(cx, cz).dist > HIGH_SEAS_R) {
+      g.font = '700 15px Cinzel, serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      for (const r of REGIONS) {
+        const a = Math.atan2(r.z - cz, r.x - cx);
+        const rr = S / 2 - 16;
+        const x = S / 2 + Math.cos(a) * rr;
+        const y = S / 2 + Math.sin(a) * rr;
+        g.save();
+        g.translate(x, y);
+        g.rotate(a);
+        g.fillStyle = 'rgba(255, 231, 168, 0.95)';
+        g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(10, 0);
+        g.lineTo(-6, -7);
+        g.lineTo(-3, 0);
+        g.lineTo(-6, 7);
+        g.closePath();
+        g.fill();
+        g.stroke();
+        g.restore();
+        const tx = S / 2 + Math.cos(a) * (rr - 30);
+        const ty = S / 2 + Math.sin(a) * (rr - 30);
+        g.lineWidth = 4;
+        g.strokeText(r.name, tx, ty);
+        g.fillText(r.name, tx, ty);
+      }
+      g.textBaseline = 'alphabetic';
+    }
     // undiscovered isles get a soft marker
     g.font = '600 18px Cinzel, serif';
     g.textAlign = 'center';

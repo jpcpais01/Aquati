@@ -1692,6 +1692,8 @@ export class TradePorts {
     const lively: TradePort[] = [];
     for (const p of this.ports) {
       const d = p.lod(cam);
+      // a town across the high seas, out of sight, is left be until you come back
+      if (!p.group.visible) continue;
       for (const s of ships) if (!s.anchored && (s.alive || s.sinkT < 6) && Math.hypot(s.pos.x - p.x, s.pos.z - p.z) < 90) p.repel(s);
       p.update(dt, world, player);
       if (p.lively && d < 300) lively.push(p);

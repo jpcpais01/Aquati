@@ -254,6 +254,13 @@ export class Dolphins {
     }
   }
 
+  /** One drawn just under the sea at `at` for the loading screen's warm-up (cleared after). */
+  warm(at: THREE.Vector3) {
+    this.mesh.setMatrixAt(0, new THREE.Matrix4().makeTranslation(at.x, -1.2, at.z));
+    this.mesh.instanceMatrix.needsUpdate = true;
+    this.mesh.count = 1;
+  }
+
   /** Gone at once (a fresh voyage). */
   clear() {
     this.pod.length = 0;

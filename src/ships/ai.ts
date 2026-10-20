@@ -4,6 +4,7 @@ import { World } from '../game/world';
 import { Ship, gunRange } from './ship';
 import { AMMO, AmmoId } from '../game/ammo';
 import { ShipClassId } from './shipTypes';
+import { clampToRegion } from '../world/regions';
 
 // How often each class of pirate loads something nastier than round shot.
 const PIRATE_AMMO: Record<ShipClassId, [AmmoId, number][]> = {
@@ -61,8 +62,8 @@ export class PirateAI {
     for (let i = 0; i < 30; i++) {
       const a = this.rnd() * Math.PI * 2;
       const r = 120 + this.rnd() * 260;
-      const x = clamp(this.ship.pos.x + Math.cos(a) * r, -880, 880);
-      const z = clamp(this.ship.pos.z + Math.sin(a) * r, -880, 880);
+      // she keeps to the archipelago she's in
+      const [x, z] = clampToRegion(this.ship.pos.x + Math.cos(a) * r, this.ship.pos.z + Math.sin(a) * r, this.ship.pos.x, this.ship.pos.z);
       if (world.terrain.heightAt(x, z) < -7 && !world.hazards?.vortexAt(x, z, 1.6)) {
         this.wp = { x, z };
         return;

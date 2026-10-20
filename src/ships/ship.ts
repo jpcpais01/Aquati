@@ -7,6 +7,9 @@ import { BowWave } from '../fx/bowWave';
 import { ShipModel } from './shipModel';
 import { ShipDamage, WRECK_LIFE } from './shipDamage';
 import { Livery, ShipClass } from './shipTypes';
+import { HIGH_SEAS_R, nearestRegion, seaEdge } from '../world/regions';
+
+const _back = { x: 0, z: 0 };
 
 export type Team = 'player' | 'pirate';
 
@@ -461,7 +464,11 @@ export class Ship {
       const tornK = 1 - EFFECT.tornSlow * Math.min(1, this.torn / 3);
       const hpF = (0.72 + 0.28 * (this.hp / this.maxHp)) * this.dmg.speedFactor * tornK;
       // a ghost sails on a wind of her own, dead into the eye of the real one if she likes
-      const wf = this.ghost ? 1.02 : windFactor(relDeg) * (0.75 + 0.25 * w.strength) * (1 + gust * 0.08);
+      let wf = this.ghost ? 1.02 : windFactor(relDeg) * (0.75 + 0.25 * w.strength) * (1 + gust * 0.08);
+      // out on the high seas the steady trade wind and the long swell carry her
+      // along on any heading, half again as fast, so the crossing stays a few calm minutes
+      const open = smoothstep(HIGH_SEAS_R - 150, HIGH_SEAS_R + 450, nearestRegion(this.pos.x, this.pos.z).dist);
+      if (open > 0) wf = Math.max(wf, 0.82 * open) * (1 + 0.5 * open);
       const target = c.maxSpeed * this.boost.speed * this.sailLevel * wf * hpF * (1 - this.held * 0.92);
       const rate = target > this.speed ? c.accel : c.accel * (1.4 + this.held * 3);
       this.speed += (target - this.speed) * damp(rate, dt);
@@ -537,12 +544,12 @@ export class Ship {
       }
     }
     this.grindReef(grind, gx, gz, dt, world);
-    // world edge
-    const r = Math.hypot(this.pos.x, this.pos.z);
-    if (r > 960) {
-      const k = (r - 960) * 0.05;
-      this.pos.x -= (this.pos.x / r) * k;
-      this.pos.z -= (this.pos.z / r) * k;
+    // the edge of the known sea (round both archipelagos and the lane between)
+    const over = seaEdge(this.pos.x, this.pos.z, _back);
+    if (over > 0) {
+      const k = over * 0.05;
+      this.pos.x += _back.x * k;
+      this.pos.z += _back.z * k;
     }
 
     // ------------------------------------------------ buoyancy

@@ -383,7 +383,8 @@ export class Birds {
   private cryClock = 3;
   private time = 0;
 
-  constructor(islands: Island[], count: number, heightAt: (x: number, z: number) => number) {
+  /** `islands` give every perch; the flock first nests round `homes` (see rehome). */
+  constructor(islands: Island[], count: number, heightAt: (x: number, z: number) => number, homes = islands) {
     const geo = gullGeometry();
     this.wingA = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
     this.wingB = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
@@ -426,7 +427,7 @@ export class Birds {
     }
 
     for (let i = 0; i < count; i++) {
-      const home = islands[i % islands.length];
+      const home = homes[i % homes.length];
       const g: Gull = {
         home,
         mode: 'soar',
@@ -480,6 +481,28 @@ export class Birds {
       }
       this.gulls.push(g);
     }
+  }
+
+  /**
+   * The flock moves to another archipelago's isles (done out on the high seas,
+   * where none of them is in sight): each gull lets go of its perch or escort
+   * and is found circling over its new home.
+   */
+  rehome(homes: Island[]) {
+    if (!homes.length || this.gulls[0]?.home === homes[0]) return;
+    this.gulls.forEach((g, i) => {
+      if (g.perch) g.perch.taken = false;
+      g.perch = null;
+      g.water = null;
+      g.home = homes[i % homes.length];
+      g.mode = 'soar';
+      g.fold = g.legs = 0;
+      g.t = 6 + Math.random() * 20;
+      this.newCircle(g);
+      const a = Math.random() * TAU;
+      g.pos.set(g.cx + Math.cos(a) * g.r, g.h, g.cz + Math.sin(a) * g.r);
+      g.vel.set(-Math.sin(a) * g.dir * 9, 0, Math.cos(a) * g.dir * 9);
+    });
   }
 
   private newCircle(g: Gull) {

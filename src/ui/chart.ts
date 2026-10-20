@@ -6,11 +6,30 @@
 import { RARITY } from '../game/loot';
 import { Ship } from '../ships/ship';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
+import type { Seas } from '../world/seas';
+import { EDGE_R, HIGH_SEAS_R, nearestRegion, Region, REGIONS } from '../world/regions';
 import { PIN_COLORS } from '../game/waypoints';
 
-const HALF = WORLD_SIZE / 2;
 const SPYGLASS = 650; // pirates are only charted within this range of you
-const MAX_ZOOM = 6;
+/** The whole known sea: every archipelago's square, and the high seas between. */
+const SEA = {
+  x0: Math.min(...REGIONS.map((r) => r.x)) - EDGE_R,
+  x1: Math.max(...REGIONS.map((r) => r.x)) + EDGE_R,
+  z0: Math.min(...REGIONS.map((r) => r.z)) - EDGE_R,
+  z1: Math.max(...REGIONS.map((r) => r.z)) + EDGE_R,
+};
+const SEA_W = SEA.x1 - SEA.x0;
+const SEA_H = SEA.z1 - SEA.z0;
+/** As close as one archipelago could be looked at before, whatever the sea's size. */
+const MAX_ZOOM = (6 * Math.max(SEA_W, SEA_H)) / WORLD_SIZE;
+/** The open water between the archipelagos, as the chart names it. */
+export const HIGH_SEAS_NAME = 'Mar Sereno';
+
+/** Which archipelago's waters a point lies in (null out on the high seas). */
+function regionAt(x: number, z: number): Region | null {
+  const { region, dist } = nearestRegion(x, z);
+  return dist < HIGH_SEAS_R ? region : null;
+}
 
 /** A trading port on a map: a gilt disc with a pair of scales. */
 export function portMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
@@ -186,6 +205,8 @@ export interface ChartScene {
   forts?: { x: number; z: number; name: string; ours: boolean; quiet: boolean }[];
   /** Maelstroms and open-sea reefs: every captain knows the old tales of where they lie. */
   hazards?: HazardMark[];
+  /** The archipelagos you've sailed into; the rest are only rumours in the mist. */
+  charted?: Set<string>;
   windX: number;
   windZ: number;
   time: number;
@@ -235,7 +256,8 @@ export function fmtDist(m: number) {
 
 export class SeaChart {
   private g: CanvasRenderingContext2D;
-  private image: HTMLCanvasElement | null = null;
+  /** Each archipelago's engraved chart, keyed by its id. */
+  private images = new Map<string, HTMLCanvasElement>();
   private dpr = 1;
   private W = 1;
   private H = 1;
@@ -246,7 +268,7 @@ export class SeaChart {
   private pointers = new Map<number, { x: number; y: number }>();
   private pinchD = 0;
   private dragged = 0;
-  private terrain: Terrain | null = null;
+  private seas: Seas | null = null;
   private multi = false;
   private tapT = 0;
   /** A tap on the chart (not a drag, pinch or double-click): world spot and the world radius of a fingertip. */
@@ -318,15 +340,17 @@ export class SeaChart {
     return [this.cx + (clientX - r.left - this.W / 2) / s, this.cz + (clientY - r.top - this.H / 2) / s];
   }
 
-  setTerrain(t: Terrain) {
-    this.terrain = t;
-    this.image = null;
+  setTerrain(t: Seas) {
+    this.seas = t;
+    this.images.clear();
   }
 
-  /** Open fitted to the whole world, but nudged towards the player. */
+  /** Open on the waters you're in (as close as one archipelago used to fill it), centred on the player. */
   open(player: Ship) {
     this.resize();
-    this.zoom = 1.35;
+    // out on the high seas there's nothing near to show: open on the whole sea
+    const open = !regionAt(player.pos.x, player.pos.z);
+    this.zoom = open ? 1 : Math.min(MAX_ZOOM, (1.35 * Math.min(this.W, this.H)) / WORLD_SIZE / (this.fit() / 0.96));
     this.cx = player.pos.x;
     this.cz = player.pos.z;
     this.clampView();
@@ -359,7 +383,7 @@ export class SeaChart {
   }
 
   private fit() {
-    return (Math.min(this.W, this.H) / WORLD_SIZE) * 0.96;
+    return Math.min(this.W / SEA_W, this.H / SEA_H) * 0.96;
   }
 
   private scale() {
@@ -385,19 +409,21 @@ export class SeaChart {
     const ex = this.W / 2 / s;
     const ez = this.H / 2 / s;
     const pad = 40 / s;
-    this.cx = ex + pad >= HALF ? 0 : Math.min(HALF - ex + pad, Math.max(-HALF + ex - pad, this.cx));
-    this.cz = ez + pad >= HALF ? 0 : Math.min(HALF - ez + pad, Math.max(-HALF + ez - pad, this.cz));
+    const mx = (SEA.x0 + SEA.x1) / 2;
+    const mz = (SEA.z0 + SEA.z1) / 2;
+    this.cx = ex + pad >= SEA_W / 2 ? mx : Math.min(SEA.x1 - ex + pad, Math.max(SEA.x0 + ex - pad, this.cx));
+    this.cz = ez + pad >= SEA_H / 2 ? mz : Math.min(SEA.z1 - ez + pad, Math.max(SEA.z0 + ez - pad, this.cz));
   }
 
   // ------------------------------------------------------------- base image
 
-  private build() {
-    const t = this.terrain!;
+  /** Engraves one archipelago's square (its first look on the chart, then kept). */
+  private build(t: Terrain, mist: boolean) {
     const res = 1024;
     const step = WORLD_SIZE / res;
     const hs = new Float32Array(res * res);
     for (let j = 0; j < res; j++)
-      for (let i = 0; i < res; i++) hs[j * res + i] = t.heightAt(-HALF + (i + 0.5) * step, -HALF + (j + 0.5) * step);
+      for (let i = 0; i < res; i++) hs[j * res + i] = t.heightAt(t.x0 + (i + 0.5) * step, t.z0 + (j + 0.5) * step);
     const c = document.createElement('canvas');
     c.width = c.height = res;
     const g = c.getContext('2d')!;
@@ -417,10 +443,17 @@ export class SeaChart {
           r = (110 + k * 60 + rock * 40) * shade;
           gg = (158 - k * 22 + rock * 20) * shade;
           b = (86 + k * 20 + rock * 50) * shade;
+          if (mist) {
+            // the mist isles: jade jungle, pale limestone towers
+            const lime = Math.min(1, Math.max(0, (h - 18) / 40));
+            r = (96 + lime * 120) * shade;
+            gg = (150 + lime * 66) * shade;
+            b = (104 + lime * 100) * shade;
+          }
         } else if (h > 0) {
-          r = 238;
-          gg = 222;
-          b = 178;
+          r = mist ? 240 : 238;
+          gg = mist ? 214 : 222;
+          b = mist ? 200 : 178;
         } else {
           const k = Math.min(1, -h / 16);
           const kk = k * k;
@@ -449,44 +482,81 @@ export class SeaChart {
       }
     }
     g.putImageData(img, 0, 0);
-    this.image = c;
+    // the deep edge of the square melts into the open sea round it
+    const fade = g.createRadialGradient(res / 2, res / 2, res * 0.42, res / 2, res / 2, res * 0.5);
+    fade.addColorStop(0, 'rgba(10, 52, 70, 0)');
+    fade.addColorStop(1, 'rgba(10, 52, 70, 1)');
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = fade;
+    g.fillRect(0, 0, res, res);
+    g.globalCompositeOperation = 'source-over';
+    return c;
   }
 
   // ------------------------------------------------------------------ draw
 
   draw(sc: ChartScene) {
-    if (!this.image && this.terrain) this.build();
     const g = this.g;
     const W = this.W;
     const H = this.H;
     const s = this.scale();
     const toS = (x: number, z: number): [number, number] => [(x - this.cx) * s + W / 2, (z - this.cz) * s + H / 2];
+    const charted = (r: Region | null) => !r || r.id === 'home' || !sc.charted || sc.charted.has(r.id);
+    // is a point somewhere the chart can show (not inside a rumoured archipelago)?
+    const shown = (x: number, z: number) => charted(regionAt(x, z));
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.fillStyle = '#0a3446';
     g.fillRect(0, 0, W, H);
 
-    if (this.image) {
-      const [x0, y0] = toS(-HALF, -HALF);
-      g.imageSmoothingEnabled = true;
-      g.imageSmoothingQuality = 'high';
-      g.drawImage(this.image, x0, y0, WORLD_SIZE * s, WORLD_SIZE * s);
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = 'high';
+    for (const t of this.seas?.regions ?? []) {
+      const region = nearestRegion(t.ox, t.oz).region;
+      const [x0, y0] = toS(t.x0, t.z0);
+      const size = WORLD_SIZE * s;
+      if (x0 > W || y0 > H || x0 + size < 0 || y0 + size < 0) continue;
+      let img = this.images.get(region.id);
+      if (!img) this.images.set(region.id, (img = this.build(t, t.style === 'brumas')));
+      if (charted(region)) {
+        g.drawImage(img, x0, y0, size, size);
+        continue;
+      }
+      // a rumour: a faint outline under drifting mist, and the old tale of it
+      g.globalAlpha = 0.22;
+      g.drawImage(img, x0, y0, size, size);
+      g.globalAlpha = 1;
+      const [mx, my] = toS(region.x, region.z);
+      const fog = g.createRadialGradient(mx, my, 0, mx, my, size * 0.5);
+      fog.addColorStop(0, 'rgba(206, 222, 226, 0.34)');
+      fog.addColorStop(0.7, 'rgba(180, 204, 212, 0.16)');
+      fog.addColorStop(1, 'rgba(180, 204, 212, 0)');
+      g.fillStyle = fog;
+      g.fillRect(x0, y0, size, size);
     }
 
-    // graticule
+    // graticule: finer as you zoom in
+    const grid = s * 1024 < 90 ? 2048 : s * 256 < 40 ? 1024 : 256;
     g.strokeStyle = 'rgba(255, 244, 214, 0.13)';
     g.lineWidth = 1;
     g.beginPath();
-    for (let v = -HALF; v <= HALF; v += 256) {
-      const [ax, ay] = toS(v, -HALF);
-      const [, by] = toS(v, HALF);
+    for (let v = Math.ceil(SEA.x0 / grid) * grid; v <= SEA.x1; v += grid) {
+      const [ax, ay] = toS(v, SEA.z0);
+      const [, by] = toS(v, SEA.z1);
       g.moveTo(ax, ay);
       g.lineTo(ax, by);
-      const [cx, cy] = toS(-HALF, v);
-      const [dx] = toS(HALF, v);
+    }
+    for (let v = Math.ceil(SEA.z0 / grid) * grid; v <= SEA.z1; v += grid) {
+      const [cx, cy] = toS(SEA.x0, v);
+      const [dx] = toS(SEA.x1, v);
       g.moveTo(cx, cy);
       g.lineTo(dx, cy);
     }
     g.stroke();
+
+    this.drawSeaNames(g, toS, s, sc, charted);
+    // zoomed out to the whole sea, only the archipelagos are named: their isles,
+    // towns and dangers shrink to marks
+    const detail = this.farness(s) < 0.5;
 
     // salvage
     for (const l of sc.loot) {
@@ -504,6 +574,7 @@ export class SeaChart {
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     for (const isl of sc.islands) {
+      if (!shown(isl.x, isl.z) || !detail) continue;
       const [x, y] = toS(isl.x, isl.z);
       const known = sc.discovered.has(isl.name);
       const ly = y + Math.max(14, isl.r * s * 0.55 + 12);
@@ -531,8 +602,10 @@ export class SeaChart {
     // trading ports
     g.font = '600 12px Cinzel, Georgia, serif';
     for (const pt of sc.ports ?? []) {
+      if (!shown(pt.x, pt.z)) continue;
       const [x, y] = toS(pt.x, pt.z);
-      portMark(g, x, y, 9);
+      portMark(g, x, y, detail ? 9 : 5);
+      if (!detail) continue;
       g.lineWidth = 4;
       g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
       g.strokeText(pt.name, x, y - 18);
@@ -543,8 +616,10 @@ export class SeaChart {
     // the forts, named (every captain knows where the Brethren's guns are)
     g.font = '600 12px Cinzel, Georgia, serif';
     for (const f of sc.forts ?? []) {
+      if (!shown(f.x, f.z)) continue;
       const [x, y] = toS(f.x, f.z);
-      fortMark(g, x, y, 9, f.ours, f.quiet);
+      fortMark(g, x, y, detail ? 9 : 5, f.ours, f.quiet);
+      if (!detail) continue;
       g.lineWidth = 4;
       g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
       g.strokeText(f.name, x, y - 18);
@@ -555,6 +630,7 @@ export class SeaChart {
     // the sea's dangers, inked in coral red: a maelstrom's pull dashed round its
     // spiral, a reef's danger mark, each with its name in italic
     for (const hz of sc.hazards ?? []) {
+      if (!shown(hz.x, hz.z) || !detail) continue;
       const [x, y] = toS(hz.x, hz.z);
       const rr = hz.r * s;
       g.font = 'italic 600 12px Georgia, serif';
@@ -735,6 +811,85 @@ export class SeaChart {
     this.drawScale(g, 18, H - 22, s);
   }
 
+  /**
+   * The archipelagos' names, large, once you've zoomed out far enough to see
+   * more than one; and the lane across the high seas between them, dotted like
+   * an old sailing route.
+   */
+  private drawSeaNames(
+    g: CanvasRenderingContext2D,
+    toS: (x: number, z: number) => [number, number],
+    s: number,
+    sc: ChartScene,
+    charted: (r: Region) => boolean,
+  ) {
+    const far = this.farness(s);
+    if (far <= 0.02) return;
+    g.save();
+    g.globalAlpha = far;
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    // the lane: from the Fortunate Isles' edge to Las Brumas', bowed a little like a real course
+    const [a, b] = REGIONS;
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    const L = Math.hypot(dx, dz);
+    const ux = dx / L;
+    const uz = dz / L;
+    const [sx, sy] = toS(a.x + ux * 1150, a.z + uz * 1150);
+    const [ex, ey] = toS(b.x - ux * 1150, b.z - uz * 1150);
+    const [qx, qy] = toS((a.x + b.x) / 2 - uz * 520, (a.z + b.z) / 2 + ux * 520);
+    g.setLineDash([3, 9]);
+    g.lineDashOffset = -sc.time * 4;
+    g.lineCap = 'round';
+    g.strokeStyle = 'rgba(255, 236, 190, 0.45)';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(sx, sy);
+    g.quadraticCurveTo(qx, qy, ex, ey);
+    g.stroke();
+    g.setLineDash([]);
+    // the high seas' name, along the lane
+    const mx = 0.25 * sx + 0.5 * qx + 0.25 * ex;
+    const my = 0.25 * sy + 0.5 * qy + 0.25 * ey;
+    g.save();
+    g.translate(mx, my);
+    g.rotate(Math.atan2(ey - sy, ex - sx));
+    g.font = 'italic 600 15px Georgia, serif';
+    g.lineWidth = 4;
+    g.strokeStyle = 'rgba(8, 30, 40, 0.7)';
+    g.strokeText(`${HIGH_SEAS_NAME}`, 0, -14);
+    g.fillStyle = 'rgba(190, 236, 240, 0.9)';
+    g.fillText(`${HIGH_SEAS_NAME}`, 0, -14);
+    g.font = 'italic 500 11px Georgia, serif';
+    g.strokeText('the high seas · calm water, dolphins', 0, 6);
+    g.fillStyle = 'rgba(190, 236, 240, 0.7)';
+    g.fillText('the high seas · calm water, dolphins', 0, 6);
+    g.restore();
+    for (const r of REGIONS) {
+      const [x, y] = toS(r.x, r.z - 1120);
+      const known = charted(r);
+      g.font = '700 22px Cinzel, Georgia, serif';
+      g.lineWidth = 5;
+      g.strokeStyle = 'rgba(8, 30, 40, 0.75)';
+      g.strokeText(r.name, x, y);
+      g.fillStyle = known ? '#ffe7a8' : 'rgba(225, 236, 238, 0.75)';
+      g.fillText(r.name, x, y);
+      g.font = 'italic 500 12px Georgia, serif';
+      const sub = known ? r.motto : 'Uncharted · only sailors\' tales';
+      g.lineWidth = 4;
+      g.strokeText(sub, x, y + 20);
+      g.fillStyle = known ? 'rgba(255, 236, 190, 0.8)' : 'rgba(225, 236, 238, 0.65)';
+      g.fillText(sub, x, y + 20);
+    }
+    g.restore();
+  }
+
+  /** 0 while one archipelago fills the chart .. 1 once it has shrunk to a corner of the whole sea. */
+  private farness(s: number) {
+    return Math.min(1, Math.max(0, (0.5 - (s * 1024) / Math.min(this.W, this.H)) / 0.2));
+  }
+
   private drawRose(g: CanvasRenderingContext2D, x: number, y: number, r: number, wx: number, wz: number) {
     g.save();
     g.translate(x, y);
@@ -777,7 +932,7 @@ export class SeaChart {
   }
 
   private drawScale(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
-    const metres = s * 200 > 140 ? 100 : s * 200 > 60 ? 200 : 500;
+    const metres = [100, 200, 500, 1000, 2000].find((m) => m * s > 60) ?? 2000;
     const len = metres * s;
     g.strokeStyle = 'rgba(255, 241, 214, 0.85)';
     g.lineWidth = 2;
@@ -791,6 +946,6 @@ export class SeaChart {
     g.textAlign = 'left';
     g.textBaseline = 'bottom';
     g.fillStyle = 'rgba(255, 241, 214, 0.85)';
-    g.fillText(`${metres} m`, x + 2, y - 6);
+    g.fillText(metres < 1000 ? `${metres} m` : `${metres / 1000} km`, x + 2, y - 6);
   }
 }

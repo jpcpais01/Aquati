@@ -186,6 +186,11 @@ export class Atmosphere {
   mode: WeatherKind | 'auto' = 'auto';
   /** Keeps the current weather from moving on (a storm holds while the Kraken is up). */
   hold = false;
+  /**
+   * Which waters' weather comes next: the Fortunate Isles', the misty isles'
+   * (sea mist at any hour, more rain) or the high seas' (fair and settled).
+   */
+  climate: 'home' | 'mist' | 'open' = 'home';
   /** Speeds up the blend for a moment after the player picks the weather by hand. */
   private rush = 0;
   /** 'auto' lets the day run; any other hour holds the clock there. */
@@ -358,13 +363,24 @@ export class Atmosphere {
   private nextWeather() {
     const h = this.hour;
     const dawn = h > 3.5 && h < 9;
-    const opts = WEATHER[this.kind].next.map(([k, w]) => [k, k === 'mist' ? (dawn ? w * 4 : w * 0.15) : w] as [WeatherKind, number]);
+    const c = this.climate;
+    const opts = WEATHER[this.kind].next.map(([k, w]) => {
+      if (k === 'mist') w *= c === 'mist' ? (dawn ? 5 : 2.2) : dawn ? 4 : 0.15;
+      if (c === 'mist' && (k === 'rain' || k === 'cloudy')) w *= 1.4;
+      if (c === 'open') w *= k === 'storm' ? 0.2 : k === 'rain' ? 0.35 : k === 'cloudy' ? 0.7 : k === 'mist' ? 0.5 : 1.6;
+      return [k, w] as [WeatherKind, number];
+    });
     const k = pick(opts);
     this.setWeather(k);
     // a change of weather brings the wind round with it: hardest into a storm
     this.shiftWind(k === 'storm' ? 1.7 : k === 'rain' ? 1.15 : k === 'mist' ? 0.5 : 0.8, 6);
     const a = WEATHER[k].arrive;
     if (a) this.onChange(k, a[0], a[1]);
+  }
+
+  /** Brings the next turn of the weather within `s` seconds (out onto the calm of the high seas). */
+  hasten(s: number) {
+    this.stateDur = Math.min(this.stateDur, this.stateT + s);
   }
 
   update(dt: number) {
