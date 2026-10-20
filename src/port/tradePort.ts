@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { staticLod } from '../render/staticLod';
 import { skipWhenHidden } from '../render/staticScene';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -451,6 +452,8 @@ export class TradePort {
     this.far.visible = false;
     this.build();
     this.group.updateMatrixWorld(true);
+    staticLod.add(this.near);
+    staticLod.add(this.far);
     // the town far off, or the half of it swapped out by distance, skips the per-frame matrix walk
     for (const o of [this.group, this.near, this.far]) skipWhenHidden(o);
   }
@@ -1720,7 +1723,9 @@ export class TradePorts {
       const port = this.ports[Math.floor(i / FOLK)];
       if (!port || !lively.includes(port)) return 0;
       f.hips.getWorldPosition(_w);
-      return _w.distanceToSquared(cam) < 60 * 60 ? 1 : 2;
+      // and the lightest cut once they're a few dozen pixels tall
+      const d2 = _w.distanceToSquared(cam);
+      return d2 < 60 * 60 ? 1 : d2 < 75 * 75 ? 2 : 3;
     });
   }
 
