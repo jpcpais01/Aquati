@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { patchMaterial } from '../render/environment';
+import { simplifiedLevels } from '../render/lod';
 import { GHOST_GREEN } from './ghostGlsl';
 
 // One sailor mesh for every crewman on every ship. The body is sculpted from
@@ -677,7 +678,11 @@ export function buildSailorGeometry(res = 1): THREE.BufferGeometry {
   const far = res < 0.6;
   const hi = res >= 0.75;
   LOD = far ? res * 0.85 : res;
-  const seg = (n: number) => n;
+  // segments round each part: the far sculpt is a few dozen pixels tall at
+  // most, where a 44-segment head is pure triangle cost, so it rounds every
+  // part far more coarsely (the silhouette at that size is the same)
+  const cols = res >= 0.95 ? 1 : far ? Math.max(0.2, res * 0.55) : 0.75;
+  const seg = (n: number) => Math.max(far ? 4 : 6, Math.round(n * cols));
   const rowsOf = (rows: number[]) => thin(rows, far ? res * 0.75 : res);
 
   // ---- torso: one continuous skin from the seat to the collarbones, bending at the waist
@@ -2078,6 +2083,9 @@ interface Level {
  * body mesh plus one per hat, prop and bigger extra (see bucketOf), all sharing
  * one vertex buffer; a sailor is queued only into the meshes they wear.
  */
+/** How far (m) the distant crew sculpt may stray from the far one. */
+const CREW_DISTANT_ERROR = 0.012;
+
 export class CrewRenderer {
   readonly group = new THREE.Group();
   readonly palette: THREE.DataTexture;
@@ -2092,56 +2100,81 @@ export class CrewRenderer {
     this.palette.colorSpace = THREE.NoColorSpace;
     this.palette.needsUpdate = true;
     const { material, depth } = createCrewMaterial(this.palette);
+    this.material = material;
+    this.depth = depth;
     // a crowd that always fits in the near batch never needs the far sculpt
     const levels = nearMax >= rows ? [[nearRes, rows]] : [[nearRes, nearMax], [farRes, rows]];
-    this.levels = levels.map(([res, max]) => {
-      const full = buildSailorGeometry(res);
-      const idx = full.index!.array;
-      const grp = full.getAttribute('aRig');
-      const triGroup = new Float32Array(idx.length / 3);
-      const groups = new Set<number>();
-      for (let t = 0; t < triGroup.length; t++) {
-        const g = grp.getZ(idx[t * 3]);
-        triGroup[t] = g;
-        groups.add(g);
-      }
-      const members = new Map<number, number[]>();
-      for (const g of groups) {
-        const b = bucketOf(g);
-        if (!members.has(b)) members.set(b, []);
-        members.get(b)!.push(g);
-      }
-      const keys = [...members.keys()].sort((a, b) => a - b);
-      const batches = keys.map((key) => {
-        const want = new Set(members.get(key)!);
-        const sub: number[] = [];
-        for (let t = 0; t < triGroup.length; t++) if (want.has(triGroup[t])) sub.push(idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]);
-        const geo = new THREE.BufferGeometry();
-        // the vertex data is shared by every mesh of the level and uploaded once
-        for (const [name, a] of Object.entries(full.attributes)) geo.setAttribute(name, a);
-        geo.setIndex(sub);
-        const poses = [0, 1, 2, 3, 4, 5].map((k) => {
-          const a = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
-          a.setUsage(THREE.DynamicDrawUsage);
-          geo.setAttribute(`aPose${k}`, a);
-          return a;
-        });
-        const style = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
-        style.setUsage(THREE.DynamicDrawUsage);
-        geo.setAttribute('aStyle', style);
-        const mesh = new THREE.InstancedMesh(geo, material, max);
-        mesh.customDepthMaterial = depth;
-        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-        mesh.count = 0;
-        mesh.visible = false;
-        mesh.frustumCulled = false;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        this.group.add(mesh);
-        return { mesh, poses, style, groups: key === 0 ? [] : members.get(key)!, n: 0 };
+    const sculpts = levels.map(([res]) => buildSailorGeometry(res));
+    this.levels = levels.map(([, max], i) => this.level(sculpts[i], null, max));
+    if (levels.length > 1) {
+      // a third, lighter cut of the far sculpt for sailors seen from the sea
+      // (the camera never comes closer than 70 m out there): the simplifier
+      // holds it within a centimetre and a bit, a fraction of a pixel at that range
+      const far = sculpts[1];
+      void simplifiedLevels(far, [{ error: CREW_DISTANT_ERROR, prune: true }]).then(([g]) => {
+        if (g) this.distant = this.level(far, g.index!.array as ArrayLike<number>, rows);
       });
-      return { batches, n: 0, max };
+    }
+  }
+
+  private readonly material: THREE.Material;
+  private readonly depth: THREE.Material;
+  private distant: Level | null = null;
+
+  /**
+   * One level: the sculpt split into a body mesh plus one per hat, prop and
+   * bigger extra, all drawing from the same vertices (through `index`, a
+   * lighter cut of them, when given).
+   */
+  private level(full: THREE.BufferGeometry, index: ArrayLike<number> | null, max: number): Level {
+    const idx = index ?? full.index!.array;
+    const grp = full.getAttribute('aRig');
+    const triGroup = new Float32Array(idx.length / 3);
+    const groups = new Set<number>();
+    for (let t = 0; t < triGroup.length; t++) {
+      const g = grp.getZ(idx[t * 3]);
+      triGroup[t] = g;
+      groups.add(g);
+    }
+    const members = new Map<number, number[]>();
+    for (const g of groups) {
+      const b = bucketOf(g);
+      if (!members.has(b)) members.set(b, []);
+      members.get(b)!.push(g);
+    }
+    const keys = [...members.keys()].sort((a, b) => a - b);
+    const batches = keys.map((key) => {
+      const want = new Set(members.get(key)!);
+      const sub: number[] = [];
+      for (let t = 0; t < triGroup.length; t++) if (want.has(triGroup[t])) sub.push(idx[t * 3], idx[t * 3 + 1], idx[t * 3 + 2]);
+      const geo = new THREE.BufferGeometry();
+      // the vertex data is shared by every mesh of the level and uploaded once
+      for (const [name, a] of Object.entries(full.attributes)) {
+        if (name.startsWith('aPose') || name === 'aStyle') continue;
+        geo.setAttribute(name, a);
+      }
+      geo.setIndex(sub);
+      const poses = [0, 1, 2, 3, 4, 5].map((k) => {
+        const a = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
+        a.setUsage(THREE.DynamicDrawUsage);
+        geo.setAttribute(`aPose${k}`, a);
+        return a;
+      });
+      const style = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
+      style.setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute('aStyle', style);
+      const mesh = new THREE.InstancedMesh(geo, this.material, max);
+      mesh.customDepthMaterial = this.depth;
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.count = 0;
+      mesh.visible = false;
+      mesh.frustumCulled = false;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      return { mesh, poses, style, groups: key === 0 ? [] : members.get(key)!, n: 0 };
     });
+    return { batches, n: 0, max };
   }
 
   /** One sailor's colours: TINT_SLOTS rgba entries (a > 0 glows, a < 0 patterns). */
@@ -2159,15 +2192,22 @@ export class CrewRenderer {
   }
 
   begin() {
-    for (const l of this.levels) {
+    for (const l of this.all()) {
       l.n = 0;
       for (const b of l.batches) b.n = 0;
     }
   }
 
-  /** Queues one posed sailor; `near` asks for the detailed sculpt (if there's room). */
-  push(m: THREE.Matrix4, pose: ArrayLike<number>, row: number, hat: number, prop: number, flags: number, near: boolean) {
-    let l = this.levels[near ? 0 : this.levels.length - 1];
+  private all() {
+    return this.distant ? [...this.levels, this.distant] : this.levels;
+  }
+
+  /**
+   * Queues one posed sailor; `near` asks for the detailed sculpt (if there's
+   * room), `distant` for the lightest one (once it's ready).
+   */
+  push(m: THREE.Matrix4, pose: ArrayLike<number>, row: number, hat: number, prop: number, flags: number, near: boolean, distant = false) {
+    let l = near ? this.levels[0] : distant && this.distant ? this.distant : this.levels[this.levels.length - 1];
     if (l.n >= l.max) l = this.levels[1];
     if (!l || l.n >= l.max) return;
     l.n++;
@@ -2192,7 +2232,7 @@ export class CrewRenderer {
   }
 
   end() {
-    for (const l of this.levels) {
+    for (const l of this.all()) {
       for (const b of l.batches) {
         b.mesh.count = b.n;
         b.mesh.visible = b.n > 0;

@@ -47,6 +47,10 @@ export class Seas implements SeaFloor {
     return this.at(x, z)?.lagoonAt(x, z) ?? false;
   }
 
+  erosionAt(x: number, z: number): number {
+    return this.at(x, z)?.erosionAt(x, z) ?? 0;
+  }
+
   gradientAt(x: number, z: number, out: THREE.Vector2): THREE.Vector2 {
     const t = this.at(x, z);
     return t ? t.gradientAt(x, z, out) : out.set(0, 0);

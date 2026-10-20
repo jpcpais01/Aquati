@@ -20,6 +20,8 @@ export interface GraphicsSettings {
   rtReflections: boolean;
   bloom: boolean;
   tiltShift: boolean;
+  /** Sunbeams through the haze under the clouds and down through the shallows. */
+  lightShafts: boolean;
 }
 
 /** How many rays / steps each ray-traced effect gets at a level. */
@@ -27,22 +29,23 @@ export interface TraceBudget {
   aoSamples: number;
   shadowSteps: number;
   ssrSteps: number;
+  shaftSteps: number;
 }
 
 export const LEVELS: Level[] = ['low', 'medium', 'high', 'ultra'];
 
 const PRESETS: Record<Level, Omit<GraphicsSettings, 'preset' | 'resolution'>> = {
-  low: { antialias: false, shadowRes: 1024, softShadows: false, rtShadows: false, rtAO: false, rtGI: false, rtReflections: false, bloom: true, tiltShift: false },
-  medium: { antialias: true, shadowRes: 2048, softShadows: false, rtShadows: true, rtAO: true, rtGI: false, rtReflections: true, bloom: true, tiltShift: true },
-  high: { antialias: true, shadowRes: 2048, softShadows: true, rtShadows: true, rtAO: true, rtGI: true, rtReflections: true, bloom: true, tiltShift: true },
-  ultra: { antialias: true, shadowRes: 4096, softShadows: true, rtShadows: true, rtAO: true, rtGI: true, rtReflections: true, bloom: true, tiltShift: true },
+  low: { antialias: false, shadowRes: 1024, softShadows: false, rtShadows: false, rtAO: false, rtGI: false, rtReflections: false, bloom: true, tiltShift: false, lightShafts: false },
+  medium: { antialias: true, shadowRes: 2048, softShadows: false, rtShadows: true, rtAO: true, rtGI: false, rtReflections: true, bloom: true, tiltShift: true, lightShafts: true },
+  high: { antialias: true, shadowRes: 2048, softShadows: true, rtShadows: true, rtAO: true, rtGI: true, rtReflections: true, bloom: true, tiltShift: true, lightShafts: true },
+  ultra: { antialias: true, shadowRes: 4096, softShadows: true, rtShadows: true, rtAO: true, rtGI: true, rtReflections: true, bloom: true, tiltShift: true, lightShafts: true },
 };
 
 const BUDGETS: Record<Level, TraceBudget> = {
-  low: { aoSamples: 6, shadowSteps: 8, ssrSteps: 8 },
-  medium: { aoSamples: 8, shadowSteps: 12, ssrSteps: 10 },
-  high: { aoSamples: 10, shadowSteps: 16, ssrSteps: 14 },
-  ultra: { aoSamples: 16, shadowSteps: 24, ssrSteps: 22 },
+  low: { aoSamples: 6, shadowSteps: 8, ssrSteps: 8, shaftSteps: 6 },
+  medium: { aoSamples: 8, shadowSteps: 12, ssrSteps: 10, shaftSteps: 8 },
+  high: { aoSamples: 10, shadowSteps: 16, ssrSteps: 14, shaftSteps: 12 },
+  ultra: { aoSamples: 16, shadowSteps: 24, ssrSteps: 22, shaftSteps: 16 },
 };
 
 const KEY = 'aquati.graphics';

@@ -7,7 +7,7 @@
 //   captains/{uid}/paints/{hash}   { d: PNG data URL of a hand-painted flag }
 // Security rules (firestore.rules) only ever let a signed-in captain reach their own.
 
-import { initializeApp, FirebaseOptions } from 'firebase/app';
+import { getApps, initializeApp, FirebaseOptions } from 'firebase/app';
 import {
   createUserWithEmailAndPassword, getAuth, getRedirectResult, GoogleAuthProvider, onAuthStateChanged, sendPasswordResetEmail,
   signInWithEmailAndPassword, signInWithPopup, signInWithRedirect, signOut, updateProfile, User,
@@ -80,7 +80,8 @@ export function authMessage(e: unknown) {
 }
 
 export function connect(config: FirebaseOptions, onUser: (u: CloudUser | null) => void) {
-  const app = initializeApp(config);
+  // multiplayer's handshake may have woken the app first (see net/signal.ts)
+  const app = getApps()[0] ?? initializeApp(config);
   const auth = getAuth(app);
   auth.useDeviceLanguage();
   const db = getFirestore(app);

@@ -4,6 +4,10 @@ import { World } from '../game/world';
 import { Ship } from './ship';
 import { HullShape, Stair } from './shipModel';
 import { CrewRenderer, FLAG, HAT, P, POSE_SIZE, PROP, TINT, TINT_SLOTS } from './crewModel';
+import type { SpiritFrom } from '../fx/spirits';
+
+/** A sailor lost for good: where his ghost rises, and what he looked like. */
+export type SoulHook = (f: SpiritFrom) => void;
 
 // Living crews. Every ship carries a captain, a helmsman, gun crews and deck
 // hands who read what their ship is doing: they man the guns on the side the
@@ -341,6 +345,10 @@ class Sailor {
   readonly mood = rand(-0.15, 0.55); // some sailors just grin more than others
   readonly height = rand(0.94, 1.06);
   readonly girth = rand(0.92, 1.12);
+  /** Sails against the player: his ghost goes up when he goes under. */
+  foe = false;
+  /** His ghost has already gone up. */
+  souled = false;
   lookYaw = 0;
   lookT = 0;
   flinch = 0;
@@ -407,6 +415,8 @@ class ShipCrew implements DeckPlan {
   private kills = 0;
   private deadSeen = false;
   readonly upright = new THREE.Quaternion();
+  /** Told when one of hers is lost (set by CrewSystem). */
+  soul: SoulHook | null = null;
 
   constructor(
     readonly ship: Ship,
@@ -514,6 +524,7 @@ class ShipCrew implements DeckPlan {
       writeLook(row, look);
       const zone = role === 'helm' || role === 'captain' ? this.helmZone : this.main;
       const sl = new Sailor(role, look, row, zone);
+      sl.foe = ship.team !== 'player';
       if (role === 'gunner') {
         const posts = this.posts.filter((p) => p.side === 1);
         sl.gun = posts[gunner++ % posts.length];
@@ -638,7 +649,16 @@ class ShipCrew implements DeckPlan {
     if (!sh.alive && !this.deadSeen) {
       this.deadSeen = true;
       // the dead don't abandon ship: a laid ghost's crew are simply gone with the curse
-      if (sh.ghost) for (const sl of this.sailors) sl.mode = 'gone';
+      if (sh.ghost) {
+        for (const sl of this.sailors) {
+          // ...and their spirits are free to go, one by one
+          if (sl.mode === 'aboard') {
+            this.toWorld(sl);
+            this.lost(sl, rand(0.3, 2.6));
+          }
+          sl.mode = 'gone';
+        }
+      }
       for (const sl of this.sailors) {
         sl.panicDelay = sl.role === 'helm' ? rand(2.4, 3.2) : rand(0.15, 2.6);
         sl.flinch = 0;
@@ -655,7 +675,10 @@ class ShipCrew implements DeckPlan {
 
     for (const sl of this.sailors) {
       if (sl.mode === 'aboard') this.think(sl, dt, world, onSplash);
-      else if (sl.mode !== 'ashore') updateLoose(sl, dt, world);
+      else if (sl.mode === 'air' || sl.mode === 'swim') {
+        updateLoose(sl, dt, world);
+        if (sinking(sl)) this.lost(sl, 0.1, world);
+      }
     }
     // keep folk from standing inside each other
     const n = this.sailors.length;
@@ -1829,8 +1852,12 @@ class ShipCrew implements DeckPlan {
     if (sl.mode === 'aboard') {
       _p.set(sl.x, this.deckY(sl.zone, sl.x, sl.z) + sl.y + 0.9, sl.z).applyMatrix4(sh.root.matrixWorld);
       if (_p.y < world.waterHeight(_p.x, _p.z)) {
-        if (sl.role === 'captain') sl.mode = 'gone';
-        else {
+        if (sl.role === 'captain') {
+          // he goes down with her
+          sl.mode = 'gone';
+          this.toWorld(sl);
+          this.lost(sl, 0.6, world);
+        } else {
           this.toWorld(sl);
           sl.mode = 'swim';
           sl.swimT = 0;
@@ -1838,6 +1865,14 @@ class ShipCrew implements DeckPlan {
         }
       }
     }
+  }
+
+  /** A sailor gone under for good: his ghost rises from the water above him (or from where he stood). */
+  private lost(sl: Sailor, delay: number, world?: World) {
+    if (!sl.foe || !this.soul || sl.souled) return;
+    sl.souled = true;
+    const y = world ? world.waterHeight(sl.wx, sl.wz) : sl.wy;
+    this.soul({ x: sl.wx, y, z: sl.wz, hat: sl.look.hat, girth: sl.girth, height: sl.height, boss: sl.role === 'captain', delay });
   }
 
   /** Copies the sailor's ship-local placement into world space. */
@@ -1990,6 +2025,11 @@ function face(sl: Sailor, T: Float32Array, tt: number, walking: boolean, battle:
   }
 }
 
+/** A swimmer whose strength has given out: going under for the last time (his ghost goes up now). */
+function sinking(sl: Sailor) {
+  return sl.foe && !sl.souled && sl.mode === 'swim' && sl.fade > 0.6;
+}
+
 /** Airborne leapers and swimmers live in world space. */
 function updateLoose(sl: Sailor, dt: number, world: World) {
   const T = sl.target;
@@ -2111,6 +2151,8 @@ export interface CrewFigure {
 
 export class CrewSystem {
   readonly mesh: THREE.Group;
+  /** A foe sailor is lost at sea: his ghost goes up. */
+  onSoul: SoulHook | null = null;
   private readonly crews = new Map<Ship, ShipCrew>();
   private orphans: Sailor[] = [];
   private readonly free: number[] = [];
@@ -2226,9 +2268,14 @@ export class CrewSystem {
     this.view.end();
   }
 
-  update(dt: number, world: World, ships: Ship[], focus: THREE.Vector3, viewR: number, eye: THREE.Vector3 | null = null) {
+  update(dt: number, world: World, ships: Ship[], focus: THREE.Vector3, viewR: number, eye: THREE.Vector3 | null = null, fov = 30) {
     // crews come aboard new ships, and are cast adrift when a ship is gone
-    for (const s of ships) if (!this.crews.has(s) && !s.removed) this.crews.set(s, new ShipCrew(s, this.alloc, this.tier, this.writeLook));
+    for (const s of ships) {
+      if (this.crews.has(s) || s.removed) continue;
+      const c = new ShipCrew(s, this.alloc, this.tier, this.writeLook);
+      c.soul = (f) => this.onSoul?.(f);
+      this.crews.set(s, c);
+    }
     for (const [s, c] of this.crews) {
       if (ships.includes(s) && !s.removed) continue;
       for (const sl of c.sailors) {
@@ -2251,11 +2298,14 @@ export class CrewSystem {
     view.begin();
     // the full sculpt (fingers, lashes, laces) only for those close enough to see it
     const near2 = 26 * 26;
+    // and the lightest cut past 50 m (further through a long lens), where
+    // every sailor seen from the sea is
+    const distant2 = (50 * Math.tan(THREE.MathUtils.degToRad(15)) / Math.tan(THREE.MathUtils.degToRad(fov * 0.5))) ** 2;
     const emit = (sl: Sailor, m: THREE.Matrix4) => {
       const e = m.elements;
       if (this.culling && !this.inView(e[12], e[13], e[14])) return;
-      const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
-      view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, near);
+      const d2 = eye ? (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 : Infinity;
+      view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, d2 < near2, d2 > distant2 && !!eye);
     };
 
     const m = _mOut;
@@ -2289,12 +2339,16 @@ export class CrewSystem {
       if (!f.visible || f.row < 0) continue;
       const e = f.matrix.elements;
       if (this.culling && !this.inView(e[12], e[13], e[14])) continue;
-      const near = !!eye && (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 < near2;
-      view.push(f.matrix, f.pose, f.row, f.look.hat, f.prop, f.look.flags, near);
+      const d2 = eye ? (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 : Infinity;
+      view.push(f.matrix, f.pose, f.row, f.look.hat, f.prop, f.look.flags, d2 < near2, d2 > distant2 && !!eye);
     }
     for (let i = this.orphans.length - 1; i >= 0; i--) {
       const sl = this.orphans[i];
       if (dt > 0) updateLoose(sl, dt, world);
+      if (sinking(sl)) {
+        sl.souled = true;
+        this.onSoul?.({ x: sl.wx, y: world.waterHeight(sl.wx, sl.wz), z: sl.wz, hat: sl.look.hat, girth: sl.girth, height: sl.height, delay: 0.1 });
+      }
       if (sl.mode === 'gone') {
         this.release(sl);
         this.orphans.splice(i, 1);

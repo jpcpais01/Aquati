@@ -13,8 +13,70 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T17:00Z',
+    entries: [
+      {
+        title: 'Las Brumas and the high seas',
+        notes: [
+          'The sea is bigger now. Far out to the east-north-east, past three archipelagos\' worth of open ocean, lie Las Brumas, the Isles of Mist: sheer limestone towers crowned with jungle, sea stacks standing in jade water, pink coral beaches and blossom trees. It\'s all one sea, with no loading screens: just keep sailing.',
+          'Las Brumas has its own ports (Vila Garoa\'s tea and silk bazaar and the jade carvers of Esmeraldeau), two Brethren forts to take, its own reefs, a maelstrom out among the stacks and cutthroat camps ashore. Mist rolls in there far more often, at any hour.',
+          'Between the archipelagos lies Mar Sereno, the high seas. Sail out into it and a calm, slow theme of harp, pad and ocarina takes over, a steady trade wind carries you half again as fast on any heading, and storms blow themselves out. No pirates, hunters or Kraken follow you this far out.',
+          'Every so often a pod of dolphins comes racing in to ride your bow wave and swim alongside, leaping and whistling, before peeling off back into the blue.',
+          'Until you\'ve been there, Las Brumas is only a rumour on your sea chart, a faint outline in the mist. Your first landfall pays 600 gold and charts it for good, synced with your cloud save. Zoom the chart out to see the whole sea and the route between, and out on the high seas your minimap points the way to each archipelago.',
+        ],
+      },
+      {
+        title: 'Less than half the triangles, same view',
+        notes: [
+          'A ship alone at sea now draws around a third of the triangles it used to at every zoom. Nothing you can see was taken away: detail is spent only where it can show on screen.',
+          'Hulls, decks and ironwork now have lighter versions that swap in as a ship gets smaller on screen, and ships cast their shadows from simple stand-ins. All of it is worked out in the background, so new ships never cause a stutter.',
+          'Sailors seen from the sea use a lighter figure that is identical at that size. Seabirds out of view, maelstroms that are still, and splinters on undamaged hulls no longer cost anything, and the ocean surface uses fewer, larger cells when you zoom out.',
+        ],
+      },
+      {
+        title: 'Sunbeams through the clouds',
+        notes: [
+          'The warm haze over the islands now catches the light. Where the sun slips between the clouds it lights the air in long slanting beams, and behind each cloud its shade hangs in the air as a dark column. Look down from high above and they lie across the sea as soft bands of light and shadow. The low sun of morning and evening stretches them longest, and misty mornings thicken them. By moonlight they turn faint and silver.',
+          'Look toward the sun from the deck or in photo mode and rays fan out from it through every gap in the clouds, and between the masts, yards and sails.',
+          'In the turquoise shallows, soft beams of sunlight sway down through the water, drifting with the ripples overhead and fading away as the water gets deeper.',
+          'The light now has its own colour at every hour: crisp at noon, honey-gold with violet shadows at sunrise and sunset, cool and blue after dark, and flat and grey under a storm.',
+          'Sun shafts have their own switch in Graphics, so you can turn them off. They are on from Medium up and cost very little, because they are worked out on a small quarter-size image.',
+        ],
+      },
+      {
+        title: 'Sail together: multiplayer is here',
+        notes: [
+          'Up to four captains can now share one sea. Open Sail together from the harbour\'s top bar, the pause menu or the crew button on the HUD, choose Host, and send your friends the link or read them the six-letter code. They join from the harbour and set sail right beside your flagship, wherever you are.',
+          'It really is one sea: the same pirates, ghost ships and bounty hunters, the same weather, hour and wind. Every broadside, splash, hit, fire and sinking shows in everyone\'s game, and pirates choose whichever captain is closest or hurting them most.',
+          'Crewmates fly a gold name tag over their ship. They show as gold arrows on the minimap, pinned to its edge when they\'re out of sight, and by name on the sea chart. Their escorts sail with them too.',
+          'Your shots count the moment you see them land, and you\'re only ever holed by balls you actually saw hit you. Whoever sinks a ship is paid her bounty, and any captain who hit her in the last half minute gets a share.',
+          'Plunder is never stolen: every wreck spills her goods into each captain\'s game separately. Your gold, ships, forts, treasure maps and trade stay your own. The sea doesn\'t stop while you sail with others, so pausing lets go of the helm without freezing the world. The Kraken stays in the deep while captains sail together.',
+        ],
+      },
+      {
+        title: 'Islands carved by rain',
+        notes: [
+          'The rocky isles have been rebuilt from the ground up. The stepped, stripy cones are gone: each is now a karst island where one to three sheer limestone crags rise out of wooded slopes. Their walls are fluted into buttresses and runnels and streaked dark where the rain runs down, there is moss on every ledge, and the jungle grows right up over their domed crowns.',
+          'Every hill and volcano has been worn down by the rain. Spurs and gullies run straight down the slopes and branch as they go, so each hillside reads as ribs of sunlit ridge and shadowed ravine. Morro Huracão is scored with deep ravines from rim to shore.',
+          'The forest follows the lie of the land: it crowds into the damp gullies, thins out along the bare spurs, and boulders weather out of the ridges. The rock looks like rock, too: pale, weathered limestone laid down in uneven beds, with warm iron stains where the old orange stripes used to be.',
+          'The pines are gone, since they never belonged in the tropics. Tree ferns now stand in the cloud forest up on the heights, each with a shaggy trunk, a lacy parasol of fronds, a skirt of dead ones and curled fiddleheads at its heart.',
+          'With the land reshaped, Kasteel do Morro now stands guard over Punta Belleau, and the Aguadouro trading post has moved to Perlabana.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T16:00Z',
     entries: [
+      {
+        title: 'Fallen pirates give up the ghost',
+        notes: [
+          'When an enemy pirate dies, his spirit now slips out of him: a little glowing green ghost in his own likeness, wearing the same tricorn, bandana, knit cap or straw hat he had on, with two hollow eyes, a tiny smile and a curling wisp of a tail.',
+          'He pops up out of the water or off the sand, bobs there a moment and looks up at you, then does one last thing before he goes: a cheery wave, a twirl, a tip of his hat or a wide-mouthed "boo!". Then he drifts away into the sky trailing green motes and vanishes in a soft puff of sparkles, with a small, hollow "woo-oo" of his own.',
+          'It happens wherever pirates fall: the crew of a ship you sink as they go under one by one (her captain goes down with her), the cutthroats of an island camp, a fort\'s garrison, and the crew you cut down when you board a ship. A ghost ship\'s crew is freed too when you lay her to rest.',
+          'They glow softly and fit the light, gentle by day and brighter against the dark at night, and they cost next to nothing to draw.',
+        ],
+      },
       {
         title: 'Your escorts carry plunder too',
         notes: [

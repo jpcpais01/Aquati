@@ -171,6 +171,8 @@ export class ShipDamage {
   private holes: Hole[] = [];
   private holeOrder = 0;
   private shards: THREE.InstancedMesh;
+  /** Bit per hole slot whose splinters are showing. */
+  private shardSlots = 0;
   private masts: MastState[];
   private bowsprit = false;
   private events = 0;
@@ -224,6 +226,8 @@ export class ShipDamage {
     }
     this.shards.castShadow = true;
     this.shards.frustumCulled = false;
+    this.shards.count = 0;
+    this.shards.visible = false;
     this.shards.userData.dmgSkip = true;
     model.root.add(this.shards);
     model.root.add(this.buildHold());
@@ -330,6 +334,11 @@ export class ShipDamage {
         this.shards.setColorAt(base + k, c.multiplyScalar(rand(0.85, 1.1)));
       }
     }
+    // draw only up to the last splintered hole: a sound hull draws none at all
+    if (h && !h.patched) this.shardSlots |= 1 << slot;
+    else this.shardSlots &= ~(1 << slot);
+    this.shards.count = (32 - Math.clz32(this.shardSlots)) * SHARDS_PER_HOLE;
+    this.shards.visible = this.shardSlots !== 0;
     this.shards.instanceMatrix.needsUpdate = true;
     if (this.shards.instanceColor) this.shards.instanceColor.needsUpdate = true;
   }
@@ -501,6 +510,8 @@ export class ShipDamage {
    */
   private breakOff(cut: Cut, pivot: THREE.Vector3, axis: THREE.Vector3, long: THREE.Vector3, len: number, delay: number, max: number, world: World) {
     const model = this.ship.model;
+    // the cut works on the full meshes, each casting its own shadow
+    model.suspendLods();
     const root = model.root;
     const skin = this.ensurePieceSkin();
     const piece = new THREE.Group();
@@ -844,6 +855,8 @@ export class ShipDamage {
     }
     this.bowsprit = false;
     this.events = 0;
+    // whole again: the light levels and shadow stand-ins come back (unless she's sinking)
+    if (this.ship.alive) this.ship.model.resumeLods();
     if (world) {
       const root = this.ship.model.root;
       for (const m of this.masts) {
@@ -942,6 +955,7 @@ export class ShipDamage {
 
   onDeath(world: World) {
     const s = this.ship;
+    s.model.suspendLods();
     const c = s.cls;
     const model = s.model;
     const shape = model.shape;
@@ -1027,6 +1041,7 @@ export class ShipDamage {
   /** Breaks the hull in two: the bow becomes its own half with its own skin. */
   private splitHull(world: World) {
     const model = this.ship.model;
+    model.suspendLods();
     const root = model.root;
     // clone everything except the parts already snapping off
     const parts = root.children.filter((o) => o.userData.dmgPart);

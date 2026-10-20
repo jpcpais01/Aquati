@@ -595,6 +595,59 @@ export class Audio {
     }
   }
 
+  /**
+   * A fallen pirate's ghost slipping free: one small hollow "woo-oo" that swoops
+   * up and sighs back down, with a glassy twinkle on top. Each one pitched a
+   * little differently, so a whole crew going up sounds like a choir of them.
+   */
+  spirit(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(1, vol), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime + Math.min(dist / SPEED_OF_SOUND, 0.8);
+    const send = ctx.createGain();
+    send.gain.value = 1.4;
+    out.connect(send).connect(this.reverbIn);
+    const f = 330 * Math.pow(2, (Math.floor(Math.random() * 6) * 2) / 12);
+    const o = ctx.createOscillator();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(f * 0.75, t);
+    o.frequency.exponentialRampToValueAtTime(f * 1.5, t + 0.42);
+    o.frequency.exponentialRampToValueAtTime(f * 1.06, t + 1.25);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5.2 + Math.random() * 1.4;
+    const lg = ctx.createGain();
+    lg.gain.setValueAtTime(0, t);
+    lg.gain.linearRampToValueAtTime(f * 0.03, t + 0.6);
+    lfo.connect(lg).connect(o.frequency);
+    // an "oo" formant
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 620;
+    bp.Q.value = 2.2;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.5, t + 0.3);
+    g.gain.setTargetAtTime(0.0001, t + 0.85, 0.28);
+    o.connect(bp).connect(g).connect(out);
+    o.start(t);
+    lfo.start(t);
+    o.stop(t + 2.2);
+    lfo.stop(t + 2.2);
+    for (const [fr, d] of [[f * 4, 0.1], [f * 6, 0.22]] as const) {
+      const s = ctx.createOscillator();
+      s.type = 'sine';
+      s.frequency.value = fr;
+      const sg = ctx.createGain();
+      sg.gain.setValueAtTime(0.0001, t + d);
+      sg.gain.linearRampToValueAtTime(0.07, t + d + 0.02);
+      sg.gain.exponentialRampToValueAtTime(0.0005, t + d + 0.9);
+      s.connect(sg).connect(out);
+      s.start(t + d);
+      s.stop(t + d + 1);
+    }
+  }
+
   /** A ghost ship laid to rest: a rising chord that opens out and fades like breath on glass. */
   exorcise(vol: number, pan: number, dist = 0) {
     const v = this.voice(Math.min(1, vol * 0.8), pan);
