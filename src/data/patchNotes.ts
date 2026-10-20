@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T17:00Z',
+    entries: [
+      {
+        title: 'Islands carved by rain',
+        notes: [
+          'The rocky isles have been rebuilt from the ground up. The stepped, stripy cones are gone: each is now a karst island where one to three sheer limestone crags rise out of wooded slopes. Their walls are fluted into buttresses and runnels and streaked dark where the rain runs down, there is moss on every ledge, and the jungle grows right up over their domed crowns.',
+          'Every hill and volcano has been worn down by the rain. Spurs and gullies run straight down the slopes and branch as they go, so each hillside reads as ribs of sunlit ridge and shadowed ravine. Morro Huracão is scored with deep ravines from rim to shore.',
+          'The forest follows the lie of the land: it crowds into the damp gullies, thins out along the bare spurs, and boulders weather out of the ridges. The rock looks like rock, too: pale, weathered limestone laid down in uneven beds, with warm iron stains where the old orange stripes used to be.',
+          'The pines are gone, since they never belonged in the tropics. Tree ferns now stand in the cloud forest up on the heights, each with a shaggy trunk, a lacy parasol of fronds, a skirt of dead ones and curled fiddleheads at its heart.',
+          'With the land reshaped, Kasteel do Morro now stands guard over Punta Belleau, and the Aguadouro trading post has moved to Perlabana.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T16:00Z',
     entries: [
       {
