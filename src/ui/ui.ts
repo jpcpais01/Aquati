@@ -1001,10 +1001,10 @@ export class UI {
   }
 
   /** A side's badge warms while a foe sits in its loaded arc. */
-  updateGunnery(sides: Record<'port' | 'starboard', { ready: boolean; target: unknown }>, auto: 'port' | 'starboard' | null) {
-    const hotP = sides.port.ready && !!sides.port.target;
-    const hotS = sides.starboard.ready && !!sides.starboard.target;
-    const hotA = !!auto && sides[auto].ready && !!sides[auto].target;
+  updateGunnery(sides: Record<'port' | 'starboard', { ready: boolean; target: unknown; mark?: unknown }>, auto: 'port' | 'starboard' | null) {
+    const hotP = sides.port.ready && !!(sides.port.target || sides.port.mark);
+    const hotS = sides.starboard.ready && !!(sides.starboard.target || sides.starboard.mark);
+    const hotA = !!auto && sides[auto].ready && !!(sides[auto].target || sides[auto].mark);
     const key = `${+hotP}${+hotS}${+hotA}${auto ?? '-'}`;
     if (this.hudCache.get('guns') === key) return;
     this.hudCache.set('guns', key);

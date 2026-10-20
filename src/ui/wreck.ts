@@ -32,7 +32,7 @@ export interface WreckReport {
   /** Best chest rarity opened (-1 none). */
   best: number;
   miles: number;
-  cause: 'shot' | 'rammed' | 'aground';
+  cause: 'shot' | 'rammed' | 'aground' | 'kraken';
   killer?: string;
   killerCls?: ShipClassId;
   /** The named captain who sent her down, if a hunter did. */
@@ -101,6 +101,7 @@ export function loadRecords(): Records {
 function causeLine(r: WreckReport) {
   const k = r.hunter && r.killer ? `${esc(r.hunter)} in the <span class="nm">${esc(r.killer)}</span>` : r.killer ? `the <span class="nm">${esc(r.killer)}</span>` : 'pirates';
   if (r.cause === 'aground') return 'Holed on the reef';
+  if (r.cause === 'kraken') return 'Dragged under by <span class="nm">the Kraken</span>';
   if (r.cause === 'rammed') return `Rammed by ${k}`;
   return `Sunk by ${k}`;
 }
@@ -117,6 +118,14 @@ function quip(r: WreckReport) {
   if (r.best >= 4) fits.push('A legendary chest, and now the sea has it back.');
   if (r.cause === 'aground') fits.push("The reef doesn't care how fast you were sailing.");
   if (r.cause === 'rammed') fits.push('Close quarters. Very close quarters.');
+  if (r.cause === 'kraken') {
+    fits.length = 0;
+    fits.push(
+      'The old sailors were right. Something lives down there.',
+      'Eight arms, one ship. The sums were never in your favour.',
+      'The Kraken sleeps again, and your ship sleeps with it.',
+    );
+  }
   if (r.killerCls === 'galleon' && r.cls === 'sloop') fits.push('A sloop against a galleon. Brave. Briefly.');
   if (r.killerCls === 'sloop' && r.cls === 'galleon') fits.push(`Brought down by a sloop. Nobody needs to know, ${mine} captain.`);
   if (r.hunter) fits.push(`${r.hunter} will dine out on this for a year. Your poster comes down; theirs stays up.`);
@@ -243,6 +252,8 @@ export class WreckScreen {
     $('wk-epitaph').innerHTML =
       r.cause === 'aground'
         ? `The <span class="nm">${esc(r.ship)}</span> ran aground ${where} after ${duration(r.time)} at sea.`
+        : r.cause === 'kraken'
+        ? `The <span class="nm">${esc(r.ship)}</span> was pulled into the deep ${where} after ${duration(r.time)} at sea.`
         : `The <span class="nm">${esc(r.ship)}</span> went down ${where} after ${duration(r.time)} at sea.`;
     $('wk-quip').textContent = `“${quip(r)}”`;
     $('wk-cause').innerHTML = causeLine(r);

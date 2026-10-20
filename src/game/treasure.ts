@@ -41,7 +41,8 @@ export type LootId =
   | 'silver' | 'spices' | 'wine' | 'silk' | 'scrimshaw' | 'sextant' | 'indigo'
   | 'doubloons' | 'pearls' | 'emeralds' | 'dagger' | 'portrait' | 'saffron'
   | 'ruby' | 'tiara' | 'chalice' | 'seascape' | 'astrolabe'
-  | 'crown' | 'idol' | 'krakenPearl' | 'mask';
+  | 'crown' | 'idol' | 'krakenPearl' | 'mask'
+  | 'krakenInk' | 'krakenBeak';
 
 export interface LootKind {
   id: LootId;
@@ -97,11 +98,16 @@ export const LOOT: Record<LootId, LootKind> = Object.fromEntries(
     K('idol', 'Golden Idol', 4, 'relics', 2000, 2, 'idol', 'Solid gold, and very much cursed. Probably.'),
     K('krakenPearl', "Kraken's Pearl", 4, 'gems', 3200, 1, 'casket', 'It hums when the sea is angry.'),
     K('mask', 'Mask of El Dorado', 4, 'relics', 2800, 1, 'idol', 'The sun itself, beaten into a face.'),
+    // trophies: only the Kraken gives these up
+    K('krakenInk', 'Vial of Kraken Ink', 3, 'relics', 950, 1, 'casket', 'Black as the deep. At night it writes by itself.'),
+    K('krakenBeak', 'Beak of the Kraken', 4, 'relics', 3800, 2, 'idol', 'Sharp enough to bite through a keel. It has.'),
   ].map((k) => [k.id, k]),
 ) as Record<LootId, LootKind>;
 
 export const LOOT_IDS = Object.keys(LOOT) as LootId[];
-const BY_RARITY: LootId[][] = [0, 1, 2, 3, 4].map((r) => LOOT_IDS.filter((id) => LOOT[id].rarity === r));
+/** Trophies no chest or wreck ever rolls: you have to slay the Kraken for them. */
+export const TROPHIES = new Set<LootId>(['krakenInk', 'krakenBeak']);
+const BY_RARITY: LootId[][] = [0, 1, 2, 3, 4].map((r) => LOOT_IDS.filter((id) => LOOT[id].rarity === r && !TROPHIES.has(id)));
 
 /** One good of the given rarity, cheaper ones a little more often. */
 export function rollGood(r: Rarity, rnd = Math.random): LootId {

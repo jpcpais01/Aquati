@@ -94,6 +94,10 @@ export const globalUniforms = {
   // z how far you can see (m); uUnderColor is the water's own glow
   uUnder: { value: new THREE.Vector4(0, 0, 60, 0) },
   uUnderColor: { value: new THREE.Vector3(0.03, 0.2, 0.24) },
+  // the Kraken's maelstrom (see game/kraken.ts): xz centre, radius (m), strength
+  // 0..1; and the ink it spills, which stains the sea over it
+  uKraken: { value: new THREE.Vector4(0, 0, 1, 0) },
+  uKrakenInk: { value: 0 },
 };
 
 export const GLSL_GUST = /* glsl */ `

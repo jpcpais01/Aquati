@@ -184,6 +184,8 @@ export class Atmosphere {
   private locked = false;
   /** 'auto' lets the weather turn on its own; a kind holds it there. */
   mode: WeatherKind | 'auto' = 'auto';
+  /** Keeps the current weather from moving on (a storm holds while the Kraken is up). */
+  hold = false;
   /** Speeds up the blend for a moment after the player picks the weather by hand. */
   private rush = 0;
   /** 'auto' lets the day run; any other hour holds the clock there. */
@@ -377,7 +379,7 @@ export class Atmosphere {
 
     // ---------------------------------------------------------- weather
     this.stateT += dt;
-    if (!this.locked && this.stateT > this.stateDur) this.nextWeather();
+    if (!this.locked && !this.hold && this.stateT > this.stateDur) this.nextWeather();
     const d = WEATHER[this.kind];
     // a hand-picked change rolls in over a few seconds instead of half a minute
     this.rush = Math.max(0, this.rush - dt / 12);

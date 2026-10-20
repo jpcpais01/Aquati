@@ -1120,6 +1120,31 @@ export class Particles {
     }
   }
 
+  /** A ball into the Kraken's flesh: a wet slap of seawater and slime, a gout of dark ink-blood. */
+  fleshHit(pos: THREE.Vector3, fire = false) {
+    this.emit({ x: pos.x, y: pos.y, z: pos.z, life: 0.12, size: 2.6, sizeEnd: 3.6, color: fire ? [9, 4, 1] : [3.4, 1.6, 1.3], colorEnd: [1, 0.2, 0.15], fadeIn: 0.001 }, true);
+    for (let i = 0; i < 14; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = rand(2, 8);
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: Math.cos(a) * sp, vy: rand(2, 9), vz: Math.sin(a) * sp,
+        life: rand(0.6, 1.2), size: rand(0.18, 0.4), sizeEnd: 0.1, color: [1.15, 1.2, 1.22], alpha: 0.85, grav: 15, drag: 0.6, kind: 0, fadeIn: 0.01,
+      });
+    }
+    for (let i = 0; i < 9; i++) {
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: rand(-4, 4), vy: rand(1, 6), vz: rand(-4, 4),
+        life: rand(0.7, 1.3), size: rand(0.22, 0.42), sizeEnd: 0.2, color: [0.22, 0.03, 0.08], alpha: 0.95, grav: 14, drag: 0.5, kind: 0, fadeIn: 0.01,
+      });
+    }
+    for (let i = 0; i < 3; i++) {
+      this.emit({
+        x: pos.x, y: pos.y, z: pos.z, vx: rand(-1, 1), vy: rand(0.5, 2), vz: rand(-1, 1),
+        life: rand(1.2, 2), size: 0.8, sizeEnd: rand(2.4, 3.4), color: [0.1, 0.03, 0.12], colorEnd: [0.16, 0.08, 0.18], alpha: 0.6, drag: 1.5, grav: 3, kind: 1, fadeIn: 0.02,
+      });
+    }
+  }
+
   /** Hot iron into the sea: a hissing gout of steam. */
   steam(pos: THREE.Vector3) {
     this.splash(pos, 0.6);

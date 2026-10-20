@@ -374,6 +374,22 @@ export class VaultStore {
     return out;
   }
 
+  /**
+   * A trophy from the sea itself (the Kraken drops its ink skin). Grants the
+   * item if it's new, else pays its duplicate refund like a pull would.
+   */
+  award(id: string): PullResult | null {
+    const it = BY_ID.get(id);
+    if (!it) return null;
+    const isNew = !this.s.owned[id];
+    this.s.owned[id] = (this.s.owned[id] ?? 0) + 1;
+    const refund = isNew ? 0 : RARITIES[it.rarity].refund;
+    this.s.purse += refund;
+    if (isNew && !this.s.unseen.includes(id)) this.s.unseen.push(id);
+    this.save();
+    return { item: it, fresh: isNew, refund };
+  }
+
   private grant(r: Rarity): PullResult {
     const pool = POOL.filter((i) => i.rarity === r);
     // the vault favours what you don't have yet
