@@ -10,8 +10,8 @@ export interface Controls {
   ammoPick: number; // pulse: 0..4 load that kind of shot (keys 1-5), -1 none
   ammoNext: boolean; // pulse: the next kind of shot (R)
   zoom: number; // accumulated wheel / pinch delta
-  steerHeading: number | null; // touch joystick: desired world heading
-  steerThrottle: number; // 0..1 from joystick magnitude
+  steerHeading: number | null; // touch helm: the world heading to put the bow on
+  sailSet: number; // pulse: touch sail lever set to 0 (stop) .. 3 (full), -1 none
   pointer: { x: number; y: number; active: boolean };
   pause: boolean;
   map: boolean;
@@ -41,7 +41,7 @@ export class Input {
     ammoNext: false,
     zoom: 0,
     steerHeading: null,
-    steerThrottle: 0,
+    sailSet: -1,
     pointer: { x: 0, y: 0, active: false },
     pause: false,
     map: false,
@@ -70,7 +70,6 @@ export class Input {
   private rmb = false;
   private spyToggle = false;
   private joyVec = { x: 0, y: 0, on: false };
-  private joySail = 0;
   private lookId: number | null = null;
   private lookLast = { x: 0, y: 0 };
   private keys = new Set<string>();
@@ -216,12 +215,16 @@ export class Input {
               const live = len > 8 ? k / Math.max(len, 1e-3) : 0;
               this.joyVec = { x: dx * live, y: -dy * live, on: true };
             } else if (len > 8) {
+              // the helm only steers: point where the bow should go, the sail lever sets the speed.
               // screen up = world -z (north), screen right = world +x... camera looks north
               this.state.steerHeading = Math.atan2(dx, dy);
-              this.state.steerThrottle = k;
+              this.joyEl?.style.setProperty('--want', `${Math.PI - this.state.steerHeading}rad`);
+              this.joyEl?.classList.add('steer');
             }
             if (this.joyKnob) {
-              const cl = Math.min(len, max) / Math.max(len, 1e-3);
+              // at sea the knob rides the rim like a compass needle; afoot it's a plain stick
+              const sea = !this.fpv && !this.foot;
+              const cl = sea ? (len > 8 ? Math.min(1, Math.max(0.55, k)) * max / len : 0) : Math.min(len, max) / Math.max(len, 1e-3);
               this.joyKnob.style.transform = `translate(${dx * cl}px, ${dy * cl}px)`;
             }
           }
@@ -266,6 +269,54 @@ export class Input {
   bindJoystick(el: HTMLElement, knob: HTMLElement) {
     this.joyEl = el;
     this.joyKnob = knob;
+  }
+
+  /**
+   * The touch sail lever: four notches from Stop to Full that stay where you
+   * leave them, like W / S. Drag the knob or tap a notch; it clicks into each
+   * detent as you pass it, and the game owns the real setting (data-lvl).
+   */
+  bindSailLever(el: HTMLElement, track: HTMLElement) {
+    let id: number | null = null;
+    let lvl = 0;
+    const at = (y: number) => {
+      const r = track.getBoundingClientRect();
+      // the knob's travel is the track less a knob's height
+      const pad = Math.min(r.width, r.height) * 0.5;
+      return Math.min(1, Math.max(0, (r.bottom - pad - y) / Math.max(1, r.height - pad * 2)));
+    };
+    const move = (y: number) => {
+      const f = at(y);
+      const n = Math.round(f * 3);
+      // magnetic notches: the knob leans toward the nearest detent rather than floating free
+      el.style.setProperty('--drag', `${n / 3 + (f - n / 3) * 0.4}`);
+      if (n === lvl) return;
+      lvl = n;
+      this.state.sailSet = n;
+      navigator.vibrate?.(n === 0 ? [16, 50, 16] : 9);
+    };
+    const end = (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      id = null;
+      el.classList.remove('drag');
+    };
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!this.enabled || id !== null) return;
+      id = e.pointerId;
+      el.setPointerCapture?.(e.pointerId);
+      lvl = +(el.dataset.lvl ?? 0);
+      el.classList.add('drag');
+      move(e.clientY);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (e.pointerId === id) move(e.clientY);
+    });
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('lostpointercapture', end);
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   /** Touch broadside buttons. pointerdown fires on contact, with no click delay or ghost taps. */
@@ -328,6 +379,20 @@ export class Input {
     return this.locked;
   }
 
+  /** Each frame the touch helm steers: the ring shows where the bow points now and the turn still to come. */
+  helmShow(heading: number, want: number) {
+    const el = this.joyEl;
+    if (!el) return;
+    // screen angles run clockwise from up; world heading 0 points down the screen
+    const hd = Math.PI - heading;
+    let turn = (heading - want) % (Math.PI * 2);
+    if (turn > Math.PI) turn -= Math.PI * 2;
+    else if (turn < -Math.PI) turn += Math.PI * 2;
+    el.style.setProperty('--hd', `${hd.toFixed(3)}rad`);
+    el.style.setProperty('--a0', `${(turn >= 0 ? hd : hd + turn).toFixed(3)}rad`);
+    el.style.setProperty('--span', `${Math.abs(turn).toFixed(3)}rad`);
+  }
+
   private showJoy(x: number, y: number) {
     if (!this.joyEl) return;
     this.joyEl.style.left = `${x}px`;
@@ -336,7 +401,7 @@ export class Input {
   }
 
   private hideJoy() {
-    this.joyEl?.classList.remove('on');
+    this.joyEl?.classList.remove('on', 'steer');
     if (this.joyKnob) this.joyKnob.style.transform = '';
   }
 
@@ -372,18 +437,16 @@ export class Input {
         st.walkY = j.y;
         st.run = st.run || Math.hypot(j.x, j.y) > 0.94;
       } else {
-        // at the wheel the stick is the tiller: sideways steers, a firm push up or down trims
+        // at the wheel the stick is the tiller, the sail lever trims
         st.rudder = Math.abs(j.x) > 0.15 ? -j.x : 0;
-        const want = j.y > 0.7 ? 1 : j.y < -0.7 ? -1 : 0;
-        if (want !== this.joySail && want !== 0) st.sailDelta += want;
-        this.joySail = want;
       }
-    } else this.joySail = 0;
+    }
     st.spy = this.fpv && (k.has('z') || this.rmb || this.spyToggle);
   }
 
   consume() {
     this.state.sailDelta = 0;
+    this.state.sailSet = -1;
     this.state.firePort = false;
     this.state.fireStarboard = false;
     this.state.fireAuto = false;

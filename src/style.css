@@ -3851,6 +3851,263 @@ body[data-hud='large'] #hud {
   border: 2px solid rgba(110, 66, 12, 0.45);
 }
 
+/* at sea the helm is a compass: a white bow mark shows where she points now,
+   a gold arc the turn still to come, and the knob rides the rim as the course */
+.joy .bow,
+.joy::after {
+  position: absolute;
+  inset: -16px;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+}
+
+.joy::after {
+  content: '';
+  background: conic-gradient(from var(--a0, 0rad), rgba(244, 199, 101, 0.9) 0 var(--span, 0rad), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 70px, #000 71px, #000 77px, transparent 78px);
+  mask: radial-gradient(circle, transparent 70px, #000 71px, #000 77px, transparent 78px);
+}
+
+.joy .bow {
+  transform: rotate(var(--hd, 0rad));
+}
+
+.joy .bow::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -3px;
+  margin-left: -8px;
+  border: 8px solid transparent;
+  border-top: 0;
+  border-bottom: 13px solid #fff;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+}
+
+.joy.steer .bow,
+.joy.steer::after {
+  opacity: 1;
+}
+
+.joy.steer .knob {
+  scale: 0.78;
+}
+
+/* the sail lever: Stop · Slow · Half · Full, in notches that stay where you leave them */
+.sail-lever {
+  --th: calc(164px * var(--kt));
+  --kn: calc(44px * var(--kt));
+  --pos: 0;
+  --lv: 0;
+  position: absolute;
+  left: calc(var(--g) + var(--safe-l) - 6px);
+  bottom: calc(var(--g) + var(--safe-b) - 6px);
+  padding: 6px;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.sail-lever[data-lvl='1'] {
+  --pos: 0.3333;
+}
+
+.sail-lever[data-lvl='2'] {
+  --pos: 0.6667;
+}
+
+.sail-lever[data-lvl='3'] {
+  --pos: 1;
+}
+
+.sail-lever.drag {
+  --pos: var(--drag);
+}
+
+.sl-track {
+  position: relative;
+  width: var(--kn);
+  height: var(--th);
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: linear-gradient(180deg, rgba(16, 40, 54, 0.62), rgba(6, 20, 30, 0.82));
+  box-shadow: var(--hi), 0 8px 22px rgba(0, 8, 14, 0.28);
+}
+
+/* the rail runs notch to notch; its gold is the canvas actually set */
+.sl-rail {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--kn) / 2);
+  bottom: calc(var(--kn) / 2);
+  width: 4px;
+  margin-left: -2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.sl-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(0deg, #d4952f, #ffe9a8);
+  transform: scaleY(var(--lv));
+  transform-origin: bottom;
+}
+
+.sl-notch {
+  position: absolute;
+  left: 50%;
+  width: 16px;
+  height: 2px;
+  margin: 0 0 -1px -8px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.sl-notch:nth-of-type(2) {
+  bottom: calc(var(--kn) / 2);
+  width: 22px;
+  margin-left: -11px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.sl-notch:nth-of-type(3) {
+  bottom: calc(var(--kn) / 2 + (var(--th) - var(--kn)) / 3);
+}
+
+.sl-notch:nth-of-type(4) {
+  bottom: calc(var(--kn) / 2 + (var(--th) - var(--kn)) * 2 / 3);
+}
+
+.sl-notch:nth-of-type(5) {
+  bottom: calc(var(--th) - var(--kn) / 2);
+}
+
+.sl-knob {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--kn);
+  height: var(--kn);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 32%, #fff6d6, #f4c765 45%, #c08528);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35), inset 0 -2px 4px rgba(120, 70, 10, 0.4);
+  transform: translateY(calc(var(--pos) * (var(--kn) - var(--th))));
+  transition: transform 0.3s var(--spring), scale 0.15s;
+}
+
+.sail-lever.drag .sl-knob {
+  transition: transform 0.05s linear, scale 0.15s;
+  scale: 1.08;
+}
+
+/* the knob is a little square-rigger: her sail drops as you set more canvas */
+.sl-knob svg {
+  width: 62%;
+  height: 62%;
+  overflow: visible;
+}
+
+.sl-mast {
+  fill: none;
+  stroke: #6b3f0e;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.sl-cloth {
+  fill: #fffaf0;
+  stroke: #8a5718;
+  stroke-width: 0.8;
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  transform: scaleY(max(0.06, var(--pos)));
+  opacity: min(1, calc(var(--pos) * 6));
+  transition: transform 0.3s var(--spring), opacity 0.2s;
+}
+
+.sl-furl {
+  fill: #f6ead0;
+  stroke: #8a5718;
+  stroke-width: 0.7;
+  opacity: calc(1 - var(--pos) * 3);
+}
+
+.sail-lever.drag .sl-cloth {
+  transition: none;
+}
+
+.sl-labels {
+  position: absolute;
+  left: calc(100% - 2px);
+  bottom: 6px;
+  height: var(--th);
+  width: 40px;
+  pointer-events: none;
+}
+
+.sl-labels span {
+  position: absolute;
+  left: 4px;
+  transform: translateY(50%);
+  font: 800 max(8px, calc(9px * var(--kt))) var(--sans);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.5);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.75);
+  transition: color 0.2s, transform 0.2s;
+}
+
+.sl-labels span:nth-child(1) {
+  bottom: calc(var(--th) - var(--kn) / 2);
+}
+
+.sl-labels span:nth-child(2) {
+  bottom: calc(var(--kn) / 2 + (var(--th) - var(--kn)) * 2 / 3);
+}
+
+.sl-labels span:nth-child(3) {
+  bottom: calc(var(--kn) / 2 + (var(--th) - var(--kn)) / 3);
+}
+
+.sl-labels span:nth-child(4) {
+  bottom: calc(var(--kn) / 2);
+}
+
+.sail-lever[data-lvl='3'] .sl-labels span:nth-child(1),
+.sail-lever[data-lvl='2'] .sl-labels span:nth-child(2),
+.sail-lever[data-lvl='1'] .sl-labels span:nth-child(3) {
+  color: var(--gold);
+  transform: translate(3px, 50%);
+}
+
+.sail-lever[data-lvl='0'] .sl-labels span:nth-child(4) {
+  color: #fff;
+  transform: translate(3px, 50%);
+}
+
+/* the lever shows the canvas, so the console keeps just the knots */
+.is-touch .sails {
+  display: none;
+}
+
+#hud.ashore .sail-lever {
+  display: none;
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .sail-lever {
+    bottom: calc(var(--g) + var(--safe-b) + 6px + 52px * var(--k));
+  }
+}
+
 /* the guns: a big gold Fire with port & starboard riding either side */
 .fire-pad {
   position: absolute;

@@ -13,6 +13,20 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T11:00Z',
+    entries: [
+      {
+        title: 'New touch controls: a sail lever and a helm that only steers',
+        notes: [
+          'On phones and tablets your speed now has its own sail lever in the bottom left corner, with four notches: Stop, Slow, Half and Full. Slide the brass knob or just tap a notch. It clicks into each one as you pass it (with a little buzz on phones that support it), and it stays where you leave it, just like W and S on a keyboard. Stop takes in all canvas, so at last you can bring her to a dead halt to line up a broadside, wait at a reef pass or sit off a fort.',
+          'The knob is a tiny square-rigger whose sail drops as you set more canvas, and the gold in its rail fills as your crew actually sets or takes in the sail, so you can see her gathering way.',
+          'The steering stick no longer touches your speed. Put your thumb anywhere on the left half and drag toward where you want the bow to point: the ring shows a white mark for where she points now and a gold arc for the turn still to come. Let go and she holds her course. You can still turn slowly with the sails at Stop.',
+          'In the captain\'s view the stick at the wheel now only steers too, and the lever trims the sails.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T10:00Z',
     entries: [
       {

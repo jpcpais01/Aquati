@@ -861,6 +861,15 @@ export class UI {
       this.hudCache.set('sails', `${lvl}`);
       const pips = $('hud-sails').children;
       for (let i = 0; i < pips.length; i++) pips[i].classList.toggle('on', i < lvl);
+      const lever = $('sail-lever');
+      lever.dataset.lvl = `${lvl}`;
+      lever.setAttribute('aria-valuenow', `${lvl}`);
+    }
+    // the lever's rail fills as the hands actually set (or take in) the canvas
+    const lv = p.sailLevel.toFixed(2);
+    if (this.hudCache.get('sail-lv') !== lv) {
+      this.hudCache.set('sail-lv', lv);
+      $('sail-lever').style.setProperty('--lv', lv);
     }
     // reload: the loaded shot's ring fills, its left half for port and right half for starboard
     const ring = (side: 'port' | 'starboard', touchId: string) => {
