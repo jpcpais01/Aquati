@@ -1,6 +1,7 @@
 import './shore.css';
 import * as THREE from 'three';
 import { icon, ICONS, STAT_ICONS } from './art';
+import { FLEET_ICONS } from './fleet';
 
 // The HUD ashore: the landing party's health in place of the hull, the
 // "row back" / "open the chest" pill, bars over the cutthroats you're
@@ -35,6 +36,9 @@ export interface PrizeView {
   haul: string;
   prize: string;
   scuttle: string;
+  /** What signing her into your fleet means (or why she can't). */
+  fleet: string;
+  fleetOk: boolean;
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -44,7 +48,7 @@ export class ShoreHud {
   /** A tap on the prompt pill. */
   onInteract: () => void = () => {};
   /** A pick on the prize card. */
-  onPrize: (k: 'prize' | 'scuttle') => void = () => {};
+  onPrize: (k: 'prize' | 'scuttle' | 'fleet') => void = () => {};
   private prizeCard: HTMLElement;
   readonly strike: HTMLButtonElement;
   readonly pistol: HTMLButtonElement;
@@ -77,12 +81,13 @@ export class ShoreHud {
     c.className = 'prize-card';
     c.innerHTML =
       `<div class="pc-flag">${icon(ICONS.flag)}</div><small class="pc-kick">She strikes her colours</small><b class="pc-name"></b><p class="pc-haul"></p>` +
-      `<div class="pc-acts"><button class="pc-a gold" data-k="prize"><kbd class="kd">1</kbd><span>${icon(ICONS.harbour)}</span><span class="pc-t"><b>Take her as a prize</b><small class="pc-p"></small></span></button>` +
+      `<div class="pc-acts"><button class="pc-a fleet" data-k="fleet"><kbd class="kd">3</kbd><span>${icon(FLEET_ICONS.follow)}</span><span class="pc-t"><b>Sign her into your fleet</b><small class="pc-f"></small></span></button>` +
+      `<button class="pc-a gold" data-k="prize"><kbd class="kd">1</kbd><span>${icon(ICONS.harbour)}</span><span class="pc-t"><b>Take her as a prize</b><small class="pc-p"></small></span></button>` +
       `<button class="pc-a" data-k="scuttle"><kbd class="kd">2</kbd><span>${icon(STAT_ICONS.firepower)}</span><span class="pc-t"><b>Scuttle her</b><small class="pc-s"></small></span></button></div>`;
     c.querySelectorAll<HTMLButtonElement>('.pc-a').forEach((b) =>
       b.addEventListener('click', (e) => {
         e.stopPropagation();
-        this.onPrize(b.dataset.k as 'prize' | 'scuttle');
+        if (!b.disabled) this.onPrize(b.dataset.k as 'prize' | 'scuttle' | 'fleet');
       }),
     );
     this.hud.appendChild(c);
@@ -172,6 +177,8 @@ export class ShoreHud {
     c.querySelector('.pc-haul')!.textContent = v.haul;
     c.querySelector('.pc-p')!.textContent = v.prize;
     c.querySelector('.pc-s')!.textContent = v.scuttle;
+    c.querySelector('.pc-f')!.textContent = v.fleet;
+    (c.querySelector('.pc-a.fleet') as HTMLButtonElement).disabled = !v.fleetOk;
   }
 
   /** The pistol's reload ring: 0 just fired .. 1 loaded. */

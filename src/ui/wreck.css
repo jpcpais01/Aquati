@@ -827,6 +827,11 @@
   filter: hue-rotate(95deg) saturate(1.4) drop-shadow(0 0 4px rgba(60, 255, 170, 0.6));
 }
 
+/* your fleet: escorts signing on, and the ones you lost */
+.wk-log li.k-fleet b {
+  color: #a8fff0;
+}
+
 /* ------------------------------------------------------------------ actions */
 
 .wk-actions {

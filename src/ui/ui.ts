@@ -775,13 +775,13 @@ export class UI {
     $('t-spy').classList.toggle('on', q > 0.5);
   }
 
-  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' | 'burn' | 'ammo' | ShipStatus = '') {
+  floater(text: string, x: number, y: number, kind: '' | 'bad' | 'loot' | 'rare' | 'epic' | 'legendary' | 'burn' | 'ammo' | 'fleet' | ShipStatus = '') {
     const f = this.floaterPool.find((p) => p.t >= p.life) ?? this.floaterPool[0];
     f.el.textContent = text;
     f.el.className = 'floater' + (kind ? ' ' + kind : '');
     f.el.style.display = 'block';
     f.t = 0;
-    f.life = kind === 'legendary' ? 2.4 : kind === 'epic' ? 1.9 : kind === 'rare' || kind === 'ablaze' || kind === 'shredded' || kind === 'crew' || kind === 'ammo' ? 1.6 : 1.3;
+    f.life = kind === 'legendary' ? 2.4 : kind === 'epic' ? 1.9 : kind === 'rare' || kind === 'ablaze' || kind === 'shredded' || kind === 'crew' || kind === 'ammo' ? 1.6 : kind === 'fleet' ? 1.9 : 1.3;
     f.x = x + (Math.random() - 0.5) * 24;
     f.y = y;
     f.vy = -48;
@@ -1107,8 +1107,8 @@ export class UI {
     $('hud-clock').textContent = text;
   }
 
-  /** Floating health bars over enemies. */
-  updateBars(ships: Ship[], player: Ship | null, camera: THREE.Camera, w: number, h: number, hide: Ship | null = null) {
+  /** Floating health bars over enemies (and, in your fleet's colour, over your escorts). `marked` is the ship your escorts are attacking. */
+  updateBars(ships: Ship[], player: Ship | null, camera: THREE.Camera, w: number, h: number, hide: Ship | null = null, marked: Ship | null = null) {
     const seen = new Set<number>();
     const v = new THREE.Vector3();
     for (const s of ships) {
@@ -1119,13 +1119,23 @@ export class UI {
       if (v.z > 1 || v.x < -1.1 || v.x > 1.1 || v.y < -1.1 || v.y > 1.1) continue;
       seen.add(s.id);
       let el = this.barEls.get(s.id);
+      // a prize that signs on changes sides: her bar is made afresh
+      const kind = s.team === 'player' ? 'ally' : s.hunter ? 'hunter' : s.ghost ? 'ghost' : '';
+      if (el && el.dataset.kind !== kind) {
+        el.remove();
+        el = undefined;
+      }
       if (!el) {
         el = document.createElement('div');
-        el.className = s.hunter ? 'ebar hunter' : s.ghost ? 'ebar ghost' : 'ebar';
-        el.innerHTML = `<i></i><span>${s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
+        el.className = kind ? `ebar ${kind}` : 'ebar';
+        el.dataset.kind = kind;
+        const label = kind === 'ally' ? esc(s.name) : s.hunter ? esc(CAPTAIN.get(s.hunter)?.epithet ?? s.name) : s.cls.name;
+        el.innerHTML = `<i></i><span>${label}</span><b class="fx"><u class="f"></u><u class="t"></u><u class="c"></u></b>`;
         this.bars.appendChild(el);
         this.barEls.set(s.id, el);
       }
+      const mk = s === marked;
+      if (el.classList.contains('marked') !== mk) el.classList.toggle('marked', mk);
       const x = (v.x * 0.5 + 0.5) * w;
       const y = (-v.y * 0.5 + 0.5) * h - 18;
       el.style.transform = `translate(${x}px, ${y}px)`;
@@ -1362,6 +1372,17 @@ export class UI {
     }
     for (const s of ships) {
       if (s === player || !s.alive) continue;
+      // your escorts in the fleet's aqua; a prize sailing off for port in faded parchment
+      if (s.team === 'player') {
+        tri(s, '#5ee3d4', 11);
+        continue;
+      }
+      if (s.prize) {
+        g.globalAlpha = 0.6;
+        tri(s, '#f2e6c8', 9);
+        g.globalAlpha = 1;
+        continue;
+      }
       if (!s.hunter) {
         tri(s, s.ghost ? '#7dffc4' : '#ff6a55', 11);
         continue;

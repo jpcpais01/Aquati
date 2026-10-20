@@ -135,8 +135,8 @@ export class Projectiles {
         }
         // ships: test in each hull's local frame (oriented box)
         for (const s of ships) {
-          // settled wrecks sit too low and twisted to stop a ball
-          if (s === b.owner || s.removed || (!s.alive && s.sinkT > 2)) continue;
+          // settled wrecks sit too low and twisted to stop a ball; your gunners shoot past your own escorts
+          if (s === b.owner || s.removed || (!s.alive && s.sinkT > 2) || (s.team === 'player' && b.owner.team === 'player')) continue;
           const dx = b.pos.x - s.pos.x;
           const dz = b.pos.z - s.pos.z;
           const R = s.cls.length * 0.55;
