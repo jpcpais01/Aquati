@@ -24,6 +24,24 @@ const PIRATE_ARC = 0.32;
 const GRAVITY = 14;
 
 /** How far a broadside reaches with the guns at full elevation (and a little to spare). */
+/**
+ * Low-arc elevation that carries a ball `d` across and `h` up (negative: down).
+ * Falls back to 45 degrees when the mark lies out of reach.
+ */
+export function elevationFor(v: number, d: number, h: number, g = GRAVITY) {
+  if (d < 0.01) return 0;
+  const a = (g * d * d) / (2 * v * v);
+  const disc = d * d - 4 * a * (a + h);
+  if (disc < 0) return Math.PI / 4;
+  return Math.atan((d - Math.sqrt(disc)) / (2 * a));
+}
+
+/** Where chain shot is laid: the middle of her canvas, above the waterline. */
+export function sailAimHeight(s: Ship) {
+  const mastH = s.cls.masts.reduce((m, d) => Math.max(m, d.height), 0);
+  return s.model.shape.top(0.5) + 0.6 + mastH * 0.42;
+}
+
 export const gunRange = (muzzleSpeed: number) => ((muzzleSpeed * muzzleSpeed) / GRAVITY) * 0.62;
 
 const WIND_TABLE = [
@@ -300,6 +318,7 @@ export class Ship {
     const g = GRAVITY;
     const mine = this.team === 'player';
     let dist = 60;
+    let aimH: number | null = null;
     const aim = p.target && p.target.alive ? p.target.pos : p.point;
     if (aim) {
       // Lead the target. Your own crews also allow for the ship's way, which the
@@ -308,10 +327,12 @@ export class Ship {
       const tv = p.target && p.target.alive ? p.target.vel : null;
       const rvx = (tv ? tv.x : 0) - (mine ? this.vel.x : 0);
       const rvz = (tv ? tv.z : 0) - (mine ? this.vel.z : 0);
+      // chain shot is laid high, into her sails, not on the waterline
+      if (p.ammo === 'chain' && p.target && p.target.alive) aimH = p.target.pos.y + sailAimHeight(p.target) - pos.y;
       let tof = Math.hypot(aim.x - pos.x, aim.z - pos.z) / (v * 0.95);
       for (let it = 0; it < 2; it++) {
         _v2.set(aim.x + rvx * tof - pos.x, 0, aim.z + rvz * tof - pos.z);
-        const e = 0.5 * Math.asin(clamp((g * _v2.length()) / (v * v), 0, 1));
+        const e = aimH !== null ? elevationFor(v, _v2.length(), aimH, g) : 0.5 * Math.asin(clamp((g * _v2.length()) / (v * v), 0, 1));
         tof = _v2.length() / (v * Math.cos(e));
       }
       dist = _v2.length();
@@ -322,7 +343,7 @@ export class Ship {
       dir.set(Math.sin(fa), 0, Math.cos(fa));
     }
     // (aim points only lie past the usual reach for a mark up on a fort's walls, which wants the higher arc)
-    const elev = clamp(0.5 * Math.asin(clamp((g * dist) / (v * v), 0, 1)), 0.015, 0.47);
+    const elev = aimH !== null ? clamp(elevationFor(v, dist, aimH, g), -0.05, 0.7) : clamp(0.5 * Math.asin(clamp((g * dist) / (v * v), 0, 1)), 0.015, 0.47);
     // pirate gun crews are a little less disciplined than yours
     const sloppy = mine ? 1 : 2.4 * this.boost.aim;
     const yaw = (Math.random() - 0.5) * 0.035 * sloppy;

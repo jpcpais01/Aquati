@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T16:00Z',
+    entries: [
+      {
+        title: 'Chain shot goes for the sails',
+        notes: [
+          'With chain shot loaded, your gun crews now raise their guns and lay them on the middle of the enemy\'s canvas instead of her waterline, so the chain scythes through sails and rigging the way it should. The lock and lead allow for the flatter, quicker flight.',
+          'Pirates who load chain do the same to you.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T15:00Z',
     entries: [
       {
