@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T16:00Z',
+    entries: [
+      {
+        title: 'Going down with your ship, beautifully',
+        notes: [
+          'The bubbles are real now: every one is shaded as a sphere of air in water, with a mirror-bright rim where light can\'t escape, a glint of sun on its shoulder and the bright surface glowing upside down in its belly. Big ones rise faster than small ones, tiny ones zigzag and spiral, and they swell as they climb toward the surface before popping just beneath it.',
+          'Air streams out of every hatch, gunport and torn seam in sputtering trains, and pockets of trapped air burst free in great wobbling, jellyfish-like gulps with a deep, round glug you can hear. Overhead, the surface churns white where it all breaks.',
+          'Sunlight now pours down through the water in real god rays that stay put as the camera moves and sway with the waves above, the same dancing light that ripples across the sand. Things deep down lose their reds and fade into the blue-green gloom, and tiny specks of drifting matter catch the light around you.',
+          'Wreckage tears loose as she goes: planks and barrels drift up past the camera toward the light, crates of shot tumble down to the sand beside her. The camera plunges through the surface in a rush of bubbles, drifts like a diver, and once she has settled slowly lifts its gaze toward the light.',
+          'A depth gauge counts her down in fathoms as she sinks, the farewell screen tells you how deep she lies, and sunbeams and finer bubbles drift behind your voyage\'s tally.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T15:00Z',
     entries: [
       {

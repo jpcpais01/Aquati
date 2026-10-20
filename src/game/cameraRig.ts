@@ -59,7 +59,7 @@ export class CameraRig {
    * A directed shot (the farewell as your ship goes down): the camera glides
    * from wherever it is toward `pos`, looking at `look`, by weight `w`.
    */
-  cine: { pos: THREE.Vector3; look: THREE.Vector3; fov: number; w: number } | null = null;
+  cine: { pos: THREE.Vector3; look: THREE.Vector3; fov: number; w: number; roll?: number } | null = null;
   /** Ashore: a close, lower third-person frame over the captain's shoulder (wanted, and the eased blend). */
   foot = false;
   private ft = 0;
@@ -335,6 +335,7 @@ export class CameraRig {
         this.camera.position.y += Math.sin(time * 53) * k * 0.4;
       }
       this.camera.lookAt(look);
+      if (cn.roll) this.camera.rotateZ(cn.roll * cn.w);
       this.camera.fov = lerp(this.camera.fov, cn.fov, cn.w);
       this.target.lerp(_b.set(cn.look.x, 0, cn.look.z), cn.w);
     }
