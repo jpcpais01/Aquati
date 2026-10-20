@@ -343,6 +343,29 @@ export class Atmosphere {
     this.update(0);
   }
 
+  /** A guest's sky in a shared sea: the host's clock, weather and wind (see net/coop.ts). */
+  private following = false;
+  private followRun = true;
+
+  /** Keeps to the host's sky: the clock eased (or set, if far off), the weather turned, the wind sent round. */
+  follow(day: number, kind: WeatherKind, windTo: number, run: boolean) {
+    this.following = true;
+    this.followRun = run;
+    const dd = ((day - this.day + 1.5) % 1) - 0.5;
+    this.day = Math.abs(dd) > 0.02 ? day : (this.day + dd * 0.5 + 1) % 1;
+    if (kind !== this.kind && kind in WEATHER) {
+      this.setWeather(kind);
+      const a = WEATHER[kind].arrive;
+      if (a) this.onChange(kind, a[0], a[1]);
+    }
+    if (Number.isFinite(windTo)) this.windTo = windTo;
+  }
+
+  /** The guest sails alone again: their own sky. */
+  unfollow() {
+    this.following = false;
+  }
+
   /** Holds the clock at a chosen hour ('auto' lets the day run again). */
   setTimeMode(m: TimeMode) {
     this.timeMode = m;
@@ -369,7 +392,9 @@ export class Atmosphere {
 
   update(dt: number) {
     // ---------------------------------------------------------- clock
-    if (this.timeMode === 'auto') this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
+    if (this.following) {
+      if (this.followRun) this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
+    } else if (this.timeMode === 'auto') this.day = (this.day + (dt / DAY_LENGTH) * pace(this.day) * PACE_NORM) % 1;
     else {
       // sweep forward to the chosen hour, so the sun travels there rather than jumping
       const to = TIMES[this.timeMode].hour / 24;
@@ -379,7 +404,7 @@ export class Atmosphere {
 
     // ---------------------------------------------------------- weather
     this.stateT += dt;
-    if (!this.locked && !this.hold && this.stateT > this.stateDur) this.nextWeather();
+    if (!this.locked && !this.hold && !this.following && this.stateT > this.stateDur) this.nextWeather();
     const d = WEATHER[this.kind];
     // a hand-picked change rolls in over a few seconds instead of half a minute
     this.rush = Math.max(0, this.rush - dt / 12);
@@ -396,7 +421,7 @@ export class Atmosphere {
     // ---------------------------------------------------------- wind heading
     // now and then the breeze veers or backs; squalls shove it about more often
     this.veerT += dt;
-    if (this.veerT > this.veerDur) this.shiftWind(0.35 + this.storm * 0.6 + this.rain * 0.2, 0);
+    if (this.veerT > this.veerDur && !this.following) this.shiftWind(0.35 + this.storm * 0.6 + this.rain * 0.2, 0);
     // swing round to the new heading: a slow start and settle, never faster than a few degrees a second
     const left = this.windTo - this.windAngle;
     const maxRate = (0.045 + this.storm * 0.05) * fast;

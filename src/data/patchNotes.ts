@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T17:00Z',
     entries: [
       {
+        title: 'Sail together: multiplayer is here',
+        notes: [
+          'Up to four captains can now share one sea. Open Sail together from the harbour\'s top bar, the pause menu or the crew button on the HUD, choose Host, and send your friends the link or read them the six-letter code. They join from the harbour and set sail right beside your flagship, wherever you are.',
+          'It really is one sea: the same pirates, ghost ships and bounty hunters, the same weather, hour and wind. Every broadside, splash, hit, fire and sinking shows in everyone\'s game, and pirates choose whichever captain is closest or hurting them most.',
+          'Crewmates fly a gold name tag over their ship. They show as gold arrows on the minimap, pinned to its edge when they\'re out of sight, and by name on the sea chart. Their escorts sail with them too.',
+          'Your shots count the moment you see them land, and you\'re only ever holed by balls you actually saw hit you. Whoever sinks a ship is paid her bounty, and any captain who hit her in the last half minute gets a share.',
+          'Plunder is never stolen: every wreck spills her goods into each captain\'s game separately. Your gold, ships, forts, treasure maps and trade stay your own. The sea doesn\'t stop while you sail with others, so pausing lets go of the helm without freezing the world. The Kraken stays in the deep while captains sail together.',
+        ],
+      },
+      {
         title: 'Islands carved by rain',
         notes: [
           'The rocky isles have been rebuilt from the ground up. The stepped, stripy cones are gone: each is now a karst island where one to three sheer limestone crags rise out of wooded slopes. Their walls are fluted into buttresses and runnels and streaked dark where the rain runs down, there is moss on every ledge, and the jungle grows right up over their domed crowns.',

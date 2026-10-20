@@ -89,6 +89,8 @@ import { findFortSites, fortClearings } from '../shore/fortKit';
 import { shoreMats } from '../shore/kit';
 import { FortHud } from '../ui/fort';
 import { gunRange } from '../ships/ship';
+import { Coop, CoopGame, Recipe, Role } from '../net/coop';
+import { CrewPanel } from '../ui/crew';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
@@ -133,6 +135,17 @@ const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(lo
 const KRAKEN_TEST = typeof location !== 'undefined' && /[?&]kraken\b/.test(location.search);
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+/** Every texture a model's materials use (uploaded a frame at a time before she's drawn). */
+function texturesOf(root: THREE.Object3D): THREE.Texture[] {
+  const out = new Set<THREE.Texture>();
+  root.traverse((o) => {
+    const m = (o as THREE.Mesh).material;
+    if (!m) return;
+    for (const mat of Array.isArray(m) ? m : [m]) for (const v of Object.values(mat)) if (v instanceof THREE.Texture) out.add(v);
+  });
+  return [...out];
+}
 
 export class Game {
   private renderer: THREE.WebGLRenderer;
@@ -392,6 +405,15 @@ export class Game {
   /** When the forts' tribute was last looked for, and the next hammer-knock under your own walls. */
   private tributeT = 0;
   private havenT = 0;
+  // sailing together: other captains' ships in this sea (see net/coop.ts)
+  private coop = new Coop(this.coopBridge());
+  private crewUi!: CrewPanel;
+  /** This frame's ships the pirates may hunt besides you: your escorts and the other captains'. */
+  private hunt: Ship[] = [];
+  /** Captains at sea the pirates gather round (you and your crewmates). */
+  private capList: Ship[] = [];
+  /** World time your side last struck each ship: a hand in her sinking earns a share. */
+  private myHits = new WeakMap<Ship, number>();
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -466,6 +488,11 @@ export class Game {
     // the icon picks the weather, the clock picks the hour
     document.getElementById('hud-sky')!.addEventListener('click', (e) => {
       e.stopPropagation();
+      // in someone else's sea, their sky
+      if (this.coop.guest) {
+        this.ui.skyTag('The host sets the sky');
+        return;
+      }
       if ((e.target as HTMLElement).closest('#hud-clock')) {
         const t = times[(times.indexOf(this.atmos.timeMode) + 1) % times.length];
         this.atmos.setTimeMode(t);
@@ -801,6 +828,14 @@ export class Game {
     this.renderer.setAnimationLoop(() => this.frame());
     // sign-in loads once the harbour is up, off the critical path
     setTimeout(() => this.cloudSave.start(), 900);
+    // came by an invite link: the crew card opens, one tap from aboard
+    const join = new URLSearchParams(location.search).get('join');
+    if (join) {
+      const u = new URL(location.href);
+      u.searchParams.delete('join');
+      history.replaceState(null, '', u);
+      this.crewUi.invite(join);
+    }
   }
 
   /** The cloud rewrote some saves (another device's progress, or a sign-out). */
@@ -1002,6 +1037,15 @@ export class Game {
       },
     );
     this.cloudSave.onWelcome = (w) => account.welcome(w);
+    this.crewUi = new CrewPanel(this.coop, {
+      open: () => this.ui.openOverlay('crew'),
+      click: () => {
+        this.audio.start();
+        this.audio.click();
+      },
+      atSea: () => this.state !== 'menu' && this.state !== 'port' && this.state !== 'loading',
+      suggest: () => this.cloudSave.user?.name.split(/\s+/)[0] || this.look.name.trim() || 'Captain',
+    });
     this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     this.cloudSave.onAdmin = () => {
       const parts = this.partStore.grantAll();
@@ -2877,6 +2921,127 @@ export class Game {
     return s;
   }
 
+  // ------------------------------------------------------------------ sailing together
+
+  /** What the crew layer may see and do (see net/coop.ts). */
+  private coopBridge(): CoopGame {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const g = this;
+    return {
+      get world() {
+        return g.world;
+      },
+      get quality() {
+        return g.quality.physicalHull ? 1 : 0;
+      },
+      shares: (out) => {
+        const atSea = g.state === 'playing' || g.state === 'paused' || g.state === 'docked' || g.state === 'dead';
+        const p = g.player;
+        if (atSea && p && !p.remote) out.set(p, 'flag');
+        if (atSea) for (const s of g.escorts.keys()) if (!s.removed) out.set(s, 'escort');
+        if (!g.coop.guest) for (const s of g.ais.keys()) if (!s.remote && !s.removed) out.set(s, 'ai');
+      },
+      recipe: (s, role) => g.recipe(s, role),
+      targetOf: (s) => g.ais.get(s)?.target ?? null,
+      prepare: (m) => {
+        g.preload.add(m.root);
+        g.texQueue.push(...texturesOf(m.root));
+      },
+      uploading: (m) => g.preload.holds(m.root),
+      scrap: (m) => g.scrapHull(m),
+      fromYard: (r) => {
+        if (r.team !== 'pirate' || r.hunter || r.livery.skin) return null;
+        if (r.livery.ghost) {
+          const m = g.ghostyard;
+          if (!m || m.cls.id !== r.cls) return null;
+          g.ghostyard = null;
+          return m;
+        }
+        const parts = JSON.stringify(r.livery.parts ?? {});
+        const i = g.shipyard.findIndex((m) => m.cls.id === r.cls && m.livery.id === r.livery.id && JSON.stringify(m.livery.parts ?? {}) === parts);
+        return i >= 0 ? g.shipyard.splice(i, 1)[0] : null;
+      },
+      launch: (r, m) => g.launchPuppet(r, m),
+      remove: (s) => {
+        s.removed = true;
+        g.removeShip(s);
+      },
+      adopt: (s) => {
+        // the host has gone: her pirates are ours to fight now
+        g.ais.set(s, new PirateAI(s, (g.player?.kills ?? 0) / 4));
+      },
+      struck: (s, by, dmg) => g.onHit(s, by as Ship, dmg, s.pos),
+      sunk: (s, by) => g.onRemoteSunk(s, by),
+      sky: () => ({ day: g.atmos.day, kind: g.atmos.kind, windTo: g.atmos.windTo, run: g.atmos.timeMode === 'auto' }),
+      follow: (sky) => (sky ? g.atmos.follow(sky.day, sky.kind, sky.windTo, sky.run) : g.atmos.unfollow()),
+      toast: (title, line, secs = 3) => g.ui.toast(title, line, secs),
+      clearSea: () => {
+        for (const s of [...g.ais.keys()]) {
+          s.removed = true;
+          g.removeShip(s);
+        }
+        g.hunters.clear();
+      },
+      changed: () => g.crewUi?.render(),
+    };
+  }
+
+  /** The captain's name the others see over your flagship. */
+  private captainName() {
+    return this.coop.session?.name || 'Captain';
+  }
+
+  /** One of our ships, for another game to build and launch. */
+  private recipe(s: Ship, role: Role): Recipe {
+    const flag = role === 'flag';
+    return {
+      cls: s.cls.id,
+      livery: s.livery,
+      team: s.team,
+      name: s.name,
+      role,
+      captain: flag ? this.captainName() : null,
+      hunter: s.hunter,
+      boost: s.hunter ? { ...s.boost } : null,
+      skin: flag ? this.vaultStore.equipped.skin : (s.livery.skin ?? null),
+      blast: s.cannonFx.blast,
+      trail: s.cannonFx.trail,
+      ammo: s.ammo,
+      x: s.pos.x,
+      z: s.pos.z,
+      h: s.heading,
+      hp: s.hp,
+      sail: s.sailLevel,
+    };
+  }
+
+  /** Another game's ship on our water: built from her recipe, steered by her owner. */
+  private launchPuppet(r: Recipe, model: ShipModel): Ship {
+    const s = new Ship(refit(SHIP_CLASSES[r.cls], r.livery.parts), r.livery, r.team, this.quality.physicalHull ? 1 : 0, model);
+    s.name = r.name;
+    s.captain = r.captain;
+    s.gold = 0;
+    if (r.hunter) {
+      s.hunter = r.hunter;
+      if (r.boost) s.setBoost(r.boost);
+    }
+    s.cannonFx.blast = r.blast;
+    s.cannonFx.trail = r.trail;
+    s.ammo = r.ammo;
+    s.sailTarget = s.sailLevel = r.sail;
+    if (s.ghost) Game.ghostify(s);
+    this.ships.push(s);
+    this.opaque.add(s.root);
+    this.water.add(s.bowWave.mesh);
+    // a phantom takes shape out of the mist here too
+    if (s.ghost && s.alive) {
+      s.place(r.x, r.z, r.h);
+      this.raiseGhost(s);
+    }
+    if (r.captain && this.state !== 'loading') this.ui.toast(`${r.captain} sails in`, `The ${r.name} joins your sea`, 3);
+    return s;
+  }
+
   /** A phantom casts no shadow, and her guns spit wraith-fire. */
   private static ghostify(s: Ship) {
     s.root.traverse((o) => {
@@ -2888,6 +3053,7 @@ export class Game {
   }
 
   private removeShip(s: Ship) {
+    this.coop.forget(s);
     this.preload.drop(s.root);
     this.opaque.remove(s.root);
     this.water.remove(s.bowWave.mesh);
@@ -3158,7 +3324,7 @@ export class Game {
     this.rig.snapTo(this.spawnPoint);
     this.frameMenu();
     // a couple of pirates on the horizon for life
-    if (!this.ships.some((s) => s.team === 'pirate')) {
+    if (!this.coop.guest && !this.ships.some((s) => s.team === 'pirate')) {
       this.spawnPirate(this.spawnPoint, 180, 300);
       this.spawnFlotilla(this.spawnPoint, 300, 420, 2);
     }
@@ -3212,6 +3378,19 @@ export class Game {
     }
     this.assignSlots();
     this.fleetHud.setOrder(this.fleet.state.order, false);
+    // a guest sets sail beside the host's flagship, wherever she is
+    const lead = this.coop.guest ? this.coop.rally() : null;
+    if (lead) {
+      const at = this.findOpenWater(lead.pos.x, lead.pos.z, 90, 150);
+      p.place(at.x, at.z, lead.heading);
+      p.speed = p.cls.maxSpeed * 0.3;
+      for (const s of this.escorts.keys()) {
+        const o = this.findOpenWater(at.x, at.z, 85, 130);
+        s.place(o.x, o.z, lead.heading);
+      }
+      this.rig.snapTo(p.pos);
+      this.ui.toast('Weigh anchor', `The ${p.name} falls in with ${lead.captain ?? 'the host'}'s ${lead.name}`, 3.4);
+    } else
     this.ui.toast('Weigh anchor', fleet.length ? `The ${p.name} sets sail with ${fleet.join(' and ')}` : `The ${p.name} sets sail`, 3);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
@@ -3230,7 +3409,9 @@ export class Game {
     this.setView(false);
     this.rig.resetEye();
     this.syncFleet();
-    for (const s of this.ships.slice()) this.removeShip(s);
+    // in a shared sea the others' ships (and, hosting, your pirates) sail on without you
+    const keep = (s: Ship) => this.coop.live && s.alive && !s.removed && (s.remote || (this.coop.hosting && this.ais.has(s)));
+    for (const s of this.ships.slice()) if (!keep(s)) this.removeShip(s);
     this.escorts.clear();
     this.fleetHud.clear();
     this.refreshHold();
@@ -3312,6 +3493,9 @@ export class Game {
     if (on && this.state === 'playing') {
       this.input.releaseLook();
       this.state = 'paused';
+      // with a crew the sea sails on: the helm is let go, not the world
+      if (this.coop.live && this.player) this.player.rudder = 0;
+      document.querySelector('#pause .kicker')!.textContent = this.coop.live ? 'Your crew sails on' : 'Voyage paused';
       const p = this.player;
       this.ui.showPause(true, p ? { gold: p.gold, kills: p.kills, isles: this.discovered.size, time: this.voyageTime, ship: p.name, cls: p.cls.id } : undefined);
     } else if (!on && this.state === 'paused') {
@@ -3516,11 +3700,15 @@ export class Game {
     const t = this.world.time;
     let best: Ship | null = null;
     let bd = Infinity;
-    for (const [s, ai] of this.ais) {
-      if (!s.alive || s.removed) continue;
+    for (const s of this.ships) {
+      if (!s.alive || s.removed || s.team !== 'pirate') continue;
+      const ai = this.ais.get(s);
+      if (!ai && !s.remote) continue;
       const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
       // a pirate tied up with an escort far off doesn't drag the camera over to her
-      const fighting = (ai.mode === 'engage' && (ai.target === p || d < 160)) || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
+      // (another game's pirate: by what her owner says she's hunting)
+      const engaged = ai ? ai.mode === 'engage' && (ai.target === p || d < 160) : this.coop.aims(s, p) || d < 160;
+      const fighting = engaged || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
       // a little hysteresis so the frame doesn't flicker at the edge of range
       if (fighting && d < (s === this.lastFoe ? 320 : 270) && d < bd) {
         bd = d;
@@ -3543,6 +3731,7 @@ export class Game {
 
   private onHit(ship: Ship, attacker: Ship, dmg: number, pos: THREE.Vector3) {
     const [x, y, ok] = this.screenOf(pos);
+    if (attacker && (attacker === this.player || this.escorts.has(attacker))) this.myHits.set(ship, this.world.time);
     if (attacker === this.player && ship !== this.player && this.state === 'playing') {
       this.log.hits++;
       this.log.dealt += dmg;
@@ -3625,7 +3814,30 @@ export class Game {
       // whatever she had bolted on is yours to pull from the wreck
       const prize = Object.values(ship.livery.parts ?? {})[0];
       if (prize) setTimeout(() => this.findPart(prize, 'Salvaged from the wreck', ship.pos), 1400);
+    } else if (this.assisted(ship) && this.player) {
+      // another captain sank her, but our guns had a hand in it: a share of the bounty
+      const share = Math.round(bounty * 0.5);
+      this.player.gold += share;
+      this.vaultStore.earn(share);
+      this.ui.toast(`+${share} gold, a share`, `${attacker?.captain ?? 'Your crewmate'} sank the ${ship.name}`, 3.4);
+      this.audio.coin();
+      this.note('fleet', `Helped sink the ${ship.name}`, `${ship.cls.name} · +${share} gold`);
+    } else if (attacker?.captain && attacker.remote) this.ui.toast(`${attacker.captain} sinks her`, `The ${ship.name} goes down`, 2.6);
+  }
+
+  /** Whether our side had a hand in sinking her (struck her in the last half minute) while someone else dealt the last blow. */
+  private assisted(ship: Ship) {
+    const t = this.myHits.get(ship);
+    return this.coop.live && t !== undefined && this.world.time - t < 30;
+  }
+
+  /** Another game's ship went down (multiplayer): a crewmate lost, or a pirate sunk by someone in the crew. */
+  private onRemoteSunk(ship: Ship, by: Ship | null) {
+    if (ship.team === 'player') {
+      if (ship.captain) this.ui.toast(`The ${ship.name} is lost`, `${ship.captain}'s flagship goes down`, 3.6);
+      return;
     }
+    this.onSunk(ship, by as Ship);
   }
 
   // ------------------------------------------------------------------ bounties
@@ -3756,7 +3968,8 @@ export class Game {
       p.kills++;
     }
     if ((attacker !== p && !escort) || !p || this.state !== 'playing') {
-      this.ui.toast('Her bounty goes unclaimed', `The ${ship.name} sank by another hand`, 3.4);
+      if (attacker?.captain && attacker.remote) this.ui.toast(`${attacker.captain} claims her bounty`, `The ${ship.name} goes down`, 3.4);
+      else this.ui.toast('Her bounty goes unclaimed', `The ${ship.name} sank by another hand`, 3.4);
       return;
     }
     const h = this.heat;
@@ -4549,6 +4762,8 @@ export class Game {
 
   /** Each storm gets one roll of the dice; if it comes, it waits for deep, lonely water. */
   private watchForKraken(dt: number, p: Ship) {
+    // the deep stays quiet while captains sail together
+    if (this.coop.live) return;
     if (KRAKEN_TEST && this.krakenCool <= 0 && this.voyageTime > 7) {
       this.summonKraken();
       this.krakenCool = 60;
@@ -4799,7 +5014,9 @@ export class Game {
     P.begin('Sinking & wrecks', 'sim');
     this.updateWreck(dt);
     P.end();
-    const simDt = this.state === 'paused' || this.state === 'loading' ? 0 : dt * this.timeScale;
+    // a shared sea never stops or slows for one captain (photo mode still holds it, briefly)
+    const frozen = this.state === 'loading' || (this.state === 'paused' && (!this.coop.live || this.photo.active));
+    const simDt = frozen ? 0 : dt * (this.coop.live ? 1 : this.timeScale);
     this.update(simDt, dt);
     this.render(simDt);
     this.input.consume();
@@ -4847,7 +5064,13 @@ export class Game {
     const lashed = this.boarding.prize;
     // your escorts stand guard even while you're ashore or on a prize's deck, and can be fought there
     this.updateFleet(dt);
-    for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships, this.state === 'playing' ? this.escortShips : []);
+    // the other captains' ships come and go, are steered onto their owners' tracks, and hear ours
+    this.coop.update(dt);
+    const hunt = this.hunt;
+    hunt.length = 0;
+    if (this.state === 'playing') for (const s of this.escortShips) hunt.push(s);
+    this.coop.mates(hunt);
+    for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships, hunt);
     P.end();
     P.begin('Maelstroms & reefs', 'ships');
     this.hazards.update(dt, w, this.ships, this.loot.all(), this.rig.target, globalUniforms.uStorm.value);
@@ -4937,9 +5160,8 @@ export class Game {
         // with the grapnels flying, nothing else is on offer
         const docking = this.boarding.busy ? true : this.updateDockPrompt(p);
         if (this.boarding.busy || !this.updateBoardPrompt(p, dt)) this.updateLandPrompt(p, dt, docking);
-        // no fresh pirates while the captain's ashore: the sea fills again once you sail
-        this.directSpawns(dt);
-        this.updateHunters(dt);
+        // hunters follow the host's infamy (a guest's sea is the host's to fill)
+        if (!this.coop.guest) this.updateHunters(dt);
       }
       this.checkDiscoveries(p);
       this.updateForts(p, dt);
@@ -4950,6 +5172,8 @@ export class Game {
     } else {
       this.loot.update(dt, w, null, 0);
     }
+    // fresh pirates gather round every captain at sea (none round one who's ashore)
+    if (!this.coop.guest) this.directSpawns(dt);
     // on foot ashore, it is the captain who walks into a pin
     const onFoot = this.shore.active ? this.shore.captain : null;
     const reached = this.waypoints.update(dt, p && p.alive && this.state === 'playing' ? (onFoot ?? p.pos) : null, (x, z) => this.terrain.heightAt(x, z));
@@ -5292,12 +5516,17 @@ export class Game {
   }
 
   private directSpawns(dt: number) {
-    const p = this.player!;
-    // pirates left far astern while cruising are recycled so the seas around you stay busy
+    const caps = this.capList;
+    caps.length = 0;
+    const p = this.player;
+    if (p && this.state === 'playing' && !this.shore.active) caps.push(p);
+    this.coop.flagships(caps);
+    if (!caps.length) return;
+    // pirates left far astern of every captain while cruising are recycled so the seas stay busy
     for (const s of this.ships.slice()) {
-      if (s.team !== 'pirate' || !s.alive || s.hunter) continue;
+      if (s.team !== 'pirate' || !s.alive || s.hunter || s.remote) continue;
       const ai = this.ais.get(s);
-      if (ai && ai.mode === 'patrol' && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) > 820) this.removeShip(s);
+      if (ai && ai.mode === 'patrol' && caps.every((c) => Math.hypot(s.pos.x - c.pos.x, s.pos.z - c.pos.z) > 820)) this.removeShip(s);
     }
     // no pirate sails into the Kraken's water
     if (this.kraken.active) {
@@ -5305,14 +5534,25 @@ export class Game {
       return;
     }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive && !s.hunter).length;
-    // a fleet draws a bigger crowd
-    const want = Math.min(4, 2 + Math.floor(p.kills / 4)) + (this.escortShips.length ? 1 : 0);
+    // a fleet draws a bigger crowd, and so does a crew of captains
+    const kills = p?.kills ?? 0;
+    const want = Math.min(4, 2 + Math.floor(kills / 4)) + (this.escortShips.length ? 1 : 0) + Math.min(3, caps.length - 1);
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
       const room = want - alivePirates;
-      if (room >= 2 && this.voyageTime > 60 && Math.random() < 0.25) this.spawnFlotilla(p.pos, 360, 520, Math.min(room, 3));
-      else this.spawnPirate(p.pos, 280, 480);
-      this.spawnTimer = 12 + Math.random() * 8;
+      // round whichever captain has the fewest pirates about her
+      let at = caps[0];
+      let few = Infinity;
+      for (const c of caps) {
+        const n = this.ships.filter((s) => s.team === 'pirate' && s.alive && Math.hypot(s.pos.x - c.pos.x, s.pos.z - c.pos.z) < 600).length + Math.random() * 0.5;
+        if (n < few) {
+          few = n;
+          at = c;
+        }
+      }
+      if (room >= 2 && (this.voyageTime > 60 || caps.length > 1) && Math.random() < 0.25) this.spawnFlotilla(at.pos, 360, 520, Math.min(room, 3));
+      else this.spawnPirate(at.pos, 280, 480);
+      this.spawnTimer = (12 + Math.random() * 8) / Math.sqrt(caps.length);
     }
   }
 

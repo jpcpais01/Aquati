@@ -636,6 +636,18 @@ export class SeaChart {
       // your escorts: always on the chart, named, with a faint line back to the flagship
       if (sh.team === 'player') {
         const [ex, ey] = toS(sh.pos.x, sh.pos.z);
+        // a crewmate's flagship: gold, under her captain's name
+        if (sh.captain) {
+          tri(sh, '#ffd36a', 13);
+          g.font = '700 11.5px Cinzel, Georgia, serif';
+          g.textAlign = 'center';
+          g.lineWidth = 3;
+          g.strokeStyle = 'rgba(26, 18, 2, 0.85)';
+          g.strokeText(sh.captain, ex, ey + 22);
+          g.fillStyle = '#ffe7a8';
+          g.fillText(sh.captain, ex, ey + 22);
+          continue;
+        }
         g.strokeStyle = 'rgba(94, 227, 212, 0.35)';
         g.lineWidth = 1.2;
         g.setLineDash([2, 4]);

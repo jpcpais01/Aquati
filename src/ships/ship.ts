@@ -10,6 +10,22 @@ import { Livery, ShipClass } from './shipTypes';
 
 export type Team = 'player' | 'pirate';
 
+/** How a blow lands when other captains share the sea: on her for real, only seen here, or seen here and told to her owner. */
+export type Verdict = 'real' | 'echo' | 'send';
+
+/**
+ * Multiplayer's say in a ship's fate (see net/coop.ts). Each ship is sailed by
+ * one captain's game; a blow only counts in the game that decides it, and the
+ * others just see the splinters fly.
+ */
+export interface NetRules {
+  verdict(target: Ship, attacker: Ship | null): Verdict;
+  /** Our shot struck another game's ship: tell its owner (`dmg` already rolled). */
+  sent(target: Ship, dmg: number, attacker: Ship, kind: 'blow' | 'fire' | 'chain' | 'grape' | 'dread'): void;
+  /** One of our ships ran out a broadside. */
+  fired(ship: Ship, side: 'port' | 'starboard', target: Ship | null, point: THREE.Vector3 | null): void;
+}
+
 interface PendingShot {
   at: number;
   muzzle: number;
@@ -87,7 +103,13 @@ const _fp = new THREE.Vector3();
 let SHIP_ID = 0;
 
 export class Ship {
+  /** Set while other captains share the sea; null sailing alone. */
+  static net: NetRules | null = null;
   readonly id = ++SHIP_ID;
+  /** Another captain's game sails her: she goes where it says, and only it decides her fate. */
+  remote = false;
+  /** The captain at her helm, when she is someone's flagship in a shared sea. */
+  captain: string | null = null;
   readonly root = new THREE.Group();
   readonly model: ShipModel;
   readonly dmg: ShipDamage;
@@ -215,7 +237,7 @@ export class Ship {
 
   /** Fire shot struck home: she burns for longer with each ball. Returns true if she just caught. */
   ignite(by: Ship | null): boolean {
-    if (!this.alive || this.ghost) return false;
+    if (!this.alive || this.ghost || !this.effect(by, 'fire')) return false;
     const fresh = this.afire <= 0;
     this.afire = Math.min(EFFECT.burnMax, Math.max(0, this.afire) + EFFECT.burnPerHit);
     if (by) this.afireBy = by;
@@ -223,27 +245,40 @@ export class Ship {
   }
 
   /** Chain shot tore through the canvas. Returns true if her sails were whole a moment ago. */
-  shred(): boolean {
-    if (!this.alive) return false;
+  shred(by: Ship | null = null): boolean {
+    if (!this.alive || !this.effect(by, 'chain')) return false;
     const fresh = this.torn <= 0;
     this.torn = EFFECT.tornTime;
     return fresh;
   }
 
   /** Grape shot swept the deck. Returns true if her crews were at full strength. */
-  rake(): boolean {
-    if (!this.alive || this.ghost) return false;
+  rake(by: Ship | null = null): boolean {
+    if (!this.alive || this.ghost || !this.effect(by, 'grape')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = EFFECT.crewTime;
     return fresh;
   }
 
   /** Wraith-fire struck her: the crews shrink from their guns. Returns true if they were steady a moment ago. */
-  terrify(): boolean {
-    if (!this.alive || this.ghost) return false;
+  terrify(by: Ship | null = null): boolean {
+    if (!this.alive || this.ghost || !this.effect(by, 'dread')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = Math.max(this.crewHit, EFFECT.dreadTime);
     return fresh;
+  }
+
+  /**
+   * In a shared sea, whether a special shot's effect takes hold here: always on
+   * a ship we decide, as a look on another's (her owner sends the truth), and
+   * never twice on ours from a ball another game already told us about.
+   */
+  private effect(by: Ship | null, kind: 'fire' | 'chain' | 'grape' | 'dread') {
+    const net = Ship.net;
+    if (!net || !by) return true;
+    const v = net.verdict(this, by);
+    if (v === 'send') net.sent(this, 0, by, kind);
+    return v !== 'echo' || this.remote;
   }
 
   /** Heel the hull over by `amount` radians (positive lifts the port rail); it springs back on its own. */
@@ -304,6 +339,7 @@ export class Ship {
     ms.forEach((e, k) => this.pending.push({ at: world.time + k * 0.085 + Math.random() * 0.05, muzzle: e.i, target, point: pt, ammo }));
     this.reload[side] = this.reloadFull[side] = this.cls.reload * AMMO[ammo].reload * this.boost.reload;
     this.rollKick += s * 0.05 * (this.cls.cannonsPerSide / 5) / this.cls.mass;
+    if (Ship.net && !this.remote) Ship.net.fired(this, side, target, pt);
     return true;
   }
 
@@ -382,29 +418,45 @@ export class Ship {
     const dmg = amount * (pierce ? 1 : 1 - this.cls.armor) * (0.85 + Math.random() * 0.3);
     // a phantom flares green where she is struck
     if (this.ghost) this.flare = Math.min(1, this.flare + 0.45);
-    this.hp -= dmg;
+    // in a shared sea only one game decides each blow; the rest see the splinters fly
+    const v = Ship.net ? Ship.net.verdict(this, attacker) : 'real';
+    if (v === 'real') this.hp -= dmg;
+    else if (v === 'send') Ship.net!.sent(this, dmg, attacker!, 'blow');
     if (hull) this.dmg.onHit(at, dmg, world);
     this.lastHit = world.time;
     if (attacker) this.lastAttacker = attacker;
     this.rollKick += (Math.random() - 0.5) * 0.04;
-    if (this.hp <= 0) {
-      this.hp = 0;
-      this.alive = false;
-      this.sinkT = 0;
-      if (attacker) attacker.kills++;
-      const [vol, pan, d] = world.soundAt(this.pos);
-      if (this.ghost) {
-        // no blast: the curse breaks, and she comes apart into the mist she came from
-        world.particles.exorcism(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), this.cls.length);
-        world.audio.exorcise(vol, pan, d);
-      } else {
-        world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
-        world.audio.explosion(vol, pan, d);
-      }
-      world.onShake(this.team === 'player' ? 1.2 : 0.5 * vol, this.pos);
-      this.dmg.onDeath(world);
-    }
+    if (this.hp <= 0) this.die(attacker, world);
     return dmg;
+  }
+
+  /** A blow another captain's game decided (multiplayer): the hull takes it as dealt. */
+  takeBlow(dmg: number, attacker: Ship | null, world: World) {
+    if (!this.alive) return;
+    this.hp -= dmg;
+    this.lastHit = world.time;
+    if (attacker) this.lastAttacker = attacker;
+    if (this.hp <= 0) this.die(attacker, world);
+  }
+
+  /** She's done for: the blast (or the curse breaking), and the wreck begins to settle. */
+  die(attacker: Ship | null, world: World) {
+    if (!this.alive) return;
+    this.hp = 0;
+    this.alive = false;
+    this.sinkT = 0;
+    if (attacker) attacker.kills++;
+    const [vol, pan, d] = world.soundAt(this.pos);
+    if (this.ghost) {
+      // no blast: the curse breaks, and she comes apart into the mist she came from
+      world.particles.exorcism(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), this.cls.length);
+      world.audio.exorcise(vol, pan, d);
+    } else {
+      world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
+      world.audio.explosion(vol, pan, d);
+    }
+    world.onShake(this.team === 'player' ? 1.2 : 0.5 * vol, this.pos);
+    this.dmg.onDeath(world);
   }
 
   update(dt: number, world: World) {
