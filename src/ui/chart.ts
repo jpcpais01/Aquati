@@ -1,10 +1,12 @@
 // Full-screen sea chart: a hand-inked overview of the whole archipelago with
 // pan (drag), zoom (wheel / pinch) and live markers for the player, nearby
-// pirates, salvage and every isle, named once discovered.
+// pirates, salvage and every isle, named once discovered. Tap the sea to drop
+// a waypoint; tap a pin to lift it.
 
 import { RARITY } from '../game/loot';
 import { Ship } from '../ships/ship';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
+import { PIN_COLORS } from '../game/waypoints';
 
 const HALF = WORLD_SIZE / 2;
 const SPYGLASS = 650; // pirates are only charted within this range of you
@@ -57,9 +59,53 @@ export interface ChartScene {
   discovered: Set<string>;
   /** Trading ports, always marked: sailors know where the markets are. */
   ports?: { x: number; z: number; name: string }[];
+  /** Waypoints dropped by the captain. */
+  pins?: { x: number; z: number; hue: number; age: number }[];
   windX: number;
   windZ: number;
   time: number;
+}
+
+/** A waypoint on a map: a glowing teardrop pin standing on its spot. */
+export function pinMark(g: CanvasRenderingContext2D, x: number, y: number, r: number, css: string, label = '') {
+  g.save();
+  g.translate(x, y);
+  // the spot itself, a soft glowing dot under the pin
+  g.shadowColor = css;
+  g.shadowBlur = r * 1.4;
+  g.fillStyle = css;
+  g.beginPath();
+  g.ellipse(0, 0, r * 0.38, r * 0.2, 0, 0, Math.PI * 2);
+  g.fill();
+  // teardrop head standing above it
+  const hy = -r * 1.55;
+  g.beginPath();
+  g.moveTo(0, -r * 0.05);
+  g.bezierCurveTo(-r * 0.25, -r * 0.55, -r * 0.82, -r * 0.95, -r * 0.82, hy);
+  g.arc(0, hy, r * 0.82, Math.PI, 0);
+  g.bezierCurveTo(r * 0.82, -r * 0.95, r * 0.25, -r * 0.55, 0, -r * 0.05);
+  g.closePath();
+  g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = Math.max(1.2, r * 0.16);
+  g.strokeStyle = 'rgba(20, 14, 6, 0.75)';
+  g.stroke();
+  g.fillStyle = 'rgba(20, 14, 6, 0.82)';
+  g.font = `700 ${Math.round(r * 1.05)}px Inter, system-ui, sans-serif`;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  if (label) g.fillText(label, 0, hy + r * 0.05);
+  else {
+    g.beginPath();
+    g.arc(0, hy, r * 0.3, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.restore();
+}
+
+/** Distance as a sailor reads it: metres up close, kilometres beyond. */
+export function fmtDist(m: number) {
+  return m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`;
 }
 
 export class SeaChart {
@@ -76,14 +122,22 @@ export class SeaChart {
   private pinchD = 0;
   private dragged = 0;
   private terrain: Terrain | null = null;
+  private multi = false;
+  private tapT = 0;
+  /** A tap on the chart (not a drag, pinch or double-click): world spot and the world radius of a fingertip. */
+  onTap: (x: number, z: number, pick: number) => void = () => {};
 
   constructor(private canvas: HTMLCanvasElement) {
     this.g = canvas.getContext('2d')!;
     canvas.addEventListener('pointerdown', (e) => {
       canvas.setPointerCapture(e.pointerId);
+      if (!this.pointers.size) this.multi = false;
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.dragged = 0;
-      if (this.pointers.size === 2) this.pinchD = this.pinchDist();
+      if (this.pointers.size === 2) {
+        this.pinchD = this.pinchDist();
+        this.multi = true;
+      }
     });
     canvas.addEventListener('pointermove', (e) => {
       const p = this.pointers.get(e.pointerId);
@@ -119,7 +173,24 @@ export class SeaChart {
       },
       { passive: false },
     );
-    canvas.addEventListener('dblclick', (e) => this.zoomAt(2, e.clientX, e.clientY));
+    // a tap waits a beat, so a double-click can zoom instead of dropping a pin
+    canvas.addEventListener('click', (e) => {
+      if (this.wasDrag || this.multi) return;
+      clearTimeout(this.tapT);
+      const [x, z] = this.toWorld(e.clientX, e.clientY);
+      const pick = (e.pointerType === 'touch' ? 26 : 16) / this.scale();
+      this.tapT = window.setTimeout(() => this.onTap(x, z, pick), 230);
+    });
+    canvas.addEventListener('dblclick', (e) => {
+      clearTimeout(this.tapT);
+      this.zoomAt(2, e.clientX, e.clientY);
+    });
+  }
+
+  private toWorld(clientX: number, clientY: number): [number, number] {
+    const r = this.canvas.getBoundingClientRect();
+    const s = this.scale();
+    return [this.cx + (clientX - r.left - this.W / 2) / s, this.cz + (clientY - r.top - this.H / 2) / s];
   }
 
   setTerrain(t: Terrain) {
@@ -393,6 +464,50 @@ export class SeaChart {
     g.arc(px, py, 10 + pulse * 22, 0, Math.PI * 2);
     g.stroke();
     tri(p, '#ffffff', 14);
+
+    // waypoints: a dotted course from the ship, the pin and its distance
+    const pins = sc.pins ?? [];
+    if (pins.length) {
+      g.lineWidth = 1.6;
+      g.setLineDash([2, 6]);
+      g.lineCap = 'round';
+      for (const pin of pins) {
+        const [x, y] = toS(pin.x, pin.z);
+        g.strokeStyle = PIN_COLORS[pin.hue].css;
+        g.globalAlpha = 0.7;
+        g.beginPath();
+        g.moveTo(px, py);
+        g.lineTo(x, y);
+        g.stroke();
+      }
+      g.setLineDash([]);
+      g.globalAlpha = 1;
+      g.font = '600 11.5px Inter, system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'top';
+      pins.forEach((pin, i) => {
+        const [x, y] = toS(pin.x, pin.z);
+        const css = PIN_COLORS[pin.hue].css;
+        // dropped pins land with a little bounce
+        const k = Math.min(1, pin.age / 0.45);
+        const drop = (1 - k) * (1 - k) * 26 - Math.sin(k * Math.PI) * 3;
+        const ring = (sc.time * 0.6 + i * 0.3) % 1;
+        g.strokeStyle = css;
+        g.globalAlpha = 0.6 * (1 - ring);
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.ellipse(x, y, 6 + ring * 16, (6 + ring * 16) * 0.5, 0, 0, Math.PI * 2);
+        g.stroke();
+        g.globalAlpha = 1;
+        pinMark(g, x, y - drop, 10, css, `${i + 1}`);
+        const t = fmtDist(Math.hypot(pin.x - p.pos.x, pin.z - p.pos.z));
+        g.lineWidth = 3.5;
+        g.strokeStyle = 'rgba(8, 30, 40, 0.8)';
+        g.strokeText(t, x, y + 7);
+        g.fillStyle = css;
+        g.fillText(t, x, y + 7);
+      });
+    }
 
     this.drawRose(g, W - 58, H - 58, 40, sc.windX, sc.windZ);
     this.drawScale(g, 18, H - 22, s);

@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T02:00Z',
     entries: [
       {
+        title: 'Waypoints: pillars of light',
+        notes: [
+          'Tap or click anywhere on the sea chart to drop a waypoint, and tap a pin again to lift it. You can keep up to five at once, each in its own colour, and they stay on your chart between voyages.',
+          'Every waypoint rises out of the sea as a thin pillar of light you can see from far away, with motes drifting up the beam, a slow pulse climbing it and rings of light rippling out across the water at its foot. A new pin falls from the sky with a bright streak and a splash of light.',
+          'The minimap shows your pins, and pins out of range sit on its rim pointing the way with how far you have to sail. A small tag at the foot of each pillar shows the distance too, and slides to the edge of the screen when the pin is out of view.',
+          'Sail into a waypoint (or walk into it ashore) and it flares and dissolves with a chime.',
+        ],
+      },
+      {
         title: 'Go ashore with your crew',
         notes: [
           'Sail close to a beach and a "Go ashore" button appears. Press F or tap it, and your ship drops anchor while the captain rows in with four hands in the ship\'s boat.',

@@ -18,7 +18,7 @@ import { WindField, WindWisps } from '../fx/wind';
 import { Rain } from '../fx/rain';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
-import { Terrain } from '../world/terrain';
+import { Terrain, WORLD_SIZE } from '../world/terrain';
 import { Vegetation } from '../world/vegetation';
 import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
@@ -57,6 +57,7 @@ import { Captain } from './captain';
 import { createSkyDome } from '../render/sky';
 import { Projectiles } from './projectiles';
 import { Item, Loot, RARITY } from './loot';
+import { PIN_COLORS, Waypoints } from './waypoints';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
 import { World } from './world';
 import { campClearings, findCampSites, Ground, Landing } from '../shore/ground';
@@ -110,6 +111,7 @@ export class Game {
   private world!: World;
   private projectiles = new Projectiles();
   private loot = new Loot();
+  private waypoints = new Waypoints();
   private debris = new Debris();
   private collisions = new ShipCollisions(() => this.player);
   private pushers: Pusher[] = [];
@@ -417,6 +419,7 @@ export class Game {
     this.particles = new Particles(q.particles);
     this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
+    this.waypoints.buildFx(this.particles.uniforms, globalUniforms.uTime, globalUniforms.uLight);
     // the vault's chest and its light: built now so the warm-up draws them
     this.vstage = new VaultStage(this.particles.uniforms);
     this.opaque.add(this.vstage.group);
@@ -431,7 +434,7 @@ export class Game {
       const [vol, pan] = this.world.soundAt(p);
       this.audio.explosion(vol * 0.18, pan, 160);
     };
-    this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx);
+    this.water.add(this.ocean.mesh, this.particles.group, this.loot.fx, this.waypoints.fx);
     // the sea from beneath: hidden until the farewell follows a wreck under (the warm-up still draws it)
     this.opaque.add(this.ocean.underside);
     this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
@@ -567,6 +570,7 @@ export class Game {
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
     ui.onMap = (on) => this.setChart(on);
+    ui.onPin = (x, z, pick) => this.tapPin(x, z, pick);
     ui.onPhoto = () => this.openPhoto();
     ui.onQuit = () => {
       this.ui.showPause(false);
@@ -1853,6 +1857,20 @@ export class Game {
     this.photo.saved(blob, 'Photo saved', `${size} · Downloads`);
   }
 
+  /** Tap on the chart: lift the pin under the finger, else drop a new one there. */
+  private tapPin(x: number, z: number, pick: number) {
+    const hit = this.waypoints.near(x, z, pick);
+    if (hit) {
+      this.waypoints.lift(hit);
+      this.audio.click();
+      return;
+    }
+    const H = WORLD_SIZE / 2;
+    if (Math.abs(x) > H || Math.abs(z) > H) return;
+    this.waypoints.add(x, z, this.player?.pos);
+    this.audio.coin();
+  }
+
   /** The sea chart overlays live play: the world keeps sailing underneath. */
   private setChart(on: boolean) {
     if (on && !this.chartOpen && this.state === 'playing' && this.player) {
@@ -2543,6 +2561,15 @@ export class Game {
     } else {
       this.loot.update(dt, w, null, 0);
     }
+    // on foot ashore, it is the captain who walks into a pin
+    const onFoot = this.shore.active ? this.shore.captain : null;
+    const reached = this.waypoints.update(dt, p && p.alive && this.state === 'playing' ? (onFoot ?? p.pos) : null, (x, z) => this.terrain.heightAt(x, z));
+    if (reached) {
+      this.ui.toast('Waypoint reached', `${this.waypoints.pins.length ? `${this.waypoints.pins.length} more on the chart` : 'The chart is clear'}`, 3);
+      this.audio.chime();
+      this.world.particles.sparkle(_a.set(reached.x, w.waterHeight(reached.x, reached.z), reached.z), PIN_COLORS[reached.hue].glow, 2);
+    }
+    this.waypoints.fx.visible = this.state === 'playing' || this.state === 'paused' || this.state === 'docked' || this.state === 'dead';
 
     P.end();
 
@@ -2650,13 +2677,15 @@ export class Game {
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
       const cap = this.shore.captain;
       const camps = this.shore.camps.map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
-      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null);
+      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins);
+      this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
     }
     if (p && this.chartOpen) {
       this.ui.drawChart({
         player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
         ports: this.tradePorts.ports.map((tp) => ({ x: tp.x, z: tp.z, name: tp.name })),
+        pins: this.waypoints.pins,
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });
     }
