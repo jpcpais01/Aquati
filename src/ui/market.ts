@@ -86,6 +86,7 @@ export class MarketUI {
   private fleetList: HTMLElement;
   private fleetPurse: HTMLElement;
   private fleetRoom: HTMLElement;
+  private body: HTMLElement;
   private partPurse: HTMLElement;
 
   constructor() {
@@ -99,6 +100,7 @@ export class MarketUI {
           <div class="mk-title"><small>Trading port</small><h2 class="mk-name"></h2><p class="mk-tag"></p></div>
           <div class="mk-purse" title="Your gold"><span class="coin"></span><b>0</b></div>
         </header>
+        <div class="mk-body">
         <div class="mk-label"><span>Your hold</span><span class="mk-room"></span></div>
         <ul class="mk-list"></ul>
         <button class="btn primary big mk-all"><span class="mk-all-l">Sell everything</span><span class="mk-all-v"><span class="coin"></span><b>0</b></span></button>
@@ -113,6 +115,7 @@ export class MarketUI {
         <div class="mk-label"><span>Harbour master</span><span class="mk-froom"></span><span class="mk-fpurse" title="Your purse"></span></div>
         <ul class="mk-parts mk-fleet"></ul>
         <p class="mk-pnote">Escorts sail in formation on your quarters and take your orders (G). They sail with you every voyage until they are sunk.</p>
+        </div>
         <footer class="mk-foot"><button class="btn mk-leave">${icon(ICONS.flag)}<span>Cast off</span><kbd class="kd">Esc</kbd></button></footer>
       </div>`;
     document.body.appendChild(r);
@@ -127,6 +130,12 @@ export class MarketUI {
     this.fleetList = r.querySelector('.mk-fleet')!;
     this.fleetPurse = r.querySelector('.mk-fpurse')!;
     this.fleetRoom = r.querySelector('.mk-froom')!;
+    this.body = r.querySelector('.mk-body')!;
+    this.body.addEventListener('scroll', () => this.edges(), { passive: true });
+    // the body's own box and every list in it: content growing changes what's left to scroll
+    const ro = new ResizeObserver(() => this.edges());
+    ro.observe(this.body);
+    for (const el of [this.list, this.partList, this.fleetList]) ro.observe(el);
     this.fleetList.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
       if (!b || b.disabled) return;
@@ -217,6 +226,7 @@ export class MarketUI {
     this.root.querySelector('.mk-tag')!.textContent = tagline;
     this.purse.textContent = fmt(gold);
     this.render();
+    this.body.scrollTop = 0;
     this.root.classList.remove('hidden', 'out');
     void this.root.offsetWidth;
     this.root.classList.add('in');
@@ -227,6 +237,14 @@ export class MarketUI {
     this.isOpen = false;
     this.root.classList.remove('in');
     this.root.classList.add('hidden');
+  }
+
+  /** Fades the scroll body's edges only where there is more to scroll to. */
+  private edges() {
+    const b = this.body;
+    const more = b.scrollHeight - b.clientHeight;
+    b.classList.toggle('more-up', b.scrollTop > 2);
+    b.classList.toggle('more-down', more > 2 && b.scrollTop < more - 2);
   }
 
   /** Where the panel sits, so the camera can keep the ship in the space it leaves. */

@@ -24,7 +24,8 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 18px 16px 14px;
+  --gut: 16px;
+  padding: 18px var(--gut) 14px;
   border-radius: 26px;
   pointer-events: auto;
   background: linear-gradient(180deg, rgba(12, 32, 44, 0.94), rgba(6, 18, 28, 0.92));
@@ -121,18 +122,51 @@
   color: var(--ink-2);
 }
 
+/* everything between the name and Cast off scrolls as one; the head and foot stay put */
+.mk-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* run out to the card's edge so button glows aren't clipped into boxes */
+  margin: 0 calc(-1 * var(--gut));
+  padding: 0 var(--gut) 6px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  --fade: 0px;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade)), transparent);
+}
+
+.mk-body.more-down {
+  --fade: 28px;
+}
+
+.mk-body > * {
+  flex: none;
+}
+
+/* section names pin to the top while their goods scroll beneath them */
+.mk-body > .mk-label {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 calc(-1 * var(--gut)) -4px;
+  padding: 8px calc(var(--gut) + 6px);
+  background: linear-gradient(180deg, rgb(11, 29, 40) 72%, rgba(11, 29, 40, 0));
+}
+
 .mk-list {
   list-style: none;
   margin: 0;
   padding: 2px;
-  flex: 1 1 auto;
-  min-height: 90px;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 .mk-row {
@@ -420,8 +454,10 @@
     right: calc(8px + var(--safe-r));
     bottom: calc(8px + var(--safe-b));
     width: auto;
-    max-height: 58vh;
-    padding: 14px 12px 10px;
+    max-height: 62vh;
+    max-height: 62dvh;
+    --gut: 12px;
+    padding: 14px var(--gut) 10px;
     gap: 8px;
     border-radius: 24px;
     transform: translateY(calc(100% + 40px));
@@ -470,7 +506,8 @@
     bottom: calc(8px + var(--safe-b));
     width: min(380px, 46vw);
     gap: 6px;
-    padding: 10px 10px 8px;
+    --gut: 10px;
+    padding: 10px var(--gut) 8px;
   }
 
   .mk-tag,
@@ -480,6 +517,48 @@
 
   .mk-head {
     grid-template-columns: 1fr auto;
+    padding-bottom: 0;
+  }
+
+  .mk-title h2 {
+    font-size: 18px;
+  }
+
+  .mk-purse {
+    height: 30px;
+    font-size: 14px;
+  }
+
+  .mk-body {
+    gap: 6px;
+  }
+
+  .mk-all {
+    min-height: 42px;
+  }
+
+  .mk-svc {
+    padding: 7px 10px;
+  }
+
+  .mk-empty {
+    padding: 10px 12px;
+  }
+
+  .mk-leave {
+    min-height: 38px;
+  }
+}
+
+/* the shortest phones on their side: let the head and the name share one line */
+@media (max-height: 400px) and (orientation: landscape) {
+  .mk-title small {
+    display: none;
+  }
+
+  .mk-title h2 {
+    margin: 0;
+    font-size: 17px;
   }
 }
 

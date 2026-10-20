@@ -13,6 +13,20 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T12:00Z',
+    entries: [
+      {
+        title: 'The port market fits on every phone, and the loading compass spins true',
+        notes: [
+          'On phones, especially held sideways, the trading port panel no longer runs off the bottom of the screen. Everything between the port\'s name and Cast off now scrolls as one smooth list, so the Chandlery, the Shipwright and the Harbour master are always a swipe away.',
+          'Your gold and the port\'s name stay pinned at the top and Cast off stays pinned at the bottom, and each section\'s heading sticks to the top while you scroll through it. A soft fade at the bottom tells you there is more below.',
+          'On short screens the panel is more compact, and on phones held upright it can now use a little more of the screen.',
+          'The compass rose on the loading screen and the menus now turns on its own centre instead of swinging around off to one side.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T11:00Z',
     entries: [
       {
