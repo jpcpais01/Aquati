@@ -57,6 +57,11 @@ export class CameraRig {
    * from wherever it is toward `pos`, looking at `look`, by weight `w`.
    */
   cine: { pos: THREE.Vector3; look: THREE.Vector3; fov: number; w: number } | null = null;
+  /** Ashore: a close, lower third-person frame over the captain's shoulder (wanted, and the eased blend). */
+  foot = false;
+  private ft = 0;
+  /** Ground height under the camera, so it never dips into a hillside ashore. */
+  ground: ((x: number, z: number) => number) | null = null;
   /** A cross-fade from a frozen camera pose into whatever the rig computes next (mode switches). */
   private easeFrom: { pos: THREE.Vector3; quat: THREE.Quaternion; fov: number; t: number; dur: number } | null = null;
 
@@ -65,9 +70,22 @@ export class CameraRig {
   }
 
   private get followDistance() {
-    const d = lerp(70, 300, this.zoomSmooth * this.zoomSmooth * 0.6 + this.zoomSmooth * 0.4);
+    const z = this.zoomSmooth * this.zoomSmooth * 0.6 + this.zoomSmooth * 0.4;
+    const d = lerp(70, 300, z);
     // in battle, pull back just enough that both ships stay comfortably in frame
-    return Math.max(d, lerp(d, this.fitDist, this.battle));
+    const sea = Math.max(d, lerp(d, this.fitDist, this.battle));
+    return lerp(sea, lerp(13, 46, z), this.footBlend);
+  }
+
+  /** 0 at sea .. 1 ashore, eased. */
+  get footBlend() {
+    const f = this.ft;
+    return f * f * (3 - 2 * f);
+  }
+
+  /** Cut straight to (or away from) the on-foot frame, behind a fade. */
+  snapFoot() {
+    this.ft = this.foot ? 1 : 0;
   }
 
   /** Effective viewing distance (drives shadow reach, sound and fx radii). */
@@ -179,6 +197,8 @@ export class CameraRig {
       return;
     }
     this.zoomSmooth += (this.zoom - this.zoomSmooth) * damp(5, dt);
+    this.ft = clamp(this.ft + (this.foot ? dt : -dt) / 0.9, 0, 1);
+    const fb = this.footBlend;
     this.blend += ((this.mode === 'follow' ? 1 : 0) - this.blend) * damp(this.mode === 'follow' ? 1.4 : 3, dt);
     const inBattle = !!foe && this.mode === 'follow';
     // ease into the battle frame briskly, and out of it slowly once the guns fall silent
@@ -190,7 +210,7 @@ export class CameraRig {
     }
     const bw = this.battle * this.battle * (3 - 2 * this.battle);
     // look-ahead fades in battle so the frame holds still around the duel
-    const look = new THREE.Vector3(vel.x, 0, vel.z).multiplyScalar(lerp(1.4, 3, this.zoomSmooth) * (1 - bw * 0.75));
+    const look = new THREE.Vector3(vel.x, 0, vel.z).multiplyScalar(lerp(lerp(1.4, 3, this.zoomSmooth), 0.45, fb) * (1 - bw * 0.75));
     const aimAt = follow.clone().add(look);
     if (bw > 0) {
       const mid = new THREE.Vector3((follow.x + this.foe.x) * 0.5, follow.y, (follow.z + this.foe.z) * 0.5);
@@ -207,9 +227,11 @@ export class CameraRig {
     this.target.copy(this.focus);
 
     // follow pose: camera due south of the focus looking north & down
-    const pitch = lerp(0.91, 1.1, this.zoomSmooth); // radians above the horizon
+    // (ashore it sits lower, more over the shoulder than overhead)
+    const pitch = lerp(lerp(0.91, 1.1, this.zoomSmooth), lerp(0.62, 0.98, this.zoomSmooth), fb); // radians above the horizon
     const dist = this.followDistance;
     const followPos = new THREE.Vector3(this.focus.x, this.focus.y + Math.sin(pitch) * dist, this.focus.z + Math.cos(pitch) * dist);
+    if (this.ground && fb > 0) followPos.y = Math.max(followPos.y, this.ground(followPos.x, followPos.z) + 2.2);
 
     // orbit pose: low, slow, cinematic
     this.orbitAngle += dt * 0.06;
@@ -241,13 +263,13 @@ export class CameraRig {
     this.trauma = Math.max(0, this.trauma - dt * 1.6);
     const s = this.trauma * this.trauma;
     if (s > 0) {
-      const k = s * (0.6 + this.zoomSmooth) * (1 - this.eyeBlend);
+      const k = s * (0.6 + this.zoomSmooth) * (1 - this.eyeBlend) * (1 - fb * 0.78);
       this.camera.position.x += (Math.sin(time * 47) + Math.sin(time * 31)) * k * 0.6;
       this.camera.position.y += Math.sin(time * 53) * k * 0.5;
       this.camera.position.z += Math.sin(time * 41 + 1) * k * 0.6;
     }
     this.camera.lookAt(lookAt);
-    this.camera.fov = lerp(30, 34, b);
+    this.camera.fov = lerp(30, lerp(34, 40, fb), b);
 
     // swoop into (or out of) the captain's eyes along a curve that drops in
     // from above and behind, so it lands looking where they look
@@ -291,7 +313,8 @@ export class CameraRig {
     }
     // the near plane rides up with the camera: a zoomed-out view keeps ~15x the
     // depth precision, so distant decks, sails and shorelines never z-fight
-    this.camera.near = lerp(clamp(this.camera.position.y * 0.08, 2, 30), 0.1, Math.min(1, e * 1.6));
+    const near = lerp(clamp(this.camera.position.y * 0.08, 2, 30), clamp(dist * 0.03, 0.3, 1.5), fb);
+    this.camera.near = lerp(near, 0.1, Math.min(1, e * 1.6));
     this.camera.far = lerp(2600, 3600, e);
     this.applyEase(dt);
     // slide the frame so the ship sits in the space the menu leaves free;
@@ -311,6 +334,6 @@ export class CameraRig {
   /** Visible ground half-extent, used to fit the shadow frustum. */
   groundRadius() {
     if (this.mode === 'port') return 62;
-    return clamp(this.distance * 0.75, 70, 260);
+    return lerp(clamp(this.distance * 0.75, 70, 260), clamp(this.distance * 1.6, 40, 120), this.footBlend);
   }
 }

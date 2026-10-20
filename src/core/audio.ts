@@ -846,6 +846,212 @@ export class Audio {
     }
   }
 
+  /** A boot in dry sand (a soft hiss and crunch), or a splash through the shallows when `wet`. */
+  sandStep(k: number, wet = false) {
+    const v = this.voice((wet ? 0.12 : 0.08) + k * 0.06, (Math.random() - 0.5) * 0.2);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = wet ? 'lowpass' : 'bandpass';
+    bp.frequency.setValueAtTime(wet ? 1400 : 1800 + Math.random() * 900, t);
+    if (wet) bp.frequency.exponentialRampToValueAtTime(500, t + 0.22);
+    bp.Q.value = wet ? 0.8 : 0.9;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + (wet ? 0.02 : 0.012));
+    g.gain.exponentialRampToValueAtTime(0.001, t + (wet ? 0.28 : 0.13 + k * 0.05));
+    src.connect(bp).connect(g).connect(out);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 0.32);
+  }
+
+  /** Steel on steel: a bright ring with a hard scrape at the front. */
+  clash(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(0.5, vol * 0.42) * Math.exp(-dist / 160), pan);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const base = 1900 + Math.random() * 500;
+    [1, 1.47, 2.09, 2.78, 3.6].forEach((m, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = base * m * (1 + (Math.random() - 0.5) * 0.01);
+      const g = ctx.createGain();
+      const a = [0.5, 0.36, 0.26, 0.16, 0.1][i];
+      g.gain.setValueAtTime(a, t);
+      g.gain.exponentialRampToValueAtTime(0.0008, t + 0.9 - i * 0.14);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 1);
+    });
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 3200;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.9, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+    src.connect(hp).connect(ng).connect(out);
+    src.start(t, Math.random());
+    src.stop(t + 0.1);
+  }
+
+  /** A blade cutting the air. */
+  swish(vol: number, pan: number) {
+    const v = this.voice(vol * 0.2, pan);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 2.2;
+    bp.frequency.setValueAtTime(700, t);
+    bp.frequency.exponentialRampToValueAtTime(3200, t + 0.09);
+    bp.frequency.exponentialRampToValueAtTime(1100, t + 0.2);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(1, t + 0.07);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    src.connect(bp).connect(g).connect(out);
+    src.start(t, Math.random() * 1.5);
+    src.stop(t + 0.25);
+  }
+
+  /** A blow landing on someone: a dull thwack and a grunt of breath. */
+  thwack(vol: number, pan: number, dist = 0, heavy = false) {
+    const v = this.voice(Math.min(0.6, vol * (heavy ? 0.55 : 0.4)) * Math.exp(-dist / 140), pan);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(heavy ? 140 : 180, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.12);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.9, t);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.18);
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = heavy ? 900 : 1300;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.8, t);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    src.connect(lp).connect(ng).connect(out);
+    src.start(t, Math.random());
+    src.stop(t + 0.12);
+    // the breath knocked out of them: a short voiced "hff"
+    const vox = ctx.createOscillator();
+    vox.type = 'sawtooth';
+    const f0 = 120 + Math.random() * 90;
+    vox.frequency.setValueAtTime(f0 * 1.25, t + 0.02);
+    vox.frequency.exponentialRampToValueAtTime(f0 * 0.85, t + 0.2);
+    const fm = ctx.createBiquadFilter();
+    fm.type = 'bandpass';
+    fm.frequency.value = 650 + Math.random() * 300;
+    fm.Q.value = 3;
+    const vg = ctx.createGain();
+    vg.gain.setValueAtTime(0, t + 0.02);
+    vg.gain.linearRampToValueAtTime(0.22, t + 0.05);
+    vg.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    vox.connect(fm).connect(vg).connect(out);
+    vox.start(t + 0.02);
+    vox.stop(t + 0.25);
+  }
+
+  /** A flintlock: the pan's hiss, then a sharp crack and its echo off the hills. */
+  pistol(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(0.75, vol * 0.7) * Math.exp(-dist / 260), pan);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    out.connect(this.reverbIn);
+    const fizz = ctx.createBufferSource();
+    fizz.buffer = this.noise;
+    const fh = ctx.createBiquadFilter();
+    fh.type = 'highpass';
+    fh.frequency.value = 4000;
+    const fg = ctx.createGain();
+    fg.gain.setValueAtTime(0.18, t);
+    fg.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    fizz.connect(fh).connect(fg).connect(out);
+    fizz.start(t, Math.random());
+    fizz.stop(t + 0.07);
+    const b = t + 0.05;
+    const crack = ctx.createBufferSource();
+    crack.buffer = this.noise;
+    const cl = ctx.createBiquadFilter();
+    cl.type = 'lowpass';
+    cl.frequency.setValueAtTime(6000, b);
+    cl.frequency.exponentialRampToValueAtTime(400, b + 0.3);
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(1, b);
+    cg.gain.exponentialRampToValueAtTime(0.001, b + 0.45);
+    crack.connect(cl).connect(cg).connect(out);
+    crack.start(b, Math.random());
+    crack.stop(b + 0.5);
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(160, b);
+    o.frequency.exponentialRampToValueAtTime(40, b + 0.2);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.9, b);
+    og.gain.exponentialRampToValueAtTime(0.001, b + 0.25);
+    o.connect(og).connect(out);
+    o.start(b);
+    o.stop(b + 0.27);
+  }
+
+  /** Voices raised together: a war cry from a cutthroat camp, or the landing party's cheer. */
+  shout(vol: number, pan: number, dist = 0, cheer = false, n = 3) {
+    const v = this.voice(Math.min(0.4, vol * 0.3) * Math.exp(-dist / 200), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    out.connect(this.reverbIn);
+    for (let i = 0; i < n; i++) {
+      const t = ctx.currentTime + i * 0.07 + Math.random() * 0.06;
+      const len = 0.45 + Math.random() * 0.35;
+      const f0 = (cheer ? 150 : 110) + Math.random() * 70;
+      const src = ctx.createOscillator();
+      src.type = 'sawtooth';
+      // a cheer climbs ("huzzah!"), a war cry falls ("yaaarr")
+      src.frequency.setValueAtTime(f0 * (cheer ? 0.9 : 1.2), t);
+      src.frequency.linearRampToValueAtTime(f0 * (cheer ? 1.35 : 0.85), t + len);
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 5 + Math.random() * 2;
+      const vd = ctx.createGain();
+      vd.gain.value = f0 * 0.03;
+      vib.connect(vd).connect(src.frequency);
+      const mix = ctx.createGain();
+      mix.gain.setValueAtTime(0, t);
+      mix.gain.linearRampToValueAtTime(0.5, t + 0.05);
+      mix.gain.setValueAtTime(0.5, t + len * 0.7);
+      mix.gain.exponentialRampToValueAtTime(0.001, t + len);
+      // two vowel formants: "ah" opening to "r"
+      for (const [fa, fb, q] of [[750, cheer ? 950 : 600, 6], [1150, cheer ? 1500 : 1300, 8]]) {
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.Q.value = q;
+        f.frequency.setValueAtTime(fa, t);
+        f.frequency.linearRampToValueAtTime(fb, t + len);
+        src.connect(f).connect(mix);
+      }
+      mix.connect(out);
+      src.start(t);
+      vib.start(t);
+      src.stop(t + len + 0.05);
+      vib.stop(t + len + 0.05);
+    }
+  }
+
   /**
    * Your ship is lost: a deep blow through the keel, then a slow, low minor
    * chord that swells and hangs in the reverb like a tolling bell.

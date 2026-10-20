@@ -58,6 +58,11 @@ import { Projectiles } from './projectiles';
 import { Item, Loot, RARITY } from './loot';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
 import { World } from './world';
+import { campClearings, findCampSites, Ground, Landing } from '../shore/ground';
+import { Camp, Shore, ShoreInput } from '../shore/shore';
+import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
+import { rollTier } from './loot';
+import { rollContents } from './treasure';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
@@ -220,6 +225,22 @@ export class Game {
   private dockT = 0;
   private holdNagT = 0;
   private sky = createSkyDome();
+  // going ashore: the islands underfoot, the landing party and the cutthroats' camps
+  private ground!: Ground;
+  private shore!: Shore;
+  private shoreHud = new ShoreHud();
+  /** The beach the ship could put a boat on right now (checked a few times a second). */
+  private landing: Landing | null = null;
+  private landT = 0;
+  /** The zoom you had at sea, given back when you row out again. */
+  private seaZoom = 0.42;
+  private shoreIn: ShoreInput = { mx: 0, mz: 0, run: false, strike: false, pistol: false, interact: false, aim: null };
+  private shoreFocus = new THREE.Vector3();
+  private shoreVel = new THREE.Vector3();
+  private partyRows: PartyRow[] = [];
+  private foeBars: FoeBar[] = [];
+  private shoreTipShown = false;
+  private ray = new THREE.Raycaster();
 
   constructor(private canvas: HTMLCanvasElement) {
     installSoftShadows();
@@ -352,7 +373,10 @@ export class Game {
     await nextFrame();
     const site = findPortSite(this.terrain, this.spawnPoint);
     const tradeSites = findTradeSites(this.terrain, 4, [site]);
-    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [site, ...tradeSites].flatMap(portClearings), q.tier === 0));
+    const towns = [site, ...tradeSites].flatMap(portClearings);
+    // the cutthroats' camps: a glade a short walk in from the beach on most isles
+    const camps = findCampSites(this.terrain, towns, site.island);
+    const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps)], q.tier === 0));
     ui.progress(0.62);
     await nextFrame();
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
@@ -428,6 +452,28 @@ export class Game {
     this.water.add(this.clouds.mesh);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
+    this.ground = new Ground(this.terrain, veg, towns);
+    this.shore = new Shore(this.ground, camps, this.crew, {
+      floater: (text, at, kind) => {
+        const [x, y, ok] = this.screenOf(at);
+        if (ok) this.ui.floater(text, x, y, kind);
+      },
+      shake: (a) => this.rig.shake(a),
+      alarm: () => {
+        if (this.shore.active) this.ui.toast('To arms!', 'Cutthroats come running from their camp', 2.8);
+      },
+      routed: (c) => this.onCampRouted(c),
+      plunder: (c) => this.plunderCamp(c),
+      defeat: () => this.onCaptainDown(),
+      step: (k, wet) => this.audio.sandStep(k, wet),
+    });
+    this.opaque.add(this.shore.group);
+    this.rig.ground = (x, z) => this.terrain.heightAt(x, z);
+    this.shoreHud.onInteract = () => {
+      if (this.shore.active) this.shoreAct();
+      else this.goAshore();
+    };
+    this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol);
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
     this.opaque.environment = this.skyEnv.update();
@@ -465,6 +511,7 @@ export class Game {
     veg.hold = true;
     this.clouds.warm = true;
     this.tradePorts.warm();
+    this.shore.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
     if (this.preview) this.preload.add(this.preview.root);
     this.preload.step(true);
@@ -474,6 +521,7 @@ export class Game {
     });
     veg.hold = false;
     this.clouds.warm = false;
+    this.shore.unwarm();
     await fonts;
     ui.progress(1);
     await nextFrame();
@@ -1007,13 +1055,198 @@ export class Game {
     const port = near && near.port.inReach(p.pos.x, p.pos.z) ? near.port : null;
     if (!port) {
       this.market.setDock(null);
-      return;
+      return false;
     }
     const chased = !!this.lastFoe;
     const n = this.hold.count;
     const why = chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
     this.market.setDock({ name: port.name, ok: !chased, why });
     if (!chased && !this.fpv && this.input.state.helm) this.dock(port);
+    return true;
+  }
+
+  // ------------------------------------------------------------------ going ashore
+
+  /** Off a beach: offer to row the captain and four hands ashore (F or a tap). */
+  private updateLandPrompt(p: Ship, dt: number, docking: boolean) {
+    this.landT -= dt;
+    if (this.landT <= 0) {
+      this.landT = 0.3;
+      this.landing = p.alive && !docking ? this.ground.landing(p.pos.x, p.pos.z, 55 + p.cls.beam) : null;
+    }
+    const L = this.landing;
+    if (!L || docking || this.fpv) {
+      this.shoreHud.setPrompt(null);
+      return;
+    }
+    const chased = !!this.lastFoe;
+    const camp = this.shore.camps.find((c) => c.site.island === L.island && !c.routed);
+    const sub = chased ? 'Shake off your pursuers first' : camp ? 'Cutthroats are camped on this isle: bring blades' : 'The captain and four hands row in';
+    this.shoreHud.setPrompt({ key: 'land', title: `Go ashore on ${L.island.name}`, sub, ok: !chased });
+    if (!chased && this.input.state.helm) this.goAshore();
+  }
+
+  /** Lowers the boat: the ship rides at anchor while the landing party rows in. */
+  private goAshore() {
+    const p = this.player;
+    const L = this.landing;
+    if (!p || !L || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.shore.active || this.wreck.t >= 0) return;
+    this.setChart(false);
+    this.setView(false);
+    this.input.releaseLook();
+    this.input.enabled = false;
+    this.peek.classList.remove('on');
+    this.veil.innerHTML = `<span>Rowing ashore to ${L.island.name}…</span>`;
+    void this.fade(() => {
+      if (this.state !== 'playing' || !p.alive) {
+        this.input.enabled = true;
+        return;
+      }
+      p.anchored = true;
+      p.sailTarget = 0;
+      p.rudder = 0;
+      this.shore.land(p, L);
+      this.market.setDock(null);
+      this.shoreHud.setPrompt(null);
+      this.shoreHud.show(true, L.island.name);
+      this.input.foot = true;
+      this.seaZoom = this.rig.zoom;
+      this.rig.zoom = 0.32;
+      this.rig.foot = true;
+      this.rig.snapFoot();
+      const cap = this.shore.captain!;
+      this.rig.snapTo(this.shoreFocus.set(cap.x, cap.y + 1, cap.z));
+      this.input.enabled = true;
+      this.note('isle', `Went ashore on ${L.island.name}`);
+      this.audio.splash(0.35, 0, 20);
+      this.ui.toast('Ashore', `${L.island.name}: your hands follow your lead`, 3.2);
+      if (!this.shoreTipShown) {
+        this.shoreTipShown = true;
+        const how = this.input.isTouch ? 'Tap Strike to swing, chain three for a lunge · Pistol fires once, then reloads' : 'Space or click swings, chain three for a lunge · Q fires your pistol · Shift runs';
+        setTimeout(() => {
+          if (this.shore.active) this.ui.toast('Cutlass and pistol', how, 6);
+        }, 3800);
+      }
+      this.last = performance.now();
+    });
+  }
+
+  /** Back into the boat and out to the ship, which weighs anchor. */
+  private returnToShip(why = '') {
+    const p = this.player;
+    if (!p || !this.shore.active || this.swBusy) return;
+    this.input.enabled = false;
+    this.setChart(false);
+    this.veil.innerHTML = `<span>${why || `Rowing back to the ${p.name}…`}</span>`;
+    void this.fade(() => {
+      this.leaveShore();
+      p.anchored = false;
+      p.sailTarget = 1 / 3;
+      this.input.enabled = this.state === 'playing';
+      this.rig.snapTo(p.pos);
+      this.last = performance.now();
+    });
+  }
+
+  /** Everyone aboard: the HUD, controls and camera go back to sailing. */
+  private leaveShore() {
+    if (!this.shore.active) return;
+    this.shore.leave();
+    this.shoreHud.show(false);
+    this.input.foot = false;
+    this.rig.foot = false;
+    this.rig.snapFoot();
+    this.rig.zoom = this.seaZoom;
+  }
+
+  /** F or a tap ashore: row back, or open a chest. */
+  private shoreAct() {
+    if (!this.shore.active || this.swBusy) return;
+    if (this.shore.interact(this.world) === 'boat') this.returnToShip();
+  }
+
+  private onCampRouted(c: Camp) {
+    this.ui.toast('Camp routed', 'Their chest is yours for the taking', 3.4);
+    this.note('kill', 'Routed a cutthroat camp', c.site.island.name);
+    this.audio.chime();
+  }
+
+  /** The cutthroats' chest: gold, goods for the hold and shot for the guns. */
+  private plunderCamp(c: Camp) {
+    const p = this.player;
+    if (!p) return;
+    const L = c.layout.chest;
+    const at = new THREE.Vector3(L.x, L.y + 1.2, L.z);
+    const gold = 120 + Math.round(Math.random() * 140) + c.gang.length * 15;
+    p.gold += gold;
+    this.vaultStore.earn(gold);
+    const tier = rollTier(0.5, 2);
+    const goods = rollContents(tier);
+    const res = this.hold.stow(goods);
+    if (res.tossed.length) this.nagHold(res.tossed.length);
+    this.stockAmmo({ shell: 2, fire: 1, chain: 1, grape: 2 }, null);
+    this.log.chests++;
+    this.log.best = Math.max(this.log.best, tier);
+    const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
+    const R = RARITY[tier];
+    this.note('chest', `Plundered a cutthroat camp`, `+${gold} gold${kept.length ? ' · ' + kept.map((id) => LOOT[id].name).join(', ') : ''}`);
+    const [x, y, ok] = this.screenOf(at);
+    if (ok) this.ui.floater(`+${gold} gold`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[tier]);
+    this.audio.treasure(tier);
+    this.world.particles.treasure(at, R.glow, tier);
+    const best = kept[0];
+    if (best && LOOT[best].rarity >= 2) this.ui.lootToast(lootIcon(best), LOOT[best].rarity, `${RARITIES[LOOT[best].rarity].name} plunder`, LOOT[best].name, 3.4);
+    else this.ui.toast(`${R.name} chest · +${gold} gold`, kept.length ? kept.map((id) => LOOT[id].name).join(', ') : 'And fresh shot for the guns', 3.4);
+    this.rig.shake(0.12);
+  }
+
+  /** The captain is down: the hands carry them back to the boat, and the camp keeps its chest. */
+  private onCaptainDown() {
+    const p = this.player;
+    if (!p) return;
+    const lost = Math.min(Math.round(p.gold * 0.1), 200);
+    this.ui.toast('The captain is down', 'The hands drag you back to the boat', 3.2);
+    this.input.enabled = false;
+    setTimeout(() => {
+      if (!this.shore.active || this.state === 'dead') return;
+      if (this.state === 'paused') this.setPaused(false);
+      p.gold = Math.max(0, p.gold - lost);
+      this.note('isle', 'Beaten back off the beach', lost ? `-${lost} gold` : '');
+      this.returnToShip('The hands row you back, bruised…');
+      if (lost) setTimeout(() => this.ui.toast(`-${lost} gold`, 'Dropped in the scramble for the boat', 3.2), 900);
+    }, 2400);
+  }
+
+  /** Where the mouse points on the ground ashore (the plane the captain stands on). */
+  private groundPick(): { x: number; z: number } | null {
+    const pt = this.input.state.pointer;
+    const cap = this.shore.captain;
+    if (!pt.active || !cap) return null;
+    this.ray.setFromCamera(new THREE.Vector2((pt.x / innerWidth) * 2 - 1, -(pt.y / innerHeight) * 2 + 1), this.rig.camera);
+    const r = this.ray.ray;
+    if (r.direction.y > -0.02) return null;
+    const t = (cap.y + 0.9 - r.origin.y) / r.direction.y;
+    return { x: r.origin.x + r.direction.x * t, z: r.origin.z + r.direction.z * t };
+  }
+
+  /** Ashore: up the screen is north, the cutlass on Space or a click, the pistol on Q / E, F acts. */
+  private controlShore() {
+    const st = this.input.state;
+    const si = this.shoreIn;
+    // the camera looks north, so screen-up walks toward -z
+    si.mx = st.walkX;
+    si.mz = -st.walkY;
+    si.run = st.run;
+    si.strike = st.fireAuto || st.fireAim;
+    si.pistol = st.firePort || st.fireStarboard;
+    si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
+    if (st.helm) this.shoreAct();
+    if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.pause) {
+      if (this.chartOpen) this.setChart(false);
+      else this.setPaused(true);
+    } else if (st.map) this.setChart(!this.chartOpen);
+    else if (st.photo) this.openPhoto();
   }
 
   /** Comes alongside: the ship ties up, the porters wake and the market opens. */
@@ -1391,6 +1624,7 @@ export class Game {
     this.voyageTime = 0;
     this.log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] };
     this.discovered.clear();
+    this.shore.resetCamps();
     this.ammoStock = freshStock();
     this.hold.capacity = HOLD_ROOM[p.cls.id] ?? 12;
     this.hold.clear();
@@ -1409,6 +1643,9 @@ export class Game {
 
   private resetWorld() {
     if (this.dockPort) this.undock(false);
+    this.leaveShore();
+    this.landing = null;
+    this.shoreHud.setPrompt(null);
     this.peek.classList.remove('on');
     this.setView(false);
     this.rig.resetEye();
@@ -1427,7 +1664,7 @@ export class Game {
   /** Bird's-eye or the captain's own eyes on deck. */
   private setView(on: boolean) {
     const p = this.player;
-    if (on && (!p || !p.alive || this.state !== 'playing')) return;
+    if (on && (!p || !p.alive || this.state !== 'playing' || this.shore.active)) return;
     if (on === this.fpv) return;
     this.fpv = on;
     this.rig.firstPerson = on;
@@ -1475,7 +1712,8 @@ export class Game {
     this.input.enabled = false;
     this.photoSnap = this.atmos.snapshot();
     document.body.classList.add('photo');
-    this.photo.open(this.rig.camera, p.pos, this.atmos.hour, fromPause);
+    const cap = this.shore.active ? this.shore.captain : null;
+    this.photo.open(this.rig.camera, cap ? this.shoreFocus.set(cap.x, cap.y + 1, cap.z) : p.pos, this.atmos.hour, fromPause);
   }
 
   /** Puts the sky back as it was and returns to the pause menu or the helm. */
@@ -1758,6 +1996,7 @@ export class Game {
     this.input.enabled = false;
     this.input.releaseLook();
     this.setChart(false);
+    this.leaveShore();
     this.setView(false);
     if (this.hold.count) this.note('trade', 'The hold went down with her', `${this.hold.count} goods worth about ${this.hold.worth} gold`);
     this.state = 'dead';
@@ -2127,6 +2366,10 @@ export class Game {
     const p = this.player;
     const st = this.input.state;
     if (!p || !p.alive) return;
+    if (this.shore.active) {
+      this.controlShore();
+      return;
+    }
     if (st.view) this.setView(!this.fpv);
     if (this.fpv) {
       if (st.helm) this.captain.toggleHelm();
@@ -2217,7 +2460,8 @@ export class Game {
 
     // AI & ships
     P.begin('Pirate AI', 'ships');
-    const prey = this.player && this.player.alive && this.state !== 'docked' ? this.player : null;
+    // a ship at anchor with her captain ashore is left be
+    const prey = this.player && this.player.alive && this.state !== 'docked' && !this.shore.active ? this.player : null;
     for (const ai of this.ais.values()) ai.update(dt, w, prey, this.ships);
     P.end();
     P.begin('Ship physics & rigging', 'ships');
@@ -2235,6 +2479,11 @@ export class Game {
     this.pushers.length = 0;
     for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
     this.debris.update(dt, w, this.pushers);
+    P.end();
+    P.begin('Shore & landing party', 'sim');
+    this.shore.update(dt, w, this.shoreIn, this.rig.target);
+    this.shoreIn.strike = this.shoreIn.pistol = false;
+    this.shoreIn.aim = null;
     P.end();
     P.begin('Shipyard (prebuilds)', 'ships');
     if (dt > 0) this.runShipyard();
@@ -2275,9 +2524,13 @@ export class Game {
       const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2, refuse);
       for (const it of got) this.haul(p, it);
       this.holdNagT -= dt;
-      this.updateDockPrompt(p);
+      if (!this.shore.active) {
+        const docking = this.updateDockPrompt(p);
+        this.updateLandPrompt(p, dt, docking);
+        // no fresh pirates while the captain's ashore: the sea fills again once you sail
+        this.directSpawns(dt);
+      }
       this.checkDiscoveries(p);
-      this.directSpawns(dt);
       // rammed or holed on a reef: no cannonball to report it
       if (!p.alive) this.onPlayerSunk('hull');
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));
@@ -2303,8 +2556,10 @@ export class Game {
     // camera
     P.begin('Camera & captain', 'sim');
     const focusShip = p ?? this.preview;
-    const fpos = focusShip ? focusShip.pos : this.spawnPoint;
-    const fvel = focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
+    const walker = this.shore.active ? this.shore.captain : null;
+    // ashore the camera follows the captain, at the height of the ground (never below the sea)
+    const fpos = walker ? this.shoreFocus.set(walker.x, Math.max(walker.y, -0.2) + 1, walker.z) : focusShip ? focusShip.pos : this.spawnPoint;
+    const fvel = walker ? this.shoreVel.set(walker.vx, 0, walker.vz) : focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
     this.updateCaptain(dt);
     if (this.photo.active) {
@@ -2320,7 +2575,7 @@ export class Game {
       ph.autoFocus += (af - ph.autoFocus) * Math.min(1, realDt * 8);
       // the captain stands at the helm in the shot, even seen from their own eyes
       if (this.captain.ship) this.captain.pilot.hidden = false;
-    } else this.rig.update(realDt, fpos, fvel, w.time, this.state === 'playing' || this.state === 'paused' ? this.battleFoe() : null);
+    } else this.rig.update(realDt, fpos, fvel, w.time, (this.state === 'playing' || this.state === 'paused') && !walker ? this.battleFoe() : null);
     const eb = this.rig.eyeBlend;
     if (eb > 0) {
       // hear the sea from where you stand, panned to where you face
@@ -2333,6 +2588,10 @@ export class Game {
       w.listenerRight.set(1, 0);
     }
     w.listenerZoom = this.rig.distance;
+    // ashore, the leaves between the camera and the captain thin away
+    const see = globalUniforms.uSeeThru.value;
+    if (walker && !this.photo.active) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5));
+    else see.w = 0;
     P.end();
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
@@ -2369,10 +2628,11 @@ export class Game {
     P.end();
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');
-    this.gunnery.setPointer(this.fpv ? null : this.input.state.pointer, this.rig.camera);
+    const ashore = this.shore.active;
+    this.gunnery.setPointer(this.fpv || ashore ? null : this.input.state.pointer, this.rig.camera);
     // the lock-on glow fades out of a photo even though the world is frozen
-    this.gunnery.update(this.photo.active ? realDt : dt, p, this.ships, w, this.state === 'playing');
-    if (this.state === 'playing') this.gunTip();
+    this.gunnery.update(this.photo.active ? realDt : dt, p, this.ships, w, this.state === 'playing' && !ashore);
+    if (this.state === 'playing' && !ashore) this.gunTip();
     P.end();
 
     // HUD
@@ -2382,7 +2642,10 @@ export class Game {
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.ui.updateAmmo(p.ammo, this.ammoStock);
       this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
-      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports);
+      const cap = this.shore.captain;
+      const camps = this.shore.camps.map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
+      this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null);
+      if (ashore) this.updateShoreHud(p);
     }
     if (p && this.chartOpen) {
       this.ui.drawChart({
@@ -2393,6 +2656,30 @@ export class Game {
     }
     this.ui.tickFloaters(realDt);
     P.end();
+  }
+
+  /** The landing party's health, the pill, the pistol's reload and bars over the foes. */
+  private updateShoreHud(p: Ship) {
+    const sh = this.shore;
+    const rows = this.partyRows;
+    rows.length = sh.party.length;
+    sh.party.forEach((m, i) => {
+      const r = (rows[i] ??= { name: '', hp: 0, max: 1, down: false });
+      r.name = m.name;
+      r.hp = m.walker.hp;
+      r.max = m.walker.maxHp;
+      r.down = m.walker.down;
+    });
+    this.shoreHud.setParty(rows);
+    this.shoreHud.setPrompt(sh.prompt(p.name));
+    this.shoreHud.setPistol(sh.pistolLoad);
+    const bars = this.foeBars;
+    bars.length = 0;
+    for (const f of sh.foes) {
+      if (f.down || f.hp >= f.maxHp) continue;
+      bars.push({ id: f.id, x: f.x, y: f.y + 2.25 * f.height, z: f.z, hp: f.hp, max: f.maxHp, boss: f.maxHp > 100 });
+    }
+    this.shoreHud.updateBars(bars, this.rig.camera, innerWidth, innerHeight);
   }
 
   /** Walks the captain, aims their eyes, and keeps the deck chrome in step. */

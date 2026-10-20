@@ -1165,10 +1165,22 @@ export class UI {
     this.chart.setTerrain(terrain);
   }
 
-  drawMap(player: Ship, ships: Ship[], loot: { x: number; z: number; tier?: number }[], islands: Island[], discovered: Set<string>, ports: { x: number; z: number }[] = []) {
+  drawMap(
+    player: Ship,
+    ships: Ship[],
+    loot: { x: number; z: number; tier?: number }[],
+    islands: Island[],
+    discovered: Set<string>,
+    ports: { x: number; z: number }[] = [],
+    camps: { x: number; z: number; routed: boolean }[] = [],
+    /** Ashore: the captain on foot, at the middle of a closer map. */
+    walker: { x: number; z: number; yaw: number } | null = null,
+  ) {
     const g = this.map;
     const S = this.mapCanvas.width;
-    const R = 420; // world metres from centre to edge
+    const R = walker ? 170 : 420; // world metres from centre to edge
+    const cx = walker ? walker.x : player.pos.x;
+    const cz = walker ? walker.z : player.pos.z;
     g.clearRect(0, 0, S, S);
     g.save();
     g.beginPath();
@@ -1176,12 +1188,12 @@ export class UI {
     g.clip();
     if (this.mapImage) {
       const px = this.mapImage.width / WORLD_SIZE;
-      const sx = (player.pos.x - R + WORLD_SIZE / 2) * px;
-      const sz = (player.pos.z - R + WORLD_SIZE / 2) * px;
+      const sx = (cx - R + WORLD_SIZE / 2) * px;
+      const sz = (cz - R + WORLD_SIZE / 2) * px;
       g.imageSmoothingEnabled = true;
       g.drawImage(this.mapImage, sx, sz, R * 2 * px, R * 2 * px, 0, 0, S, S);
     }
-    const toMap = (x: number, z: number): [number, number] => [((x - player.pos.x) / R) * (S / 2) + S / 2, ((z - player.pos.z) / R) * (S / 2) + S / 2];
+    const toMap = (x: number, z: number): [number, number] => [((x - cx) / R) * (S / 2) + S / 2, ((z - cz) / R) * (S / 2) + S / 2];
     // undiscovered isles get a soft marker
     g.font = '600 18px Cinzel, serif';
     g.textAlign = 'center';
@@ -1205,7 +1217,7 @@ export class UI {
     let nd = Infinity;
     let inView = false;
     for (const pt of ports) {
-      const d = Math.hypot(pt.x - player.pos.x, pt.z - player.pos.z);
+      const d = Math.hypot(pt.x - cx, pt.z - cz);
       if (d < R - 20) {
         portMark(g, ...toMap(pt.x, pt.z), 13);
         inView = true;
@@ -1215,7 +1227,7 @@ export class UI {
       }
     }
     if (near && !inView) {
-      const a = Math.atan2(near.z - player.pos.z, near.x - player.pos.x);
+      const a = Math.atan2(near.z - cz, near.x - cx);
       const rr = S / 2 - 18;
       g.globalAlpha = 0.9;
       portMark(g, S / 2 + Math.cos(a) * rr, S / 2 + Math.sin(a) * rr, 10);
@@ -1240,8 +1252,47 @@ export class UI {
       g.stroke();
       g.restore();
     };
+    // cutthroat camps: crossed blades, greyed once routed
+    for (const c of camps) {
+      const [x, y] = toMap(c.x, c.z);
+      if (x < -10 || y < -10 || x > S + 10 || y > S + 10) continue;
+      g.save();
+      g.translate(x, y);
+      g.strokeStyle = 'rgba(0,0,0,0.55)';
+      g.lineCap = 'round';
+      for (const [w, col] of [[6, 'rgba(0,0,0,0.5)'], [3, c.routed ? 'rgba(220,220,210,0.55)' : '#ff8a6a']] as const) {
+        g.strokeStyle = col;
+        g.lineWidth = w;
+        g.beginPath();
+        g.moveTo(-7, -7);
+        g.lineTo(7, 7);
+        g.moveTo(7, -7);
+        g.lineTo(-7, 7);
+        g.stroke();
+      }
+      g.restore();
+    }
     for (const s of ships) if (s !== player && s.alive) tri(s, '#ff6a55', 11);
-    tri(player, '#ffffff', 14);
+    tri(player, walker ? 'rgba(255,255,255,0.7)' : '#ffffff', 14);
+    if (walker) {
+      // the captain: a gold arrowhead
+      const [x, y] = toMap(walker.x, walker.z);
+      g.save();
+      g.translate(x, y);
+      g.rotate(-walker.yaw + Math.PI);
+      g.fillStyle = '#ffd36b';
+      g.strokeStyle = 'rgba(0,0,0,0.55)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(0, -11);
+      g.lineTo(8, 8);
+      g.lineTo(0, 4);
+      g.lineTo(-8, 8);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.restore();
+    }
     g.restore();
     // bezel
     g.strokeStyle = 'rgba(255,240,210,0.25)';

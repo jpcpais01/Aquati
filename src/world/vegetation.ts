@@ -87,12 +87,16 @@ const _m4 = new THREE.Matrix4();
 /** Frustum margin (m): small camera moves never uncover an unculled plant. */
 const MARGIN = 14;
 
+const solidKey = (gx: number, gz: number) => (gx + 4096) * 8192 + gz + 4096;
+
 export class Vegetation {
   readonly group = new THREE.Group();
   private lists: Lists[] = [];
   private flora: IslandFlora[] = [];
   /** While set (the loading screen's warm-up draw), nothing is culled or swapped. */
   hold = false;
+  /** Trunks and boulders people on foot walk round, bucketed on an 8 m grid (see solidsNear). */
+  private solids = new Map<number, { x: number; z: number; r: number }[]>();
   // the view the batches were last culled for
   private cullPos = new THREE.Vector3(Infinity, 0, 0);
   private cullDir = new THREE.Vector3();
@@ -359,6 +363,34 @@ export class Vegetation {
       }
     }
     this.lists.push(L);
+    const solid = (list: Placement[], r: number) => {
+      for (const p of list) {
+        const k = solidKey(Math.floor(p.x / 8), Math.floor(p.z / 8));
+        const cell = this.solids.get(k);
+        const o = { x: p.x, z: p.z, r: r * p.scale };
+        if (cell) cell.push(o);
+        else this.solids.set(k, [o]);
+      }
+    };
+    solid(L.palm, 0.3);
+    solid(L.tree, 0.42);
+    solid(L.pine, 0.36);
+    solid(L.banana, 0.2);
+    solid(L.rock, 0.95);
+  }
+
+  /** Every trunk or boulder whose disc might reach within `r` of (x, z). */
+  solidsNear(x: number, z: number, out: { x: number; z: number; r: number }[]) {
+    out.length = 0;
+    const gx = Math.floor(x / 8);
+    const gz = Math.floor(z / 8);
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oz = -1; oz <= 1; oz++) {
+        const cell = this.solids.get(solidKey(gx + ox, gz + oz));
+        if (cell) for (const o of cell) out.push(o);
+      }
+    }
+    return out;
   }
 
   build() {

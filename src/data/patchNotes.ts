@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T02:00Z',
+    entries: [
+      {
+        title: 'Go ashore with your crew',
+        notes: [
+          'Sail close to a beach and a "Go ashore" button appears. Press F or tap it, and your ship drops anchor while the captain rows in with four hands in the ship\'s boat.',
+          'On land you walk the captain yourself with WASD or the stick, and Shift runs. Your hands follow in a loose wedge, splash through the shallows behind you and sit down on the sand for a rest when you stop to look around.',
+          'Many islands now have a cutthroat camp: a fire with a pot on the spit, log benches, a tent, barrels and a black flag. Walk too close and they grab their blades and come running with a war cry.',
+          'Fight with your cutlass using Space, a click or the Strike button. Chain three cuts and the last is a lunge. Your pistol, on Q or the Pistol button, fires one heavy ball and then takes a while to reload. Your hands each pick a cutthroat to fight and run to help anyone who goes for you.',
+          'Knock out the whole camp and its flag comes down. Open their chest for gold, plunder for your hold and fresh shot. If the captain falls, the hands drag you back to the boat, and you drop a little gold on the way. Walk back to the boat and press F to row out to your ship.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-19T21:00Z',
     entries: [
       {
