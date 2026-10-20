@@ -18,7 +18,8 @@ interface Saved {
   range?: number;
 }
 
-export function warmDraw(scenes: THREE.Object3D[], draw: () => void) {
+/** Forces every object under `scenes` drawable (see above); returns what to put back. */
+function force(scenes: THREE.Object3D[]) {
   const saved: Saved[] = [];
   for (const scene of scenes) {
     scene.traverse((o) => {
@@ -44,18 +45,105 @@ export function warmDraw(scenes: THREE.Object3D[], draw: () => void) {
       saved.push(s);
     });
   }
+  return saved;
+}
+
+function restore(saved: Saved[]) {
+  for (const s of saved) {
+    s.obj.visible = s.visible;
+    s.obj.frustumCulled = s.culled;
+    const m = s.obj as THREE.Mesh & THREE.InstancedMesh;
+    if (s.count !== undefined) m.count = s.count;
+    const g = m.geometry as THREE.InstancedBufferGeometry | undefined;
+    if (g && s.instances !== undefined) g.instanceCount = s.instances;
+    if (g && s.range !== undefined) g.drawRange.count = s.range;
+  }
+}
+
+export function warmDraw(scenes: THREE.Object3D[], draw: () => void) {
+  const saved = force(scenes);
   try {
     draw();
   } finally {
-    for (const s of saved) {
-      s.obj.visible = s.visible;
-      s.obj.frustumCulled = s.culled;
-      const m = s.obj as THREE.Mesh & THREE.InstancedMesh;
-      if (s.count !== undefined) m.count = s.count;
-      const g = m.geometry as THREE.InstancedBufferGeometry | undefined;
-      if (g && s.instances !== undefined) g.instanceCount = s.instances;
-      if (g && s.range !== undefined) g.drawRange.count = s.range;
+    restore(saved);
+  }
+}
+
+/**
+ * warmDraw spread over many frames, for the loading screen. Drawing the whole
+ * world at once hands the driver every first-draw compile in one go: a frame
+ * that can block the GPU process for seconds on a phone, and with it the
+ * page's own compositing (the loading animation froze). Here every object is
+ * forced drawable exactly as warmDraw does, but each frame only a slice of the
+ * materials is switched on (`material.visible`, which three honours in every
+ * pass, shadow map included). Every object is still drawn with every one of its
+ * materials through the real pipeline, so the guarantee is the same as one big
+ * warmDraw, only paced. The slice grows while frames keep their rhythm and
+ * shrinks when one runs long.
+ */
+export async function warmDrawSliced(
+  scenes: THREE.Object3D[],
+  draw: () => void,
+  frame: () => Promise<void>,
+  onProgress?: (done: number) => void,
+  /** Materials sharing a key (their compiled program) go in the same slice: one compile covers them all. */
+  groupOf?: (m: THREE.Material) => unknown,
+) {
+  const saved = force(scenes);
+  const mats: THREE.Material[] = [];
+  const seen = new Set<THREE.Material>();
+  for (const s of saved) {
+    const mat = (s.obj as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+    if (!mat) continue;
+    for (const m of Array.isArray(mat) ? mat : [mat]) {
+      // a material switched off by design stays off, as in warmDraw
+      if (m && m.visible && !seen.has(m)) {
+        seen.add(m);
+        mats.push(m);
+      }
     }
+  }
+  try {
+    for (const m of mats) m.visible = false;
+    // the frame's own passes first, with none of the world: twice, as the first
+    // makes the shadow map the water then switches on. A third, by then cheap,
+    // times a frame with nothing new in it: the pace the slices are held to.
+    draw();
+    await frame();
+    draw();
+    await frame();
+    let t = performance.now();
+    draw();
+    await frame();
+    const base = Math.min(50, performance.now() - t);
+    const keyed = new Map<unknown, THREE.Material[]>();
+    for (const m of mats) {
+      const k = groupOf?.(m) ?? m;
+      const g = keyed.get(k);
+      if (g) g.push(m);
+      else keyed.set(k, [m]);
+    }
+    const groups = [...keyed.values()];
+    let n = 2;
+    for (let i = 0; i < groups.length; ) {
+      t = performance.now();
+      const batch = groups.slice(i, i + n).flat();
+      for (const m of batch) m.visible = true;
+      try {
+        draw();
+      } finally {
+        for (const m of batch) m.visible = false;
+      }
+      i += n;
+      onProgress?.(Math.min(1, i / groups.length));
+      await frame();
+      const dt = performance.now() - t;
+      if (dt < base * 1.4 + 4) n = Math.ceil(n * 1.6);
+      else if (dt > base * 2.5 + 10) n = Math.max(1, n >> 1);
+    }
+  } finally {
+    for (const m of mats) m.visible = true;
+    restore(saved);
   }
 }
 
@@ -94,6 +182,11 @@ export class BufferPreloader {
       const i = this.queue.indexOf((o as THREE.Mesh).geometry);
       if (i >= 0) this.queue.splice(i, 1);
     });
+  }
+
+  /** Geometries still waiting to be uploaded. */
+  get pending() {
+    return this.queue.length;
   }
 
   /** Uploads the next queued geometry; `force` empties the queue (behind the loading screen). */

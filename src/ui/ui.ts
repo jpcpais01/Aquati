@@ -487,8 +487,11 @@ export class UI {
     document.body.classList.toggle('is-touch', on);
   }
 
-  progress(p: number) {
-    this.loadBar.style.width = `${Math.round(p * 100)}%`;
+  /** Sends the loading bar to `p`, gliding there over `ms` (about as long as the step ahead takes). */
+  progress(p: number, ms = 400) {
+    const st = this.loadBar.style;
+    st.transitionDuration = `${ms}ms`;
+    st.transform = `scaleX(${Math.min(1, Math.max(0, p)).toFixed(3)})`;
   }
 
   hideLoading() {

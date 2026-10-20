@@ -209,19 +209,24 @@ button:focus {
 }
 
 .crest {
+  position: relative;
   width: 100%;
   height: 100%;
   display: block;
   filter: drop-shadow(0 calc(4px * var(--u)) calc(14px * var(--u)) rgba(0, 0, 0, 0.35));
 }
 
-.crest-rose {
-  /* SVG user units (viewBox 64): the rose pivots on its hub at any size */
-  transform-box: view-box;
-  transform-origin: 32px 32px;
+.crest > svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .crest-slot.spin .crest-rose {
+  /* transform on the rose's own <svg> box: animated by the compositor, never the main thread */
+  will-change: transform;
   animation: rose 6s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 }
 
@@ -591,6 +596,13 @@ kbd {
   pointer-events: none;
 }
 
+/* the sweep animates background-position, which repaints on the main thread: on the
+   loading screen (main thread busy building the world) it would judder, so it waits for the harbour */
+#loading .logo-main::after {
+  animation: none;
+  display: none;
+}
+
 @keyframes logoGlint {
   0%,
   70% {
@@ -624,16 +636,48 @@ kbd {
   border-radius: 3px;
   background: rgba(255, 255, 255, 0.1);
   overflow: hidden;
+  position: relative;
 }
 
 .bar i {
+  position: relative;
   display: block;
   height: 100%;
-  width: 0%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--aqua), var(--gold));
   box-shadow: 0 0 12px rgba(94, 227, 212, 0.7);
-  transition: width 0.3s ease;
+  /* scaleX, not width: the fill glides on the compositor even while the world is being built.
+     game.ts sets each step's transition length so the bar keeps creeping through long steps */
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.4s cubic-bezier(0.2, 0.6, 0.3, 1);
+  will-change: transform;
+}
+
+/* a glint that runs along the track forever, so the bar never looks frozen */
+.bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: translateX(-100%);
+  animation: barGlint 1.8s cubic-bezier(0.4, 0, 0.3, 1) infinite;
+  will-change: transform;
+  pointer-events: none;
+}
+
+@keyframes barGlint {
+  to {
+    transform: translateX(250%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar::after {
+    animation: none;
+    display: none;
+  }
 }
 
 /* ------------------------------------------------------------------ home */

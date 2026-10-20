@@ -9,7 +9,7 @@ import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { freezeStatic, skipWhenHidden } from '../render/staticScene';
 import { Pipeline } from '../render/pipeline';
-import { BufferPreloader, warmDraw } from '../render/warmup';
+import { BufferPreloader, warmDrawSliced } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
 import { Birds } from '../fx/birds';
@@ -497,14 +497,19 @@ export class Game {
     const fonts = Promise.all(
       ['500 1em Cinzel', '700 1em Cinzel', '400 1em Inter', '600 1em Inter', '800 1em Inter'].map((f) => document.fonts?.load(f).catch(() => [])),
     );
-    ui.progress(0.05);
-    await nextFrame();
+    // The loading screen's motion (compass, bar, glint, backdrop drift) is all
+    // compositor transforms, so it keeps going while this thread is busy. Each
+    // checkpoint below hands the bar a target and roughly how long the step
+    // takes, and waits a frame so the browser starts that glide before the work.
+    const mark = (p: number, ms: number) => {
+      ui.progress(p, ms);
+      return nextFrame();
+    };
+    await mark(0.12, 700);
     this.terrain = new Terrain(20251019);
-    ui.progress(0.3);
-    await nextFrame();
+    await mark(0.18, 300);
     this.terrain.bakeAO(2);
-    ui.progress(0.5);
-    await nextFrame();
+    await mark(0.24, 300);
     const site = findPortSite(this.terrain, this.spawnPoint);
     const tradeSites = findTradeSites(this.terrain, 4, [site]);
     const towns = [site, ...tradeSites].flatMap(portClearings);
@@ -516,18 +521,19 @@ export class Game {
     const camps = findCampSites(this.terrain, [...towns, ...fortGround], site.island);
     this.digAvoid = [...towns, ...campClearings(camps), ...fortGround];
     const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps), ...fortGround], q.tier === 0));
-    ui.progress(0.62);
-    await nextFrame();
+    await mark(0.31, 700);
     this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
     // the plants never move once placed (culling only repacks their instances)
     const plants = veg.build();
     this.opaque.add(plants);
     freezeStatic(plants);
+    await mark(0.37, 900);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
     skipWhenHidden(this.port.root);
+    await mark(0.45, 1200);
     this.tradePorts = new TradePorts(tradeSites, (x, z) => this.terrain.heightAt(x, z));
     this.opaque.add(this.tradePorts.root);
     for (const tp of this.tradePorts.ports) {
@@ -544,8 +550,7 @@ export class Game {
     this.opaque.add(this.birds.mesh);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
-    ui.progress(0.75);
-    await nextFrame();
+    await mark(0.53, 900);
 
     const windAngle = this.atmos.windAngle;
     const waves = buildWaves(windAngle, 1);
@@ -609,6 +614,7 @@ export class Game {
     this.clouds = new LowClouds(this.terrain.islands, q.tier);
     this.cumulus.budget = q.tier === 0 ? 1600 : 4200;
     this.water.add(this.clouds.mesh);
+    await mark(0.6, 700);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
     this.ground = new Ground(this.terrain, veg, towns);
@@ -679,6 +685,7 @@ export class Game {
     this.syncTreasure();
     this.projectiles.onHit = (e) => this.onHit(e.ship, e.attacker, e.damage, e.pos);
 
+    await mark(0.65, 600);
     this.opaque.environment = this.skyEnv.update();
     this.opaque.environmentIntensity = SKY_LIGHT;
     this.ui.buildMap(this.terrain);
@@ -690,8 +697,7 @@ export class Game {
     this.opaque.add(this.kraken.view.group);
     this.water.add(this.kraken.view.fx);
     this.wireKraken();
-    ui.progress(0.88);
-    await nextFrame();
+    await mark(0.72, 1200);
 
     this.applySettings(this.settings.value);
     this.resize();
@@ -706,21 +712,21 @@ export class Game {
     keeper.place(this.spawnPoint.x + 40, this.spawnPoint.z + 40, 0);
     this.opaque.add(keeper.root);
     this.ghostKeeper = keeper;
-    for (const id of Object.keys(SHIP_CLASSES) as ShipClassId[]) {
-      // pirate paint only: the player's own ship is in the scene and gets the warm-up draw below
-      for (const liv of [...PIRATE_LIVERIES, HUNTER_HULL, GHOST_LIVERY]) {
-        for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
-      }
+    // pirate paint only: the player's own ship is in the scene and gets the warm-up draw below.
+    // One paint a frame: each is painted, then pushed to the GPU, without starving the page
+    const paints = (Object.keys(SHIP_CLASSES) as ShipClassId[]).flatMap((id) => [...PIRATE_LIVERIES, HUNTER_HULL, GHOST_LIVERY].map((liv) => [id, liv] as const));
+    for (let i = 0; i < paints.length; i++) {
+      const [id, liv] = paints[i];
+      for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
+      await mark(0.74 + (0.06 * (i + 1)) / paints.length, 250);
     }
-    ui.progress(0.92);
+    // KHR_parallel_shader_compile: every program compiles on the driver's own threads while we wait
     await this.renderer.compileAsync(this.opaque, this.rig.camera);
     await this.renderer.compileAsync(this.water, this.rig.camera);
     await this.renderer.compileAsync(this.ocean.reflScene, this.rig.camera);
     await this.renderer.compileAsync(this.clouds.shadowScene, this.rig.camera);
-    ui.progress(0.96);
-    await nextFrame();
+    await mark(0.83, 400);
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
-    // twice: the first pass makes the shadow map, which the water then switches on.
     // Plants stay unculled so every one of their batches is drawn too.
     veg.hold = true;
     this.clouds.warm = true;
@@ -730,12 +736,22 @@ export class Game {
     this.shore.warm();
     this.forts.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
+    // (a few uploads a frame, so no single frame pushes every buffer at once)
     if (this.preview) this.preload.add(this.preview.root);
-    this.preload.step(true);
-    warmDraw([this.opaque, this.water, this.ocean.reflScene, this.clouds.shadowScene], () => {
-      this.render(0);
-      this.render(0);
-    });
+    const queued = this.preload.pending;
+    while (this.preload.pending) {
+      const t = performance.now();
+      while (this.preload.pending && performance.now() - t < 8) this.preload.step();
+      await mark(0.83 + 0.03 * (1 - this.preload.pending / Math.max(1, queued)), 200);
+    }
+    // the whole world drawn once for real, a slice of its materials per frame
+    await warmDrawSliced(
+      [this.opaque, this.water, this.ocean.reflScene, this.clouds.shadowScene],
+      () => this.render(0),
+      nextFrame,
+      (f) => ui.progress(0.86 + 0.13 * f, 250),
+      (m) => (this.renderer.properties.get(m) as { currentProgram?: unknown }).currentProgram,
+    );
     veg.hold = false;
     this.clouds.warm = false;
     this.shore.unwarm();
@@ -744,8 +760,7 @@ export class Game {
     this.cumulus.warm = false;
     this.warming = false;
     await fonts;
-    ui.progress(1);
-    await nextFrame();
+    await mark(1, 250);
     ui.hideLoading();
     this.last = performance.now();
     this.renderer.setAnimationLoop(() => this.frame());

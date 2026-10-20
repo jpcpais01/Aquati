@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T14:00Z',
     entries: [
       {
+        title: 'A loading screen that never stutters',
+        notes: [
+          'The spinning compass, the progress bar and the drifting backdrop now animate on their own, separate from the work of building the world, so they keep moving perfectly smoothly even while the islands, ships and sea are being made.',
+          'The final step of loading used to draw the entire world in one giant frame so no shader would ever have to compile mid-battle. It now does exactly the same work spread across many short frames, a few shaders at a time, pacing itself to your device. Same hitch-free voyages, without the frozen moment at the end of the bar.',
+          'Ship paints and hull geometry are sent to the graphics card a little at a time instead of all at once, and the progress bar glides steadily through every long step instead of jumping.',
+        ],
+      },
+      {
         title: 'The archipelago gets its own tongue',
         notes: [
           'Every island, port, fort, reef and maelstrom has a new name in the sea\'s own blended language: Spanish at heart, with Portuguese vowels, a French lilt, Dutch corners and old Taíno words underneath.',
