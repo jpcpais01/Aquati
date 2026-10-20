@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { staticLod } from '../render/staticLod';
 import { setBowWaveScene } from '../fx/bowWave';
 import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
@@ -25,11 +26,13 @@ import { Spindrift } from '../fx/spindrift';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
+import type { TerrainLod } from '../world/terrainLod';
 import { Seas } from '../world/seas';
 import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, RegionId, regionById, REGIONS, seaEdge, STREAM_R } from '../world/regions';
 import { Dolphins } from '../fx/dolphins';
 import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
+import { Grass, GRASS_PUSHERS } from '../world/grass';
 import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { buildShore, setShoreField, setSurf } from '../world/shore';
@@ -139,6 +142,8 @@ const WRECK_REACH = 520;
 
 const _cineV = new THREE.Vector3();
 const _swayV = new THREE.Vector3();
+/** Who parts the grass this frame (see Grass.setPushers). */
+const _pushers: { x: number; y: number; z: number }[] = [];
 /** Planking torn from a sinking hull. */
 const WRECK_TIMBER = [new THREE.Color(0.42, 0.29, 0.18), new THREE.Color(0.55, 0.4, 0.26), new THREE.Color(0.33, 0.24, 0.16)];
 
@@ -233,6 +238,8 @@ export class Game {
   private lastFoe: Ship | null = null;
   private player: Ship | null = null;
   private veg?: Vegetation;
+  /** Blades of grass around the eye (none on the lightest devices). */
+  private grass?: Grass;
   private preview: Ship | null = null;
   private state: State = 'loading';
   private discovered = new Set<string>();
@@ -686,6 +693,11 @@ export class Game {
     const plants = veg.build();
     this.opaque.add(plants);
     freezeStatic(plants);
+    if (q.tier > 0) {
+      this.grass = new Grass([home, mist], [...towns, ...campClearings(camps), ...fortGround], q.tier === 1 ? 0.8 : 1);
+      this.opaque.add(this.grass.group);
+      freezeStatic(this.grass.group);
+    }
     await mark(0.4, 900);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
     await preloadPaint(this.look.flag.paint);
@@ -4155,7 +4167,7 @@ export class Game {
       const file = new File([blob], name, { type: 'image/png' });
       if (navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: 'Shores of Fortune' });
+          await navigator.share({ files: [file], title: 'Shores O’ Fortune' });
           this.photo.saved(blob, 'Photo shared', size);
           return;
         } catch (e) {
@@ -6457,7 +6469,22 @@ export class Game {
     P.begin('Vegetation culling', 'sim');
     // from eye level the far LOD takes over from ~85 m out, even on the island underfoot
     if (this.veg) this.veg.detail = this.rig.eyeBlend > 0.5 && !this.photo.active ? 85 : Infinity;
-    this.veg?.update(cam, this.toSun);
+    this.veg?.update(cam, this.toSun, this.shadowC, this.shadowR);
+    if (this.grass) {
+      // feet walking through the meadow part it
+      const sh = this.shore;
+      const pu = _pushers;
+      pu.length = 0;
+      if (sh.active) {
+        if (sh.captain) pu.push(sh.captain);
+        for (const m of sh.party) if (pu.length < GRASS_PUSHERS && m.walker !== sh.captain && m.walker.visible) pu.push(m.walker);
+        for (const f of sh.foes) if (pu.length < GRASS_PUSHERS && f.visible && Math.hypot(f.x - cam.position.x, f.z - cam.position.z) < 30) pu.push(f);
+      }
+      this.grass.setPushers(pu);
+      this.grass.update(cam, this.veg?.hold);
+    }
+    for (const r of this.regions) (r.land.userData.lod as TerrainLod | undefined)?.update(cam);
+    staticLod.update(cam);
     P.end();
     P.begin('Wake simulation', 'ocean', true);
     this.wake.update(this.renderer, target.x, target.z, dt);

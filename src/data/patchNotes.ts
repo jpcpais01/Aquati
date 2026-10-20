@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-20T20:00Z',
+    hour: '2026-10-20T21:00Z',
     entries: [
       {
         title: 'Storms worth sailing into, and every weather reworked',
@@ -26,10 +26,52 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
-        title: 'A new app icon',
+        title: 'Shores O\u2019 Fortune',
         notes: [
-          'Shores of Fortune has a new face on your home screen: a galleon in silhouette sailing across a huge golden-hour sun, her sails rimmed in gold light, a red pennant at the masthead, palm isles on the horizon and the sun\'s path glittering across a turquoise sea.',
-          'It is drawn to stay clear at every size, from a full home-screen icon down to the little browser-tab icon, and Android\'s round and squircle icon shapes now crop it neatly without clipping the ship. Reinstall or re-add the game to your home screen if your device keeps showing the old one.',
+          'The game now goes by Shores O\u2019 Fortune, with a salty pirate swagger in the gilded wordmark. Same sea, same ships, same saves.',
+        ],
+      },
+      {
+        title: 'Grass you can walk through',
+        notes: [
+          'The meadows on every island now grow real grass. Walk ashore and you wade through clumps of blades that sway in the wind, roll in waves as the breeze crosses the hillside and bow flat as each gust passes. They part around your boots and your crew\'s as you walk through them.',
+          'Each blade grows out of ground of exactly its own colour, so the grass is lush and dark in the damp hollows, sun-gold on the high ridges and blue-green in Las Brumas. It stops cleanly where the turf meets the sand or bare rock and thins out under the trees.',
+          'It only grows around you and fades out smoothly with distance, so it costs nothing out at sea.',
+        ],
+      },
+      {
+        title: 'Islands up close',
+        notes: [
+          'The ground under your feet has real texture now. Sand is grainy, with bits of shell and grit washed into drifts, and pink coral fragments in Las Brumas. Turf shows soil and sun-dried thatch between the clumps, the forest floor is littered with fallen leaves, and rock is gritty, finely cracked and freckled with lichen.',
+          'Tree crowns break up into lit clusters of leaves with shadowy gaps between them, and each cluster catches the sun on its own side. Broadleaf trunks have fissured bark with moss creeping up from the roots, and palms and tree ferns show the ring scars where old fronds fell.',
+          'All of this detail only shows when you are close enough to see it, and fades away smoothly further out.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T20:00Z',
+    entries: [
+      {
+        title: 'A new view while you load',
+        notes: [
+          'The loading screen now opens on Las Brumas: a ship riding the turquoise shallows off a pink beach under the limestone towers, still drifting slowly while the sea is made ready.',
+          'Held upright, a phone frames the ship and the shore instead of open water, and it loads a sharper image to match its screen.',
+        ],
+      },
+      {
+        title: 'Steady surf on every beach',
+        notes: [
+          'The white surf along the beaches no longer flickers and slides about while you sail. Away from your ship the sea is built more coarsely and glides along with you, and the breakers were worked out on that moving framework, so their foam crawled and jumped. Every breaker is now worked out right where you see it, so the surf rolls in steadily on every beach in view.',
+        ],
+      },
+      {
+        title: 'Islands drawn far lighter',
+        notes: [
+          'Islands now cost your graphics card well under half of what they did, with no change you can see. Hills and beaches far from you are drawn with fewer, larger pieces, only as fine as your screen can actually show at that distance, and the shoreline itself never moves.',
+          'Towns, forts and pirate camps do the same: once they are a little way off, their buildings switch to lighter versions you cannot tell apart from the real thing, and their shadows come from simple stand-ins.',
+          'Palms, bushes and rocks on distant hillsides get lighter versions too, and plants far outside the area where shadows fall no longer spend time casting them.',
+          'All of this is worked out in the background while you sail, so nothing stutters while it happens.',
         ],
       },
     ],

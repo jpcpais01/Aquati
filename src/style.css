@@ -1,5 +1,5 @@
 /* =====================================================================
-   Shores of Fortune UI: glass over a living sea.
+   Shores O’ Fortune UI: glass over a living sea.
    Inter for the interface, Cinzel only for proper names (the logo, ships,
    isles). Frosted ocean glass, warm gold for the one thing you should
    press, a white focus glow for whatever you're on.
@@ -465,6 +465,14 @@ kbd {
 
 .load-scenes .scene.ready {
   animation: kenBurns 14s ease-out both;
+}
+
+/* phones held upright see a narrow slice of the 16:9 scene: keep the ship and the
+   pink Brumas shore in it rather than the open water at the centre */
+@media (orientation: portrait) {
+  .load-scenes .scene {
+    object-position: 37% 50%;
+  }
 }
 
 .load-scenes .scene.on.ready {

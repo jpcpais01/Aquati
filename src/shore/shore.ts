@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { staticLod } from '../render/staticLod';
 import { angleDelta, clamp, damp, lerp, mulberry32, smoothstep } from '../core/noise';
 import { Builder, Bucket } from '../port/port';
 import { CrewSystem, Look, makeLook } from '../ships/crew';
@@ -343,6 +344,7 @@ export class Shore {
       g.name = `camp-${i}`;
       b.finish(g, mats as unknown as Record<Bucket, THREE.Material>);
       this.group.add(g);
+      staticLod.add(g);
       for (const d of layout.blocks) ground.blocks.push(d);
       const flag = campFlag(mats.flag);
       flag.position.copy(layout.flagTop);
