@@ -46,6 +46,8 @@ export class Audio {
   private thunderFar: AudioBuffer[] = [];
   private thunderQueued = false;
   private gust = 0;
+  /** The maelstrom's roar: a looping bed built the first time one is in earshot. */
+  private vortexBed: { gain: GainNode; pan: StereoPannerNode | null; howl: GainNode; howlF: BiquadFilterNode } | null = null;
   private duckGain!: GainNode;
   private reverb!: ConvolverNode;
   private reverbIn!: GainNode;
@@ -787,6 +789,156 @@ export class Audio {
     const f = Math.max(0, Math.min(1, force));
     const at = this.emit(pick(this.bank.crunch), { vol: vol * (0.35 + 0.55 * f), pan, dist, rate: 1.12 - f * 0.22 + Math.random() * 0.08, wet: 0.45 });
     if (at >= 0 && dist < 40 && f > 0.4) this.duck(at, 0.3 * f);
+  }
+
+  /**
+   * A keel grinding over coral: splintering timber under a long dry rasp of
+   * coral on planking, juddering as she lurches over each head. `strike` is
+   * the first blow, run onto the reef at speed.
+   */
+  scrape(vol: number, pan: number, dist = 0, k = 1, strike = false) {
+    this.emit(pick(this.bank.crunch), { vol: vol * (strike ? 0.75 : 0.22 + 0.3 * k), pan, dist, rate: (strike ? 0.78 : 0.6) + Math.random() * 0.12, wet: 0.35 });
+    if (strike) this.emit(pick(this.bank.wood), { vol: vol * 0.6, pan, dist, rate: 0.62 + Math.random() * 0.1, wet: 0.4, delay: 0.06 });
+    const v = this.voice(vol * Math.min(1, 140 / (140 + dist)) * (0.35 + 0.4 * k), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime + Math.min(dist / SPEED_OF_SOUND, 1.1);
+    const len = 0.5 + Math.random() * 0.25;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    src.playbackRate.value = 0.7 + Math.random() * 0.25;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(900 + k * 600, t);
+    bp.frequency.exponentialRampToValueAtTime(420 + k * 200, t + len);
+    bp.Q.value = 1.4;
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t);
+    env.gain.linearRampToValueAtTime(0.55, t + 0.04);
+    env.gain.exponentialRampToValueAtTime(0.001, t + len);
+    // the judder: a ragged sawtooth tremolo as she bumps from head to head
+    const trem = ctx.createGain();
+    trem.gain.value = 0.6;
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sawtooth';
+    lfo.frequency.value = 14 + Math.random() * 12;
+    const lg = ctx.createGain();
+    lg.gain.value = 0.4;
+    lfo.connect(lg).connect(trem.gain);
+    src.connect(bp).connect(trem).connect(env).connect(out);
+    src.start(t, Math.random() * 2);
+    src.stop(t + len + 0.05);
+    lfo.start(t);
+    lfo.stop(t + len + 0.05);
+    // a low groan of strained timber under it all
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    const f = 58 + Math.random() * 24;
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.linearRampToValueAtTime(f * 0.7, t + len);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 320;
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.linearRampToValueAtTime(0.22 * k, t + 0.08);
+    og.gain.exponentialRampToValueAtTime(0.001, t + len + 0.1);
+    o.connect(lp).connect(og).connect(out);
+    o.start(t);
+    o.stop(t + len + 0.15);
+  }
+
+  /** The leadsman's warning: two quick strokes of the ship's bell, then a third (shoal water ahead). */
+  shoalBell() {
+    const v = this.voice(0.2, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    [0, 0.2, 0.62].forEach((dt, k) => {
+      const t = ctx.currentTime + dt;
+      [[1318.5, 1], [2637, 0.35], [3520, 0.18], [1975.5, 0.22]].forEach(([fr, a]) => {
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.value = fr;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime((k === 2 ? 0.42 : 0.5) * a, t + 0.004);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 1.1 - a * 0.3);
+        o.connect(g).connect(out);
+        o.start(t);
+        o.stop(t + 1.2);
+      });
+    });
+  }
+
+  /**
+   * The maelstrom's voice, set every frame: a deep rolling roar of water
+   * pouring round and down, with a hollow howl from the throat that climbs as
+   * you're drawn nearer. `vol` 0 silences it (the loop keeps running, muted).
+   */
+  setMaelstrom(vol: number, pan: number, near: number) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    if (!this.vortexBed) {
+      if (vol < 0.01) return;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      let panner: StereoPannerNode | null = null;
+      if (ctx.createStereoPanner) {
+        panner = ctx.createStereoPanner();
+        gain.connect(panner).connect(this.ambBus);
+      } else gain.connect(this.ambBus);
+      // the roar: slow, heavy, lowpassed noise breathing on two unrelated LFOs
+      const roar = ctx.createBufferSource();
+      roar.buffer = this.noise;
+      roar.loop = true;
+      roar.playbackRate.value = 0.42;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 260;
+      lp.Q.value = 0.9;
+      const rg = ctx.createGain();
+      rg.gain.value = 0.9;
+      const l1 = ctx.createOscillator();
+      l1.frequency.value = 0.23;
+      const l1g = ctx.createGain();
+      l1g.gain.value = 0.25;
+      l1.connect(l1g).connect(rg.gain);
+      const l2 = ctx.createOscillator();
+      l2.frequency.value = 0.071;
+      const l2g = ctx.createGain();
+      l2g.gain.value = 90;
+      l2.connect(l2g).connect(lp.frequency);
+      roar.connect(lp).connect(rg).connect(gain);
+      // the throat's howl: a resonant band swept by how close you are
+      const howlSrc = ctx.createBufferSource();
+      howlSrc.buffer = this.noise;
+      howlSrc.loop = true;
+      howlSrc.playbackRate.value = 0.9;
+      const howlF = ctx.createBiquadFilter();
+      howlF.type = 'bandpass';
+      howlF.frequency.value = 220;
+      howlF.Q.value = 7;
+      const howl = ctx.createGain();
+      howl.gain.value = 0;
+      const l3 = ctx.createOscillator();
+      l3.frequency.value = 0.37;
+      const l3g = ctx.createGain();
+      l3g.gain.value = 40;
+      l3.connect(l3g).connect(howlF.frequency);
+      howlSrc.connect(howlF).connect(howl).connect(gain);
+      roar.start(0, 0.4);
+      howlSrc.start(0, 1.7);
+      l1.start();
+      l2.start();
+      l3.start();
+      this.vortexBed = { gain, pan: panner, howl, howlF };
+    }
+    const b = this.vortexBed;
+    const t = ctx.currentTime;
+    b.gain.gain.setTargetAtTime(Math.min(1, vol) * 0.55, t, 0.4);
+    b.pan?.pan.setTargetAtTime(Math.max(-0.85, Math.min(0.85, pan)), t, 0.3);
+    b.howl.gain.setTargetAtTime(near * near * 0.9, t, 0.5);
+    b.howlF.frequency.setTargetAtTime(160 + near * 260, t, 0.6);
   }
 
   /** Shot ploughing into a beach or hillside. */

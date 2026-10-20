@@ -32,7 +32,7 @@ export interface WreckReport {
   /** Best chest rarity opened (-1 none). */
   best: number;
   miles: number;
-  cause: 'shot' | 'rammed' | 'aground' | 'kraken' | 'fort';
+  cause: 'shot' | 'rammed' | 'aground' | 'kraken' | 'fort' | 'reef' | 'maelstrom';
   killer?: string;
   killerCls?: ShipClassId;
   /** The named captain who sent her down, if a hunter did. */
@@ -101,6 +101,8 @@ export function loadRecords(): Records {
 function causeLine(r: WreckReport) {
   const k = r.hunter && r.killer ? `${esc(r.hunter)} in the <span class="nm">${esc(r.killer)}</span>` : r.killer ? `the <span class="nm">${esc(r.killer)}</span>` : 'pirates';
   if (r.cause === 'aground') return 'Holed on the reef';
+  if (r.cause === 'reef') return `Torn open on the coral of <span class="nm">${esc(r.killer ?? 'the reef')}</span>`;
+  if (r.cause === 'maelstrom') return `Swallowed by <span class="nm">${esc(r.killer ?? 'the maelstrom')}</span>`;
   if (r.cause === 'kraken') return 'Dragged under by <span class="nm">the Kraken</span>';
   if (r.cause === 'fort') return `Sunk by the guns of <span class="nm">${esc(r.killer ?? 'a fort')}</span>`;
   if (r.cause === 'rammed') return `Rammed by ${k}`;
@@ -119,6 +121,18 @@ function quip(r: WreckReport) {
   if (r.best >= 4) fits.push('A legendary chest, and now the sea has it back.');
   if (r.cause === 'aground') fits.push("The reef doesn't care how fast you were sailing.");
   if (r.cause === 'rammed') fits.push('Close quarters. Very close quarters.');
+  if (r.cause === 'reef') {
+    fits.push('The breakers were telling you. Coral never shouts twice.', 'A sloop would have floated over it. Just saying.');
+    if (r.cls === 'galleon') fits.push('Two and a half fathoms of keel over one fathom of coral. The arithmetic was always going to win.');
+  }
+  if (r.cause === 'maelstrom') {
+    fits.length = 0;
+    fits.push(
+      'Round and round and down. The sea keeps what it takes.',
+      'Sail with the wind, the old hands say. Out, never across.',
+      'The whirlpool turns on without you, patient as ever.',
+    );
+  }
   if (r.cause === 'fort') fits.push('Never trade broadsides with a stone wall. It has all day.', 'The fort is still standing. The fort is always still standing.');
   if (r.cause === 'kraken') {
     fits.length = 0;
@@ -256,6 +270,10 @@ export class WreckScreen {
         ? `The <span class="nm">${esc(r.ship)}</span> ran aground ${where} after ${duration(r.time)} at sea.`
         : r.cause === 'kraken'
         ? `The <span class="nm">${esc(r.ship)}</span> was pulled into the deep ${where} after ${duration(r.time)} at sea.`
+        : r.cause === 'maelstrom'
+        ? `The <span class="nm">${esc(r.ship)}</span> was drawn down the maelstrom's throat after ${duration(r.time)} at sea.`
+        : r.cause === 'reef'
+        ? `The <span class="nm">${esc(r.ship)}</span> struck the coral and broke her back after ${duration(r.time)} at sea.`
         : `The <span class="nm">${esc(r.ship)}</span> went down ${where} after ${duration(r.time)} at sea.`;
     $('wk-quip').textContent = `“${quip(r)}”`;
     $('wk-cause').innerHTML = causeLine(r);

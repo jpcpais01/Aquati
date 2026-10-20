@@ -6,7 +6,7 @@ import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { HOLD_ROOM } from '../game/treasure';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
-import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark, fortMark } from './chart';
+import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark, fortMark, vortexMark, reefMark, HazardMark } from './chart';
 import { PIN_COLORS } from '../game/waypoints';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
@@ -1266,6 +1266,7 @@ export class UI {
     /** A whole treasure map's X. */
     treasure: { x: number; z: number } | null = null,
     forts: { x: number; z: number; ours: boolean; quiet: boolean }[] = [],
+    hazards: HazardMark[] = [],
   ) {
     const g = this.map;
     const S = this.mapCanvas.width;
@@ -1367,6 +1368,25 @@ export class UI {
       const [x, y] = toMap(f.x, f.z);
       if (x < -14 || y < -14 || x > S + 14 || y > S + 14) continue;
       fortMark(g, x, y, 11, f.ours, f.quiet);
+    }
+    // a maelstrom's pull ringed in coral red round its wheeling spiral; a reef's danger mark
+    const now = performance.now() / 1000;
+    for (const hz of hazards) {
+      const [x, y] = toMap(hz.x, hz.z);
+      const rr = (hz.r / R) * (S / 2);
+      if (x < -rr - 14 || y < -rr - 14 || x > S + rr + 14 || y > S + rr + 14) continue;
+      if (hz.kind === 'vortex') {
+        g.save();
+        g.setLineDash([6, 6]);
+        g.lineDashOffset = -now * 8 * hz.dir;
+        g.strokeStyle = 'rgba(255, 130, 100, 0.7)';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(x, y, rr, 0, Math.PI * 2);
+        g.stroke();
+        g.restore();
+        vortexMark(g, x, y, Math.max(11, Math.min(30, rr * 0.5)), now * 0.8, hz.dir);
+      } else reefMark(g, x, y, 9);
     }
     if (treasure) {
       const [x, y] = toMap(treasure.x, treasure.z);

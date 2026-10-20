@@ -6,6 +6,8 @@ import { WakeField } from '../world/wakeField';
 import { Audio } from '../core/audio';
 import type { Debris } from '../fx/debris';
 import type { AmmoId } from './ammo';
+import { Vortex, vortexCalm, vortexDip } from '../world/vortex';
+import type { HazardSense } from './hazards';
 
 export interface Wind {
   angle: number; // direction the wind blows toward
@@ -46,6 +48,12 @@ export class World {
   /** A special shot just set a lasting effect on a ship. */
   onStatus: (ship: unknown, status: ShipStatus, attacker: unknown) => void = () => {};
   debris!: Debris;
+  /** The maelstroms turning out at sea (see game/hazards.ts): they draw the surface down into a funnel. */
+  readonly vortices: Vortex[] = [];
+  /** What a captain can tell of the maelstroms ahead (see game/hazards.ts). */
+  hazards: HazardSense | null = null;
+  /** A ship took a beating from the sea itself: grinding on a reef, or wrung in a maelstrom's throat. */
+  onHazard: (ship: unknown, kind: 'reef' | 'maelstrom', damage: number, at: THREE.Vector3) => void = () => {};
 
   constructor(
     readonly terrain: Terrain,
@@ -64,7 +72,13 @@ export class World {
   }
 
   waterHeight(x: number, z: number) {
-    return waveHeight(this.waves, x, z, this.time, this.waterDamp(x, z));
+    let calm = 1;
+    let dip = 0;
+    for (const v of this.vortices) {
+      calm *= vortexCalm(v, x, z);
+      dip += vortexDip(v, x, z);
+    }
+    return waveHeight(this.waves, x, z, this.time, this.waterDamp(x, z) * calm) - dip;
   }
 
   /** Volume, pan and distance (m) for a sound at a world position relative to the camera. */

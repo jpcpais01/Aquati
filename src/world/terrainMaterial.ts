@@ -16,6 +16,7 @@ import { GLSL_SURF, shoreUniforms } from './shore';
 //   aqInfo  (tint -1..1, summit rock 0..1, crater 0..1)
 //   aqAO    baked horizon AO
 //   aqCanopy  tree cover (0..1): mossy forest floor and leaf litter under crowns
+//   aqReef    open-sea coral reef (0..1): a dense living carpet of coral heads
 
 function lin(hex: number): string {
   const c = new THREE.Color(hex).convertSRGBToLinear();
@@ -32,6 +33,9 @@ const vec3 T_CORAL_A = ${lin(0xf27e74)};
 const vec3 T_CORAL_B = ${lin(0xffb07a)};
 const vec3 T_CORAL_C = ${lin(0xb98ad6)};
 const vec3 T_CORAL_D = ${lin(0xf5d06a)};
+const vec3 T_CORAL_E = ${lin(0xc98f5a)};
+const vec3 T_CORAL_F = ${lin(0x7fae8c)};
+const vec3 T_RUBBLE = ${lin(0xd9cdb0)};
 const vec3 T_GRASS = ${lin(0x6eaa48)};
 const vec3 T_GRASS_LIGHT = ${lin(0xa2cc5e)};
 const vec3 T_GRASS_DRY = ${lin(0xb4bd56)};
@@ -58,6 +62,7 @@ const FRAG_HEAD = /* glsl */ `
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqCanopy;
+varying float vAqReef;
 ${PALETTE}
 ${GLSL_SURF}
 // the swash cycle, as fractions of a wave period: the sheet runs up until
@@ -138,6 +143,27 @@ const FRAG_ALBEDO = /* glsl */ `
   cc = mix(cc, T_CORAL_D, smoothstep(0.62, 0.7, nC.a));
   bed = mix(bed, cc * (0.75 + blob * 0.35), smoothstep(0.05, 0.3, coral) * (1.0 - gm));
   float bBed = coral * 0.35 * (1.0 - smoothstep(0.25, 0.6, fp)) + gm * (nF.g - 0.5) * 0.08 * (1.0 - smoothstep(0.04, 0.1, fp));
+  // open-sea reefs: the crest is one crowded garden of coral, heads of every
+  // shape and colour packed shoulder to shoulder over pale rubble, bleaching
+  // toward the shallowest knobs. It reads through the water as a warm mosaic.
+  if (vAqReef > 0.01) {
+    float rBand = smoothstep(-10.0, -3.5, h);
+    vec4 nC2 = texture(uNoiseTex, xz * 0.11 + vec2(0.61, 0.07)); // ~9 m tile, heads under a metre
+    float rBlob = 1.0 - smoothstep(0.16, 0.44, nC2.b);
+    float rBig = 1.0 - smoothstep(0.2, 0.5, nC.b);
+    float heads = max(rBlob, rBig * 0.9);
+    float rCover = smoothstep(0.25, 0.5, vAqReef + (nS.a - 0.5) * 0.5 + (nD.g - 0.5) * 0.3) * rBand;
+    vec3 rc = mix(T_CORAL_A, T_CORAL_C, smoothstep(0.42, 0.6, nM.a + (nD.r - 0.5) * 0.3));
+    rc = mix(rc, T_CORAL_D, smoothstep(0.55, 0.68, nC2.r) * 0.75);
+    rc = mix(rc, T_CORAL_E, smoothstep(0.5, 0.62, nD.r) * 0.65);
+    rc = mix(rc, T_CORAL_F, smoothstep(0.56, 0.7, nC2.g) * 0.6);
+    rc = mix(rc, T_CORAL_B, smoothstep(0.62, 0.72, nC.r) * 0.5);
+    rc = mix(rc, vec3(0.86, 0.82, 0.74), smoothstep(-1.3, -0.55, h) * 0.4);
+    vec3 rubble = T_RUBBLE * (0.8 + nF.a * 0.3);
+    vec3 reefCol = mix(rubble, rc * (0.7 + heads * 0.45), smoothstep(0.1, 0.45, heads));
+    bed = mix(bed, reefCol, rCover);
+    bBed += rCover * (heads * 0.42 + (nF.a - 0.5) * 0.1) * (1.0 - smoothstep(0.25, 0.6, fp));
+  }
 
   // ---------------------------------------------------------------- grass
   float beachTop = mix(1.2, 1.55, kA) + (nS.g - 0.5) * 0.9 + (nM.r - 0.5) * 0.5;
@@ -337,12 +363,14 @@ attribute vec3 aqKind;
 attribute vec3 aqInfo;
 attribute float aqAO;
 attribute float aqCanopy;
+attribute float aqReef;
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqAO;
-varying float vAqCanopy;`,
+varying float vAqCanopy;
+varying float vAqReef;`,
       )
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;');
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;\nvAqReef = aqReef;');
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', `${lite ? '#define AQ_TERRAIN_LITE\n' : ''}varying float vAqAO;\n${FRAG_HEAD}\nvoid main() {`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_ALBEDO}`)

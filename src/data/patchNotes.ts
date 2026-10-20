@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T10:00Z',
+    entries: [
+      {
+        title: 'Sea hazards: maelstroms that drag you down and coral reefs that tear your hull',
+        notes: [
+          'Three great maelstroms now turn in the open sea: La Garganta, El Remolino Negro and the Ojo de Caribdis. The water winds round in white spiral arms that turn faster the nearer they come to the eye, the surface sinks into a funnel you can see your ship heel down into, and a black throat waits at its heart. They swell and slacken over time, and grow wilder and wider in a storm, so watch for them roaring in the distance.',
+          'Sail into one and the current takes you: it sweeps you round, swings your bow and draws you inward. Out at the rim you can sail clear with full sail and a course out. Further in, the strain starts to work your hull, and near the throat it tears at her. Anything floating, cargo and wreckage included, is drawn round and swallowed.',
+          'Four coral reefs now lie just under the surface: the long Arrecife del Diablo barrier with its narrow passes, La Herradura horseshoe with a sandy lagoon inside, and the scattered heads of Los Dientes and the Bajo de las Ánimas. You can see them glowing turquoise through the water, with the swell breaking white over their crests. Whether you clear them depends on how deep your ship sits: a sloop can slip over coral that will rip the bottom out of a galleon.',
+          'Run onto a reef and you grind to a halt with a crunch of timber, losing hull with every bite, worse the faster you hit. A pill at the top of the screen warns you before you get there: "Shoal water ahead", with how much water is over the coral against how much your ship draws, a ship\'s bell, and an arrow pointing to deep water. Inside a maelstrom it shows how tight its grip is and the way out. Both are marked on the minimap and the sea chart.',
+          'Pirates steer around maelstroms and reefs, but one that is chasing you hard will follow you across the coral or too close to the funnel. Lure her in and if the sea finishes her you get the bounty and the kill. Being sunk by either now has its own line on the farewell screen.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T08:00Z',
     entries: [
       {
