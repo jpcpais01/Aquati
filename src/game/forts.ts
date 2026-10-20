@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { staticLod } from '../render/staticLod';
 import { angleDelta, clamp, damp } from '../core/noise';
 import { progressSaved } from '../core/progress';
 import { currentIsle } from '../data/renamedIsles';
@@ -258,6 +259,7 @@ export class Forts {
         g.add(d);
       });
       this.root.add(g);
+      staticLod.add(g);
       // its plaza and ramp are floor to walk on
       const H = FORT_H;
       const footY = layout.rampFootY;

@@ -285,7 +285,8 @@ export class Crowd {
 
   /**
    * Copies every posed skeleton into the instance buffers (world space).
-   * `lod` picks each figure's sculpt: 1 detailed, 2 the far one, 0 not drawn.
+   * `lod` picks each figure's sculpt: 1 detailed, 2 the far one, 3 the far
+   * one's lighter cut, 0 not drawn.
    */
   sync(lod?: (f: Figure, i: number) => number) {
     const v = this.view;
@@ -299,7 +300,7 @@ export class Crowd {
       this.m.multiplyMatrices(f.hips.matrixWorld, this.off);
       f.write(this.pose);
       const l = this.looks[i];
-      v.push(this.m, this.pose, i, l.hat, f.prop, l.flags, level === 1);
+      v.push(this.m, this.pose, i, l.hat, f.prop, l.flags, level === 1, level === 3);
     });
     v.end();
   }

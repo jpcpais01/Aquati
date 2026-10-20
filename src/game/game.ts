@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { staticLod } from '../render/staticLod';
 import { setBowWaveScene } from '../fx/bowWave';
 import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
@@ -24,6 +25,7 @@ import { Rain } from '../fx/rain';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
+import type { TerrainLod } from '../world/terrainLod';
 import { Seas } from '../world/seas';
 import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, RegionId, regionById, REGIONS, seaEdge, STREAM_R } from '../world/regions';
 import { Dolphins } from '../fx/dolphins';
@@ -6463,7 +6465,9 @@ export class Game {
     P.begin('Vegetation culling', 'sim');
     // from eye level the far LOD takes over from ~85 m out, even on the island underfoot
     if (this.veg) this.veg.detail = this.rig.eyeBlend > 0.5 && !this.photo.active ? 85 : Infinity;
-    this.veg?.update(cam, this.toSun);
+    this.veg?.update(cam, this.toSun, this.shadowC, this.shadowR);
+    for (const r of this.regions) (r.land.userData.lod as TerrainLod | undefined)?.update(cam);
+    staticLod.update(cam);
     P.end();
     P.begin('Wake simulation', 'ocean', true);
     this.wake.update(this.renderer, target.x, target.z, dt);
