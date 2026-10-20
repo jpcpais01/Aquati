@@ -845,6 +845,7 @@ export class Game {
       this.audio.click();
     };
     ui.onPhoto = () => this.openPhoto();
+    ui.onSweep = () => this.sweepWrecks();
     this.fleetHud.onOrder = (o) => {
       this.audio.click();
       this.giveOrder(o);
@@ -2956,6 +2957,28 @@ export class Game {
       // never before she has settled, so the pose carries on without a jump
       if (i >= MAX_WRECKS || far) s.wreckLife = Math.max(s.sinkT, 9);
     }
+  }
+
+  /**
+   * The HUD broom: every sunken or sinking enemy hull, all drifting wreckage and
+   * the smoke over them are gone at once. Your ship, live foes, a prize your
+   * boarders hold and the floating loot (your plunder) are left alone.
+   */
+  sweepWrecks() {
+    if (this.state !== 'playing') return;
+    const lashed = this.boarding.prize;
+    let n = 0;
+    for (const s of this.ships.slice()) {
+      if (s.alive || s === this.player || s === lashed || s.prize) continue;
+      s.removed = true;
+      this.removeShip(s);
+      n++;
+    }
+    this.wrecks.length = 0;
+    this.debris.clear();
+    this.particles.clear();
+    this.audio.click();
+    this.ui.toast('Clear seas', n ? `${n} wreck${n > 1 ? 's' : ''} swept away` : 'Wreckage swept away', 2.2);
   }
 
   /** A flotilla: a flagship with two or three escorts in a loose vee. */
