@@ -6005,7 +6005,10 @@ export class Game {
     const cl = this.clouds;
     cl.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     const keep = this.player && this.player.alive && this.state === 'playing' && !this.photo.active ? this.player.pos : null;
-    cl.update(dt, cam, target, this.toSun, this.atmos, this.world.wind.dirX, this.world.wind.dirZ, keep);
+    // out on the open ocean with no fight on, the clouds sail right over you like over anything else
+    const pl = this.player;
+    const fight = !!this.lastFoe || this.kraken.active || (!!pl && this.world.time - pl.lastHit < 12);
+    cl.update(dt, cam, target, this.toSun, this.atmos, this.world.wind.dirX, this.world.wind.dirZ, keep, !this.onHighSeas || fight);
     cl.renderShadow(this.renderer);
     P.end(true);
     P.begin('Camera & sky binding', 'render');

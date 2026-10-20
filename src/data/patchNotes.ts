@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'Clouds over the open ocean',
+        notes: [
+          'Out on the high seas, when no fight is on, the little clouds no longer thin out into a see-through hole over your ship. They drift right over you, shadow and all, and you sail on underneath. As soon as a battle starts, or the Kraken rises, the clouds clear around your ship again so you can see what you are doing. The change fades in and out over a couple of seconds.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T18:00Z',
     entries: [
       {
