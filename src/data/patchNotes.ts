@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T20:00Z',
     entries: [
       {
+        title: 'Steady surf on every beach',
+        notes: [
+          'The white surf along the beaches no longer flickers and slides about while you sail. Away from your ship the sea is built more coarsely and glides along with you, and the breakers were worked out on that moving framework, so their foam crawled and jumped. Every breaker is now worked out right where you see it, so the surf rolls in steadily on every beach in view.',
+        ],
+      },
+      {
         title: 'Islands drawn far lighter',
         notes: [
           'Islands now cost your graphics card well under half of what they did, with no change you can see. Hills and beaches far from you are drawn with fewer, larger pieces, only as fine as your screen can actually show at that distance, and the shoreline itself never moves.',

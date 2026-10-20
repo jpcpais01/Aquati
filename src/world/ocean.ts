@@ -309,7 +309,11 @@ const OCEAN_VERT = /* glsl */ `
     if (reach * (1.0 - smoothstep(4.5, 8.0, -th)) > 0.001) {
       float sth = fract(psi);
       vec3 sw = surfWave(wp.xz, floor(psi) + step(0.7, sth), max(-th, 0.0), reach);
-      wp.y += sw.x * (surfShape(sth, 0.3) - 0.37);
+      // the breaker's face is sharp: where the grid is stretched and gliding,
+      // its vertices would hop over it, so the lift fades there (the foam,
+      // drawn per pixel, still shows every wave)
+      float span = max(aqGridSpan.x, aqGridSpan.y);
+      wp.y += sw.x * (surfShape(sth, 0.3) - 0.37) * (span > 0.0 ? 1.0 - smoothstep(2.8, 5.0, span) : 1.0);
     }
     vShore = vec4(psi, sf.gb, reach);
     vWorld = wp.xyz;
@@ -768,20 +772,25 @@ export class Ocean {
 
           // ---- surf: the breaker under this pixel and the one rolling in behind it
           float fp = length(fwidth(p));
-          float sDepth = max(-vTerrain, 0.0);
-          float sth = fract(vShore.x);
+          // read per pixel, not passed down from the vertices: away from the
+          // ship the grid glides with her, and a breaker's phase or the depth
+          // under it, blended between moving vertices, would crawl and jump
+          float sDepth = max(-texture(uHeightTex, (p - uWorldRect.xy) * uWorldRect.w).r, 0.0);
+          vec4 sField = shoreField(p);
+          vec4 shore = vec4(surfPhase(p, sField.r), sField.gb, mix(0.22, 1.0, sField.a) * (1.0 - smoothstep(12.0, 17.0, sField.r)));
+          float sth = fract(shore.x);
           float sAge = sth * SURF_T; // seconds since the last crest went by
           float swf = 0.16;
           bool sFace = sth > 1.0 - swf;
           vec3 sPrev = vec3(0.0);
           vec3 sNext = vec3(0.0);
-          if (vShore.w * (1.0 - smoothstep(4.5, 8.0, sDepth)) > 0.001) {
-            float sn = floor(vShore.x);
-            sPrev = surfWave(p, sn, sDepth, vShore.w);
-            sNext = surfWave(p, sn + 1.0, sDepth, vShore.w);
+          if (shore.w * (1.0 - smoothstep(4.5, 8.0, sDepth)) > 0.001) {
+            float sn = floor(shore.x);
+            sPrev = surfWave(p, sn, sDepth, shore.w);
+            sNext = surfWave(p, sn + 1.0, sDepth, shore.w);
             vec3 sCur = sFace ? sNext : sPrev;
             // the phase climbs 1 / (c T) per metre out to sea, c = sqrt(g d)
-            vec2 sdir = vShore.yz / max(length(vShore.yz), 0.2);
+            vec2 sdir = shore.yz / max(length(shore.yz), 0.2);
             float sg = sCur.x * surfSlope(sth, swf) / (sqrt(9.81 * max(sDepth, 0.15)) * SURF_T);
             // a broken face is a rumpled tumble of water, not a clean slope
             sg *= 1.0 - sCur.y * 0.45;
