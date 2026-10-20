@@ -102,7 +102,46 @@ export const globalUniforms = {
   // the maelstroms (see game/hazards.ts, world/vortex.ts): xz centre, radius (m),
   // strength signed by the way it turns; an unused slot has strength 0
   uVortex: { value: Array.from({ length: VORTEX_N }, () => new THREE.Vector4(0, 0, 1, 0)) },
+  // fireworks bursting overhead (see fx/fireworks.ts): xyz where, w how bright
+  // (0 = dark slot), and each one's colour
+  uFwLight: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+  uFwColor: { value: Array.from({ length: 4 }, () => new THREE.Vector3(1, 1, 1)) },
 };
+
+// Light from the fireworks: a few bursts at most, each a soft round lamp in
+// the sky. Compiled into every lit surface at load, so a show never compiles
+// anything; a dark sky costs four skipped iterations.
+export const GLSL_FW = /* glsl */ `
+uniform vec4 uFwLight[4];
+uniform vec3 uFwColor[4];
+// light reaching a point facing n (world space); n = 0 lights from every side (smoke)
+vec3 fwLightAt(vec3 wp, vec3 n) {
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec4 l = uFwLight[i];
+    if (l.w <= 0.0) continue;
+    vec3 d = l.xyz - wp;
+    float r2 = dot(d, d);
+    float ndl = dot(n, n) > 0.0 ? max(dot(n, d * inversesqrt(r2 + 1e-4)), 0.0) * 0.8 + 0.2 : 1.0;
+    acc += uFwColor[i] * (l.w * ndl / (1.0 + r2 * 0.0011));
+  }
+  return acc;
+}
+// the bursts mirrored in a wavy surface: a shimmering column under each
+vec3 fwMirror(vec3 wp, vec3 R) {
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec4 l = uFwLight[i];
+    if (l.w <= 0.0) continue;
+    vec3 d = l.xyz - wp;
+    float r2 = dot(d, d);
+    float s = max(dot(R, d * inversesqrt(r2 + 1e-4)), 0.0);
+    float s2 = s * s; float s4 = s2 * s2; float s8 = s4 * s4; float s16 = s8 * s8; float s32 = s16 * s16;
+    acc += uFwColor[i] * l.w * (s32 * s16 * 2.6 + s8 * 0.22) / (1.0 + r2 * 0.00025);
+  }
+  return acc;
+}
+`;
 
 export const GLSL_GUST = /* glsl */ `
 uniform vec3 uWind;
@@ -571,6 +610,7 @@ uniform vec4 uUnder;
 uniform vec3 uUnderColor;
 ${GLSL_ATMOS}
 ${GLSL_AERIAL}
+${GLSL_FW}
 ${GLSL_DAMAGE_FRAGMENT_PARS}
 ${GLSL_GHOST_FRAGMENT_PARS}
 #ifdef AQ_SKIN
@@ -675,6 +715,11 @@ ${GLSL_GHOST_EMISSIVE}`,
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
+  // fireworks overhead light the decks, sails and hillsides in their colours
+  if (uFwLight[0].w + uFwLight[1].w + uFwLight[2].w + uFwLight[3].w > 0.0) {
+    vec3 aqFwN = inverseTransformDirection(normal, viewMatrix);
+    reflectedLight.indirectDiffuse += diffuseColor.rgb * fwLightAt(vAqWorld, aqFwN);
+  }
 #ifdef AQ_FOLIAGE
   {
     // leaves are thin: the sun glows through to their shaded side, warm and

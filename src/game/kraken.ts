@@ -116,6 +116,7 @@ const VS: Record<AmmoId, [number, number]> = {
   fire: [0.8, 0.8],
   chain: [1.9, 0.6],
   grape: [1.25, 0.65],
+  firework: [0, 0],
   wraith: [1.1, 1.1],
 };
 /** How far the head lurks from its prey while submerged. */

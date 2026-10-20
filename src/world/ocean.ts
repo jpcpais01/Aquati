@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLSL_AERIAL, GLSL_ATMOS, globalUniforms } from '../render/environment';
+import { GLSL_AERIAL, GLSL_ATMOS, GLSL_FW, globalUniforms } from '../render/environment';
 import { getSharedTextures } from '../render/textures';
 import { GLSL_WAVES, packWaves, Wave } from './waves';
 import { WORLD_SIZE } from './terrain';
@@ -565,6 +565,7 @@ export class Ocean {
         uniform vec4 uWaveA[8];
         uniform vec4 uWaveB[8];
         ${GLSL_AERIAL}
+        ${GLSL_FW}
         ${GLSL_SURF}
         varying vec3 vWorld;
         varying vec3 vNormal;
@@ -983,6 +984,12 @@ export class Ocean {
           spec *= 1.0 - uNight * 0.5;
 
           vec3 col = mix(body, refl, F) + uSunColor * spec * 0.55;
+
+          // fireworks overhead: each burst mirrored as a shimmering column in
+          // the chop, and its colour washed over the water beneath it
+          if (uFwLight[0].w + uFwLight[1].w + uFwLight[2].w + uFwLight[3].w > 0.0) {
+            col += fwMirror(vWorld, R) * mix(0.3, 1.0, F) + body * fwLightAt(vWorld, N) * 0.5;
+          }
 
           // ---- foam
           vec4 nz = texture(uNoiseTex, vWorld.xz * 0.06 + vec2(t * 0.01, -t * 0.013));

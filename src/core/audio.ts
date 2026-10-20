@@ -56,6 +56,11 @@ export class Audio {
   private deep: { src: AudioBufferSourceNode; gain: GainNode } | null = null;
   private voices = 0;
   private bank: Record<Exclude<BankKind, 'reverb'>, AudioBuffer[]> = {
+    rocket: [],
+    fwBoom: [],
+    fwCrackle: [],
+    fwSizzle: [],
+    fwPop: [],
     cannon: [],
     recoil: [],
     wood: [],
@@ -799,6 +804,42 @@ export class Audio {
     this.emit(pick(this.bank.flames), { vol: vol * 0.32, pan, dist, rate: 0.85 + Math.random() * 0.3, wet: 0.3 });
   }
 
+  /**
+   * Fireworks: a rocket going up, a shell breaking overhead (a showpiece's
+   * heavier double charge), crackle, a willow's hanging hiss or a crossette's
+   * split. Bursts arrive late across the water like any far bang.
+   */
+  firework(kind: 'launch' | 'whistle' | 'burst' | 'big' | 'crackle' | 'pop' | 'sizzle', vol: number, pan: number, dist = 0) {
+    const b = this.bank;
+    switch (kind) {
+      case 'launch':
+        this.emit(b.rocket[(Math.random() * 2) | 0], { vol: vol * 0.42, pan, dist, rate: 0.9 + Math.random() * 0.25, wet: 0.25 });
+        break;
+      case 'whistle':
+        this.emit(b.rocket[2], { vol: vol * 0.5, pan, dist, rate: 0.92 + Math.random() * 0.16, wet: 0.35 });
+        break;
+      case 'burst': {
+        const at = this.emit(b.fwBoom[(Math.random() * 2) | 0], { vol: vol * 0.7, pan, dist, rate: 0.85 + Math.random() * 0.3, wet: 0.75 });
+        if (at >= 0 && vol > 0.6) this.duck(at, 0.2);
+        break;
+      }
+      case 'big': {
+        const at = this.emit(b.fwBoom[2], { vol: vol * 0.85, pan, dist, rate: 0.9 + Math.random() * 0.1, wet: 0.85 });
+        if (at >= 0) this.duck(at, 0.35);
+        break;
+      }
+      case 'crackle':
+        this.emit(b.fwCrackle[(Math.random() * 2) | 0], { vol: vol * 0.5, pan, dist, rate: 0.9 + Math.random() * 0.2, wet: 0.55 });
+        break;
+      case 'pop':
+        this.emit(b.fwPop[0], { vol: vol * 0.55, pan, dist, rate: 0.9 + Math.random() * 0.25, wet: 0.5 });
+        break;
+      case 'sizzle':
+        this.emit(b.fwSizzle[0], { vol: vol * 0.35, pan, dist, rate: 0.9 + Math.random() * 0.2, wet: 0.4 });
+        break;
+    }
+  }
+
   /** Changing the shot: a ball of the new kind rolling into the gunner's hands and a click of the rack. */
   ammoSwap(kind: number) {
     const v = this.voice(0.22, 0);
@@ -808,7 +849,7 @@ export class Audio {
     // the iron ball's knock, lower for heavier loads
     const o = ctx.createOscillator();
     o.type = 'triangle';
-    const f = [118, 96, 132, 150, 210][kind] ?? 118;
+    const f = [118, 96, 132, 150, 210, 260][kind] ?? 118;
     o.frequency.setValueAtTime(f * 1.5, t);
     o.frequency.exponentialRampToValueAtTime(f, t + 0.06);
     const g = ctx.createGain();

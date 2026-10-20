@@ -977,3 +977,51 @@
   font: 500 10.5px/1.4 var(--sans);
   color: var(--ink-3);
 }
+
+/* ------------------------------------------------------------------ the pyrotechnist */
+
+.mk-plabel {
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+
+.mk-fwrow {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--rc) 9%, transparent), rgba(255, 255, 255, 0.03) 60%);
+}
+
+.mk-fwrow .mk-ico {
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--rc) 26%, rgba(4, 12, 22, 0.9)), rgba(2, 8, 16, 0.9) 75%);
+}
+
+.mk-fwrow .mk-ico .fw-ico {
+  width: 40px;
+  height: 40px;
+}
+
+.mk-fwrow .mk-pst span {
+  font: 500 10px/1.35 var(--sans);
+  color: var(--ink-2);
+}
+
+/* a showpiece: a gold frame and a slow shimmer of its own colours */
+.mk-fwrow.t2 {
+  border-color: rgba(255, 215, 110, 0.55);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--rc) 16%, transparent), color-mix(in srgb, var(--rc2) 12%, transparent) 45%, rgba(255, 255, 255, 0.03) 80%);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--rc) 22%, transparent) inset;
+}
+
+.mk-fwrow.t2 .mk-what small em {
+  color: var(--gold-hi);
+}
+
+@media (max-width: 560px), (max-height: 520px) {
+  .mk-fwrow .mk-ico .fw-ico {
+    width: 34px;
+    height: 34px;
+  }
+  .mk-fwrow .mk-pst {
+    display: none;
+  }
+}

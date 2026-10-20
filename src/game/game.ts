@@ -13,6 +13,7 @@ import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDrawSliced } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
+import { Fireworks } from '../fx/fireworks';
 import { Bubbles } from '../fx/bubbles';
 import { Birds } from '../fx/birds';
 import { ReefLife } from '../fx/fish';
@@ -78,6 +79,8 @@ import { Projectiles } from './projectiles';
 import { Item, Loot, RARITY } from './loot';
 import { PIN_COLORS, Waypoints } from './waypoints';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
+import { FIREWORKS, FireworkCounts, FireworkId, FireworkLocker, fireworkLoot, FW_ORDER, pyroStock } from './fireworks';
+import { fireworkIcon } from '../ui/fireworkArt';
 import { ShipStatus, World } from './world';
 import { campClearings, digSite, Disc, findCampSites, Ground, Landing } from '../shore/ground';
 import { Camp, Shore, ShoreInput } from '../shore/shore';
@@ -241,6 +244,11 @@ export class Game {
   private gunTipShown = false;
   /** Special shot aboard this voyage, in broadsides' worth (round shot never runs out). */
   private ammoStock: AmmoStock = freshStock();
+  /** Fireworks: the locker (it follows the captain from voyage to voyage) and the kind loaded. */
+  private fwLocker = new FireworkLocker();
+  private fwType: FireworkId = 'peony';
+  private fireworks!: Fireworks;
+  private fwTipShown = false;
   private smokeT = 0;
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
@@ -668,6 +676,8 @@ export class Game {
     for (const r of this.regions) for (const tex of [r.seabed, r.surf]) this.renderer.initTexture(tex);
     this.particles = new Particles(q.particles);
     this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
+    // built now (and drawn by the warm-up) so the first rocket compiles nothing
+    this.fireworks = new Fireworks(q.particles, this.particles);
     this.bubbles = new Bubbles(this.particles.uniforms);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.waypoints.buildFx(this.particles.uniforms, globalUniforms.uTime, globalUniforms.uLight);
@@ -686,12 +696,18 @@ export class Game {
       this.audio.explosion(vol * 0.18, pan, 160);
     };
     this.ocean.placeVortices(this.hazards.maelstroms.map((m) => ({ x: m.x, z: m.z, r: m.r0 })));
-    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.bubbles.mesh, this.loot.fx, this.waypoints.fx);
+    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.fireworks.mesh, this.bubbles.mesh, this.loot.fx, this.waypoints.fx);
     // the sea from beneath: hidden until the farewell follows a wreck under (the warm-up still draws it)
     this.opaque.add(this.ocean.underside);
     this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
     this.world.debris = this.debris;
+    this.world.fireworks = this.fireworks;
+    this.fireworks.onSound = (kind, at, power) => {
+      const [vol, pan, d] = this.world.soundAt(at);
+      // a burst high overhead is still as far off as its height
+      this.audio.firework(kind, Math.min(1.2, vol * power), pan, Math.hypot(d, at.y * 0.8));
+    };
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
     this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
@@ -907,6 +923,7 @@ export class Game {
     if (parts.has('bounty')) this.bounty.reload();
     if (parts.has('fleet')) this.fleet.reload();
     if (parts.has('charts')) this.charts.reload();
+    if (parts.has('fireworks')) this.fwLocker.reload();
     if (parts.has('forts')) {
       this.fortStore.reload();
       // a fort taken on another device changes hands here too (between voyages)
@@ -952,6 +969,9 @@ export class Game {
     ui.onSelect = (id) => this.setPreview(id);
     ui.onSail = () => this.startVoyage();
     ui.onAmmo = (id) => this.selectAmmo(id);
+    ui.onFirework = (id) => this.chooseFirework(id);
+    ui.fwCount = (id) => this.fwLocker.count(id);
+    this.fwLocker.subscribe(() => ui.refreshFwPicker());
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
     ui.onMap = (on) => this.setChart(on);
@@ -1112,10 +1132,11 @@ export class Game {
     this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     this.cloudSave.onAdmin = () => {
       const parts = this.partStore.grantAll();
-      if (!this.vaultStore.grantAll(ADMIN_GOLD) && !parts) return;
+      const rockets = this.fwLocker.fill();
+      if (!this.vaultStore.grantAll(ADMIN_GOLD) && !parts && !rockets) return;
       this.applyCosmetics();
       this.shipwright.refresh();
-      this.ui.toast('Admiral of the fleet', 'A billion gold, every treasure and every ship part are yours', 6);
+      this.ui.toast('Admiral of the fleet', 'A billion gold, every treasure, every ship part and a locker full of fireworks are yours', 6);
     };
     sw.setVault(this.vaultStore);
     sw.setParts(this.partStore);
@@ -1559,6 +1580,7 @@ export class Game {
     m.onHire = (id) => this.hire(id);
     m.onPayOff = (id) => this.payOff(id);
     m.onShot = () => this.buyShot();
+    m.onBuyFirework = (id) => this.buyFirework(id);
     m.onLeave = () => this.castOff();
     // the hold chip opens a peek at what's aboard
     const chip = document.getElementById('hud-hold-chip')!;
@@ -2827,6 +2849,32 @@ export class Game {
   private refreshServices() {
     this.market.setServices(this.serviceCosts());
     this.market.setGold(this.player?.gold ?? 0);
+    this.refreshPyro();
+  }
+
+  /** The pyrotechnist's stall: today's rockets, what's in your locker and what the purse stretches to. */
+  private refreshPyro() {
+    const port = this.dockPort;
+    if (!port) return;
+    const k = this.tradePorts.ports.indexOf(port);
+    const day = Math.floor(Date.now() / 86400000);
+    const offers = pyroStock(k + 1, day).map((id) => ({ id, price: FIREWORKS[id].price, owned: this.fwLocker.count(id), room: this.fwLocker.room(id) }));
+    this.market.setPyro(offers, this.player?.gold ?? 0);
+  }
+
+  private buyFirework(id: FireworkId) {
+    const p = this.player;
+    const port = this.dockPort;
+    if (!p || !port || this.state !== 'docked') return;
+    const f = FIREWORKS[id];
+    if (f.price > p.gold || this.fwLocker.room(id) <= 0) return;
+    p.gold -= f.price;
+    this.stockFireworks({ [id]: 1 }, null);
+    port.unload(['calico'] as LootId[], true);
+    port.cheer(f.tier === 2 ? 2 : 0.5);
+    this.audio.purchase('shot');
+    this.refreshServices();
+    if (f.tier === 2) this.note('trade', `Bought a showpiece: ${f.name}`, `${port.name} · ${f.price.toLocaleString('en-US')} gold`);
   }
 
   /** Sells one lot (or the whole fleet's cargo) at today's prices: the escorts' holds go ashore with yours. */
@@ -3425,6 +3473,9 @@ export class Game {
     this.forts.setColours(p);
     this.fortHud.clear();
     this.ammoStock = freshStock();
+    if (this.fwLocker.count(this.fwType) <= 0) this.fwType = this.fwLocker.next(this.fwType) ?? this.fwType;
+    this.syncFw();
+    this.ui.closeFwPicker();
     this.hold.capacity = HOLD_ROOM[p.cls.id] ?? 12;
     this.hold.clear();
     p.ammo = 'round';
@@ -4080,6 +4131,7 @@ export class Game {
     const at = new THREE.Vector3(it.x, 2, it.z);
     // the fleet shares one magazine: shot she finds is sent across to the flagship's racks
     this.stockAmmo(ammoLoot(it.tier), at);
+    this.stockFireworks(fireworkLoot(it.tier), at);
     const res = by ? { ...by.hold.stow(it.goods), across: [] } : this.stowFleet(it.goods);
     const [x, y] = this.screenOf(at);
     const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
@@ -5001,11 +5053,14 @@ export class Game {
     const skin = this.vaultStore.award('skin:kraken');
     p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.35);
     this.stockAmmo({ shell: 3, fire: 3, chain: 3, grape: 3 }, p.pos.clone().setY(p.root.position.y + 6));
+    // and in its ink-black hoard, a showpiece made in its own likeness
+    this.stockFireworks({ kraken: 1 }, null);
     this.note('kill', 'Slew the Kraken', `+${bounty} gold · its hoard rose from the deep`);
     const rewards: KrakenReward[] = [
       { art: '', label: `+${bounty.toLocaleString()} gold bounty`, rarity: -1 },
       { art: lootIcon('krakenBeak'), label: LOOT.krakenBeak.name, rarity: 4 },
       { art: lootIcon('krakenInk'), label: LOOT.krakenInk.name, rarity: 3 },
+      { art: fireworkIcon('kraken'), label: `${FIREWORKS.kraken.name} showpiece`, rarity: 4 },
     ];
     if (skin) rewards.push({ art: '<span class="kr-skin"></span>', label: skin.fresh ? 'Kraken Ink skin unlocked' : `Kraken Ink skin · +${skin.refund} gold`, rarity: 3 });
     this.krHud.victory(rewards);
@@ -5019,8 +5074,10 @@ export class Game {
 
   private tryFire(side: Side) {
     const p = this.player!;
+    this.syncFw();
     // a special the magazine has run out of: load round shot rather than leave the guns cold
     if (this.ammoStock[p.ammo] <= 0) this.selectAmmo('round', true);
+    if (p.ammo === 'firework') return this.fireRockets(side);
     const a = this.gunnery.aim(p, side);
     const shot = p.ammo;
     if (p.fire(side, this.world, a.target, a.point)) {
@@ -5037,30 +5094,135 @@ export class Game {
     } else this.ui.flashBroadside(side);
   }
 
+  /** Fireworks loaded: a rocket off each chosen gun, and one volley out of the locker. */
+  private fireRockets(side: Side) {
+    const p = this.player!;
+    const id = this.fwType;
+    p.firework = id;
+    if (!p.fire(side, this.world, null, null)) {
+      this.ui.flashBroadside(side);
+      return;
+    }
+    this.ui.closeFwPicker();
+    this.fwLocker.take(id);
+    if (FIREWORKS[id].tier === 2) this.note('trade', `Lit the ${FIREWORKS[id].name}`, 'A showpiece over the sea');
+    if (this.fwLocker.count(id) > 0) return this.syncFw();
+    const next = this.fwLocker.next(id);
+    if (next) {
+      this.fwType = p.firework = next;
+      this.syncFw();
+      this.ui.toast(`That was the last ${FIREWORKS[id].name}`, `${FIREWORKS[next].name} loaded`, 2.6);
+    } else {
+      this.syncFw();
+      this.ui.toast('The firework locker is empty', 'Round shot loaded · trading ports have a pyrotechnist', 3.2);
+      this.selectAmmo('round', true);
+    }
+  }
+
+  /** The rack's count for fireworks is the kind loaded. */
+  private syncFw() {
+    this.ammoStock.firework = this.fwLocker.count(this.fwType);
+  }
+
   /** Load a kind of shot for the next broadsides. Specials need some aboard. */
   private selectAmmo(id: AmmoId, quiet = false) {
     const p = this.player;
     if (!p || !p.alive || (this.state !== 'playing' && this.state !== 'paused')) return;
+    if (id === 'firework') {
+      // 6 again with rockets already loaded: the next kind in the locker
+      if (p.ammo === 'firework' && !quiet) return this.cycleFirework();
+      if (this.fwLocker.count(this.fwType) <= 0) this.fwType = this.fwLocker.next(this.fwType) ?? this.fwType;
+      this.syncFw();
+    }
     if (this.ammoStock[id] <= 0) {
       this.ui.ammoDenied(id);
-      if (!quiet) this.ui.toast(`No ${AMMO[id].name.toLowerCase()} left`, 'Salvage, chests and new isles restock the magazine', 2.8);
+      if (!quiet) {
+        if (id === 'firework') this.ui.toast('The firework locker is empty', 'Pyrotechnists in the trading ports sell them, and fine chests hide a few', 3);
+        else this.ui.toast(`No ${AMMO[id].name.toLowerCase()} left`, 'Salvage, chests and new isles restock the magazine', 2.8);
+      }
       return;
     }
+    if (id === 'firework') p.firework = this.fwType;
     if (p.ammo === id) {
-      if (!quiet) this.ui.showTag(id);
+      if (!quiet) this.ui.showTag(id, true, this.fwType);
       return;
     }
     p.ammo = id;
     if (!quiet) {
       this.audio.ammoSwap(AMMO_ORDER.indexOf(id));
-      this.ui.showTag(id);
+      this.ui.showTag(id, true, this.fwType);
     }
+  }
+
+  /** The next kind of firework in the locker. */
+  private cycleFirework() {
+    const next = this.fwLocker.next(this.fwType);
+    if (next) this.chooseFirework(next);
+  }
+
+  /** A kind picked from the locker: loaded at once (fireworks too, if shot was in the guns). */
+  private chooseFirework(id: FireworkId) {
+    const p = this.player;
+    if (!p || !p.alive || (this.state !== 'playing' && this.state !== 'paused')) return;
+    if (this.fwLocker.count(id) <= 0) {
+      this.ui.ammoDenied('firework');
+      return;
+    }
+    const same = p.ammo === 'firework' && this.fwType === id;
+    this.fwType = p.firework = id;
+    p.ammo = 'firework';
+    this.syncFw();
+    if (!same) this.audio.ammoSwap(AMMO_ORDER.indexOf('firework'));
+    this.ui.showTag('firework', true, id);
+  }
+
+  /** Fireworks found or bought: into the locker, with a "+n" off the rack. */
+  private stockFireworks(add: FireworkCounts, at: THREE.Vector3 | null) {
+    const got = this.fwLocker.add(add);
+    let line = '';
+    let n = 0;
+    let show: FireworkId | null = null;
+    for (const id of FW_ORDER) {
+      const k = got[id] ?? 0;
+      if (!k) continue;
+      n += k;
+      if (FIREWORKS[id].tier === 2) show = id;
+      line += `${line ? ' · ' : ''}+${k} ${FIREWORKS[id].short}`;
+    }
+    if (!n) return '';
+    if (this.fwLocker.count(this.fwType) <= 0) this.fwType = this.fwLocker.next(this.fwType) ?? this.fwType;
+    this.syncFw();
+    this.ui.ammoGain('firework', n);
+    if (at) {
+      const [x, y, ok] = this.screenOf(at);
+      if (ok) this.ui.floater(line, x, y - 44, show ? 'legendary' : 'ammo');
+    }
+    if (show && this.state === 'playing') {
+      this.ui.toast(`A showpiece: ${FIREWORKS[show].name}`, this.input.isTouch ? 'Pick it from the fireworks in the shot fan' : 'Load fireworks (6) and pick it from the locker', 4.5);
+      this.audio.treasure(3);
+    }
+    return line;
+  }
+
+  /** The first night at sea with rockets aboard: say how to light them, once per device. */
+  private fireworkTip() {
+    if (this.fwTipShown || globalUniforms.uNight.value < 0.6 || this.fwLocker.total <= 0 || this.gunnery.combat) return;
+    this.fwTipShown = true;
+    try {
+      if (localStorage.getItem('aquati.fwTip') === '1') return;
+      localStorage.setItem('aquati.fwTip', '1');
+    } catch {
+      /* private mode: show it anyway */
+    }
+    const how = this.input.isTouch ? 'Tap the shot button, choose the rocket, then fire a broadside' : 'Press 6 to load fireworks (6 again picks another kind), then fire a broadside';
+    this.ui.toast('A fine night for fireworks', how, 6);
   }
 
   /** R: the next kind of shot that's aboard. */
   private cycleAmmo() {
     const p = this.player;
     if (!p) return;
+    this.syncFw();
     const i = AMMO_ORDER.indexOf(p.ammo);
     for (let k = 1; k <= AMMO_ORDER.length; k++) {
       const id = AMMO_ORDER[(i + k) % AMMO_ORDER.length];
@@ -5117,7 +5279,7 @@ export class Game {
     const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
     this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and warm light gathers around her, ${how}`, 5.5);
     // and a little later, the shot rack
-    const pick = this.input.isTouch ? 'Tap the shot button above Fire' : 'Press 1 to 5, or click the rack';
+    const pick = this.input.isTouch ? 'Tap the shot button above Fire' : 'Press 1 to 6, or click the rack';
     setTimeout(() => {
       if (this.state === 'playing') this.ui.toast('Choose your shot', `${pick}: shells burst, fire burns, chain shreds sails, grape cuts down crews`, 6);
     }, 7000);
@@ -5460,6 +5622,8 @@ export class Game {
     P.end();
     P.begin('Particles', 'fx');
     this.particles.update(dt);
+    this.fireworks.view(this.rig.camera, this.rig.distance, this.rig.eyeBlend, innerHeight);
+    this.fireworks.update(dt);
     this.spirits.update(dt, w.time);
     P.end();
     P.begin('Birds', 'fx');
@@ -5482,7 +5646,9 @@ export class Game {
     if (p && (this.state === 'playing' || this.state === 'paused') && !this.photo.active) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
-      this.ui.updateAmmo(p.ammo, this.ammoStock);
+      this.syncFw();
+      this.ui.updateAmmo(p.ammo, this.ammoStock, this.fwType);
+      if (this.state === 'playing') this.fireworkTip();
       // the fleet panel, and the crossed swords over whoever the escorts are fighting
       const rows = this.fleetRows;
       rows.length = 0;

@@ -7,7 +7,7 @@ export interface Controls {
   fireStarboard: boolean;
   fireAuto: boolean;
   fireAim: boolean; // mouse click: the side the pointer is in
-  ammoPick: number; // pulse: 0..4 load that kind of shot (keys 1-5), -1 none
+  ammoPick: number; // pulse: 0..5 load that kind of shot (keys 1-6, 6 fireworks), -1 none
   ammoNext: boolean; // pulse: the next kind of shot (R)
   zoom: number; // accumulated wheel / pinch delta
   steerHeading: number | null; // touch helm: the world heading to put the bow on
@@ -101,7 +101,7 @@ export class Input {
       if (k === 'q') this.state.firePort = true;
       if (k === 'e') this.state.fireStarboard = true;
       if (k === ' ') this.state.fireAuto = true;
-      if (k >= '1' && k <= '5') this.state.ammoPick = +k - 1;
+      if (k >= '1' && k <= '6') this.state.ammoPick = +k - 1;
       if (k === 'r') this.state.ammoNext = true;
       if (k === 'escape') this.state.pause = true;
       if (k === 'p') this.state.photo = true;
