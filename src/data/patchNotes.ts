@@ -13,6 +13,20 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T03:00Z',
+    entries: [
+      {
+        title: 'Ghost ships',
+        notes: [
+          'Something else sails these waters now. Ghost ships are rare phantom pirates, half see-through and glowing a cold green, with rotting holes drifting across their planks and sails. You are most likely to meet one at night, in thick mist or in a storm, and she rises out of the haze rather than sailing over the horizon.',
+          'Ghost ships fire wraith shot: glowing green balls that pass straight through armour and fill your crew with dread, slowing their work for a few seconds. Your own shot sometimes passes clean through a ghost without touching her.',
+          'Phantoms ignore the wind, never run, cannot be set alight or have their crews raked, and sail straight through other ships.',
+          'Sink one and she dissolves back into the mist, leaving a doubled cursed bounty, extra loot and a little luck. Her ghostly crew fade with her.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T02:00Z',
     entries: [
       {
