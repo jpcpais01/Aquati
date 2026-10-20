@@ -2013,6 +2013,29 @@ export class Audio {
     }
   }
 
+  /** A pocket of air bursting out of a sunken hull: a deep, round glug or two, then a fizz of small bubbles. */
+  airPocket(size: number, vol: number, pan: number) {
+    const v = this.voice(0.32 * vol * Math.min(1.4, size), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    for (let i = 0; i < (size > 1 ? 3 : 2); i++) {
+      const at = t + i * (0.07 + Math.random() * 0.08);
+      const o = ctx.createOscillator();
+      const f = (70 + Math.random() * 55) / Math.sqrt(Math.max(size, 0.3));
+      o.frequency.setValueAtTime(f, at);
+      o.frequency.exponentialRampToValueAtTime(f * 2.2, at + 0.18);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.75, at + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, at + 0.26);
+      o.connect(g).connect(out);
+      o.start(at);
+      o.stop(at + 0.28);
+    }
+    for (let i = 0; i < 4; i++) this.bubble(t + 0.12 + Math.random() * 0.5);
+  }
+
   private bubble(at: number) {
     const v = this.voice(0.16, (Math.random() - 0.5) * 0.8);
     if (!v) return;
