@@ -22,6 +22,15 @@ export const PATCH_NOTES: PatchGroup[] = [
           'It is drawn to stay clear at every size, from a full home-screen icon down to the little browser-tab icon, and Android\'s round and squircle icon shapes now crop it neatly without clipping the ship. Reinstall or re-add the game to your home screen if your device keeps showing the old one.',
         ],
       },
+      {
+        title: 'Islands drawn far lighter',
+        notes: [
+          'Islands now cost your graphics card well under half of what they did, with no change you can see. Hills and beaches far from you are drawn with fewer, larger pieces, only as fine as your screen can actually show at that distance, and the shoreline itself never moves.',
+          'Towns, forts and pirate camps do the same: once they are a little way off, their buildings switch to lighter versions you cannot tell apart from the real thing, and their shadows come from simple stand-ins.',
+          'Palms, bushes and rocks on distant hillsides get lighter versions too, and plants far outside the area where shadows fall no longer spend time casting them.',
+          'All of this is worked out in the background while you sail, so nothing stutters while it happens.',
+        ],
+      },
     ],
   },
   {

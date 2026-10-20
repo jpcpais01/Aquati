@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Simplex2, mulberry32, clamp, lerp, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import { createTerrainMaterial } from './terrainMaterial';
+import { SKIRT_DROP, TerrainLod, type TerrainChunk } from './terrainLod';
 import { WORLD_SIZE } from './worldSize';
 
 export type IslandKind = 'lush' | 'volcanic' | 'atoll' | 'rocky' | 'karst';
@@ -1114,6 +1115,7 @@ export class Terrain implements SeaFloor {
         }
       }
     }
+    const lodChunks: TerrainChunk[] = [];
     for (let cj = 0; cj < chunks; cj++) {
       for (let ci = 0; ci < chunks; ci++) {
         const inPit = pit[cj * chunks + ci] === 1;
@@ -1130,15 +1132,17 @@ export class Terrain implements SeaFloor {
         const step = inPit && maxH < -14.2 ? Math.max(lod, 2) : lod;
         const res = chunkCells / step;
         const vn = res + 1;
-        const pos = new Float32Array(vn * vn * 3);
-        const nrm = new Float32Array(vn * vn * 3);
-        const kindA = new Float32Array(vn * vn * 3);
-        const infoA = new Float32Array(vn * vn * 3);
-        const aoA = new Float32Array(vn * vn);
-        const canA = new Float32Array(vn * vn);
-        const reefA = new Float32Array(vn * vn);
-        const biomeA = new Float32Array(vn * vn).fill(this.style === 'brumas' ? 1 : 0);
-        const eroA = new Float32Array(vn * vn);
+        // the grid, then a copy of each rim vertex for the skirt (see TerrainLod)
+        const nv = vn * vn + 4 * res;
+        const pos = new Float32Array(nv * 3);
+        const nrm = new Float32Array(nv * 3);
+        const kindA = new Float32Array(nv * 3);
+        const infoA = new Float32Array(nv * 3);
+        const aoA = new Float32Array(nv);
+        const canA = new Float32Array(nv);
+        const reefA = new Float32Array(nv);
+        const biomeA = new Float32Array(nv).fill(this.style === 'brumas' ? 1 : 0);
+        const eroA = new Float32Array(nv);
         for (let vj = 0; vj < vn; vj++) {
           for (let vi = 0; vi < vn; vi++) {
             const i = ci * chunkCells + vi * step;
@@ -1178,6 +1182,27 @@ export class Terrain implements SeaFloor {
           }
         }
         if (!idx.length) continue;
+        const skirtOf = new Int32Array(nv).fill(-1);
+        let sk = vn * vn;
+        for (let vj = 0; vj < vn; vj++) {
+          for (let vi = 0; vi < vn; vi++) {
+            if (vi > 0 && vi < res && vj > 0 && vj < res) continue;
+            const k = vj * vn + vi;
+            skirtOf[k] = sk;
+            for (let c = 0; c < 3; c++) {
+              pos[sk * 3 + c] = pos[k * 3 + c];
+              nrm[sk * 3 + c] = nrm[k * 3 + c];
+              kindA[sk * 3 + c] = kindA[k * 3 + c];
+              infoA[sk * 3 + c] = infoA[k * 3 + c];
+            }
+            pos[sk * 3 + 1] -= SKIRT_DROP;
+            aoA[sk] = aoA[k];
+            canA[sk] = canA[k];
+            reefA[sk] = reefA[k];
+            eroA[sk] = eroA[k];
+            sk++;
+          }
+        }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
@@ -1195,8 +1220,10 @@ export class Terrain implements SeaFloor {
         mesh.receiveShadow = true;
         mesh.matrixAutoUpdate = false;
         group.add(mesh);
+        lodChunks.push({ mesh, skirtOf, top: maxH });
       }
     }
+    group.userData.lod = new TerrainLod(lodChunks, group);
     // the endless seabed under everything (each archipelago's reaches half way
     // across the high seas and a little more, so the two meet out there)
     const floorGeo = new THREE.PlaneGeometry(FLOOR_SPAN, FLOOR_SPAN, 1, 1);

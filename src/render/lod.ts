@@ -25,6 +25,18 @@ export interface LodJob {
    * bleed a little, so only for levels seen small.
    */
   permissive?: boolean;
+  /** Keep the mesh's open edges exactly where they are (tiles that must meet their neighbours). */
+  lockBorder?: boolean;
+  /**
+   * Also hold the vertex data to the error: one weight per float of the
+   * request's attributes (see simplifiedLevels' `attrs`), in metres of error
+   * per unit the value strays.
+   */
+  attrWeights?: number[];
+  /** Vertices with a height (y) in this band are never moved or merged. */
+  lockY?: [number, number];
+  /** Give up (null) when more than this share of the triangles would stay (default 0.75). */
+  keep?: number;
 }
 
 export interface LodRequest {
@@ -32,6 +44,8 @@ export interface LodRequest {
   positions: Float32Array;
   index: Uint32Array;
   jobs: LodJob[];
+  /** Per-vertex floats the attrWeights jobs hold to (packed, one stride per vertex). */
+  attrs?: Float32Array;
 }
 
 export interface LodReply {
@@ -81,7 +95,7 @@ function hash(a: Uint32Array, h = 0x811c9dc5) {
  * per job, each null where the simplifier isn't available or can't save at
  * least a quarter of the triangles.
  */
-export async function simplifiedLevels(geo: THREE.BufferGeometry, jobs: LodJob[]): Promise<(THREE.BufferGeometry | null)[]> {
+export async function simplifiedLevels(geo: THREE.BufferGeometry, jobs: LodJob[], attrs?: string[], minTris = 200): Promise<(THREE.BufferGeometry | null)[]> {
   const none = jobs.map(() => null);
   initLod();
   if (!worker) return none;
@@ -98,17 +112,28 @@ export async function simplifiedLevels(geo: THREE.BufferGeometry, jobs: LodJob[]
   const start = Math.max(0, geo.drawRange.start);
   const count = Math.min(idx.length - start, geo.drawRange.count);
   if (start > 0 || count < idx.length) idx = idx.slice(start, start + count);
-  if (idx.length < 600) return none;
+  if (idx.length < minTris * 3) return none;
   const positions = (pos.array as Float32Array).slice(0, n * 3);
-  const key = `${n}:${hash(new Uint32Array(positions.buffer), hash(idx))}:${JSON.stringify(jobs)}`;
+  let packed: Float32Array | undefined;
+  if (attrs) {
+    // the named attributes, every component, packed vertex by vertex
+    const list = attrs.map((a) => geo.getAttribute(a));
+    const stride = list.reduce((t, a) => t + a.itemSize, 0);
+    packed = new Float32Array(n * stride);
+    for (let v = 0, o = 0; v < n; v++) {
+      for (const a of list) for (let c = 0; c < a.itemSize; c++) packed[o++] = a.getComponent(v, c);
+    }
+  }
+  let key = `${n}:${hash(new Uint32Array(positions.buffer), hash(idx))}:${JSON.stringify(jobs)}`;
+  if (packed) key += `:${hash(new Uint32Array(packed.buffer))}`;
   let job = cache.get(key);
   if (!job) {
     const w = worker;
     job = new Promise<(Uint32Array | null)[]>((resolve) => {
       const id = nextId++;
       waiting.set(id, resolve);
-      const req: LodRequest = { id, positions, index: idx, jobs };
-      w.postMessage(req, [positions.buffer, idx.buffer]);
+      const req: LodRequest = { id, positions, index: idx, jobs, attrs: packed };
+      w.postMessage(req, packed ? [positions.buffer, idx.buffer, packed.buffer] : [positions.buffer, idx.buffer]);
     });
     cache.set(key, job);
     if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
