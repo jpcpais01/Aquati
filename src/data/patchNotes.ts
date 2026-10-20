@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T17:00Z',
     entries: [
       {
+        title: 'Sunbeams through the clouds',
+        notes: [
+          'The warm haze over the islands now catches the light. Where the sun slips between the clouds it lights the air in long slanting beams, and behind each cloud its shade hangs in the air as a dark column. Look down from high above and they lie across the sea as soft bands of light and shadow. The low sun of morning and evening stretches them longest, and misty mornings thicken them. By moonlight they turn faint and silver.',
+          'Look toward the sun from the deck or in photo mode and rays fan out from it through every gap in the clouds, and between the masts, yards and sails.',
+          'In the turquoise shallows, soft beams of sunlight sway down through the water, drifting with the ripples overhead and fading away as the water gets deeper.',
+          'The light now has its own colour at every hour: crisp at noon, honey-gold with violet shadows at sunrise and sunset, cool and blue after dark, and flat and grey under a storm.',
+          'Sun shafts have their own switch in Graphics, so you can turn them off. They are on from Medium up and cost very little, because they are worked out on a small quarter-size image.',
+        ],
+      },
+      {
         title: 'Sail together: multiplayer is here',
         notes: [
           'Up to four captains can now share one sea. Open Sail together from the harbour\'s top bar, the pause menu or the crew button on the HUD, choose Host, and send your friends the link or read them the six-letter code. They join from the harbour and set sail right beside your flagship, wherever you are.',

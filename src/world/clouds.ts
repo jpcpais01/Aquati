@@ -97,7 +97,8 @@ export class LowClouds {
   readonly mesh: THREE.Mesh;
   /** The shadow splats, drawn into `shadowRT` (kept in its own scene). */
   readonly shadowScene = new THREE.Scene();
-  readonly shadowRT = new THREE.WebGLRenderTarget(SH_RES, SH_RES, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+  // mipmapped: the sun shafts read it blurred by how far apart their steps land
+  readonly shadowRT = new THREE.WebGLRenderTarget(SH_RES, SH_RES, { depthBuffer: false, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: true });
   private shadowCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private shadowMesh: THREE.Mesh;
 
