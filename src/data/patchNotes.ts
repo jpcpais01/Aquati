@@ -25,6 +25,31 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Softer, slower clouds',
+        notes: [
+          'The little clouds you see from high above now change shape far more slowly. Their billows used to slide through them as the wind carried them along, so they seemed to boil; now each billow rides with its cloud and only gently swells and settles.',
+          'They also look fuller and fluffier: every lump casts a soft shade on the one behind it, the edges facing the sun glow with a silver lining, the hollows between billows sit in cooler shadow, and the billows shift with a hint of depth as your camera moves.',
+        ],
+      },
+      {
+        title: 'Dolphins that swim like dolphins',
+        notes: [
+          'The dolphins of the high seas move far more naturally. They swim the way they point, sweeping round in curves and banking into their turns instead of snapping onto a new heading, and they drift about their place beside you each at their own pace.',
+          'They come up to breathe: a slow roll of the back and dorsal fin through the surface, with a little puff of spray from the blowhole, before sliding back down.',
+          'Leaps now start below the surface with a steepening climb, the flukes driving hard, and follow a long, low porpoising arc with the whole body bending along it. They re-enter nose first and carry the dive on under the water before levelling out. Often a friend leaps alongside.',
+          'The tail beat swells toward the flukes, which feather against each stroke, and the head nods gently in time. Bow riders glide in your pressure wave with barely a flick, and now and then one rolls onto its side to look up at you.',
+        ],
+      },
+      {
+        title: 'The high seas, properly charted',
+        notes: [
+          'The open water on the Sea Chart is no longer a flat blue square. Mar Sereno is now engraved like a fine old nautical chart: the sea darkens from each archipelago\'s shelf into the deep, with depth contours, scattered soundings in fathoms and a long swell rolling across it.',
+          'A great gilt compass rose sits in the open water south of the lane, with its 32 rhumb lines running out across the whole chart.',
+          'The Corriente del Sereno and its counter-current are marked either side of the sailing lane, with drifting arrows showing which way they set, and the shallow Banco del Sereno is outlined under the lane.',
+          'Past the edge of the known sea the water turns dark and hatched, with a warning that the swell turns every keel back.',
+        ],
+      },
+      {
         title: 'A smooth sea under sail',
         notes: [
           'The sea no longer stutters while you sail. Its surface used to hop forward a few metres at a time to keep up with your ship, and each hop redrew the swell slightly differently, so the waves seemed to twitch whenever you were moving. The water round your ship now stays put while the far sea glides along with you, so the swell rolls on without a single jerk.',
