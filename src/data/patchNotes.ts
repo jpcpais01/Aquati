@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T02:00Z',
     entries: [
       {
+        title: 'Pirate ports that sound the part',
+        notes: [
+          'Coins now sound like real gold: every doubloon rings with a heavy, warm chink, bounces on the counter and sometimes spins down on its rim before it lies flat.',
+          'Selling sounds different depending on the sum. A small sale is counted out coin by coin, a fair one lands as a leather purse thumped on the counter and poured out, and a fortune gets a second purse, a squeezebox flourish and the whole quay cheering.',
+          'Coming alongside, your hull bumps the fenders, the mooring lines creak tight and someone on the quay strikes up a jaunty tune on a concertina. Casting off, the bosun pipes all hands and the crew gives a shout.',
+          'While you are tied up, the port has its own soundscape: water slapping among the pilings, the hubbub of haggling sailors, creaking ropes and timbers, gulls, and a shipwright hammering across the yard.',
+          'Paying the chandler counts out your gold, then you hear the carpenters mallet your hull back together or the round shot thunk into its crate. The market buttons knock on the oak counter.',
+        ],
+      },
+      {
         title: 'Waypoints: pillars of light',
         notes: [
           'Tap or click anywhere on the sea chart to drop a waypoint, and tap a pin again to lift it. You can keep up to five at once, each in its own colour, and they stay on your chart between voyages.',
