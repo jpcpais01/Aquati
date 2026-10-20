@@ -99,7 +99,7 @@ import { TreasureMapUI } from '../ui/treasureMap';
 import { EscortAI, EscortRec, FleetStore, holdCargo, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
 import { EscortRow, FleetHud } from '../ui/fleet';
 import { Fort, FORT_RANGE, Forts, FortStore, Gun, HAVEN_R, TRIBUTE_HOUR } from './forts';
-import { BRUMAS_FORT_NAMES, findFortSites, fortClearings } from '../shore/fortKit';
+import { BRUMAS_FORT_KINDS, BRUMAS_FORT_NAMES, findFortSites, fortClearings } from '../shore/fortKit';
 import { shoreMats } from '../shore/kit';
 import { FortHud } from '../ui/fort';
 import { PeaceHud } from '../ui/peace';
@@ -667,7 +667,7 @@ export class Game {
     // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns); two more hold the mist
     const fortSites = [
       ...findFortSites(home, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3),
-      ...findFortSites(mist, towns, [], 2, BRUMAS_FORT_NAMES),
+      ...findFortSites(mist, towns, [], 2, BRUMAS_FORT_NAMES, BRUMAS_FORT_KINDS),
     ];
     const fortGround = fortSites.flatMap(fortClearings);
     // maelstroms in deep water, well clear of every harbour mouth, fort and the
@@ -2129,7 +2129,7 @@ export class Game {
         hint = 'Guns silent · land and storm the fort';
         hot = true;
       }
-      this.fortHud.set({ name: f.name, ours, guns, garrison: ours ? -1 : gar, hint, hot });
+      this.fortHud.set({ name: f.name, kind: f.style.kind, ours, guns, garrison: ours ? -1 : gar, hint, hot });
     }
     // tribute: the garrison rows it out as you pass
     this.tributeT -= dt;
