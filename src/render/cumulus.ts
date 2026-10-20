@@ -173,18 +173,20 @@ export class SkyCumulus {
           // light scattered round inside: the shaded side never goes black
           float Tms = exp(-tSun * dens * 0.22) * (0.2 + 0.5 * through) * 0.45;
           // a dark crease where one billow turns from the sun, so each reads against the next
-          float powder = 1.0 - exp(-zf * 2.6) * 0.4;
+          // (by moonlight, mostly from behind, the creases fade: each heap reads as one soft mass)
+          float powder = 1.0 - exp(-zf * 2.6) * 0.4 * (1.0 - uNight * 0.75);
           float mu = dot(V, uSunDir);
           float phase = 0.85 + 0.3 * mu * mu + pow(max(mu, 0.0), 8.0) * 2.4;
           float lam = 0.45 + 0.55 * smoothstep(-0.6, 0.9, dot(nrm, uSunDir));
           vec3 sun = uSunColor * (Ts * powder + Tms) * lam * phase * 0.52;
           // toward the sun the thin rims burn silver with light scattered through them
-          sun += uSunColor * pow(max(mu, 0.0), 10.0) * (1.0 - zf) * (1.0 - zf) * through * 1.3;
+          // (by night the moon behind a heap lines every billow's edge in silver)
+          sun += uSunColor * pow(max(mu, 0.0), 10.0 - uNight * 4.0) * (1.0 - zf) * (1.0 - zf) * (through * 1.3 + uNight * 1.6);
           // the open sky lights the crowns, the bright sea below lifts the bellies
           float hf = clamp((P.y - ${CLOUD.base.toFixed(1)}) / max(vInfo.y, 1.0), 0.0, 1.0);
           vec3 sky = mix(uSkyHorizon, uSkyZenith, 0.6) * 0.5 + uLight * 0.12;
           vec3 sea = vec3(0.08, 0.2, 0.25) * (uLight * 0.85 + 0.03) + sky * 0.25;
-          vec3 amb = mix(sea, sky, smoothstep(-0.7, 0.8, nrm.y)) * mix(0.5, 1.05, hf) * mix(0.7, 1.0, zf);
+          vec3 amb = mix(sea, sky, smoothstep(-0.7, 0.8, nrm.y)) * mix(0.5, 1.05, hf) * mix(mix(0.7, 1.0, zf), 1.0, uNight * 0.4);
           float albedo = 1.0 - uStorm * 0.5 - uRain * 0.3;
           vec3 col = (sun + amb) * albedo * (1.0 - uNight * 0.5);
           col += vec3(0.62, 0.7, 0.95) * uFlash * (0.4 + hf * 0.4);
