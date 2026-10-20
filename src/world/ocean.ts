@@ -460,7 +460,15 @@ export class Ocean {
           // surface), first thing, so hidden water costs next to nothing
           float sceneZ = linearDepth(texture(uSceneDepth, suv).r);
           float waterZ = linearDepth(gl_FragCoord.z);
-          if (sceneZ < waterZ - 0.02) discard;
+          // ...except through a ghost ship: she leaves her opacity in the opaque
+          // alpha (ghostGlsl), and the sea behind her shows through by the rest
+          float ghostSee = 0.0;
+          if (sceneZ < waterZ - 0.02) {
+            float oa = texture(uSceneColor, suv).a;
+            if (oa > 0.985) discard;
+            ghostSee = 1.0 - oa;
+            sceneZ = waterZ + 60.0;
+          }
           float thick = max(sceneZ - waterZ, 0.0);
           float t = uTime;
           vec3 V = normalize(cameraPosition - vWorld);
@@ -751,7 +759,7 @@ export class Ocean {
           // ---- atmospheric haze
           col = mix(col, hazeColor(-V), aerialAt(vViewDist, 0.0) * 0.88);
 
-          gl_FragColor = vec4(col, 1.0);
+          gl_FragColor = ghostSee > 0.0 ? vec4(col * ghostSee, ghostSee) : vec4(col, 1.0);
         }`,
     });
     this.mesh = gridMesh(buildGrid(opts.segments, opts.half), this.material, -10);

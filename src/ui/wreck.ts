@@ -12,7 +12,7 @@ import { progressSaved } from '../core/progress';
 
 export interface VoyageEvent {
   t: number;
-  kind: 'kill' | 'chest' | 'isle' | 'trade' | 'bounty';
+  kind: 'kill' | 'chest' | 'isle' | 'trade' | 'bounty' | 'ghost';
   text: string;
   detail: string;
 }
@@ -135,7 +135,7 @@ function quip(r: WreckReport) {
   return fits[(Math.random() * fits.length) | 0];
 }
 
-const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle', trade: 'coin', bounty: 'skull' };
+const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle', trade: 'coin', bounty: 'skull', ghost: 'skull' };
 
 export class WreckScreen {
   private cine = $('cine');

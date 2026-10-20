@@ -3,7 +3,7 @@
 // rounder you never run out of; the specials are powerful, carried in short
 // supply and topped up from salvage, chests and friendly isles.
 
-export type AmmoId = 'round' | 'shell' | 'fire' | 'chain' | 'grape';
+export type AmmoId = 'round' | 'shell' | 'fire' | 'chain' | 'grape' | 'wraith';
 
 export interface AmmoType {
   id: AmmoId;
@@ -122,6 +122,25 @@ export const AMMO: Record<AmmoId, AmmoType> = {
     max: 12,
     start: 4,
   },
+  // only the dead load it: never in your racks, never in salvage
+  wraith: {
+    id: 'wraith',
+    name: 'Wraith-fire',
+    short: 'Wraith',
+    blurb: 'Cold green ghost-fire from a phantom\'s guns. Passes through armour as if it were mist, and the sight of it unmans a gun crew.',
+    css: '#7dffc4',
+    damage: 0.9,
+    reload: 1.05,
+    speed: 1.04,
+    balls: 1,
+    spread: 0,
+    size: 1.05,
+    // above 1: the ball glows (see Projectiles)
+    color: 0x66ffb8,
+    trail: 'wraith',
+    max: 0,
+    start: 0,
+  },
 };
 
 export const AMMO_ORDER: AmmoId[] = ['round', 'shell', 'fire', 'chain', 'grape'];
@@ -142,6 +161,10 @@ export const EFFECT = {
   /** Grape shot: seconds the gun crews stay thinned, and how much slower they reload. */
   crewTime: 10,
   crewReload: 0.55,
+  /** Wraith-fire: seconds a struck crew stays terrified (they reload slowly, as if raked). */
+  dreadTime: 6,
+  /** Ghost ships: chance a ball passes clean through the phantom without touching her. */
+  phase: 0.25,
 };
 
 export type AmmoStock = Record<AmmoId, number>;

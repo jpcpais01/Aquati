@@ -22,6 +22,9 @@ interface Ball {
   ammo: AmmoId;
   spin: number;
   rib: number; // smoke ribbon id: -2 not laid yet, -1 none
+  ghostId: number; // the ghost ship this ball has rolled against (-1 none) ...
+  ghostPass: boolean; // ... and whether it passes through her
+  shimmered: boolean;
 }
 
 export interface HitEvent {
@@ -62,6 +65,16 @@ export class Projectiles {
   constructor() {
     const geo = new THREE.SphereGeometry(0.2, 10, 8);
     const mat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.7, roughness: 0.35 }), { clouds: true });
+    // a ball colour brighter than white glows (wraith-fire): the excess is light of its own
+    const base = mat.onBeforeCompile;
+    mat.onBeforeCompile = (sh, r) => {
+      base.call(mat, sh, r);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <color_fragment>', '#include <color_fragment>\n  vec3 aqGlow = max(diffuseColor.rgb - 1.0, 0.0);\n  diffuseColor.rgb = min(diffuseColor.rgb, vec3(1.0));')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += aqGlow * 2.5;');
+    };
+    const key = mat.customProgramCacheKey;
+    mat.customProgramCacheKey = () => key.call(mat) + '|glowball';
     this.mesh = new THREE.InstancedMesh(geo, mat, INSTANCES);
     // every ball carries its shot's colour; made up front so the program never changes mid-fight
     for (let i = 0; i < INSTANCES; i++) this.mesh.setColorAt(i, AMMO_COLORS.round);
@@ -77,6 +90,7 @@ export class Projectiles {
       pos: s.pos.clone(), vel: s.vel.clone(), owner: s.owner as Ship, damage: s.damage, age: 0, trail: 0, tore: -1,
       // only the odd grape ball whistles past, or a volley would be a swarm of bees
       heard: ammo === 'grape' && Math.random() > 0.2, style: s.trail ?? 'powder', ammo, spin: Math.random() * Math.PI * 2, rib: -2,
+      ghostId: -1, ghostPass: false, shimmered: false,
     });
   }
 
@@ -121,6 +135,10 @@ export class Projectiles {
             if (b.ammo === 'chain') {
               const mastH = s.cls.masts.reduce((m, d) => Math.max(m, d.height), 0);
               if (Math.abs(_local.x) < s.cls.beam * 0.75 && _local.y < top + mastH * 0.95) {
+                if (this.phases(b, s)) {
+                  this.phaseThrough(b, s, world);
+                  continue;
+                }
                 dead = true;
                 this.chainHit(b, s, world, top);
                 break;
@@ -129,6 +147,10 @@ export class Projectiles {
             }
             // grape sweeps the deck at head height and cuts down whoever stands there
             if (b.ammo === 'grape' && _local.y < top + 2.2 && Math.abs(_local.x) < shape.halfWidthAtY(tc, Math.max(0, top - 0.6))) {
+              if (this.phases(b, s)) {
+                this.phaseThrough(b, s, world);
+                continue;
+              }
               dead = true;
               this.grapeHit(b, s, world);
               break;
@@ -136,17 +158,22 @@ export class Projectiles {
             // high shots fly through the rigging: tear canvas, smash masts
             const rig = s.dmg.rigTest(_local);
             if (rig.kind === 2) {
+              if (this.phases(b, s)) {
+                this.phaseThrough(b, s, world);
+                continue;
+              }
               dead = true;
-              const dmg = s.damage(b.damage * 0.4, b.owner, world, null, false);
+              const dmg = s.damage(b.damage * 0.4, b.owner, world, null, false, b.ammo === 'wraith');
               s.dmg.onRigHit(2, rig.mast, b.pos.clone(), b.vel, world);
               if (b.ammo === 'shell') this.detonate(b, b.pos.clone(), world, ships, false, s, dmg);
               else {
                 if (b.ammo === 'fire') this.ignite(b, s, world);
+                if (b.ammo === 'wraith') this.haunt(b, s, world);
                 this.onHit({ ship: s, attacker: b.owner, damage: dmg, pos: b.pos.clone() });
               }
               break;
             }
-            if (rig.kind === 1 && b.tore !== s.id) {
+            if (rig.kind === 1 && b.tore !== s.id && !this.phases(b, s)) {
               b.tore = s.id;
               s.dmg.onRigHit(1, rig.mast, b.pos.clone(), b.vel, world);
               // red-hot shot through dry canvas: the sails catch
@@ -157,6 +184,10 @@ export class Projectiles {
           if (_local.y < shape.bottom(tc) - 0.2) continue;
           const hw = shape.halfWidthAtY(tc, Math.max(_local.y, 0)) + 0.15;
           if (Math.abs(_local.x) > hw) continue;
+          if (this.phases(b, s)) {
+            this.phaseThrough(b, s, world);
+            continue;
+          }
           dead = true;
           if (!s.alive) {
             if (b.ammo === 'shell') this.detonate(b, b.pos.clone(), world, ships, false, null, 0);
@@ -171,11 +202,14 @@ export class Projectiles {
             this.chainHit(b, s, world, top);
             break;
           }
-          const dmg = s.damage(b.damage, b.owner, world, b.pos);
+          const dmg = s.damage(b.damage, b.owner, world, b.pos, true, b.ammo === 'wraith');
           const n = new THREE.Vector3(Math.sign(_local.x) || 1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), s.heading);
-          world.particles.woodHit(b.pos.clone(), n);
+          // a phantom has no timber to splinter
+          if (s.ghost) world.particles.ectoHit(b.pos.clone(), n);
+          else if (b.ammo !== 'wraith') world.particles.woodHit(b.pos.clone(), n);
           const [vol, pan, d] = world.soundAt(b.pos);
           world.audio.hit(vol, pan, d);
+          if (b.ammo === 'wraith') this.haunt(b, s, world, n);
           if (b.ammo === 'shell') {
             this.detonate(b, b.pos.clone(), world, ships, false, s, dmg);
             break;
@@ -216,7 +250,8 @@ export class Projectiles {
           if (b.ammo === 'fire') {
             world.particles.steam(p);
             world.audio.sizzle(vol, pan, d);
-          } else world.particles.splash(p, 1);
+          } else if (b.ammo === 'wraith') world.particles.wraithSplash(p);
+          else world.particles.splash(p, 1);
           world.wake.stamp(p.x, p.z, 2.2, 1.4);
           world.wake.stamp(p.x, p.z, 4.5, 0.8, true);
           world.wake.push(p.x, p.z, 1.8, -0.35); // crater that rings outward
@@ -294,12 +329,42 @@ export class Projectiles {
         // red-hot iron flickers as it cools in the air
         _col.copy(AMMO_COLORS.fire).multiplyScalar(1 + 0.35 * Math.sin(b.age * 40 + b.spin));
         this.mesh.setColorAt(n++, _col);
+      } else if (b.ammo === 'wraith') {
+        // ghost-fire: a ball of cold light, guttering
+        _col.copy(AMMO_COLORS.wraith).multiplyScalar(2.6 + 0.8 * Math.sin(b.age * 31 + b.spin));
+        this.mesh.setColorAt(n++, _col);
       } else this.mesh.setColorAt(n++, AMMO_COLORS[b.ammo]);
     }
     streaks.end();
     this.mesh.count = n;
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+  }
+
+  // ------------------------------------------------------------------ ghosts
+
+  /** Whether this ball passes clean through `s` (a phantom): rolled once per ball and ship. */
+  private phases(b: Ball, s: Ship) {
+    if (!s.ghost || !s.alive) return false;
+    if (b.ghostId !== s.id) {
+      b.ghostId = s.id;
+      b.ghostPass = Math.random() < EFFECT.phase;
+    }
+    return b.ghostPass;
+  }
+
+  /** The ball is inside a phantom's hull and carrying on: a shiver of light, once. */
+  private phaseThrough(b: Ball, s: Ship, world: World) {
+    if (b.shimmered) return;
+    b.shimmered = true;
+    world.particles.phaseShimmer(b.pos, b.vel);
+    if (this.canPlay(s.id * 8 + 5, world.time, 1.2)) world.onStatus(s, 'phased', b.owner);
+  }
+
+  /** Wraith-fire struck home: green fire and a crew that will not stand to its guns. */
+  private haunt(b: Ball, s: Ship, world: World, n?: THREE.Vector3) {
+    world.particles.wraithHit(b.pos.clone(), n);
+    if (s.terrify()) world.onStatus(s, 'dread', b.owner);
   }
 
   // ------------------------------------------------------------------ special shot
@@ -310,6 +375,7 @@ export class Projectiles {
     const [vol, pan, d] = world.soundAt(b.pos);
     if (this.canPlay(s.id * 8 + 1, world.time, 0.3)) world.audio.ignite(vol, pan, d);
     if (s.ignite(b.owner)) world.onStatus(s, 'ablaze', b.owner);
+    else if (s.ghost && this.canPlay(s.id * 8 + 6, world.time, 2.5)) world.onStatus(s, 'unburnt', b.owner);
   }
 
   /** Chain through the rigging: sails shredded, sometimes a spar knocked about, a little hull damage. */
@@ -339,6 +405,7 @@ export class Projectiles {
     const [vol, pan, d] = world.soundAt(b.pos);
     if (this.canPlay(s.id * 8 + 3, world.time, 0.25)) world.audio.grape(vol, pan, d);
     if (s.rake()) world.onStatus(s, 'crew', b.owner);
+    else if (s.ghost && this.canPlay(s.id * 8 + 6, world.time, 2.5)) world.onStatus(s, 'fleshless', b.owner);
     const r = this.rakes.get(s);
     if (r) {
       r.damage += dmg;

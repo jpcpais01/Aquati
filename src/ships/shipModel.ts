@@ -223,6 +223,9 @@ function makeSkinUniforms() {
   };
 }
 
+/** A ghost material's presence before a ship takes it over (her damage skin carries her own). */
+const GHOST_IDLE = { value: new THREE.Vector4(1, 0, 0, 0) };
+
 /** Shared by every ship that can never wear a skin (the pirates' cached paint). */
 const NO_SKIN = makeSkinUniforms();
 
@@ -652,22 +655,27 @@ export class ShipModel {
         ? new THREE.MeshPhysicalMaterial({ ...hullParams, clearcoat: 0.55, clearcoatRoughness: 0.28 })
         : new THREE.MeshStandardMaterial(hullParams);
     const su = this.owned ? this.skinUniforms : NO_SKIN;
-    patchMaterial(hull, { clouds: true, caustics: true, skin: 1 }, su);
+    // a phantom's every surface takes the ghost look (and needs a presence uniform even uncloned)
+    const ghost = !!this.livery.ghost;
+    const gx: Record<string, THREE.IUniform> = ghost ? { uGhost: GHOST_IDLE } : {};
+    patchMaterial(hull, { clouds: true, caustics: true, skin: 1, ghost }, { ...su, ...gx });
     const sternRows = this.cls.sternCastle ? (this.cls.id === 'galleon' ? 3 : 2) : 1;
     const st = sternTexture(this.livery, sternRows);
     const stern = patchMaterial(
-      new THREE.MeshStandardMaterial({ map: st.map, emissiveMap: st.emissive, emissive: new THREE.Color(1, 0.75, 0.4), emissiveIntensity: 1.4, roughness: 0.5 }),
-      { clouds: true },
+      new THREE.MeshStandardMaterial({ map: st.map, emissiveMap: st.emissive, emissive: ghost ? new THREE.Color(0.35, 1.6, 0.9) : new THREE.Color(1, 0.75, 0.4), emissiveIntensity: 1.4, roughness: 0.5 }),
+      { clouds: true, ghost },
+      gx,
     );
     if (!sharedDeck) sharedDeck = deckTextures();
-    const deck = patchMaterial(new THREE.MeshStandardMaterial({ map: sharedDeck.map, normalMap: sharedDeck.normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78 }), { clouds: true });
-    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2 }, su);
-    const iron = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true });
-    const trim = patchMaterial(new THREE.MeshStandardMaterial({ color: hexL(this.livery.trim), roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true });
-    const glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(5.0, 3.2, 1.4) });
-    const flag = patchMaterial(new THREE.MeshStandardMaterial({ map: flagTexture(this.livery), side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.5 }), { flag: true });
-    const rope = new THREE.LineBasicMaterial({ color: 0x2a1f16, transparent: true, opacity: 0.75 });
-    const ratline = new THREE.LineBasicMaterial({ color: 0x2a1f16, transparent: true, opacity: 0.38 });
+    const deck = patchMaterial(new THREE.MeshStandardMaterial({ map: sharedDeck.map, normalMap: sharedDeck.normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78 }), { clouds: true, ghost }, gx);
+    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2, ghost }, { ...su, ...gx });
+    const iron = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x23262b, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true, ghost }, gx);
+    const trim = patchMaterial(new THREE.MeshStandardMaterial({ color: hexL(this.livery.trim), roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true, ghost }, gx);
+    // lanterns and stern lights: warm lamplight, or a cold corpse-light on a phantom
+    const glow = new THREE.MeshBasicMaterial({ color: ghost ? new THREE.Color(0.7, 3.2, 1.9) : new THREE.Color(5.0, 3.2, 1.4) });
+    const flag = patchMaterial(new THREE.MeshStandardMaterial({ map: flagTexture(this.livery), side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.5 }), { flag: true, ghost }, gx);
+    const rope = new THREE.LineBasicMaterial({ color: ghost ? 0x6fae94 : 0x2a1f16, transparent: true, opacity: ghost ? 0.5 : 0.75 });
+    const ratline = new THREE.LineBasicMaterial({ color: ghost ? 0x6fae94 : 0x2a1f16, transparent: true, opacity: ghost ? 0.26 : 0.38 });
     const set: MaterialSet = {
       hull,
       stern,
@@ -688,7 +696,8 @@ export class ShipModel {
 
   private makeSailMaterial(map: THREE.Texture) {
     const m = new THREE.MeshStandardMaterial({ map, normalMap: sailNormalTexture(), normalScale: new THREE.Vector2(0.45, 0.45), side: THREE.DoubleSide, roughness: 0.92, envMapIntensity: 0.9 });
-    return patchMaterial(m, { sail: true, clouds: true, skin: 3 }, { ...this.sailUniforms, ...this.skinUniforms });
+    const ghost = !!this.livery.ghost;
+    return patchMaterial(m, { sail: true, clouds: true, skin: 3, ghost }, { ...this.sailUniforms, ...this.skinUniforms, ...(ghost ? { uGhost: GHOST_IDLE } : {}) });
   }
 
   // ---------------------------------------------------------------- hull

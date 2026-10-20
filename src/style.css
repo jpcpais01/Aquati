@@ -3611,7 +3611,11 @@ body[data-hud='large'] #hud {
 .floater.ablaze,
 .floater.shredded,
 .floater.crew,
-.floater.ammo {
+.floater.ammo,
+.floater.dread,
+.floater.phased,
+.floater.unburnt,
+.floater.fleshless {
   font-size: 13px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -3630,6 +3634,19 @@ body[data-hud='large'] #hud {
 .floater.crew {
   color: #e4d8ff;
   text-shadow: 0 0 10px rgba(170, 140, 255, 0.85), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+/* ghost ships: wraith-fire's terror, and the shot that phantoms shrug off */
+.floater.dread,
+.floater.phased,
+.floater.unburnt,
+.floater.fleshless {
+  color: #c8ffe8;
+  text-shadow: 0 0 10px rgba(60, 255, 170, 0.9), 0 0 22px rgba(40, 220, 140, 0.45), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.floater.phased {
+  font-style: italic;
 }
 
 .floater.ammo {
@@ -3683,6 +3700,17 @@ body[data-hud='large'] #hud {
   transform-origin: left;
   background: linear-gradient(90deg, #d8402f, #ff9d6a);
   transition: transform 0.2s ease;
+}
+
+/* a ghost ship: her bar is cold green light that wavers */
+.ebar.ghost {
+  box-shadow: 0 0 0 1px rgba(160, 255, 215, 0.35), 0 0 12px rgba(60, 255, 170, 0.35), 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.ebar.ghost i {
+  background: linear-gradient(90deg, #1fae74, #7dffc4, #2fd58f, #c8ffe8);
+  background-size: 200% 100%;
+  animation: smoulder 2.4s linear infinite;
 }
 
 /* ablaze: the bar itself smoulders */

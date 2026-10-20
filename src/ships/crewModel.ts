@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { patchMaterial } from '../render/environment';
+import { GHOST_GREEN } from './ghostGlsl';
 
 // One sailor mesh for every crewman on every ship. The body is sculpted from
 // smooth parametric surfaces (no primitives glued together) and skinned in the
@@ -53,8 +54,9 @@ export const TINT = {
   mouth: 26,
   tongue: 27,
   shine: 28, // eye glints, glow a touch
+  ghost: 29, // not a colour: r = 1 for a ghost ship's spectral crew
 } as const;
-export const TINT_SLOTS = 29;
+export const TINT_SLOTS = 30;
 
 export const HAT = { none: 0, tricorn: 1, bandana: 2, knit: 3, straw: 4 } as const;
 // group ids: 1-9 hats, 10-29 shown with a flag bit, 30-49 hidden by a flag bit, 50+ held props,
@@ -1745,6 +1747,7 @@ export function createCrewMaterial(palette: THREE.DataTexture): { material: THRE
 #define CREW_ANIM
 ${GLSL_CREW}
 uniform highp sampler2D uCrewPalette;
+varying float vCrewGhost;
 varying vec3 vCrewB;
 varying vec3 vCrewC;
 varying vec3 vCrewStripe;
@@ -1766,6 +1769,7 @@ varying vec3 vCrewCloth;`,
     int tint = int(aRig.y + 0.5);
     int part = int(color.g + 0.5);
     vec4 pal = texelFetch(uCrewPalette, ivec2(tint, row), 0);
+    vCrewGhost = texelFetch(uCrewPalette, ivec2(${TINT.ghost}, row), 0).r;
     vec3 stripe = texelFetch(uCrewPalette, ivec2(${TINT.stripe}, row), 0).rgb;
     float ao = color.r;
     vColor = vec4(pal.rgb * ao, 1.0);
@@ -1799,6 +1803,7 @@ varying vec3 vCrewStripe;
 varying vec3 vCrewRest;
 varying vec4 vCrewInfo;
 varying vec3 vCrewCloth;
+varying float vCrewGhost;
 float crewEdge(float d) { float w = fwidth(d) * 0.75 + 1e-4; return smoothstep(-w, w, d); }
 float crewNoise(vec3 p) { return sin(p.x * 1.7 + sin(p.y * 2.3 + p.z * 1.1)) * sin(p.y * 1.3 + sin(p.z * 2.9 + p.x * 0.7)); }
 // Folds in the cloth, as a height (metres) over the rest pose: the shirt bloused over the sash,
@@ -1966,11 +1971,23 @@ vec3 crewBump(vec3 pos, vec3 n, float hx, float hy) {
       float band = exp(-pow((normal.y - 0.45) / 0.18, 2.0));
       totalEmissiveRadiance += diffuseColor.rgb * 0.45 * band * uLight;
     }
+  }
+  // a ghost ship's crew: grey-green shades, lit from within, eyes burning, half see-through
+  float crGhA = 1.0;
+  if (vCrewGhost > 0.5) {
+    float rim = 1.0 - clamp(dot(normal, normalize(vViewPosition)), 0.0, 1.0);
+    float lum = dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15));
+    diffuseColor.rgb = vec3(lum) * vec3(0.45, 0.75, 0.66);
+    vec3 G = vec3(${GHOST_GREEN.join(', ')});
+    totalEmissiveRadiance = G * (0.05 + rim * rim * 0.95) * (0.5 + uNight * 0.45);
+    if (crTint == ${TINT.pupil} || crTint == ${TINT.shine} || crTint == ${TINT.white}) totalEmissiveRadiance += G * 5.0;
+    crGhA = clamp(0.32 + rim * rim * 0.8, 0.0, 1.0);
   }`,
-      );
+      )
+      .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n  gl_FragColor.a = crGhA;');
   };
   const prevKey = material.customProgramCacheKey;
-  material.customProgramCacheKey = () => prevKey.call(material) + '|crew4';
+  material.customProgramCacheKey = () => prevKey.call(material) + '|crew5';
 
   const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   depth.onBeforeCompile = (shader) => {

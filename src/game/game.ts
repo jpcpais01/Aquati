@@ -30,7 +30,7 @@ import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { ShipModel } from '../ships/shipModel';
-import { PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { GHOST_LIVERY, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
@@ -59,7 +59,7 @@ import { Projectiles } from './projectiles';
 import { Item, Loot, RARITY } from './loot';
 import { PIN_COLORS, Waypoints } from './waypoints';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
-import { World } from './world';
+import { ShipStatus, World } from './world';
 import { campClearings, findCampSites, Ground, Landing } from '../shore/ground';
 import { Camp, Shore, ShoreInput } from '../shore/shore';
 import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
@@ -83,6 +83,15 @@ const PIRATE_NAMES = [
   'Black Gull', 'Salt Widow', 'Crimson Tide', 'Grim Mariner', 'Sea Wraith', 'Rusty Anchor', 'Dread Marlin', 'Bone Siren',
   'Gilded Shark', 'Howling Jenny', 'Midnight Eel', 'Scarlet Kraken',
 ];
+
+/** Ships the sea gave back. */
+const GHOST_NAMES = [
+  'Drowned Widow', 'Hollow Crown', 'Weeping Anne', 'Pale Regret', 'Grey Mourner', 'Last Lament', 'Sorrowtide',
+  'Unquiet Mary', 'Lantern of the Lost', 'Kraken\'s Bride', 'Silent Bell', 'Ashen Covenant',
+];
+
+/** `?ghosts` in the address: every pirate that can be a ghost is one (for a look at them). */
+const ALL_GHOSTS = new URLSearchParams(location.search).has('ghosts');
 
 /** Seconds into the farewell when the camera follows her under. */
 const DIVE = 8.6;
@@ -127,6 +136,10 @@ export class Game {
    */
   private shipyard: ShipModel[] = [];
   private keel: ShipModel | null = null;
+  /** One ghost hull kept ready (built like the pirates', a slice at a time), and the ghost who keeps her shaders compiled. */
+  private ghostyard: ShipModel | null = null;
+  ghostKeeper: Ship | null = null;
+  private ghostIdx = Math.floor(Math.random() * GHOST_NAMES.length);
   private preload: BufferPreloader;
   private ais = new Map<Ship, PirateAI>();
   private lastFoe: Ship | null = null;
@@ -516,9 +529,16 @@ export class Game {
     // warm up before the first visible frame: compile every shader, upload every
     // ship texture, then draw the whole world once for real (see render/warmup)
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
+    // one phantom drawn in the warm-up, then kept aside (never shown or freed) so the
+    // ghost ships' shaders are compiled now and stay resident, never built mid-voyage
+    const keeper = new Ship(SHIP_CLASSES.brig, GHOST_LIVERY, 'pirate', this.quality.physicalHull ? 1 : 0);
+    Game.ghostify(keeper);
+    keeper.place(this.spawnPoint.x + 40, this.spawnPoint.z + 40, 0);
+    this.opaque.add(keeper.root);
+    this.ghostKeeper = keeper;
     for (const id of Object.keys(SHIP_CLASSES) as ShipClassId[]) {
       // pirate paint only: the player's own ship is in the scene and gets the warm-up draw below
-      for (const liv of [...PIRATE_LIVERIES, HUNTER_HULL]) {
+      for (const liv of [...PIRATE_LIVERIES, HUNTER_HULL, GHOST_LIVERY]) {
         for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
       }
     }
@@ -546,6 +566,7 @@ export class Game {
     veg.hold = false;
     this.clouds.warm = false;
     this.shore.unwarm();
+    this.opaque.remove(keeper.root);
     await fonts;
     ui.progress(1);
     await nextFrame();
@@ -1511,13 +1532,24 @@ export class Game {
       this.applyCosmetics(s);
     }
     else {
-      s.name = PIRATE_NAMES[this.nameIdx++ % PIRATE_NAMES.length];
+      s.name = s.ghost ? GHOST_NAMES[this.ghostIdx++ % GHOST_NAMES.length] : PIRATE_NAMES[this.nameIdx++ % PIRATE_NAMES.length];
       s.gold = 0;
     }
+    if (s.ghost) Game.ghostify(s);
     this.ships.push(s);
     this.opaque.add(s.root);
     this.water.add(s.bowWave.mesh);
     return s;
+  }
+
+  /** A phantom casts no shadow, and her guns spit wraith-fire. */
+  private static ghostify(s: Ship) {
+    s.root.traverse((o) => {
+      o.castShadow = false;
+    });
+    s.cannonFx.blast = 'wraith';
+    s.cannonFx.trail = 'wraith';
+    s.ammo = 'wraith';
   }
 
   private removeShip(s: Ship) {
@@ -1579,7 +1611,40 @@ export class Game {
     let id: ShipClassId = forceId ?? (roll < 0.48 ? 'sloop' : roll < 0.82 ? 'brig' : 'galleon');
     if (!forceId && kills < 2 && id === 'galleon') id = 'brig';
     const p = this.findOpenWater(near.x, near.z, rMin, rMax);
+    if (!forceId && this.ghostyard && this.ghostOmen()) {
+      const ai = this.launchPirate(this.ghostyard.cls.id, p.x, p.z, Math.random() * Math.PI * 2, true);
+      this.raiseGhost(ai.ship);
+      return ai;
+    }
     return this.launchPirate(id, p.x, p.z, Math.random() * Math.PI * 2);
+  }
+
+  /**
+   * Whether the next sail on the horizon is a ghost: rare by day, far likelier
+   * in the dark, in mist and in foul weather, and only ever one at a time.
+   */
+  private ghostOmen() {
+    if (this.ships.some((s) => s.ghost && s.alive)) return false;
+    if (ALL_GHOSTS) return true;
+    const g = globalUniforms;
+    const chance = Math.min(0.42, 0.05 + g.uNight.value * 0.24 + g.uMist.value * 0.2 + g.uStorm.value * 0.06);
+    return Math.random() < chance;
+  }
+
+  /** A ghost takes shape out of the sea mist, and if she is near enough, you hear her. */
+  private raiseGhost(s: Ship) {
+    s.presence = 0;
+    const w = this.world;
+    w.particles.ghostRise(new THREE.Vector3(s.pos.x, w.waterHeight(s.pos.x, s.pos.z), s.pos.z), s.cls.length);
+    const p = this.player;
+    if (!p || this.state !== 'playing') return;
+    const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
+    const [, pan] = w.soundAt(s.pos);
+    this.audio.ghostWail(0.42 * Math.max(0.35, 1 - d / 900), pan);
+    const night = globalUniforms.uNight.value > 0.5;
+    const mist = globalUniforms.uMist.value > 0.35;
+    this.ui.toast('A ghost ship', `The ${s.name} drifts out of the ${mist ? 'mist' : night ? 'dark' : 'haze'}`, 4.2);
+    this.note('ghost', `Sighted the ${s.name}`, 'A ghost ship');
   }
 
   /** How many ready hulls of each class the shipyard keeps on the slipway. */
@@ -1600,8 +1665,14 @@ export class Game {
       } else {
         const ids = Object.keys(Game.STOCK) as ShipClassId[];
         const id = ids.find((k) => this.shipyard.filter((m) => m.cls.id === k).length < Game.STOCK[k]);
-        if (!id) return;
-        this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(), this.quality.physicalHull ? 1 : 0, true);
+        const q = this.quality.physicalHull ? 1 : 0;
+        if (id) this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(), q, true);
+        else if (!this.ghostyard) {
+          // once the pirates are stocked, one phantom waits in the yard's shadow
+          const r = Math.random();
+          const gid: ShipClassId = r < 0.4 ? 'sloop' : r < 0.85 ? 'brig' : 'galleon';
+          this.keel = new ShipModel(SHIP_CLASSES[gid], GHOST_LIVERY, q, true);
+        } else return;
       }
     }
     // a little each frame: every slice is small, and a frame stops starting new ones after 1.5 ms
@@ -1617,7 +1688,8 @@ export class Game {
           this.hunterHull = k;
           this.preload.add(k.root);
         } else {
-          this.shipyard.push(k);
+          if (k.livery.ghost) this.ghostyard = k;
+          else this.shipyard.push(k);
           this.preload.add(k.root);
         }
         return;
@@ -1635,10 +1707,14 @@ export class Game {
     m.dispose();
   }
 
-  private launchPirate(id: ShipClassId, x: number, z: number, heading: number) {
+  private launchPirate(id: ShipClassId, x: number, z: number, heading: number, ghost = false) {
     const kills = this.player?.kills ?? 0;
-    const i = this.shipyard.findIndex((m) => m.cls.id === id);
-    const model = i >= 0 ? this.shipyard.splice(i, 1)[0] : undefined;
+    const i = ghost ? -1 : this.shipyard.findIndex((m) => m.cls.id === id);
+    let model = i >= 0 ? this.shipyard.splice(i, 1)[0] : undefined;
+    if (ghost && this.ghostyard) {
+      model = this.ghostyard;
+      this.ghostyard = null;
+    }
     const s = this.makeShip(id, 'pirate', model?.livery, model);
     s.place(x, z, heading);
     s.sailTarget = 0.5;
@@ -2043,13 +2119,21 @@ export class Game {
   }
 
   /** A special shot left its mark: say so over the ship, once per fresh effect. */
-  private onStatus(ship: Ship, st: 'ablaze' | 'shredded' | 'crew', attacker: Ship | null) {
+  private onStatus(ship: Ship, st: ShipStatus, attacker: Ship | null) {
     const p = this.player;
     if (!p || (attacker !== p && ship !== p)) return;
     const at = new THREE.Vector3(ship.pos.x, ship.root.position.y + ship.cls.masts[0].height * 0.45 + 3, ship.pos.z);
     const [x, y, ok] = this.screenOf(at);
     const mine = ship === p;
-    const text = { ablaze: mine ? 'We\'re ablaze!' : 'Ablaze!', shredded: mine ? 'Sails shredded!' : 'Sails shredded', crew: mine ? 'Gun crews cut down!' : 'Crews cut down' }[st];
+    const text = {
+      ablaze: mine ? 'We\'re ablaze!' : 'Ablaze!',
+      shredded: mine ? 'Sails shredded!' : 'Sails shredded',
+      crew: mine ? 'Gun crews cut down!' : 'Crews cut down',
+      dread: mine ? 'The crew are terrified!' : 'Terrified',
+      phased: 'Passed clean through',
+      unburnt: 'The dead don\'t burn',
+      fleshless: 'No flesh to cut',
+    }[st];
     if (ok) this.ui.floater(text, x, y - 18, st);
   }
 
@@ -2058,16 +2142,18 @@ export class Game {
     this.spawnTimer = Math.max(this.spawnTimer, 10);
     const named = ship.hunter ? CAPTAIN.get(ship.hunter) : undefined;
     if (named) return this.claimHunter(ship, named, attacker);
-    // the Crown pays more the more the Brethren hate you, and more again for your infamy
+    // the Crown pays more the more the Brethren hate you, and more again for your infamy;
+    // a ghost's hold is full of the cursed gold she went down with
     const heat = 1 + wantedLevel(this.heat.pts) * HEAT_BONUS;
-    const bounty = Math.round({ sloop: 60, brig: 110, galleon: 220 }[ship.cls.id] * heat * this.bounty.bonus);
-    const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id];
-    this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8), luck, ship.cls.id === 'galleon');
+    const bounty = Math.round({ sloop: 60, brig: 110, galleon: 220 }[ship.cls.id] * heat * this.bounty.bonus * (ship.ghost ? 2 : 1));
+    const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id] + (ship.ghost ? 0.35 : 0);
+    this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8) + (ship.ghost ? 2 : 0), luck, ship.cls.id === 'galleon' || ship.ghost);
     if (attacker === this.player) {
-      this.note('kill', `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
+      if (ship.ghost) this.note('ghost', `Laid the ${ship.name} to rest`, `Ghost ${ship.cls.name.toLowerCase()} · +${bounty} gold`);
+      else this.note('kill', `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
       this.player.gold += bounty;
       this.vaultStore.earn(bounty);
-      this.ui.toast(`+${bounty} gold bounty`, `${ship.name} sunk`, 3.2);
+      this.ui.toast(`+${bounty} gold ${ship.ghost ? 'cursed bounty' : 'bounty'}`, ship.ghost ? `The ${ship.name} is laid to rest` : `${ship.name} sunk`, 3.6);
       this.audio.coin();
       this.addInfamy(KILL_INFAMY[ship.cls.id]);
     }

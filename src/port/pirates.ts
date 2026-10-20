@@ -212,6 +212,7 @@ export function lookOf(st: PirateStyle, seed: number) {
   const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
   const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length) % a.length];
   const slots: number[][] = Array.from({ length: TINT_SLOTS }, () => [1, 1, 1, 0]);
+  slots[TINT.ghost] = [0, 0, 0, 0];
   const shirt = hex(st.shirt);
   const pants = hex(st.pants);
   const skin = hex(st.skin);

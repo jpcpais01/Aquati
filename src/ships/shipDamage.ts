@@ -41,10 +41,11 @@ class DamageSkin {
     uDmgCount: { value: number };
     uDmgSplit: { value: THREE.Vector4 };
     uDmgState: { value: THREE.Vector4 };
+    uGhost: { value: THREE.Vector4 };
   };
   private clones = new Map<THREE.Material, THREE.Material>();
 
-  constructor(holes: THREE.Vector4[], info: THREE.Vector4[], count: { value: number }, state: THREE.Vector4) {
+  constructor(holes: THREE.Vector4[], info: THREE.Vector4[], count: { value: number }, state: THREE.Vector4, ghost: THREE.Vector4) {
     this.uniforms = {
       uDmgInv: { value: new THREE.Matrix4() },
       uDmgHoles: { value: holes },
@@ -52,6 +53,7 @@ class DamageSkin {
       uDmgCount: count,
       uDmgSplit: { value: new THREE.Vector4() },
       uDmgState: { value: state },
+      uGhost: { value: ghost },
     };
   }
 
@@ -161,6 +163,8 @@ export class ShipDamage {
   private readonly infoVecs = Array.from({ length: DAMAGE_MAX_HOLES }, () => new THREE.Vector4());
   private readonly count = { value: 0 };
   private readonly state = new THREE.Vector4(0, 0, Math.random() * 10, 0);
+  /** A ghost ship's presence (x, 0..1), flare when struck (y) and seed (z): see ghostGlsl. */
+  readonly ghost = new THREE.Vector4(1, 0, Math.random() * 10, 0);
   private readonly skin: DamageSkin;
   private bowSkin: DamageSkin | null = null;
   private pieceSkin: DamageSkin | null = null;
@@ -197,7 +201,7 @@ export class ShipDamage {
 
   constructor(private readonly ship: Ship) {
     const model = ship.model;
-    this.skin = new DamageSkin(this.holeVecs, this.infoVecs, this.count, this.state);
+    this.skin = new DamageSkin(this.holeVecs, this.infoVecs, this.count, this.state, this.ghost);
     this.skin.apply(model.root);
     this.masts = ship.cls.masts.map((def) => ({ def, z: model.shape.z(def.t), y0: model.shape.deckY(def.t), hp: 1, broken: false }));
 
@@ -253,7 +257,7 @@ export class ShipDamage {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setIndex(idx);
     g.computeVertexNormals();
-    const base = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x1c130c, roughness: 1, side: THREE.DoubleSide }), { solid: true });
+    const base = patchMaterial(new THREE.MeshStandardMaterial({ color: 0x1c130c, roughness: 1, side: THREE.DoubleSide }), { solid: true, ghost: !!this.ship.livery.ghost });
     const mesh = new THREE.Mesh(g, this.skin.material(base));
     mesh.userData.dmgSkip = true;
     mesh.receiveShadow = true;
@@ -469,7 +473,7 @@ export class ShipDamage {
 
   private ensurePieceSkin() {
     if (!this.pieceSkin) {
-      this.pieceSkin = new DamageSkin(this.holeVecs, this.infoVecs, { value: 0 }, new THREE.Vector4(0, 0, this.state.z, 0));
+      this.pieceSkin = new DamageSkin(this.holeVecs, this.infoVecs, { value: 0 }, new THREE.Vector4(0, 0, this.state.z, 0), this.ghost);
     }
     this.pieceSkin.uniforms.uDmgState.value.w = this.state.w * 0.8;
     return this.pieceSkin;
@@ -943,6 +947,17 @@ export class ShipDamage {
     const shape = model.shape;
     // a spar still going up is whole enough to come down again with the rest
     if (this.raising) this.finishRig(null);
+    if (s.ghost) {
+      // a phantom doesn't break up or spill cargo: she settles a little, lists,
+      // and dissolves (Ship.haunt fades her presence), lanterns burning to the last
+      this.mode = 'capsize';
+      const k = this.wreckK;
+      k.depth = c.draft * 0.6;
+      k.pivotY = -c.draft * 0.4;
+      k.roll = (Math.random() < 0.5 ? -1 : 1) * rand(0.12, 0.3);
+      k.pitch = (Math.random() < 0.5 ? -1 : 1) * rand(0.03, 0.1);
+      return;
+    }
     this.mode = Math.random() < (c.id === 'sloop' ? 0.3 : 0.65) ? 'split' : 'capsize';
     const fallSide = this.list !== 0 ? -Math.sign(this.list) : Math.random() < 0.5 ? 1 : -1;
     const k = this.wreckK;
@@ -1021,7 +1036,7 @@ export class ShipDamage {
     bow.traverse((o) => {
       if ((o as THREE.LineSegments).isLineSegments || o.userData.rope) o.visible = false;
     });
-    this.bowSkin = new DamageSkin(this.holeVecs, this.infoVecs, this.count, this.state);
+    this.bowSkin = new DamageSkin(this.holeVecs, this.infoVecs, this.count, this.state, this.ghost);
     this.bowSkin.apply(bow);
     this.bowRoot = new THREE.Group();
     this.bowRoot.add(bow);

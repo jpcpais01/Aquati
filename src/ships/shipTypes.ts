@@ -178,6 +178,8 @@ export interface Livery {
    * uniforms, sails and flag.
    */
   skin?: string;
+  /** A phantom: her materials take the spectral ghost look (see ghostGlsl). */
+  ghost?: boolean;
 }
 
 export const PLAYER_LIVERY: Livery = {
@@ -228,3 +230,21 @@ export const PIRATE_LIVERIES: Livery[] = [
     flag2: '#e9e1d2',
   },
 ];
+
+/** The drowned and the damned: weathered grey timber and rotten canvas, lit from within. */
+export const GHOST_LIVERY: Livery = {
+  id: 'ghost',
+  hull: '#4c5552',
+  bottom: '#2c3533',
+  boot: '#9fb5ac',
+  strake: '#33413d',
+  wale: '#151b1a',
+  trim: '#8fa89c',
+  sail: '#a9b8ae',
+  sailSeam: '#7f8f86',
+  emblem: 'skull',
+  emblemColor: '#d8fff0',
+  flag: '#0d1413',
+  flag2: '#c8f5e2',
+  ghost: true,
+};
