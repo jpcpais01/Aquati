@@ -258,6 +258,8 @@ export class Shore {
   private revealT = -1;
   private unearthedOnce = false;
   private diggers = new Map<Walker, { x: number; z: number; stroke: number }>();
+  /** Spadefuls thrown, ever (the HUD's gauge kicks on each). */
+  private strokes = 0;
   /** What the party stands on: the island, or a boarded ship's deck. */
   private floor: Floor;
   /** The deck being fought over, and the ship it belongs to (null ashore). */
@@ -1780,7 +1782,7 @@ export class Shore {
     if (this.digHere(2.6)) {
       if (this.fighting) return { key: 'dig', title: 'X marks the spot', sub: 'See off the cutthroats first', ok: false };
       if (this.digging) return null;
-      return { key: 'dig', title: this.digP > 0 ? 'Keep digging' : 'Dig here', sub: 'X marks the spot', ok: true };
+      return { key: 'dig', title: this.digP > 0 ? 'Keep digging' : 'Dig here', sub: this.digP > 0 ? `${Math.max(1, Math.round(this.digP * 6))} ft down, the chest lies at 6` : 'X marks the spot', ok: true };
     }
     const c = this.chestNear();
     if (c) {
@@ -1979,8 +1981,22 @@ export class Shore {
     this.hooks.floater('Something wooden…', _w.set(T.x, T.y + 1.8, T.z), 'loot');
   }
 
+  /**
+   * How the dig is going, for the HUD: how deep (0..1), how many spades are
+   * going, the spadefuls so far, and whether the chest is coming up. Null
+   * when nobody's digging.
+   */
+  get digView(): { k: number; hands: number; strokes: number; heave: boolean } | null {
+    if (this.revealT >= 0 && this.revealT < 1.75) return { k: 1, hands: 0, strokes: this.strokes, heave: true };
+    if (!this.digging) return null;
+    let hands = 0;
+    for (const w of this.diggers.keys()) if (w.digging && !w.down) hands++;
+    return { k: this.digP, hands, strokes: this.strokes, heave: false };
+  }
+
   /** A spadeful of sand thrown over the shoulder onto the heap. */
   private toss(w: Walker, world: World) {
+    this.strokes++;
     const T = this.treasure!;
     const heap = _w.copy(this.spoil.position).applyMatrix4(this.site.matrixWorld);
     const p = world.particles;

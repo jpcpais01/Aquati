@@ -2130,6 +2130,37 @@ export class Audio {
     if (tier >= 1) this.treasure(tier + 1);
   }
 
+  /** Old parchment unrolled (or rolled away): a dry, crackling rustle. */
+  parchment(vol = 1) {
+    const v = this.voice(0.32 * vol, 0);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1800;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'peaking';
+    bp.frequency.value = 4200;
+    bp.gain.value = 6;
+    const g = ctx.createGain();
+    // a crackle: the paper catches and lets go in little bursts
+    g.gain.setValueAtTime(0, t);
+    let at = t;
+    for (let i = 0; i < 9; i++) {
+      const a = (0.25 + Math.random() * 0.75) * (1 - i / 11);
+      g.gain.linearRampToValueAtTime(a, at + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.04 + Math.random() * 0.08, at + 0.03 + Math.random() * 0.03);
+      at += 0.028 + Math.random() * 0.05;
+    }
+    g.gain.exponentialRampToValueAtTime(0.001, at + 0.12);
+    src.connect(hp).connect(bp).connect(g).connect(out);
+    src.start(t, Math.random() * 1.5);
+    src.stop(at + 0.15);
+  }
+
   click() {
     const v = this.voice(0.12, 0);
     if (!v) return;
