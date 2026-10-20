@@ -1,6 +1,6 @@
 import './shore.css';
 import * as THREE from 'three';
-import { icon, ICONS } from './art';
+import { icon, ICONS, STAT_ICONS } from './art';
 
 // The HUD ashore: the landing party's health in place of the hull, the
 // "row back" / "open the chest" pill, bars over the cutthroats you're
@@ -24,6 +24,17 @@ export interface FoeBar {
   hp: number;
   max: number;
   boss: boolean;
+  /** What the bar says ('' for the camp's defaults). */
+  label?: string;
+}
+
+/** A boarded ship's fate, put to the captain once her crew strikes. */
+export interface PrizeView {
+  name: string;
+  /** What her strongbox gave up. */
+  haul: string;
+  prize: string;
+  scuttle: string;
 }
 
 const $ = (id: string) => document.getElementById(id)!;
@@ -32,6 +43,9 @@ const _v = new THREE.Vector3();
 export class ShoreHud {
   /** A tap on the prompt pill. */
   onInteract: () => void = () => {};
+  /** A pick on the prize card. */
+  onPrize: (k: 'prize' | 'scuttle') => void = () => {};
+  private prizeCard: HTMLElement;
   readonly strike: HTMLButtonElement;
   readonly pistol: HTMLButtonElement;
   private hud = $('hud');
@@ -59,6 +73,20 @@ export class ShoreHud {
     });
     this.hud.appendChild(d);
 
+    const c = (this.prizeCard = document.createElement('div'));
+    c.className = 'prize-card';
+    c.innerHTML =
+      `<div class="pc-flag">${icon(ICONS.flag)}</div><small class="pc-kick">She strikes her colours</small><b class="pc-name"></b><p class="pc-haul"></p>` +
+      `<div class="pc-acts"><button class="pc-a gold" data-k="prize"><kbd class="kd">1</kbd><span>${icon(ICONS.harbour)}</span><span class="pc-t"><b>Take her as a prize</b><small class="pc-p"></small></span></button>` +
+      `<button class="pc-a" data-k="scuttle"><kbd class="kd">2</kbd><span>${icon(STAT_ICONS.firepower)}</span><span class="pc-t"><b>Scuttle her</b><small class="pc-s"></small></span></button></div>`;
+    c.querySelectorAll<HTMLButtonElement>('.pc-a').forEach((b) =>
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.onPrize(b.dataset.k as 'prize' | 'scuttle');
+      }),
+    );
+    this.hud.appendChild(c);
+
     const h = (this.hint = document.createElement('div'));
     h.className = 'shore-hint kd';
     h.innerHTML = '<kbd>WASD</kbd> walk · <kbd>Shift</kbd> run · <kbd>Space</kbd> or click: cutlass · <kbd>Q</kbd> pistol · <kbd>F</kbd> act';
@@ -74,9 +102,11 @@ export class ShoreHud {
     this.pistol = pad.querySelector('#t-pistol')!;
   }
 
-  show(on: boolean, isle = '') {
+  show(on: boolean, isle = '', head = 'Landing party') {
     this.hud.classList.toggle('ashore', on);
     this.panel.querySelector('.pp-isle')!.textContent = isle;
+    this.panel.querySelector('.pp-head small')!.textContent = head;
+    if (!on) this.showPrize(null);
     if (!on) {
       this.setPrompt(null);
       this.clearBars();
@@ -129,7 +159,19 @@ export class ShoreHud {
     d.classList.toggle('ok', p.ok);
     d.querySelector('b')!.textContent = p.title;
     d.querySelector('small')!.textContent = p.sub;
-    d.querySelector('.dp-ico')!.innerHTML = icon(ICONS[p.key === 'boat' || p.key === 'land' ? 'boat' : p.key === 'fight' ? 'cutlass' : p.key === 'dig' ? 'spade' : 'anchor']);
+    d.querySelector('.dp-ico')!.innerHTML = icon(p.key === 'retreat' ? STAT_ICONS.hull : ICONS[p.key === 'boat' || p.key === 'land' ? 'boat' : p.key === 'fight' ? 'cutlass' : p.key === 'dig' ? 'spade' : p.key === 'board' ? 'grapnel' : 'anchor']);
+    d.classList.toggle('board', p.key === 'board');
+  }
+
+  /** Puts a boarded ship's fate to you (null takes the card away). */
+  showPrize(v: PrizeView | null) {
+    const c = this.prizeCard;
+    c.classList.toggle('on', !!v);
+    if (!v) return;
+    c.querySelector('.pc-name')!.textContent = `The ${v.name} is yours`;
+    c.querySelector('.pc-haul')!.textContent = v.haul;
+    c.querySelector('.pc-p')!.textContent = v.prize;
+    c.querySelector('.pc-s')!.textContent = v.scuttle;
   }
 
   /** The pistol's reload ring: 0 just fired .. 1 loaded. */
@@ -152,7 +194,8 @@ export class ShoreHud {
       if (!el) {
         el = document.createElement('div');
         el.className = 'ebar foe-bar' + (f.boss ? ' boss' : '');
-        el.innerHTML = `<i></i><span>${f.boss ? 'Captain of the camp' : 'Cutthroat'}</span>`;
+        el.innerHTML = '<i></i><span></span>';
+        el.querySelector('span')!.textContent = f.label || (f.boss ? 'Captain of the camp' : 'Cutthroat');
         this.bars.appendChild(el);
         this.barEls.set(f.id, el);
       }

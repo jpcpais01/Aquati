@@ -1108,11 +1108,11 @@ export class UI {
   }
 
   /** Floating health bars over enemies. */
-  updateBars(ships: Ship[], player: Ship | null, camera: THREE.Camera, w: number, h: number) {
+  updateBars(ships: Ship[], player: Ship | null, camera: THREE.Camera, w: number, h: number, hide: Ship | null = null) {
     const seen = new Set<number>();
     const v = new THREE.Vector3();
     for (const s of ships) {
-      if (s === player || !s.alive) continue;
+      if (s === player || !s.alive || s.prize || s === hide) continue;
       // anchor just above her tallest truck so the bar never sits on the hull
       const top = s.cls.masts.reduce((m, k) => Math.max(m, k.height), 0);
       v.set(s.pos.x, s.root.position.y + top + 4.5, s.pos.z).project(camera);

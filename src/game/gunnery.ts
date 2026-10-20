@@ -230,7 +230,7 @@ export class Gunnery {
       starboard: { s: null, m: null, score: Infinity, d: 0 },
     };
     for (const s of ships) {
-      if (s === p || !s.alive || s.removed || s.team === p.team) continue;
+      if (s === p || !s.alive || s.removed || s.team === p.team || s.prize) continue;
       const raw = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
       if (raw > R * 1.4) continue;
       if (raw < focusD) {

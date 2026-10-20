@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T04:00Z',
+    entries: [
+      {
+        title: 'Boarding actions: grapple a crippled pirate and take her deck',
+        notes: [
+          'Shoot a pirate down below 40% of her hull and close in, and a new prompt pulses up: Board her. Press F (or tap it) and your crew whirl grappling hooks over their heads and let fly. The lines arc across, the iron bites into her rail, and the ropes come taut as both ships glide to a stop and her hull is hauled in against yours with a boom of grinding timbers and spray squeezed up between them.',
+          'Then it is over the side. Your captain and hands perch on the rail and swing across one after another on lines from the rigging, roaring as they go, while her crew wait on her deck with blades drawn. The camera swoops down to the deck with them.',
+          'The fight is the same cutlass and pistol combat as ashore, but on her rolling deck: everyone heaves, pitches and rolls with the ship, and fights round her masts, guns and hatches. Her captain is a tougher opponent, and a named bounty hunter fights you herself. Back up against your own rail and press F to cut the lines and fall back if it goes badly; if the captain goes down, the hands drag you back aboard.',
+          'Cut down her captain and most of her men and the rest throw down their blades and drop to their knees with their hands up. Her colours come down the halyard, her strongbox is yours (gold, plunder for the hold, fresh shot, maybe a ship part or a scrap of treasure map), and a hunter\'s bounty is paid on the spot.',
+          'Then you decide her fate. Take her as a prize and your own flag runs up her mast while a prize crew sails her off to port for a purse of prize money. Or scuttle her: a slow match in her magazine, she blows up alongside, her crew leap into the sea and her cargo floats up for salvage, with her bounty and infamy as if you had sunk her.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T03:00Z',
     entries: [
       {

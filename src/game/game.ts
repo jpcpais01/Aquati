@@ -58,6 +58,7 @@ import { KrakenHud, KrakenReward } from '../ui/kraken';
 import { CameraRig } from './cameraRig';
 import { Gunnery, Side } from './gunnery';
 import { Captain } from './captain';
+import { Boarding } from './boarding';
 import { createSkyDome } from '../render/sky';
 import { SkyCumulus } from '../render/cumulus';
 import { Projectiles } from './projectiles';
@@ -275,6 +276,15 @@ export class Game {
   private foeBars: FoeBar[] = [];
   private shoreTipShown = false;
   private ray = new THREE.Raycaster();
+  // boarding: grapnels across, the hulls lashed together, a fight for her deck and a prize to take
+  private boarding!: Boarding;
+  /** The crippled pirate near enough to grapple right now (checked a few times a second). */
+  private boardable: Ship | null = null;
+  private boardT = 0;
+  /** Her strongbox's haul, said on the prize card, and whether the card is up. */
+  private prizeHaul = '';
+  private prizeOpen = false;
+  private boardTipShown = false;
   // bounties: your infamy among the Brethren, and the named captains it sends after you
   private bounty = new BountyBook();
   private board = new BountyBoard();
@@ -540,14 +550,43 @@ export class Game {
       plunder: (c) => this.plunderCamp(c),
       defeat: () => this.onCaptainDown(),
       unearthed: (at) => this.onUnearthed(at),
-      step: (k, wet) => this.audio.sandStep(k, wet),
+      struck: (prize) => this.onStruck(prize),
+      landed: (w, cap) => {
+        const at = _a.set(w.x, w.y, w.z);
+        const [vol, pan, d] = this.world.soundAt(at);
+        this.audio.hit(vol * (cap ? 0.7 : 0.4), pan, d);
+        this.audio.footstep(1);
+        if (cap) this.rig.shake(0.1);
+      },
+      step: (k, wet, deck) => (deck ? this.audio.footstep(k) : this.audio.sandStep(k, wet)),
     });
     this.opaque.add(this.shore.group);
+    this.boarding = new Boarding(this.shore.lines, {
+      thrown: (at) => {
+        const [vol, pan, d] = this.world.soundAt(at);
+        this.audio.grapple(vol, pan, d);
+      },
+      bit: (at) => {
+        const [vol, pan, d] = this.world.soundAt(at);
+        this.audio.hookBite(vol, pan, d);
+        // splinters off her rail
+        for (let i = 0; i < 5; i++) {
+          this.particles.emit({
+            x: at.x, y: at.y, z: at.z, vx: (Math.random() - 0.5) * 3, vy: 1.5 + Math.random() * 2, vz: (Math.random() - 0.5) * 3,
+            life: 0.6 + Math.random() * 0.4, size: 0.05 + Math.random() * 0.04, sizeEnd: 0.03, color: [0.55, 0.4, 0.26], alpha: 0.95, grav: 11, drag: 0.6, kind: 0, fadeIn: 0.01,
+          });
+        }
+      },
+      met: (at) => this.hullsMeet(at),
+      lashed: () => this.boardOver(),
+    });
     this.rig.ground = (x, z) => this.terrain.heightAt(x, z);
     this.shoreHud.onInteract = () => {
       if (this.shore.active) this.shoreAct();
+      else if (this.boardable) this.startBoarding();
       else this.goAshore();
     };
+    this.shoreHud.onPrize = (k) => this.choosePrize(k);
     this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol);
     this.mapUi.onOpen = () => this.setMapView(true);
     this.mapUi.onClose = () => this.setMapView(false);
@@ -1384,20 +1423,27 @@ export class Game {
   }
 
   /** Everyone aboard: the HUD, controls and camera go back to sailing. */
-  private leaveShore() {
+  private leaveShore(asPrize = false) {
     if (!this.shore.active) return;
-    this.shore.leave();
+    if (asPrize) this.shore.leaveAsPrize();
+    else this.shore.leave();
+    this.prizeOpen = false;
+    this.shoreHud.showPrize(null);
     this.shoreHud.show(false);
     this.input.foot = false;
     this.rig.foot = false;
+    this.rig.deck = false;
     this.rig.snapFoot();
     this.rig.zoom = this.seaZoom;
   }
 
-  /** F or a tap ashore: row back, or open a chest. */
+  /** F or a tap ashore: row back, or open a chest (on a boarded deck: fall back aboard, or take the prize). */
   private shoreAct() {
     if (!this.shore.active || this.swBusy) return;
-    if (this.shore.interact(this.world) === 'boat') this.returnToShip();
+    if (this.prizeOpen) return this.choosePrize('prize');
+    if (this.shore.interact(this.world) !== 'boat') return;
+    if (this.shore.deck) this.endBoarding('retreat');
+    else this.returnToShip();
   }
 
   private onCampRouted(c: Camp) {
@@ -1520,6 +1566,7 @@ export class Game {
   private onCaptainDown() {
     const p = this.player;
     if (!p) return;
+    if (this.shore.deck) return this.onRepelled();
     const lost = Math.min(Math.round(p.gold * 0.1), 200);
     this.ui.toast('The captain is down', 'The hands drag you back to the boat', 3.2);
     this.input.enabled = false;
@@ -1531,6 +1578,268 @@ export class Game {
       this.returnToShip('The hands row you back, bruised…');
       if (lost) setTimeout(() => this.ui.toast(`-${lost} gold`, 'Dropped in the scramble for the boat', 3.2), 900);
     }, 2400);
+  }
+
+  // ------------------------------------------------------------------ boarding
+
+  /** A pirate shot to pieces and close aboard: offer to grapple her (F or a tap). Returns whether it's on offer. */
+  private updateBoardPrompt(p: Ship, dt: number) {
+    this.boardT -= dt;
+    if (this.boardT <= 0) {
+      this.boardT = 0.25;
+      this.boardable = this.boardTarget(p);
+    }
+    const e = this.boardable;
+    if (!e || this.fpv) return false;
+    if (!e.alive || e.removed) {
+      this.boardable = null;
+      return false;
+    }
+    const named = e.hunter ? CAPTAIN.get(e.hunter) : undefined;
+    const beast = this.kraken.active;
+    const sub = beast ? 'Not with the Kraken in these waters' : named ? `${named.epithet} waits on her deck, blade drawn` : 'She\'s shot to pieces: grapple her and take her deck';
+    this.shoreHud.setPrompt({ key: 'board', title: `Board the ${e.name}`, sub, ok: !beast });
+    if (!beast && this.input.state.helm) this.startBoarding();
+    return true;
+  }
+
+  /** The nearest pirate (no phantom) with her hull below 40% and her rail within a grapnel's throw. */
+  private boardTarget(p: Ship): Ship | null {
+    if (!p.alive || this.state !== 'playing' || this.wreck.t >= 0) return null;
+    let best: Ship | null = null;
+    let bd = Infinity;
+    for (const s of this.ais.keys()) {
+      if (!s.alive || s.removed || s.ghost || s.prize || s.hp > s.maxHp * 0.4) continue;
+      // rail to rail
+      const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) - (p.cls.beam + s.cls.beam) / 2;
+      const reach = 16 + Math.min(p.cls.length, s.cls.length) * 0.35;
+      if (d < reach && d < bd) {
+        bd = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  /** Grapnels away: the lines fly, bite and haul her in (game/boarding.ts), then it's over the side. */
+  private startBoarding() {
+    const p = this.player;
+    const e = this.boardable;
+    if (!p || !e || !p.alive || !e.alive || this.state !== 'playing' || this.swBusy || this.shore.active || this.boarding.busy || this.kraken.active || this.wreck.t >= 0) return;
+    const ours = this.crew.deckPlan(p);
+    const hers = this.crew.deckPlan(e);
+    if (!ours || !hers) return;
+    this.setChart(false);
+    this.setView(false);
+    this.input.releaseLook();
+    this.peek.classList.remove('on');
+    this.boarding.begin(p, e, ours, hers);
+    this.boardable = null;
+    this.shoreHud.setPrompt(null);
+    const named = e.hunter ? CAPTAIN.get(e.hunter) : undefined;
+    this.ui.toast('Grapnels away!', named ? `${named.epithet} won't strike without a fight` : `Haul the ${e.name} alongside`, 2.8);
+    this.audio.shout(0.75, 0, 0, false, 4);
+    this.audio.bosunPipe();
+  }
+
+  /** Her hull grinds into ours: a boom of timbers, spray squeezed up between the two. */
+  private hullsMeet(at: THREE.Vector3) {
+    this.audio.hullsMeet(0.9, 0);
+    this.rig.shake(0.3);
+    const y = this.world.waterHeight(at.x, at.z);
+    const p = this.player;
+    const e = this.boarding.prize;
+    if (!p || !e) return;
+    const f = p.forward.clone();
+    for (let i = -2; i <= 2; i++) {
+      const k = i * Math.min(p.cls.length, e.cls.length) * 0.16;
+      this.particles.splash(_a.set(at.x + f.x * k, y, at.z + f.z * k), 0.45 + Math.random() * 0.2);
+    }
+  }
+
+  /** Lashed alongside: the captain and hands swing across onto her deck, and her crew meet them. */
+  private boardOver() {
+    const p = this.player;
+    const e = this.boarding.prize;
+    if (!p || !e || !e.alive || this.state !== 'playing') {
+      this.boarding.part();
+      return;
+    }
+    const named = e.hunter ? CAPTAIN.get(e.hunter) : undefined;
+    const hands = { sloop: 3, brig: 4, galleon: 6 }[p.cls.id] ?? 4;
+    const foes = ({ sloop: 4, brig: 6, galleon: 8 }[e.cls.id] ?? 5) + (named ? 1 : 0);
+    const ok = this.shore.board(p, e, {
+      hands, foes,
+      bossHp: named ? 150 + named.tier * 30 : 115,
+      boss: named ? named.epithet : 'Her captain',
+      hand: 'Pirate',
+    });
+    if (!ok) {
+      this.boarding.part();
+      return;
+    }
+    this.market.setDock(null);
+    this.shoreHud.show(true, e.name, 'Boarding party');
+    this.input.foot = true;
+    this.seaZoom = this.rig.zoom;
+    this.rig.zoom = 0.3;
+    // no cut: the camera swoops round and down, out over the water beyond her, as the party swings across
+    this.rig.foot = true;
+    this.rig.deck = true;
+    this.rig.deckYaw = Math.atan2(e.pos.x - p.pos.x, e.pos.z - p.pos.z);
+    this.audio.shout(0.9, 0, 0, false, 6);
+    this.ui.toast('Over the side!', named ? `Cut down ${named.epithet} and her crew will strike` : 'Cut down her captain and her crew will strike', 3.2);
+    if (!this.boardTipShown) {
+      this.boardTipShown = true;
+      const how = this.input.isTouch ? 'Strike to swing, Pistol to fire · back to your own rail to fall back' : 'Space or click swings · Q fires your pistol · F at your own rail falls back';
+      setTimeout(() => {
+        if (this.shore.deck) this.ui.toast('Fight for her deck', how, 5.5);
+      }, 3600);
+    }
+  }
+
+  /** Her crew throws in: the strongbox is broken open, a named captain's bounty paid, and the prize card comes up. */
+  private onStruck(e: Ship) {
+    const p = this.player;
+    if (!p || this.state !== 'playing') return;
+    const named = e.hunter ? CAPTAIN.get(e.hunter) : undefined;
+    const id = e.cls.id;
+    const gold = ({ sloop: 150, brig: 280, galleon: 480 }[id] ?? 200) + Math.round(Math.random() * 120) + (named ? named.tier * 120 : 0);
+    p.gold += gold;
+    this.vaultStore.earn(gold);
+    const tier = rollTier({ sloop: 0.35, brig: 0.55, galleon: 0.8 }[id] ?? 0.4, named ? 4 : 3);
+    const goods = [...rollContents(tier), ...rollContents(rollTier(0.4, 2))];
+    const res = this.hold.stow(goods);
+    if (res.tossed.length) this.nagHold(res.tossed.length);
+    this.stockAmmo({ shell: 2, fire: 1, chain: 2, grape: 3 }, null);
+    this.log.chests++;
+    this.log.best = Math.max(this.log.best, tier);
+    const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
+    this.prizeHaul = `Her strongbox: +${gold} gold${kept.length ? ' · ' + kept.slice(0, 3).map((k) => LOOT[k].name).join(', ') + (kept.length > 3 ? ` +${kept.length - 3}` : '') : ''}`;
+    const at = new THREE.Vector3(e.pos.x, e.root.position.y + e.cls.freeboard + 1.5, e.pos.z);
+    const [x, y, ok] = this.screenOf(at);
+    if (ok) this.ui.floater(`+${gold} gold`, x, y, (['loot', 'loot', 'rare', 'epic', 'legendary'] as const)[tier]);
+    this.audio.treasure(tier);
+    this.rig.shake(0.15);
+    this.pipeline.flash(0.08);
+    this.ui.toast(`The ${e.name} strikes her colours!`, 'Her crew throw down their blades', 3.4);
+    this.boarding.strike(e);
+    const best = kept[0];
+    if (best && LOOT[best].rarity >= 2) setTimeout(() => this.ui.lootToast(lootIcon(best), LOOT[best].rarity, `${RARITIES[LOOT[best].rarity].name} plunder`, LOOT[best].name, 3.4), 700);
+    this.note('kill', `Boarded and took the ${e.name}`, this.prizeHaul.replace('Her strongbox: ', ''));
+    // a named captain taken at the point of your cutlass: her poster stamped, her bounty yours
+    if (named) {
+      this.claimHunter(e, named, p);
+      e.hunter = null;
+    }
+    this.chestPart(Math.max(1, tier), at, 1500);
+    if (Math.random() < 0.3) setTimeout(() => this.foundPiece(at), 2000);
+    setTimeout(() => this.offerPrize(), 1700);
+  }
+
+  /** What becomes of her: sent to port for prize money, or blown up for her bounty and salvage. */
+  private offerPrize() {
+    const e = this.shore.prize;
+    if (!e || !this.shore.deck || !this.shore.struck || this.state === 'dead') return;
+    this.prizeOpen = true;
+    this.shoreHud.showPrize({
+      name: e.name,
+      haul: this.prizeHaul,
+      prize: `+${this.prizeMoney(e).toLocaleString('en-US')} gold prize money`,
+      scuttle: 'Her bounty, salvage and infamy',
+    });
+    this.audio.bell(2, 0.2);
+  }
+
+  private prizeMoney(e: Ship) {
+    const heat = 1 + wantedLevel(this.heat.pts) * HEAT_BONUS;
+    return Math.round(({ sloop: 380, brig: 700, galleon: 1250 }[e.cls.id] ?? 500) * heat * this.bounty.bonus);
+  }
+
+  private choosePrize(k: 'prize' | 'scuttle') {
+    if (!this.prizeOpen) return;
+    this.audio.click();
+    this.endBoarding(k);
+  }
+
+  /** The captain is down on her deck: the hands drag you back over the rail and cut the lines. */
+  private onRepelled() {
+    const p = this.player!;
+    const lost = Math.min(Math.round(p.gold * 0.1), 200);
+    this.ui.toast('The captain is down', 'The hands drag you back aboard', 3.2);
+    this.input.enabled = false;
+    setTimeout(() => {
+      if (!this.shore.deck || this.state === 'dead') return;
+      if (this.state === 'paused') this.setPaused(false);
+      p.gold = Math.max(0, p.gold - lost);
+      this.note('kill', `Beaten back off the ${this.shore.prize?.name ?? 'pirate'}'s deck`, lost ? `-${lost} gold` : '');
+      this.endBoarding('repelled');
+      if (lost) setTimeout(() => this.ui.toast(`-${lost} gold`, 'Lost in the scramble back over the rail', 3.2), 1100);
+    }, 2400);
+  }
+
+  /** Back aboard behind the veil, the lines cut and the hulls parted, and her fate settled. */
+  private endBoarding(how: 'prize' | 'scuttle' | 'retreat' | 'repelled' | 'sinking') {
+    const p = this.player;
+    const e = this.shore.prize;
+    if (!p || !this.shore.deck || this.swBusy) return;
+    this.input.enabled = false;
+    this.prizeOpen = false;
+    this.shoreHud.showPrize(null);
+    const name = e?.name ?? 'pirate';
+    const say = {
+      prize: `A prize crew takes over the ${name}…`,
+      scuttle: `A slow match in the ${name}'s magazine…`,
+      retreat: `Back over the rail to the ${p.name}…`,
+      repelled: `The hands haul you back aboard the ${p.name}…`,
+      sinking: `She's going down: back aboard the ${p.name}!`,
+    }[how];
+    this.veil.innerHTML = `<span>${say}</span>`;
+    void this.fade(() => {
+      this.leaveShore(how === 'prize');
+      this.boarding.part();
+      p.anchored = false;
+      p.sailTarget = 1 / 3;
+      if (e && e.alive && this.state === 'playing') {
+        if (how === 'prize') this.takePrize(p, e);
+        else if (how === 'scuttle') this.scuttle(p, e);
+        // a crew that saw you off takes heart, and patches a little of the damage
+        else e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.1);
+      }
+      this.input.enabled = this.state === 'playing';
+      this.rig.snapTo(p.pos);
+      this.last = performance.now();
+    });
+  }
+
+  /** Sent off to port under a prize crew: prize money now, infamy for the taking, and whatever she had bolted on. */
+  private takePrize(p: Ship, e: Ship) {
+    const gold = this.prizeMoney(e);
+    p.gold += gold;
+    this.vaultStore.earn(gold);
+    p.kills++;
+    this.ais.delete(e);
+    this.boarding.sendAway(e);
+    this.boarding.hoist(e, p);
+    this.spawnTimer = Math.max(this.spawnTimer, 10);
+    this.addInfamy(KILL_INFAMY[e.cls.id]);
+    this.note('kill', `Took the ${e.name} as a prize`, `${e.cls.name} · +${gold.toLocaleString('en-US')} gold prize money`);
+    this.ui.toast(`+${gold.toLocaleString('en-US')} gold prize money`, `A prize crew sails the ${e.name} for port`, 4.2);
+    this.audio.coin();
+    this.audio.coin(0.25, 0.4);
+    this.audio.bell(3, 0.24);
+    const part = Object.values(e.livery.parts ?? {})[0];
+    if (part) setTimeout(() => this.findPart(part, 'Stripped from your prize', e.pos), 1400);
+  }
+
+  /** Fire in her magazine: she goes up beside you, her crew over the side, her hold on the swell. */
+  private scuttle(p: Ship, e: Ship) {
+    e.afire = 8;
+    e.afireBy = p;
+    e.damage(e.hp + 1e4, p, this.world, e.pos.clone().setY(e.root.position.y + 1), true, true);
+    this.onSunk(e, p);
+    this.rig.shake(0.45);
+    this.pipeline.flash(0.15);
   }
 
   /** Where the mouse points on the ground ashore (the plane the captain stands on). */
@@ -1549,14 +1858,18 @@ export class Game {
   private controlShore() {
     const st = this.input.state;
     const si = this.shoreIn;
-    // the camera looks north, so screen-up walks toward -z
-    si.mx = st.walkX;
-    si.mz = -st.walkY;
+    // screen-up walks the way the camera looks (north ashore; across her deck when boarding)
+    const az = this.rig.azimuth;
+    const ca = Math.cos(az);
+    const sa = Math.sin(az);
+    si.mx = st.walkX * ca - st.walkY * sa;
+    si.mz = -st.walkX * sa - st.walkY * ca;
     si.run = st.run;
     si.strike = st.fireAuto || st.fireAim;
     si.pistol = st.firePort || st.fireStarboard;
     si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
-    if (st.helm) this.shoreAct();
+    if (this.prizeOpen && (st.ammoPick === 0 || st.ammoPick === 1)) this.choosePrize(st.ammoPick === 0 ? 'prize' : 'scuttle');
+    else if (st.helm) this.shoreAct();
     if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
     if (st.pause) {
       if (this.mapUi.isOpen) this.setMapView(false);
@@ -2064,6 +2377,8 @@ export class Game {
   private resetWorld() {
     if (this.dockPort) this.undock(false);
     this.leaveShore();
+    this.boarding.reset();
+    this.boardable = null;
     this.landing = null;
     this.shoreHud.setPrompt(null);
     this.hunters.clear();
@@ -3223,6 +3538,11 @@ export class Game {
       this.controlShore();
       return;
     }
+    if (this.boarding.busy) {
+      // the hooks are flying: the helm and the guns wait
+      if (st.pause) this.setPaused(true);
+      return;
+    }
     if (st.view) this.setView(!this.fpv);
     if (this.fpv) {
       if (st.helm) this.captain.toggleHelm();
@@ -3317,9 +3637,12 @@ export class Game {
     P.begin('Pirate AI', 'ships');
     // a ship at anchor with her captain ashore is left be
     const prey = this.player && this.player.alive && this.state !== 'docked' && !this.shore.active ? this.player : null;
-    for (const ai of this.ais.values()) ai.update(dt, w, prey, this.ships);
+    // a ship fast in our grapnels has other things on her mind than sailing
+    const lashed = this.boarding.prize;
+    for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships);
     P.end();
     P.begin('Ship physics & rigging', 'ships');
+    if (dt > 0) this.boarding.pin(dt);
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
     P.end();
     P.begin('Collisions', 'ships');
@@ -3342,6 +3665,16 @@ export class Game {
     this.shore.update(dt, w, this.shoreIn, this.rig.target);
     this.shoreIn.strike = this.shoreIn.pistol = false;
     this.shoreIn.aim = null;
+    this.boarding.update(dt, w, this.shore.deck ? (o) => this.shore.swingLines(o) : null, this.player);
+    if (this.shore.deck && this.player && !this.player.alive) {
+      // our own ship burnt out from under us: everyone is back aboard for the end
+      this.leaveShore();
+      this.boarding.part();
+    } else if (this.shore.deck && !this.swBusy && this.state === 'playing') {
+      // a burning prize can founder under the boarders' feet
+      const e = this.shore.prize;
+      if (e && !e.alive) this.endBoarding('sinking');
+    }
     P.end();
     P.begin('Shipyard (prebuilds)', 'ships');
     if (dt > 0) this.runShipyard();
@@ -3383,8 +3716,9 @@ export class Game {
       for (const it of got) this.haul(p, it);
       this.holdNagT -= dt;
       if (!this.shore.active) {
-        const docking = this.updateDockPrompt(p);
-        this.updateLandPrompt(p, dt, docking);
+        // with the grapnels flying, nothing else is on offer
+        const docking = this.boarding.busy ? true : this.updateDockPrompt(p);
+        if (this.boarding.busy || !this.updateBoardPrompt(p, dt)) this.updateLandPrompt(p, dt, docking);
         // no fresh pirates while the captain's ashore: the sea fills again once you sail
         this.directSpawns(dt);
         this.updateHunters(dt);
@@ -3509,7 +3843,7 @@ export class Game {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.ui.updateAmmo(p.ammo, this.ammoStock);
-      this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight);
+      this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight, this.boarding.prize);
       const cap = this.shore.captain;
       const camps = this.shore.camps.map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
       this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target);
@@ -3549,7 +3883,7 @@ export class Game {
     bars.length = 0;
     for (const f of sh.foes) {
       if (f.down || f.hp >= f.maxHp) continue;
-      bars.push({ id: f.id, x: f.x, y: f.y + 2.25 * f.height, z: f.z, hp: f.hp, max: f.maxHp, boss: f.maxHp > 100 });
+      bars.push({ id: f.id, x: f.x, y: f.y + 2.25 * f.height, z: f.z, hp: f.hp, max: f.maxHp, boss: f.maxHp > 100, label: f.title });
     }
     this.shoreHud.updateBars(bars, this.rig.camera, innerWidth, innerHeight);
   }

@@ -1331,6 +1331,106 @@ export class Audio {
     }
   }
 
+  /** A grappling hook whirled and let fly: the rope hums round, then hisses out over the water. */
+  grapple(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(0.35, vol * 0.3) * Math.exp(-dist / 150), pan);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 3;
+    bp.frequency.value = 600;
+    // two whirls overhead, then the throw
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t);
+    for (let i = 0; i < 2; i++) {
+      const a = t + i * 0.22;
+      bp.frequency.setValueAtTime(420, a);
+      bp.frequency.exponentialRampToValueAtTime(1300, a + 0.11);
+      bp.frequency.exponentialRampToValueAtTime(480, a + 0.22);
+      g.gain.linearRampToValueAtTime(0.5, a + 0.1);
+      g.gain.linearRampToValueAtTime(0.12, a + 0.21);
+    }
+    const th = t + 0.44;
+    bp.frequency.setValueAtTime(900, th);
+    bp.frequency.exponentialRampToValueAtTime(2600, th + 0.12);
+    bp.frequency.exponentialRampToValueAtTime(700, th + 0.6);
+    g.gain.linearRampToValueAtTime(1, th + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.001, th + 0.65);
+    src.connect(bp).connect(g).connect(out);
+    src.start(t, Math.random() * 1.5);
+    src.stop(th + 0.7);
+  }
+
+  /** Iron prongs biting into a rail: a hard clank, a splintering knock and the line snapping taut. */
+  hookBite(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(0.45, vol * 0.4) * Math.exp(-dist / 160), pan);
+    if (!v || !this.noise) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const base = 900 + Math.random() * 300;
+    [1, 1.71, 2.62].forEach((m, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.value = base * m;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime([0.4, 0.22, 0.12][i], t);
+      g.gain.exponentialRampToValueAtTime(0.0008, t + 0.22 - i * 0.04);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 0.25);
+    });
+    // the wood
+    const k = ctx.createOscillator();
+    k.frequency.setValueAtTime(190, t);
+    k.frequency.exponentialRampToValueAtTime(80, t + 0.09);
+    const kg = ctx.createGain();
+    kg.gain.setValueAtTime(0.7, t);
+    kg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    k.connect(kg).connect(out);
+    k.start(t);
+    k.stop(t + 0.14);
+    // the line twanging tight
+    const tw = ctx.createOscillator();
+    tw.type = 'sawtooth';
+    tw.frequency.setValueAtTime(70, t + 0.08);
+    tw.frequency.exponentialRampToValueAtTime(130, t + 0.2);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 500;
+    const tg = ctx.createGain();
+    tg.gain.setValueAtTime(0, t + 0.08);
+    tg.gain.linearRampToValueAtTime(0.25, t + 0.1);
+    tg.gain.exponentialRampToValueAtTime(0.001, t + 0.38);
+    tw.connect(lp).connect(tg).connect(out);
+    tw.start(t + 0.08);
+    tw.stop(t + 0.4);
+  }
+
+  /** Two hulls hauled together: a deep wooden boom, then the timbers grinding and groaning against each other. */
+  hullsMeet(vol: number, pan: number) {
+    this.emit(pick(this.bank.crunch), { vol: vol * 0.45, pan, dist: 6, rate: 0.7, wet: 0.5 });
+    this.emit(pick(this.bank.wood), { vol: vol * 0.8, pan, dist: 4, rate: 0.6, wet: 0.5, delay: 0.02 });
+    this.emit(this.bank.creak[0], { vol: vol * 0.45, pan: pan - 0.2, dist: 5, rate: 0.75, wet: 0.4, delay: 0.3 });
+    this.emit(this.bank.creak[2], { vol: vol * 0.38, pan: pan + 0.2, dist: 5, rate: 0.68, wet: 0.4, delay: 0.85 });
+    const v = this.voice(Math.min(0.6, vol * 0.5), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(62, t);
+    o.frequency.exponentialRampToValueAtTime(34, t + 0.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.62);
+  }
+
   /** A boot in dry sand (a soft hiss and crunch), or a splash through the shallows when `wet`. */
   sandStep(k: number, wet = false) {
     const v = this.voice((wet ? 0.12 : 0.08) + k * 0.06, (Math.random() - 0.5) * 0.2);
