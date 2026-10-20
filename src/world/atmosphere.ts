@@ -532,7 +532,7 @@ export class Atmosphere {
       const gb = 0.93 + 0.04 * st;
       const ov = (dst: THREE.Vector3, k: number) => {
         const l = L * k * dim;
-        const tint = 0.18;
+        const tint = 0.18 * (1 - 0.65 * st);
         dst.set(
           dst.x * tint + l * gr * (1 - tint),
           dst.y * tint + l * gg * (1 - tint),
