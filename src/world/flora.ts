@@ -428,55 +428,74 @@ export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shado
   return mergeParts(parts);
 }
 
-// ------------------------------------------------------------------ highland pine
+// ------------------------------------------------------------------ tree fern
 
-/** Norfolk-style island pine: a straight spire with flat, star-shaped tiers. */
-export function pineGeometry(seed: number, lod = 0): Geo {
-  const rnd = mulberry32(seed * 17 + 5);
-  const H = 9 + rnd() * 2;
+/**
+ * Tree fern, the emblem of a tropical cloud forest: a slender, shaggy trunk
+ * scarred by old frond bases, under a parasol of long lacy fronds (bright
+ * young ones arching up, old ones sagging), a skirt of dead fronds hanging
+ * against the trunk and a knot of curled fiddleheads at the heart.
+ */
+export function treeFernGeometry(seed: number, lod = 0): Geo {
+  const rnd = mulberry32(seed * 23 + 11);
+  const H = 3.8 + rnd() * 1.8;
+  const lean = (rnd() - 0.5) * 0.7;
+  const wob = (rnd() - 0.5) * 0.5;
+  const curve = (t: number) => new THREE.Vector3(lean * t * t, H * t, wob * Math.sin(t * Math.PI));
   const parts: Geo[] = [];
-  const bark = lin(0x5a4433);
-  const barkL = lin(0x7d624a);
+  const rings = lod ? 3 : 10;
+  const path: THREE.Vector3[] = [];
+  for (let i = 0; i <= rings; i++) path.push(curve(i / rings));
+  const fibre = lin(0x3a2a20);
+  const scar = lin(0x6a5238);
   parts.push(
-    tube([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, H * 0.5, 0), new THREE.Vector3(0, H, 0)], (t) => lerp(0.26, 0.04, t) * (1 + 0.6 * Math.pow(1 - t, 8)), lod ? 4 : 6, (t, _a2, o) =>
-      o.copy(bark).lerp(barkL, t)),
+    tube(
+      path,
+      // a flared, rooty foot and a crown a touch thicker than the waist
+      (t) => 0.19 * (1 + 0.9 * Math.pow(1 - t, 7) + 0.25 * t * t) * (lod ? 1 : 1 + 0.07 * Math.cos(t * rings * 2 * Math.PI)),
+      lod ? 4 : 7,
+      (t, a, out) => {
+        out.copy(fibre).lerp(scar, lod ? 0.3 : (0.5 + 0.5 * Math.cos(t * rings * 2 * Math.PI + a * 2)) * 0.45 + t * 0.2);
+      },
+    ),
   );
+  const top = curve(1);
   const soup = new Soup();
-  const tiers = lod ? 4 : 7;
-  const arms = lod ? 5 : 7;
-  const dark = lin(0x2a5c3a);
-  const tip = lin(0x6aa35a);
-  const under = lin(0x1d4429);
-  const ctr = new THREE.Vector3();
-  const ctrB = new THREE.Vector3();
-  const rim: THREE.Vector3[] = [];
-  const rimC: THREE.Color[] = [];
-  for (let i = 0; i < tiers; i++) {
-    const t = i / (tiers - 1);
-    const y = 2.4 + t * (H - 2.8);
-    const R = lerp(2.5, 0.55, t) * (0.9 + rnd() * 0.2);
-    const rot = rnd() * Math.PI;
-    ctr.set(0, y + 0.3, 0);
-    ctrB.set(0, y - 0.12, 0);
-    rim.length = 0;
-    rimC.length = 0;
-    for (let k = 0; k < arms * 2; k++) {
-      const a = rot + (k / (arms * 2)) * Math.PI * 2;
-      const isTip = k % 2 === 0;
-      const r = isTip ? R : R * 0.42;
-      rim.push(new THREE.Vector3(Math.cos(a) * r, y - (isTip ? R * 0.34 : R * 0.08), Math.sin(a) * r));
-      rimC.push(isTip ? tip.clone().lerp(dark, t * 0.3) : dark.clone());
-    }
-    const cc = dark.clone().multiplyScalar(0.8);
-    for (let k = 0; k < rim.length; k++) {
-      const k2 = (k + 1) % rim.length;
-      soup.tri(ctr, rim[k], rim[k2], cc, rimC[k], rimC[k2], true);
-      soup.tri(ctrB, rim[k2], rim[k], under, under, under);
+  const fronds = lod ? 7 : 13;
+  const young = [lin(0x5d9a34), lin(0xb6dc6a)];
+  const mature = [lin(0x24582a), lin(0x6aa846)];
+  for (let f = 0; f < fronds; f++) {
+    const a = (f / fronds) * Math.PI * 2 + rnd() * 0.4;
+    const age = (f * 0.618 + rnd() * 0.3) % 1;
+    const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+    const pal = age < 0.3 ? young : mature;
+    const L = (2.7 + rnd() * 0.9) * (age < 0.3 ? 0.85 : 1);
+    sawFrond(soup, top.clone().addScaledVector(UP, 0.12 - age * 0.15), dir, L, lerp(1.25, 0.35, age), lerp(0.9, 2.3, age), 0.62, lod ? 4 : 13, pal[0], pal[1], rnd, !!lod);
+  }
+  if (!lod) {
+    // the skirt: dead fronds hanging down against the trunk
+    const dead = [lin(0x5a4026), lin(0x9a7a48)];
+    const n = 4 + Math.floor(rnd() * 3);
+    for (let f = 0; f < n; f++) {
+      const a = (f / n) * Math.PI * 2 + rnd();
+      const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      sawFrond(soup, top.clone().addScaledVector(UP, -0.15), dir, 1.5 + rnd() * 0.5, -0.1, 2.0, 0.38, 6, dead[0], dead[1], rnd);
     }
   }
   const crown = soup.geometry();
-  bendNormals(crown, new THREE.Vector3(0, H * 0.35, 0), 0.55, 0.15);
+  bendNormals(crown, top.clone().addScaledVector(UP, -1.1), 0.55, 0.35);
   parts.push(crown);
+  if (!lod) {
+    // fiddleheads, tightly curled, at the heart of the crown
+    const fid = lin(0x9cc456);
+    for (let i = 0; i < 3; i++) {
+      const g = puff(0.13, 1, seed * 5 + i, 1.2, 0.1);
+      const a = (i / 3) * Math.PI * 2 + rnd();
+      g.translate(top.x + Math.cos(a) * 0.14, top.y + 0.32 + rnd() * 0.12, top.z + Math.sin(a) * 0.14);
+      paint(g, (_p, nn, out) => out.copy(fid).multiplyScalar(0.75 + Math.max(nn.y, 0) * 0.4));
+      parts.push(g);
+    }
+  }
   return mergeParts(parts);
 }
 

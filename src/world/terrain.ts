@@ -48,6 +48,15 @@ export interface Island {
   tint: number; // -1..1 hue / lushness variation
 }
 
+/** One crag of a rocky isle (see Terrain.cragsOf). */
+interface Crag {
+  x: number;
+  z: number;
+  r: number;
+  h: number;
+  seed: number;
+}
+
 export { WORLD_SIZE };
 export const CELL = 2;
 export const GRID_N = WORLD_SIZE / CELL + 1;
@@ -92,6 +101,9 @@ export class Terrain {
   readonly abysses: { x: number; z: number; r: number }[] = [];
   /** How much reef each cell is (0..1): living coral a keel can strike. */
   private reefMask = new Float32Array(GRID_N * GRID_N);
+  /** What the erosion carved at each cell: + spur / ridge, - gully (about -1..1, 0 off the hillsides). */
+  readonly erosion = new Float32Array(GRID_N * GRID_N);
+  private crags = new Map<Island, Crag[]>();
   private simplex: Simplex2;
   private seed: number;
 
@@ -101,6 +113,7 @@ export class Terrain {
     this.placeIslands();
     this.placeReefs();
     this.buildHeights();
+    this.erode();
     this.buildReefs();
   }
 
@@ -197,13 +210,30 @@ export class Terrain {
     const m = smoothstep(beachW * 0.6, 0.98, f);
     let h: number;
     if (isl.kind === 'rocky') {
-      const ridge = 0.65 + 0.55 * s.ridged(x * 0.011 + isl.seed, z * 0.011, 4);
-      h = isl.peak * Math.pow(m, 0.8) * ridge;
-      const step = 3.4;
-      const k = h / step;
-      const fl = Math.floor(k);
-      h = step * (fl + smoothstep(0.2, 0.8, k - fl));
-      h += beach;
+      // A karst isle: wooded aprons climb from the coves to one to three
+      // sheer crags with domed, jungle-capped crowns. Their walls are fluted
+      // by the erosion pass (erode) into buttresses and runnels.
+      const ux = lx / isl.r;
+      const uz = lz / isl.r;
+      const apron = isl.peak * 0.3 * Math.pow(smoothstep(beachW * 0.4, 0.66, f), 1.3);
+      let crag = 0;
+      for (const c of this.cragsOf(isl)) {
+        const ex = ux - c.x;
+        const ez = uz - c.z;
+        const a = Math.atan2(ez, ex);
+        // bays and spurs round the foot, so no crag is a plain drum
+        const rr = c.r * (1 + 0.24 * s.noise(Math.cos(a) * 1.5 + c.seed, Math.sin(a) * 1.5 - c.seed) + 0.08 * s.noise(Math.cos(a) * 4 - c.seed, Math.sin(a) * 4));
+        const u = 1 - Math.sqrt(ex * ex + ez * ez) / rr;
+        if (u <= 0) continue;
+        // a sheer wall rounding over into a domed, slightly tilted crown
+        const wall = smoothstep(0, 0.3, u);
+        const dome = 1 - (1 - u) * (1 - u);
+        const v = c.h * (wall * (0.56 + 0.08 * Math.sin(a + c.seed)) + dome * 0.4);
+        crag = smax(crag, v, 3);
+      }
+      crag *= smoothstep(0.04, 0.3, f);
+      h = beach + smax(apron, crag, isl.peak * 0.1);
+      h += 2.4 * m * (s.fbm(x * 0.03, z * 0.03, 3) * 0.5 + 0.5);
     } else {
       const ridge = 0.5 + 0.8 * s.ridged(x * 0.0085 + isl.seed, z * 0.0085 - isl.seed, 5);
       h = beach + isl.peak * Math.pow(m, 1.55) * ridge;
@@ -215,6 +245,25 @@ export class Terrain {
       }
     }
     return h;
+  }
+
+  /** The crags of a rocky isle, in its stretched local frame (units of isl.r). */
+  private cragsOf(isl: Island): Crag[] {
+    let cs = this.crags.get(isl);
+    if (cs) return cs;
+    const rnd = mulberry32(Math.floor(isl.seed * 1000) + 17);
+    const a0 = rnd() * Math.PI * 2;
+    // the main crag sits a little off centre, so one side of the isle is a
+    // long wooded slope and the other a cliff over a cove
+    cs = [{ x: Math.cos(a0) * 0.16, z: Math.sin(a0) * 0.16, r: 0.36 + rnd() * 0.1, h: isl.peak, seed: rnd() * 50 }];
+    const n = 1 + Math.floor(rnd() * 2.6);
+    for (let i = 1; i < n; i++) {
+      const a = a0 + Math.PI * (0.65 + rnd() * 0.7) * (i === 1 ? 1 : -1);
+      const d = 0.3 + rnd() * 0.14;
+      cs.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: 0.18 + rnd() * 0.1, h: isl.peak * (0.5 + rnd() * 0.28), seed: rnd() * 50 });
+    }
+    this.crags.set(isl, cs);
+    return cs;
   }
 
   /** Underwater shelf profile; s = normalised distance beyond the shore. */
@@ -457,6 +506,116 @@ export class Terrain {
   }
 
   /**
+   * Carves the hillsides the way rain would: spurs and gullies running down
+   * the fall line, branching as they go. It is the gully noise of iq / Clay
+   * John: at every cell, a few cosine waves set across the slope (so their
+   * crests run straight downhill) are blended from a jittered lattice, and
+   * each finer octave is steered by the slope the coarser ones made, so
+   * small runnels fork off the big ravines. Analytic and local, so it costs
+   * a few tens of ms at load instead of a droplet simulation. The beaches
+   * and anything flat are left alone; volcanoes get deep radial ravines,
+   * crags their fluted walls. The signed result is kept per cell for the
+   * ground shader (bare rock on the spurs, deep green down the gullies) and
+   * for planting.
+   */
+  private erode() {
+    const H = this.heights;
+    const src = H.slice();
+    const N = GRID_N;
+    const E = this.erosion;
+    const e: [number, number, number] = [0, 0, 0];
+    this.islands.forEach((isl, idx) => {
+      if (isl.kind === 'atoll') return;
+      const amp = isl.kind === 'rocky' ? 3.4 : isl.kind === 'volcanic' ? 3 + isl.peak * 0.08 : 2.6;
+      // gully spacing grows with the isle, so a big volcano gets big ravines
+      const wl = clamp(isl.r * 0.2, 13, 24);
+      const ext = isl.r * Math.max(isl.stretch, 1 / isl.stretch) * 1.6 + 10;
+      const i0 = Math.max(2, Math.floor((isl.x - ext + HALF) / CELL));
+      const i1 = Math.min(N - 3, Math.ceil((isl.x + ext + HALF) / CELL));
+      const j0 = Math.max(2, Math.floor((isl.z - ext + HALF) / CELL));
+      const j1 = Math.min(N - 3, Math.ceil((isl.z + ext + HALF) / CELL));
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const k = j * N + i;
+          const h0 = src[k];
+          if (h0 < 1.4 || this.owner[k] !== idx) continue;
+          // the fall line, from the uncarved ground 4 m either side
+          const gx = (src[k + 2] - src[k - 2]) / (4 * CELL);
+          const gz = (src[k + 2 * N] - src[k - 2 * N]) / (4 * CELL);
+          const slope = Math.hypot(gx, gz);
+          const fade = smoothstep(3.5, 11, h0) * smoothstep(0.05, 0.4, slope);
+          if (fade <= 0) continue;
+          const x = -HALF + i * CELL;
+          const z = -HALF + j * CELL;
+          // across the slope: steeper ground packs its gullies a little closer
+          const dm = clamp(slope * 1.4, 0.55, 1.25) / slope;
+          const bx = gz * dm;
+          const bz = -gx * dm;
+          let v = 0;
+          let dx = 0;
+          let dz = 0;
+          let a = 1;
+          let f = 1;
+          let norm = 0;
+          for (let o = 0; o < 3; o++) {
+            this.gully((x / wl) * f, (z / wl) * f, bx + dz * 0.9, bz - dx * 0.9, e);
+            v += e[0] * a;
+            dx += e[1] * a * f;
+            dz += e[2] * a * f;
+            norm += a;
+            a *= 0.45;
+            f *= 2.1;
+          }
+          v /= norm;
+          // sharp spurs, rounded gully floors
+          v = v > 0 ? v * (1.15 - 0.3 * v) : v * 0.9;
+          let d = v * amp * fade;
+          // never cut the turf down into the sand
+          if (d < 0) d = Math.max(d, -(h0 - 1.45) * 0.7);
+          H[k] = h0 + d;
+          E[k] = clamp(v * fade * 1.3, -1, 1);
+        }
+      }
+    });
+  }
+
+  /** One octave of gully noise at p (lattice units), stripes across `dir`: value, d/dx, d/dz. */
+  private gully(px: number, pz: number, dirx: number, dirz: number, out: [number, number, number]) {
+    const ix = Math.floor(px);
+    const iz = Math.floor(pz);
+    const fx = px - ix;
+    const fz = pz - iz;
+    const TAU = Math.PI * 2;
+    let va = 0;
+    let vx = 0;
+    let vz = 0;
+    let wt = 0;
+    for (let oj = -2; oj <= 1; oj++) {
+      for (let oi = -2; oi <= 1; oi++) {
+        // a jittered lattice point
+        let hs = Math.imul(ix - oi, 374761393) + Math.imul(iz - oj, 668265263) + this.seed;
+        hs = Math.imul(hs ^ (hs >>> 13), 1274126177);
+        hs ^= hs >>> 16;
+        const hx = ((hs & 0xffff) / 65536) * 0.5;
+        const hz = ((hs >>> 16) / 65536) * 0.5;
+        const ppx = fx + oi - hx;
+        const ppz = fz + oj - hz;
+        const w = Math.exp(-(ppx * ppx + ppz * ppz) * 2);
+        const mag = (ppx * dirx + ppz * dirz) * TAU;
+        const sn = Math.sin(mag);
+        va += Math.cos(mag) * w;
+        vx -= sn * dirx * w;
+        vz -= sn * dirz * w;
+        wt += w;
+      }
+    }
+    out[0] = va / wt;
+    out[1] = vx / wt;
+    out[2] = vz / wt;
+    return out;
+  }
+
+  /**
    * Bores an abyss into the seabed under a maelstrom: the floor falls away from
    * its rim to ABYSS deep under the eye, so its throat can drop tens of metres
    * through open water. Call before buildMeshes and createHeightTexture.
@@ -513,6 +672,19 @@ export class Terrain {
   reefNear(x: number, z: number, pad = 0): Reef | null {
     for (const rf of this.reefs) if (Math.hypot(rf.x - x, rf.z - z) < rf.r + pad) return rf;
     return null;
+  }
+
+  /** Spur (+) or gully (-) the erosion carved under (x, z), about -1..1 (bilinear). */
+  erosionAt(x: number, z: number): number {
+    const fx = clamp((x + HALF) / CELL, 0, GRID_N - 1.001);
+    const fz = clamp((z + HALF) / CELL, 0, GRID_N - 1.001);
+    const i = Math.floor(fx);
+    const j = Math.floor(fz);
+    const tx = fx - i;
+    const tz = fz - j;
+    const E = this.erosion;
+    const k = j * GRID_N + i;
+    return lerp(lerp(E[k], E[k + 1], tx), lerp(E[k + GRID_N], E[k + GRID_N + 1], tx), tz);
   }
 
   /** Whether (x, z) lies in a sheltered atoll lagoon (nearest grid cell). */
@@ -655,7 +827,8 @@ export class Terrain {
     kind[o + 1] = isl.kind === 'atoll' ? 1 : 0;
     kind[o + 2] = isl.kind === 'rocky' ? 1 : 0;
     info[o] = isl.tint;
-    if (isl.kind !== 'atoll') {
+    // bare summits on the volcano and the lush hills (a karst crag's crown is jungle)
+    if (isl.kind === 'volcanic' || isl.kind === 'lush') {
       info[o + 1] = smoothstep(isl.peak * 0.7, isl.peak * 0.95, h) * (isl.kind === 'volcanic' ? 1 : 0.6);
     }
     if (isl.kind === 'volcanic') info[o + 2] = smoothstep(0.86, 0.975, this.inland[k]);
@@ -708,6 +881,7 @@ export class Terrain {
         const aoA = new Float32Array(vn * vn);
         const canA = new Float32Array(vn * vn);
         const reefA = new Float32Array(vn * vn);
+        const eroA = new Float32Array(vn * vn);
         for (let vj = 0; vj < vn; vj++) {
           for (let vi = 0; vi < vn; vi++) {
             const i = ci * chunkCells + vi * step;
@@ -730,6 +904,7 @@ export class Terrain {
             aoA[k] = this.ao[j * GRID_N + i];
             canA[k] = this.canopy[j * GRID_N + i];
             reefA[k] = this.reefMask[j * GRID_N + i];
+            eroA[k] = this.erosion[j * GRID_N + i];
           }
         }
         const idx: number[] = [];
@@ -754,6 +929,7 @@ export class Terrain {
         geo.setAttribute('aqAO', new THREE.BufferAttribute(aoA, 1));
         geo.setAttribute('aqCanopy', new THREE.BufferAttribute(canA, 1));
         geo.setAttribute('aqReef', new THREE.BufferAttribute(reefA, 1));
+        geo.setAttribute('aqErode', new THREE.BufferAttribute(eroA, 1));
         geo.setIndex(idx);
         geo.computeBoundingSphere();
         const mesh = new THREE.Mesh(geo, mat);
