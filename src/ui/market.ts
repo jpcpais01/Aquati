@@ -4,6 +4,9 @@ import { icon, ICONS } from './art';
 import { lootIcon } from './lootArt';
 import { Part, PART_RARITIES, SLOT_NAMES, statLines } from '../ships/parts';
 import { partIcon } from './partArt';
+import { shipSilhouette } from './art';
+import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { FLEET_MAX, HireOffer } from '../game/fleet';
 
 // The trading port's market: your hold laid out on the counter with today's
 // prices, a Sell button on every lot, the chandlery for repairs and fresh
@@ -25,6 +28,24 @@ export interface Services {
   shot: number;
   /** Broadsides of special shot that buys. */
   shotN: number;
+}
+
+/** One of your escorts, as the harbour master sees her. */
+export interface FleetMember {
+  id: string;
+  name: string;
+  cls: ShipClassId;
+  master: string;
+  prize: boolean;
+  hp: number;
+  kills: number;
+}
+
+/** The harbour master's counter: who sails with you, and who's for hire today. */
+export interface FleetCounter {
+  roster: FleetMember[];
+  offers: HireOffer[];
+  purse: number;
 }
 
 /** A part on the port shipwright's counter. */
@@ -59,7 +80,12 @@ export class MarketUI {
   onDock: () => void = () => {};
   onClick: () => void = () => {};
   onBuyPart: (id: string) => void = () => {};
+  onHire: (id: string) => void = () => {};
+  onPayOff: (id: string) => void = () => {};
   private partList: HTMLElement;
+  private fleetList: HTMLElement;
+  private fleetPurse: HTMLElement;
+  private fleetRoom: HTMLElement;
   private partPurse: HTMLElement;
 
   constructor() {
@@ -84,6 +110,9 @@ export class MarketUI {
         <div class="mk-label"><span>Shipwright</span><span class="mk-wpurse" title="Your purse"></span></div>
         <ul class="mk-parts"></ul>
         <p class="mk-pnote">Paid from your purse. New parts are fitted at the Shipwright before your next voyage.</p>
+        <div class="mk-label"><span>Harbour master</span><span class="mk-froom"></span><span class="mk-fpurse" title="Your purse"></span></div>
+        <ul class="mk-parts mk-fleet"></ul>
+        <p class="mk-pnote">Escorts sail in formation on your quarters and take your orders (G). They sail with you every voyage until they are sunk.</p>
         <footer class="mk-foot"><button class="btn mk-leave">${icon(ICONS.flag)}<span>Cast off</span><kbd class="kd">Esc</kbd></button></footer>
       </div>`;
     document.body.appendChild(r);
@@ -95,6 +124,30 @@ export class MarketUI {
     this.svcShot = r.querySelector('[data-k="shot"]')!;
     this.partList = r.querySelector('.mk-parts')!;
     this.partPurse = r.querySelector('.mk-wpurse')!;
+    this.fleetList = r.querySelector('.mk-fleet')!;
+    this.fleetPurse = r.querySelector('.mk-fpurse')!;
+    this.fleetRoom = r.querySelector('.mk-froom')!;
+    this.fleetList.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
+      if (!b || b.disabled) return;
+      e.stopPropagation();
+      this.onClick();
+      if (b.classList.contains('mk-hire')) this.onHire(b.dataset.id!);
+      else if (b.classList.contains('mk-off')) {
+        // paying off a ship is for good: the first tap asks, the second does it
+        if (!b.classList.contains('sure')) {
+          b.classList.add('sure');
+          b.textContent = 'Sure?';
+          setTimeout(() => {
+            if (!b.isConnected) return;
+            b.classList.remove('sure');
+            b.textContent = 'Pay off';
+          }, 2600);
+          return;
+        }
+        this.onPayOff(b.dataset.id!);
+      }
+    });
     this.partList.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.mk-buy');
       if (!b || b.disabled) return;
@@ -212,6 +265,36 @@ export class MarketUI {
         </li>`;
       })
       .join('');
+  }
+
+  /** The harbour master's counter: your escorts' hulls, and today's ships for hire. */
+  setFleet(f: FleetCounter, signed?: string) {
+    this.fleetPurse.innerHTML = `<span class="coin"></span>${fmt(f.purse)}`;
+    this.fleetRoom.textContent = `${f.roster.length} / ${FLEET_MAX} escorts`;
+    const full = f.roster.length >= FLEET_MAX;
+    const mine = f.roster
+      .map((m) => {
+        const k = Math.max(0, Math.min(1, m.hp));
+        return `<li class="mk-row mk-prow mk-frow${m.prize ? ' prize' : ''}${signed === m.id ? ' just' : ''}" style="--rc:#5ee3d4">
+          <i class="mk-ico">${shipSilhouette(SHIP_CLASSES[m.cls])}</i>
+          <div class="mk-what"><b>${esc(m.name)}</b><small><em>${m.prize ? 'Prize' : 'Hired'}</em> · ${SHIP_CLASSES[m.cls].name}${m.master ? ` · ${esc(m.master)}` : ''}${m.kills ? ` · ${m.kills} sunk` : ''}</small><span class="mk-fhull"><i class="${k < 0.35 ? 'low' : ''}" style="transform:scaleX(${k.toFixed(3)})"></i></span></div>
+          <button class="mk-buy mk-off" data-id="${esc(m.id)}">Pay off</button>
+        </li>`;
+      })
+      .join('');
+    const offers = f.offers
+      .filter((o) => !f.roster.some((m) => m.id === o.id))
+      .map((o) => {
+        const c = SHIP_CLASSES[o.cls];
+        const can = !full && f.purse >= o.price;
+        return `<li class="mk-row mk-prow mk-frow" style="--rc:#f4c765">
+          <i class="mk-ico">${shipSilhouette(c)}</i>
+          <div class="mk-what"><b>The ${esc(o.name)}</b><small><em>${c.name}</em> · Captain ${esc(o.master)}</small><span class="mk-trait">“${esc(o.trait)}”</span></div>
+          <button class="mk-buy mk-hire" data-id="${esc(o.id)}"${can ? '' : ' disabled'}>${full ? 'Fleet full' : `Hire <span class="coin"></span>${fmt(o.price)}`}</button>
+        </li>`;
+      })
+      .join('');
+    this.fleetList.innerHTML = mine + (offers || (full ? '' : '<li class="mk-empty"><p><small>No more ships for hire here today.</small></p></li>'));
   }
 
   setGold(g: number) {

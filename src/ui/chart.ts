@@ -482,6 +482,28 @@ export class SeaChart {
     g.setLineDash([]);
     for (const sh of sc.ships) {
       if (sh === p || !sh.alive) continue;
+      // your escorts: always on the chart, named, with a faint line back to the flagship
+      if (sh.team === 'player') {
+        const [ex, ey] = toS(sh.pos.x, sh.pos.z);
+        g.strokeStyle = 'rgba(94, 227, 212, 0.35)';
+        g.lineWidth = 1.2;
+        g.setLineDash([2, 4]);
+        g.beginPath();
+        g.moveTo(px, py);
+        g.lineTo(ex, ey);
+        g.stroke();
+        g.setLineDash([]);
+        tri(sh, '#5ee3d4', 11);
+        g.font = '700 11.5px Cinzel, Georgia, serif';
+        g.textAlign = 'center';
+        g.lineWidth = 3;
+        g.strokeStyle = 'rgba(2, 24, 26, 0.85)';
+        g.strokeText(sh.name, ex, ey + 21);
+        g.fillStyle = '#c8fff4';
+        g.fillText(sh.name, ex, ey + 21);
+        continue;
+      }
+      if (sh.prize) continue;
       // the Brethren make sure you know where their hunters are
       if (sh.hunter) {
         const [hx, hy] = toS(sh.pos.x, sh.pos.z);

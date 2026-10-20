@@ -91,14 +91,45 @@ export class PirateAI {
     return heading + Math.PI * 0.6;
   }
 
-  update(dt: number, world: World, player: Ship | null, others: Ship[]) {
+  /**
+   * Who she's after: you, or one of your escorts if one is nearer or has just
+   * hurt her. A named hunter only has eyes for you unless an escort gets right
+   * in her way.
+   */
+  private pickTarget(world: World, player: Ship | null, escorts: Ship[]): Ship | null {
+    const s = this.ship;
+    const cur = this.target;
+    let best: Ship | null = null;
+    let bs = Infinity;
+    let curScore = Infinity;
+    for (const c of player ? [player, ...escorts] : escorts) {
+      if (!c.alive || c.removed) continue;
+      let score = Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z);
+      if (c === player) score *= this.hunter ? 0.35 : 0.8;
+      if (s.lastAttacker === c && world.time - s.lastHit < 12) score *= 0.6;
+      if (c === cur) curScore = score;
+      if (score < bs) {
+        bs = score;
+        best = c;
+      }
+    }
+    // a little loyalty to the ship she's already fighting, so she doesn't dither between two
+    return cur && curScore < bs * 1.3 ? cur : best;
+  }
+
+  /** The ship she's hunting (you or one of your escorts), chosen a few times a second. */
+  target: Ship | null = null;
+
+  update(dt: number, world: World, player: Ship | null, others: Ship[], escorts: Ship[] = []) {
     const s = this.ship;
     if (!s.alive) {
       s.rudder = 0;
       return;
     }
     this.think -= dt;
-    const target = player && player.alive ? player : null;
+    if (!player && !escorts.length) this.target = null;
+    else if (this.think <= 0 || (this.target && (!this.target.alive || this.target.removed))) this.target = this.pickTarget(world, player && player.alive ? player : null, escorts);
+    const target = this.target && this.target.alive ? this.target : null;
     const dx = target ? target.pos.x - s.pos.x : 0;
     const dz = target ? target.pos.z - s.pos.z : 0;
     const dist = Math.hypot(dx, dz);
@@ -107,7 +138,7 @@ export class PirateAI {
 
     if (this.think <= 0) {
       this.think = 0.4 + this.rnd() * 0.3;
-      let provoked = s.lastAttacker === target && world.time - s.lastHit < 25;
+      let provoked = !!s.lastAttacker && (s.lastAttacker === player || escorts.includes(s.lastAttacker)) && world.time - s.lastHit < 25;
       const pk = this.pack;
       if (pk && pk.leader && !pk.leader.ship.alive) pk.leader = null;
       // the pack answers a sighting by any of its ships

@@ -1118,6 +1118,47 @@ export class Audio {
     }, (end - ctx.currentTime) * 1000 + 1500);
   }
 
+  /**
+   * A fleet order piped across the water, each with its own call: two notes
+   * rising for "form on me", a quick triple for "attack", a long note falling
+   * away for "hold position".
+   */
+  fleetSignal(kind: 'follow' | 'attack' | 'hold') {
+    const v = this.voice(0.075, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    out.connect(this.reverbIn);
+    const t = ctx.currentTime + 0.02;
+    const notes: [number, number, number, number][] =
+      kind === 'attack'
+        ? [[0, 0.1, 2350, 2350], [0.14, 0.1, 2350, 2350], [0.28, 0.36, 2400, 2750]]
+        : kind === 'hold'
+          ? [[0, 0.34, 2500, 2500], [0.38, 0.55, 2300, 1650]]
+          : [[0, 0.22, 1750, 1800], [0.27, 0.45, 2300, 2500]];
+    let end = 0;
+    for (const [at, len, f0, f1] of notes) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(f0 * 0.93, t + at);
+      o.frequency.exponentialRampToValueAtTime(f0, t + at + 0.04);
+      o.frequency.exponentialRampToValueAtTime(f1, t + at + len);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + at);
+      g.gain.exponentialRampToValueAtTime(0.7, t + at + 0.03);
+      g.gain.setValueAtTime(0.7, t + at + len - 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + at + len);
+      o.connect(g).connect(out);
+      o.start(t + at);
+      o.stop(t + at + len + 0.05);
+      o.onended = () => {
+        o.disconnect();
+        g.disconnect();
+      };
+      end = Math.max(end, at + len);
+    }
+    setTimeout(() => out.disconnect(), (end + 2.5) * 1000);
+  }
+
   /** The bosun's call: a shrill pipe swooping up, trilling, and falling away: "all hands, cast off!". */
   bosunPipe() {
     const v = this.voice(0.09, 0);

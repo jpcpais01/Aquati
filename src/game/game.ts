@@ -30,7 +30,7 @@ import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { ShipModel } from '../ships/shipModel';
-import { GHOST_LIVERY, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { GHOST_LIVERY, Livery, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
@@ -40,7 +40,7 @@ import { GraphicsPanel } from '../ui/graphics';
 import { Customizer, SwTab } from '../ui/customizer';
 import { Vault } from '../ui/vault';
 import { PhotoMode } from '../ui/photo';
-import { FxItem, fxItem, Item as Cosmetic, POOL, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
+import { BASE, FxItem, fxItem, Item as Cosmetic, POOL, SkinItem, skinItem, VaultStore } from '../ships/cosmetics';
 import { chestPart, Found, loadoutStats, part as partById, PART_RARITIES, PartSlot, PartStore, PartTier, pirateFit, portStock, refit, rollPart, SLOT_NAMES } from '../ships/parts';
 import { partIcon } from '../ui/partArt';
 import { Cloud, Part } from '../cloud/cloud';
@@ -74,6 +74,8 @@ import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarn
 import { BountyBanner, BountyBoard, WantedHud } from '../ui/bounty';
 import { DigTarget, TreasureMaps } from './treasureMaps';
 import { TreasureMapUI } from '../ui/treasureMap';
+import { EscortAI, EscortRec, FleetStore, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
+import { EscortRow, FleetHud } from '../ui/fleet';
 
 /** Image-based sky light. Kept a little under the sun so lit faces and shade read apart. */
 const SKY_LIGHT = 0.72;
@@ -285,6 +287,7 @@ export class Game {
   private prizeHaul = '';
   private prizeOpen = false;
   private boardTipShown = false;
+  private attackTipShown = false;
   // bounties: your infamy among the Brethren, and the named captains it sends after you
   private bounty = new BountyBook();
   private board = new BountyBoard();
@@ -317,6 +320,19 @@ export class Game {
   private krWarn: THREE.Vector3[] = [];
   private krWarnPx = Array.from({ length: 8 }, () => ({ x: 0, y: 0 }));
   private krFocus = new THREE.Vector3();
+  // your fleet: escorts in formation on your quarters, under your orders (see game/fleet.ts)
+  private fleet = new FleetStore();
+  private escorts = new Map<Ship, EscortAI>();
+  private fleetHud = new FleetHud();
+  /** This frame's hostile ships afloat (what escorts may fight) and your escorts (what pirates may). */
+  private foes: Ship[] = [];
+  private escortShips: Ship[] = [];
+  private fleetRows: EscortRow[] = [];
+  private seaMarks: SeaMark[] = [];
+  /** The ship your own guns last laid on or struck: "attack my target". */
+  private markedFoe: Ship | null = null;
+  /** The roster and colours the escorts moored in the harbour were built from. */
+  private moorKey = '';
   // treasure maps: torn pieces from chests, an X on an island, and the dig
   private maps = new TreasureMaps();
   private mapUi = new TreasureMapUI();
@@ -427,6 +443,7 @@ export class Game {
     for (const ev of ['pointerup', 'touchend', 'keydown'] as const) addEventListener(ev, wake, true);
     window.addEventListener('resize', () => this.resize());
     document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.syncFleet();
       if (document.hidden && this.state === 'playing') {
         this.setChart(false);
         this.setPaused(true);
@@ -668,6 +685,7 @@ export class Game {
   /** The cloud rewrote some saves (another device's progress, or a sign-out). */
   private applyCloud(parts: Set<Part>) {
     if (parts.has('bounty')) this.bounty.reload();
+    if (parts.has('fleet')) this.fleet.reload();
     if (parts.has('maps')) {
       this.maps.reload();
       this.syncTreasure();
@@ -680,10 +698,13 @@ export class Game {
       this.partStore.reload();
       this.shipwright.refresh();
     }
-    if (!parts.has('look') && !parts.has('ship') && !parts.has('parts')) return;
-    parts.forEach((p) => this.cloudParts.add(p));
-    // the moored ship only changes in the harbour, between scenes
-    if (this.state === 'menu' && !this.vault.isOpen && !this.swBusy && this.adoptCloud()) this.setPreview(this.ui.selected);
+    if (parts.has('look') || parts.has('ship') || parts.has('parts')) {
+      parts.forEach((p) => this.cloudParts.add(p));
+      // the moored ship only changes in the harbour, between scenes
+      if (this.state === 'menu' && !this.vault.isOpen && !this.swBusy && this.adoptCloud()) this.setPreview(this.ui.selected);
+    }
+    // ...and so does the fleet moored beside her
+    if (this.state === 'menu' && !this.vault.isOpen && !this.swBusy) this.mooreFleet();
   }
 
   /** Takes up a synced livery and favourite ship; true if the preview needs rebuilding. */
@@ -710,6 +731,11 @@ export class Game {
     ui.onMap = (on) => this.setChart(on);
     ui.onPin = (x, z, pick) => this.tapPin(x, z, pick);
     ui.onPhoto = () => this.openPhoto();
+    this.fleetHud.onOrder = (o) => {
+      this.audio.click();
+      this.giveOrder(o);
+    };
+    this.fleetHud.setOrder(this.fleet.state.order, false);
     ui.onQuit = () => {
       this.ui.showPause(false);
       this.resetWorld();
@@ -1144,6 +1170,7 @@ export class Game {
     const k = this.tradePorts.ports.indexOf(port);
     const offers = portStock(k + 1).map((p) => ({ part: p, owned: this.partStore.owns(p.id) }));
     this.market.setParts(offers, this.vaultStore.purse, bought);
+    this.refreshFleetMarket();
   }
 
   private buyPart(id: string) {
@@ -1288,6 +1315,8 @@ export class Game {
     m.onSellAll = () => this.sell(null);
     m.onRepair = () => this.buyRepair();
     m.onBuyPart = (id) => this.buyPart(id);
+    m.onHire = (id) => this.hire(id);
+    m.onPayOff = (id) => this.payOff(id);
     m.onShot = () => this.buyShot();
     m.onLeave = () => this.castOff();
     // the hold chip opens a peek at what's aboard
@@ -1747,6 +1776,8 @@ export class Game {
       haul: this.prizeHaul,
       prize: `+${this.prizeMoney(e).toLocaleString('en-US')} gold prize money`,
       scuttle: 'Her bounty, salvage and infamy',
+      fleet: this.fleet.full ? `Your fleet is full (${this.fleet.ships.length} escorts): pay one off in port` : `Her crew sign on: she sails at your side, every voyage`,
+      fleetOk: !this.fleet.full,
     });
     this.audio.bell(2, 0.2);
   }
@@ -1756,8 +1787,8 @@ export class Game {
     return Math.round(({ sloop: 380, brig: 700, galleon: 1250 }[e.cls.id] ?? 500) * heat * this.bounty.bonus);
   }
 
-  private choosePrize(k: 'prize' | 'scuttle') {
-    if (!this.prizeOpen) return;
+  private choosePrize(k: 'prize' | 'scuttle' | 'fleet') {
+    if (!this.prizeOpen || (k === 'fleet' && this.fleet.full)) return;
     this.audio.click();
     this.endBoarding(k);
   }
@@ -1779,7 +1810,7 @@ export class Game {
   }
 
   /** Back aboard behind the veil, the lines cut and the hulls parted, and her fate settled. */
-  private endBoarding(how: 'prize' | 'scuttle' | 'retreat' | 'repelled' | 'sinking') {
+  private endBoarding(how: 'prize' | 'scuttle' | 'fleet' | 'retreat' | 'repelled' | 'sinking') {
     const p = this.player;
     const e = this.shore.prize;
     if (!p || !this.shore.deck || this.swBusy) return;
@@ -1790,6 +1821,7 @@ export class Game {
     const say = {
       prize: `A prize crew takes over the ${name}…`,
       scuttle: `A slow match in the ${name}'s magazine…`,
+      fleet: `The ${name}'s crew sign the articles…`,
       retreat: `Back over the rail to the ${p.name}…`,
       repelled: `The hands haul you back aboard the ${p.name}…`,
       sinking: `She's going down: back aboard the ${p.name}!`,
@@ -1803,6 +1835,7 @@ export class Game {
       if (e && e.alive && this.state === 'playing') {
         if (how === 'prize') this.takePrize(p, e);
         else if (how === 'scuttle') this.scuttle(p, e);
+        else if (how === 'fleet') this.enlist(p, e);
         // a crew that saw you off takes heart, and patches a little of the damage
         else e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.1);
       }
@@ -1842,6 +1875,313 @@ export class Game {
     this.pipeline.flash(0.15);
   }
 
+  // ------------------------------------------------------------------ your fleet
+
+  /** What an escort is built in: a hired ship wears your colours; a prize keeps her paint and flies your flag. */
+  private escortLivery(rec: EscortRec): Livery {
+    const mine = lookToLivery(this.look);
+    if (rec.origin !== 'prize' || !rec.livery) return mine;
+    // dressed (cached hull paint, her own flag and canvas): nothing new to compile
+    return { ...rec.livery, flag: mine.flag, flag2: mine.flag2, flagDesign: mine.flagDesign, sailMark: mine.sailMark, emblem: 'none', skin: rec.livery.skin || BASE.skin };
+  }
+
+  /** Builds an escort from her roster entry (in the harbour or alongside a quay only: never mid-fight). */
+  private buildEscort(rec: EscortRec) {
+    const s = this.makeShip(rec.cls, 'player', this.escortLivery(rec));
+    s.name = rec.name;
+    if (rec.origin === 'prize') {
+      // her own skin, if she wore one, and plain powder: the vault's finery is the flagship's alone
+      s.model.setSkin(skinItem(rec.livery?.skin ?? BASE.skin));
+      s.cannonFx.blast = s.cannonFx.trail = 'powder';
+    }
+    s.hp = Math.max(1, s.maxHp * rec.hp);
+    const ai = new EscortAI(s, { ...rec });
+    ai.order = this.fleet.state.order;
+    this.escorts.set(s, ai);
+    return s;
+  }
+
+  /** The roster, kept up to date from the ships themselves (hull and tally). */
+  private syncFleet() {
+    const out: { id: string; hp: number; kills: number }[] = [];
+    for (const [s, ai] of this.escorts) if (s.alive) out.push({ id: ai.rec.id, hp: s.hp / s.maxHp, kills: ai.rec.kills });
+    if (out.length) this.fleet.sync(out);
+  }
+
+  /** In the harbour, the escorts ride at anchor off the flagship's quarters (rebuilt only when the roster or your colours change). */
+  private mooreFleet() {
+    const pv = this.preview;
+    if (this.state !== 'menu' || !pv) return;
+    const recs = this.fleet.ships;
+    const key = `${lookToLivery(this.look).id}|${recs.map((r) => r.id).join(',')}`;
+    if (key !== this.moorKey || [...this.escorts.keys()].some((s) => s.removed || !s.alive)) {
+      this.moorKey = key;
+      for (const s of [...this.escorts.keys()]) this.removeShip(s);
+      for (const rec of recs) this.buildEscort(rec);
+    }
+    let i = 0;
+    for (const s of this.escorts.keys()) {
+      const a = this.anchorage(this.spawnPoint.x, this.spawnPoint.z, Math.PI * 0.82, pv.cls.length, i++, this.escorts.size, s, 1.5);
+      s.place(a.x, a.z, a.h);
+      s.anchored = true;
+      s.sailTarget = 0;
+      s.sailLevel = 0;
+      s.rudder = 0;
+    }
+  }
+
+  /** Where escort `i` of `n` anchors off a flagship lying at (x, z) on heading `h`; `wide` spreads the berths. */
+  private anchorage(x: number, z: number, h: number, flagLen: number, i: number, n: number, s: Ship, wide = 1) {
+    const st = station(i, n, flagLen, s.cls.length);
+    const sh = Math.sin(h);
+    const ch = Math.cos(h);
+    const sx = st.x * wide;
+    const sz = st.z * wide;
+    return this.deepFor(s, x + ch * sx - sh * sz, z - sh * sx - ch * sz, h);
+  }
+
+  /** The nearest water deep enough for her, clear of every other hull, searching out from (x, z). */
+  private deepFor(s: Ship, x: number, z: number, h: number) {
+    const L = s.cls.length * 0.55;
+    const fx = Math.sin(h);
+    const fz = Math.cos(h);
+    const ok = (px: number, pz: number) => {
+      for (const k of [-1, 0, 1]) if (this.terrain.heightAt(px + fx * L * k, pz + fz * L * k) > -s.cls.draft - 2) return false;
+      return !this.ships.some((o) => o !== s && !o.removed && Math.hypot(o.pos.x - px, o.pos.z - pz) < (o.cls.length + s.cls.length) * 0.6);
+    };
+    if (ok(x, z)) return { x, z, h };
+    for (let r = 12; r <= 192; r += 12) {
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2 + r * 0.07;
+        const px = x + Math.cos(a) * r;
+        const pz = z + Math.sin(a) * r;
+        if (ok(px, pz)) return { x: px, z: pz, h };
+      }
+    }
+    const w = this.findOpenWater(x, z, 30, 220);
+    return { x: w.x, z: w.z, h };
+  }
+
+  /** Every escort afloat gets her place in the line, in the order they joined. */
+  private assignSlots() {
+    const p = this.player;
+    if (!p) return;
+    const live = [...this.escorts.values()].filter((a) => a.ship.alive).sort((a, b) => a.rec.joined - b.rec.joined);
+    live.forEach((a, i) => {
+      const st = station(i, live.length, p.cls.length, a.ship.cls.length);
+      a.slot.x = st.x;
+      a.slot.z = st.z;
+    });
+  }
+
+  /** Under way from a berth: the escorts weigh and fall in on their stations astern of you. */
+  private formFleet() {
+    const p = this.player;
+    if (!p || !this.escorts.size) return;
+    this.assignSlots();
+    const sh = Math.sin(p.heading);
+    const ch = Math.cos(p.heading);
+    for (const [s, ai] of this.escorts) {
+      if (!s.alive) continue;
+      const a = this.deepFor(s, p.pos.x + ch * ai.slot.x - sh * ai.slot.z, p.pos.z - sh * ai.slot.x - ch * ai.slot.z, p.heading);
+      s.place(a.x, a.z, a.h);
+      s.anchored = false;
+      s.speed = 2.5;
+      s.sailTarget = 2 / 3;
+      ai.order = this.fleet.state.order;
+      ai.mode = 'station';
+      ai.target = null;
+    }
+  }
+
+  /** Alongside a quay: the escorts let go their anchors in the roads off the berth. */
+  private moorAtPort(port: TradePort) {
+    const p = this.player;
+    if (!p) return;
+    const c = port.castOff(p.cls.beam);
+    let i = 0;
+    const n = [...this.escorts.keys()].filter((s) => s.alive).length;
+    for (const [s, ai] of this.escorts) {
+      if (!s.alive) continue;
+      const a = this.anchorage(c.x, c.z, c.heading, p.cls.length, i++, n, s, 1.25);
+      s.place(a.x, a.z, a.h);
+      s.anchored = true;
+      s.sailTarget = 0;
+      s.rudder = 0;
+      ai.target = null;
+      ai.mode = 'station';
+    }
+  }
+
+  /** Runs a signal up: every escort answers, over her own deck. */
+  private giveOrder(o: Order) {
+    this.fleet.setOrder(o);
+    this.fleetHud.setOrder(o);
+    if (!this.escorts.size) return;
+    this.audio.fleetSignal(o);
+    const acks = ORDER_INFO[o].ack;
+    let k = Math.floor(Math.random() * acks.length);
+    for (const [s, ai] of this.escorts) {
+      ai.order = o;
+      if (o === 'follow') ai.target = null;
+      if (!s.alive || !this.player) continue;
+      const [x, y, ok] = this.screenOf(_a.set(s.pos.x, s.root.position.y + s.cls.masts[0].height * 0.55 + 4, s.pos.z));
+      if (ok) this.ui.floater(acks[k++ % acks.length], x, y, 'fleet');
+    }
+    if (o === 'attack' && !(this.markedFoe && this.markedFoe.alive) && this.state === 'playing' && !this.attackTipShown) {
+      this.attackTipShown = true;
+      this.ui.toast('Attack my target', 'They go for whatever your guns last laid on, or the nearest enemy', 3.6);
+    }
+  }
+
+  /** G: the next signal along (follow, attack, hold). */
+  private cycleOrder() {
+    if (!this.escorts.size) return;
+    const i = ORDERS.indexOf(this.fleet.state.order);
+    this.giveOrder(ORDERS[(i + 1) % ORDERS.length]);
+  }
+
+  /** This frame's foes and escorts, and each escort's captain at work. */
+  private updateFleet(dt: number) {
+    const foes = this.foes;
+    const es = this.escortShips;
+    foes.length = es.length = 0;
+    // the ship your boarders are fighting on is nobody's target
+    const lashed = this.boarding.prize;
+    for (const s of this.ships) {
+      if (!s.alive || s.removed || s === lashed) continue;
+      if (s.team === 'pirate' && !s.prize) foes.push(s);
+      else if (this.escorts.has(s)) es.push(s);
+    }
+    if (!this.escorts.size || dt <= 0) return;
+    if (this.state !== 'playing' && this.state !== 'dead') return;
+    const p = this.player;
+    const flag = p && p.alive && this.state === 'playing' ? p : null;
+    if (this.markedFoe && (!this.markedFoe.alive || this.markedFoe.removed || this.markedFoe.team !== 'pirate')) this.markedFoe = null;
+    const marks = this.seaMarks;
+    marks.length = 0;
+    for (let i = 0; i < this.gunnery.nMarks; i++) marks.push(this.gunnery.marks[i]);
+    const w = this.world;
+    for (const [s, ai] of this.escorts) {
+      ai.update(dt, w, flag, foes, this.markedFoe, this.ships, marks);
+      // a quiet spell lets her carpenters get to work (more slowly than the flagship's)
+      if (s.alive && w.time - s.lastHit > 9) s.hp = Math.min(s.maxHp, s.hp + s.maxHp * 0.006 * dt);
+    }
+  }
+
+  /** An escort went down: off the roster for good. */
+  private onEscortLost(s: Ship) {
+    const ai = this.escorts.get(s);
+    if (!ai) return;
+    this.escorts.delete(s);
+    this.fleet.remove(ai.rec.id, true);
+    this.assignSlots();
+    const by = s.lastAttacker && s.lastAttacker !== s ? ` · sunk by the ${s.lastAttacker.name}` : '';
+    this.note('fleet', `Lost the ${s.name}`, `${s.cls.name}${by}`);
+    this.ui.toast(`The ${s.name} is lost!`, `${ai.rec.master || 'Her captain'} and her crew go down fighting`, 4);
+    this.audio.bell(1, 0.32);
+    this.rig.shake(0.12);
+  }
+
+  /** Her crew sign the articles: she flies your flag and sails at your side from now on. */
+  private enlist(p: Ship, e: Ship) {
+    if (this.fleet.full) return this.takePrize(p, e);
+    this.ais.delete(e);
+    this.hunters.delete(e);
+    e.team = 'player';
+    e.prize = false;
+    e.hunter = null;
+    e.ammo = 'round';
+    e.afire = 0;
+    e.hp = Math.max(e.hp, e.maxHp * 0.4);
+    e.anchored = false;
+    e.sailTarget = 1 / 3;
+    this.boarding.hoist(e, p);
+    const rec: EscortRec = {
+      id: `prize-${Date.now().toString(36)}-${e.id}`,
+      cls: e.cls.id,
+      name: e.name,
+      master: prizeMaster(),
+      origin: 'prize',
+      livery: { ...e.livery },
+      hp: e.hp / e.maxHp,
+      kills: 0,
+      joined: Date.now(),
+    };
+    this.fleet.add(rec);
+    const ai = new EscortAI(e, { ...rec });
+    ai.order = this.fleet.state.order;
+    this.escorts.set(e, ai);
+    this.assignSlots();
+    this.markedFoe = null;
+    p.kills++;
+    this.addInfamy(KILL_INFAMY[e.cls.id]);
+    this.spawnTimer = Math.max(this.spawnTimer, 10);
+    this.note('fleet', `The ${e.name} joined your fleet`, `${e.cls.name} · ${rec.master} at her helm`);
+    this.ui.toast(`The ${e.name} joins your fleet!`, `${rec.master} has her helm · ${this.input.isTouch ? 'signal orders from the fleet panel' : 'G signals orders'}`, 4.6);
+    this.audio.bell(3, 0.24);
+    setTimeout(() => this.audio.fleetSignal('follow'), 600);
+    const [x, y, ok] = this.screenOf(_a.set(e.pos.x, e.root.position.y + e.cls.masts[0].height * 0.6 + 4, e.pos.z));
+    if (ok) this.ui.floater('Signs on!', x, y, 'fleet');
+  }
+
+  /** The harbour master signs a ship and her crew on, paid from your purse. */
+  private hire(id: string) {
+    const port = this.dockPort;
+    const p = this.player;
+    if (!port || !p || this.state !== 'docked' || this.fleet.full || this.fleet.get(id)) return;
+    const k = this.tradePorts.ports.indexOf(port);
+    const o = hireOffers(k + 1).find((x) => x.id === id);
+    if (!o || !this.vaultStore.spend(o.price)) return;
+    const rec: EscortRec = { id: o.id, cls: o.cls, name: o.name, master: o.master, origin: 'hired', hp: 1, kills: 0, joined: Date.now() };
+    if (!this.fleet.add(rec)) return;
+    this.buildEscort(rec);
+    this.moorAtPort(port);
+    this.refreshFleetMarket(rec.id);
+    port.cheer(o.cls === 'galleon' ? 2 : 1);
+    this.audio.coin();
+    this.audio.bell(3, 0.22);
+    this.note('fleet', `Hired the ${o.name}`, `${SHIP_CLASSES[o.cls].name} · ${o.master} · ${o.price.toLocaleString('en-US')} gold`);
+  }
+
+  /** Pays a ship off: she leaves your service and sails away. */
+  private payOff(id: string) {
+    const port = this.dockPort;
+    if (!port || this.state !== 'docked') return;
+    const rec = this.fleet.get(id);
+    if (!rec) return;
+    this.fleet.remove(id, false);
+    for (const [s, ai] of this.escorts) {
+      if (ai.rec.id !== id) continue;
+      this.escorts.delete(s);
+      s.anchored = false;
+      this.boarding.sendAway(s);
+    }
+    this.refreshFleetMarket();
+    this.audio.bell(1, 0.2);
+    this.note('fleet', `Paid off the ${rec.name}`, `${SHIP_CLASSES[rec.cls].name} · ${port.name}`);
+  }
+
+  /** The harbour master's counter, refreshed. */
+  private refreshFleetMarket(signed?: string) {
+    const port = this.dockPort;
+    if (!port) return;
+    const k = this.tradePorts.ports.indexOf(port);
+    const live = new Map<string, Ship>();
+    for (const [s, ai] of this.escorts) live.set(ai.rec.id, s);
+    this.market.setFleet(
+      {
+        roster: this.fleet.ships.map((r) => {
+          const s = live.get(r.id);
+          return { id: r.id, name: r.name, cls: r.cls, master: r.master, prize: r.origin === 'prize', hp: s ? s.hp / s.maxHp : r.hp, kills: s ? (this.escorts.get(s)?.rec.kills ?? r.kills) : r.kills };
+        }),
+        offers: hireOffers(k + 1).filter((o) => !this.fleet.get(o.id)),
+        purse: this.vaultStore.purse,
+      },
+      signed,
+    );
+  }
+
   /** Where the mouse points on the ground ashore (the plane the captain stands on). */
   private groundPick(): { x: number; z: number } | null {
     const pt = this.input.state.pointer;
@@ -1868,9 +2208,10 @@ export class Game {
     si.strike = st.fireAuto || st.fireAim;
     si.pistol = st.firePort || st.fireStarboard;
     si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
-    if (this.prizeOpen && (st.ammoPick === 0 || st.ammoPick === 1)) this.choosePrize(st.ammoPick === 0 ? 'prize' : 'scuttle');
+    if (this.prizeOpen && st.ammoPick >= 0 && st.ammoPick <= 2) this.choosePrize((['prize', 'scuttle', 'fleet'] as const)[st.ammoPick]);
     else if (st.helm) this.shoreAct();
     if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.fleet) this.cycleOrder();
     if (st.pause) {
       if (this.mapUi.isOpen) this.setMapView(false);
       else if (this.chartOpen) this.setChart(false);
@@ -1904,6 +2245,8 @@ export class Game {
       p.update(0.016, this.world);
       port.pin(p);
       p.root.updateMatrixWorld(true);
+      this.syncFleet();
+      this.moorAtPort(port);
       this.market.open(port.name, port.spec.taste.tagline, port.market, this.hold, p.gold, this.world.time);
       this.refreshServices();
       this.refreshParts();
@@ -1933,7 +2276,9 @@ export class Game {
   /** What the chandlery can do for her right now. */
   private serviceCosts() {
     const p = this.player!;
-    const hp = Math.max(0, Math.ceil(p.maxHp - p.hp));
+    // the yard mends the escorts' hulls along with hers
+    let hp = Math.max(0, Math.ceil(p.maxHp - p.hp));
+    for (const s of this.escorts.keys()) if (s.alive) hp += Math.max(0, Math.ceil(s.maxHp - s.hp));
     let shotN = 0;
     for (const id of SPECIALS) shotN += Math.max(0, AMMO[id].max - this.ammoStock[id]);
     return { repair: Math.ceil(hp * 0.5), repairHp: hp, shot: shotN * 9, shotN };
@@ -1984,6 +2329,9 @@ export class Game {
     if (!c.repair || c.repair > p.gold) return;
     p.gold -= c.repair;
     p.hp = p.maxHp;
+    for (const s of this.escorts.keys()) if (s.alive) s.hp = s.maxHp;
+    this.syncFleet();
+    this.refreshFleetMarket();
     port.unload(['calico', 'calico', 'cheese'].slice(0, 1 + Math.min(2, Math.floor(c.repairHp / 80))) as LootId[], true);
     this.audio.purchase('repair');
     this.refreshServices();
@@ -2036,6 +2384,7 @@ export class Game {
     this.ui.showHud(true);
     this.rig.mode = 'follow';
     this.rig.snapTo(p.pos);
+    this.formFleet();
     this.last = performance.now();
   }
 
@@ -2106,6 +2455,8 @@ export class Game {
     this.ships.splice(this.ships.indexOf(s), 1);
     this.ais.delete(s);
     this.hunters.delete(s);
+    this.escorts.delete(s);
+    if (this.markedFoe === s) this.markedFoe = null;
     s.root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.geometry) m.geometry.dispose();
@@ -2137,6 +2488,7 @@ export class Game {
     s.root.updateMatrixWorld(true);
     this.rig.orbitBox = box;
     this.rig.orbitQuat = rot;
+    this.mooreFleet();
   }
 
   private findOpenWater(cx: number, cz: number, rMin: number, rMax: number): THREE.Vector3 {
@@ -2370,7 +2722,18 @@ export class Game {
     this.spawnTimer = 4;
     this.resetHeat();
     if (KRAKEN_TEST) this.atmos.setWeather('storm');
-    this.ui.toast('Weigh anchor', `The ${p.name} sets sail`, 3);
+    // the escorts weigh with her and fall in on her quarters
+    const fleet: string[] = [];
+    for (const [s, ai] of this.escorts) {
+      s.anchored = false;
+      s.sailTarget = 2 / 3;
+      ai.order = this.fleet.state.order;
+      ai.mode = 'station';
+      fleet.push(`the ${s.name}`);
+    }
+    this.assignSlots();
+    this.fleetHud.setOrder(this.fleet.state.order, false);
+    this.ui.toast('Weigh anchor', fleet.length ? `The ${p.name} sets sail with ${fleet.join(' and ')}` : `The ${p.name} sets sail`, 3);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
 
@@ -2387,7 +2750,12 @@ export class Game {
     this.peek.classList.remove('on');
     this.setView(false);
     this.rig.resetEye();
+    this.syncFleet();
     for (const s of this.ships.slice()) this.removeShip(s);
+    this.escorts.clear();
+    this.fleetHud.clear();
+    this.markedFoe = null;
+    this.moorKey = '';
     this.projectiles.clear();
     this.particles.streaks.begin();
     this.particles.streaks.end();
@@ -2637,7 +3005,8 @@ export class Game {
     for (const [s, ai] of this.ais) {
       if (!s.alive || s.removed) continue;
       const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
-      const fighting = ai.mode === 'engage' || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
+      // a pirate tied up with an escort far off doesn't drag the camera over to her
+      const fighting = (ai.mode === 'engage' && (ai.target === p || d < 160)) || (s.lastAttacker === p && t - s.lastHit < 12) || (p.lastAttacker === s && t - p.lastHit < 12);
       // a little hysteresis so the frame doesn't flicker at the edge of range
       if (fighting && d < (s === this.lastFoe ? 320 : 270) && d < bd) {
         bd = d;
@@ -2660,6 +3029,8 @@ export class Game {
     if (attacker === this.player && ship !== this.player && this.state === 'playing') {
       this.log.hits++;
       this.log.dealt += dmg;
+      // the ship you're hitting is the one "attack my target" goes for
+      if (ship.team === 'pirate' && ship.alive) this.markedFoe = ship;
     }
     if (attacker === this.player && ok) this.ui.floater(`${Math.round(dmg)}`, x, y);
     if (ship === this.player) {
@@ -2703,6 +3074,7 @@ export class Game {
   }
 
   private onSunk(ship: Ship, attacker: Ship) {
+    if (ship.team === 'player') return this.onEscortLost(ship);
     // the replacement waits until the wreck has settled
     this.spawnTimer = Math.max(this.spawnTimer, 10);
     const named = ship.hunter ? CAPTAIN.get(ship.hunter) : undefined;
@@ -2713,10 +3085,19 @@ export class Game {
     const bounty = Math.round({ sloop: 60, brig: 110, galleon: 220 }[ship.cls.id] * heat * this.bounty.bonus * (ship.ghost ? 2 : 1));
     const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id] + (ship.ghost ? 0.35 : 0);
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8) + (ship.ghost ? 2 : 0), luck, ship.cls.id === 'galleon' || ship.ghost);
-    if (attacker === this.player) {
-      if (ship.ghost) this.note('ghost', `Laid the ${ship.name} to rest`, `Ghost ${ship.cls.name.toLowerCase()} · +${bounty} gold`);
-      else this.note('kill', `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
-      this.player.gold += bounty;
+    // your escorts' kills are yours: the Crown pays the flagship
+    const escort = this.escorts.get(attacker);
+    if (escort && this.player && this.state === 'playing') {
+      escort.rec.kills++;
+      this.player.kills++;
+      const [x, y, ok] = this.screenOf(_a.set(ship.pos.x, ship.root.position.y + ship.cls.freeboard + 4, ship.pos.z));
+      if (ok) this.ui.floater(`The ${attacker.name} sinks her!`, x, y, 'fleet');
+    }
+    if (attacker === this.player || (escort && this.player && this.state === 'playing')) {
+      const by = escort ? ` (the ${attacker.name})` : '';
+      if (ship.ghost) this.note('ghost', `Laid the ${ship.name} to rest${by}`, `Ghost ${ship.cls.name.toLowerCase()} · +${bounty} gold`);
+      else this.note(escort ? 'fleet' : 'kill', escort ? `The ${attacker.name} sank the ${ship.name}` : `Sank the ${ship.name}`, `${ship.cls.name} · +${bounty} gold`);
+      this.player!.gold += bounty;
       this.vaultStore.earn(bounty);
       this.ui.toast(`+${bounty} gold ${ship.ghost ? 'cursed bounty' : 'bounty'}`, ship.ghost ? `The ${ship.name} is laid to rest` : `${ship.name} sunk`, 3.6);
       this.audio.coin();
@@ -2849,7 +3230,12 @@ export class Game {
     // she carried her fortune with her
     this.loot.drop(ship.pos.x, ship.pos.z, 6 + c.tier, 0.7 + c.tier * 0.06, true);
     const p = this.player;
-    if (attacker !== p || !p || this.state !== 'playing') {
+    const escort = this.escorts.get(attacker);
+    if (escort && p && this.state === 'playing') {
+      escort.rec.kills++;
+      p.kills++;
+    }
+    if ((attacker !== p && !escort) || !p || this.state !== 'playing') {
       this.ui.toast('Her bounty goes unclaimed', `The ${ship.name} sank by another hand`, 3.4);
       return;
     }
@@ -2959,6 +3345,8 @@ export class Game {
     this.setChart(false);
     this.leaveShore();
     this.setView(false);
+    this.syncFleet();
+    if (this.escortShips.length) this.note('fleet', 'Your escorts broke off and ran for port', this.escortShips.map((s) => `the ${s.name}`).join(' and '));
     if (this.hold.count) this.note('trade', 'The hold went down with her', `${this.hold.count} goods worth about ${this.hold.worth} gold`);
     this.state = 'dead';
     // your own ship founders in moments rather than lingering as a hulk
@@ -3432,6 +3820,7 @@ export class Game {
     const a = this.gunnery.aim(p, side);
     const shot = p.ammo;
     if (p.fire(side, this.world, a.target, a.point)) {
+      if (a.target) this.markedFoe = a.target;
       const sd = side === 'port' ? 1 : -1;
       this.log.shots += p.model.muzzles.filter((m) => m.side === sd).length;
       if (shot !== 'round') {
@@ -3556,6 +3945,7 @@ export class Game {
     } else p.rudder = st.rudder;
     if (st.ammoPick >= 0) this.selectAmmo(AMMO_ORDER[st.ammoPick]);
     if (st.ammoNext) this.cycleAmmo();
+    if (st.fleet) this.cycleOrder();
     if (st.firePort) this.tryFire('port');
     if (st.fireStarboard) this.tryFire('starboard');
     if (st.fireAuto) {
@@ -3639,7 +4029,9 @@ export class Game {
     const prey = this.player && this.player.alive && this.state !== 'docked' && !this.shore.active ? this.player : null;
     // a ship fast in our grapnels has other things on her mind than sailing
     const lashed = this.boarding.prize;
-    for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships);
+    // your escorts stand guard even while you're ashore or on a prize's deck, and can be fought there
+    this.updateFleet(dt);
+    for (const ai of this.ais.values()) if (ai.ship !== lashed) ai.update(dt, w, prey, this.ships, this.state === 'playing' ? this.escortShips : []);
     P.end();
     P.begin('Ship physics & rigging', 'ships');
     if (dt > 0) this.boarding.pin(dt);
@@ -3843,7 +4235,18 @@ export class Game {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.ui.updateAmmo(p.ammo, this.ammoStock);
-      this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight, this.boarding.prize);
+      // the fleet panel, and the crossed swords over whoever the escorts are fighting
+      const rows = this.fleetRows;
+      rows.length = 0;
+      let marked: Ship | null = null;
+      for (const [s, ai] of this.escorts) {
+        if (s.removed) continue;
+        rows.push({ id: s.id, name: s.name, cls: s.cls.id, prize: ai.rec.origin === 'prize', hp: s.hp, max: s.maxHp, status: ai.status(), fighting: ai.mode === 'fight' });
+        if (!marked && ai.mode === 'fight' && ai.target && (ai.order === 'attack' || ai.target === this.markedFoe)) marked = ai.target;
+      }
+      this.fleetHud.setRows(rows);
+      this.fleetHud.show(rows.length > 0);
+      this.ui.updateBars(this.ships, p, this.rig.camera, innerWidth, innerHeight, this.boarding.prize, marked);
       const cap = this.shore.captain;
       const camps = this.shore.camps.map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
       this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target);
@@ -4060,7 +4463,8 @@ export class Game {
       return;
     }
     const alivePirates = this.ships.filter((s) => s.team === 'pirate' && s.alive && !s.hunter).length;
-    const want = Math.min(4, 2 + Math.floor(p.kills / 4));
+    // a fleet draws a bigger crowd
+    const want = Math.min(4, 2 + Math.floor(p.kills / 4)) + (this.escortShips.length ? 1 : 0);
     this.spawnTimer -= dt;
     if (alivePirates < want && this.spawnTimer <= 0) {
       const room = want - alivePirates;

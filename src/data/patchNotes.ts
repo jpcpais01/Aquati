@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T06:00Z',
+    entries: [
+      {
+        title: 'Your own fleet: up to two escorts that sail and fight at your side',
+        notes: [
+          'Board a pirate and win her deck, and the prize card now has a third choice: Sign her into your fleet (key 3). Her crew sign the articles, your flag runs up her mast, and she falls in on your quarter with one of her own hands at the helm. She keeps the paint she was taken in but flies your colours, from then on and every voyage after.',
+          'Harbour masters at the trading ports now have two ships for hire each day, each with a named captain and a line about them. A sloop is 2,500 gold and a brig or galleon costs more, paid from your purse. A hired ship wears your own paint and hull skin. The harbour master is also where you pay a ship off (click twice to be sure) and see every escort\'s hull and tally.',
+          'Escorts keep station astern on your quarters, one to each side, matching your course and speed and closing up when they fall behind. Press G, or tap the signal buttons under your ship\'s panel, to run up an order. Form on me: they guard you and turn on anyone who comes for you. Attack my target: they break formation and go for whatever your guns last hit (crossed swords mark her). Hold position: they heave to where they are and fight from there. Each escort calls back her answer over her deck.',
+          'They fight with real broadsides, can be holed, set ablaze and sunk, and the pirates will turn on them. Every ship they sink pays you the bounty and infamy, and counts as your kill. Your shot passes straight through your own ships, so you can fire past them freely. A badly holed escort falls back under your guns, and they patch up slowly when the shooting stops. Paying for repairs at a port mends their hulls along with yours.',
+          'Your fleet panel shows each escort\'s name, what she is doing and her hull. They show as aqua ships on the minimap and the sea chart (with their names), ride at anchor beside your ship in the harbour and off the quay when you dock, and your fleet is saved with your progress and synced between devices. Lose one and she is gone for good, so look after them.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T04:00Z',
     entries: [
       {

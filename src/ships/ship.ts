@@ -164,7 +164,7 @@ export class Ship {
   private mistT = 0;
 
   /** `model` may be one built ahead of time (see ShipModel's deferred build). */
-  constructor(readonly cls: ShipClass, readonly livery: Livery, readonly team: Team, quality = 1, model?: ShipModel) {
+  constructor(readonly cls: ShipClass, readonly livery: Livery, public team: Team, quality = 1, model?: ShipModel) {
     this.ghost = !!livery.ghost;
     this.model = model ?? new ShipModel(cls, livery, quality);
     this.root.add(this.model.root);
