@@ -41,12 +41,23 @@ export interface CampSite {
   y: number;
 }
 
+/** Raised ground laid over the island: a fort's plaza and its ramp. `at` is null outside it. */
+export interface Lift {
+  x: number;
+  z: number;
+  /** Half-size of the square it may answer within. */
+  r: number;
+  at(x: number, z: number): number | null;
+}
+
 const _g = new THREE.Vector2();
 const _solids: Disc[] = [];
 
 export class Ground {
   /** Discs nobody walks into on top of the plants: camp furniture, the boat. */
   readonly blocks: Disc[] = [];
+  /** Stone floors over the island (forts' plazas and ramps). */
+  readonly lifts: Lift[] = [];
 
   constructor(
     readonly terrain: Terrain,
@@ -56,7 +67,18 @@ export class Ground {
   ) {}
 
   height(x: number, z: number) {
-    return this.terrain.heightAt(x, z);
+    const v = this.lifted(x, z);
+    return v ?? this.terrain.heightAt(x, z);
+  }
+
+  /** The height of a stone floor here, or null on bare ground. */
+  lifted(x: number, z: number) {
+    for (const l of this.lifts) {
+      if (Math.abs(x - l.x) > l.r || Math.abs(z - l.z) > l.r) continue;
+      const v = l.at(x, z);
+      if (v !== null) return v;
+    }
+    return null;
   }
 
   /** Rise per metre at a point. */
@@ -66,6 +88,11 @@ export class Ground {
 
   /** Can a body of radius `r` stand here? */
   open(x: number, z: number, r = 0.3) {
+    // flagstones are level going, whatever the hill beneath them does
+    if (this.lifts.length && this.lifted(x, z) !== null) {
+      for (const t of this.towns) if ((x - t.x) ** 2 + (z - t.z) ** 2 < (t.r + r) ** 2) return false;
+      return true;
+    }
     const h = this.terrain.heightAt(x, z);
     if (h < -WADE) return false;
     if (h > 0.5 && this.slope(x, z) > STEEP) return false;

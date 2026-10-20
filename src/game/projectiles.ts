@@ -137,6 +137,8 @@ export class Projectiles {
         for (const s of ships) {
           // settled wrecks sit too low and twisted to stop a ball; your gunners shoot past your own escorts
           if (s === b.owner || s.removed || (!s.alive && s.sinkT > 2) || (s.team === 'player' && b.owner.team === 'player')) continue;
+          // a fort's gunners know their own side's ships
+          if (b.owner.battery && s.team === b.owner.team) continue;
           const dx = b.pos.x - s.pos.x;
           const dz = b.pos.z - s.pos.z;
           const R = s.cls.length * 0.55;

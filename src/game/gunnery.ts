@@ -39,6 +39,11 @@ export interface GunMark {
   x: number;
   z: number;
   r: number;
+  /**
+   * A mark set out past a target standing high above the sea (a fort's gun):
+   * how far beyond the guns' usual reach it may lie, as a multiple of it.
+   */
+  reach?: number;
 }
 
 const DEPTH_GLSL = /* glsl */ `
@@ -257,7 +262,7 @@ export class Gunnery {
         fm = m;
       }
       const b = this.bearing(p, m.x, m.z);
-      if (Math.abs(b.u) > 1.08 || raw > R || raw < r0 + 3) continue;
+      if (Math.abs(b.u) > 1.08 || raw > R * (m.reach ?? 1) || raw < r0 + 3) continue;
       const toPtr = this.pointerSide === b.side && this.pointer ? Math.hypot(this.pointer.x - m.x, this.pointer.z - m.z) : -1;
       const score = toPtr >= 0 ? toPtr : raw + Math.abs(b.u) * 60;
       if (score < best[b.side].score) best[b.side] = { s: null, m, score, d: raw };

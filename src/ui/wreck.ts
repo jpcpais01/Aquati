@@ -12,7 +12,7 @@ import { progressSaved } from '../core/progress';
 
 export interface VoyageEvent {
   t: number;
-  kind: 'kill' | 'chest' | 'isle' | 'trade' | 'bounty' | 'ghost' | 'fleet';
+  kind: 'kill' | 'chest' | 'isle' | 'trade' | 'bounty' | 'ghost' | 'fleet' | 'fort';
   text: string;
   detail: string;
 }
@@ -32,7 +32,7 @@ export interface WreckReport {
   /** Best chest rarity opened (-1 none). */
   best: number;
   miles: number;
-  cause: 'shot' | 'rammed' | 'aground' | 'kraken';
+  cause: 'shot' | 'rammed' | 'aground' | 'kraken' | 'fort';
   killer?: string;
   killerCls?: ShipClassId;
   /** The named captain who sent her down, if a hunter did. */
@@ -102,6 +102,7 @@ function causeLine(r: WreckReport) {
   const k = r.hunter && r.killer ? `${esc(r.hunter)} in the <span class="nm">${esc(r.killer)}</span>` : r.killer ? `the <span class="nm">${esc(r.killer)}</span>` : 'pirates';
   if (r.cause === 'aground') return 'Holed on the reef';
   if (r.cause === 'kraken') return 'Dragged under by <span class="nm">the Kraken</span>';
+  if (r.cause === 'fort') return `Sunk by the guns of <span class="nm">${esc(r.killer ?? 'a fort')}</span>`;
   if (r.cause === 'rammed') return `Rammed by ${k}`;
   return `Sunk by ${k}`;
 }
@@ -118,6 +119,7 @@ function quip(r: WreckReport) {
   if (r.best >= 4) fits.push('A legendary chest, and now the sea has it back.');
   if (r.cause === 'aground') fits.push("The reef doesn't care how fast you were sailing.");
   if (r.cause === 'rammed') fits.push('Close quarters. Very close quarters.');
+  if (r.cause === 'fort') fits.push('Never trade broadsides with a stone wall. It has all day.', 'The fort is still standing. The fort is always still standing.');
   if (r.cause === 'kraken') {
     fits.length = 0;
     fits.push(
@@ -144,7 +146,7 @@ function quip(r: WreckReport) {
   return fits[(Math.random() * fits.length) | 0];
 }
 
-const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle', trade: 'coin', bounty: 'skull', ghost: 'skull', fleet: 'isle' };
+const KIND_ICON: Record<VoyageEvent['kind'], string> = { kill: 'skull', chest: 'coin', isle: 'isle', trade: 'coin', bounty: 'skull', ghost: 'skull', fleet: 'isle', fort: 'isle' };
 
 export class WreckScreen {
   private cine = $('cine');

@@ -7,6 +7,7 @@ import type { Ship } from '../ships/ship';
 import type { World } from '../game/world';
 import { BOAT_L, buildBoat, buildCamp, buildDigMarks, campFlag, CampLayout, CHEST_D, CHEST_H, chestParts, holeGeometry, ShoreMats, shoreMats, spoilGeometry } from './kit';
 import { CampSite, Ground, Landing } from './ground';
+import { fortToWorld, worldToFort } from './fortKit';
 import { DeckFloor, Floor, Lines, railPoint } from './deck';
 import { Cut, CUT_HIT, CUT_WIND, RUN, WALK, Walker } from './walker';
 
@@ -40,6 +41,12 @@ const DIG_WORK = 16;
 const CAMP_ALARM = 19;
 /** ...and gives up the chase this far from home. */
 const LEASH = 42;
+/** A fort's garrison stands to when the party comes this close to the plaza's brazier, and chases this far. */
+const FORT_ALARM = 31;
+const FORT_LEASH = 78;
+/** The garrison: soldiers, and their commandant. */
+const GARRISON = 5;
+const COMMANDANT_HP = 160;
 /** A boarder's flight across on a line (s), and how high the leap carries over the rails. */
 const SWING_T = 1.15;
 const SWING_UP = 1.35;
@@ -52,6 +59,10 @@ const _mid = new THREE.Vector3();
 const _w = new THREE.Vector3();
 const _o = { x: 0, z: 0 };
 const _hand = new THREE.Vector3();
+const _la = { x: 0, z: 0 };
+const _lb = { x: 0, z: 0 };
+const _rt = { x: 0, z: 0 };
+const _wp = new THREE.Vector3();
 
 export interface ShoreInput {
   /** Wanted stride in world space, length 0..1. */
@@ -102,10 +113,31 @@ interface Swing {
   done: boolean;
 }
 
+/** A fort's walls, as the walkers see them: a square with its gate on the landward face (-z). */
+export interface FortWalls {
+  x: number;
+  z: number;
+  yaw: number;
+  /** Half-width to the outer face, and the walls' thickness. */
+  H: number;
+  T: number;
+}
+
+/** A fort's garrison, handed to the shore like a camp. */
+export interface Garrison {
+  site: CampSite;
+  layout: CampLayout & { flagDrop: number };
+  walls: FortWalls;
+}
+
 export interface Camp {
   readonly index: number;
   readonly site: CampSite;
-  readonly layout: CampLayout;
+  readonly layout: CampLayout & { flagDrop?: number };
+  /** Set when this is a fort's garrison rather than a camp of cutthroats. */
+  readonly fort?: FortWalls;
+  /** Nobody home: a fort of yours, its old garrison long gone. */
+  empty?: boolean;
   readonly gang: Walker[];
   readonly flag: THREE.Group;
   readonly lid: THREE.Group;
@@ -244,11 +276,15 @@ export class Shore {
   /** The grappling lines and boarding ropes (drawn by whoever runs the boarding). */
   readonly lines: Lines;
 
+  /** Forts' walls, for walking round them to the gate. */
+  private walls: FortWalls[] = [];
+
   constructor(
     readonly ground: Ground,
     sites: CampSite[],
     private crew: CrewSystem,
     private hooks: ShoreHooks,
+    garrisons: Garrison[] = [],
   ) {
     this.group.name = 'shore';
     this.floor = ground;
@@ -304,6 +340,30 @@ export class Shore {
       this.muster(camp, i);
       this.camps.push(camp);
     });
+    // the forts' garrisons: the same as a camp, behind stone walls (the fort itself is built elsewhere)
+    garrisons.forEach((gr) => {
+      const i = this.camps.length;
+      for (const d of gr.layout.blocks) ground.blocks.push(d);
+      this.walls.push(gr.walls);
+      // the Brethren's colours, big enough to read from the sea
+      const flag = campFlag(mats.flag);
+      flag.scale.setScalar(2.3);
+      flag.position.copy(gr.layout.flagTop);
+      this.group.add(flag);
+      const chest = new THREE.Group();
+      const lid = new THREE.Group();
+      for (const [k, geo] of Object.entries(parts.body)) if (geo) chest.add(this.mesh(geo, k as Bucket));
+      for (const [k, geo] of Object.entries(parts.lid)) if (geo) lid.add(this.mesh(geo, k as Bucket));
+      lid.position.set(0, CHEST_H, -CHEST_D / 2);
+      chest.add(lid);
+      chest.scale.setScalar(1.25);
+      chest.position.copy(gr.layout.chest);
+      chest.rotation.y = gr.layout.chestYaw;
+      this.group.add(chest);
+      const camp: Camp = { index: i, site: gr.site, layout: gr.layout, fort: gr.walls, gang: [], flag, lid, chest, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
+      this.muster(camp, i);
+      this.camps.push(camp);
+    });
   }
 
   private mesh(geo: THREE.BufferGeometry, k: Bucket) {
@@ -330,12 +390,15 @@ export class Shore {
     }
     L.posts.forEach((p, k) => spots.push({ ...p, idle: k === 1 ? 'watch' : k === 2 ? 'lean' : 'stand', seatH: 0 }));
     c.spots = spots;
-    const n = 3 + Math.floor(rnd() * 2) + (c.site.island.r > 85 ? 1 : 0);
+    const fort = !!c.fort;
+    const n = fort ? GARRISON + 1 : 3 + Math.floor(rnd() * 2) + (c.site.island.r > 85 ? 1 : 0);
     for (let k = 0; k < n; k++) {
-      const boss = k === 0 && c.site.island.r > 70;
+      const boss = k === 0 && (fort || c.site.island.r > 70);
       const look = foeLook(boss, rnd);
       const row = this.crew.takeRow(look);
-      const w = new Walker('foe', row, look, boss ? BOSS_HP : FOE_HP, boss ? 1.16 : 0.94 + rnd() * 0.16, boss ? 1.06 : 0.95 + rnd() * 0.1, true);
+      const hp = boss ? (fort ? COMMANDANT_HP : BOSS_HP) : FOE_HP;
+      const w = new Walker('foe', row, look, hp, boss ? (fort ? 1.2 : 1.16) : 0.94 + rnd() * 0.16, boss ? (fort ? 1.08 : 1.06) : 0.95 + rnd() * 0.1, true);
+      if (fort) w.title = boss ? 'Commandant' : '';
       c.gang.push(w);
     }
     this.restCamp(c);
@@ -748,7 +811,7 @@ export class Shore {
     // camps come alive near the camera
     for (const c of this.camps) {
       // (a fight on a ship's deck is no place to walk an island's cutthroats: they'd be walked on her planks)
-      const live = !this.deck && Math.hypot(c.site.x - focus.x, c.site.z - focus.z) < CAMP_LIVE;
+      const live = !this.deck && !c.empty && Math.hypot(c.site.x - focus.x, c.site.z - focus.z) < CAMP_LIVE;
       if (live !== c.live) {
         c.live = live;
         for (const w of c.gang) {
@@ -1122,7 +1185,15 @@ export class Shore {
     }
     let ux = d > 1e-3 ? dx / d : 0;
     let uz = d > 1e-3 ? dz / d : 0;
-    if (marching) {
+    // through a fort's gate rather than into its walls
+    const r = this.via(w.x, w.z, tx, tz, _rt);
+    const detour = r.x !== tx || r.z !== tz;
+    if (detour) {
+      const rl = Math.hypot(r.x - w.x, r.z - w.z) || 1;
+      ux = (r.x - w.x) / rl;
+      uz = (r.z - w.z) / rl;
+    }
+    if (marching && !detour) {
       // near your place, walk the way the party walks rather than chasing the spot
       const b = clamp(1 - d / 1.5, 0, 1) * 0.7;
       ux = lerp(ux, cap.vx / capV, b);
@@ -1235,10 +1306,10 @@ export class Shore {
     // stand off at a spot round the target of your own, so a gang surrounds rather than stacks
     const ang = Math.atan2(-dx, -dz) + Math.sin(this.time * 0.5 + w.seed) * 0.5 + ((k % 3) - 1) * 0.35;
     const want = 1.45;
-    const gx = t.x + Math.sin(ang) * want;
-    const gz = t.z + Math.cos(ang) * want;
-    const ex = gx - w.x;
-    const ez = gz - w.z;
+    // round a fort's walls to its gate, if they stand between
+    const r = this.via(w.x, w.z, t.x + Math.sin(ang) * want, t.z + Math.cos(ang) * want, _rt);
+    const ex = r.x - w.x;
+    const ez = r.z - w.z;
     const ed = Math.hypot(ex, ez);
     const sp = d > 6 ? RUN * 0.92 : d > 2.4 ? WALK * 1.25 : clamp(ed * 2.2, 0, 1.6);
     if (ed > 0.15) {
@@ -1263,12 +1334,14 @@ export class Shore {
   private thinkCamp(c: Camp, dt: number, world: World) {
     const cap = this.active ? this.captain : null;
     const f = c.layout.fire;
+    const alarm = c.fort ? FORT_ALARM : CAMP_ALARM;
+    const leash = c.fort ? FORT_LEASH : LEASH;
     // the party comes too close: up and at them
     if (!c.alert && !c.routed && cap && !this.defeated) {
       let near = Infinity;
       for (const p of this.party) {
         const w = p.walker;
-        near = Math.min(near, Math.hypot(w.x - f.x, w.z - f.z) - CAMP_ALARM);
+        near = Math.min(near, Math.hypot(w.x - f.x, w.z - f.z) - alarm);
         for (const g of c.gang) if (g.alive && !g.down) near = Math.min(near, Math.hypot(w.x - g.x, w.z - g.z) - 9);
       }
       if (near < 0) this.raise(c, world);
@@ -1294,7 +1367,7 @@ export class Shore {
         }
         const t = w.target;
         // too far from home and nobody pressing: give up and walk back
-        if (!t || Math.hypot(t.x - f.x, t.z - f.z) > LEASH) {
+        if (!t || Math.hypot(t.x - f.x, t.z - f.z) > leash) {
           w.target = null;
           this.goHome(w, c, k, dt);
           return;
@@ -1307,7 +1380,7 @@ export class Shore {
     });
     // a gang that's lost its quarry stands down
     if (c.alert && !c.routed && c.gang.every((w) => w.down || !w.target)) {
-      const home = c.gang.every((w) => w.down || Math.hypot(w.x - f.x, w.z - f.z) < 9);
+      const home = c.gang.every((w) => w.down || Math.hypot(w.x - f.x, w.z - f.z) < (c.fort ? 11 : 9));
       if (home || !cap) {
         c.alert = false;
         for (const w of c.gang) {
@@ -1328,13 +1401,15 @@ export class Shore {
       const free = c.spots.filter((o) => !c.gang.some((g) => g !== w && Math.hypot(g.x - o.x, g.z - o.z) < 0.6));
       s = free[Math.floor(Math.random() * free.length)] ?? s;
     }
-    const dx = s.x - w.x;
-    const dz = s.z - w.z;
-    const d = Math.hypot(dx, dz);
+    const r = this.via(w.x, w.z, s.x, s.z, _rt);
+    const dx = r.x - w.x;
+    const dz = r.z - w.z;
+    const d = Math.hypot(s.x - w.x, s.z - w.z);
     if (d > 0.35) {
       const sp = Math.min(c.alert ? WALK : 1.35, d * 1.5 + 0.3);
-      w.vx += ((dx / d) * sp - w.vx) * damp(5, dt);
-      w.vz += ((dz / d) * sp - w.vz) * damp(5, dt);
+      const dl = Math.hypot(dx, dz) || 1;
+      w.vx += ((dx / dl) * sp - w.vx) * damp(5, dt);
+      w.vz += ((dz / dl) * sp - w.vz) * damp(5, dt);
       w.wantYaw = Math.atan2(dx, dz);
       w.idle = 'stand';
       w.seatH = 0;
@@ -1610,6 +1685,49 @@ export class Shore {
     }
   }
 
+  // ---------------------------------------------------------------- forts' walls
+
+  /**
+   * Where to head for, to get from (x, z) to (gx, gz): straight there, or
+   * round a fort's walls and through its gate if they stand in the way.
+   */
+  private via(x: number, z: number, gx: number, gz: number, out: { x: number; z: number }) {
+    out.x = gx;
+    out.z = gz;
+    for (const f of this.walls) {
+      const reach = f.H + 40;
+      if (Math.abs(x - f.x) > reach || Math.abs(z - f.z) > reach) continue;
+      const a = worldToFort(f, x, z, _la);
+      const b = worldToFort(f, gx, gz, _lb);
+      const H = f.H;
+      const inA = Math.abs(a.x) < H && Math.abs(a.z) < H;
+      const inB = Math.abs(b.x) < H && Math.abs(b.z) < H;
+      if (inA && inB) return out;
+      let tx = b.x;
+      let tz = b.z;
+      const mouthIn = -H + f.T + 1.4;
+      const mouthOut = -H - 2.8;
+      if (inA) {
+        // in the plaza or the passage: to the gate, then out through it
+        const passage = Math.abs(a.x) < 1.5 && a.z < mouthIn + 0.4;
+        tx = 0;
+        tz = passage ? mouthOut : mouthIn;
+      } else if (inB) {
+        // outside, bound in: round to the gate's mouth, then in through it
+        const atGate = Math.abs(a.x) < 1.7 && a.z > mouthOut - 0.9;
+        tx = 0;
+        tz = atGate ? mouthIn : mouthOut;
+        if (!atGate) [tx, tz] = roundWalls(a.x, a.z, tx, tz, H);
+      } else [tx, tz] = roundWalls(a.x, a.z, tx, tz, H);
+      if (tx === b.x && tz === b.z) return out;
+      fortToWorld(f, tx, tz, _wp);
+      out.x = _wp.x;
+      out.z = _wp.z;
+      return out;
+    }
+    return out;
+  }
+
   // ---------------------------------------------------------------- the camps' fires, flags and chests
 
   private campFx(c: Camp, dt: number, world: World, focus: THREE.Vector3) {
@@ -1620,7 +1738,7 @@ export class Shore {
       c.flag.rotation.y = Math.atan2(-world.wind.dirZ, world.wind.dirX);
       if (c.routed && c.strike < 1) {
         c.strike = Math.min(1, c.strike + dt * 0.45);
-        c.flag.position.y = L.flagTop.y - c.strike * 4.4;
+        c.flag.position.y = L.flagTop.y - c.strike * (L.flagDrop ?? 4.4);
         if (c.strike >= 1) c.flag.visible = false;
       }
     }
@@ -1635,7 +1753,7 @@ export class Shore {
     c.fireT += dt * (d < 90 ? 11 : 5);
     while (c.fireT > 1) {
       c.fireT -= 1;
-      world.particles.flame(_v.set(L.fire.x, L.fire.y + 0.05, L.fire.z), 0.42);
+      world.particles.flame(_v.set(L.fire.x, L.fire.y + 0.05, L.fire.z), c.fort ? 0.34 : 0.42);
     }
     if (Math.random() < dt * 2.5) {
       world.particles.emit({
@@ -1666,6 +1784,10 @@ export class Shore {
     }
     const c = this.chestNear();
     if (c) {
+      if (c.fort) {
+        if (!c.routed) return { key: 'chest', title: 'The fort\'s strongbox', sub: 'Beat the garrison to claim it', ok: false };
+        return { key: 'chest', title: 'Open the fort\'s strongbox', sub: 'The garrison\'s pay chest is yours', ok: true };
+      }
       if (!c.routed) return { key: 'chest', title: 'A locked chest', sub: 'Rout the camp to claim it', ok: false };
       return { key: 'chest', title: 'Open the cutthroats\' chest', sub: 'Their plunder is yours', ok: true };
     }
@@ -1677,7 +1799,7 @@ export class Shore {
     if (!cap) return null;
     for (const c of this.camps) {
       if (!c.live || c.opened) continue;
-      if (Math.hypot(c.layout.chest.x - cap.x, c.layout.chest.z - cap.z) < 2.4) return c;
+      if (Math.hypot(c.layout.chest.x - cap.x, c.layout.chest.z - cap.z) < (c.fort ? 2.8 : 2.4)) return c;
     }
     return null;
   }
@@ -1911,3 +2033,46 @@ function foeLook(boss: boolean, rnd: () => number): Look {
   return l;
 }
 
+
+/** Does the segment a→b cut the square |x|, |z| < E? (Liang–Barsky) */
+function cuts(ax: number, az: number, bx: number, bz: number, E: number) {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = bx - ax;
+  const dz = bz - az;
+  const p = [-dx, dx, -dz, dz];
+  const q = [ax + E, E - ax, az + E, E - az];
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return false;
+      continue;
+    }
+    const r = q[i] / p[i];
+    if (p[i] < 0) {
+      if (r > t1) return false;
+      t0 = Math.max(t0, r);
+    } else {
+      if (r < t0) return false;
+      t1 = Math.min(t1, r);
+    }
+  }
+  return t1 - t0 > 1e-4;
+}
+
+/** From a (outside a fort of half-width H, fort frame) toward t: straight on, or to the corner that gets you round. */
+function roundWalls(ax: number, az: number, tx: number, tz: number, H: number): [number, number] {
+  const E = H + 0.6;
+  if (!cuts(ax, az, tx, tz, E)) return [tx, tz];
+  const C = H + 3.4;
+  let best: [number, number] = [tx, tz];
+  let bd = Infinity;
+  for (const [cx, cz] of [[C, C], [-C, C], [C, -C], [-C, -C]]) {
+    if (cuts(ax, az, cx, cz, E)) continue;
+    const d = Math.hypot(cx - ax, cz - az) + Math.hypot(tx - cx, tz - cz) + (cuts(cx, cz, tx, tz, E) ? H * 2 : 0);
+    if (d < bd) {
+      bd = d;
+      best = [cx, cz];
+    }
+  }
+  return best;
+}

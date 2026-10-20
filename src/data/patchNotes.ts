@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T08:00Z',
+    entries: [
+      {
+        title: 'Island forts: silence their guns, storm the gate and fly your flag',
+        notes: [
+          'Three Spanish-built stone forts now stand on the islands, held by the Brethren: Castillo San Felipe, Fuerte Santa Bárbara and Castillo del Morro. Each has corner bastions with sentry boxes, a barracks, a powder magazine, a flagstaff with the black flag and four bronze guns on its ramparts. They show on the minimap and the sea chart.',
+          'Sail within range and the shore batteries open up on you. They lead their shots, traverse to follow you and hit hard, so keep moving. Aim at the guns themselves (your gunnery marks lock on to them) and each one you smash goes quiet and smokes. A bar at the top of the screen shows the fort\'s name, which guns still stand and what to do next.',
+          'With its guns silenced you can land on its beach. Climb the ramp to the gate and the garrison of five, led by a tough Commandant, sallies out to meet you. Cut them down and the gates are open: their pay chest holds gold, shot and ship gear, and you run your own flag up the staff.',
+          'A fort that flies your flag is yours for good. Its guns fire on any pirate that comes near you, it pays tribute in gold every hour (sail by to collect it, up to eight hours\' worth), restocks your shot, and its anchorage slowly mends your hull and your escorts\' while you lie under its guns.',
+          'Your forts are saved with your progress and synced between devices. Sinking under a fort\'s guns now gets its own line on the farewell screen.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T06:00Z',
     entries: [
       {

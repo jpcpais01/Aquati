@@ -6,7 +6,7 @@ import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { HOLD_ROOM } from '../game/treasure';
 import { Terrain, WORLD_SIZE, Island } from '../world/terrain';
-import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark } from './chart';
+import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark, fortMark } from './chart';
 import { PIN_COLORS } from '../game/waypoints';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
@@ -1265,6 +1265,7 @@ export class UI {
     pins: { x: number; z: number; hue: number }[] = [],
     /** A whole treasure map's X. */
     treasure: { x: number; z: number } | null = null,
+    forts: { x: number; z: number; ours: boolean; quiet: boolean }[] = [],
   ) {
     const g = this.map;
     const S = this.mapCanvas.width;
@@ -1361,6 +1362,11 @@ export class UI {
         g.stroke();
       }
       g.restore();
+    }
+    for (const f of forts) {
+      const [x, y] = toMap(f.x, f.z);
+      if (x < -14 || y < -14 || x > S + 14 || y > S + 14) continue;
+      fortMark(g, x, y, 11, f.ours, f.quiet);
     }
     if (treasure) {
       const [x, y] = toMap(treasure.x, treasure.z);
