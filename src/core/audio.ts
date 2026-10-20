@@ -16,6 +16,18 @@ const MUSIC_VOL = 0.55;
 const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
 const pick = <T>(a: T[]): T | undefined => a[(Math.random() * a.length) | 0];
 
+/** A jaunty hornpipe phrase in D for coming alongside: [midi, beat, beats], tune over oom-pah. */
+const ARRIVAL: [number, number, number][] = [
+  [69, 0, 1], [74, 1, 1], [74, 2, 1], [78, 3, 1], [76, 4, 1], [74, 5, 1],
+  [76, 6, 1], [72, 7, 1], [69, 8, 1], [71, 9, 1], [73, 10, 1], [74, 11, 3],
+  [50, 0, 1.5], [54, 1.5, 1], [57, 1.5, 1], [45, 3, 1.5], [54, 4.5, 1], [57, 4.5, 1],
+  [48, 6, 1.5], [52, 7.5, 1], [55, 7.5, 1], [45, 9, 1.5], [55, 10.5, 1], [57, 10.5, 1], [50, 11, 3], [54, 11, 3], [57, 11, 3],
+];
+/** A quick squeezebox run up to a ringing chord, for a fortune changing hands. */
+const FLOURISH: [number, number, number][] = [
+  [74, 0, 1], [78, 1, 1], [81, 2, 1], [86, 3, 3], [50, 3, 3], [57, 3, 3], [62, 3, 3],
+];
+
 export class Audio {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -56,7 +68,17 @@ export class Audio {
     grape: [],
     chain: [],
     flames: [],
+    coin: [],
+    pour: [],
+    purse: [],
+    creak: [],
+    mallet: [],
+    clunk: [],
+    lap: [],
+    murmur: [],
   };
+  /** The quay's loops and the timer that peppers them with creaks, gulls and hammering. */
+  private quay: { gain: GainNode; srcs: AudioBufferSourceNode[]; timer: number } | null = null;
   private music: HTMLAudioElement | null = null;
   private musicGain: GainNode | null = null;
   private musicWanted = false;
@@ -661,22 +683,24 @@ export class Audio {
     });
   }
 
-  coin() {
-    const v = this.voice(0.18, 0);
-    if (!v) return;
-    const [ctx, out] = v;
-    [1046.5, 1568].forEach((fr, i) => {
-      const t = ctx.currentTime + i * 0.07;
-      const o = ctx.createOscillator();
-      o.type = 'triangle';
-      o.frequency.value = fr;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.5, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-      o.connect(g).connect(out);
-      o.start(t);
-      o.stop(t + 0.4);
-    });
+  /** A gold doubloon flipped onto the counter: a heavy, warm chink and its bounces. */
+  coin(delay = 0, vol = 0.5) {
+    this.emit(pick(this.bank.coin), { vol, pan: (Math.random() - 0.5) * 0.3, dist: 0, rate: 0.93 + Math.random() * 0.14, wet: 0.18, delay });
+  }
+
+  /** Counting gold out onto the table, one piece after another. */
+  private countOut(n: number, delay = 0, vol = 0.42) {
+    let t = delay;
+    for (let i = 0; i < n; i++) {
+      this.coin(t, vol * (0.8 + Math.random() * 0.3));
+      t += 0.1 + Math.random() * 0.07;
+    }
+    return t;
+  }
+
+  /** A tap on the merchant's oak counter: the market's buttons. */
+  knock() {
+    if (this.emit(pick(this.bank.mallet), { vol: 0.13, pan: 0, dist: 0, rate: 1.5 + Math.random() * 0.25, wet: 0.05 }) < 0) this.click();
   }
 
   /** Chest pickup: a coin clink plus a rising arpeggio that grows with rarity. */
@@ -744,25 +768,226 @@ export class Audio {
     }
   }
 
-  /** A sale: coins pour into the purse, more for a bigger sum. */
-  sale(value: number) {
-    const v = this.voice(0.16, 0);
+  /**
+   * A sale. A few pieces are counted out by hand; a fair sum lands as a
+   * purse thumped on the counter and poured out; a fortune gets a second
+   * purse, a squeezebox flourish and the whole quay roaring.
+   */
+  sale(value: number, best = 0) {
+    if (value < 120) {
+      const end = this.countOut(3 + Math.min(3, Math.floor(value / 30)));
+      this.emit(this.bank.pour[0], { vol: 0.28, pan: 0, dist: 0, rate: 1.1, wet: 0.15, delay: end - 0.05 });
+      return;
+    }
+    const big = value >= 600;
+    this.emit(pick(this.bank.purse), { vol: 0.62, pan: -0.1, dist: 0, rate: 0.95 + Math.random() * 0.1, wet: 0.2 });
+    this.emit(this.bank.pour[big ? 1 : 0], { vol: big ? 0.55 : 0.45, pan: 0.05, dist: 0, rate: 0.96 + Math.random() * 0.08, wet: 0.22, delay: 0.16 });
+    if (big) this.emit(pick(this.bank.purse), { vol: 0.5, pan: 0.15, dist: 0, rate: 0.88, wet: 0.2, delay: 0.55 });
+    this.coin(big ? 1.6 : 0.85, 0.4);
+    if (value >= 1500 || best >= 3) {
+      this.squeezebox(FLOURISH, 0.13, 0.25);
+      this.shout(0.9, 0.2, 25, true, 6);
+    }
+  }
+
+  /** Paying the chandler: gold counted out, then the yard gets to work. */
+  purchase(kind: 'repair' | 'shot') {
+    const end = this.countOut(kind === 'repair' ? 4 : 3);
+    for (let i = 0; i < 3; i++) {
+      const d = end + 0.15 + i * (kind === 'repair' ? 0.32 : 0.26) + Math.random() * 0.05;
+      if (kind === 'repair') this.emit(pick(this.bank.mallet), { vol: 0.32 - i * 0.05, pan: 0.35, dist: 14, rate: 0.9 + Math.random() * 0.15, wet: 0.35, delay: d });
+      else this.emit(pick(this.bank.clunk), { vol: 0.4 - i * 0.06, pan: -0.3, dist: 10, rate: 0.92 + Math.random() * 0.12, wet: 0.3, delay: d });
+    }
+  }
+
+  /**
+   * A concertina: two free reeds tuned a hair apart (that wet "musette"
+   * beating), buzzing through the box's wooden resonance, with the bellows
+   * breathing behind each note. Notes are [midi, start beat, beats].
+   */
+  squeezebox(tune: [number, number, number][], beat: number, vol: number, delay = 0) {
+    const v = this.voice(vol, 0);
     if (!v) return;
     const [ctx, out] = v;
-    const n = Math.min(14, 3 + Math.floor(Math.log2(1 + value / 30)));
-    for (let i = 0; i < n; i++) {
-      const t = ctx.currentTime + i * 0.055 + Math.random() * 0.02;
-      const o = ctx.createOscillator();
-      o.type = 'triangle';
-      o.frequency.value = 1900 + Math.random() * 1600;
+    out.connect(this.reverbIn);
+    const body = ctx.createBiquadFilter();
+    body.type = 'lowpass';
+    body.frequency.value = 2600;
+    body.Q.value = 0.8;
+    const honk = ctx.createBiquadFilter();
+    honk.type = 'peaking';
+    honk.frequency.value = 1150;
+    honk.Q.value = 1.4;
+    honk.gain.value = 6;
+    body.connect(honk).connect(out);
+    const t0 = ctx.currentTime + delay;
+    let end = t0;
+    for (const [midi, at, len] of tune) {
+      const f = 440 * Math.pow(2, (midi - 69) / 12);
+      const t = t0 + at * beat;
+      const d = len * beat;
       const g = ctx.createGain();
-      g.gain.setValueAtTime(0.32, t);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
-      o.connect(g).connect(out);
-      o.start(t);
-      o.stop(t + 0.2);
+      const lvl = midi < 55 ? 0.22 : 0.3;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(lvl, t + 0.025);
+      g.gain.setValueAtTime(lvl, t + d * 0.6);
+      g.gain.exponentialRampToValueAtTime(lvl * 0.7, t + d * 0.92);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.05);
+      g.connect(body);
+      for (const [type, det, a] of [['sawtooth', -9, 0.5], ['sawtooth', 9, 0.5], ['square', 0, 0.22]] as const) {
+        const o = ctx.createOscillator();
+        o.type = type;
+        o.frequency.value = f;
+        o.detune.value = det;
+        const og = ctx.createGain();
+        og.gain.value = a;
+        o.connect(og).connect(g);
+        o.start(t);
+        o.stop(t + d + 0.08);
+        o.onended = () => {
+          o.disconnect();
+          og.disconnect();
+        };
+      }
+      end = Math.max(end, t + d + 0.1);
     }
-    this.coin();
+    setTimeout(() => {
+      body.disconnect();
+      honk.disconnect();
+      out.disconnect();
+    }, (end - ctx.currentTime) * 1000 + 1500);
+  }
+
+  /** The bosun's call: a shrill pipe swooping up, trilling, and falling away: "all hands, cast off!". */
+  bosunPipe() {
+    const v = this.voice(0.09, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    out.connect(this.reverbIn);
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(1650, t);
+    o.frequency.exponentialRampToValueAtTime(2550, t + 0.28);
+    o.frequency.setValueAtTime(2550, t + 0.95);
+    o.frequency.exponentialRampToValueAtTime(1900, t + 1.35);
+    // the piper's "rolling" trill, finger fluttering over the buoy
+    const trill = ctx.createOscillator();
+    trill.frequency.value = 13;
+    const td = ctx.createGain();
+    td.gain.setValueAtTime(0, t);
+    td.gain.setValueAtTime(0, t + 0.35);
+    td.gain.linearRampToValueAtTime(140, t + 0.45);
+    td.gain.setValueAtTime(140, t + 0.9);
+    td.gain.linearRampToValueAtTime(0, t + 0.98);
+    trill.connect(td).connect(o.frequency);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.8, t + 0.05);
+    g.gain.setValueAtTime(0.8, t + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+    // breath through the pipe
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 2400;
+    bp.Q.value = 2;
+    const ng = ctx.createGain();
+    ng.gain.value = 0.25;
+    o.connect(g);
+    n.connect(bp).connect(ng).connect(g);
+    g.connect(out);
+    o.start(t);
+    trill.start(t);
+    n.start(t, Math.random() * 2);
+    o.stop(t + 1.45);
+    trill.stop(t + 1.45);
+    n.stop(t + 1.45);
+    o.onended = () => {
+      o.disconnect();
+      trill.disconnect();
+      td.disconnect();
+      n.disconnect();
+      bp.disconnect();
+      ng.disconnect();
+      g.disconnect();
+      out.disconnect();
+    };
+  }
+
+  /** Coming alongside: the hull nudges the fenders, the lines creak taut, and somebody on the quay strikes up a tune. */
+  portArrive() {
+    this.emit(pick(this.bank.mallet), { vol: 0.5, pan: 0.2, dist: 6, rate: 0.42, wet: 0.35 });
+    this.emit(pick(this.bank.earth), { vol: 0.2, pan: 0.2, dist: 6, rate: 0.7, wet: 0.3, delay: 0.03 });
+    this.emit(this.bank.creak[0], { vol: 0.3, pan: -0.4, dist: 8, rate: 0.95, wet: 0.3, delay: 0.35 });
+    this.emit(this.bank.creak[1], { vol: 0.24, pan: 0.45, dist: 10, rate: 1.05, wet: 0.3, delay: 0.9 });
+    this.squeezebox(ARRIVAL, 0.14, 0.13, 0.9);
+    this.harbour(true);
+  }
+
+  /** Casting off: the bosun pipes, the lines come in and the timbers ease. */
+  portDepart() {
+    this.bosunPipe();
+    this.emit(this.bank.creak[2], { vol: 0.3, pan: 0.3, dist: 8, rate: 0.9, wet: 0.35, delay: 0.5 });
+    this.emit(this.bank.creak[0], { vol: 0.22, pan: -0.3, dist: 8, rate: 1.1, wet: 0.3, delay: 1.1 });
+    this.shout(0.6, 0, 15, true, 4);
+  }
+
+  /** The quay's own soundscape while you're tied up: water among the pilings, hubbub, creaks, gulls, the yard. */
+  harbour(on: boolean) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (!on) {
+      const q = this.quay;
+      if (!q) return;
+      this.quay = null;
+      clearInterval(q.timer);
+      q.gain.gain.cancelScheduledValues(now);
+      q.gain.gain.setTargetAtTime(0, now, 0.5);
+      setTimeout(() => {
+        for (const s of q.srcs) s.stop();
+        q.gain.disconnect();
+      }, 3000);
+      return;
+    }
+    if (this.quay) return;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(1, now + 2.5);
+    gain.connect(this.duckGain);
+    const srcs: AudioBufferSourceNode[] = [];
+    for (const [buf, v, rate] of [[this.bank.lap[0], 0.9, 1], [this.bank.murmur[0], 0.3, 1]] as const) {
+      if (!buf) continue;
+      const s = ctx.createBufferSource();
+      s.buffer = buf;
+      s.loop = true;
+      s.playbackRate.value = rate;
+      const g = ctx.createGain();
+      g.gain.value = v;
+      s.connect(g).connect(gain);
+      s.start(now, Math.random() * buf.duration);
+      s.onended = () => {
+        s.disconnect();
+        g.disconnect();
+      };
+      srcs.push(s);
+    }
+    const side = () => (Math.random() < 0.5 ? -1 : 1) * (0.3 + Math.random() * 0.6);
+    const timer = window.setInterval(() => {
+      if (this.muted || ctx.state !== 'running') return;
+      const r = Math.random();
+      if (r < 0.14) this.emit(pick(this.bank.creak), { vol: 0.1 + Math.random() * 0.1, pan: side(), dist: 15 + Math.random() * 30, rate: 0.85 + Math.random() * 0.3, wet: 0.4 });
+      else if (r < 0.2) this.gull(0.35 + Math.random() * 0.3, side(), 1 + ((Math.random() * 3) | 0));
+      else if (r < 0.24) {
+        // a shipwright across the yard, hard at a plank
+        const p = side();
+        for (let i = 0, n = 3 + ((Math.random() * 4) | 0); i < n; i++) this.emit(pick(this.bank.mallet), { vol: 0.07, pan: p, dist: 70, rate: 0.95 + Math.random() * 0.1, wet: 0.6, delay: i * 0.38 });
+      } else if (r < 0.26) this.emit(pick(this.bank.clunk), { vol: 0.08, pan: side(), dist: 40, rate: 0.8, wet: 0.5 });
+      else if (r < 0.28) this.coin(0, 0.08);
+    }, 900);
+    this.quay = { gain, srcs, timer };
   }
 
   /** A side's guns run out again: two dull knocks from the gun deck and a small bright bell. */

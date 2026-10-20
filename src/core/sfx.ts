@@ -817,7 +817,304 @@ export function fireCrackle(sr: number, seed: number): Float32Array {
   return peakNorm(out, 0.8);
 }
 
-export type BankKind = 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast' | 'crunch' | 'shell' | 'ignite' | 'steam' | 'grape' | 'chain' | 'flames';
+// ---------------------------------------------------------------- the port
+
+/**
+ * One gold coin struck. A coin rings like a tiny free disc: inharmonic plate
+ * modes (not a musical note), each split in two by the coin's wobble so it
+ * shimmers. Gold is heavy and soft, so it sits lower and dies sooner than a
+ * silver ping: a warm, buttery "chink" rather than a bell.
+ */
+function strike(dst: Float32Array, sr: number, r: Rand, t0: number, f0: number, amp: number, ring: number, bright = 1) {
+  const start = Math.floor(t0 * sr);
+  if (start >= dst.length || amp < 0.002) return;
+  const ratio = [1, 1.73, 2.33, 3.9, 4.12, 5.93];
+  const gain = [1, 0.5, 0.72, 0.34 * bright, 0.28 * bright, 0.14 * bright];
+  const dec = [1, 0.62, 0.55, 0.3, 0.27, 0.16];
+  for (let m = 0; m < ratio.length; m++) {
+    const f = f0 * ratio[m] * (0.985 + r() * 0.03);
+    if (f > sr * 0.45) continue;
+    const d = ring * dec[m];
+    const split = 1 + (0.002 + r() * 0.004);
+    const ph = r() * TAU;
+    const len = Math.min(dst.length - start, Math.floor(d * 6 * sr));
+    const a = amp * gain[m] * (0.7 + r() * 0.6);
+    for (let i = 0; i < len; i++) {
+      const t = i / sr;
+      const e = Math.exp(-t / d) * (1 - Math.exp(-t / 0.00015));
+      dst[start + i] += (Math.sin(ph + TAU * f * t) + 0.7 * Math.sin(ph * 1.3 + TAU * f * split * t)) * e * a;
+    }
+  }
+  // the tick of metal meeting metal
+  const hp = new SVF(sr, 6500, 0.8);
+  const cl = Math.min(dst.length - start, Math.floor(0.004 * sr));
+  for (let i = 0; i < cl; i++) {
+    hp.run(r() * 2 - 1);
+    dst[start + i] += hp.hp * Math.exp(-i / sr / 0.0007) * amp * 0.9 * bright;
+  }
+}
+
+/**
+ * A single doubloon tossed onto the counter: the strike, a couple of bounces,
+ * and on some the coin rolling onto its rim and spinning down (the gaps
+ * between chinks shrinking to a rattle before it lies flat).
+ */
+export function goldClink(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.1);
+  const out = new Float32Array(n);
+  const f0 = 2100 + r() * 1100;
+  let t = 0.002;
+  let a = 1;
+  let gap = 0.05 + r() * 0.03;
+  const bounces = 2 + Math.floor(r() * 3);
+  for (let k = 0; k <= bounces; k++) {
+    strike(out, sr, r, t, f0 * (1 + (r() - 0.5) * 0.02), a, k ? 0.07 : 0.16, k ? 0.6 : 1);
+    t += gap;
+    gap *= 0.62;
+    a *= 0.42;
+  }
+  if (seed % 2) {
+    // spinning down on its rim
+    let g = 0.045;
+    let sa = 0.35;
+    for (let s = t + 0.04; s < 0.95 && g > 0.0035; s += g) {
+      strike(out, sr, r, s, f0 * 0.97, sa, 0.03, 0.4);
+      g *= 0.9;
+      sa *= 0.965;
+    }
+  }
+  fadeTail(out, sr, 0.1);
+  return peakNorm(out, 0.85);
+}
+
+/** A double handful of gold sliding onto the pile: chinks, slither and the heavy ones landing last. */
+export function coinPour(sr: number, seed: number, dur: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * (dur + 0.6));
+  const out = new Float32Array(n);
+  const count = Math.floor(55 * dur + 10);
+  for (let k = 0; k < count; k++) {
+    // dense at first, thinning out as the last coins trickle off the top
+    const u = Math.pow(r(), 1.5);
+    const t = 0.01 + u * dur;
+    const a = (0.25 + 0.75 * r()) * (0.45 + 0.55 * Math.exp(-u * 1.4));
+    strike(out, sr, r, t, 2300 + r() * 2600, a, 0.025 + r() * 0.06, 0.5 + r() * 0.5);
+  }
+  // the slither of coins grinding over coins
+  noiseGrains(out, sr, r, { count: Math.floor(260 * dur), t0: 0.01, spread: dur, skew: 1.4, fLo: 3500, fHi: 11000, q: 1.6, durLo: 0.0005, durHi: 0.003, amp: 0.25 });
+  // a few heavy pieces settling
+  for (let k = 0; k < 3; k++) strike(out, sr, r, dur * (0.7 + r() * 0.35), 1900 + r() * 500, 0.6, 0.12);
+  fadeTail(out, sr, 0.15);
+  return peakNorm(out, 0.85);
+}
+
+/** A fat leather purse of gold dropped on an oak counter: thump, leather slap, and a muffled crunch of coin inside. */
+export function purseDrop(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 0.7);
+  const out = new Float32Array(n);
+  // the counter taking the weight
+  const ex = new Float32Array(Math.floor(sr * 0.02));
+  const lp = new SVF(sr, 900, 0.7);
+  for (let i = 0; i < ex.length; i++) {
+    lp.run(r() * 2 - 1);
+    ex[i] = lp.lp * Math.exp(-i / sr / 0.004);
+  }
+  mix(out, peakNorm(comb(ex, sr, 150 + r() * 40, 0.7, 0.45)), 0.9);
+  modal(out, sr, r, [118, 245, 410, 690], [0.07, 0.05, 0.03, 0.018], [0.9, 0.6, 0.35, 0.2]);
+  // leather slapping down
+  const bp = new SVF(sr, 1100 + r() * 400, 0.9);
+  for (let i = 0; i < Math.floor(sr * 0.06); i++) {
+    bp.run(r() * 2 - 1);
+    out[i] += bp.bp * Math.exp(-i / sr / 0.012) * 1.4;
+  }
+  // the coins inside, heard through the leather
+  const coins = new Float32Array(n);
+  for (let k = 0; k < 34; k++) strike(coins, sr, r, 0.003 + Math.pow(r(), 2) * 0.16, 1800 + r() * 2000, 0.3 + r() * 0.7, 0.02 + r() * 0.03, 0.6);
+  const m = new SVF(sr, 2600, 0.7);
+  for (let i = 0; i < n; i++) {
+    m.run(coins[i]);
+    coins[i] = m.lp;
+  }
+  mix(out, peakNorm(coins), 0.55);
+  fadeTail(out, sr, 0.12);
+  saturate(out, 1.3);
+  return peakNorm(out, 0.85);
+}
+
+/**
+ * A mooring line or a timber taking strain: stick-slip friction through hemp
+ * and oak resonances. `rope` is the tighter, higher "eeerk" of a hawser on a
+ * bollard; otherwise the slow groan of the quay's pilings.
+ */
+export function creak(sr: number, seed: number, rope: boolean): Float32Array {
+  const r = rng(seed);
+  const len = (rope ? 0.55 : 0.9) + r() * 0.5;
+  const n = Math.floor(sr * (len + 0.3));
+  const out = new Float32Array(n);
+  const res = (rope ? [520, 860, 1350, 2050, 2900] : [190, 310, 520, 800, 1180]).map((f) => new SVF(sr, f * (0.9 + r() * 0.2), rope ? 7 : 5));
+  const resAmp = [1, 0.8, 0.55, 0.35, 0.2];
+  const base = rope ? 70 + r() * 50 : 22 + r() * 14;
+  const bend = rope ? 1.9 : 1.6;
+  let ph = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const u = Math.min(1, t / len);
+    // the pulse rate climbs as the strain builds, then lets go
+    ph += (base * (1 + (bend - 1) * Math.sin(u * Math.PI)) * (1 + Math.sin(t * 9 + seed) * 0.06)) / sr;
+    let x = (r() * 2 - 1) * 0.04;
+    if (ph >= 1) {
+      ph -= 1;
+      x += 0.5 + r() * 0.8;
+    }
+    const env = t < len ? Math.min(1, t / 0.08, (len - t) / 0.12) : 0;
+    let y = 0;
+    for (let m = 0; m < res.length; m++) {
+      res[m].run(x * env);
+      y += res[m].bp * resAmp[m];
+    }
+    out[i] = y;
+  }
+  fadeTail(out, sr, 0.1);
+  return peakNorm(out, 0.8);
+}
+
+/** A shipwright's mallet on a plank (or, slowed down, a hull nudging the fenders). */
+export function mallet(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 0.4);
+  const out = new Float32Array(n);
+  snap(out, sr, r, 0, 0.5, 1500, 4000, 0.002);
+  modal(out, sr, r, [360, 840, 1480, 2300], [0.06, 0.035, 0.02, 0.012], [1, 0.6, 0.35, 0.18]);
+  const ex = new Float32Array(Math.floor(sr * 0.012));
+  for (let i = 0; i < ex.length; i++) ex[i] = (r() * 2 - 1) * Math.exp(-i / sr / 0.002);
+  mix(out, peakNorm(comb(ex, sr, 210 + r() * 60, 0.6, 0.4)), 0.4);
+  fadeTail(out, sr, 0.08);
+  return peakNorm(out, 0.85);
+}
+
+/** Round shot set down into a crate of its fellows: iron on iron, the box's thud, a short roll. */
+export function ironClunk(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 0.8);
+  const out = new Float32Array(n);
+  modal(out, sr, r, [480, 1310, 2560, 3900], [0.1, 0.05, 0.03, 0.018], [0.7, 0.5, 0.32, 0.18]);
+  modal(out, sr, r, [105, 190, 330], [0.08, 0.05, 0.03], [1, 0.6, 0.3]);
+  snap(out, sr, r, 0, 0.35, 900, 3000, 0.003);
+  const lp = new SVF(sr, 420, 0.8);
+  const fl = flutter(r, sr, n, 0.02, 0.8);
+  for (let i = Math.floor(sr * 0.08); i < n; i++) {
+    const t = i / sr - 0.08;
+    lp.run(r() * 2 - 1);
+    out[i] += lp.lp * fl[i] * Math.min(1, t / 0.03) * Math.exp(-t / 0.18) * 0.9;
+  }
+  fadeTail(out, sr, 0.1);
+  return peakNorm(out, 0.85);
+}
+
+/** Folds a rendered tail back onto the start so a buffer loops with no seam. */
+function wrap(a: Float32Array, n: number) {
+  const out = a.slice(0, n);
+  for (let i = n; i < a.length; i++) out[i % n] += a[i];
+  return out;
+}
+
+/** Harbour water slapping and plocking among the pilings under the quay (seamless loop). */
+export function harbourLap(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const loop = Math.floor(sr * 5);
+  const a = new Float32Array(loop + sr);
+  const wash = new SVF(sr, 320, 0.6);
+  const fl = flutter(r, sr, loop, 0.35, 0.5);
+  for (let i = 0; i < loop; i++) {
+    wash.run(r() * 2 - 1);
+    a[i] += wash.lp * fl[i] * 0.35;
+  }
+  for (let t = r() * 0.3; t < 5; t += 0.35 + r() * 0.7) {
+    const s = Math.floor(t * sr);
+    const bp = new SVF(sr, 280 + r() * 520, 1.3);
+    const amp = 0.4 + r() * 0.6;
+    const len = Math.floor(sr * 0.35);
+    for (let i = 0; i < len; i++) {
+      const tt = i / sr;
+      bp.run(r() * 2 - 1);
+      a[s + i] += bp.bp * (1 - Math.exp(-tt / 0.012)) * Math.exp(-tt / 0.07) * amp * 2.2;
+    }
+    if (r() < 0.55) {
+      // the hollow "plock" of a wavelet into the gap behind a piling
+      const f = 170 + r() * 190;
+      const pa = 0.3 + r() * 0.4;
+      for (let i = 0; i < Math.floor(sr * 0.12); i++) {
+        const tt = i / sr;
+        a[s + i] += Math.sin(TAU * f * tt * (1 + tt * 6)) * Math.exp(-tt / 0.025) * (1 - Math.exp(-tt / 0.002)) * pa;
+      }
+    }
+  }
+  return peakNorm(wrap(a, loop), 0.8);
+}
+
+/**
+ * The quay's hubbub: a dozen distant voices haggling, each a glottal buzz
+ * through shifting vowel formants in irregular phrases, blurred by distance
+ * into a lively murmur with no words to catch (seamless loop).
+ */
+export function crowdMurmur(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const dur = 6;
+  const loop = Math.floor(sr * dur);
+  const a = new Float32Array(loop + sr * 2);
+  const vowels = [[730, 1090], [530, 1840], [270, 2290], [570, 840], [300, 870], [640, 1190], [490, 1350]];
+  for (let v = 0; v < 12; v++) {
+    const f0 = (r() < 0.6 ? 95 + r() * 60 : 180 + r() * 70);
+    const f1 = new SVF(sr, 700, 5);
+    const f2 = new SVF(sr, 1200, 7);
+    const g = (0.5 + r() * 0.5) * (r() < 0.3 ? 1.5 : 1);
+    let t = r() * 1.5;
+    let ph = 0;
+    while (t < dur) {
+      // a phrase of a few syllables, then a breath
+      const syl = 3 + Math.floor(r() * 7);
+      const rise = (r() - 0.5) * 0.3;
+      for (let k = 0; k < syl; k++) {
+        const sl = 0.09 + r() * 0.15;
+        const vw = vowels[(r() * vowels.length) | 0];
+        f1.set(vw[0] * (0.9 + r() * 0.2), 5);
+        f2.set(vw[1] * (0.9 + r() * 0.2), 7);
+        const s = Math.floor(t * sr);
+        const pitch = f0 * (1 + rise * (k / syl) + (r() - 0.5) * 0.12);
+        for (let i = 0; i < Math.floor(sl * sr); i++) {
+          const tt = i / sr;
+          ph += pitch / sr;
+          let x = (r() * 2 - 1) * 0.08;
+          if (ph >= 1) {
+            ph -= 1;
+            x += 1;
+          }
+          const env = Math.sin(Math.PI * Math.min(1, tt / sl));
+          f1.run(x * env);
+          f2.run(x * env);
+          a[s + i] += (f1.bp + f2.bp * 0.6) * g;
+        }
+        t += sl + r() * 0.03;
+      }
+      t += 0.2 + r() * 0.9;
+    }
+  }
+  // distance: the highs go, the room around the quay stays
+  const lp = new SVF(sr, 1700, 0.6);
+  const hp = new SVF(sr, 140, 0.6);
+  for (let i = 0; i < a.length; i++) {
+    lp.run(a[i]);
+    hp.run(lp.lp);
+    a[i] = hp.hp;
+  }
+  return peakNorm(wrap(a, loop), 0.8);
+}
+
+export type BankKind =
+  | 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast' | 'crunch' | 'shell' | 'ignite' | 'steam' | 'grape' | 'chain' | 'flames'
+  | 'coin' | 'pour' | 'purse' | 'creak' | 'mallet' | 'clunk' | 'lap' | 'murmur';
 export const CALIBERS = 3;
 
 /** Everything the game plays, cheapest/most needed first. Cannon index = caliber * 2 + variant. */
@@ -839,5 +1136,14 @@ export function bankJobs(sr: number): { kind: BankKind; index: number; render: (
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'grape', index: v, render: () => [grapeHail(sr, 1301 + v)] });
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'chain', index: v, render: () => [chainRip(sr, 1401 + v)] });
   jobs.push({ kind: 'flames', index: 0, render: () => [fireCrackle(sr, 1501)] });
+  // the port: gold, rope, timber and the quay's own noise
+  for (let v = 0; v < 6; v++) jobs.push({ kind: 'coin', index: v, render: () => [goldClink(sr, 1601 + v)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'pour', index: v, render: () => [coinPour(sr, 1701 + v, v ? 1.5 : 0.6)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'purse', index: v, render: () => [purseDrop(sr, 1801 + v)] });
+  for (let v = 0; v < 3; v++) jobs.push({ kind: 'creak', index: v, render: () => [creak(sr, 1901 + v, v < 2)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'mallet', index: v, render: () => [mallet(sr, 2001 + v)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'clunk', index: v, render: () => [ironClunk(sr, 2101 + v)] });
+  jobs.push({ kind: 'lap', index: 0, render: () => [harbourLap(sr, 2201)] });
+  jobs.push({ kind: 'murmur', index: 0, render: () => [crowdMurmur(sr, 2301)] });
   return jobs;
 }

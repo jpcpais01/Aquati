@@ -1025,7 +1025,7 @@ export class Game {
     document.body.appendChild(m.root);
     m.onClick = () => {
       this.audio.start();
-      this.audio.click();
+      this.audio.knock();
     };
     m.onDock = () => {
       const near = this.player && this.tradePorts.nearest(this.player.pos.x, this.player.pos.z);
@@ -1290,6 +1290,7 @@ export class Game {
       this.frameDock(0);
       this.rig.snapShot();
       this.note('trade', `Docked at ${port.name}`, port.spec.house);
+      this.audio.portArrive();
     });
   }
 
@@ -1347,8 +1348,7 @@ export class Game {
     // the porters carry it ashore, finest first, and the quay cheers a good sale
     port.unload(goods);
     port.cheer(total >= 1500 || best >= 4 ? 2 : total >= 250 || best >= 2 ? 1 : 0.5);
-    this.audio.sale(total);
-    if (best >= 3) this.audio.treasure(best);
+    this.audio.sale(total, best);
     this.note('trade', id ? `Sold ${goods.length > 1 ? `${goods.length} × ` : ''}${LOOT[id].name}` : `Sold the hold (${goods.length} goods)`, `${port.name} · +${total} gold`);
   }
 
@@ -1361,7 +1361,7 @@ export class Game {
     p.gold -= c.repair;
     p.hp = p.maxHp;
     port.unload(['calico', 'calico', 'cheese'].slice(0, 1 + Math.min(2, Math.floor(c.repairHp / 80))) as LootId[], true);
-    this.audio.coin();
+    this.audio.purchase('repair');
     this.refreshServices();
   }
 
@@ -1376,7 +1376,7 @@ export class Game {
     for (const id of SPECIALS) add[id] = AMMO[id].max - this.ammoStock[id];
     this.stockAmmo(add, null);
     port.unload(['rum', 'rum'] as LootId[], true);
-    this.audio.coin();
+    this.audio.purchase('shot');
     this.refreshServices();
   }
 
@@ -1386,6 +1386,7 @@ export class Game {
     const port = this.dockPort;
     if (!p || !port || this.state !== 'docked' || this.swBusy) return;
     this.veil.innerHTML = '<span>Casting off…</span>';
+    this.audio.portDepart();
     void this.fade(() => this.undock(true));
   }
 
@@ -1394,6 +1395,7 @@ export class Game {
     const p = this.player;
     const port = this.dockPort;
     this.market.close();
+    this.audio.harbour(false);
     this.dockPort = null;
     port?.setShip(null);
     this.rig.camera.clearViewOffset();
@@ -1868,7 +1870,7 @@ export class Game {
     const H = WORLD_SIZE / 2;
     if (Math.abs(x) > H || Math.abs(z) > H) return;
     this.waypoints.add(x, z, this.player?.pos);
-    this.audio.coin();
+    this.audio.knock();
   }
 
   /** The sea chart overlays live play: the world keeps sailing underneath. */
