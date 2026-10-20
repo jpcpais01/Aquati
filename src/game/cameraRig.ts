@@ -25,6 +25,7 @@ export class CameraRig {
   private focus = new THREE.Vector3();
   zoom = 0.45; // 0 close .. 1 far
   private zoomSmooth = 0.45;
+  private zoomVel = 0;
   /**
    * Past the farthest zoom: 0 = the usual high view .. 1 = leaned a little
    * further over at the same distance, for a more cinematic angle. Zooming out further only stirs it
@@ -293,7 +294,15 @@ export class CameraRig {
       this.applyEase(dt);
       return;
     }
-    this.zoomSmooth += (this.zoom - this.zoomSmooth) * damp(5, dt);
+    // a critically damped spring, not a plain lag: a lag jumps to full speed on
+    // every wheel notch and then brakes, so a spun wheel zooms in surges; the
+    // spring carries its speed from notch to notch and glides
+    const zw = 8;
+    const zx = this.zoomSmooth - this.zoom;
+    const ze = Math.exp(-zw * dt);
+    const zt = (this.zoomVel + zw * zx) * dt;
+    this.zoomVel = (this.zoomVel - zw * zt) * ze;
+    this.zoomSmooth = this.zoom + (zx + zt) * ze;
     // a slow, weighty swing, like a crane shot settling
     this.tiltSmooth += (this.tilt - this.tiltSmooth) * damp(2.2, dt);
     this.ft = clamp(this.ft + (this.foot ? dt : -dt) / 0.9, 0, 1);

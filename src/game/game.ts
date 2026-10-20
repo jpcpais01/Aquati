@@ -947,7 +947,7 @@ export class Game {
     await mark(1, 250);
     ui.hideLoading();
     this.last = performance.now();
-    this.renderer.setAnimationLoop(() => this.frame());
+    this.renderer.setAnimationLoop((t) => this.frame(t));
     // sign-in loads once the harbour is up, off the critical path
     setTimeout(() => this.cloudSave.start(), 900);
     // the picker's painted charts, made while the captain admires the ship
@@ -5526,15 +5526,27 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
 
-  private frame() {
+  /**
+   * `vsync` is the frame's own timestamp from requestAnimationFrame: steady,
+   * where reading the clock once the callback finally runs wobbles by however
+   * late the browser got round to it. Motion paced by that wobble lands on
+   * an even vsync grid uneven, a judder that shows only while things move.
+   */
+  private frame(vsync = performance.now()) {
     const now = performance.now();
-    let dt = (now - this.last) / 1000;
-    this.last = now;
+    let dt = Math.max(0, (vsync - this.last) / 1000);
+    this.last = vsync;
     const P = this.prof;
     P.tick(now);
     this.fps = P.fps;
+    // a frame is shown a whole number of refreshes after the last: snap a
+    // near miss onto that grid, so the camera moves the same each refresh
+    // (the scaler learns the refresh rate from the raw intervals)
+    if (this.scaler.sample(Math.min(dt, 0.05), this.cpuMs)) this.resize();
+    const slot = this.scaler.slotMs / 1000;
+    const n = Math.round(dt / slot);
+    if (n >= 1 && n <= 3 && Math.abs(dt - n * slot) < slot * 0.12) dt = n * slot;
     dt = Math.min(dt, 0.05);
-    if (this.scaler.sample(dt, this.cpuMs)) this.resize();
     // Auto's last resort: still slow at the lowest resolution, so shed effects
     if (this.scaler.pressure >= 2) {
       this.scaler.pressure = 0;
