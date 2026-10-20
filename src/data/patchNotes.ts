@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T17:00Z',
     entries: [
       {
+        title: 'Las Brumas and the high seas',
+        notes: [
+          'The sea is bigger now. Far out to the east-north-east, past three archipelagos\' worth of open ocean, lie Las Brumas, the Isles of Mist: sheer limestone towers crowned with jungle, sea stacks standing in jade water, pink coral beaches and blossom trees. It\'s all one sea, with no loading screens: just keep sailing.',
+          'Las Brumas has its own ports (Vila Garoa\'s tea and silk bazaar and the jade carvers of Esmeraldeau), two Brethren forts to take, its own reefs, a maelstrom out among the stacks and cutthroat camps ashore. Mist rolls in there far more often, at any hour.',
+          'Between the archipelagos lies Mar Sereno, the high seas. Sail out into it and a calm, slow theme of harp, pad and ocarina takes over, a steady trade wind carries you half again as fast on any heading, and storms blow themselves out. No pirates, hunters or Kraken follow you this far out.',
+          'Every so often a pod of dolphins comes racing in to ride your bow wave and swim alongside, leaping and whistling, before peeling off back into the blue.',
+          'Until you\'ve been there, Las Brumas is only a rumour on your sea chart, a faint outline in the mist. Your first landfall pays 600 gold and charts it for good, synced with your cloud save. Zoom the chart out to see the whole sea and the route between, and out on the high seas your minimap points the way to each archipelago.',
+        ],
+      },
+      {
         title: 'Less than half the triangles, same view',
         notes: [
           'A ship alone at sea now draws around a third of the triangles it used to at every zoom. Nothing you can see was taken away: detail is spent only where it can show on screen.',

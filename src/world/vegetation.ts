@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mulberry32, Simplex2, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import { shadowOnly } from '../render/passCull';
-import { Terrain, Island } from './terrain';
+import { SeaFloor, Island } from './terrain';
 import {
   palmGeometry, broadleafGeometry, treeFernGeometry, bananaGeometry, fernGeometry, bushGeometry, flowerBushGeometry,
   wildflowerGeometry, tuftGeometry, rockGeometry, starfishGeometry, shellGeometry, coconutsGeometry, driftwoodGeometry,
@@ -106,7 +106,7 @@ export class Vegetation {
   private cullProj = new Float32Array(2);
 
   constructor(
-    private terrain: Terrain,
+    private terrain: SeaFloor,
     private density = 1,
     private clearings: { x: number; z: number; r: number }[] = [],
     private lite = false,
@@ -156,9 +156,14 @@ export class Vegetation {
     const volcanic = isl.kind === 'volcanic';
     const rocky = isl.kind === 'rocky';
     const atoll = isl.kind === 'atoll';
+    // Las Brumas: dense, wet, flowering jungle, the karst towers crowned with it, and far fewer palms
+    const karst = isl.kind === 'karst';
+    const misty = isl.style === 'brumas';
+    const top = karst ? 120 : isl.peak * (rocky ? 1.3 : 0.9);
     const jungleAt = (x: number, z: number, h: number) => {
       const e = t.erosionAt(x, z);
-      const j = smoothstep(-0.25, 0.45, s.noise(x * 0.025, z * 0.025) - e * 0.45) * (0.55 + 0.45 * smoothstep(3, 12, h));
+      const n = smoothstep(-0.25, 0.45, s.noise(x * 0.025, z * 0.025) - e * 0.45);
+      const j = Math.min(1, misty ? n * 1.3 + 0.12 : n) * (0.55 + 0.45 * smoothstep(3, 12, h));
       return Math.min(1, j * (rocky ? 0.8 : 1) * (1 - Math.max(e, 0) * 0.45));
     };
 
@@ -177,7 +182,7 @@ export class Vegetation {
       // coconut groves along the beach, leaning out over the water
       if (h > 0.45 && h < 4.2 && slope < 0.42) {
         const grove = smoothstep(-0.3, 0.45, s.noise(x * 0.021 + 5.3, z * 0.021 - 2.1));
-        if (roll < (0.015 + grove * grove * 0.26) * (atoll ? 1.4 : 1)) {
+        if (roll < (0.015 + grove * grove * 0.26) * (atoll ? 1.4 : 1) * (misty && !atoll ? 0.4 : 1)) {
           if (!free(x, z, 1.9)) continue;
           take(x, z, 1.9);
           const lean = Math.atan2(grad.y, -grad.x); // rotates local +x (trunk lean) downhill
@@ -216,10 +221,10 @@ export class Vegetation {
         continue;
       }
 
-      // (a karst crag's crown is wooded right to the top)
-      if (h > 2.6 && h < isl.peak * (rocky ? 1.3 : 0.9) && slope < 0.58) {
+      // (a karst crag's crown is wooded right to the top, and so is a tower's)
+      if (h > 2.6 && h < top && slope < 0.58) {
         const jungle = jungleAt(x, z, h);
-        const high = rocky ? 0.2 + 0.6 * smoothstep(isl.peak * 0.4, isl.peak * 0.8, h) : smoothstep(isl.peak * 0.45, isl.peak * 0.75, h);
+        const high = karst ? 0.25 : rocky ? 0.2 + 0.6 * smoothstep(isl.peak * 0.4, isl.peak * 0.8, h) : smoothstep(isl.peak * 0.45, isl.peak * 0.75, h);
         if (roll < jungle * (0.45 + jungle * 0.3)) {
           // cloud forest up high: tree ferns among the broadleaves
           if (rnd() < high * 0.6) {
@@ -241,11 +246,12 @@ export class Vegetation {
           continue;
         }
         // a lone flowering tree out in the open: the island's showpiece
-        if (roll < jungle * (0.45 + jungle * 0.3) + (1 - jungle) * 0.03 * (1 - high) && h < 22) {
+        if (roll < jungle * (0.45 + jungle * 0.3) + (1 - jungle) * (misty ? 0.07 : 0.03) * (1 - high) && (h < 22 || karst)) {
           if (!free(x, z, 3)) continue;
           take(x, z, 3);
           const k = rnd();
-          const v = volcanic ? T_ROUND : k < 0.45 ? T_FLAME : k < 0.8 ? T_BLOSSOM + Math.floor(rnd() * 2) : T_ROUND;
+          // in the mist the showpieces are pink and lilac blossom trees, the odd flame tree among them
+          const v = volcanic ? T_ROUND : misty ? (k < 0.2 ? T_FLAME : k < 0.85 ? T_BLOSSOM + Math.floor(rnd() * 2) : T_TALL) : k < 0.45 ? T_FLAME : k < 0.8 ? T_BLOSSOM + Math.floor(rnd() * 2) : T_ROUND;
           L.tree.push(pl(x, h - 0.2, z, 0.85 + rnd() * 0.35, v));
           t.stampAO(x, z, 4.6, 0.34);
           t.stampCanopy(x, z, 4.2, 0.8);
@@ -337,7 +343,7 @@ export class Vegetation {
       const drift = s.noise(cx * 0.035 - 9.1, cz * 0.035 + 3.7);
       if (!volcanic && drift > 0.12 && shade < 0.5 && rnd() < 0.7) {
         const hue = s.noise(cx * 0.012 + 40, cz * 0.012 - 11) * 0.5 + 0.5;
-        const v = rocky ? (hue < 0.6 ? 1 : 0) : Math.min(3, Math.floor(hue * 4));
+        const v = rocky ? (hue < 0.6 ? 1 : 0) : misty ? 2 + (hue < 0.5 ? 0 : 1) : Math.min(3, Math.floor(hue * 4));
         const k = 2 + Math.floor(rnd() * 4);
         for (let c = 0; c < k; c++) {
           const x = cx + (rnd() - 0.5) * 3.2;
@@ -553,8 +559,8 @@ export class Vegetation {
       add(L.beach, beach, beachMat, (t, c) => (t < 0.5 ? c.setRGB(1, 0.85 + t * 0.3, 0.8) : c.setRGB(1.05, 0.55 + t * 0.3, 0.75)), { shadows: false });
       add(L.coconuts, coconuts, beachMat, (t, c) => c.setRGB(0.9 + t * 0.2, 0.9 + t * 0.15, 0.9), { shadows: false });
       // rocks take on the island's own stone: sandstone, basalt or mossy granite
-      const stone = isl.kind === 'rocky' ? [1.42, 1.02, 0.72] : isl.kind === 'volcanic' ? [0.72, 0.68, 0.66] : [1, 1, 0.96];
-      add(L.rock, isl.kind === 'lush' ? mossRocks : rocks, rockMat, (t, c) => c.setRGB(stone[0] * (0.9 + t * 0.2), stone[1] * (0.9 + t * 0.15), stone[2] * (0.88 + t * 0.1)), {
+      const stone = isl.style === 'brumas' ? [1.22, 1.2, 1.1] : isl.kind === 'rocky' ? [1.42, 1.02, 0.72] : isl.kind === 'volcanic' ? [0.72, 0.68, 0.66] : [1, 1, 0.96];
+      add(L.rock, isl.kind === 'lush' || isl.kind === 'karst' ? mossRocks : rocks, rockMat, (t, c) => c.setRGB(stone[0] * (0.9 + t * 0.2), stone[1] * (0.9 + t * 0.15), stone[2] * (0.88 + t * 0.1)), {
         tilt: true, always: true,
       });
       add(L.drift, drift, driftMat, (t, c) => c.setRGB(0.95 + t * 0.1, 0.95 + t * 0.08, 0.95), { always: true });

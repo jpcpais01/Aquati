@@ -22,11 +22,15 @@ import { Spirits, SpiritFrom } from '../fx/spirits';
 import { Rain } from '../fx/rain';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
-import { Terrain, WORLD_SIZE } from '../world/terrain';
+import { Terrain } from '../world/terrain';
+import { Seas } from '../world/seas';
+import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, REGIONS, seaEdge, STREAM_R } from '../world/regions';
+import { Dolphins } from '../fx/dolphins';
+import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
 import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
-import { buildShore, setSurf } from '../world/shore';
+import { buildShore, setShoreField, setSurf } from '../world/shore';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, turnWaves, Wave } from '../world/waves';
 import { Atmosphere, AtmosSnapshot, TIMES, WEATHER } from '../world/atmosphere';
@@ -59,7 +63,7 @@ import { Aboard, holdPeek, MarketUI } from '../ui/market';
 import { lootIcon } from '../ui/lootArt';
 import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood, Stowed } from './treasure';
 import { Kraken } from './kraken';
-import { Hazards } from './hazards';
+import { BRUMAS_NAMES, Hazards, NAMES as MAELSTROM_NAMES } from './hazards';
 import { vortexDepth } from '../world/vortex';
 import { HazardHud, HazardView } from '../ui/hazard';
 import type { HazardMark } from '../ui/chart';
@@ -86,7 +90,7 @@ import { TreasureMapUI } from '../ui/treasureMap';
 import { EscortAI, EscortRec, FleetStore, holdCargo, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
 import { EscortRow, FleetHud } from '../ui/fleet';
 import { Fort, FORT_RANGE, Forts, FortStore, Gun, HAVEN_R, TRIBUTE_HOUR } from './forts';
-import { findFortSites, fortClearings } from '../shore/fortKit';
+import { BRUMAS_FORT_NAMES, findFortSites, fortClearings } from '../shore/fortKit';
 import { shoreMats } from '../shore/kit';
 import { FortHud } from '../ui/fort';
 import { gunRange } from '../ships/ship';
@@ -132,6 +136,8 @@ const WRECK_TIMBER = [new THREE.Color(0.42, 0.29, 0.18), new THREE.Color(0.55, 0
 const BOARD_SEEN_KEY = 'aquati.boardSeen';
 /** `?maelstrom` / `?reef` set sail a little way off the first maelstrom / reef (for trying them out). */
 const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(location.search) ? 'maelstrom' : /[?&]reef\b/.test(location.search) ? 'reef' : null) : null;
+/** `?brumas` / `?highseas` set sail off Las Brumas / out on the high seas between the archipelagos (for a look). */
+const SEA_TEST = typeof location !== 'undefined' ? (/[?&]brumas\b/.test(location.search) ? 'brumas' : /[?&]highseas\b/.test(location.search) ? 'highseas' : null) : null;
 /** `?kraken` brews a storm at once and sends the Kraken a few seconds into the voyage. */
 const KRAKEN_TEST = typeof location !== 'undefined' && /[?&]kraken\b/.test(location.search);
 
@@ -160,7 +166,22 @@ export class Game {
   private input: Input;
   private audio = new Audio();
   private ui = new UI();
-  private terrain!: Terrain;
+  private terrain!: Seas;
+  /**
+   * The archipelagos, one seamless sea (see world/regions.ts). Each keeps its
+   * land in a group of its own, drawn only within STREAM_R of it, and its own
+   * seabed and surf fields for the water shaders, swapped in out on the high
+   * seas where neither reaches (see updateSeas).
+   */
+  private regions: { region: Region; terrain: Terrain; land: THREE.Group; seabed: THREE.DataTexture; surf: THREE.DataTexture }[] = [];
+  private liveRegion = 0;
+  /** Out past every archipelago: no pirates, a calm theme and the dolphins. */
+  private onHighSeas = false;
+  private seasT = 0;
+  /** Seconds until the next dolphin pod may come. */
+  private dolphinT = 20;
+  private dolphins = new Dolphins();
+  private charts = new ChartStore();
   private ocean!: Ocean;
   private wake!: WakeField;
   private particles!: Particles;
@@ -555,31 +576,54 @@ export class Game {
       return nextFrame();
     };
     await mark(0.12, 700);
-    this.terrain = new Terrain(20251019);
+    // the Fortunate Isles you sail from, and Las Brumas far out across the high seas
+    const [homeR, mistR] = REGIONS;
+    const home = new Terrain(homeR.seed);
+    const mist = new Terrain(mistR.seed, { ox: mistR.x, oz: mistR.z, style: 'brumas' });
+    this.terrain = new Seas([home, mist]);
     await mark(0.18, 300);
-    this.terrain.bakeAO(2);
+    home.bakeAO(2);
+    mist.bakeAO(2);
     await mark(0.24, 300);
-    const site = findPortSite(this.terrain, this.spawnPoint);
-    const tradeSites = findTradeSites(this.terrain, 4, [site]);
+    const site = findPortSite(home, this.spawnPoint);
+    // four markets at home, two in the mist (their quays look in toward their own archipelago's heart)
+    const tradeSites = [...findTradeSites(home, 4, [site]), ...findTradeSites(mist, 2, [], mistR)];
     const towns = [site, ...tradeSites].flatMap(portClearings);
     // the Brethren's forts: a stone square on a rise over the sea, on three isles (well clear of any town)
-    // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns)
-    const fortSites = findFortSites(this.terrain, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3);
+    // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns); two more hold the mist
+    const fortSites = [
+      ...findFortSites(home, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3),
+      ...findFortSites(mist, towns, [], 2, BRUMAS_FORT_NAMES),
+    ];
     const fortGround = fortSites.flatMap(fortClearings);
     // maelstroms in deep water, well clear of every harbour mouth, fort and the
     // waters you sail from (each bores an abyss into the seabed, so before the meshes)
-    this.hazards = new Hazards(this.terrain, [
+    const clear = [
       { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 },
       { x: 0, z: 150, r: 300 },
       ...[site, ...tradeSites].map((t) => ({ x: t.x, z: t.z, r: 260 })),
       ...fortSites.map((f) => ({ x: f.x, z: f.z, r: 280 })),
+    ];
+    this.hazards = new Hazards(this.terrain, [
+      { cx: homeR.x, cz: homeR.z, names: MAELSTROM_NAMES, avoid: clear, seed: 4242 },
+      { cx: mistR.x, cz: mistR.z, names: BRUMAS_NAMES, avoid: clear, seed: 5151 },
     ]);
     // the cutthroats' camps: a glade a short walk in from the beach on most isles
-    const camps = findCampSites(this.terrain, [...towns, ...fortGround], site.island);
+    const camps = [...findCampSites(home, [...towns, ...fortGround], site.island), ...findCampSites(mist, [...towns, ...fortGround], null)];
     this.digAvoid = [...towns, ...campClearings(camps), ...fortGround];
     const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps), ...fortGround], q.tier === 0));
     await mark(0.31, 700);
-    this.opaque.add(this.terrain.buildMeshes(q.terrainLod, q.tier === 0));
+    for (const t of [home, mist]) {
+      const land = t.buildMeshes(q.terrainLod, q.tier === 0);
+      // the seabeds reach out under the high seas to meet, so they're always drawn
+      const bed = land.getObjectByName('seabed')!;
+      this.opaque.add(land, bed);
+      skipWhenHidden(land);
+      const region = REGIONS.find((r) => r.x === t.ox && r.z === t.oz)!;
+      this.regions.push({ region, terrain: t, land, seabed: t.createHeightTexture(512), surf: buildShore(t) });
+    }
+    // the far archipelago's land goes up to the GPU during the loading screen, not as it comes over the horizon
+    this.preload.add(this.regions[1].land);
     // the plants never move once placed (culling only repacks their instances)
     const plants = veg.build();
     this.opaque.add(plants);
@@ -603,8 +647,10 @@ export class Game {
         for (let i = 0; i < 5; i++) this.particles.sparkle(at, tint, 0.8);
       };
     }
-    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z));
+    this.birds = new Birds(this.terrain.islands, q.tier === 0 ? 18 : 36, (x, z) => this.terrain.heightAt(x, z), home.islands);
     this.opaque.add(this.birds.mesh);
+    // the high seas' dolphins: one mesh, empty until a pod comes (drawn once in the warm-up)
+    this.opaque.add(this.dolphins.mesh);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
     await mark(0.53, 900);
@@ -614,10 +660,10 @@ export class Game {
     this.baseWaves = waves.map((w) => ({ ...w }));
     this.swellAngle = this.baseAngle = windAngle;
     this.wake = new WakeField(q.wakeRes, 300);
-    const seaFloor = this.terrain.createHeightTexture(512);
-    this.wake.setTerrain(seaFloor);
-    buildShore(this.terrain);
+    const seaFloor = this.regions[0].seabed;
+    this.wake.setTerrain(seaFloor, home.rect);
     this.ocean = new Ocean(waves, { segments: q.oceanSegments, half: 760, heightTex: seaFloor, wake: this.wake, quality: q.tier > 0 ? 1 : 0 });
+    for (const r of this.regions) for (const tex of [r.seabed, r.surf]) this.renderer.initTexture(tex);
     this.particles = new Particles(q.particles);
     this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
     this.bubbles = new Bubbles(this.particles.uniforms);
@@ -649,6 +695,15 @@ export class Game {
     this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
     this.world.onStatus = (ship, st, by) => this.onStatus(ship as Ship, st, by as Ship | null);
     this.hazards.attach(this.world);
+    this.dolphins.onSplash = (at, size) => {
+      this.particles.splash(at, size);
+      const [vol, pan, d] = this.world.soundAt(at);
+      this.audio.splash(vol * 0.35 * size, pan, d);
+    };
+    this.dolphins.onCall = (at, whistle) => {
+      const [vol, pan] = this.world.soundAt(at);
+      this.audio.dolphin(vol, pan, whistle);
+    };
     this.world.onHazard = (ship, kind, dmg, at) => this.onHazard(ship as Ship, kind, dmg, at);
     this.hzHud = new HazardHud(document.getElementById('hud')!);
     this.hzMarks = [
@@ -798,6 +853,7 @@ export class Game {
     this.cumulus.warm = true;
     this.warming = true;
     this.tradePorts.warm();
+    this.dolphins.warm(this.spawnPoint);
     this.shore.warm();
     this.forts.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
@@ -818,6 +874,7 @@ export class Game {
       (m) => (this.renderer.properties.get(m) as { currentProgram?: unknown }).currentProgram,
     );
     veg.hold = false;
+    this.dolphins.clear();
     this.clouds.warm = false;
     this.shore.unwarm();
     this.forts.unwarm();
@@ -847,6 +904,7 @@ export class Game {
     if (parts.has('world')) this.waypoints.clear();
     if (parts.has('bounty')) this.bounty.reload();
     if (parts.has('fleet')) this.fleet.reload();
+    if (parts.has('charts')) this.charts.reload();
     if (parts.has('forts')) {
       this.fortStore.reload();
       // a fort taken on another device changes hands here too (between voyages)
@@ -1928,7 +1986,10 @@ export class Game {
 
   /** Where a new map's X falls, from its seed. */
   private digTarget(seed: number): DigTarget | null {
-    const t = digSite(this.ground, seed, this.digAvoid, this.port.site.island);
+    // the X falls among the isles of whichever archipelago you're in
+    const p = this.player?.pos ?? this.spawnPoint;
+    const here = nearestRegion(p.x, p.z).region;
+    const t = digSite(this.ground, seed, this.digAvoid, this.port.site.island, (i) => nearestRegion(i.x, i.z).region === here);
     return t && { isle: t.island.name, x: t.x, z: t.z };
   }
 
@@ -3105,8 +3166,8 @@ export class Game {
     for (let i = 0; i < 80; i++) {
       const a = Math.random() * Math.PI * 2;
       const r = rMin + Math.random() * (rMax - rMin);
-      const x = clamp(cx + Math.cos(a) * r, -900, 900);
-      const z = clamp(cz + Math.sin(a) * r, -900, 900);
+      // kept within the archipelago it's sought from (out on the high seas, anywhere)
+      const [x, z] = clampToRegion(cx + Math.cos(a) * r, cz + Math.sin(a) * r, cx, cz, 900);
       if (this.terrain.heightAt(x, z) > -9) continue;
       if (this.ships.some((s) => Math.hypot(s.pos.x - x, s.pos.z - z) < 80)) continue;
       return new THREE.Vector3(x, 0, z);
@@ -3315,6 +3376,7 @@ export class Game {
 
   private enterMenu() {
     this.state = 'menu';
+    this.leaveHighSeas(true);
     this.adoptCloud();
     this.cloudSave.flush();
     this.player = null;
@@ -3351,6 +3413,7 @@ export class Game {
     this.hzHit = null;
     this.hzHud.set(null);
     if (HAZARD_TEST) this.testHazard(p);
+    this.seasT = 0;
     this.shore.resetCamps();
     // the Brethren re-man and re-arm their forts between voyages; yours stay yours
     this.forts.apply(this.fortStore.state.taken);
@@ -3367,6 +3430,10 @@ export class Game {
     this.rig.mode = 'follow';
     this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
     this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
+    if (SEA_TEST) {
+      this.testSea(p);
+      this.rig.snapTo(p.pos);
+    }
     this.spawnTimer = 4;
     this.resetHeat();
     if (KRAKEN_TEST) this.atmos.setWeather('storm');
@@ -3458,6 +3525,7 @@ export class Game {
       this.maps.wipe();
       this.fortStore.wipe();
       this.fleet.wipe();
+      this.charts.wipe();
       this.waypoints.clear();
       try {
         localStorage.removeItem(BOARD_SEEN_KEY);
@@ -3670,8 +3738,8 @@ export class Game {
       this.audio.click();
       return;
     }
-    const H = WORLD_SIZE / 2;
-    if (Math.abs(x) > H || Math.abs(z) > H) return;
+    // anywhere on the known sea: an archipelago's waters or the high seas between
+    if (seaEdge(x, z) > 0) return;
     this.waypoints.add(x, z, this.player?.pos);
     this.audio.knock();
   }
@@ -3895,7 +3963,7 @@ export class Game {
       }
     }
     // one at a time, a breather after each claim, and only once her ship is ready on the slipway
-    if (!near && p.alive && h.cool <= 0 && this.hunterHull && huntersEarned(h.pts) > h.sent) this.sendHunter();
+    if (!near && p.alive && !this.onHighSeas && h.cool <= 0 && this.hunterHull && huntersEarned(h.pts) > h.sent) this.sendHunter();
     const c = near ? this.hunters.get(near) : undefined;
     this.wanted.update(h.pts, wantedLevel(h.pts), near && c ? { name: c.handle, dist: nd } : null);
     if (near && c && p.alive && !this.fpv) {
@@ -4621,6 +4689,106 @@ export class Game {
     this.hzHud.set(v);
   }
 
+  /** `?brumas` / `?highseas`: set sail off Las Brumas' main isle, or far out on the open ocean between. */
+  private testSea(p: Ship) {
+    const [home, mist] = REGIONS;
+    const hero = this.terrain.islands.find((i) => nearestRegion(i.x, i.z).region === mist)!;
+    const at = SEA_TEST === 'brumas' ? this.findOpenWater(hero.x, hero.z, hero.r + 200, hero.r + 320) : _a.set(home.x + (mist.x - home.x) * 0.42, 0, home.z + (mist.z - home.z) * 0.42).clone();
+    p.place(at.x, at.z, Math.atan2(mist.x - at.x, mist.z - at.z));
+    p.speed = p.cls.maxSpeed * 0.5;
+    if (SEA_TEST === 'highseas') this.dolphinT = 3;
+    else this.atmos.climate = 'mist';
+  }
+
+  // ------------------------------------------------------------------ the one sea
+
+  /**
+   * The archipelagos and the high seas between them, a few times a second:
+   * which land is drawn, whose seabed and surf the water reads, and whether
+   * you've sailed out into the calm (or into an archipelago, perhaps for the
+   * first time).
+   */
+  private updateSeas(dt: number) {
+    if (this.dolphins.active || this.onHighSeas) this.dolphins.update(dt, this.world, this.player);
+    if (this.onHighSeas && this.player && this.state === 'playing') this.callDolphins(dt);
+    this.seasT -= dt;
+    if (this.seasT > 0) return;
+    this.seasT = 0.25;
+    const t = this.rig.target;
+    // land is drawn (and its matrices walked) only within reach of the view
+    for (const r of this.regions) r.land.visible = this.warming || Math.hypot(r.region.x - t.x, r.region.z - t.z) < STREAM_R;
+    // the water shaders read the nearer archipelago's seabed and surf: the swap
+    // falls far out on the high seas, where neither has a shoal to show
+    const near = nearestRegion(t.x, t.z).region;
+    const i = this.regions.findIndex((r) => r.region === near);
+    if (i >= 0 && i !== this.liveRegion) {
+      this.liveRegion = i;
+      const r = this.regions[i];
+      this.ocean.setSeabed(r.seabed, r.terrain.rect);
+      this.wake.setTerrain(r.seabed, r.terrain.rect);
+      setShoreField(r.surf, r.terrain.rect);
+      // the gulls nest wherever you're bound
+      this.birds.rehome(r.terrain.islands);
+    }
+    const p = this.player;
+    if (!p || this.state !== 'playing') return;
+    const { region, dist } = nearestRegion(p.pos.x, p.pos.z);
+    // a little hysteresis, so sailing along the edge doesn't flicker the music
+    if (!this.onHighSeas && dist > HIGH_SEAS_R + 60) this.enterHighSeas();
+    else if (this.onHighSeas && dist < HIGH_SEAS_R - 60) {
+      this.leaveHighSeas(false);
+      this.arrive(region, p);
+    }
+  }
+
+  private enterHighSeas() {
+    this.onHighSeas = true;
+    this.audio.highSeas(true);
+    this.atmos.climate = 'open';
+    // the storm blows itself out behind you
+    if (this.atmos.kind === 'storm' || this.atmos.kind === 'rain') this.atmos.hasten(25);
+    this.dolphinT = Math.min(this.dolphinT, 14 + Math.random() * 16);
+    this.ui.toast('The high seas · Mar Sereno', 'Open ocean, a fair trade wind and a long, easy swell. No pirate hunts this far out', 5);
+  }
+
+  /** Back among islands (or the voyage over: `quiet`, no fanfare). */
+  private leaveHighSeas(quiet: boolean) {
+    if (quiet) {
+      this.dolphins.clear();
+      this.atmos.climate = 'home';
+    } else this.dolphins.dismiss();
+    if (!this.onHighSeas) return;
+    this.onHighSeas = false;
+    this.audio.highSeas(false);
+  }
+
+  /** Sailing in among an archipelago's isles; the first time, it goes on the chart for good. */
+  private arrive(region: Region, p: Ship) {
+    this.atmos.climate = region.id === 'brumas' ? 'mist' : 'home';
+    if (this.charts.mark(region.id)) {
+      const reward = 600;
+      p.gold += reward;
+      this.vaultStore.earn(reward);
+      this.note('isle', `Reached ${region.name}`, `+${reward} gold`);
+      this.ui.toast(`${region.name} · ${region.motto}`, `New waters charted! +${reward} gold. Their isles, ports and forts are on your chart now`, 6.5);
+      this.audio.treasure(2);
+    } else {
+      this.ui.toast(region.name, region.motto, 4);
+      this.audio.chime();
+    }
+  }
+
+  /** Now and then a pod of dolphins comes racing in to ride along with you. */
+  private callDolphins(dt: number) {
+    const p = this.player!;
+    if (this.dolphins.active) return;
+    this.dolphinT -= dt;
+    if (this.dolphinT > 0 || !p.alive || p.speed < 2.5) return;
+    this.dolphins.summon(p);
+    this.dolphinT = 55 + Math.random() * 70;
+    this.ui.toast('Dolphins!', 'A pod comes racing in to ride your bow wave', 3.4);
+  }
+
   /** `?maelstrom` / `?reef`: set sail just off one, bows on. */
   private testHazard(p: Ship) {
     const m = this.hazards.maelstroms[0];
@@ -4788,6 +4956,8 @@ export class Game {
 
   /** Deep water all round, and well clear of any harbour. */
   private krakenWaters(p: Ship) {
+    // the high seas are the one place it never comes
+    if (this.onHighSeas) return false;
     const x = p.pos.x, z = p.pos.z;
     if (Math.hypot(x - this.spawnPoint.x, z - this.spawnPoint.z) < 600) return false;
     const near = this.tradePorts.nearest(x, z);
@@ -5238,6 +5408,7 @@ export class Game {
     }
     w.listenerZoom = this.rig.distance;
     this.hazards.sound(w);
+    this.updateSeas(dt);
     // ashore, the leaves between the camera and the captain thin away
     const see = globalUniforms.uSeeThru.value;
     if (walker && !this.photo.active) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5));
@@ -5329,6 +5500,7 @@ export class Game {
         treasure: this.maps.target,
         forts: this.fortMarks().map((f, i) => ({ ...f, name: this.forts.forts[i].name })),
         hazards: this.hzMarks,
+        charted: new Set(Object.keys(this.charts.state.seen)),
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });
     }
@@ -5531,6 +5703,11 @@ export class Game {
       if (s.team !== 'pirate' || !s.alive || s.hunter || s.remote) continue;
       const ai = this.ais.get(s);
       if (ai && ai.mode === 'patrol' && caps.every((c) => Math.hypot(s.pos.x - c.pos.x, s.pos.z - c.pos.z) > 820)) this.removeShip(s);
+    }
+    // nor out on the high seas: they keep to the archipelagos' waters
+    if (this.onHighSeas) {
+      this.spawnTimer = Math.max(this.spawnTimer, 10);
+      return;
     }
     // no pirate sails into the Kraken's water
     if (this.kraken.active) {

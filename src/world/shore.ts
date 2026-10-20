@@ -25,6 +25,8 @@ export const shoreUniforms = {
   // r: travel time to shore (s), g/b: unit direction pointing out to sea, a: exposure (0 lagoon .. 1 open sea)
   uShoreTex: { value: new THREE.DataTexture(new Uint16Array(4), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType) as THREE.Texture },
   uFoamTex: { value: new THREE.DataTexture(new Uint8Array(4), 1, 1) as THREE.Texture },
+  // the archipelago square uShoreTex covers: corner x, corner z, size, 1 / size (swapped as you sail between them)
+  uShoreRect: { value: new THREE.Vector4(-WORLD_SIZE / 2, -WORLD_SIZE / 2, WORLD_SIZE, 1 / WORLD_SIZE) },
   // x: breaker height (m), y: swash run-up height (m), z: storm 0..1
   uSurf: { value: new THREE.Vector4(0.35, 0.32, 0, 0) },
 };
@@ -36,11 +38,12 @@ export const shoreUniforms = {
 export const GLSL_SURF = /* glsl */ `
 uniform sampler2D uShoreTex;
 uniform sampler2D uFoamTex;
+uniform vec4 uShoreRect;
 uniform vec4 uSurf;
 #define SURF_T ${SURF_PERIOD.toFixed(1)}
 
 vec4 shoreField(vec2 xz) {
-  return texture(uShoreTex, xz * ${(1 / WORLD_SIZE).toFixed(8)} + 0.5);
+  return texture(uShoreTex, (xz - uShoreRect.xy) * uShoreRect.w);
 }
 
 // Wave phase: crests sit at whole numbers and march shoreward. A slow drift
@@ -164,10 +167,23 @@ class Heap {
   }
 }
 
-/** Bakes the surf field and the foam texture (at load, behind the loading screen). */
-export function buildShore(terrain: Terrain) {
-  shoreUniforms.uShoreTex.value = bakeShoreField(terrain, 512);
-  shoreUniforms.uFoamTex.value = createFoamTexture();
+/**
+ * Bakes the foam texture and one archipelago's surf field (at load, behind the
+ * loading screen), returning the field. The first one baked goes live.
+ */
+export function buildShore(terrain: Terrain): THREE.DataTexture {
+  const tex = bakeShoreField(terrain, 512);
+  if (!shoreUniforms.uFoamTex.value.image || (shoreUniforms.uFoamTex.value.image as { width: number }).width <= 1) {
+    shoreUniforms.uFoamTex.value = createFoamTexture();
+    setShoreField(tex, terrain.rect);
+  }
+  return tex;
+}
+
+/** Points the surf at an archipelago's own field (see Game's region swap). */
+export function setShoreField(tex: THREE.Texture, rect: THREE.Vector4) {
+  shoreUniforms.uShoreTex.value = tex;
+  shoreUniforms.uShoreRect.value.copy(rect);
 }
 
 /**
@@ -178,13 +194,12 @@ export function buildShore(terrain: Terrain) {
 function bakeShoreField(terrain: Terrain, res: number): THREE.DataTexture {
   const N = res;
   const cs = WORLD_SIZE / N;
-  const half = WORLD_SIZE / 2;
   const H = new Float32Array(N * N);
   const shelter = new Float32Array(N * N);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
-      const x = -half + (i + 0.5) * cs;
-      const z = -half + (j + 0.5) * cs;
+      const x = terrain.x0 + (i + 0.5) * cs;
+      const z = terrain.z0 + (j + 0.5) * cs;
       H[j * N + i] = terrain.heightAt(x, z);
       shelter[j * N + i] = terrain.lagoonAt(x, z) ? 1 : 0;
     }

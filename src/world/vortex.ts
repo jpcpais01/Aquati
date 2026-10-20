@@ -8,7 +8,7 @@
 // See game/hazards.ts for the currents and everything else a maelstrom does.
 
 /** At most this many maelstroms turn at once (one uniform slot each). */
-export const VORTEX_N = 3;
+export const VORTEX_N = 4;
 
 export interface Vortex {
   x: number;
