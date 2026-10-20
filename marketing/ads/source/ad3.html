@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="ad.css">
+<style>
+.bg { background-image: url(img/KRAKEN_A.jpg); filter: contrast(1.18) saturate(1.2) brightness(.9); }
+.tint { background: linear-gradient(180deg, #0b2f44 0%, #123d52 40%, #0a2a3a 100%); mix-blend-mode: soft-light; opacity: .95; }
+.vig { background: radial-gradient(120% 70% at 50% 48%, transparent 45%, rgba(0,8,14,.65) 100%); }
+.top { background: linear-gradient(180deg, rgba(2,14,24,.92) 0%, rgba(2,14,24,.6) 16%, rgba(2,14,24,.15) 28%, rgba(2,14,24,0) 34%); }
+.bot { background: linear-gradient(0deg, rgba(1,9,16,.97) 0%, rgba(1,10,18,.85) 17%, rgba(2,14,24,.3) 28%, rgba(2,14,24,0) 34%); }
+.eye { background: radial-gradient(9% 5% at 39% 46%, rgba(255,214,90,.28), transparent 70%); mix-blend-mode: screen; }
+.hd { top: 54px; }
+.title { top: 236px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.h1 { font-size: 118px; }
+.kicker { color: #ffd36e; }
+.feat { bottom: 330px; }
+.sub2 { bottom: 430px; text-align: center; }
+.sub { font-size: 34px; }
+.foot { bottom: 84px; }
+</style></head><body><div class="ad">
+<div class="bg"></div><div class="shade tint"></div><div class="shade vig"></div><div class="shade top"></div><div class="shade bot"></div>
+<div class="layer hd brand"><div data-part="logo" data-cls="sm"></div></div>
+<div class="layer title">
+  <div class="kicker">Boss battles at sea</div>
+  <div class="h1">The deep<br><span class="g">is waking</span></div>
+</div>
+<div class="layer sub2"><div class="sub">Out here, the storms bring<br>more than rain.</div></div>
+<div class="layer feat chips sm">
+  <span class="chip" data-icon="tentacle">The Kraken</span>
+  <span class="chip" data-icon="ghost">Ghost ships</span>
+  <span class="chip" data-icon="swirl">Maelstroms</span>
+</div>
+<div class="layer foot" data-part="cta" data-label="Face the deep"></div>
+</div><script src="parts.js"></script><script src="icons.js"></script></body></html>

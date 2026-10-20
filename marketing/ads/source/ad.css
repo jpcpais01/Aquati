@@ -1,0 +1,60 @@
+@font-face { font-family: 'Cinzel'; font-weight: 600; src: url(fonts/cinzel-latin-600-normal.woff2); }
+@font-face { font-family: 'Cinzel'; font-weight: 700; src: url(fonts/cinzel-latin-700-normal.woff2); }
+@font-face { font-family: 'Cinzel'; font-weight: 800; src: url(fonts/cinzel-latin-800-normal.woff2); }
+@font-face { font-family: 'Cinzel'; font-weight: 900; src: url(fonts/cinzel-latin-900-normal.woff2); }
+:root {
+  --gold: #f4c765; --gold-hi: #ffe7a8; --gold-lo: #d99a35; --aqua: #5ee3d4; --navy: #04131d;
+  --ink: #f5f8f9; --ink-2: rgba(234, 242, 245, 0.82);
+  --serif: 'Cinzel', Georgia, serif; --sans: 'Inter', system-ui, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1080px; height: 1920px; overflow: hidden; background: #04131d; color: var(--ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+.ad { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+.bg { position: absolute; inset: 0; background-size: cover; background-position: center; }
+.shade { position: absolute; inset: 0; pointer-events: none; }
+.layer { position: absolute; left: 0; right: 0; }
+
+/* the game's own wordmark */
+.brand { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.crest { width: 92px; height: 92px; filter: drop-shadow(0 4px 18px rgba(0, 0, 0, 0.45)); }
+.logo { display: inline-flex; flex-direction: column; align-items: center; font-family: var(--serif); font-weight: 700; font-size: 132px; line-height: 1; filter: drop-shadow(0 8px 30px rgba(0, 10, 20, 0.55)); }
+.logo-pre { display: flex; align-items: center; gap: 0.7em; font-size: 0.26em; font-weight: 600; letter-spacing: 0.5em; padding-left: 0.5em; text-transform: uppercase; color: #ffe9b8; margin-bottom: 0.3em; }
+.logo-pre em { font-style: italic; font-family: Georgia, 'Times New Roman', serif; text-transform: none; letter-spacing: 0.08em; font-size: 1.25em; font-weight: 400; color: var(--gold); }
+.logo-pre::before, .logo-pre::after { content: ''; width: 2.6em; height: 2px; background: linear-gradient(90deg, transparent, rgba(244, 199, 101, 0.95)); }
+.logo-pre::after { background: linear-gradient(270deg, transparent, rgba(244, 199, 101, 0.95)); }
+.logo-main { letter-spacing: 0.14em; padding-left: 0.14em; text-transform: uppercase; background: linear-gradient(180deg, #fffaf0 0%, #ffe3a0 48%, #e2a84a 78%, #b9802c 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.logo.sm { font-size: 84px; }
+
+.kicker { font: 700 26px var(--sans); letter-spacing: 0.3em; text-transform: uppercase; color: var(--aqua); text-shadow: 0 2px 14px rgba(0, 0, 0, 0.75), 0 1px 3px rgba(0, 0, 0, 0.6); }
+.h1 { font-family: var(--serif); font-weight: 800; text-transform: uppercase; line-height: 0.98; letter-spacing: 0.02em; color: #fff; text-shadow: 0 6px 30px rgba(0, 12, 22, 0.55), 0 2px 4px rgba(0, 0, 0, 0.35); }
+.h1 .g { background: linear-gradient(180deg, #fff6dc 0%, #ffd67a 45%, #e8a640 100%); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: none; filter: drop-shadow(0 6px 22px rgba(0, 10, 20, 0.55)); }
+.sub { font: 500 38px/1.35 var(--sans); color: var(--ink-2); text-shadow: 0 2px 16px rgba(0, 0, 0, 0.6); }
+
+/* bottom call to action */
+.cta-wrap { display: flex; flex-direction: column; align-items: center; gap: 26px; }
+.cta { position: relative; display: inline-flex; align-items: center; gap: 22px; padding: 34px 78px; border-radius: 999px; font: 800 44px var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: #2a1a03;
+  background: linear-gradient(180deg, #fff1c4 0%, #f8cf6c 45%, #e3a23e 100%);
+  box-shadow: 0 0 0 3px rgba(255, 240, 200, 0.35), 0 18px 50px rgba(240, 170, 60, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.85), inset 0 -4px 0 rgba(160, 90, 10, 0.35); }
+.cta svg { width: 40px; height: 40px; }
+.fine { font: 600 24px var(--sans); letter-spacing: 0.12em; text-transform: uppercase; color: rgba(240, 248, 250, 0.8); text-shadow: 0 2px 10px rgba(0, 0, 0, 0.6); display: flex; gap: 18px; align-items: center; }
+.fine i { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); display: inline-block; }
+
+/* frosted chips */
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+.chips.sm .chip { font-size: 25px; padding: 14px 22px 14px 16px; gap: 10px; }
+.chips.sm .chip svg { width: 30px; height: 30px; }
+.chip { display: inline-flex; align-items: center; gap: 16px; padding: 18px 30px 18px 22px; border-radius: 999px; font: 650 30px var(--sans); color: #fff; background: rgba(6, 26, 38, 0.52); border: 1.5px solid rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 10px 30px rgba(0, 10, 18, 0.3); backdrop-filter: blur(18px) saturate(1.4); }
+.chip svg { width: 36px; height: 36px; flex: none; }
+.badge { display: inline-block; padding: 12px 26px; border-radius: 999px; font: 800 24px var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: #032a2a; background: linear-gradient(180deg, #a5fff3, #43d6c6); box-shadow: 0 8px 26px rgba(40, 220, 200, 0.4); }
+
+/* ship callouts */
+.tag { position: absolute; width: 330px; padding: 20px 24px 22px; border-radius: 26px; background: rgba(5, 22, 34, 0.62); border: 1.5px solid rgba(255, 255, 255, 0.18); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 18px 44px rgba(0, 8, 16, 0.4); backdrop-filter: blur(16px) saturate(1.4); }
+.tag .nm { font: 800 38px var(--serif); letter-spacing: 0.06em; color: #fff; line-height: 1; }
+.tag .ln { margin-top: 8px; font: 600 23px var(--sans); color: var(--gold-hi); letter-spacing: 0.02em; }
+.tag .st { margin-top: 14px; display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; align-items: center; font: 700 17px var(--sans); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(230, 242, 246, 0.75); }
+.tag .bar { height: 9px; border-radius: 9px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+.tag .bar i { display: block; height: 100%; border-radius: 9px; background: linear-gradient(90deg, #3fd1c2, #a8fff1); box-shadow: 0 0 12px rgba(94, 227, 212, 0.6); }
+.tag .bar.fp i { background: linear-gradient(90deg, #e9a43f, #ffe08a); box-shadow: 0 0 12px rgba(244, 199, 101, 0.6); }
+.pin { position: absolute; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.28), 0 0 22px rgba(160, 255, 240, 0.9); transform: translate(-50%, -50%); }
+svg.lead { position: absolute; inset: 0; width: 1080px; height: 1920px; pointer-events: none; }
+svg.lead path { fill: none; stroke: rgba(255, 255, 255, 0.85); stroke-width: 3; stroke-dasharray: 2 9; stroke-linecap: round; filter: drop-shadow(0 1px 3px rgba(0,0,0,.5)); }

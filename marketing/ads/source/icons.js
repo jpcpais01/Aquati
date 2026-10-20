@@ -1,0 +1,10 @@
+const ICON = {
+  palm: `<svg viewBox="0 0 36 36" fill="none" stroke="#5ee3d4" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 33c0-7 1-13 3-19"/><path d="M21 14c-4-4-10-4-14 0 5-1 9 0 14 0Z" fill="#5ee3d4" fill-opacity=".25"/><path d="M21 14c3-5 9-6 13-3-5 0-9 1-13 3Z" fill="#5ee3d4" fill-opacity=".25"/><path d="M21 14c-1-5-5-9-10-9 4 2 7 5 10 9Z"/><path d="M6 33h24"/></svg>`,
+  cannon: `<svg viewBox="0 0 36 36" fill="none" stroke="#f4c765" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20l19-8 3 7-19 6Z" fill="#f4c765" fill-opacity=".25"/><circle cx="12" cy="27" r="4"/><path d="M28 13l3-1M29 17l4 0M28 21l3 2"/></svg>`,
+  chest: `<svg viewBox="0 0 36 36" fill="none" stroke="#f4c765" stroke-width="2.4" stroke-linejoin="round"><path d="M5 15h26v15H5Z" fill="#f4c765" fill-opacity=".2"/><path d="M5 15c0-6 4-9 13-9s13 3 13 9"/><path d="M5 20h26"/><rect x="15" y="18" width="6" height="6" rx="1" fill="#f4c765"/></svg>`,
+  tentacle: `<svg viewBox="0 0 36 36" fill="none" stroke="#5ee3d4" stroke-width="2.4" stroke-linecap="round"><path d="M10 33c-4-8 2-12 6-16s4-10-1-12c4 0 8 3 7 9-1 5-6 8-6 13 0 3 2 5 5 6"/><circle cx="15" cy="21" r="1.2" fill="#5ee3d4"/><circle cx="18" cy="15" r="1.2" fill="#5ee3d4"/></svg>`,
+  ghost: `<svg viewBox="0 0 36 36" fill="none" stroke="#a9f7ff" stroke-width="2.4" stroke-linejoin="round"><path d="M18 4v24M18 6l10 8-10 2M18 18l9 6-9 2M18 8l-9 7 9 1" fill="#a9f7ff" fill-opacity=".2"/><path d="M5 28c4 3 22 3 26 0l-3 4H8Z"/></svg>`,
+  swirl: `<svg viewBox="0 0 36 36" fill="none" stroke="#5ee3d4" stroke-width="2.4" stroke-linecap="round"><path d="M18 18c0-2 2-3 3.5-2s1.5 4-1 5.5-6.5 0-7-4 3-8 8-7.5 9 5 7.5 10.5S22 31 16 30 5 24 6 17"/></svg>`,
+  ship: `<svg viewBox="0 0 36 36" fill="none" stroke="#f4c765" stroke-width="2.4" stroke-linejoin="round"><path d="M17 4v22M17 6c6 4 8 10 7 16H17M17 9c-5 3-7 8-7 13h7" fill="#f4c765" fill-opacity=".2"/><path d="M4 26h28l-4 6H8Z"/></svg>`,
+};
+for (const el of document.querySelectorAll('[data-icon]')) el.insertAdjacentHTML('afterbegin', ICON[el.dataset.icon]);
