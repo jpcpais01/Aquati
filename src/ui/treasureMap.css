@@ -691,7 +691,7 @@
   margin: calc(-2px * var(--k)) calc(-10px * var(--k)) calc(-2px * var(--k)) calc(2px * var(--k));
 }
 
-/* a phone held upright: the map sits on top of the speed, the lever over both */
+/* a phone held upright: the map sits on top of the speed, both over the lever */
 @media (orientation: portrait) and (max-width: 600px) {
   .is-touch .bottom:has(.map-chip.on) {
     flex-direction: column-reverse;
@@ -708,9 +708,6 @@
     margin: 0;
   }
 
-  .is-touch #hud:has(.map-chip.on) .sail-lever {
-    bottom: calc(var(--mb) + 6px + 52px * var(--k) + 52px * var(--kt));
-  }
 }
 
 /* ashore the console goes, but the map stays where it was */

@@ -10,7 +10,7 @@
   align-items: center;
   justify-content: center;
   gap: calc(22px * var(--u));
-  padding: calc(18px * var(--u)) 16px;
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
   background:
     radial-gradient(ellipse 90% 70% at 50% 46%, rgba(3, 18, 28, 0.28), rgba(2, 10, 18, 0.74)),
     linear-gradient(180deg, rgba(2, 12, 20, 0.35), rgba(2, 12, 20, 0) 30%, rgba(2, 12, 20, 0) 70%, rgba(2, 12, 20, 0.45));
@@ -406,8 +406,8 @@
   #seapick {
     --k: 1.3;
     gap: calc(10px * var(--u));
-    padding-top: calc(10px * var(--u));
-    padding-bottom: calc(10px * var(--u));
+    padding-top: var(--mt);
+    padding-bottom: var(--mb);
   }
   .sp-title {
     font-size: calc(24px * var(--t));
@@ -429,8 +429,8 @@
   }
   .sp-back {
     position: absolute;
-    top: calc(10px * var(--u));
-    left: 16px;
+    top: var(--mt);
+    left: var(--ml);
     padding: calc(8px * var(--u)) calc(14px * var(--u));
   }
 }

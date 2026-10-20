@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-20T22:00Z',
+    entries: [
+      {
+        title: 'A lighter HUD on phones, and menus that use the whole screen',
+        notes: [
+          'The home screen, the archipelago picker, the crew card, the Shipwright, the Vault, the market, photo mode and the sunk screen now run edge to edge like the game itself, instead of leaving a band for the notch and system bars. Everything keeps the same even 3% margin from every edge.',
+          'The minimap sits right in the corner now, with pause, captain\'s view, photo, crew and clear-debris arranged in tidy rows of three beneath it.',
+          'The "Peaceful seas" pill is gone. While the seas are calm, a soft blue-white light glows around the minimap instead. Provoke someone and the glow turns ember red, a little crossed-blades tag on the rim counts who has taken up arms, and the glow fades as tempers cool.',
+          'On phones the speed sits on top of the sail lever: the number as big as before, with a small "kn" beside it.',
+          'Prompts like "Go ashore", "Enter port" or a fort covering the shore are now a slim chip at the bottom of the screen. The reason is written as a line of shadowed text just above it, with no box over the sea. Alerts and the fort strip are more see-through, and on phones the ship card loses its box: class and name on one small line over a slim hull bar.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T21:00Z',
     entries: [
       {
