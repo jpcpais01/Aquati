@@ -59,9 +59,9 @@ export interface VortexState {
 }
 
 const NAMES: [string, number, 1 | -1][] = [
-  ['La Garganta', 94, 1],
-  ['El Remolino Negro', 80, -1],
-  ['Ojo de Caribdis', 72, 1],
+  ['La Gargantilha', 94, 1],
+  ['Redemolino Noir', 80, -1],
+  ['El Ojo de Juracán', 72, 1],
 ];
 
 /** Peak swirl (m/s, at the edge of the throat) and inflow at full strength. */

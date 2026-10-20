@@ -39,7 +39,7 @@ export interface WreckReport {
   hunter?: string;
   /** Named captains sunk this voyage. */
   bounties?: number;
-  /** "off Isla Verde", or null in open water. */
+  /** "off Guanaverde", or null in open water. */
   where: string | null;
   events: VoyageEvent[];
 }

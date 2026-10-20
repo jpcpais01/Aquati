@@ -84,7 +84,7 @@ export function worldToFort(s: { x: number; z: number; yaw: number }, x: number,
 
 // ------------------------------------------------------------------ sites
 
-const FORT_NAMES = ['Castillo San Felipe', 'Fuerte Santa Bárbara', 'Castillo del Morro', 'Fuerte San Cristóbal', 'Castillo de la Real Fuerza'];
+const FORT_NAMES = ['Castillo São Felipe', 'Forte Sainte-Bárbara', 'Kasteel do Morro', 'Fuerte San Cristóvão', 'Bastión de Yaguana'];
 
 /**
  * Rises above the sea for the forts: a flat shoulder of dry ground a short
