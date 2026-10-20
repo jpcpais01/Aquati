@@ -212,8 +212,14 @@
         <header class="wk-head">
           <div class="kicker">Shipwrecked <i></i> <span id="wk-cause"></span></div>
           <h2 class="wk-title" id="wk-title">Lost to the Depths</h2>
-          <p class="wk-epitaph" id="wk-epitaph"></p>
-          <p class="wk-quip" id="wk-quip"></p>
+          <div class="wk-plaque">
+            <div class="wk-port" aria-hidden="true"><div class="wk-port-ship" id="wk-port-ship"></div><div class="wk-port-sea"></div><i></i><i></i><i></i></div>
+            <div class="wk-plaque-text">
+              <div class="wk-ship"><span id="wk-ship-name"></span><small id="wk-ship-cls"></small></div>
+              <p class="wk-epitaph" id="wk-epitaph"></p>
+              <p class="wk-quip" id="wk-quip"></p>
+            </div>
+          </div>
         </header>
         <div class="wk-body">
           <section class="wk-panel wk-rank">
@@ -229,12 +235,17 @@
               <div class="wk-score"><b id="wk-score">0</b><em id="wk-score-best" class="hidden">New best</em></div>
               <div class="wk-rank-name" id="wk-rank-name"></div>
               <div class="wk-rank-line" id="wk-rank-line"></div>
+              <div class="wk-ladder" id="wk-ladder" aria-hidden="true"></div>
               <div class="wk-rank-next" id="wk-rank-next"></div>
             </div>
           </section>
           <section class="wk-stats">
             <div class="wk-tiles" id="wk-tiles"></div>
-            <div class="wk-panel wk-minor" id="wk-minor"></div>
+            <div class="wk-panel wk-voyage">
+              <div class="kicker">The voyage <small id="wk-voy-len"></small></div>
+              <div class="wk-voy" id="wk-voy"></div>
+              <div class="wk-minor" id="wk-minor"></div>
+            </div>
           </section>
           <section class="wk-panel wk-log">
             <div class="kicker">Ship's log <small id="wk-log-more"></small></div>
@@ -242,7 +253,7 @@
           </section>
         </div>
         <footer class="wk-actions">
-          <button class="btn primary big" id="btn-retry"><span class="ti" data-icon="refresh"></span>Sail again<kbd>Enter</kbd></button>
+          <button class="btn primary big" id="btn-retry"><span class="ti" data-icon="refresh"></span><span class="wk-retry"><span>Sail again</span><small id="wk-retry-sub"></small></span><kbd>Enter</kbd></button>
           <button class="btn" id="btn-again"><span class="ti" data-icon="anchor"></span>Choose a new ship<kbd>Esc</kbd></button>
         </footer>
       </div>
