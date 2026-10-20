@@ -16,13 +16,6 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-20T20:00Z',
     entries: [
       {
-        title: 'A new app icon',
-        notes: [
-          'Shores of Fortune has a new face on your home screen: a galleon in silhouette sailing across a huge golden-hour sun, her sails rimmed in gold light, a red pennant at the masthead, palm isles on the horizon and the sun\'s path glittering across a turquoise sea.',
-          'It is drawn to stay clear at every size, from a full home-screen icon down to the little browser-tab icon, and Android\'s round and squircle icon shapes now crop it neatly without clipping the ship. Reinstall or re-add the game to your home screen if your device keeps showing the old one.',
-        ],
-      },
-      {
         title: 'Islands drawn far lighter',
         notes: [
           'Islands now cost your graphics card well under half of what they did, with no change you can see. Hills and beaches far from you are drawn with fewer, larger pieces, only as fine as your screen can actually show at that distance, and the shoreline itself never moves.',
