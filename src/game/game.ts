@@ -47,6 +47,7 @@ import { Atmosphere, AtmosSnapshot, TIMES, WEATHER, WeatherKind } from '../world
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
+import { loadFigureheads } from '../ships/figureheads';
 import { ShipModel } from '../ships/shipModel';
 import { GHOST_LIVERY, Livery, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
@@ -709,6 +710,8 @@ export class Game {
   async init() {
     // the mesh simplifier (WebAssembly) for the ships' levels of detail, before any ship is built
     initLod();
+    // the baked figureheads, decoded before the first ship is built
+    const figures = loadFigureheads();
     const ui = this.ui;
     const q = this.quality;
     // webfonts load on first use: fetch every weight now so a toast or banner
@@ -788,6 +791,7 @@ export class Game {
     }
     await mark(0.4, 900);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
+    await figures;
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);

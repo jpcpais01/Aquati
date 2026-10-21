@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T14:00Z',
+    entries: [
+      {
+        title: 'Figureheads, carved properly',
+        notes: [
+          'Every figurehead has been sculpted again from scratch, as smooth carved forms instead of stacked shapes, with real faces, hands and detail.',
+          'The mermaid has a face, a seven-pointed crown tipped with pearls, a pearl held high and a sash of pearls, and a scaled tail running down the cutwater to a fluke spread either side of it.',
+          'The lion roars with fangs bared under a mane of carved locks, his paws on a gilded shield with an anchor on it. The sea eagle grips a golden orb, its wings fanned feather by feather.',
+          'The kraken glares with ruby eyes, its arms lined with suckers. The dragon has scaled coils, belly plates, horns and whiskers, and crimson wings. The seraph has robes, silver hair and crystal wings.',
+          'They still fit every hull and cost no extra draw calls. They load once, with the rest of the game.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T12:00Z',
     entries: [
       {
