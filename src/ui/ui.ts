@@ -1390,13 +1390,25 @@ export class UI {
 
   private skyKey = '';
   private skyTagT = 0;
-  /** Says what a tap on the sky badge chose, in a chip beside the strip. */
-  skyTag(text: string) {
+  /**
+   * Says what a tap on the sky badge chose, in a chip beside the strip. With
+   * `need`, it's a weather that can't be had here and now: a little card
+   * names it and says what it waits for, and stays up long enough to read.
+   */
+  skyTag(text: string, need?: string) {
     const el = $('hud-say');
-    el.textContent = text;
+    el.classList.toggle('need', !!need);
+    if (need) {
+      el.innerHTML = '';
+      const b = document.createElement('b');
+      b.textContent = text;
+      const s = document.createElement('small');
+      s.textContent = need;
+      el.append(b, s);
+    } else el.textContent = text;
     replay(el, 'say');
     clearTimeout(this.skyTagT);
-    this.skyTagT = window.setTimeout(() => el.classList.remove('say'), 1800);
+    this.skyTagT = window.setTimeout(() => el.classList.remove('say'), need ? 4200 : 1800);
   }
   /** Gold pips on the icon / clock while the weather / hour is pinned rather than left to run. */
   skyPins(weather: boolean, hour: boolean) {

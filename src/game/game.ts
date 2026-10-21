@@ -26,6 +26,7 @@ import { Spirits, SpiritFrom } from '../fx/spirits';
 import { Rain } from '../fx/rain';
 import { Spindrift } from '../fx/spindrift';
 import { RareSkies } from './rareSkies';
+import { seaGlowAt } from '../world/seaGlow';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
@@ -42,7 +43,7 @@ import { Ocean } from '../world/ocean';
 import { buildShore, setShoreField, setSurf } from '../world/shore';
 import { WakeField } from '../world/wakeField';
 import { buildWaves, setSeaState, turnWaves, Wave } from '../world/waves';
-import { Atmosphere, AtmosSnapshot, TIMES, WEATHER } from '../world/atmosphere';
+import { Atmosphere, AtmosSnapshot, TIMES, WEATHER, WeatherKind } from '../world/atmosphere';
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
@@ -361,6 +362,8 @@ export class Game {
   private spindrift!: Spindrift;
   /** Ember rain, mirages and the sea-spark blooms: where and when (see rareSkies.ts). */
   private rare!: RareSkies;
+  /** Time to the next check that a rare weather picked by hand still has its time and place. */
+  private wxCheckT = 0;
   /** The last lightning strike: xz, reach of its light (m), its strength. */
   private strikeAt = new THREE.Vector4();
   private clouds!: LowClouds;
@@ -636,7 +639,10 @@ export class Game {
     this.opaque.fog = new THREE.Fog(new THREE.Color(), 380, 1500);
     this.skyEnv = new SkyEnvironment(this.renderer);
     this.applyAtmosphere();
-    const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm', 'calm', 'hot', 'embers'] as const;
+    const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm', 'calm', 'hot', 'embers', 'glow'] as const;
+    // a weather that can't be had here and now is shown (with what it waits
+    // for) but not set; a tap soon after moves on from it
+    let refused: { m: (typeof modes)[number]; at: number } | null = null;
     const times = ['auto', 'dawn', 'noon', 'golden', 'dusk', 'night'] as const;
     const pins = () => this.ui.skyPins(this.atmos.mode !== 'auto', this.atmos.timeMode !== 'auto');
     pins();
@@ -655,7 +661,15 @@ export class Game {
         pins();
         return;
       }
-      const m = modes[(modes.indexOf(this.atmos.mode) + 1) % modes.length];
+      const from = refused && performance.now() - refused.at < 8000 ? refused.m : this.atmos.mode;
+      refused = null;
+      const m = modes[(modes.indexOf(from) + 1) % modes.length];
+      const need = m === 'auto' ? null : this.weatherNeeds(m);
+      if (need && m !== 'auto') {
+        refused = { m, at: performance.now() };
+        this.ui.skyTag(WEATHER[m].name, need);
+        return;
+      }
       this.atmos.setMode(m);
       this.ui.skyTag(m === 'auto' ? 'Weather · Auto' : WEATHER[m].name);
       pins();
@@ -6998,6 +7012,17 @@ export class Game {
     const pl = this.player;
     const ship = pl && pl.alive ? pl.pos : null;
     this.rare.update(dt, a, ship && pl ? { x: ship.x, z: ship.z, heading: pl.heading } : null, this.state === 'playing', w.wind, { x: tgt.x, z: tgt.z, dist: this.rig.distance });
+    // a rare weather picked by hand lasts only as long as its time and place
+    if ((this.wxCheckT -= dt) < 0) {
+      this.wxCheckT = 1;
+      const m = a.mode;
+      const need = this.state === 'playing' && !this.coop.guest && m !== 'auto' ? this.weatherNeeds(m, true) : null;
+      if (need && m !== 'auto') {
+        a.setMode('auto');
+        this.ui.skyPins(false, a.timeMode !== 'auto');
+        this.ui.skyTag(`${WEATHER[m].name} has passed`, need);
+      }
+    }
 
     this.audio.setWeather(a.rain, a.storm, a.wind);
     // the band plays for fair sailing; the harbour, the open sea, a storm and the Kraken all have music of their own
@@ -7008,9 +7033,36 @@ export class Game {
     const k = a.ash > 0.45 ? 'embers' : a.kind;
     const dark = a.sunDir.y < -0.03;
     const icon = k === 'storm' ? 'storm' : k === 'rain' ? 'rain' : k === 'mist' ? 'mist' : k === 'cloudy' ? 'cloud'
-      : k === 'calm' ? (dark ? 'calm-moon' : 'calm') : k === 'hot' ? 'hot' : k === 'embers' ? 'embers'
+      : k === 'calm' ? (dark ? 'calm-moon' : 'calm') : k === 'hot' ? 'hot' : k === 'embers' ? 'embers' : k === 'glow' ? 'glow'
       : k === 'fair' ? (dark ? 'partly-moon' : 'partly-sun') : dark ? 'moon' : 'sun';
     this.ui.setSky(a.hour, icon, WEATHER[k].name);
+  }
+
+  /**
+   * What a weather picked by hand still waits for here and now, or null if it
+   * can be had. The rare ones keep to their time and place: a very hot noon
+   * only out on the high seas, ember rain only under a volcano's plume, the
+   * glowing seas only at night in a sea-spark bloom. `keep` loosens the test
+   * a little, for one already set (so it doesn't flicker off at the edge).
+   */
+  private weatherNeeds(m: WeatherKind, keep = false): string | null {
+    const p = this.player;
+    const h = this.atmos.hour;
+    const w = this.world;
+    if (m === 'hot') {
+      const noon = h >= 11 && h < (keep ? 14.5 : 14);
+      if (!this.onHighSeas) return 'Only out on the high seas, at noon (11:00 to 14:00), far from any island.';
+      if (!noon) return 'Only at noon (11:00 to 14:00). Tap the clock to set it to Noon.';
+    } else if (m === 'embers') {
+      const ash = p ? this.rare.plumeAt(p.pos.x, p.pos.z, w.wind.dirX, w.wind.dirZ) : 0;
+      if (ash < (keep ? 0.15 : 0.3)) return `Only downwind of ${this.rare.volcanoName}, where its ash and embers drift over the sea.`;
+    } else if (m === 'glow') {
+      const night = h >= 20.5 || h < 4.8;
+      const bloom = p ? seaGlowAt(p.pos.x, p.pos.z) : 0;
+      if (bloom < (keep ? 0.12 : 0.3)) return 'Only in the glowing stretches of the high seas, at night. Two lie on the crossing to Las Brumas.';
+      if (!night) return 'Only at night (20:30 to 04:45). Tap the clock to set it to Night.';
+    }
+    return null;
   }
 
   private checkDiscoveries(p: Ship) {

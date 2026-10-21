@@ -22,7 +22,7 @@ import { globalUniforms } from '../render/environment';
 // wherever the wind carries a restless volcano's ash (an overlay on whatever
 // weather is about, see ashTo).
 
-export type WeatherKind = 'clear' | 'fair' | 'cloudy' | 'mist' | 'rain' | 'storm' | 'calm' | 'hot' | 'embers';
+export type WeatherKind = 'clear' | 'fair' | 'cloudy' | 'mist' | 'rain' | 'storm' | 'calm' | 'hot' | 'embers' | 'glow';
 
 interface WeatherDef {
   name: string;
@@ -84,6 +84,12 @@ export const WEATHER: Record<WeatherKind, WeatherDef> = {
     name: 'Ember rain', cover: 0.5, rain: 0, storm: 0, fog: 0.16, wind: 0.85, dur: [120, 200],
     next: [['cloudy', 0.5], ['fair', 0.5]],
     arrive: ['Ember rain', 'Warm ash and glowing embers drift down on the wind'],
+  },
+  // picked by hand at night in a sea-spark bloom: a still, clear night with the bloom at its brightest
+  glow: {
+    name: 'Glowing seas', cover: 0.12, rain: 0, storm: 0, fog: 0.04, wind: 0.45, dur: [150, 240],
+    next: [['clear', 0.6], ['fair', 0.4]],
+    arrive: ['Glowing seas', 'The night sea lights up blue wherever it is stirred'],
   },
 };
 
@@ -698,7 +704,7 @@ export class Atmosphere {
     u.uMist.value = this.fog;
     u.uVeil.value.copy(this.veil);
     // the sea-spark blooms light up on a dark night (a gale breaks them up)
-    this.glow = smooth(0.3, 0.85, this.night) * (1 - 0.7 * this.storm);
+    this.glow = this.kind === 'glow' ? Math.max(0.6, smooth(0.15, 0.6, this.night)) : smooth(0.3, 0.85, this.night) * (1 - 0.7 * this.storm);
     u.uSpecial.value.set(this.calm, this.glow, this.heat, this.ash);
     this.updateLook(sy, sunVis);
     const hazeK = 1 - 0.85 * this.cover;
