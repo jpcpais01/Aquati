@@ -189,8 +189,12 @@ class Shards {
     this.full = (this.pos.array as Float32Array).slice();
     this.mesh = new THREE.Mesh(geo, mat);
     this.mesh.castShadow = this.mesh.receiveShadow = true;
-    // its pieces come and go: no simplified levels (they'd keep the whole set)
-    this.mesh.userData.noLod = true;
+    // its pieces come and go by folding their vertices away: a set built
+    // standing gets simplified levels that never join two pieces (the levels
+    // share the vertices, so a piece folds out of every level at once); the
+    // sets built folded keep their full mesh
+    this.mesh.userData.noLod = !this.shown.size;
+    this.mesh.userData.lodSolid = true;
   }
 
   set(key: string, on: boolean) {
@@ -353,6 +357,8 @@ export class Forts {
    * anywhere on the sea.
    */
   private sets: { barrels: THREE.InstancedMesh; carriages: THREE.InstancedMesh; rubble: THREE.InstancedMesh }[] = [];
+  /** The warm-up shows every rubble heap. */
+  private rubbleAll = false;
   private all: Gun[] = [];
   private doorGroups: THREE.Group[][] = [];
   private flagGeo: THREE.BufferGeometry | null = null;
@@ -389,8 +395,10 @@ export class Forts {
         return sh;
       };
       const shards = { intact: shard('intact'), broken: shard('broken'), patch: shard('patch') };
-      shards.broken?.all(false);
-      shards.patch?.all(false);
+      for (const sh of [shards.broken, shards.patch]) {
+        sh?.all(false);
+        if (sh) sh.mesh.userData.noLod = true;
+      }
       this.root.add(g);
       staticLod.add(g);
       // its plaza and ramp are floor to walk on
@@ -449,8 +457,13 @@ export class Forts {
         }
         m.count = layout.guns.length;
         m.boundingSphere = bound;
+        // the battery takes the fort's distance levels too
+        m.userData.lodInstanced = true;
         this.root.add(m);
+        staticLod.add(m);
       }
+      // no gun down yet: no rubble heaps to draw
+      set.rubble.count = 0;
       this.sets.push(set);
       layout.guns.forEach((gs, k) => {
         const gun: Gun = {
@@ -1141,6 +1154,10 @@ export class Forts {
   }
 
   private flush() {
+    // a rubble heap stands only where a gun is down (the warm-up draws them all)
+    const heaps = this.sets.map(() => 0);
+    for (const g of this.all) if (g.dead || this.rubbleAll) heaps[this.forts.indexOf(g.fort)] = Math.max(heaps[this.forts.indexOf(g.fort)], g.slot + 1);
+    this.sets.forEach((set, i) => (set.rubble.count = heaps[i]));
     for (const set of this.sets) {
       for (const m of [set.barrels, set.carriages, set.rubble]) {
         m.instanceMatrix.needsUpdate = true;
@@ -1162,6 +1179,7 @@ export class Forts {
       }
     }
     for (const g of this.all) this.sets[this.forts.indexOf(g.fort)].rubble.setMatrixAt(g.slot, _m.compose(g.base, _q.identity(), UNIT));
+    this.rubbleAll = true;
     this.flush();
   }
 
@@ -1176,6 +1194,7 @@ export class Forts {
       f.pocks.count = Math.min(POCKS, f.pockN);
       f.debris.count = Math.min(DEBRIS, f.debrisN);
     }
+    this.rubbleAll = false;
     for (const g of this.all) this.pose(g);
     this.flush();
   }

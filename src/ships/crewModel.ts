@@ -2088,6 +2088,13 @@ interface Level {
  */
 /** How far (m) the distant crew sculpt may stray from the far one. */
 const CREW_DISTANT_ERROR = 0.012;
+/**
+ * And the speck: a sailor a few dozen pixels tall at most (past SPECK_PX px
+ * per metre), held to this, which is still under a pixel there; hat brims,
+ * buttons and fingers fold into the figure.
+ */
+const CREW_SPECK_ERROR = 0.045;
+export const SPECK_PX = 16;
 
 export class CrewRenderer {
   readonly group = new THREE.Group();
@@ -2114,8 +2121,13 @@ export class CrewRenderer {
       // (the camera never comes closer than 70 m out there): the simplifier
       // holds it within a centimetre and a bit, a fraction of a pixel at that range
       const far = sculpts[1];
-      void simplifiedLevels(far, [{ error: CREW_DISTANT_ERROR, prune: true }]).then(([g]) => {
+      void simplifiedLevels(far, [{ error: CREW_DISTANT_ERROR, prune: true }, { error: CREW_SPECK_ERROR, prune: true, permissive: true }]).then(([g, sp]) => {
         if (g) this.distant = this.level(far, g.index!.array as ArrayLike<number>, rows);
+        if (sp) {
+          this.speck = this.level(far, sp.index!.array as ArrayLike<number>, rows);
+          // a speck's own shadow is a pixel or two on the deck: not worth its draw
+          for (const b of this.speck.batches) b.mesh.castShadow = false;
+        }
       });
     }
   }
@@ -2123,6 +2135,7 @@ export class CrewRenderer {
   private readonly material: THREE.Material;
   private readonly depth: THREE.Material;
   private distant: Level | null = null;
+  private speck: Level | null = null;
 
   /**
    * One level: the sculpt split into a body mesh plus one per hat, prop and
@@ -2198,15 +2211,16 @@ export class CrewRenderer {
   }
 
   private all() {
-    return this.distant ? [...this.levels, this.distant] : this.levels;
+    const out = this.distant ? [...this.levels, this.distant] : this.levels;
+    return this.speck ? [...out, this.speck] : out;
   }
 
   /**
    * Queues one posed sailor; `near` asks for the detailed sculpt (if there's
    * room), `distant` for the lightest one (once it's ready).
    */
-  push(m: THREE.Matrix4, pose: ArrayLike<number>, row: number, hat: number, prop: number, flags: number, near: boolean, distant = false) {
-    let l = near ? this.levels[0] : distant && this.distant ? this.distant : this.levels[this.levels.length - 1];
+  push(m: THREE.Matrix4, pose: ArrayLike<number>, row: number, hat: number, prop: number, flags: number, near: boolean, distant = false, speck = false) {
+    let l = near ? this.levels[0] : speck && this.speck ? this.speck : distant && this.distant ? this.distant : this.levels[this.levels.length - 1];
     if (l.n >= l.max) l = this.levels[1];
     if (!l || l.n >= l.max) return;
     l.n++;

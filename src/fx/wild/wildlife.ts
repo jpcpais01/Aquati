@@ -4,6 +4,7 @@ import type { World } from '../../game/world';
 import type { Ship } from '../../ships/ship';
 import type { Island, SeaFloor } from '../../world/terrain';
 import type { Placement, Vegetation } from '../../world/vegetation';
+import { simplifiedLevels } from '../../render/lod';
 import { wildGeometries } from './models';
 import { wildMaterials } from './rig';
 
@@ -229,7 +230,14 @@ const ACTIVE = 320;
 /** How far past ACTIVE isles are surveyed ahead of time (m), so they're ready when the view arrives. */
 const AHEAD = 260;
 /** Below this many pixels tall a beast isn't drawn. */
-const MIN_PX = 1.4;
+const MIN_PX = 3;
+/**
+ * Each species also has a light cut, held to LIGHT_ERROR (model units). A
+ * species draws it while that error stays under LIGHT_PX pixels on every one
+ * of its beasts in view: from mid zoom out, all of them.
+ */
+const LIGHT_ERROR = 0.03;
+const LIGHT_PX = 0.8;
 const SEEN_KEY = 'aquati.fauna.v1';
 
 // broadleaf trunk heights by `tree` variant (see vegetation.ts T_*), and palm heights / leans
@@ -245,6 +253,11 @@ const pick = <T>(l: T[]): T => l[(Math.random() * l.length) | 0];
 
 interface WildMesh {
   mesh: THREE.InstancedMesh;
+  full: THREE.BufferGeometry;
+  /** The light cut (same vertices and pose buffers, a lighter index), once the worker has it. */
+  light: THREE.BufferGeometry | null;
+  /** The most pixels a model-space metre spans on any beast packed this frame. */
+  px: number;
   a: THREE.InstancedBufferAttribute;
   b: THREE.InstancedBufferAttribute;
   c: THREE.InstancedBufferAttribute;
@@ -304,7 +317,13 @@ export class Wildlife {
           mesh.count = 0;
           mesh.visible = false;
           this.group.add(mesh);
-          return { mesh, a, b, c, n: 0 };
+          const wm: WildMesh = { mesh, full: geo, light: null, px: 0, a, b, c, n: 0 };
+          // limbs, beaks and tails are separate pieces: the cut keeps each one
+          // whole (no welding across them), only dropping the tiniest
+          void simplifiedLevels(geo, [{ error: LIGHT_ERROR, prune: true }]).then(([g]) => {
+            wm.light = g;
+          });
+          return wm;
         }),
       );
     });
@@ -2917,7 +2936,12 @@ export class Wildlife {
   private pack(cam: THREE.PerspectiveCamera, pxK: number) {
     _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     _fr.setFromProjectionMatrix(_pm);
-    for (const list of this.meshes) for (const m of list) m.n = 0;
+    for (const list of this.meshes) {
+      for (const m of list) {
+        m.n = 0;
+        m.px = 0;
+      }
+    }
     for (const p of this.active) {
       for (const a of p.beasts) {
         if (a.hidden) continue;
@@ -2930,6 +2954,7 @@ export class Wildlife {
         const m = this.meshes[a.k][a.geo];
         if (m.n >= sp.max) continue;
         const i = m.n++;
+        m.px = Math.max(m.px, (a.s * pxK) / Math.max(d, 1));
         const c = a.cur;
         m.a.setXYZW(i, a.gait, c[STRIDE], c[HP], c[HY]);
         m.b.setXYZW(i, a.flapPh, c[FLAP], c[FOLD], c[TAILW]);
@@ -2953,6 +2978,8 @@ export class Wildlife {
       for (const m of list) {
         m.mesh.count = m.n;
         m.mesh.visible = m.n > 0;
+        const geo = m.light && m.px * LIGHT_ERROR < LIGHT_PX ? m.light : m.full;
+        if (m.mesh.geometry !== geo) m.mesh.geometry = geo;
         if (m.n) {
           m.mesh.instanceMatrix.needsUpdate = true;
           m.a.needsUpdate = m.b.needsUpdate = m.c.needsUpdate = true;

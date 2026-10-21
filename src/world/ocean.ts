@@ -47,6 +47,12 @@ import { GLSL_SEA_GLOW } from './seaGlow';
  * swell in one jump, which a moving grid otherwise shows as a stutter.
  */
 const TILES = 8;
+/**
+ * Camera heights (m, per unit of lens zoom) over which the swell trains the
+ * sparse grid can't carry fade out, and from the top of which the sea (and
+ * its reflections) take the sparse grid.
+ */
+const SPARSE_FADE: [number, number] = [200, 232];
 const SWELL_PAD = 12;
 /** Centre cell size over the grid's half width, and how much of the lattice stays unstretched. */
 const GRID_A = 0.26;
@@ -117,6 +123,49 @@ function buildGrid(segments: number, half: number, morph: boolean, pad: number):
       g.setAttribute('aMorph', aMorph);
       g.setIndex(new THREE.BufferAttribute(idx, 1));
       // the lattice slides up to `pad` either way under the ship: bound the warp past it
+      const x0 = warp1(i0 * h - H - pad, C, k), x1 = warp1(i1 * h - H + pad, C, k);
+      const z0 = warp1(j0 * h - H - pad, C, k), z1 = warp1(j1 * h - H + pad, C, k);
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2), Math.hypot(x1 - x0, z1 - z0) / 2 + SWELL_PAD);
+      out.push(g);
+    }
+  }
+  return out;
+}
+
+/**
+ * Every other row and column of a built grid (`tiles`, `segments` across):
+ * the same vertices, a quarter of the triangles. `px`, `pz` pick the odd or
+ * even ones, so the caller can keep the vertices it draws pinned to the world
+ * as the lattice snaps along under the ship (see Ocean.follow).
+ */
+function sparseGrid(tiles: THREE.BufferGeometry[], segments: number, half: number, pad: number, px: number, pz: number): THREE.BufferGeometry[] {
+  const { H, C, k } = gridWarpParams(half);
+  const n = segments + 1;
+  const h = (2 * H) / segments;
+  const cut = (t: number, par: number) => Math.min(segments - ((segments - par) & 1), Math.max(par, par + 2 * Math.round(((t * segments) / TILES - par) / 2)));
+  const out: THREE.BufferGeometry[] = [];
+  for (let tj = 0; tj < TILES; tj++) {
+    for (let ti = 0; ti < TILES; ti++) {
+      const i0 = cut(ti, px), i1 = cut(ti + 1, px), j0 = cut(tj, pz), j1 = cut(tj + 1, pz);
+      const idx = new Uint32Array(((i1 - i0) >> 1) * ((j1 - j0) >> 1) * 6);
+      let p = 0;
+      for (let j = j0; j < j1; j += 2) {
+        for (let i = i0; i < i1; i += 2) {
+          const a0 = j * n + i;
+          const b0 = a0 + 2;
+          const c0 = a0 + 2 * n;
+          const d0 = c0 + 2;
+          idx[p++] = a0;
+          idx[p++] = c0;
+          idx[p++] = b0;
+          idx[p++] = b0;
+          idx[p++] = c0;
+          idx[p++] = d0;
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      for (const [name, a] of Object.entries(tiles[0].attributes)) g.setAttribute(name, a);
+      g.setIndex(new THREE.BufferAttribute(idx, 1));
       const x0 = warp1(i0 * h - H - pad, C, k), x1 = warp1(i1 * h - H + pad, C, k);
       const z0 = warp1(j0 * h - H - pad, C, k), z1 = warp1(j1 * h - H + pad, C, k);
       g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2), Math.hypot(x1 - x0, z1 - z0) / 2 + SWELL_PAD);
@@ -602,6 +651,15 @@ export class Ocean {
   readonly funnels = new THREE.Group();
   private readonly reflFunnels = new THREE.Group();
   private gridCoarse = false;
+  /** The sea draws the sparse grid (the camera is far up). */
+  private sparse = false;
+  /** Which of the sparse grids keeps its vertices on the world's even lattice lines. */
+  private snapParity = 0;
+
+  private fitSparse() {
+    if (this.sparse) this.rows.setLevel(2 + this.snapParity);
+    this.reflRows.setLevel(this.sparse ? 1 + this.snapParity : 0);
+  }
   /** Each slot's ring mesh, fine and coarse: the coarse one serves a maelstrom seen small. */
   private readonly funnelLevels: [THREE.BufferGeometry, THREE.BufferGeometry][] = [];
 
@@ -1287,7 +1345,10 @@ export class Ocean {
     // centimetres off the true crest at most, well under the ripple wobble (and the
     // sea itself takes it, pulled well back: see fitGrid)
     const coarse = buildGrid(opts.segments >> 1, opts.half, false, pad);
-    this.rows = new TileRows([fine, coarse], this.material, -10);
+    // and from the farthest zoom every other row and column of that (see fitGrid)
+    const cs = opts.segments >> 1;
+    const sparse = [0, 1, 2, 3].map((q) => sparseGrid(coarse, cs, opts.half, pad, q & 1, q >> 1));
+    this.rows = new TileRows([fine, coarse, ...sparse], this.material, -10);
     this.mesh = this.rows.group;
     // the rim glides in and out with the ship: start the apron well inside it
     this.apron = new THREE.Mesh(buildApron(opts.half * 0.94, 3400), this.material);
@@ -1303,7 +1364,7 @@ export class Ocean {
       vertexShader: OCEAN_VERT,
       fragmentShader: REFL_FRAG,
     });
-    this.reflRows = new TileRows([coarse], this.reflMaterial);
+    this.reflRows = new TileRows([coarse, ...sparse], this.reflMaterial);
     this.reflMesh = this.reflRows.group;
     this.reflApron = new THREE.Mesh(this.apron.geometry, this.reflMaterial);
     this.reflApron.frustumCulled = false;
@@ -1426,7 +1487,13 @@ export class Ocean {
    */
   follow(x: number, z: number) {
     const s = this.cell * 2;
-    (this.material.uniforms.uGridShift.value as THREE.Vector2).set(Math.round(x / s) * s - x, Math.round(z / s) * s - z);
+    const kx = Math.round(x / s);
+    const kz = Math.round(z / s);
+    (this.material.uniforms.uGridShift.value as THREE.Vector2).set(kx * s - x, kz * s - z);
+    // a coarse vertex i stands on the world's lattice line i + kx: the sparse
+    // reflection grid draws the ones on even lines
+    this.snapParity = (kx & 1) | ((kz & 1) << 1);
+    this.fitSparse();
     this.mesh.position.set(x, 0, z);
     this.mesh.updateMatrixWorld();
     this.underside.position.copy(this.mesh.position);
@@ -1497,13 +1564,25 @@ export class Ocean {
    * coarse ones with the camera's height (steady while she sails and turns,
    * unlike its distance to her, which the look-ahead swings), and only once
    * they lie exactly on them does the coarse grid take over: no pop either way.
+   *
+   * Pulled right back (the farthest zoom), every other row and column of the
+   * coarse grid does: the same vertices, a quarter of the triangles. Before
+   * it takes over, the morph runs on past 1 (moving nothing: the coarse grid
+   * has no morph steps) to tell the swell the spacing it is about to have,
+   * so the short trains it can't carry, already faint with that distance,
+   * fade out smoothly first.
    */
   private fitGrid(cam: THREE.PerspectiveCamera) {
-    const m = THREE.MathUtils.smoothstep(cam.position.y / cam.zoom, 135, 175);
-    this.material.uniforms.uGridMorph.value = m;
+    const lift = cam.position.y / cam.zoom;
+    const m = THREE.MathUtils.smoothstep(lift, 135, 175);
+    const far = THREE.MathUtils.smoothstep(lift, SPARSE_FADE[0], SPARSE_FADE[1]);
+    this.material.uniforms.uGridMorph.value = m + 2 * far;
     const coarse = m > 0.999;
-    if (coarse === this.gridCoarse) return;
+    const sparse = this.sparse ? far > 0.97 : far > 0.999;
+    if (coarse === this.gridCoarse && sparse === this.sparse) return;
     this.gridCoarse = coarse;
-    this.rows.setLevel(coarse ? 1 : 0);
+    this.sparse = sparse;
+    if (!sparse) this.rows.setLevel(coarse ? 1 : 0);
+    this.fitSparse();
   }
 }

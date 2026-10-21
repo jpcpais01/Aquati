@@ -80,6 +80,8 @@ interface Batch {
   hasMid: boolean;
   /** On-screen radius (CSS px) under which the set's plants go light. */
   lodPx: number;
+  /** On-screen radius (CSS px) above which a set with a mid level shows its detailed plant. */
+  midPx: number;
   /** How far out it is drawn up close, as a share of the detail radius (cover reaches further than its LOD'd plants). */
   reach: number;
 }
@@ -109,13 +111,13 @@ const _shadowBox = new THREE.Vector4();
 /**
  * On-screen radius (CSS px) below which a tree or shrub shows its light mesh:
  * at that size the detailed one's extra fronds and puffs merge into the same
- * silhouette.
+ * silhouette. Seen from the farthest zoom every plant sits under it.
  */
-const LOD_PX = 22;
+const LOD_PX = 30;
 /** Above this (CSS px radius) palms show every frond, nut and trunk ring. */
-const MID_PX = 55;
+const MID_PX = 75;
 /** Ground cover smaller than this on screen (radius, CSS px) isn't drawn at all. */
-const COVER_MIN_PX = 0.6;
+const COVER_MIN_PX = 5;
 /** The light plants' shadow casters: welded and held to 20 cm. */
 const FAR_SHADOW: LodJob = { error: 0.2, weld: true, permissive: true };
 /** Frustum margin (m): small camera moves never uncover an unculled plant. */
@@ -537,7 +539,8 @@ export class Vegetation {
     const palmsSh = [palmGeometry(8.5, 1.6, 3, 0, true, true), palmGeometry(10.5, 2.4, 7, 0, true, true), palmGeometry(7, 0.9, 13, 0, true, true)];
     const treeSpec: [number, 'round' | 'tall' | 'flame' | 'blossom'][] = [[5, 'round'], [17, 'round'], [29, 'tall'], [41, 'flame'], [52, 'blossom'], [63, 'blossom']];
     const trees = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, false, true));
-    const treesLo = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, lo, false, true));
+    // (the light tree: the same crown, every puff a twelve-sided lump)
+    const treesLo = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 2, false, true));
     const treesSh = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, true, true));
     const treeFerns = [treeFernGeometry(3, 0, true), treeFernGeometry(8, 0, true), treeFernGeometry(14, 0, true)];
     const treeFernsLo = [treeFernGeometry(3, lo, true), treeFernGeometry(8, lo, true), treeFernGeometry(14, lo, true)];
@@ -595,6 +598,8 @@ export class Vegetation {
       mid?: THREE.BufferGeometry[];
       /** on-screen radius (CSS px) under which the light mesh takes over */
       lodPx?: number;
+      /** on-screen radius (CSS px) over which the detailed mesh takes over from the mid one */
+      midPx?: number;
       tilt?: boolean;
       shadows?: boolean;
       always?: boolean;
@@ -612,7 +617,7 @@ export class Vegetation {
       this.group.add(f.near, f.far, f.always);
       this.flora.push(f);
 
-      const batch = (mesh: THREE.InstancedMesh, geo: THREE.BufferGeometry, mats: Float32Array, shadows: boolean, role: Batch['role'] = 'cover', lvl: Uint8Array | null = null, hasMid = false, lodPx = LOD_PX): Batch => {
+      const batch = (mesh: THREE.InstancedMesh, geo: THREE.BufferGeometry, mats: Float32Array, shadows: boolean, role: Batch['role'] = 'cover', lvl: Uint8Array | null = null, hasMid = false, lodPx = LOD_PX, midPx = MID_PX): Batch => {
         const n = mesh.count;
         if (!geo.boundingSphere) geo.computeBoundingSphere();
         const sph = new Float32Array(n * 4);
@@ -628,7 +633,7 @@ export class Vegetation {
         mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
         const shown = new Uint32Array(n);
         for (let k = 0; k < n; k++) shown[k] = k;
-        return { mesh, mat: mats, col: (mesh.instanceColor!.array as Float32Array).slice(), sph, shown, n, shadows, role, lvl, hasMid, lodPx, reach: 1 };
+        return { mesh, mat: mats, col: (mesh.instanceColor!.array as Float32Array).slice(), sph, shown, n, shadows, role, lvl, hasMid, lodPx, midPx, reach: 1 };
       };
 
       const add = (list: Placement[], geos: THREE.BufferGeometry[], mat: THREE.Material, tint: Tint, o: Opts = {}) => {
@@ -652,7 +657,7 @@ export class Vegetation {
           const mats = (inst.instanceMatrix.array as Float32Array).slice();
           const lvl = o.lo ? new Uint8Array(sub.length).fill(2) : null;
           (o.always ? f.always : f.near).add(inst);
-          const nb = batch(inst, geos[v], mats, inst.castShadow, lvl ? 'near' : 'cover', lvl, !!o.mid, o.lodPx);
+          const nb = batch(inst, geos[v], mats, inst.castShadow, lvl ? 'near' : 'cover', lvl, !!o.mid, o.lodPx, o.midPx);
           // ground cover has no far LOD to hand over to: past the detail radius it carries on a little further, then stops
           if (!o.lo && !o.shadow) nb.reach = 1.6;
           (o.always ? f.alwaysB : f.nearB).push(nb);
@@ -700,15 +705,16 @@ export class Vegetation {
       };
 
       const leafy: Tint = (t, c) => c.setRGB(0.88 + t * 0.24, 0.93 + t * 0.12, 0.84 + (1 - t) * 0.14);
-      add(L.palm, palms, palmMat, (t, c) => c.setRGB(0.9 + t * 0.2, 0.95 + t * 0.1, 0.85 + (1 - t) * 0.1), { lo: palmsLo, shadow: palmsSh, mid: palmsSh });
-      // a broadleaf crown's lumpy, leaf-clustered puffs show at any size worth
-      // drawing: it keeps them until it's a speck, then goes straight to the light mesh
-      add(L.tree, trees, treeMat, leafy, { lo: treesLo, shadow: treesSh, lodPx: 10 });
+      add(L.palm, palms, palmMat, (t, c) => c.setRGB(0.9 + t * 0.2, 0.95 + t * 0.1, 0.85 + (1 - t) * 0.1), { lo: palmsLo, shadow: palmsSh, mid: palmsSh, lodPx: 40, midPx: 90 });
+      // a broadleaf crown keeps its every puff at every level: finely cut up
+      // close, coarser (the shadow stand-in's cut) from mid zoom, and as
+      // twelve-sided lumps once the whole tree is a few dozen pixels across
+      add(L.tree, trees, treeMat, leafy, { lo: treesLo, shadow: treesSh, mid: treesSh, lodPx: 40, midPx: 75 });
       add(L.treeFern, treeFerns, palmMat, leafy, { lo: treeFernsLo });
       add(L.banana, bananas, bananaMat, leafy, { lo: bananasLo });
-      // a shrub's light mesh is a smooth blob: it only takes over once the shrub is a speck
-      add(L.bush, bushes, bushMat, leafy, { lo: bushesLo, lodPx: 4 });
-      add(L.flowerBush, flowerBushes, bushMat, (t, c) => c.setRGB(0.92 + t * 0.16, 0.95 + t * 0.05, 0.92), { lo: flowerBushesLo, lodPx: 4 });
+      // a shrub's light mesh is a smooth blob: it takes over once the shrub is a few pixels across
+      add(L.bush, bushes, bushMat, leafy, { lo: bushesLo, lodPx: 11 });
+      add(L.flowerBush, flowerBushes, bushMat, (t, c) => c.setRGB(0.92 + t * 0.16, 0.95 + t * 0.05, 0.92), { lo: flowerBushesLo, lodPx: 11 });
       // ground cover lives only in the near set and casts no shadow (contact AO instead)
       add(L.fern, ferns, coverMat, leafy, { shadows: false });
       add(L.tuft, tufts, coverMat, (t, c) => c.setRGB(0.85 + t * 0.3, 0.92 + t * 0.12, 0.8 + t * 0.15), { shadows: false });
@@ -719,7 +725,7 @@ export class Vegetation {
       // rocks take on the island's own stone: sandstone, basalt or mossy granite
       const stone = isl.style === 'brumas' ? [1.22, 1.2, 1.1] : isl.kind === 'rocky' ? [1.42, 1.02, 0.72] : isl.kind === 'volcanic' ? [0.72, 0.68, 0.66] : [1, 1, 0.96];
       add(L.rock, isl.kind === 'lush' || isl.kind === 'karst' ? mossRocks : rocks, rockMat, (t, c) => c.setRGB(stone[0] * (0.9 + t * 0.2), stone[1] * (0.9 + t * 0.15), stone[2] * (0.88 + t * 0.1)), {
-        tilt: true, always: true, lo: isl.kind === 'lush' || isl.kind === 'karst' ? mossRocksLo : rocksLo, lodPx: 6,
+        tilt: true, always: true, lo: isl.kind === 'lush' || isl.kind === 'karst' ? mossRocksLo : rocksLo, lodPx: 11,
       });
       add(L.drift, drift, driftMat, (t, c) => c.setRGB(0.95 + t * 0.1, 0.95 + t * 0.08, 0.95), { always: true });
     });
@@ -841,7 +847,7 @@ export class Vegetation {
           const px = (sph[i * 4 + 3] * pxK) / Math.max(d, 1);
           const was = lvl[i];
           if (d > detail) lvl[i] = 0;
-          else if (b.hasMid && px > (was === 2 ? MID_PX * 0.88 : MID_PX)) lvl[i] = 2;
+          else if (b.hasMid && px > (was === 2 ? b.midPx * 0.88 : b.midPx)) lvl[i] = 2;
           else if (px > (was ? b.lodPx * 0.88 : b.lodPx)) lvl[i] = b.hasMid ? 1 : 2;
           else lvl[i] = 0;
         }

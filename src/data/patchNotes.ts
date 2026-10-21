@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T15:00Z',
     entries: [
       {
+        title: 'A far lighter world when zoomed out',
+        notes: [
+          'Pulled all the way out in a fight beside two islands, the game now draws well under half the triangles it did (around 550 thousand down to 130 to 220 thousand in our test battle), so big views should run smoother and cooler on every device.',
+          'Distant trees keep their own shape and colours but are built from simpler puffs, shrubs and rocks switch to their light versions sooner, and tiny ground cover like grass tufts and wildflowers stops drawing once it is only a few pixels across.',
+          'Far-off sailors, ships, island animals, fort guns and the island ground all have new lighter versions that take over once they are small on screen. Silenced fort guns no longer draw invisible rubble.',
+          'From the farthest zoom the sea and its reflections use a lighter grid, easing out the shortest swells first so nothing pops.',
+        ],
+      },
+      {
         title: 'A brighter peaceful glow',
         notes: ['The soft light around the minimap on peaceful seas is a little brighter and wider now, so you can tell the seas are calm at a glance.'],
       },
