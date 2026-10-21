@@ -896,6 +896,14 @@ ${GLSL_DAMAGE_SURFACE}`,
       .replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
+#ifdef USE_EMISSIVEMAP
+  // lit windows are lamps: held through the night like every lamp (render/lamps.ts)
+  totalEmissiveRadiance *= mix(1.0, 0.6, smoothstep(0.05, 0.8, uNight));
+#else
+  // a bare emissive is gilt's warm bounce of the day: it goes with the sun,
+  // or the lifted night exposure turns a gold dome into a lantern
+  totalEmissiveRadiance *= 1.0 - 0.85 * uNight;
+#endif
 #ifdef AQ_SKIN
   totalEmissiveRadiance += skEmis;
 #endif
@@ -909,6 +917,10 @@ ${GLSL_GHOST_EMISSIVE}`,
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
+  // by night the key light is the moon, lifted for the eye like the rest of
+  // the night: her glint off gilt, brass and wet metal is as tight as the
+  // sun's, and lifted with it would burn white blots through the bloom
+  reflectedLight.directSpecular *= 1.0 - 0.88 * uNight;
   // fireworks overhead light the decks, sails and hillsides in their colours
   if (uFwLight[0].w + uFwLight[1].w + uFwLight[2].w + uFwLight[3].w > 0.0) {
     vec3 aqFwN = inverseTransformDirection(normal, viewMatrix);

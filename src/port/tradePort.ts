@@ -15,6 +15,7 @@ import { Builder, C, colorize, DECK, lin, shade } from './port';
 import { Crowd, Figure, HIP, PirateStyle, PropGeo } from './pirates';
 import { PortSite } from './site';
 import { Feast, FEASTS, festoonGeometry, lanternMaterial, Span } from './festival';
+import { lampMaterial, lampPools } from '../render/lamps';
 
 // The archipelago's trading ports: busy little market towns on stilts where
 // plunder turns into gold. Each has its own colours, its own landmark and its
@@ -268,7 +269,7 @@ function makeKit(specs: TradeSpec[]): Kit {
   const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, envMapIntensity: 0.8 }), { clouds: true, caustics: true });
   const iron = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.7, envMapIntensity: 1.2 }), { clouds: true });
   const gold = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, metalness: 1, envMapIntensity: 1.6, emissive: new THREE.Color(0.35, 0.22, 0.03) }), { clouds: true });
-  const glow = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const glow = lampMaterial();
   const prop = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, envMapIntensity: 0.9 }), { clouds: true });
   const tex = deckTexture(57);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -537,7 +538,10 @@ export class TradePort {
     this.lighthouse(both, 26.2, -3.2);
     for (const x of this.stalls) this.stall(n, both, x, -5.6);
     this.props(n);
-    for (const [x, z] of [[-25, -0.9], [-11, -0.9], [7.6, -0.9], [24, -7.5]] as [number, number][]) this.lantern(n, x, z, 3.2);
+    const posts: [number, number][] = [[-25, -0.9], [-11, -0.9], [7.6, -0.9], [24, -7.5]];
+    for (const [x, z] of posts) this.lantern(n, x, z, 3.2);
+    // and the light they throw on the boards after dark
+    this.near.add(lampPools(posts.map(([x, z]) => [x, z + 0.6]), DECK + 0.01, 0.25));
     n.finish(this.near, this.kit);
     f.finish(this.far, this.kit);
     for (const m of this.far.children as THREE.Mesh[]) m.castShadow = false;

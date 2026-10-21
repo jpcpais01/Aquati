@@ -192,9 +192,11 @@ const LANTERN_FS = /* glsl */ `
     float flick = 0.9 + 0.1 * sin(uTime * 11.0 + vSeed * 60.0) * sin(uTime * 6.3 + vSeed * 31.0);
     // paper lit from inside: you see the most light where you look straight
     // through it, a candle's hot heart in the middle, the rim falling off
+    // (they only burn after dark, when the grade has opened the exposure up
+    // more than twice: a lantern brighter than this blots out its string)
     float through = vFace * vFace;
-    vec3 lit = vCol * vPaper * (0.45 + 1.9 * through) * 3.0 * flick;
-    lit += vec3(1.0, 0.72, 0.4) * vPaper * through * through * through * 2.2 * flick;
+    vec3 lit = vCol * vPaper * (0.45 + 1.9 * through) * 1.0 * flick;
+    lit += vec3(1.0, 0.72, 0.4) * vPaper * through * through * through * 0.7 * flick;
     // unlit (and the caps): paper and lacquer in whatever light there is
     vec3 off = mix(vec3(0.05, 0.035, 0.025), vCol * 0.35, vPaper) * uLight;
     vec3 c = mix(off, lit + off * 0.3, vOn * vPaper);

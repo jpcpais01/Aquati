@@ -11,6 +11,7 @@ import { buildHullPart, buildSailPart, GLOW, gunBarrel, METAL, type MastInfo, ty
 import { ball, colorize, hexL, lathe, rbox, spar, spiral, squareRing, surfaceMatrix, sweep, tube } from './geo';
 import { bowHead, buildFigure, buildKnee, type BowHead } from './figureheads';
 import { deckTextures, FLAG_ASPECT, flagTexture, hullTextures, sailNormalTexture, sailTexture, sternTexture } from './shipTextures';
+import { lampMaterial } from '../render/lamps';
 
 // Fully procedural ships: a lofted hull with real sheer, tumblehome, bilge
 // and stem; castles that sweep up out of the sheer; a rounded wale, keel and
@@ -658,7 +659,7 @@ export class ShipModel {
     const iron = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true, ghost }, gx);
     const trim = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true, ghost }, gx);
     // lights carry their colour in the vertex paint (warm lamplight by default); a phantom tints it to a cold corpse-light
-    const glow = new THREE.MeshBasicMaterial({ vertexColors: true, color: ghost ? new THREE.Color(0.14, 1, 1.36) : 0xffffff });
+    const glow = lampMaterial(ghost ? new THREE.Color(0.14, 1, 1.36) : 0xffffff);
     const flag = patchMaterial(new THREE.MeshStandardMaterial({ map: flagTexture(this.livery), side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.5 }), { flag: true, ghost }, gx);
     const rope = new THREE.LineBasicMaterial({ color: ghost ? 0x6fae94 : 0x2a1f16, transparent: true, opacity: ghost ? 0.5 : 0.75 });
     const ratline = new THREE.LineBasicMaterial({ color: ghost ? 0x6fae94 : 0x2a1f16, transparent: true, opacity: ghost ? 0.26 : 0.38 });

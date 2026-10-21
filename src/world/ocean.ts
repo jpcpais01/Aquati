@@ -54,6 +54,8 @@ const TILES = 8;
  */
 const SPARSE_FADE: [number, number] = [200, 232];
 const SWELL_PAD = 12;
+/** The default view's camera height (m, per unit of lens zoom): 139 m back at 57° (see CameraRig). */
+const DEFAULT_LIFT = 117;
 /** Centre cell size over the grid's half width, and how much of the lattice stays unstretched. */
 const GRID_A = 0.26;
 const GRID_CORE = 0.4;
@@ -360,6 +362,11 @@ const OCEAN_VERT = /* glsl */ `
   varying float vViewDist;
   varying vec4 vShore;
   varying float vCut;
+  // the point of the lattice before the swell moved it (xz) and a maelstrom's
+  // calm there (z), and the funnel's slope: the fragment works the swell's
+  // slope out again per pixel from these (see swellAt)
+  varying vec3 vRest;
+  varying vec2 vVxGrad;
   // the grid: a lattice pinned to the world in steps of two cells (uGridShift,
   // its offset from the ship), warped outward from the ship: x, the half width
   // of the flat core; y, the cubic stretch beyond it. uGridMorph slides the
@@ -409,11 +416,11 @@ const OCEAN_VERT = /* glsl */ `
     vec2 huv = (wp.xz - uWorldRect.xy) * uWorldRect.w;
     float th = texture(uHeightTex, huv).r;
     vTerrain = th;
-    float damp = clamp(-th / 8.0, 0.12, 1.0);
     // a maelstrom smooths the swell as it spins the water round, and draws
     // the surface down its walls into the throat (the CPU buoyancy reads the
     // same funnel), the spiral ridges riding round and down it
-    damp *= vortexCalm(wp.xz);
+    float calm = vortexCalm(wp.xz);
+    float damp = clamp(-th / 8.0, 0.12, 1.0) * calm;
     vec2 vxGrad = vec2(0.0);
     float vxH = 0.0;
     #ifdef VX_GRID_DIP
@@ -421,6 +428,8 @@ const OCEAN_VERT = /* glsl */ `
     #else
     if (funnel) vxH = vortexHeight(wp.xz, uTime, true, vxGrad);
     #endif
+    vRest = vec3(wp.xz, calm);
+    vVxGrad = vxGrad;
     vec3 n; float crest;
     vec3 off = gerstner(wp.xz, uTime, damp, length(wp.xz - cameraPosition.xz), n, crest);
     wp.xyz += off;
@@ -454,6 +463,46 @@ const OCEAN_VERT = /* glsl */ `
     gl_Position = projectionMatrix * mv;
   }`;
 
+// The swell's slope, worked out again per pixel at the lattice point the
+// pixel's water came from: every train the view can hold, whatever the grid
+// under it carries. Up close the grid holds the short trains as well, but
+// pulled back (and out where it stretches) it can't, and slopes blended over
+// its big cells showed as squares. A train fades only where it is too short
+// to read: the vertices' distance fade, measured as the default view sees it
+// (so a pulled-back sea keeps the look it has up close), and never under
+// about four pixels a wavelength. Needs uWaveA/B, uHeightTex, uWorldRect.
+const GLSL_SWELL_PX = /* glsl */ `
+  uniform float uDetailScale;
+  varying vec3 vRest;
+  varying vec2 vVxGrad;
+  vec3 swellAt(out float crest) {
+    vec2 p = vRest.xy;
+    float depth = max(-texture(uHeightTex, (p - uWorldRect.xy) * uWorldRect.w).r, 0.0);
+    float damp = clamp(depth / 8.0, 0.12, 1.0) * vRest.z;
+    float near = length(p - cameraPosition.xz) / uDetailScale;
+    float fpx = max(length(dFdx(p)), length(dFdy(p))) + 1e-4;
+    vec3 n = vec3(0.0, 1.0, 0.0);
+    float c = 0.0;
+    for (int i = 0; i < 8; i++) {
+      vec4 a = uWaveA[i];
+      vec4 b = uWaveB[i];
+      float lam = 6.28319 / a.z;
+      float A = a.w * damp * (1.0 - smoothstep(14.0, 28.0, near / lam)) * smoothstep(3.0, 6.0, lam / fpx);
+      if (A <= 0.0) continue;
+      float th = a.z * dot(a.xy, p) - b.x * uTime + b.z;
+      float s = sin(th);
+      float co = cos(th);
+      float wa = a.z * A;
+      n.x -= a.x * wa * co;
+      n.z -= a.y * wa * co;
+      n.y -= b.y * wa * s;
+      c += b.y * wa * s;
+    }
+    crest = c;
+    n.xz -= vVxGrad * n.y;
+    return normalize(n);
+  }`;
+
 const GLSL_SCENE = /* glsl */ `
   uniform sampler2D uSceneColor;
   uniform sampler2D uSceneDepth;
@@ -479,6 +528,11 @@ const REFL_FRAG = /* glsl */ `
   // a quarter of the texels of the full depth buffer, already linear
   uniform sampler2D uHalfZ;
   uniform float uHalfZOn;
+  uniform sampler2D uHeightTex;
+  uniform vec4 uWorldRect;
+  uniform vec4 uWaveA[8];
+  uniform vec4 uWaveB[8];
+  ${GLSL_SWELL_PX}
   float sceneZ(vec2 uv) {
     return uHalfZOn > 0.5 ? texture(uHalfZ, uv).g : linearDepth(texture(uSceneDepth, uv).r);
   }
@@ -549,9 +603,10 @@ const REFL_FRAG = /* glsl */ `
     vec2 r1 = texture(uNormalTex, mat2(0.825, -0.565, 0.565, 0.825) * p * 0.031 + wdrift * 0.021).xy * 2.0 - 1.0;
     vec2 r2 = texture(uNormalTex, mat2(-0.416, -0.909, 0.909, -0.416) * p * 0.067 + wpdrift * 0.017 + 0.37).xy * 2.0 - 1.0;
     vec2 rip = (r1 * mat2(0.825, -0.565, 0.565, 0.825)) * 0.8 + (r2 * mat2(-0.416, -0.909, 0.909, -0.416)) * 0.7;
-    rip *= (0.6 + 0.4 * (1.0 - smoothstep(140.0, 520.0, vViewDist))) * (1.0 + uStorm * 0.9) * (1.0 - 0.9 * uSpecial.x);
+    rip *= (0.6 + 0.4 * (1.0 - smoothstep(140.0, 520.0, vViewDist / uDetailScale))) * (1.0 + uStorm * 0.9) * (1.0 - 0.9 * uSpecial.x);
     vec3 V = normalize(cameraPosition - vWorld);
-    vec3 Rs = reflect(-V, normalize(normalize(vNormal) + vec3(rip.x, 0.0, rip.y) * 0.08));
+    float crest;
+    vec3 Rs = reflect(-V, normalize(swellAt(crest) + vec3(rip.x, 0.0, rip.y) * 0.08));
     Rs.y = abs(Rs.y);
     vec4 hit = traceReflection(vWorld, Rs);
     gl_FragColor = vec4(hit.rgb * hit.a, hit.a);
@@ -696,6 +751,9 @@ export class Ocean {
       uGridWarp: { value: new THREE.Vector2(gw.C, gw.k) },
       uGridMorph: { value: 0 },
       uGridCell: { value: (2 * gw.H) / opts.segments },
+      // how far the camera stands back from the default view (1 up close): the
+      // sea's detail fades are measured as that view would see them
+      uDetailScale: { value: 1 },
     };
     this.material = new THREE.ShaderMaterial({
       uniforms,
@@ -721,9 +779,9 @@ export class Ocean {
         ${GLSL_FW}
         ${GLSL_SURF}
         ${GLSL_SEA_GLOW}
+        ${GLSL_SWELL_PX}
         varying vec3 vWorld;
         varying vec3 vNormal;
-        varying float vCrest;
         varying float vTerrain;
         varying float vViewDist;
         varying vec4 vShore;
@@ -809,7 +867,8 @@ export class Ocean {
           vec2 wpdrift = vec2(-wdrift.y, wdrift.x);
           vec4 mac = texture(uNoiseTex, vWorld.xz * 0.0021 + vec2(0.13, 0.71) + wdrift * 0.0004);
           vec4 mac2 = texture(uNoiseTex, vWorld.xz * 0.0053 + vec2(0.52, 0.27) - wpdrift * 0.0007);
-          float detailFade = 1.0 - smoothstep(140.0, 520.0, vViewDist);
+          // (measured as the default view sees it: pulled back, the sea keeps its look)
+          float detailFade = 1.0 - smoothstep(140.0, 520.0, vViewDist / uDetailScale);
 
           // ---- ripples: four layers at unrelated scales and rotations, each
           // fading in and out under the macro noise. Their tiles never line up,
@@ -863,7 +922,8 @@ export class Ocean {
             calm = mix(calm, 1.0, gust);
           }
 
-          vec3 Ns = normalize(vNormal);
+          float swellCrest;
+          vec3 Ns = swellAt(swellCrest);
           // shading normal: swell + ripples. Glint normal adds the gust chop so
           // gusts sparkle without tilting the reflection toward the pale horizon.
           vec3 N = normalize(Ns + vec3(rip.x, 0.0, rip.y) * 0.36 * calm);
@@ -1072,7 +1132,7 @@ export class Ocean {
           float sssView = pow(max(dot(V, -L + vec3(0.0, 0.6, 0.0)), 0.0), 2.0);
           float sss = hgt * hgt * (0.3 + sssView) * (0.35 + 0.65 * mac2.r);
           body += vec3(0.02, 0.19, 0.22) * sss * 0.11 * light * (1.0 - T);
-          body += vec3(0.02, 0.2, 0.16) * smoothstep(0.15, 0.75, vCrest) * uStorm * (0.45 + sssView) * light * 0.3;
+          body += vec3(0.02, 0.2, 0.16) * smoothstep(0.15, 0.75, swellCrest) * uStorm * (0.45 + sssView) * light * 0.3;
           // wake crests glow translucent turquoise, troughs sink a touch deeper
           body += vec3(0.04, 0.36, 0.34) * clamp(wakeH * 1.6, -0.25, 1.0) * (0.45 + sssView) * light * 0.5;
           // ruffled water under a gust scatters less light back up: darker, matte
@@ -1215,7 +1275,7 @@ export class Ocean {
           wakeFoam *= 0.7 + 0.3 * smoothstep(0.0, 0.6, wf);
           // whitecaps break only here and there, and more often where a gust blows
           float breaking = smoothstep(0.54 - uStorm * 0.16, 0.8 - uStorm * 0.1, texture(uNoiseTex, p * 0.0093 - wdrift * 0.017).g + gust * 0.35);
-          float crestFoam = smoothstep(0.5 - uStorm * 0.1, 0.95, vCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.15);
+          float crestFoam = smoothstep(0.5 - uStorm * 0.1, 0.95, swellCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.15);
           // In a blow the long swells break along their crests: white water
           // tumbles down each face as the crest runs on and is left lying on
           // its back, thinning to lace. The breaking stretches ride with the
@@ -1314,7 +1374,7 @@ export class Ocean {
               vec3 blue = vec3(0.04, 0.5, 1.0);
               col += blue * stir * spark * bloom * 1.6;
               // the swell's crests shimmer faintly as they fold over
-              col += blue * smoothstep(0.25, 0.8, vCrest + nz2.g * 0.4 - 0.2) * 0.012 * bloom;
+              col += blue * smoothstep(0.25, 0.8, swellCrest + nz2.g * 0.4 - 0.2) * 0.012 * bloom;
               // twinkles: sparse points flaring up and fading, never two alike
               if (detailFade > 0.0) {
                 vec4 tw = texture(uNoiseTex, p * 3.7 + vec2(0.31, 0.77));
@@ -1585,6 +1645,7 @@ export class Ocean {
    */
   private fitGrid(cam: THREE.PerspectiveCamera) {
     const lift = cam.position.y / cam.zoom;
+    this.material.uniforms.uDetailScale.value = Math.max(1, lift / DEFAULT_LIFT);
     const m = THREE.MathUtils.smoothstep(lift, 135, 175);
     const far = THREE.MathUtils.smoothstep(lift, SPARSE_FADE[0], SPARSE_FADE[1]);
     this.material.uniforms.uGridMorph.value = m + 2 * far;
