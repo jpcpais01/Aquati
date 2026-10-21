@@ -181,7 +181,7 @@ export class Mirage {
         varying vec3 vN; varying vec3 vWorld; varying float vPart; varying float vFlip; varying float vH;
         float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
         void main() {
-          vec3 base = vPart < 0.5 ? vec3(1.0, 0.9, 0.72)
+          vec3 base = vPart < 0.5 ? vec3(0.96, 0.84, 0.64)
             : vPart < 1.5 ? vec3(0.78, 0.62, 0.5)
             : vPart < 2.5 ? vec3(0.42, 0.86, 0.68)
             : vPart < 3.5 ? vec3(1.0, 0.97, 0.94) : vec3(1.0, 0.82, 0.45);
@@ -189,21 +189,25 @@ export class Mirage {
           vec3 V = normalize(cameraPosition - vWorld);
           float lit = 0.62 + 0.38 * max(dot(N, uSunDir), 0.0);
           // washed out with the hot sky, as a thing seen through miles of air
-          vec3 col = mix(base * lit, uSkyHorizon * 1.4 + 0.1, 0.42 + 0.2 * vFlip);
+          // (the sky's hue, not its glare: a bleached noon horizon would burn it white)
+          vec3 hz = uSkyHorizon / max(max(uSkyHorizon.r, uSkyHorizon.g), max(uSkyHorizon.b, 1e-3)) * 0.8;
+          vec3 col = mix(base * lit * 0.85, hz, 0.28 + 0.2 * vFlip);
           // its edges run with a pearly rainbow
           float fr = 1.0 - abs(dot(N, V));
           vec3 pearl = 0.5 + 0.5 * cos(6.2832 * (fr * 0.8 + vH * 0.6 + uTime * 0.07 + vec3(0.0, 0.33, 0.67)));
-          col += pearl * fr * fr * 0.5;
+          col += pearl * fr * fr * 0.35;
           col *= uLight;
           // it shimmers in rising bands, and frays away at the top and the bottom
           vec4 nz = texture(uNoiseTex, vWorld.xz * 0.05 + vec2(0.0, uTime * 0.03));
           float band = 0.5 + 0.5 * sin(vWorld.y * 1.1 - uTime * 4.2 + nz.r * 6.0);
-          float a = mix(0.45, 1.0, band) * (vFlip > 0.5 ? 0.5 : 0.85);
+          float a = mix(0.3, 1.0, band) * (vFlip > 0.5 ? 0.42 : 0.72);
+          // the sand fades to nothing at its rim, so it lies on the sea as a glow, not a lid
+          if (vPart < 0.5) a *= smoothstep(0.0, 0.14, vH) * 0.55;
           float fray = smoothstep(0.15, 0.55, nz.g + (1.0 - abs(vH) * 1.1) * 0.5);
           a *= fray;
           // the seam where the island meets its own image glows with the sky
           float seam = exp(-abs(vH) * 9.0);
-          col += uSkyHorizon * seam * 0.6 * uLight;
+          col += hz * seam * 0.35 * uLight;
           // a ship sailing in parts it like a curtain
           float dShip = length(vWorld.xz - uPart.xy);
           a *= smoothstep(uPart.z * 0.25, uPart.z, dShip + (nz.b - 0.5) * uPart.z * 0.6);

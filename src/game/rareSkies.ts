@@ -129,7 +129,7 @@ export class RareSkies {
     const fz = Math.cos(ship.heading);
     const x = ship.x + fx * d + fz * side;
     const z = ship.z + fz * d - fx * side;
-    const size = 18 + Math.random() * 10;
+    const size = 15 + Math.random() * 8;
     // never over (or on top of) real land
     for (let i = 0; i < 7; i++) {
       const ang = (i / 6) * Math.PI * 2;

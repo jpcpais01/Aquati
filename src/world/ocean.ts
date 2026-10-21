@@ -1245,15 +1245,15 @@ export class Ocean {
               vec3 blue = vec3(0.04, 0.5, 1.0);
               col += blue * stir * spark * bloom * 1.6;
               // the swell's crests shimmer faintly as they fold over
-              col += blue * smoothstep(0.25, 0.8, vCrest + nz2.g * 0.4 - 0.2) * 0.05 * bloom;
+              col += blue * smoothstep(0.25, 0.8, vCrest + nz2.g * 0.4 - 0.2) * 0.012 * bloom;
               // twinkles: sparse points flaring up and fading, never two alike
               if (detailFade > 0.0) {
-                vec4 tw = texture(uNoiseTex, p * 0.83 + vec2(0.31, 0.77));
+                vec4 tw = texture(uNoiseTex, p * 3.7 + vec2(0.31, 0.77));
                 float blink = max(sin(t * (1.3 + tw.g * 2.0) + tw.r * 40.0), 0.0);
-                col += vec3(0.1, 0.65, 1.0) * smoothstep(0.88, 0.98, tw.a) * blink * blink * 0.7 * bloom * detailFade;
+                col += vec3(0.1, 0.65, 1.0) * smoothstep(0.9, 0.98, tw.a) * blink * blink * 0.5 * bloom * detailFade;
               }
               // the bloom's own faint milky glow, so its edges show far off on the dark
-              col += vec3(0.0, 0.03, 0.06) * bloom * (0.6 + 0.4 * mac.g);
+              col += vec3(0.0, 0.005, 0.011) * bloom * (0.6 + 0.4 * mac.g);
             }
           }
 

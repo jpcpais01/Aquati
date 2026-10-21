@@ -92,7 +92,7 @@ export class Embers {
           float dist = length(cameraPosition - c);
           // never smaller than a pixel or so, however far the view pulls out
           float size = mix(0.09 + aSeed.x * 0.08, 0.07, ember);
-          size = max(size, dist * mix(0.0011, 0.0016, ember));
+          size = max(size, dist * mix(0.0024, 0.0022, ember));
           vec3 toCam = normalize(cameraPosition - c);
           vec3 side = normalize(cross(toCam, abs(toCam.y) > 0.95 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0)));
           vec3 up = cross(side, toCam);
@@ -122,7 +122,7 @@ export class Embers {
             float core = smoothstep(0.42, 0.0, r);
             float halo = exp(-r * r * 5.0) * 0.5;
             a = (core + halo) * vA;
-            col = mix(vec3(2.6, 0.55, 0.08), vec3(5.0, 2.6, 0.7), core) * (1.0 + uNight * 0.6);
+            col = mix(vec3(2.6, 0.55, 0.08), vec3(5.0, 2.6, 0.7), core) * mix(2.0, 1.6, uNight);
             a *= 0.55;
             // glow: barely any cover, all light
             vec2 suv = gl_FragCoord.xy / uResolution;
@@ -133,7 +133,7 @@ export class Embers {
           }
           // a flake of ash: soft-edged and a little ragged, lit by the sky
           a = smoothstep(1.0, 0.45, r + sin(atan(vC.y, vC.x) * 3.0 + vA * 9.0) * 0.12) * vA * 0.8;
-          col = vec3(0.34, 0.32, 0.3) * (uLight * 0.85 + 0.05);
+          col = vec3(0.55, 0.53, 0.5) * (uLight * 0.85 + 0.05);
           vec2 suv = gl_FragCoord.xy / uResolution;
           a *= clamp((linearDepth(texture(uSceneDepth, suv).r) - vViewZ) * 0.5, 0.0, 1.0);
           if (a < 0.003) discard;

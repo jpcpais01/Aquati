@@ -81,7 +81,7 @@ export const WEATHER: Record<WeatherKind, WeatherDef> = {
   },
   // picked by hand (or ?wx=embers); out at sea it comes from a volcano's plume instead
   embers: {
-    name: 'Ember rain', cover: 0.5, rain: 0, storm: 0, fog: 0.3, wind: 0.85, dur: [120, 200],
+    name: 'Ember rain', cover: 0.5, rain: 0, storm: 0, fog: 0.16, wind: 0.85, dur: [120, 200],
     next: [['cloudy', 0.5], ['fair', 0.5]],
     arrive: ['Ember rain', 'Warm ash and glowing embers drift down on the wind'],
   },
@@ -653,7 +653,7 @@ export class Atmosphere {
     // mist glows with whatever light there is
     if (this.fog > 0.01) this.fogColor.lerp(this.tmp.copy(this.horizon).multiplyScalar(1.02), this.fog * 0.5);
     // the far air thickens a little; the weather on the water itself is the veil below
-    const fogAmt = Math.max(this.fog, this.ash * 0.5);
+    const fogAmt = Math.max(this.fog, this.ash * 0.3);
     this.fogRange.set(380 * (1 - 0.55 * fogAmt), 1500 * (1 - 0.5 * fogAmt));
     // Low weather on the sea. Sea mist lies in shallow banks with clear water
     // between them, drifting slowly; rain hangs in tall curtains that sweep by
@@ -666,7 +666,7 @@ export class Atmosphere {
     const heatK = this.heat * 0.25;
     const veilSum = mistK + rainK + lowK + ashK + heatK + 1e-4;
     this.veil.set(
-      mistK * 0.012 + rainK * 0.0026 + this.storm * 0.0012 + lowK * 0.004 + ashK * 0.006 + heatK * 0.0024,
+      mistK * 0.012 + rainK * 0.0026 + this.storm * 0.0012 + lowK * 0.004 + ashK * 0.0022 + heatK * 0.0016,
       (mistK * 15 + rainK * 58 + lowK * 40 + ashK * 50 + heatK * 9) / veilSum,
       0.4 + 0.58 * ((mistK + ashK * 0.6) / veilSum),
       1.2 + this.wind * 2.5 + this.storm * 7,
