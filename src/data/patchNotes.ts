@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T16:00Z',
     entries: [
       {
+        title: 'Sail there: your helmsman takes the wheel',
+        notes: [
+          'Tap anything on the sea chart (a waypoint pin, a trading port, a fort, an island, or the X of a treasure map) and a card opens over it with its name, how far it is and roughly how long the voyage will take. Press Sail there and your helmsman plots a course and sails her there himself. Tapping open sea still drops a pin, and its card lets you sail to it or lift it.',
+          'He steers wide of islands, shoals too shallow for your keel, living coral and every maelstrom\'s pull, and works the wind like a real sailor: when the course runs into the eye of the wind he beats up it in long tacks, far faster than pinching straight into it. He shortens sail for sharp turns, gives way to ships under your bow, and eases in so she glides to a gentle stop on her mark. At a port she comes up off the quay, ready for you to come alongside.',
+          'The course glows on the chart and the minimap as a line of gold that flows toward your goal. A pill low on screen shows where you are bound, the distance and time left, how she is sailing (running before the wind, beating to windward, coming about), and a ship\'s wheel that turns as he steers. Tap its X, or simply steer yourself, to take the helm back. Raising or lowering sail sets the canvas he cruises under, and furling it all stops her.',
+        ],
+      },
+      {
         title: 'Maelstroms swallow ships whole',
         notes: [
           'Linger in a maelstrom\'s throat and it now drags your ship down into it: she settles by the head, shudders and whirls faster as the sea climbs her sides, until it pours over the rail and she goes under. The hazard banner warns you when the throat has her, and there is still time to crowd on sail and claw your way out.',

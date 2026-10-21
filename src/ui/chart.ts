@@ -297,6 +297,10 @@ export interface ChartScene {
   hazards?: HazardMark[];
   /** The archipelagos you've sailed into; the rest are only rumours in the mist. */
   charted?: Set<string>;
+  /** The helmsman's course, from her bow to her goal. */
+  route?: { x: number; z: number }[] | null;
+  /** The place last tapped (its card is open over it). */
+  selected?: { x: number; z: number; css: string } | null;
   windX: number;
   windZ: number;
   time: number;
@@ -336,6 +340,51 @@ export function pinMark(g: CanvasRenderingContext2D, x: number, y: number, r: nu
     g.arc(0, hy, r * 0.3, 0, Math.PI * 2);
     g.fill();
   }
+  g.restore();
+}
+
+/**
+ * The helmsman's course on a chart: a soft gold glow under a line of dashes
+ * that flow from the ship toward the goal, and a ringed mark where it ends.
+ * `pts` are in canvas pixels, the ship first.
+ */
+export function drawRoute(g: CanvasRenderingContext2D, pts: [number, number][], time: number, scale = 1) {
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  const path = () => {
+    g.beginPath();
+    g.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  };
+  path();
+  g.strokeStyle = 'rgba(255, 206, 110, 0.2)';
+  g.lineWidth = 7 * scale;
+  g.stroke();
+  g.setLineDash([9 * scale, 7 * scale]);
+  g.lineDashOffset = -time * 26 * scale;
+  g.shadowColor = 'rgba(255, 200, 90, 0.9)';
+  g.shadowBlur = 8 * scale;
+  g.strokeStyle = '#ffdc8c';
+  g.lineWidth = 2.4 * scale;
+  path();
+  g.stroke();
+  g.setLineDash([]);
+  const [ex, ey] = pts[pts.length - 1];
+  const ring = (time * 0.7) % 1;
+  g.shadowBlur = 0;
+  g.strokeStyle = `rgba(255, 220, 140, ${0.8 * (1 - ring)})`;
+  g.lineWidth = 2 * scale;
+  g.beginPath();
+  g.arc(ex, ey, (5 + ring * 14) * scale, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = '#ffe3a0';
+  g.strokeStyle = 'rgba(40, 26, 4, 0.8)';
+  g.lineWidth = 1.5 * scale;
+  g.beginPath();
+  g.arc(ex, ey, 4 * scale, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
   g.restore();
 }
 
@@ -436,6 +485,17 @@ export class SeaChart {
       clearTimeout(this.tapT);
       this.zoomAt(2, e.clientX, e.clientY);
     });
+  }
+
+  /** A world spot's place on the chart, in CSS pixels from its top left corner. */
+  toScreen(x: number, z: number): [number, number] {
+    const s = this.scale();
+    return [(x - this.cx) * s + this.W / 2, (z - this.cz) * s + this.H / 2];
+  }
+
+  /** The chart's size in CSS pixels. */
+  get size(): [number, number] {
+    return [this.W, this.H];
   }
 
   /** A screen point in chart pixels from the centre. The on-screen box can differ from the layout box
@@ -1200,6 +1260,7 @@ export class SeaChart {
 
     // spyglass range + pirates inside it
     const [px, py] = toS(p.pos.x, p.pos.z);
+    if (sc.route && sc.route.length > 1) drawRoute(g, sc.route.map((q) => toS(q.x, q.z)), sc.time);
     g.setLineDash([4, 6]);
     g.strokeStyle = 'rgba(255, 244, 214, 0.28)';
     g.lineWidth = 1.2;
@@ -1336,6 +1397,24 @@ export class SeaChart {
         g.fillStyle = css;
         g.fillText(t, x, y + 7);
       });
+    }
+
+    // the place whose card is open: a soft ring breathing round it
+    if (sc.selected) {
+      const [x, y] = toS(sc.selected.x, sc.selected.z);
+      const b = 0.5 + 0.5 * Math.sin(sc.time * 3.2);
+      g.strokeStyle = sc.selected.css;
+      g.lineWidth = 2;
+      g.globalAlpha = 0.55 + 0.35 * b;
+      g.beginPath();
+      g.arc(x, y, 15 + b * 3, 0, Math.PI * 2);
+      g.stroke();
+      g.globalAlpha = 0.25;
+      g.lineWidth = 6;
+      g.beginPath();
+      g.arc(x, y, 15 + b * 3, 0, Math.PI * 2);
+      g.stroke();
+      g.globalAlpha = 1;
     }
 
     this.drawRose(g, W - 58, H - 58, 40, sc.windX, sc.windZ);
