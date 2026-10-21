@@ -369,34 +369,40 @@ class Streaks {
         }`,
       fragmentShader: /* glsl */ `
         uniform vec3 uLight; uniform float uFlash; uniform float uNight; uniform vec3 uFogColor; uniform vec2 uFogRange; uniform float uTime;
+        uniform sampler2D uSceneDepth; uniform vec2 uResolution; uniform vec2 uCamNearFar;
         varying vec2 vUv; varying float vStr; varying float vViewZ; varying vec4 vStyle;
+        float linearDepth(float d) { float n = uCamNearFar.x, f = uCamNearFar.y; return (n * f) / (f - d * (f - n)); }
         void main() {
+          // the FX pass has its own depth buffer, so clip against the world's by hand: a trail
+          // behind a sail, hull or headland is hidden, with a short soft edge where it grazes one
+          float occ = clamp((linearDepth(texture(uSceneDepth, gl_FragCoord.xy / uResolution).r) - vViewZ) * 1.5, 0.0, 1.0);
+          if (occ < 0.003) discard;
           float across = 1.0 - vUv.y * vUv.y;
           float t = vUv.x;
           float fog = smoothstep(uFogRange.x, uFogRange.y, vViewZ) * 0.85;
           if (vStyle.w > 2.5) {
             // solid iron (chain shot's chain): an opaque, softly edged strip
-            float a = smoothstep(1.0, 0.55, abs(vUv.y)) * vStr;
+            float a = smoothstep(1.0, 0.55, abs(vUv.y)) * vStr * occ;
             if (a < 0.01) discard;
             vec3 col = mix(vStyle.rgb * (uLight + uFlash * 0.8) * (0.7 + 0.6 * across), uFogColor, fog);
             gl_FragColor = vec4(col * a, a);
           } else if (vStyle.w < 0.5) {
-            float a = across * t * t * (0.38 + 0.25 * t) * vStr;
+            float a = across * t * t * (0.38 + 0.25 * t) * vStr * occ;
             if (a < 0.003) discard;
             // hot core right behind the ball, fading into a pale wake
             float core = pow(max(across, 0.0), 6.0) * smoothstep(0.55, 1.0, t);
             vec3 wake = vec3(0.98, 0.97, 0.95) * (uLight + uFlash * 0.8);
-            vec3 glow = vec3(3.2, 1.5, 0.45) * core * (0.25 + uNight * 0.9) * vStr;
+            vec3 glow = vec3(3.2, 1.5, 0.45) * core * (0.25 + uNight * 0.9) * vStr * occ;
             vec3 col = mix(wake * a, uFogColor * a, fog) + glow * (1.0 - fog);
             gl_FragColor = vec4(col, a);
           } else {
             // vault trails: a coloured glowing ribbon (or every colour at once)
-            float a = across * pow(t, 1.4) * vStr;
+            float a = across * pow(t, 1.4) * vStr * occ;
             if (a < 0.003) discard;
             vec3 tint = vStyle.rgb;
             if (vStyle.w > 1.5) tint = clamp(abs(fract(t * 1.4 - uTime * 1.6 + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0) * 2.6 + 0.2;
             float core = pow(max(across, 0.0), 5.0) * smoothstep(0.35, 1.0, t);
-            vec3 col = tint * (a * 0.6 + core * 1.7) * (1.0 + uNight * 0.6) * (1.0 - fog);
+            vec3 col = tint * (a * 0.6 + core * occ * 1.7) * (1.0 + uNight * 0.6) * (1.0 - fog);
             gl_FragColor = vec4(col, a * 0.32);
           }
         }`,

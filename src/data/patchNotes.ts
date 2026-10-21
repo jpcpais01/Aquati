@@ -16,6 +16,10 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T15:00Z',
     entries: [
       {
+        title: 'Cannon trails stay behind the sails',
+        notes: ['The glowing trail behind a flying cannonball no longer shines through sails, hulls or hills when the shot passes behind them. It now tucks neatly out of sight, with a soft edge where it just grazes the canvas.'],
+      },
+      {
         title: 'The cinematic angle stays as you zoom in',
         notes: [
           'Once you have leaned the camera into its cinematic angle at the farthest zoom, zooming back in now keeps that angle all the way down to your ship, instead of straightening up first. Up close it leans a touch lower still, for a proper over-the-water shot.',
