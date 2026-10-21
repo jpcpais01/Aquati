@@ -8,11 +8,25 @@ import { renderThunder } from './thunder';
 import { KitKind, kitJobs } from './musicKit';
 import { VoyageMusic } from './voyageMusic';
 import { wildCall } from './wildCalls';
+import { canPrerender, ChunkSource, ChunkStream } from './prerender';
 import type { CallKind } from '../fx/wild/wildlife';
 
 const SPEED_OF_SOUND = 343;
+/**
+ * Phones mix on a small core with a tight deadline, under a GPU that is
+ * already hot: they get a roomier output buffer, fewer voices and a shorter
+ * echo, so the mixer never misses a deadline (a miss is the crackle).
+ */
+const MOBILE =
+  typeof navigator !== 'undefined' && (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)));
 /** Most bank samples sounding at once; past this a big battle only piles crackle onto the audio thread. */
-const MAX_VOICES = 64;
+const MAX_VOICES = MOBILE ? 30 : 64;
+/** Past this many bank voices only the loud ones still get in. */
+const CROWDED = MOBILE ? 18 : 40;
+/** Synthesised sounds started in about the last second before the quiet ones are skipped. */
+const SYNTH_BUDGET = MOBILE ? 14 : 36;
+/** The high seas' theme is soft and dark: rendered at a low rate, it costs a third as much and loses nothing. */
+const SEA_SR = 24000;
 const AMBIENCE_LEVEL = 0.35;
 const MUSIC_URL = '/music/sunset-archipelago.mp3';
 const MUSIC_VOL = 0.55;
@@ -170,6 +184,35 @@ export class Audio {
     document.addEventListener('visibilitychange', () => this.syncMusic());
   }
 
+  /** The last stage before the speakers, which everything (the harbour theme too) goes through. */
+  private out!: AudioNode;
+
+  /**
+   * A soft ceiling on the whole mix. The compressor's make-up gain and the
+   * harbour theme summed after it could push a broadside past full scale,
+   * and a hard clip at the output is the harsh crackle of a blown speaker.
+   * This stays perfectly clean up to -3 dB, then rounds peaks off smoothly
+   * so even +6 dB arrives as a warm squash instead of static.
+   */
+  private limiter(ctx: AudioContext): AudioNode {
+    const pre = ctx.createGain();
+    // the shaper's table covers -1..1, so feed it half and let the curve map back to full scale
+    pre.gain.value = 0.5;
+    const shaper = ctx.createWaveShaper();
+    const n = 2048;
+    const curve = new Float32Array(n);
+    const knee = 0.7;
+    for (let i = 0; i < n; i++) {
+      const x = ((i / (n - 1)) * 2 - 1) * 2;
+      const a = Math.abs(x);
+      curve[i] = Math.sign(x) * (a <= knee ? a : knee + (1 - knee) * Math.tanh((a - knee) / (1 - knee)));
+    }
+    shaper.curve = curve;
+    shaper.oversample = 'none';
+    pre.connect(shaper).connect(ctx.destination);
+    return pre;
+  }
+
   start() {
     if (this.ctx) {
       if (this.ctx.state === 'suspended') void this.ctx.resume();
@@ -177,7 +220,12 @@ export class Audio {
     }
     const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AC) return;
-    this.ctx = new AC();
+    try {
+      // 'playback' lets a phone mix in bigger blocks: a few ms more latency, no underruns
+      this.ctx = new AC({ latencyHint: MOBILE ? 'playback' : 'interactive' });
+    } catch {
+      this.ctx = new AC();
+    }
     const ctx = this.ctx;
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.8 * this.vol.master;
@@ -198,7 +246,8 @@ export class Audio {
     this.muffle.type = 'lowpass';
     this.muffle.frequency.value = 22000;
     this.muffle.Q.value = 0.5;
-    this.master.connect(this.muffle).connect(comp).connect(ctx.destination);
+    this.out = this.limiter(ctx);
+    this.master.connect(this.muffle).connect(comp).connect(this.out);
 
     this.reverbIn = ctx.createGain();
     this.reverb = ctx.createConvolver();
@@ -355,7 +404,7 @@ export class Audio {
         this.musicGain.gain.value = 0;
         this.musicBus = ctx.createGain();
         this.musicBus.gain.value = this.vol.music * this.vol.master;
-        ctx.createMediaElementSource(el).connect(this.musicGain).connect(this.musicBus).connect(ctx.destination);
+        ctx.createMediaElementSource(el).connect(this.musicGain).connect(this.musicBus).connect(this.out);
       } catch {
         this.musicGain = null;
         el.volume = 0;
@@ -396,8 +445,23 @@ export class Audio {
     const t = this.ctx.currentTime;
     const w = this.wx;
     const blow = Math.max(0, w.wind - 0.8);
-    this.windGain.gain.setTargetAtTime(0.04 + speed01 * 0.08 + this.gust * 0.06 + blow * 0.2 + w.storm * 0.07, t, 0.5);
-    this.surfGain.gain.setTargetAtTime(0.2 + speed01 * 0.12 + w.storm * 0.14, t, 0.5);
+    this.glide(this.windGain.gain, 0.04 + speed01 * 0.08 + this.gust * 0.06 + blow * 0.2 + w.storm * 0.07, t, 0.5);
+    this.glide(this.surfGain.gain, 0.2 + speed01 * 0.12 + w.storm * 0.14, t, 0.5);
+  }
+
+  private glides = new WeakMap<AudioParam, number>();
+
+  /**
+   * A slow glide toward `v`, for the levels the game nudges every frame. The
+   * same target re-sent sixty times a second only floods the audio thread's
+   * automation queue (Safari's in particular), so it goes out only when the
+   * target has really moved.
+   */
+  private glide(p: AudioParam, v: number, t: number, tc: number) {
+    const last = this.glides.get(p);
+    if (last !== undefined && Math.abs(v - last) <= Math.max(0.002, Math.abs(last) * 0.02)) return;
+    this.glides.set(p, v);
+    p.setTargetAtTime(v, t, tc);
   }
 
   /** Weather beds: rain hiss & roar, a howling wind and heavier surf in a storm. */
@@ -407,8 +471,8 @@ export class Audio {
     this.wx.wind = wind;
     if (this.ctx) {
       const t = this.ctx.currentTime;
-      this.rainGain.gain.setTargetAtTime(rain * 0.13, t, 0.6);
-      this.roarGain.gain.setTargetAtTime(rain * rain * 0.12 + storm * 0.1, t, 0.8);
+      this.glide(this.rainGain.gain, rain * 0.13, t, 0.6);
+      this.glide(this.roarGain.gain, rain * rain * 0.12 + storm * 0.1, t, 0.8);
     }
     if (storm > 0.1 && !this.thunderQueued && this.ctx) {
       // render the thunder bank a piece per tick, well before the first strike
@@ -466,8 +530,17 @@ export class Audio {
     };
   }
 
+  private synthLoad = 0;
+  private synthAt = 0;
+
   private voice(vol: number, pan: number): [AudioContext, GainNode] | null {
     if (!this.ctx || this.muted) return null;
+    // a crowded moment (a melee, a broadside of wraith-fire) lets the quiet synth voices go first
+    const now = this.ctx.currentTime;
+    this.synthLoad *= Math.exp(-(now - this.synthAt) / 1.2);
+    this.synthAt = now;
+    if (this.synthLoad > SYNTH_BUDGET && vol < 0.3) return null;
+    this.synthLoad++;
     const g = this.ctx.createGain();
     g.gain.value = vol;
     if (this.ctx.createStereoPanner) {
@@ -489,7 +562,7 @@ export class Audio {
       else this.bank[kind][index] = b;
     };
     const inline = () => {
-      const jobs = bankJobs(sr);
+      const jobs = bankJobs(sr, MOBILE);
       const next = () => {
         const j = jobs.shift();
         if (!j) return;
@@ -501,7 +574,7 @@ export class Audio {
     try {
       const w = new Worker(new URL('./sfxWorker.ts', import.meta.url), { type: 'module' });
       let got = 0;
-      const total = bankJobs(sr).length;
+      const total = bankJobs(sr, MOBILE).length;
       w.onmessage = (e: MessageEvent<{ kind: BankKind; index: number; data: Float32Array[] }>) => {
         store(e.data.kind, e.data.index, e.data.data);
         if (++got === total) w.terminate();
@@ -510,7 +583,7 @@ export class Audio {
         w.terminate();
         if (!got) inline();
       };
-      w.postMessage({ sr });
+      w.postMessage({ sr, lite: MOBILE });
     } catch {
       inline();
     }
@@ -525,7 +598,7 @@ export class Audio {
     const ctx = this.ctx;
     if (!ctx || this.muted || !buf || o.vol < 0.01) return -1;
     // a crowded mix drops the faint and far first, and never grows past what a weak device can mix
-    if (this.voices >= MAX_VOICES || (this.voices > 40 && o.vol < 0.4)) return -1;
+    if (this.voices >= MAX_VOICES || (this.voices > CROWDED && o.vol < 0.4)) return -1;
     const at = ctx.currentTime + Math.min(o.dist / SPEED_OF_SOUND, 1.1) + (o.delay ?? 0);
     const src = ctx.createBufferSource();
     src.buffer = buf;
@@ -568,8 +641,12 @@ export class Audio {
   private duck(at: number, depth: number) {
     const g = this.duckGain.gain;
     const now = this.ctx!.currentTime;
-    g.cancelScheduledValues(now);
-    g.setValueAtTime(g.value, now);
+    // hold wherever the last duck's recovery has got to (a jump there is a click)
+    if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(now);
+    else {
+      g.cancelScheduledValues(now);
+      g.setValueAtTime(g.value, now);
+    }
     g.setValueAtTime(g.value, at);
     g.linearRampToValueAtTime(Math.min(g.value, 1 - depth), at + 0.02);
     g.setTargetAtTime(1, at + 0.12, 0.8);
@@ -1157,10 +1234,10 @@ export class Audio {
     }
     const b = this.vortexBed;
     const t = ctx.currentTime;
-    b.gain.gain.setTargetAtTime(Math.min(1, vol) * 0.55, t, 0.4);
-    b.pan?.pan.setTargetAtTime(Math.max(-0.85, Math.min(0.85, pan)), t, 0.3);
-    b.howl.gain.setTargetAtTime(near * near * 0.9, t, 0.5);
-    b.howlF.frequency.setTargetAtTime(160 + near * 260, t, 0.6);
+    this.glide(b.gain.gain, Math.min(1, vol) * 0.55, t, 0.4);
+    if (b.pan) this.glide(b.pan.pan, Math.max(-0.85, Math.min(0.85, pan)), t, 0.3);
+    this.glide(b.howl.gain, near * near * 0.9, t, 0.5);
+    this.glide(b.howlF.frequency, 160 + near * 260, t, 0.6);
   }
 
   /** Shot ploughing into a beach or hillside. */
@@ -2654,7 +2731,7 @@ export class Audio {
     }, 4000);
   }
 
-  private noiseSrc(ctx: AudioContext, at: number, dur: number, rate = 1) {
+  private noiseSrc(ctx: BaseAudioContext, at: number, dur: number, rate = 1) {
     const n = ctx.createBufferSource();
     n.buffer = this.noise;
     n.playbackRate.value = rate;
@@ -3013,13 +3090,18 @@ export class Audio {
     tl.connect(tg).connect(trem.gain);
     nodes.push(tl);
     sl.connect(trem).connect(strings).connect(gain);
+    // (a phone gets one player per part instead of two a hair apart: half the saws, the same dread)
+    const desk = MOBILE ? [0] : [-7, 7];
+    const deskGain = ctx.createGain();
+    deskGain.gain.value = MOBILE ? 1.4 : 1;
+    deskGain.connect(sl);
     for (const f of [220, 233.08, 329.63, 440]) {
-      for (const det of [-7, 7]) {
+      for (const det of desk) {
         const o = ctx.createOscillator();
         o.type = 'sawtooth';
         o.frequency.value = f;
         o.detune.value = det;
-        o.connect(sl);
+        o.connect(deskGain);
         nodes.push(o);
       }
     }
@@ -3066,14 +3148,14 @@ export class Audio {
   }
 
   // ---------------------------------------------------------------- the high seas
-  // A calm theme for the open ocean, played live: a slow, warm pad breathing
+  // A calm theme for the open ocean, played from tape where it can: a slow, warm pad breathing
   // through Dmaj9, Bm11, Gmaj7#11 and A6sus, a deep sine under each chord, a
   // harp picking lazily over the chord tones and, now and then, a soft
   // ocarina line from the pentatonic, all washed in a long, cross-fed echo
   // like light on the swell. It fades in when you leave the islands behind and
   // drifts away as land comes up over the horizon.
   private seaBus: GainNode | null = null;
-  private seaSong: { gain: GainNode; wet: GainNode; dry: GainNode; timer: number; next: number; bar: number; nodes: AudioScheduledSourceNode[] } | null = null;
+  private seaSong: { gain: GainNode; timer: number; stream: ChunkStream | null } | null = null;
 
   private syncSea() {
     if (!this.ctx || !this.seaBus) return;
@@ -3091,9 +3173,10 @@ export class Audio {
       this.seaSong = null;
       sg.gain.gain.cancelScheduledValues(t);
       sg.gain.gain.setTargetAtTime(0, t, 1.6);
+      sg.stream?.release();
       window.setTimeout(() => {
         clearInterval(sg.timer);
-        for (const n of sg.nodes) n.stop();
+        sg.stream?.fade(ctx.currentTime, 0.05);
         sg.gain.disconnect();
       }, 9000);
       return;
@@ -3109,40 +3192,43 @@ export class Audio {
     gain.gain.linearRampToValueAtTime(1, t + 6);
     gain.connect(this.seaBus);
     // the echo: two delays feeding each other through a dark filter, panned apart
-    const dry = ctx.createGain();
-    dry.gain.value = 0.8;
-    dry.connect(gain);
-    const wet = ctx.createGain();
-    wet.gain.value = 0.55;
-    const nodes: AudioScheduledSourceNode[] = [];
-    const dl = ctx.createDelay(2);
-    const dr = ctx.createDelay(2);
-    dl.delayTime.value = 0.61;
-    dr.delayTime.value = 0.83;
-    const fb = ctx.createBiquadFilter();
-    fb.type = 'lowpass';
-    fb.frequency.value = 2400;
-    const fbl = ctx.createGain();
-    const fbr = ctx.createGain();
-    fbl.gain.value = 0.48;
-    fbr.gain.value = 0.46;
-    const pl = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    const pr = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    wet.connect(fb);
-    fb.connect(dl);
-    fb.connect(dr);
-    dl.connect(fbr).connect(dr);
-    dr.connect(fbl).connect(dl);
-    if (pl && pr) {
-      pl.pan.value = -0.7;
-      pr.pan.value = 0.7;
-      dl.connect(pl).connect(gain);
-      dr.connect(pr).connect(gain);
-    } else {
-      dl.connect(gain);
-      dr.connect(gain);
-    }
-    const sg = { gain, wet, dry, timer: 0, next: t + 0.3, bar: 0, nodes };
+    let c: BaseAudioContext = ctx;
+    let dry!: GainNode;
+    let wet!: GainNode;
+    const voices = (dest: AudioNode) => {
+      dry = c.createGain();
+      dry.gain.value = 0.8;
+      dry.connect(dest);
+      wet = c.createGain();
+      wet.gain.value = 0.55;
+      const dl = c.createDelay(2);
+      const dr = c.createDelay(2);
+      dl.delayTime.value = 0.61;
+      dr.delayTime.value = 0.83;
+      const fb = c.createBiquadFilter();
+      fb.type = 'lowpass';
+      fb.frequency.value = 2400;
+      const fbl = c.createGain();
+      const fbr = c.createGain();
+      fbl.gain.value = 0.48;
+      fbr.gain.value = 0.46;
+      const pl = c.createStereoPanner ? c.createStereoPanner() : null;
+      const pr = c.createStereoPanner ? c.createStereoPanner() : null;
+      wet.connect(fb);
+      fb.connect(dl);
+      fb.connect(dr);
+      dl.connect(fbr).connect(dr);
+      dr.connect(fbl).connect(dl);
+      if (pl && pr) {
+        pl.pan.value = -0.7;
+        pr.pan.value = 0.7;
+        dl.connect(pl).connect(dest);
+        dr.connect(pr).connect(dest);
+      } else {
+        dl.connect(dest);
+        dr.connect(dest);
+      }
+    };
     const BAR = (60 / 64) * 4;
     const hz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
     // chord voicings (midi), and the root under each
@@ -3158,12 +3244,12 @@ export class Audio {
     ];
     const PENTA = [69, 71, 73, 76, 78, 81, 83, 85];
     const pad = (at: number, notes: number[], len: number) => {
-      const lp = ctx.createBiquadFilter();
+      const lp = c.createBiquadFilter();
       lp.type = 'lowpass';
       lp.frequency.setValueAtTime(700, at);
       lp.frequency.linearRampToValueAtTime(1500, at + len * 0.5);
       lp.frequency.linearRampToValueAtTime(800, at + len + 2.5);
-      const g = ctx.createGain();
+      const g = c.createGain();
       g.gain.setValueAtTime(0.0001, at);
       g.gain.linearRampToValueAtTime(0.05, at + 2.2);
       g.gain.setValueAtTime(0.05, at + len - 0.4);
@@ -3173,7 +3259,7 @@ export class Audio {
       g.connect(wet);
       for (const m of notes) {
         for (const det of [-6, 5]) {
-          const o = ctx.createOscillator();
+          const o = c.createOscillator();
           o.type = 'triangle';
           o.frequency.value = hz(m);
           o.detune.value = det + (Math.random() - 0.5) * 3;
@@ -3184,9 +3270,9 @@ export class Audio {
       }
     };
     const bass = (at: number, m: number, len: number) => {
-      const o = ctx.createOscillator();
+      const o = c.createOscillator();
       o.frequency.value = hz(m);
-      const g = ctx.createGain();
+      const g = c.createGain();
       g.gain.setValueAtTime(0.0001, at);
       g.gain.linearRampToValueAtTime(0.11, at + 0.9);
       g.gain.exponentialRampToValueAtTime(0.02, at + len);
@@ -3198,24 +3284,24 @@ export class Audio {
     // a plucked harp string: a bright attack that mellows as it rings
     const harp = (at: number, m: number, v: number) => {
       const f = hz(m);
-      const g = ctx.createGain();
+      const g = c.createGain();
       g.gain.setValueAtTime(0.0001, at);
       g.gain.exponentialRampToValueAtTime(v, at + 0.006);
       g.gain.exponentialRampToValueAtTime(0.0008, at + 2.6);
-      const lp = ctx.createBiquadFilter();
+      const lp = c.createBiquadFilter();
       lp.type = 'lowpass';
       lp.frequency.setValueAtTime(f * 6, at);
       lp.frequency.exponentialRampToValueAtTime(f * 1.5, at + 1.2);
-      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      const pan = c.createStereoPanner ? c.createStereoPanner() : null;
       if (pan) pan.pan.value = (Math.random() - 0.5) * 0.8;
       lp.connect(g);
       (pan ? g.connect(pan) : g).connect(dry);
       (pan ?? g).connect(wet);
       for (const [mul, k] of [[1, 1], [2, 0.35], [3, 0.12]] as const) {
-        const o = ctx.createOscillator();
+        const o = c.createOscillator();
         o.type = mul === 1 ? 'triangle' : 'sine';
         o.frequency.value = f * mul;
-        const og = ctx.createGain();
+        const og = c.createGain();
         og.gain.value = k;
         o.connect(og).connect(lp);
         o.start(at);
@@ -3224,15 +3310,15 @@ export class Audio {
     };
     // a breathy ocarina: a sine with a soft vibrato and a puff of air at the start
     const ocarina = (at: number, m: number, len: number) => {
-      const o = ctx.createOscillator();
+      const o = c.createOscillator();
       o.frequency.value = hz(m);
-      const vib = ctx.createOscillator();
+      const vib = c.createOscillator();
       vib.frequency.value = 5.2;
-      const vg = ctx.createGain();
+      const vg = c.createGain();
       vg.gain.setValueAtTime(0, at);
       vg.gain.linearRampToValueAtTime(hz(m) * 0.006, at + len * 0.6);
       vib.connect(vg).connect(o.frequency);
-      const g = ctx.createGain();
+      const g = c.createGain();
       g.gain.setValueAtTime(0.0001, at);
       g.gain.linearRampToValueAtTime(0.045, at + 0.18);
       g.gain.setValueAtTime(0.04, at + len - 0.2);
@@ -3244,51 +3330,74 @@ export class Audio {
       o.stop(at + len + 0.6);
       vib.start(at);
       vib.stop(at + len + 0.6);
-      const n = this.noiseSrc(ctx, at, 0.25, 1);
-      const bp = ctx.createBiquadFilter();
+      const n = this.noiseSrc(c, at, 0.25, 1);
+      const bp = c.createBiquadFilter();
       bp.type = 'bandpass';
       bp.frequency.value = hz(m) * 2;
       bp.Q.value = 2;
-      const ng = ctx.createGain();
+      const ng = c.createGain();
       ng.gain.setValueAtTime(0.012, at);
       ng.gain.exponentialRampToValueAtTime(0.0005, at + 0.22);
       n.connect(bp).connect(ng).connect(wet);
     };
     let lastMel = 73;
-    sg.timer = window.setInterval(() => {
-      const now = ctx.currentTime;
-      while (sg.next < now + 1.5) {
-        const at = sg.next;
-        const ci = Math.floor(sg.bar / 2) % CHORDS.length;
-        const [notes, root] = CHORDS[ci];
-        if (sg.bar % 2 === 0) {
-          pad(at, notes, BAR * 2);
-          bass(at, root, BAR * 2);
-        }
-        // the harp: eighth notes over the chord, rising and falling, often resting
-        const tones = [...notes, ...notes.map((n) => n + 12)].sort((a, b) => a - b);
-        for (let e = 0; e < 8; e++) {
-          if (Math.random() > (e % 2 ? 0.38 : 0.62)) continue;
-          const k = Math.floor((Math.sin((sg.bar * 8 + e) * 0.7) * 0.5 + 0.5) * (tones.length - 1));
-          harp(at + e * (BAR / 8) + (Math.random() - 0.5) * 0.02, tones[k], 0.05 + Math.random() * 0.03);
-        }
-        // the ocarina sings a little phrase every few bars
-        if (sg.bar % 4 === 1 && Math.random() < 0.75) {
-          let beat = 0;
-          const len = 2 + Math.floor(Math.random() * 3);
-          for (let i = 0; i < len; i++) {
-            const step = Math.round((Math.random() - 0.5) * 3);
-            const j = Math.max(0, Math.min(PENTA.length - 1, PENTA.indexOf(lastMel) + step));
-            lastMel = PENTA[j < 0 ? 2 : j];
-            const d = (BAR / 4) * (i === len - 1 ? 3 : 1 + Math.floor(Math.random() * 2));
-            ocarina(at + beat, lastMel, d * 0.95);
-            beat += d;
-          }
-        }
-        sg.next += BAR;
-        sg.bar++;
+    /** One bar of the song at `at`: a pad and bass every other bar, the harp, sometimes the ocarina. */
+    const playBar = (at: number, bar: number) => {
+      const ci = Math.floor(bar / 2) % CHORDS.length;
+      const [notes, root] = CHORDS[ci];
+      if (bar % 2 === 0) {
+        pad(at, notes, BAR * 2);
+        bass(at, root, BAR * 2);
       }
-    }, 200);
+      // the harp: eighth notes over the chord, rising and falling, often resting
+      const tones = [...notes, ...notes.map((n) => n + 12)].sort((a, b) => a - b);
+      for (let e = 0; e < 8; e++) {
+        if (Math.random() > (e % 2 ? 0.38 : 0.62)) continue;
+        const k = Math.floor((Math.sin((bar * 8 + e) * 0.7) * 0.5 + 0.5) * (tones.length - 1));
+        harp(at + e * (BAR / 8) + (Math.random() - 0.5) * 0.02, tones[k], 0.05 + Math.random() * 0.03);
+      }
+      // the ocarina sings a little phrase every few bars
+      if (bar % 4 === 1 && Math.random() < 0.75) {
+        let beat = 0;
+        const len = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < len; i++) {
+          const step = Math.round((Math.random() - 0.5) * 3);
+          const j = Math.max(0, Math.min(PENTA.length - 1, PENTA.indexOf(lastMel) + step));
+          lastMel = PENTA[j < 0 ? 2 : j];
+          const d = (BAR / 4) * (i === len - 1 ? 3 : 1 + Math.floor(Math.random() * 2));
+          ocarina(at + beat, lastMel, d * 0.95);
+          beat += d;
+        }
+      }
+    };
+    const sg: { gain: GainNode; timer: number; stream: ChunkStream | null } = { gain, timer: 0, stream: null };
+    if (canPrerender(SEA_SR)) {
+      // from tape, four bars at a time: its oscillators, swept filters and echo all rendered off the audio thread
+      const PRE = 0.05;
+      const tape: ChunkSource = {
+        // a pad rings two bars and its release past the last bar that starts here, then the echo dies away
+        // (with a breath of lead-in: the harp's human timing can start a note a hair before the bar)
+        span: (from, to) => ({ len: PRE + to - from + BAR * 2 + 3.2 + 5, more: true }),
+        render: (oc, dest, from, to) => {
+          c = oc;
+          voices(dest);
+          for (let k = Math.round(from / BAR); k * BAR < to - 1e-6; k++) playBar(PRE + k * BAR - from, k);
+        },
+      };
+      sg.stream = new ChunkStream(ctx, gain, tape, { sr: SEA_SR, chunk: BAR * 4, lead: 8, startAt: t + 0.3, pre: PRE });
+      sg.timer = window.setInterval(() => sg.stream?.pump(), 500);
+    } else {
+      voices(gain);
+      let next = t + 0.3;
+      let bar = 0;
+      sg.timer = window.setInterval(() => {
+        const now = ctx.currentTime;
+        while (next < now + 1.5) {
+          playBar(next, bar++);
+          next += BAR;
+        }
+      }, 200);
+    }
     this.seaSong = sg;
   }
 
@@ -3330,7 +3439,7 @@ export class Audio {
       band.store(kind, index, b);
     };
     const inline = () => {
-      const jobs = kitJobs(ctx.sampleRate);
+      const jobs = kitJobs(band.verbRate);
       const next = () => {
         const j = jobs.shift();
         if (!j) return;
@@ -3342,7 +3451,7 @@ export class Audio {
     try {
       const w = new Worker(new URL('./musicWorker.ts', import.meta.url), { type: 'module' });
       let got = 0;
-      const total = kitJobs(ctx.sampleRate).length;
+      const total = kitJobs(band.verbRate).length;
       w.onmessage = (e: MessageEvent<{ kind: KitKind; index: number; sr: number; data: Float32Array[] }>) => {
         store(e.data.kind, e.data.index, e.data.sr, e.data.data);
         if (++got === total) w.terminate();
@@ -3351,7 +3460,7 @@ export class Audio {
         w.terminate();
         if (!got) inline();
       };
-      w.postMessage({ sr: ctx.sampleRate });
+      w.postMessage({ sr: band.verbRate });
     } catch {
       inline();
     }

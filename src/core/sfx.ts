@@ -588,8 +588,8 @@ export function earthImpact(sr: number, seed: number): Float32Array {
  * reflections (it's outdoors), a darkening diffuse tail, and a handful of
  * discrete slap-back echoes off distant cliffs that make a broadside roll.
  */
-export function seaReverb(sr: number, seed: number): [Float32Array, Float32Array] {
-  const n = Math.floor(sr * 3.2);
+export function seaReverb(sr: number, seed: number, len = 3.2): [Float32Array, Float32Array] {
+  const n = Math.floor(sr * len);
   const chans: Float32Array[] = [];
   for (let c = 0; c < 2; c++) {
     const r = rng(seed + c * 977);
@@ -1236,11 +1236,12 @@ export type BankKind =
 export const CALIBERS = 3;
 
 /** Everything the game plays, cheapest/most needed first. Cannon index = caliber * 2 + variant. */
-export function bankJobs(sr: number): { kind: BankKind; index: number; render: () => Float32Array[] }[] {
+export function bankJobs(sr: number, lite = false): { kind: BankKind; index: number; render: () => Float32Array[] }[] {
   const jobs: { kind: BankKind; index: number; render: () => Float32Array[] }[] = [];
   for (let c = 0; c < CALIBERS; c++)
     for (let v = 0; v < 2; v++) jobs.push({ kind: 'cannon', index: c * 2 + v, render: () => [cannonBlast(sr, c / (CALIBERS - 1), 101 + c * 17 + v * 5)] });
-  jobs.push({ kind: 'reverb', index: 0, render: () => seaReverb(sr, 11) });
+  // phones get a shorter tail: the convolution's cost grows with it, and the last second is -25 dB
+  jobs.push({ kind: 'reverb', index: 0, render: () => seaReverb(sr, 11, lite ? 2.2 : 3.2) });
   for (let v = 0; v < 3; v++) jobs.push({ kind: 'recoil', index: v, render: () => [gunRecoil(sr, 301 + v)] });
   for (let v = 0; v < 3; v++) jobs.push({ kind: 'wood', index: v, render: () => [woodImpact(sr, 401 + v)] });
   for (let v = 0; v < 3; v++) jobs.push({ kind: 'water', index: v, render: () => [waterImpact(sr, 501 + v)] });

@@ -5,8 +5,13 @@
 // gliding from note to note as a player would; the strings are short-lived
 // swells per chord. Every channel sends into one shared hall. Nothing runs
 // between songs, and the timer stops when the band is told to rest.
+// Where the browser can, the band plays from tape: each song is rendered a
+// few bars ahead off the audio thread (./prerender), so a phone's real-time
+// mixer only plays a stereo stream instead of dozens of live oscillators,
+// filters and the hall's convolution, which is what made it crackle.
 
-import { DRUM_VARIANTS, KIT_ROOTS, KitKind, Tonal } from './musicKit';
+import { DRUM_VARIANTS, KIT_ROOTS, KIT_SR, KitKind, Tonal } from './musicKit';
+import { canPrerender, ChunkSource, ChunkStream } from './prerender';
 import { Ev, Inst, Mono, SONGS } from './songs';
 
 const hz = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
@@ -60,6 +65,15 @@ const VOICE: Record<Mono, { harm: number[]; oscs: number[]; atk: number; rel: nu
 
 interface Strip {
   in: GainNode;
+}
+
+/** Where a song plays: the live band, or one stretch of tape being rendered. */
+interface Stage {
+  readonly ctx: BaseAudioContext;
+  readonly out: AudioNode;
+  readonly verbIn: AudioNode;
+  readonly kit: Partial<Record<Exclude<KitKind, 'verb'>, AudioBuffer[]>>;
+  readonly noise: AudioBuffer;
 }
 
 /** One live melodic voice for the length of a song. */
@@ -182,13 +196,14 @@ export class Playing {
   private voices = new Map<Mono, Voice>();
   private dry: GainNode;
   private wet: GainNode;
-  private alt = 0;
+  /** Which take of a drum comes next, so the same hit never repeats twice running. */
+  alt = 0;
   private padL: GainNode | null = null;
   private padR: GainNode | null = null;
   stopped = false;
 
   constructor(
-    private band: VoyageMusic,
+    private band: Stage,
     readonly index: number,
     private ev: Ev[],
     readonly t0: number,
@@ -368,12 +383,51 @@ export class Playing {
   }
 }
 
+/** A song cut into stretches of tape: the notes starting in each, rendered with their ring-out. */
+export class BandTape implements ChunkSource {
+  private i = 0;
+  private alt = 0;
+
+  constructor(
+    private band: VoyageMusic,
+    private index: number,
+    private ev: Ev[],
+  ) {}
+
+  span(from: number, to: number) {
+    const ev = this.ev;
+    let j = this.i;
+    let end = 0;
+    for (; j < ev.length && ev[j].t < to; j++) end = Math.max(end, ev[j].t - from + ev[j].d);
+    return { len: j > this.i ? Math.max(to - from, end) + this.band.ringOut : 0, more: j < ev.length };
+  }
+
+  render(ctx: OfflineAudioContext, dest: AudioNode, from: number, to: number) {
+    const ev = this.ev;
+    const part: Ev[] = [];
+    while (this.i < ev.length && ev[this.i].t < to) {
+      const e = ev[this.i++];
+      part.push({ ...e, t: e.t - from });
+    }
+    const p = new Playing(this.band.tapeStage(ctx, dest), this.index, part, 0);
+    p.alt = this.alt;
+    p.pump(Infinity);
+    this.alt = p.alt;
+  }
+}
+
 export class VoyageMusic {
   readonly kit: Partial<Record<Exclude<KitKind, 'verb'>, AudioBuffer[]>> = {};
   readonly verbIn: GainNode;
   private verb: ConvolverNode;
+  private verbBuf: AudioBuffer | null = null;
+  /** Playing from tape (rendered ahead), or live. */
+  private tape: boolean;
+  /** The hall's sample rate: the tape's when taped (the kit's own rate), else the context's. */
+  readonly verbRate: number;
+  private longest = 2.6;
   private got = 0;
-  private cur: Playing | null = null;
+  private cur: Playing | ChunkStream | null = null;
   private wanted = false;
   private night = 0;
   private nextAt = 0;
@@ -387,11 +441,13 @@ export class VoyageMusic {
 
   constructor(
     readonly ctx: BaseAudioContext,
-    bus: AudioNode,
+    private bus: AudioNode,
     readonly noise: AudioBuffer,
     jobs: number,
   ) {
     this.needed = jobs;
+    this.tape = typeof window !== 'undefined' && !('startRendering' in ctx) && canPrerender(KIT_SR);
+    this.verbRate = this.tape ? KIT_SR : ctx.sampleRate;
     // nothing below the bass's lowest string: rumble only muddies the sea and pumps the mix's compressor
     const hp = ctx.createBiquadFilter();
     hp.type = 'highpass';
@@ -411,9 +467,34 @@ export class VoyageMusic {
 
   /** A rendered sample (or the hall) arriving from the kit. */
   store(kind: KitKind, index: number, buf: AudioBuffer) {
-    if (kind === 'verb') this.verb.buffer = buf;
-    else (this.kit[kind] ??= [])[index] = buf;
+    if (kind === 'verb') {
+      this.verbBuf = buf;
+      if (!this.tape) this.verb.buffer = buf;
+    } else {
+      (this.kit[kind] ??= [])[index] = buf;
+      this.longest = Math.max(this.longest, buf.duration);
+    }
     this.got++;
+  }
+
+  /** Longest a note rings past its written end: a sample played down to its nearest root (or a pad's release), then the hall. */
+  get ringOut() {
+    return Math.max(this.longest * 1.12, 1.7) + (this.verbBuf?.duration ?? 2.2) + 0.1;
+  }
+
+  /** A fresh hall and low cut inside an offline render, for one stretch of tape. */
+  tapeStage(ctx: OfflineAudioContext, dest: AudioNode): Stage {
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 62;
+    hp.Q.value = 0.6;
+    hp.connect(dest);
+    const verbIn = ctx.createGain();
+    const verb = ctx.createConvolver();
+    verb.normalize = false;
+    verb.buffer = this.verbBuf;
+    verbIn.connect(verb).connect(hp);
+    return { ctx, out: hp, verbIn, kit: this.kit, noise: this.noise };
   }
 
   /** Whether the band should play (nothing grander sounding), and how dark it is (0 day .. 1 night). */
@@ -441,6 +522,7 @@ export class VoyageMusic {
     }
     if (cur) {
       cur.pump(now + LOOKAHEAD);
+      if (cur instanceof ChunkStream && cur.failed) this.tape = false;
       if (now > cur.end) {
         cur.release(now);
         this.cur = null;
@@ -480,6 +562,8 @@ export class VoyageMusic {
       this.nextAt = at + 30;
       return null;
     }
+    if (this.tape)
+      return new ChunkStream(this.ctx, this.bus, new BandTape(this, index, ev), { sr: KIT_SR, chunk: 8, lead: 5, startAt: at });
     return new Playing(this, index, ev, at);
   }
 }
