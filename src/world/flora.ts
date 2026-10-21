@@ -321,7 +321,14 @@ interface PuffSpec {
  * umbrella of a flame tree, a lilac/pink blossom tree and a tall two-tiered
  * jungle emergent. Visible limbs fork from the trunk into the canopy puffs.
  */
+/**
+ * `lod` 1 is a light crown of a few big puffs; 2 keeps the detailed crown's
+ * every puff, each cut as coarsely as it goes (an icosahedron's twenty faces),
+ * so a tree seen small keeps its own silhouette and colouring.
+ */
 export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shadow = false, mark = false): Geo {
+  const lumps = lod === 2;
+  if (lumps) lod = 0;
   const rnd = mulberry32(seed * 31 + 7);
   const s = new Simplex2(seed + 3);
   const parts: Geo[] = [];
@@ -369,13 +376,13 @@ export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shado
   const trunkTop = new THREE.Vector3((rnd() - 0.5) * 0.4, H + 0.3, (rnd() - 0.5) * 0.4);
   const tr = style === 'tall' ? 0.42 : 0.34;
   const tp: THREE.Vector3[] = [];
-  const tn = lod || shadow ? 2 : 5;
+  const tn = lod || shadow || lumps ? 2 : 5;
   for (let i = 0; i <= tn; i++) {
     const t = i / tn;
     tp.push(new THREE.Vector3(trunkTop.x * t * t, H * 0.92 * t, trunkTop.z * t * t));
   }
-  parts.push(tube(tp, (t) => tr * (1 - t * 0.45) * (1 + 0.7 * Math.pow(1 - t, 7)), lod || shadow ? 5 : 7, bark));
-  if (!lod && !shadow) {
+  parts.push(tube(tp, (t) => tr * (1 - t * 0.45) * (1 + 0.7 * Math.pow(1 - t, 7)), lod || shadow || lumps ? 5 : 7, bark));
+  if (!lod && !shadow && !lumps) {
     // limbs fork out to the outer puffs (only the ones you can glimpse)
     const limbs = puffs.filter((p) => Math.hypot(p.x, p.z) > 0.8).slice(0, style === 'flame' ? 5 : 3);
     for (const p of limbs) {
@@ -393,7 +400,7 @@ export function broadleafGeometry(seed: number, style: TreeStyle, lod = 0, shado
   puffs.forEach((p, i) => {
     // hi canopies are finely tessellated so the crowns stay round and smooth up
     // close; the shadow caster keeps every puff, just more coarsely cut
-    const g = puff(p.r, lod || shadow ? 1 : 2, seed * 13 + i, p.sq);
+    const g = puff(p.r, lumps ? 0 : lod || shadow ? 1 : 2, seed * 13 + i, p.sq);
     g.translate(p.x, p.y, p.z);
     canopyParts.push(finish(g));
     cy += p.y;

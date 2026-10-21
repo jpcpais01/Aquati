@@ -12,12 +12,25 @@ import { viewCull } from '../render/viewCull';
 // so beaches meet the sea exactly where they always did, and the shadow map
 // is drawn from a coarse stand-in of each chunk.
 
-/** Deviation (m) each level may have, finest first (the full grid is level 0). */
-const LEVELS = [0.04, 0.1, 0.25];
-/** The shadow stand-in's deviation (m): under a shadow-map texel at every zoom. */
-const SHADOW_ERROR = 0.2;
+/**
+ * Deviation (m) each level may have, finest first (the full grid is level 0).
+ * The ground keeps its own smooth normals at every level, so only an outline
+ * (a ridge against the sea or sky) can show a level's error at all.
+ */
+const LEVELS = [0.05, 0.14, 0.35, 0.8];
+/**
+ * The painted ground (contact shade under plants and rocks, forest floor,
+ * bare spurs and green gullies) rides on the vertices: from COARSE metres of
+ * error on, a level also holds each of these within its tolerance, so a far
+ * island's big flat triangles never smear it away.
+ */
+const PAINT = ['aqAO', 'aqCanopy', 'aqErode'];
+const PAINT_TOL = [0.12, 0.15, 0.25];
+const COARSE = 0.3;
+/** The shadow stand-in's deviation (m): about a shadow-map texel at the widest zoom, under the soft penumbra. */
+const SHADOW_ERROR = 0.3;
 /** How far a level's error may show on screen (CSS px). */
-const SUB_PX = 0.75;
+const SUB_PX = 2.4;
 /** Underwater ground is seen through the waves: it can stray further. */
 const UNDER_SCALE = 1.8;
 /** How far below the edge the skirts hang (m), well past any level's error. */
@@ -68,9 +81,15 @@ export class TerrainLod {
         for (const [name, a] of Object.entries(surface.attributes)) full.setAttribute(name, a);
         full.setIndex(Array.from(surface.index!.array));
         c.levels[0] = this.skirted(full, c.skirtOf);
-        const jobs: LodJob[] = LEVELS.map((e) => ({ error: e * c.scale, lockY: SHORE_BAND, keep: 0.9 }));
+        const paint = PAINT.every((a) => surface.getAttribute(a));
+        const jobs: LodJob[] = LEVELS.map((e) => {
+          const error = e * c.scale;
+          const j: LodJob = { error, lockY: SHORE_BAND, keep: 0.9 };
+          if (paint && e >= COARSE) j.attrWeights = PAINT_TOL.map((t) => error / t);
+          return j;
+        });
         if (c.mesh.castShadow) jobs.push({ error: SHADOW_ERROR, keep: 0.9 });
-        const out = await simplifiedLevels(surface, jobs);
+        const out = await simplifiedLevels(surface, jobs, paint ? PAINT : undefined);
         for (let i = 0; i < LEVELS.length; i++) c.levels.push(out[i] ? this.skirted(out[i]!, c.skirtOf) : null);
         const sh = c.mesh.castShadow ? out[LEVELS.length] : null;
         if (sh) {

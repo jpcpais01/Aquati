@@ -3,7 +3,7 @@ import { angleDelta, clamp, damp, lerp } from '../core/noise';
 import { World } from '../game/world';
 import { Ship } from './ship';
 import { HullShape, Stair } from './shipModel';
-import { CrewRenderer, FLAG, HAT, P, POSE_SIZE, PROP, TINT, TINT_SLOTS } from './crewModel';
+import { CrewRenderer, FLAG, HAT, P, POSE_SIZE, PROP, SPECK_PX, TINT, TINT_SLOTS } from './crewModel';
 import type { SpiritFrom } from '../fx/spirits';
 
 /** A sailor lost for good: where his ghost rises, and what he looked like. */
@@ -2319,11 +2319,13 @@ export class CrewSystem {
     // and the lightest cut past 50 m (further through a long lens), where
     // every sailor seen from the sea is
     const distant2 = (50 * Math.tan(THREE.MathUtils.degToRad(15)) / Math.tan(THREE.MathUtils.degToRad(fov * 0.5))) ** 2;
+    // and a speck once a metre is under SPECK_PX pixels (CSS) there
+    const speck2 = ((typeof innerHeight === 'number' ? innerHeight : 1080) / (2 * Math.tan(THREE.MathUtils.degToRad(fov * 0.5)) * SPECK_PX)) ** 2;
     const emit = (sl: Sailor, m: THREE.Matrix4) => {
       const e = m.elements;
       if (this.culling && !this.inView(e[12], e[13], e[14])) return;
       const d2 = eye ? (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 : Infinity;
-      view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, d2 < near2, d2 > distant2 && !!eye);
+      view.push(m, sl.pose, sl.row, sl.look.hat, sl.prop, sl.look.flags, d2 < near2, d2 > distant2 && !!eye, d2 > speck2 && !!eye);
     };
 
     const m = _mOut;
@@ -2358,7 +2360,7 @@ export class CrewSystem {
       const e = f.matrix.elements;
       if (this.culling && !this.inView(e[12], e[13], e[14])) continue;
       const d2 = eye ? (e[12] - eye.x) ** 2 + (e[13] - eye.y) ** 2 + (e[14] - eye.z) ** 2 : Infinity;
-      view.push(f.matrix, f.pose, f.row, f.look.hat, f.prop, f.look.flags, d2 < near2, d2 > distant2 && !!eye);
+      view.push(f.matrix, f.pose, f.row, f.look.hat, f.prop, f.look.flags, d2 < near2, d2 > distant2 && !!eye, d2 > speck2 && !!eye);
     }
     for (let i = this.orphans.length - 1; i >= 0; i--) {
       const sl = this.orphans[i];

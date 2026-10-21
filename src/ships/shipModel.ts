@@ -378,20 +378,25 @@ const FINE_ON = 21;
 const FINE_OFF = 17;
 /**
  * Simplified core meshes: deviation allowed (m) and the pixels per metre
- * below which each level shows. Both stay under about half a pixel on screen,
- * so the swap can't be seen.
+ * below which each level shows. Each stays under a pixel on screen, so the
+ * swap can't be seen; from the farthest zoom every ship is on the distant cut.
  */
-const LOD_NEAR = { job: { error: 0.018, prune: true, permissive: true } as LodJob, below: 26 };
-const LOD_FAR = { job: { error: 0.07, prune: true, permissive: true } as LodJob, below: 6.5 };
+const LOD_NEAR = { job: { error: 0.02, prune: true, permissive: true } as LodJob, below: 40 };
+const LOD_FAR = { job: { error: 0.055, prune: true, permissive: true } as LodJob, below: 15 };
+const LOD_DISTANT = { job: { error: 0.11, prune: true, permissive: true } as LodJob, below: 7.5 };
 /** The shadow stand-in: welded shape only, held to 5 cm (the shadow map's texels are 6-25 cm). */
 const LOD_SHADOW: LodJob = { error: 0.05, weld: true, prune: true, permissive: true };
+/** Its twin for a ship on the distant cut, held to a shadow-map texel at that zoom. */
+const LOD_SHADOW_FAR: LodJob = { error: 0.13, weld: true, prune: true, permissive: true };
 
 /** A mesh's simplified levels: index buffers over its own vertices (see render/lod.ts). */
 interface Levels {
   near: THREE.BufferGeometry | null;
   far: THREE.BufferGeometry | null;
-  /** Welded and pruned, for the shadow map only. */
+  distant: THREE.BufferGeometry | null;
+  /** Welded and pruned, for the shadow map only (and coarser, for a ship on the distant cut). */
   shadow: THREE.BufferGeometry | null;
+  shadowFar: THREE.BufferGeometry | null;
 }
 
 interface LodSet {
@@ -2780,16 +2785,16 @@ export class ShipModel {
   private ask(g: THREE.BufferGeometry, shadow: boolean) {
     if (this.levels.has(g) || this.asking.has(g)) return;
     this.asking.add(g);
-    const jobs = [LOD_NEAR.job, LOD_FAR.job];
-    if (shadow) jobs.push(LOD_SHADOW);
-    void simplifiedLevels(g, jobs).then(([near, far, sh]) => {
+    const jobs = [LOD_NEAR.job, LOD_FAR.job, LOD_DISTANT.job];
+    if (shadow) jobs.push(LOD_SHADOW, LOD_SHADOW_FAR);
+    void simplifiedLevels(g, jobs).then(([near, far, distant, sh, shFar]) => {
       this.asking.delete(g);
       // gone, or cut again while the worker was busy
       if (this.lodGone || !this.inUse(g)) {
-        for (const l of [near, far, sh]) if (l) disposeLevel(l);
+        for (const l of [near, far, distant, sh, shFar]) if (l) disposeLevel(l);
         return;
       }
-      this.levels.set(g, { near, far, shadow: sh ?? null });
+      this.levels.set(g, { near, far, distant, shadow: sh ?? shFar ?? null, shadowFar: sh ? (shFar ?? null) : null });
       if (!this.asking.size) this.engage();
     });
   }
@@ -2819,7 +2824,7 @@ export class ShipModel {
     // the levels of geometries the damage model has since swapped out
     this.levels.forEach((lv, g) => {
       if (this.inUse(g)) return;
-      for (const x of [lv.near, lv.far, lv.shadow]) if (x) disposeLevel(x);
+      for (const x of [lv.near, lv.far, lv.distant, lv.shadow, lv.shadowFar]) if (x) disposeLevel(x);
       this.levels.delete(g);
     });
     this.lodLive = true;
@@ -2924,16 +2929,23 @@ export class ShipModel {
       // each boundary leans toward the level already showing, so a ship
       // sitting right on one doesn't flick back and forth
       const nearT = LOD_NEAR.below * (was >= 1 ? 1.08 : 0.92);
-      const farT = LOD_FAR.below * (was === 2 ? 1.08 : 0.92);
-      const level = pxPerM < farT ? 2 : pxPerM < nearT ? 1 : 0;
+      const farT = LOD_FAR.below * (was >= 2 ? 1.08 : 0.92);
+      const distT = LOD_DISTANT.below * (was === 3 ? 1.08 : 0.92);
+      const level = pxPerM < distT ? 3 : pxPerM < farT ? 2 : pxPerM < nearT ? 1 : 0;
       if (level !== was) {
         this.lodLevel = level;
         for (const l of this.lods) {
           if (!l.full) continue;
           const lv = this.levels.get(l.full);
-          const g = (lv && (level === 2 ? (lv.far ?? lv.near) : level === 1 ? lv.near : null)) ?? l.full;
+          const g = (lv && (level === 3 ? (lv.distant ?? lv.far ?? lv.near) : level === 2 ? (lv.far ?? lv.near) : level === 1 ? lv.near : null)) ?? l.full;
           l.mesh.geometry = g;
           if (l.twinOn) l.twin!.geometry = g;
+          // the shadow stand-ins coarsen with the distant cut
+          const sh = lv && ((level === 3 && lv.shadowFar) || lv.shadow);
+          if (sh) {
+            if (l.proxy?.visible) l.proxy.geometry = sh;
+            if (l.twinOn && l.twinProxy?.visible) l.twinProxy.geometry = sh;
+          }
         }
       }
     }
@@ -2998,7 +3010,7 @@ export class ShipModel {
       if (l.full && !shown.has(l.full)) l.full.dispose();
     }
     this.levels.forEach((lv) => {
-      for (const g of [lv.near, lv.far, lv.shadow]) if (g && !shown.has(g)) disposeLevel(g);
+      for (const g of [lv.near, lv.far, lv.distant, lv.shadow, lv.shadowFar]) if (g && !shown.has(g)) disposeLevel(g);
     });
     this.levels.clear();
     this.lods = [];

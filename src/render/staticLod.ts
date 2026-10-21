@@ -4,16 +4,25 @@ import { disposeLevel, simplifiedLevels, type LodJob } from './lod';
 import { shadowOnly } from './passCull';
 
 // Distance levels for the built world that never moves: towns, forts, camps.
-// Each mesh gets two simplified levels (index-only, see lod.ts) and, if it
+// Each mesh gets three simplified levels (index-only, see lod.ts) and, if it
 // casts a shadow, a welded coarse stand-in that casts it instead. Each frame a
 // mesh shows the lightest level whose error stays under SUB_PX pixels where
 // it stands.
+//
+// Two kinds of mesh take part on their own terms:
+// - userData.lodSolid: made of separate pieces that must stay apart (a fort's
+//   breakable stonework folds a piece away by its vertices): no welding and
+//   no collapsing across seams, so no level ever joins two pieces.
+// - userData.lodInstanced: an InstancedMesh whose instances never leave its
+//   boundingSphere (a fort's guns): every instance takes the level, and the
+//   level casts its own shadow.
 
-/** Deviation (m) of the two levels. */
-const LEVELS = [0.025, 0.09];
-const SHADOW: LodJob = { error: 0.08, weld: true, prune: true, permissive: true };
+/** Deviation (m) of the three levels. */
+const LEVELS = [0.03, 0.1, 0.28];
+const SHADOW: LodJob = { error: 0.1, weld: true, prune: true, permissive: true };
+const SOLID_SHADOW: LodJob = { error: 0.1, prune: true };
 /** How far a level's error may show on screen (CSS px). */
-const SUB_PX = 0.6;
+const SUB_PX = 1;
 
 interface Entry {
   mesh: THREE.Mesh;
@@ -36,7 +45,8 @@ export class StaticLod {
     const meshes: THREE.Mesh[] = [];
     root.traverse((o) => {
       const m = o as THREE.Mesh;
-      if (!m.isMesh || (m as THREE.InstancedMesh).isInstancedMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(m.material)) return;
+      if (!m.isMesh || (m as THREE.SkinnedMesh).isSkinnedMesh || Array.isArray(m.material)) return;
+      if ((m as THREE.InstancedMesh).isInstancedMesh && !m.userData.lodInstanced) return;
       // anything that bends in its vertex shader from a flat rest pose would fold away
       const opts = patchInfo.get(m.material)?.opts;
       if (opts?.sail || opts?.flag) return;
@@ -45,16 +55,18 @@ export class StaticLod {
     });
     for (const mesh of meshes) {
       const full = mesh.geometry;
-      const jobs: LodJob[] = LEVELS.map((error) => ({ error, prune: true, permissive: true }));
-      const shadows = mesh.castShadow;
-      if (shadows) jobs.push(SHADOW);
-      void simplifiedLevels(full, jobs).then(([near, far, shadow]) => {
+      const solid = !!mesh.userData.lodSolid;
+      const inst = (mesh as THREE.InstancedMesh).isInstancedMesh;
+      const jobs: LodJob[] = LEVELS.map((error) => (solid ? { error, prune: true } : { error, prune: true, permissive: true }));
+      const shadows = mesh.castShadow && !inst;
+      if (shadows) jobs.push(solid ? SOLID_SHADOW : SHADOW);
+      void simplifiedLevels(full, jobs, undefined, inst ? 60 : 200).then(([near, mid, far, shadow]) => {
         // swapped out or taken away while the worker was busy
         if (mesh.geometry !== full || !mesh.parent) {
-          for (const g of [near, far, shadow]) if (g) disposeLevel(g);
+          for (const g of [near, mid, far, shadow]) if (g) disposeLevel(g);
           return;
         }
-        if (!near && !far && !shadow) return;
+        if (!near && !mid && !far && !shadow) return;
         let proxy: THREE.Mesh | null = null;
         if (shadow && shadows) {
           proxy = shadowOnly(new THREE.Mesh(shadow, mesh.material));
@@ -70,9 +82,15 @@ export class StaticLod {
           proxy.updateMatrixWorld(true);
           mesh.castShadow = false;
         }
-        if (!full.boundingSphere) full.computeBoundingSphere();
-        _s.copy(full.boundingSphere!).applyMatrix4(mesh.matrixWorld);
-        this.entries.push({ mesh, levels: [full, near, far], level: 0, proxy, c: _s.center.clone(), r: _s.radius });
+        if (inst) {
+          const im = mesh as THREE.InstancedMesh;
+          if (!im.boundingSphere) im.computeBoundingSphere();
+          _s.copy(im.boundingSphere!).applyMatrix4(mesh.matrixWorld);
+        } else {
+          if (!full.boundingSphere) full.computeBoundingSphere();
+          _s.copy(full.boundingSphere!).applyMatrix4(mesh.matrixWorld);
+        }
+        this.entries.push({ mesh, levels: [full, near, mid, far], level: 0, proxy, c: _s.center.clone(), r: _s.radius });
       });
     }
   }
