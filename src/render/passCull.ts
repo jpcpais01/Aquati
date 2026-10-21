@@ -61,3 +61,31 @@ Object.defineProperty(THREE.MeshDepthMaterial.prototype, 'colorWrite', {
   get: () => false,
   set: () => {},
 });
+
+// Pools of particles, splashes, lanterns and the like stay in the scene while
+// empty (no instances, or nothing in their draw range), and three still sets
+// up a full draw for each: program, uniforms, buffers, then a call that draws
+// nothing. A fifth of a calm frame's draws were these. They're dropped before
+// any of that, except while the loading screen draws everything once.
+export const emptyDraws = { skip: false };
+
+export function skipEmptyDraws(renderer: THREE.WebGLRenderer) {
+  const draw = renderer.renderBufferDirect;
+  renderer.renderBufferDirect = function (camera, scene, geometry, material, object, group) {
+    if (emptyDraws.skip && !(material as THREE.MeshBasicMaterial).wireframe) {
+      if ((object as THREE.InstancedMesh).isInstancedMesh && (object as THREE.InstancedMesh).count === 0) return;
+      if ((geometry as THREE.InstancedBufferGeometry).isInstancedBufferGeometry && (geometry as THREE.InstancedBufferGeometry).instanceCount === 0) return;
+      const r = geometry.drawRange;
+      let start = r.start;
+      let end = r.start + r.count;
+      if (group) {
+        start = Math.max(start, group.start);
+        end = Math.min(end, group.start + group.count);
+      }
+      const n = geometry.index ? geometry.index.count : geometry.attributes.position?.count;
+      if (n !== undefined) end = Math.min(end, n);
+      if (end <= Math.max(start, 0)) return;
+    }
+    draw.call(this, camera, scene, geometry, material, object, group);
+  };
+}
