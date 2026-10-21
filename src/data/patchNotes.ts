@@ -16,6 +16,10 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T15:00Z',
     entries: [
       {
+        title: 'A brighter peaceful glow',
+        notes: ['The soft light around the minimap on peaceful seas is a little brighter and wider now, so you can tell the seas are calm at a glance.'],
+      },
+      {
         title: 'Smoother zooming out',
         notes: [
           'Pulling the camera back, by hand or when a battle widens the view, no longer stutters as the far islands come in.',

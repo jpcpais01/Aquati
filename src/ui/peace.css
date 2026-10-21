@@ -21,8 +21,8 @@
   z-index: -1;
   inset: calc(-9px * var(--k));
   border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(200, 236, 255, 0) 70%, rgba(186, 230, 255, 0.34) 84%, rgba(160, 215, 255, 0) 100%);
-  box-shadow: 0 0 calc(18px * var(--k)) rgba(176, 226, 255, 0.4);
+  background: radial-gradient(closest-side, rgba(200, 236, 255, 0) 70%, rgba(190, 232, 255, 0.46) 84%, rgba(160, 215, 255, 0) 100%);
+  box-shadow: 0 0 calc(22px * var(--k)) rgba(176, 226, 255, 0.55);
   animation: peaceIn 0.8s ease both, peaceBreathe 5s ease-in-out 0.8s infinite;
   transition: background 0.6s ease, box-shadow 0.6s ease, opacity 0.4s ease;
 }
@@ -36,7 +36,7 @@
 
 @keyframes peaceBreathe {
   50% {
-    opacity: 0.6;
+    opacity: 0.72;
   }
 }
 
