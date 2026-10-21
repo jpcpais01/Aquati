@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T12:00Z',
+    entries: [
+      {
+        title: 'Las Brumas: steadier stone, wilder towers',
+        notes: [
+          'The limestone towers of Las Brumas no longer shimmer. Up close their walls used to break into thin flickering stripes, and from a distance they crawled. The rock is now textured along each face, its fine detail fades out cleanly with distance, and the grain stays put however far you sail from home.',
+          'The towers themselves have been rebuilt to look like Ha Long or El Nido. They are broader haystacks of grey stone, fluted by the rain into ribs and runnels, and they round over into domed crowns thick with jungle. A few stay jagged. Neighbours merge into massifs over wooded saddles, and scree and jungle bank up round their feet.',
+          'Cliffs crack along tall joints instead of round cells, rain stains hang down the walls, and the jungle clings to steeper ground. Green no longer creeps up the foot of a cliff in spikes.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T11:00Z',
     entries: [
       {

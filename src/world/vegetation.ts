@@ -359,6 +359,38 @@ export class Vegetation {
         t.stampAO(x, z, 1.6, 0.22);
         placed++;
       }
+      // the crowns: every tower's top one thick, rounded cap of jungle, as
+      // Ha Long's are (a stream of its own again)
+      const cr = mulberry32(Math.floor(isl.seed * 911) + 31);
+      for (const tw of isl.towers ?? []) {
+        const cTries = Math.floor(tw.r * tw.r * 0.6 * this.density);
+        let trees = 0;
+        for (let n = 0; n < cTries; n++) {
+          const a = cr() * TAU;
+          const d = Math.sqrt(cr()) * tw.r * 0.85;
+          const x = tw.x + Math.cos(a) * d;
+          const z = tw.z + Math.sin(a) * d;
+          const h = t.heightAt(x, z);
+          if (h < 12 || cleared(x, z)) continue;
+          t.gradientAt(x, z, grad);
+          const slope = grad.length();
+          if (slope > 1.1) continue;
+          if (trees < 18 && slope < 0.9 && cr() < 0.6) {
+            if (!free(x, z, 1.7)) continue;
+            take(x, z, 1.7);
+            const v = cr() < 0.12 ? T_BLOSSOM + Math.floor(cr() * 2) : cr() < 0.3 ? T_TALL : T_ROUND + Math.floor(cr() * 2);
+            L.tree.push(pl(x, h - 0.5 - slope * 0.4, z, 0.55 + cr() * 0.4, v));
+            t.stampCanopy(x, z, 3, 0.9);
+            t.stampAO(x, z, 3.2, 0.3);
+            trees++;
+          } else {
+            if (!free(x, z, 1)) continue;
+            take(x, z, 1);
+            L.bush.push(pl(x, h - 0.25 - slope * 0.3, z, 0.8 + cr() * 0.7, 1));
+            t.stampAO(x, z, 1.6, 0.2);
+          }
+        }
+      }
     }
 
     // ---------------------------------------------------------------- understorey
