@@ -94,14 +94,29 @@ interface Crag {
  * so it leans, steps back in ledges and is never a plain drum.
  */
 interface TowerForm {
-  tiers: { ox: number; oz: number; r: number; h: number; w: number; e: number; ph: number }[];
+  /**
+   * ox/oz: offset (lean); r, h: radius and summit height; S: wall steepness
+   * (metres of drop per metre out); dome: how much the crown rounds off;
+   * k: how softly the wall rolls over into it; fl: rain flutes round the wall
+   * (noise frequency) and fd their depth (fraction of r); ph: noise phase.
+   */
+  tiers: { ox: number; oz: number; r: number; h: number; S: number; dome: number; k: number; fl: number; fd: number; ph: number }[];
   /** The footprint's squash and turn. */
   asp: number;
   c: number;
   s: number;
   reach: number;
-  /** Talus round the foot: how far out it runs (units of r). */
+  /** Fallen blocks round the foot: how far out they run (units of r). */
   skirt: number;
+  /** Scree and jungle banked against the foot: its height (m) and how far out it runs (units of r). */
+  talus: number;
+  talusW: number;
+  /** How craggy the crown is (m): Ha Long's rounded haystacks low, El Nido's jagged pinnacles high. */
+  jag: number;
+}
+
+function smin(a: number, b: number, k: number): number {
+  return -smax(-a, -b, k);
 }
 
 export { WORLD_SIZE };
@@ -405,11 +420,18 @@ export class Terrain implements SeaFloor {
   }
 
   /**
-   * The karst over (x, z), as Ha Long or El Nido have it: weathered towers
-   * that taper and lean, step back in ledges where the jungle takes hold,
-   * round over into lumpy wooded crowns and drop sheer into the sea, with
-   * fallen blocks drowned round their feet. Towers that stand close merge
-   * into one massif over a saddle. Far below anything where no tower stands.
+   * The karst over (x, z), as Ha Long or El Nido have it: haystacks of grey
+   * limestone, steep walls fluted by the rain into ribs and runnels that roll
+   * over at the shoulder into domed, jungle-capped crowns, stepping back in a
+   * ledge or two where the jungle takes hold. Scree and jungle bank up round
+   * their feet on land; out in the shallows fallen blocks lie drowned round
+   * them. Towers that stand close merge into one massif over a saddle.
+   * Far below anything where no tower stands.
+   *
+   * (A 2 m heightfield can't hold a truly vertical wall: one cell would carry
+   * the whole cliff as a single stretched triangle. The walls lean back a
+   * few degrees from sheer instead, so every face has rows of vertices for
+   * its flutes and bulges, and stays a cliff to the eye.)
    */
   private towerHeight(isl: Island, x: number, z: number): number {
     const s = this.simplex;
@@ -417,7 +439,7 @@ export class Terrain implements SeaFloor {
     for (const t of isl.towers!) {
       const dx0 = x - t.x;
       const dz0 = z - t.z;
-      const F = this.towerForm(t);
+      const F = this.towerForm(t, isl);
       if (dx0 * dx0 + dz0 * dz0 > F.reach * F.reach) continue;
       // a bent, squashed footprint: no two towers share an outline
       const dx = dx0 + s.noise(x * 0.034 + t.seed, z * 0.034) * t.r * 0.2;
@@ -434,22 +456,33 @@ export class Terrain implements SeaFloor {
         const a = Math.atan2(ev, eu);
         const ca = Math.cos(a);
         const sa = Math.sin(a);
-        // bays, buttresses and rain flutes round each tier
-        const lobe =
-          s.noise(ca * 1.4 + T.ph, sa * 1.4 - T.ph) * 0.22 + s.noise(ca * 3.6 - T.ph, sa * 3.6 + T.ph * 0.5) * 0.09 + s.noise(ca * 9 + T.ph * 2, sa * 9) * 0.035;
-        const d = Math.sqrt(eu * eu + ev * ev) / (T.r * (1 + lobe));
+        // bays and buttresses round each tier
+        const lobe = s.noise(ca * 1.4 + T.ph, sa * 1.4 - T.ph) * 0.2 + s.noise(ca * 3.6 - T.ph, sa * 3.6 + T.ph * 0.5) * 0.08;
+        // the rain's flutes: broad runnels between sharp ribs, all the way down
+        const n = s.noise(ca * T.fl + T.ph * 2, sa * T.fl - T.ph);
+        const rib = 1 - Math.abs(n);
+        const flute = (rib * rib * rib - 0.3) * T.fd;
+        const d = Math.sqrt(eu * eu + ev * ev) / (T.r * (1 + lobe + flute));
         if (i === 0) d0 = d;
-        if (d >= 1) continue;
-        // a near-sheer wall that rounds over at the shoulder into a domed top
-        const p = Math.pow(Math.min(1, (1 - d) / T.w), T.e);
-        const top = T.h * (1 - d * d * 0.14);
-        h = smax(h, lerp(-26, top, p), 2.2);
-        if (i === F.tiers.length - 1) crown = p;
+        if (d >= 1.6) continue;
+        // a steep wall from well under the ground, rolling over at the
+        // shoulder into a domed crown
+        const wall = -14 + (1 - d) * T.r * T.S;
+        const dome = T.h * (1 - T.dome * d * d);
+        const ht = smin(dome, wall, T.k);
+        h = smax(h, Math.max(ht, -40), 2.2);
+        if (i === F.tiers.length - 1) crown = smoothstep(0, T.k * 1.5, wall - dome);
       }
       if (h > -40) {
-        // knobbly crown, rough ledges and the odd bulge down the faces
-        h += crown * (s.ridged(x * 0.05 + t.seed, z * 0.05, 3) * 3.2 - 1.2);
-        h += s.noise(x * 0.13 + t.seed, z * 0.13 - t.seed) * 1.1;
+        // a craggy or a rounded crown, and the odd bulge down the faces
+        h += crown * (s.ridged(x * 0.045 + t.seed, z * 0.045, 3) - 0.4) * F.jag;
+        h += s.noise(x * 0.13 + t.seed, z * 0.13 - t.seed) * 0.8;
+      }
+      // scree and jungle banked against the foot
+      if (F.talus > 0) {
+        const q = 1 - smoothstep(0.98, 1 + F.talusW, d0);
+        // (lumpy with fallen blocks, not a smooth bank)
+        if (q > 0) h = Math.max(h, F.talus * q * q * (0.75 + 0.25 * s.noise(x * 0.07 + t.seed, z * 0.07)) + q * s.noise(x * 0.11 - t.seed, z * 0.11) * 1.1);
       }
       // fallen blocks round the foot, just under the water
       const sk = 1 - smoothstep(0.94, F.skirt, d0);
@@ -464,14 +497,16 @@ export class Terrain implements SeaFloor {
    * with it every isle, port and fort stays where it was): a broad base
    * stepping up to a narrower, leaning crown. Heights vary a good deal.
    */
-  private towerForm(t: NonNullable<Island['towers']>[number]): TowerForm {
+  private towerForm(t: NonNullable<Island['towers']>[number], isl: Island): TowerForm {
     let F = this.towerForms.get(t);
     if (F) return F;
     const rnd = mulberry32(Math.floor(t.seed * 1000) + 5);
-    // (never so slender it reads as a spike)
-    const H = Math.min(t.h * (0.7 + rnd() * 0.6), t.r * 3.3 + 8);
+    // A little broader than its footing in the crowd, so neighbours merge
+    // into massifs over saddles, and never so slender it reads as a finger
+    const R = t.r * (1.1 + rnd() * 0.25);
+    const H = Math.min(t.h * (0.7 + rnd() * 0.6), R * 2.5 + 6);
     const la = rnd() * Math.PI * 2;
-    const lean = t.r * (0.06 + rnd() * 0.18);
+    const lean = R * (0.06 + rnd() * 0.18);
     const n = t.r > 15 ? 3 : 2;
     const tiers: TowerForm['tiers'] = [];
     let off = 0;
@@ -481,19 +516,44 @@ export class Terrain implements SeaFloor {
       const hk = last ? 1 : i === 0 ? 0.32 + rnd() * 0.26 : 0.62 + rnd() * 0.2;
       const a = la + (rnd() - 0.5) * 0.9;
       off = lean * k;
+      const r = R * (1 - k * (0.16 + rnd() * 0.14));
+      const h = H * hk;
+      // the wall meets the crown half to four fifths of the way out (a wall
+      // that never reached it would close over into a cone), and leans back
+      // 4.5 to 12 m of drop a metre out: 77-85 degrees, a cliff to the eye
+      const shoulder = 0.5 + rnd() * 0.3;
       tiers.push({
         ox: Math.cos(a) * off,
         oz: Math.sin(a) * off,
-        r: t.r * (1 - k * (0.18 + rnd() * 0.16)),
-        h: H * hk,
-        w: last ? 0.34 + rnd() * 0.2 : 0.1 + rnd() * 0.1,
-        e: 0.4 + rnd() * 0.2,
+        r,
+        h,
+        S: clamp((h + 14) / (r * (1 - shoulder)), 4.5, 12),
+        dome: last ? 0.12 + rnd() * 0.22 : 0.05 + rnd() * 0.08,
+        k: last ? 5 + rnd() * 6 : 2.5 + rnd() * 2,
+        // a rib every 5-7 m round the wall
+        fl: (r / 6) * (0.85 + rnd() * 0.3),
+        fd: 0.05 + rnd() * 0.05,
         ph: t.seed + i * 3.7,
       });
     }
     const rot = rnd() * Math.PI;
     const asp = 0.8 + rnd() * 0.45;
-    F = { tiers, asp, c: Math.cos(rot), s: Math.sin(rot), reach: t.r * 1.75 * Math.max(asp, 1 / asp) + 8, skirt: 1.25 + rnd() * 0.3 };
+    const skirt = 1.25 + rnd() * 0.3;
+    // ~1 in 4 towers jagged as El Nido's, the rest rounded as Ha Long's
+    const jag = rnd() < 0.27 ? 3.5 + rnd() * 2 : 1.2 + rnd() * 1.3;
+    // on the isle (not out in the shallows as a sea stack) scree banks up round the foot
+    const cr = Math.cos(isl.rot);
+    const sr = Math.sin(isl.rot);
+    const lx = ((t.x - isl.x) * cr + (t.z - isl.z) * sr) / isl.stretch;
+    const lz = (-(t.x - isl.x) * sr + (t.z - isl.z) * cr) * isl.stretch;
+    const onLand = Math.hypot(lx, lz) < isl.r * 0.9;
+    const talus = onLand ? Math.min(H * 0.2, 4 + R * 0.25) * (0.7 + rnd() * 0.5) : 0;
+    const talusW = 0.3 + rnd() * 0.25;
+    F = {
+      tiers, asp, c: Math.cos(rot), s: Math.sin(rot),
+      reach: R * (1 + Math.max(skirt, 1 + talusW) * 0.85) * Math.max(asp, 1 / asp) + 10,
+      skirt, talus, talusW, jag,
+    };
     this.towerForms.set(t, F);
     return F;
   }

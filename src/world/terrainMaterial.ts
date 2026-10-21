@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { patchMaterial } from '../render/environment';
 import { GLSL_SURF, shoreUniforms } from './shore';
+import { REGIONS } from './regions';
 
 // Per-pixel island shading. The heightfield is only 2 m per vertex, so any
 // colour baked into vertices smears into soft blotches up close. Instead every
@@ -113,7 +114,7 @@ float aqRockAt(float h, float slope, float summit, float kR, float erode, float 
   // spurs go bare a little sooner, gullies hold their green on steeper ground
   float rn = (nD.g - 0.5) * 0.26 + erode * 0.09;
   // (in the mist the jungle clings on to steeper ground)
-  float rockT = smoothstep(0.26, 0.33, slope + rn - biome * 0.07);
+  float rockT = smoothstep(0.26, 0.33, slope + rn - biome * 0.09);
   rockT = max(rockT, smoothstep(0.32, 0.42, summit + rn));
   rockT = max(rockT, kR * smoothstep(0.18, 0.24, slope + rn));
   return rockT * (smoothstep(-6.0, -1.0, h) * 0.6 + 0.4);
@@ -148,7 +149,16 @@ vec3 aqTurfColor(float h, vec3 kind, float tint, float erode, float biome, float
 }
 `;
 
+// Las Brumas lies ~7 km out from the world's origin. Out there a world
+// position carries only half a millimetre of precision, which a texture
+// coordinate of a few cycles per metre turns into a stepping, crawling grain,
+// and whose screen derivatives (the pixel's footprint, the triangle's slope)
+// turn to noise. So the vertex shader hands the fragment its position about
+// its own archipelago's centre (vAqLocal), where every digit counts.
+const LOCAL_ORIGIN = /* glsl */ `vec3(${REGIONS[1].x.toFixed(1)}, 0.0, ${REGIONS[1].z.toFixed(1)})`;
+
 const FRAG_HEAD = /* glsl */ `
+varying vec3 vAqLocal;
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqCanopy;
@@ -165,6 +175,43 @@ ${GLSL_SURF}
 float aqBump = 0.0;
 float aqRough = 0.94;
 vec3 aqLava = vec3(0.0);
+
+// world-space screen derivatives of the surface, taken once in uniform control flow
+vec3 aqDX = vec3(0.0);
+vec3 aqDY = vec3(0.0);
+
+// Stone in the plane of its own face: top-down on a ledge, side-on up a wall.
+// Sampled top-down, as the ground is, a sheer cliff smears every crack and
+// grain into pixel-thin stripes that run its whole height and crawl as the
+// view moves. w are the triplanar weights; the blend is stretched back to the
+// noise's own contrast, so cracks don't fade out where two planes meet.
+vec4 aqRockTex(vec3 p, vec3 w, float s, vec2 o) {
+  vec4 c = vec4(0.0);
+  if (w.y > 0.0) c += w.y * textureGrad(uNoiseTex, p.xz * s + o, aqDX.xz * s, aqDY.xz * s);
+  if (w.x > 0.0) c += w.x * textureGrad(uNoiseTex, p.zy * s + o + vec2(0.31, 0.53), aqDX.zy * s, aqDY.zy * s);
+  if (w.z > 0.0) c += w.z * textureGrad(uNoiseTex, p.xy * s + o + vec2(0.67, 0.19), aqDX.xy * s, aqDY.xy * s);
+  return 0.5 + (c - 0.5) * inversesqrt(dot(w, w));
+}
+
+// Noise hung on the walls, stretched down them (s: across, down): rain
+// stains, creepers and flutes, side-on on whichever way the face looks.
+vec4 aqWallTex(vec3 p, vec3 n, vec2 s, vec2 o) {
+  vec2 w = n.xz * n.xz + 1e-5;
+  w *= w;
+  w = max(w / (w.x + w.y) - 0.04, 0.0);
+  w /= w.x + w.y;
+  vec4 c = vec4(0.0);
+  if (w.x > 0.0) c += w.x * textureGrad(uNoiseTex, p.zy * s + o, aqDX.zy * s, aqDY.zy * s);
+  if (w.y > 0.0) c += w.y * textureGrad(uNoiseTex, p.xy * s + o + vec2(0.43, 0.29), aqDX.xy * s, aqDY.xy * s);
+  return 0.5 + (c - 0.5) * inversesqrt(dot(w, w));
+}
+
+// A threshold that widens to what one pixel spans of x, so a crisp edge
+// softens into its average with distance instead of sparkling.
+float aqStep(float a, float b, float x) {
+  float fw = fwidth(x);
+  return smoothstep(a - fw, b + fw, x);
+}
 
 // Mikkelsen's derivative bump mapping (unnormalised, so strength is in metres
 // and independent of resolution).
@@ -186,14 +233,32 @@ const FRAG_ALBEDO = /* glsl */ `
   float h = vAqWorld.y;
   vec3 wn = normalize(vNormal * mat3(viewMatrix));
   float slope = 1.0 - wn.y;
+  // A cliff's foot shares its vertex normal with the flat ground below, so the
+  // smooth normal fades the wall's lower triangles toward level and the turf
+  // climbs it in long green spikes. The triangle's own slope settles it.
+  // (Screen derivatives in camera space, turned to world axes: the camera's
+  // own coordinates are small near the lens, so they hold their precision
+  // where a world position several kilometres out turns them to noise.)
+  aqDX = dFdx(-vViewPosition) * mat3(viewMatrix);
+  aqDY = dFdy(-vViewPosition) * mat3(viewMatrix);
+  vec3 fn = cross(aqDX, aqDY);
+  float fSlope = 1.0 - abs(fn.y) * inversesqrt(max(dot(fn, fn), 1e-20));
+  slope = max(slope, fSlope * smoothstep(0.5, 0.7, fSlope));
   float kV = vAqKind.x;
   float kA = vAqKind.y;
   float kR = vAqKind.z;
   float kL = clamp(1.0 - kV - kA - kR, 0.0, 1.0);
   float tint = vAqInfo.x;
   // metres covered by one pixel: bump detail smaller than a few pixels is
-  // faded out, since derivative bump on it would only show 2x2-pixel grain
-  float fp = length(fwidth(xz));
+  // faded out, since derivative bump on it would only show 2x2-pixel grain.
+  // (All three axes: up a sheer wall the ground plane's xz barely moves while
+  // a pixel spans metres of height.)
+  vec3 lp = vAqLocal;
+  float fp = length(abs(aqDX) + abs(aqDY));
+  // triplanar weights for stone (see aqRockTex)
+  vec3 tw = max(abs(wn) - 0.3, 0.0);
+  tw *= tw;
+  tw /= tw.x + tw.y + tw.z;
 
   vec4 nW, nM, nS, nD, nF;
   aqGroundNoise(xz, nW, nM, nS, nD, nF);
@@ -204,7 +269,7 @@ const FRAG_ALBEDO = /* glsl */ `
   sand = mix(sand, mix(T_SAND_PINK, T_SAND_ROSE, smoothstep(0.42, 0.7, nS.g) * 0.7), vAqBiome);
   sand *= 0.94 + nF.a * 0.12;
   // wind-combed ripples: strong in the shallows, a whisper on dry beach
-  float rph = dot(xz, vec2(0.79, 0.61)) * 2.4 + (nD.g - 0.5) * 7.0 + (nS.r - 0.5) * 14.0;
+  float rph = dot(lp.xz, vec2(0.79, 0.61)) * 2.4 + (nD.g - 0.5) * 7.0 + (nS.r - 0.5) * 14.0;
   float rFade = 1.0 - smoothstep(0.7, 1.7, fwidth(rph));
   float rip = sin(rph);
   rip = rip * rip * sign(rip) * 0.5 + 0.5;
@@ -285,12 +350,18 @@ const FRAG_ALBEDO = /* glsl */ `
   vec3 beach = sand * (1.0 + rim * 0.07);
 
   // ---------------------------------------------------------------- rock
-  vec2 ruv = xz + vec2(0.0, h * 0.35); // a little height so stacked ledges differ
-  vec4 nR = texture(uNoiseTex, ruv * 0.07 + vec2(0.27, 0.6)); // ~1 m crack cells
-  vec4 nR2 = texture(uNoiseTex, ruv * 0.045 + (nW.rg - 0.5) * 0.4 + vec2(0.8, 0.4));
-  vec4 nCol = texture(uNoiseTex, ruv * 0.055 + vec2(0.13, 0.91)); // ~1.3 m basalt columns
+  vec4 nR = aqRockTex(lp, tw, 0.07, vec2(0.27, 0.6)); // ~1 m crack cells
+  vec4 nR2 = aqRockTex(lp, tw, 0.045, (nW.rg - 0.5) * 0.4 + vec2(0.8, 0.4));
+  // (top-down on purpose: basalt columns stand upright, so they run down the walls)
+  vec4 nCol = texture(uNoiseTex, (xz + vec2(0.0, h * 0.35)) * 0.055 + vec2(0.13, 0.91)); // ~1.3 m basalt columns
   float cells = mix(nR.b, nCol.b, kV);
-  float crack = smoothstep(0.55, 0.75, cells);
+  float crack = aqStep(0.55, 0.75, cells);
+  // Las Brumas: limestone parts along upright joints and level beds, so up
+  // the walls its cracks run in long verticals, not round cells
+  if (vAqBiome > 0.01) {
+    float joint = aqStep(0.6, 0.8, aqWallTex(lp, wn, vec2(0.12, 0.028), vec2(0.21, 0.66)).b);
+    crack = mix(crack, joint, smoothstep(0.3, 0.6, slope) * vAqBiome);
+  }
 
   vec3 rLush = mix(T_ROCK, T_ROCK_DARK, smoothstep(0.4, 0.7, nR2.g) * 0.65);
   rLush *= 1.0 - crack * 0.3;
@@ -299,19 +370,19 @@ const FRAG_ALBEDO = /* glsl */ `
   // slice of the noise up the face, gently dipping across the isle), warm
   // iron stains in places, dark rain streaks hanging down the walls and moss
   // on every ledge and down the runnels.
-  float bedPh = (h + (nR2.g - 0.5) * 2.4 + (nM.b - 0.5) * 6.0 + dot(xz, vec2(0.05, 0.03))) * 0.012;
+  float bedPh = (h + (nR2.g - 0.5) * 2.4 + (nM.b - 0.5) * 6.0 + dot(lp.xz, vec2(0.05, 0.03))) * 0.012;
   vec4 nB = texture(uNoiseTex, vec2(bedPh, 0.37 + tint * 0.1));
   float beds = nB.a * 0.55 + nB.g * 0.45;
+  // the thinnest beds (~1.3 m) blur into their average once a pixel spans one
+  float bedsT = aqStep(0.3, 0.7, beds);
   vec3 rSand = mix(T_LIME_GREY, T_LIME, smoothstep(0.32, 0.68, nM.g + (nS.r - 0.5) * 0.4));
   rSand = mix(rSand, T_LIME_WARM, smoothstep(0.5, 0.74, nR2.r + (nS.b - 0.5) * 0.3) * (0.45 + 0.3 * tint));
-  rSand *= 0.86 + smoothstep(0.3, 0.7, beds) * 0.22 + nR.a * 0.06;
+  rSand *= 0.86 + bedsT * 0.22 + nR.a * 0.06;
   float streak = 0.0;
   #ifndef AQ_TERRAIN_LITE
-  // streaks run down the face, so they follow the face's own horizontal axis
-  float wx = smoothstep(-0.2, 0.2, abs(wn.x) - abs(wn.z));
-  vec2 sk = vec2(mix(xz.x, xz.y, wx) * 0.21, h * 0.007);
-  streak = texture(uNoiseTex, sk + vec2(0.13, 0.57)).a * 0.55 + texture(uNoiseTex, sk * vec2(0.4, 1.0) + vec2(0.71, 0.2)).g * 0.45;
-  streak = smoothstep(0.5, 0.7, streak) * smoothstep(0.3, 0.6, slope);
+  // streaks hang down the face, side-on to it
+  streak = aqWallTex(lp, wn, vec2(0.21, 0.007), vec2(0.13, 0.57)).a * 0.55 + aqWallTex(lp, wn, vec2(0.084, 0.007), vec2(0.71, 0.2)).g * 0.45;
+  streak = aqStep(0.5, 0.7, streak) * smoothstep(0.3, 0.6, slope);
   rSand = mix(rSand, T_LIME_STAIN, streak * 0.32);
   #endif
   rSand = mix(rSand, T_LIME_MOSS, clamp(smoothstep(0.58, 0.8, wn.y + (nR.g - 0.5) * 0.3) * 0.8 + smoothstep(-0.2, -0.75, vAqErode) * 0.35, 0.0, 0.85));
@@ -325,27 +396,49 @@ const FRAG_ALBEDO = /* glsl */ `
   rVol = mix(rVol, T_ASH, smoothstep(0.6, 0.75, texture(uNoiseTex, vec2(xz.x * 0.06 + xz.y * 0.02, h * 0.012)).g) * 0.35);
   #endif
   vec3 rock = rLush * kL + rLush * kA + rSand * kR + rVol * kV;
+  float bLime = 0.0;
   if (vAqBiome > 0.01) {
-    // limestone: pale stone in soft bands, long grey rain stains running down
-    // the walls (noise stretched along height), ferns and moss on every ledge
-    float stain = smoothstep(0.5, 0.78, texture(uNoiseTex, vec2(xz.x * 0.11 + xz.y * 0.07, h * 0.006 + xz.y * 0.013)).g + (nR.a - 0.5) * 0.2);
-    vec3 lime = mix(T_MIST_LIME, T_MIST_LIME_WARM, smoothstep(0.35, 0.75, beds) * 0.5);
-    // iron-ochre where a slab broke away not long ago
-    lime = mix(lime, T_MIST_LIME_WARM, smoothstep(0.62, 0.8, nM.r + (nS.g - 0.5) * 0.5) * 0.55);
-    lime = mix(lime, T_MIST_LIME_STAIN, stain * 0.55);
-    lime *= 1.0 - crack * 0.22;
+    // Limestone as Ha Long has it: pale cream-grey stone, cooler in the shade
+    // of the walls, warm where it broke away not long ago; long grey-black rain
+    // stains hanging down from every lip; moss on each ledge, creepers in
+    // tongues down the walls, and solution flutes (the rain's own runnels)
+    // fluting every face. All of it hung side-on on the walls (aqWallTex).
+    vec4 sW = aqWallTex(lp, wn, vec2(0.11, 0.0065), vec2(0.17, 0.39));
+    vec4 sF = aqWallTex(lp, wn, vec2(0.045, 0.004), vec2(0.58, 0.12));
+    float stain = aqStep(0.5, 0.74, sW.g * 0.7 + sF.r * 0.3 + (nR.a - 0.5) * 0.16);
+    // the broad stains: whole curtains of darker stone where water runs most
+    float curtain = smoothstep(0.48, 0.7, sF.g + (nM.b - 0.5) * 0.3);
+    vec3 lime = mix(T_MIST_LIME, T_MIST_LIME * vec3(0.9, 0.93, 0.96), smoothstep(0.35, 0.7, nR2.g));
+    lime = mix(lime, T_MIST_LIME_WARM, bedsT * 0.32);
+    // iron-ochre where a slab broke away
+    lime = mix(lime, T_MIST_LIME_WARM, aqStep(0.6, 0.76, nR2.r + (nS.g - 0.5) * 0.35) * 0.6);
+    lime = mix(lime, T_MIST_LIME_STAIN, max(stain * 0.6, curtain * 0.34));
+    lime *= 1.0 - crack * 0.18;
     lime = mix(lime, T_MIST_LIME_MOSS, smoothstep(0.55, 0.8, wn.y + (nR.g - 0.5) * 0.4) * 0.85);
     // creepers and ferns hang in long tongues down the walls from every ledge
-    float vine = texture(uNoiseTex, vec2(xz.x * 0.09 - xz.y * 0.06, h * 0.012 + xz.y * 0.011) + vec2(0.41, 0.83)).g + (nS.r - 0.5) * 0.35 + (nD.a - 0.5) * 0.2;
-    lime = mix(lime, mix(T_MIST_LIME_VINE, T_MIST_LIME_MOSS, nD.g * 0.6), smoothstep(0.56, 0.68, vine) * 0.9 * smoothstep(3.0, 9.0, h));
+    float vine = aqWallTex(lp, wn, vec2(0.09, 0.012), vec2(0.41, 0.83)).g + (nS.r - 0.5) * 0.35 + (nD.a - 0.5) * 0.2;
+    float vineT = aqStep(0.56, 0.68, vine) * smoothstep(3.0, 9.0, h);
+    lime = mix(lime, mix(T_MIST_LIME_VINE, T_MIST_LIME_MOSS, nD.g * 0.6), vineT * 0.9);
     // the sea gnaws a dark, dripping notch into the foot of every wall
     float notch = (1.0 - smoothstep(1.4, 2.6, h + (nS.b - 0.5) * 1.2)) * smoothstep(-0.8, 0.2, h);
     lime = mix(lime, T_MIST_LIME_NOTCH, notch * 0.8);
+    // solution flutes: runnels a hand to an arm's span across, down every
+    // steep face, the bigger ones out to where a pixel spans a few of them
+    #ifndef AQ_TERRAIN_LITE
+    float wall = smoothstep(0.35, 0.7, slope);
+    float flF = aqWallTex(lp, wn, vec2(0.6, 0.03), vec2(0.73, 0.61)).g;
+    // (the big runnels are the stains' own: the rain darkens the grooves it cut)
+    float flC = 1.0 - sW.g;
+    bLime = wall * (1.0 - vineT * 0.7) * ((flF - 0.5) * 0.09 * (1.0 - smoothstep(0.04, 0.12, fp)) + (flC - 0.5) * 0.3 * (1.0 - smoothstep(0.2, 0.6, fp)))
+      + vineT * 0.08 * (1.0 - smoothstep(0.1, 0.3, fp));
+    lime *= 1.0 + ((flF - 0.5) * 0.12 * (1.0 - smoothstep(0.04, 0.12, fp)) + (flC - 0.5) * 0.08) * wall;
+    #endif
     rock = mix(rock, lime, vAqBiome * (1.0 - kV));
   }
   float fineFade = 1.0 - smoothstep(0.1, 0.25, fp);
-  float bRock = mix(-crack * 0.2 * fineFade + nR.a * 0.08 * fineFade, (beds - 0.5) * 0.2 - crack * 0.1 * fineFade + nR.a * 0.06 * fineFade - streak * 0.03, kR)
+  float bRock = mix(-crack * 0.2 * fineFade + nR.a * 0.08 * fineFade, (beds - 0.5) * 0.2 * (1.0 - smoothstep(0.25, 0.7, fp)) - crack * 0.1 * fineFade + nR.a * 0.06 * fineFade - streak * 0.03, kR)
     + kV * ((1.0 - cells) * 0.22) * (1.0 - smoothstep(0.25, 0.6, fp));
+  bRock += bLime * vAqBiome * (1.0 - kV);
 
   float rockT = aqRockAt(h, slope, vAqInfo.y, kR, vAqErode, vAqBiome, nD);
 
@@ -369,11 +462,12 @@ const FRAG_ALBEDO = /* glsl */ `
   #ifndef AQ_TERRAIN_LITE
   float nearW = 1.0 - smoothstep(0.045, 0.13, fp);
   if (nearW > 0.0 && h > -3.0) {
-    vec2 q = mat2(0.6, 0.8, -0.8, 0.6) * xz;
-    vec4 u1 = texture(uNoiseTex, q * 1.9 + vec2(0.37, 0.81));       // 53 cm tile: ~4 cm cells
-    vec4 u2 = texture(uNoiseTex, xz * 0.71 + vec2(0.62, 0.05));     // 1.4 m tile: ~10 cm cells
-    vec4 u3 = texture(uNoiseTex, q.yx * 5.3 + vec2(0.19, 0.44));    // 19 cm tile: millimetre grain
-    float fineB = 1.0 - smoothstep(0.004, 0.02, fp);
+    // (in the plane of the face: on a wall, top-down grain would be stripes)
+    vec4 u1 = aqRockTex(lp, tw, 1.9, vec2(0.37, 0.81));   // 53 cm tile: ~4 cm cells
+    vec4 u2 = aqRockTex(lp, tw, 0.71, vec2(0.62, 0.05));  // 1.4 m tile: ~10 cm cells
+    vec4 u3 = aqRockTex(lp, tw, 5.3, vec2(0.19, 0.44));   // 19 cm tile: millimetre grain
+    // (millimetre grain: its relief only once a pixel is well under a grain across)
+    float fineB = 1.0 - smoothstep(0.0015, 0.005, fp);
     float midB = 1.0 - smoothstep(0.006, 0.026, fp);
     float turfW = grassT * land * (1.0 - rockT);
     float sandW = (1.0 - grassT * land) * (1.0 - rockT);
@@ -386,8 +480,9 @@ const FRAG_ALBEDO = /* glsl */ `
     gritC = mix(gritC, T_CORAL_B * 1.1, step(0.62, u2.r) * max(vAqBiome, kA));
     vec3 sandM = mix(albedo * (1.0 + grain * 0.07), albedo * gritC, grit * 0.7);
     // turf: the soil showing between clumps, sun-dried thatch, blade-scale grain
-    vec2 tq = mat2(0.96, 0.28, -0.28, 0.96) * xz;
-    float thatch = texture(uNoiseTex, tq * vec2(2.6, 0.45) + vec2(0.71, 0.33)).a;
+    vec2 tq = mat2(0.96, 0.28, -0.28, 0.96) * lp.xz;
+    vec2 tqs = vec2(2.6, 0.45);
+    float thatch = textureGrad(uNoiseTex, tq * tqs + vec2(0.71, 0.33), (mat2(0.96, 0.28, -0.28, 0.96) * aqDX.xz) * tqs, (mat2(0.96, 0.28, -0.28, 0.96) * aqDY.xz) * tqs).a;
     float soil = smoothstep(0.55, 0.85, u2.b + (u1.a - 0.5) * 0.3);
     vec3 turfM = albedo * (1.0 + grain * 0.07);
     turfM = mix(turfM, albedo * vec3(0.62, 0.5, 0.36), soil * 0.4 * (1.0 - vAqBiome * 0.4));
@@ -398,7 +493,10 @@ const FRAG_ALBEDO = /* glsl */ `
     leafC = mix(leafC, T_FOREST_FLOOR * 1.2, smoothstep(0.55, 0.7, u2.r));
     vec3 floorM = mix(albedo * (1.0 + grain * 0.1), leafC * (0.85 + u3.a * 0.3), leaf * 0.7);
     // rock: grain, a web of fine cracks, lichen rosettes (none on fresh basalt)
-    float fcrack = smoothstep(0.62, 0.8, u1.b);
+    // (edges no sharper than a pixel: the derivative bump would show them as 2x2 steps)
+    float fcrack = aqStep(0.62, 0.8, u1.b);
+    // (Las Brumas' limestone walls: hairline fissures running down the face, the rain's karren)
+    if (vAqBiome > 0.01) fcrack = mix(fcrack, aqStep(0.6, 0.8, aqWallTex(lp, wn, vec2(1.3, 0.28), vec2(0.52, 0.17)).b), smoothstep(0.3, 0.6, slope) * vAqBiome);
     // (ragged rosettes: the cells broken up by the fine noise)
     float lichen = (1.0 - smoothstep(0.16, 0.36, u2.b + (u1.a - 0.5) * 0.35)) * smoothstep(0.56, 0.7, u2.g + (nR.g - 0.5) * 0.3) * (1.0 - kV) * smoothstep(0.2, 0.6, wn.y + 0.4);
     vec3 lichC = albedo * mix(vec3(1.25, 1.3, 0.95), vec3(1.4, 1.05, 0.6), kR * step(0.5, u1.g));
@@ -529,6 +627,7 @@ attribute float aqReef;
 attribute float aqErode;
 attribute float aqBiome;
 varying float vAqBiome;
+varying vec3 vAqLocal;
 varying vec3 vAqKind;
 varying vec3 vAqInfo;
 varying float vAqAO;
@@ -536,7 +635,18 @@ varying float vAqCanopy;
 varying float vAqReef;
 varying float vAqErode;`,
       )
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAqKind = aqKind;\nvAqInfo = aqInfo;\nvAqAO = aqAO;\nvAqCanopy = aqCanopy;\nvAqReef = aqReef;\nvAqErode = aqErode;\nvAqBiome = aqBiome;');
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+vAqKind = aqKind;
+vAqInfo = aqInfo;
+vAqAO = aqAO;
+vAqCanopy = aqCanopy;
+vAqReef = aqReef;
+vAqErode = aqErode;
+vAqBiome = aqBiome;
+vAqLocal = (modelMatrix * vec4(transformed, 1.0)).xyz - ${LOCAL_ORIGIN} * step(0.5, aqBiome);`,
+      );
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', `${lite ? '#define AQ_TERRAIN_LITE\n' : ''}varying float vAqAO;\n${FRAG_HEAD}\nvoid main() {`)
       .replace('#include <color_fragment>', `#include <color_fragment>\n${FRAG_ALBEDO}`)
