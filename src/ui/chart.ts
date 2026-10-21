@@ -397,7 +397,8 @@ export class SeaChart {
       p.x = e.clientX;
       p.y = e.clientY;
       if (this.pointers.size === 1) {
-        const s = this.scale();
+        const r = canvas.getBoundingClientRect();
+        const s = this.scale() * (r.width > 0 ? r.width / this.W : 1);
         this.cx -= dx / s;
         this.cz -= dy / s;
         this.dragged += Math.abs(dx) + Math.abs(dy);
@@ -437,10 +438,19 @@ export class SeaChart {
     });
   }
 
-  private toWorld(clientX: number, clientY: number): [number, number] {
+  /** A screen point in chart pixels from the centre. The on-screen box can differ from the layout box
+   *  (the chart scales in as it opens, the UI may be scaled), so measure against what's actually shown. */
+  private local(clientX: number, clientY: number): [number, number] {
     const r = this.canvas.getBoundingClientRect();
+    const kx = r.width > 0 ? this.W / r.width : 1;
+    const ky = r.height > 0 ? this.H / r.height : 1;
+    return [(clientX - r.left) * kx - this.W / 2, (clientY - r.top) * ky - this.H / 2];
+  }
+
+  private toWorld(clientX: number, clientY: number): [number, number] {
+    const [mx, my] = this.local(clientX, clientY);
     const s = this.scale();
-    return [this.cx + (clientX - r.left - this.W / 2) / s, this.cz + (clientY - r.top - this.H / 2) / s];
+    return [this.cx + mx / s, this.cz + my / s];
   }
 
   setTerrain(t: Seas) {
@@ -471,10 +481,11 @@ export class SeaChart {
   }
 
   resize() {
-    const r = this.canvas.getBoundingClientRect();
+    // layout size, not getBoundingClientRect: that's shrunk mid scale-in animation, which left the
+    // chart drawn stretched and every pin landing down-right of the tap
     this.dpr = Math.min(devicePixelRatio || 1, 2);
-    this.W = Math.max(1, r.width);
-    this.H = Math.max(1, r.height);
+    this.W = Math.max(1, this.canvas.clientWidth);
+    this.H = Math.max(1, this.canvas.clientHeight);
     this.canvas.width = Math.round(this.W * this.dpr);
     this.canvas.height = Math.round(this.H * this.dpr);
     this.clampView();
@@ -494,9 +505,7 @@ export class SeaChart {
   }
 
   private zoomAt(f: number, clientX: number, clientY: number) {
-    const r = this.canvas.getBoundingClientRect();
-    const mx = clientX - r.left - this.W / 2;
-    const my = clientY - r.top - this.H / 2;
+    const [mx, my] = this.local(clientX, clientY);
     const s0 = this.scale();
     const wx = this.cx + mx / s0;
     const wz = this.cz + my / s0;
