@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T02:00Z',
     entries: [
       {
+        title: 'Feast nights in the ports',
+        notes: [
+          'Every trading port now keeps its own feast, one night in three: the Spice Feast at Porto Cinabre, Gold Night at Aguadouro, the Night of the Coral Saints at Sainte-Corália, the Rum Harvest at Ronvliet, the Drizzle Lanterns at Vila Garoa and the Jade Moon at Esmeraldeau. On the night of the full moon every port in the isles celebrates at once. Word goes round at dusk, and a ring of little lanterns circles the town on your minimap and chart.',
+          'As the sun goes down, strings of paper lanterns in the feast\u2019s colours light one after another across the quay, from poles along its edge to the houses and down from the lighthouse gallery. Their glow warms the boards, the townsfolk and your ship, and shimmers on the water in front of the town.',
+          'The whole town turns out. Everyone not hauling cargo joins a ring dance that stamps, claps and turns back the other way. Two couples in their feast-day best swing each other round, a drummer beats on a barrel beside the fiddler, the merchants clap along, a fellow with a mug toasts the night, and every face turns up when a shell breaks. Sail within earshot and you hear the band: squeezebox reels with a bodhrán and a tambourine, fading out over the water as you leave.',
+          'Through the middle of the night the harbourmaster sends rockets up from the lighthouse and the end of the quay, in each town\u2019s favourite shells. At midnight comes the grand finale: a sky full of breaks, a Shores O\u2019 Fortune showpiece and the whole quay roaring.',
+          'The fisherman and the townsfolk set paper-lantern boats down on the water. The tide carries them out to sea in a long, spreading trail of candlelight that rides the swell, parts round your bow and gutters out a few minutes later. Merchants pay 15% more for everything on a feast night.',
+        ],
+      },
+      {
         title: 'Figureheads you can actually see',
         notes: [
           'Every figurehead is now about twice as big, sized to each hull: around three and a half metres on a galleon, a little less on the brigantine and the sloop. They lean out over the waves as far as the bowsprit allows, so you can make them out from the normal sailing view.',

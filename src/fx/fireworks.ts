@@ -136,6 +136,9 @@ export class Fireworks {
   private readonly geo: THREE.InstancedBufferGeometry;
   private events: Event[] = [];
   private lights: Light[] = [];
+  /** A steady light that isn't a burst (a festival town's lanterns), lit while nothing brighter needs its slot. */
+  private steady: Light | null = null;
+  private readonly lit: Light[] = [];
   private readonly density: number;
   /** Where to break, metres over the guns: set from the camera so a burst fills the view without leaving it. */
   private height = 40;
@@ -341,6 +344,27 @@ export class Fireworks {
 
   get busy() {
     return this.clock <= this.liveUntil || this.events.length > 0;
+  }
+
+  /**
+   * A steady glow at a point (a quay strung with lanterns): it lights the
+   * town and shimmers on the water like the bursts do, and gives up its slot
+   * whenever the sky is busier. null puts it out.
+   */
+  glow(at: THREE.Vector3 | null, c: RGB = [1, 0.6, 0.3], power = 0) {
+    if (!at || power <= 0.001) {
+      this.steady = null;
+      return;
+    }
+    const l = (this.steady ??= this.light(at, c, 0, power, 1, 0));
+    l.x = at.x;
+    l.y = at.y;
+    l.z = at.z;
+    const m = Math.max(c[0], c[1], c[2], 1e-3);
+    l.c[0] = c[0] / m;
+    l.c[1] = c[1] / m;
+    l.c[2] = c[2] / m;
+    l.power = power;
   }
 
   /** Puts the sky out at once (a new voyage, the farewell). */
@@ -793,8 +817,14 @@ export class Fireworks {
     const now = this.clock;
     const L = globalUniforms.uFwLight.value;
     const Cl = globalUniforms.uFwColor.value;
-    const ls = this.lights;
+    const ls = this.lit;
+    ls.length = 0;
+    for (const l of this.lights) ls.push(l);
+    const st = this.steady;
+    if (st) ls.push(st);
     const lv = (l: Light) => {
+      // the lanterns' glow: steady, with the faintest candle waver
+      if (l === st) return l.power * (0.94 + 0.06 * Math.sin(now * 7.3) * Math.sin(now * 3.1));
       const t = now - l.t0;
       if (t < 0) return 0;
       const k = Math.max(0, 1 - t / l.dur);
