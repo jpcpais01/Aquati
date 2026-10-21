@@ -378,21 +378,28 @@ const FINE_ON = 21;
 const FINE_OFF = 17;
 /**
  * Simplified core meshes: deviation allowed (m) and the pixels per metre
- * below which each level shows. Both stay under about half a pixel on screen,
- * so the swap can't be seen.
+ * below which each level shows. Each stays under a pixel on screen, so the
+ * swap can't be seen; from the farthest zoom every ship is on the distant cut.
  */
-const LOD_NEAR = { job: { error: 0.018, prune: true, permissive: true } as LodJob, below: 26 };
-const LOD_FAR = { job: { error: 0.07, prune: true, permissive: true } as LodJob, below: 6.5 };
+const LOD_NEAR = { job: { error: 0.02, prune: true, permissive: true } as LodJob, below: 40 };
+const LOD_FAR = { job: { error: 0.055, prune: true, permissive: true } as LodJob, below: 15 };
+const LOD_DISTANT = { job: { error: 0.11, prune: true, permissive: true } as LodJob, below: 7.5 };
 /** The shadow stand-in: welded shape only, held to 5 cm (the shadow map's texels are 6-25 cm). */
 const LOD_SHADOW: LodJob = { error: 0.05, weld: true, prune: true, permissive: true };
+/** Its twin for a ship on the distant cut, held to a shadow-map texel at that zoom. */
+const LOD_SHADOW_FAR: LodJob = { error: 0.13, weld: true, prune: true, permissive: true };
 
 interface LodSet {
   mesh: THREE.Mesh;
   full: THREE.BufferGeometry;
   near: THREE.BufferGeometry | null;
   far: THREE.BufferGeometry | null;
+  distant: THREE.BufferGeometry | null;
   /** Coarse twin drawn into the shadow map in the mesh's place. */
   proxy: THREE.Mesh | null;
+  /** The proxy's own shapes: close, and for a ship on the distant cut. */
+  shadow: THREE.BufferGeometry | null;
+  shadowFar: THREE.BufferGeometry | null;
 }
 const _spinQ = new THREE.Quaternion();
 
@@ -2725,16 +2732,18 @@ export class ShipModel {
       // the sails and flags bend in the vertex shader: their flat rest pose would fold away
       if (opts?.sail || opts?.flag) continue;
       const full = mesh.geometry;
-      const jobs = [LOD_NEAR.job, LOD_FAR.job];
-      if (mesh.castShadow) jobs.push(LOD_SHADOW);
+      const jobs = [LOD_NEAR.job, LOD_FAR.job, LOD_DISTANT.job];
+      if (mesh.castShadow) jobs.push(LOD_SHADOW, LOD_SHADOW_FAR);
       this.lodPending++;
-      void simplifiedLevels(full, jobs).then(([near, far, shadow]) => {
+      void simplifiedLevels(full, jobs).then(([near, far, distant, shadow0, shadowFar0]) => {
         this.lodPending--;
         // gone, or already cut up by a hit while the worker was busy
         if (this.lodGone || mesh.geometry !== full || mesh.parent !== this.root || mesh.userData.dmgOff) {
-          for (const g of [near, far, shadow]) if (g) disposeLevel(g);
+          for (const g of [near, far, distant, shadow0, shadowFar0]) if (g) disposeLevel(g);
           return;
         }
+        const shadow = shadow0 ?? shadowFar0;
+        const shadowFar = shadow0 ? shadowFar0 : null;
         let proxy: THREE.Mesh | null = null;
         if (shadow) {
           proxy = shadowOnly(new THREE.Mesh(shadow, mesh.material));
@@ -2748,7 +2757,7 @@ export class ShipModel {
           proxy.userData.lodProxy = true;
           this.root.add(proxy);
         }
-        if (near || far || proxy) this.lods.push({ mesh, full, near, far, proxy });
+        if (near || far || distant || proxy) this.lods.push({ mesh, full, near, far, distant, proxy, shadow, shadowFar });
         if (!this.lodPending && !this.lodHeld) this.resumeLods();
       });
     }
@@ -2808,11 +2817,15 @@ export class ShipModel {
       // each boundary leans toward the level already showing, so a ship
       // sitting right on one doesn't flick back and forth
       const nearT = LOD_NEAR.below * (was >= 1 ? 1.08 : 0.92);
-      const farT = LOD_FAR.below * (was === 2 ? 1.08 : 0.92);
-      const level = pxPerM < farT ? 2 : pxPerM < nearT ? 1 : 0;
+      const farT = LOD_FAR.below * (was >= 2 ? 1.08 : 0.92);
+      const distT = LOD_DISTANT.below * (was === 3 ? 1.08 : 0.92);
+      const level = pxPerM < distT ? 3 : pxPerM < farT ? 2 : pxPerM < nearT ? 1 : 0;
       if (level !== was) {
         this.lodLevel = level;
-        for (const l of this.lods) l.mesh.geometry = (level === 2 ? (l.far ?? l.near) : level === 1 ? l.near : null) ?? l.full;
+        for (const l of this.lods) {
+          l.mesh.geometry = (level === 3 ? (l.distant ?? l.far ?? l.near) : level === 2 ? (l.far ?? l.near) : level === 1 ? l.near : null) ?? l.full;
+          if (l.proxy && l.shadow) l.proxy.geometry = (level === 3 && l.shadowFar) || l.shadow;
+        }
       }
     }
     if (this.fineOn ? pxPerM < FINE_OFF : pxPerM > FINE_ON) this.fineOn = !this.fineOn;
@@ -2872,7 +2885,9 @@ export class ShipModel {
     this.lodGone = true;
     for (const l of this.lods) {
       if (l.mesh.geometry !== l.full) l.full.dispose();
-      for (const g of [l.near, l.far]) if (g && l.mesh.geometry !== g) disposeLevel(g);
+      for (const g of [l.near, l.far, l.distant]) if (g && l.mesh.geometry !== g) disposeLevel(g);
+      // (the proxy, in the root, goes with the traversal: only its spare shape here)
+      for (const g of [l.shadow, l.shadowFar]) if (g && l.proxy?.geometry !== g) disposeLevel(g);
     }
     this.lods = [];
     this.sailMaterial.dispose();
