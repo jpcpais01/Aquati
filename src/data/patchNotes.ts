@@ -13,6 +13,20 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T19:00Z',
+    entries: [
+      {
+        title: 'Clean, crackle-free sound on phones',
+        notes: [
+          'On phones the sound could crackle and break up with a faint static, worst in a busy battle with music playing. The cause was the phone\'s audio mixer running out of time: the ship\'s band and the high seas theme were being played live by dozens of synthesised instruments and a concert-hall echo, all on top of the cannons.',
+          'The band and the high seas theme now play from tape. Each song is recorded a few bars ahead in the background, away from the mixer, so all it has to do is play back a finished stereo track. Every note, the hall and the echoes are exactly as before.',
+          'Phones also get a roomier sound buffer, a shorter island echo, a tighter cap on how many sounds can play at once (the faint, far-off ones give way first) and a lighter Kraken battle score. Background levels like wind, surf and rain now update only when they really change instead of sixty times a second.',
+          'A gentle limiter now sits on the very last stage of the mix on every device. A full broadside over the harbour theme could push the sound past its ceiling and clip with a harsh crack; now the loudest peaks are rounded off smoothly while everything below them is untouched.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T16:00Z',
     entries: [
       {
