@@ -400,6 +400,7 @@ export class TradePort {
   private near = new THREE.Group();
   private far = new THREE.Group();
   private detail = true;
+  private folkShown = true;
   private time = Math.random() * 100;
   private ship: Ship | null = null;
   private docked = false;
@@ -1000,7 +1001,12 @@ export class TradePort {
 
     // the townsfolk: skeletons live in the port frame
     const f = this.figures;
-    for (const fig of f) this.group.add(fig.root);
+    for (const fig of f) {
+      this.group.add(fig.root);
+      // an idle town's skeletons (thirteen of them, fifteen joints each) stay
+      // out of every per-frame walk until the town comes alive again
+      skipWhenHidden(fig.root);
+    }
     f[9].root.scale.setScalar(0.66); // the kid
     f[12].hips.add(this.rod);
     this.rod.position.set(0, 0.36, 0.38);
@@ -1144,7 +1150,18 @@ export class TradePort {
       this.far.visible = !want;
     }
     this.group.visible = d < 1650;
+    const live = this.detail && this.group.visible;
+    if (live !== this.folkShown) {
+      this.folkShown = live;
+      for (const f of this.figures) f.root.visible = live;
+    }
     return d;
+  }
+
+  /** Every skeleton back in the walk (the warm-up poses them all); lod() puts the idle ones away again. */
+  showFolk() {
+    this.folkShown = true;
+    for (const f of this.figures) f.root.visible = true;
   }
 
   /** Whether the townsfolk are close enough to be drawn and animated. */
@@ -1731,7 +1748,10 @@ export class TradePorts {
 
   /** Warm-up: every townsperson drawn once in both sculpts. */
   warm() {
-    for (const p of this.ports) p.group.updateMatrixWorld(true);
+    for (const p of this.ports) {
+      p.showFolk();
+      p.group.updateMatrixWorld(true);
+    }
     let n = 0;
     this.crowd.sync(() => (n++ % 2 ? 1 : 2));
   }

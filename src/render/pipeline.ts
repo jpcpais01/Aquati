@@ -642,6 +642,18 @@ export class Pipeline {
 
     P?.end(true);
 
+    if (P?.on) {
+      // The first touch of the screen's own buffer can wait for the browser to
+      // hand it back from the display. Timed alone (one cleared pixel), so the
+      // final pass below shows only its own work.
+      P.begin('Waiting for the screen', 'render', true);
+      r.setRenderTarget(null);
+      r.setScissorTest(true);
+      r.setScissor(0, 0, 1, 1);
+      r.clear(true, false, false);
+      r.setScissorTest(false);
+      P.end(true);
+    }
     P?.begin('Final grade & sharpen', 'render', true);
     fu.uOpaque.value = this.rtOpaque.texture;
     fu.uWater.value = this.rtWater.texture;

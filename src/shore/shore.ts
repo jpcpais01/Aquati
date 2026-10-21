@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { skipWhenHidden } from '../render/staticScene';
 import { staticLod } from '../render/staticLod';
 import { angleDelta, clamp, damp, lerp, mulberry32, smoothstep } from '../core/noise';
 import { Builder, Bucket } from '../port/port';
@@ -37,6 +38,8 @@ const PISTOL_RELOAD = 7;
 const PISTOL_RANGE = 18;
 /** Camps nearer the camera than this are simulated and drawn. */
 const CAMP_LIVE = 270;
+/** Camps further than this (m) from the ship or party are lost in the haze: not drawn. */
+const CAMP_SHOW = 1500;
 /** Spade-seconds to dig a treasure up (three diggers share them). */
 const DIG_WORK = 16;
 /** A camp takes up arms when the landing party comes this close to its fire. */
@@ -154,6 +157,8 @@ export interface Camp {
   readonly flag: THREE.Group;
   readonly lid: THREE.Group;
   readonly chest: THREE.Group;
+  /** The camp's huts, colours and chest, put away whole when it's far out of sight. */
+  readonly holder: THREE.Group;
   alert: boolean;
   routed: boolean;
   opened: boolean;
@@ -349,12 +354,14 @@ export class Shore {
       const g = new THREE.Group();
       g.name = `camp-${i}`;
       b.finish(g, mats as unknown as Record<Bucket, THREE.Material>);
-      this.group.add(g);
+      const holder = new THREE.Group();
+      this.group.add(holder);
+      holder.add(g);
       staticLod.add(g);
       for (const d of layout.blocks) ground.blocks.push(d);
       const flag = campFlag(mats.flag);
       flag.position.copy(layout.flagTop);
-      this.group.add(flag);
+      holder.add(flag);
       // the chest: a body and a lid on its hinge
       const chest = new THREE.Group();
       const lid = new THREE.Group();
@@ -364,8 +371,9 @@ export class Shore {
       chest.add(lid);
       chest.position.copy(layout.chest);
       chest.rotation.y = layout.chestYaw;
-      this.group.add(chest);
-      const camp: Camp = { index: i, site, layout, gang: [], flag, lid, chest, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
+      holder.add(chest);
+      skipWhenHidden(holder);
+      const camp: Camp = { index: i, site, layout, gang: [], flag, lid, chest, holder, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
       this.muster(camp, i);
       this.camps.push(camp);
     });
@@ -378,7 +386,9 @@ export class Shore {
       const flag = campFlag(mats.flag);
       flag.scale.setScalar(2.3);
       flag.position.copy(gr.layout.flagTop);
-      this.group.add(flag);
+      const holder = new THREE.Group();
+      this.group.add(holder);
+      holder.add(flag);
       const chest = new THREE.Group();
       const lid = new THREE.Group();
       for (const [k, geo] of Object.entries(parts.body)) if (geo) chest.add(this.mesh(geo, k as Bucket));
@@ -388,8 +398,9 @@ export class Shore {
       chest.scale.setScalar(1.25);
       chest.position.copy(gr.layout.chest);
       chest.rotation.y = gr.layout.chestYaw;
-      this.group.add(chest);
-      const camp: Camp = { index: i, site: gr.site, layout: gr.layout, fort: gr.walls, gang: [], flag, lid, chest, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
+      holder.add(chest);
+      skipWhenHidden(holder);
+      const camp: Camp = { index: i, site: gr.site, layout: gr.layout, fort: gr.walls, gang: [], flag, lid, chest, holder, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
       this.muster(camp, i);
       this.camps.push(camp);
     });
@@ -1826,6 +1837,9 @@ export class Shore {
   private campFx(c: Camp, dt: number, world: World, focus: THREE.Vector3) {
     const L = c.layout;
     const d = Math.hypot(L.fire.x - focus.x, L.fire.z - focus.z);
+    // far out past the haze the whole camp leaves the scene's per-frame walks
+    const show = d < CAMP_SHOW;
+    if (c.holder.visible !== show) c.holder.visible = show;
     // the jolly roger flies downwind (and comes down when the camp is routed)
     if (d < 520) {
       c.flag.rotation.y = Math.atan2(-world.wind.dirZ, world.wind.dirX);
