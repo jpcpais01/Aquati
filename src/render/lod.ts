@@ -61,6 +61,16 @@ const waiting = new Map<number, (levels: (Uint32Array | null)[]) => void>();
 const cache = new Map<string, Promise<(Uint32Array | null)[]>>();
 const CACHE_MAX = 96;
 
+/**
+ * Where every finished level goes to have its index uploaded ahead of its
+ * first draw (the game's BufferPreloader). Levels arrive from the worker well
+ * after the loading screen's warm-up, and a zoom-out swaps dozens of chunks,
+ * towns and hulls onto levels never drawn before in the same few frames: left
+ * alone, each one's buffer upload and vertex-array setup would land in those
+ * frames, all at once.
+ */
+export const lodUploads: { sink: ((g: THREE.BufferGeometry) => void) | null } = { sink: null };
+
 /** Starts the simplifier worker early, so it's warm by the time the first ship is built. */
 export function initLod() {
   if (worker || failed) return;
@@ -155,7 +165,7 @@ export async function simplifiedLevels(geo: THREE.BufferGeometry, jobs: LodJob[]
   const levels = await job;
   if (!geo.boundingSphere) geo.computeBoundingSphere();
   if (!geo.boundingBox) geo.computeBoundingBox();
-  return jobs.map((_, i) => {
+  const made = jobs.map((_, i) => {
     const out = levels[i];
     if (!out) return null;
     const g = new THREE.BufferGeometry();
@@ -168,6 +178,11 @@ export async function simplifiedLevels(geo: THREE.BufferGeometry, jobs: LodJob[]
     g.userData.lodOf = geo;
     return g;
   });
+  // queued now, uploaded a few a frame later: by then the caller has finished
+  // with them (a terrain level gets its skirt), and a level thrown away first
+  // drops out of the queue when it's disposed
+  for (const g of made) if (g) lodUploads.sink?.(g);
+  return made;
 }
 
 /**

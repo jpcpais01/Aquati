@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T15:00Z',
+    entries: [
+      {
+        title: 'Smoother zooming out',
+        notes: [
+          'Pulling the camera back, by hand or when a battle widens the view, no longer stutters as the far islands come in.',
+          'Distant islands, towns and ships used to send their lighter detail to the graphics card on the first frame you saw them, dozens at once. That now happens quietly in the background in the first seconds of a voyage.',
+          'The island wildlife no longer settles a whole island in a single frame as it comes into view. Each island is now surveyed a little at a time, and ahead of time, so the animals are ready when you get there.',
+          'The plants on the islands are re-sorted less often while the camera is high up and moving.',
+          'A brief stutter no longer makes Auto resolution drop the picture quality. That drop used to rebuild every screen buffer and cause a second hitch. Now only a slowdown that lasts two seconds lowers it.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T14:00Z',
     entries: [
       {
