@@ -110,8 +110,9 @@ export class LanternBoats {
           float k = vTint.w * flick;
           vec3 paper = vec3(0.92, 0.88, 0.8);
           // the lantern glows through its paper; the folded hull catches the candle from above
-          vec3 lit = vTint.rgb * vGlow * (0.5 + 1.8 * vFace * vFace) * 3.2 * k;
-          lit += vec3(1.0, 0.7, 0.38) * step(0.5, vGlow) * pow(vFace, 6.0) * 2.0 * k;
+          // (lit only after dark, under the night's lifted exposure: held to a candle's glow)
+          vec3 lit = vTint.rgb * vGlow * (0.5 + 1.8 * vFace * vFace) * 1.2 * k;
+          lit += vec3(1.0, 0.7, 0.38) * step(0.5, vGlow) * pow(vFace, 6.0) * 0.8 * k;
           vec3 base = mix(vec3(0.06, 0.045, 0.03), paper, step(0.05, vGlow)) * (uLight * 0.9 + vec3(0.02));
           vec3 c = base + lit;
           c *= 1.0 - vFog;

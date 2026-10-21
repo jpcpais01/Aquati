@@ -12,6 +12,7 @@ import type { World } from '../game/world';
 import { Crowd, Figure, HIP, PirateStyle, PropGeo } from './pirates';
 import { FLAG, P, PROP } from '../ships/crewModel';
 import { PortSite, PORT_HALF_WIDTH } from './site';
+import { lampMaterial, lampPools } from '../render/lamps';
 
 // Puerto: a stilt-town harbour on a sunny beach. A plank quay on pilings, a
 // tavern, a sail loft that flies your colours, a cargo shed, a lookout tower,
@@ -354,7 +355,7 @@ export class Port {
     const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, envMapIntensity: 0.8 }), { clouds: true, caustics: true });
     const iron = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.7, envMapIntensity: 1.2 }), { clouds: true });
     const gold = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, metalness: 1, envMapIntensity: 1.6, emissive: new THREE.Color(0.35, 0.22, 0.03) }), { clouds: true });
-    const glow = new THREE.MeshBasicMaterial({ vertexColors: true });
+    const glow = lampMaterial();
     this.propMat = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, envMapIntensity: 0.9 }), { clouds: true });
     this.paintMat = patchMaterial(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, envMapIntensity: 1 }), { clouds: true });
 
@@ -422,8 +423,10 @@ export class Port {
       const prof: [number, number][] = [[0.24, 0], [0.22, 0.3], [0.16, 0.42], [0.2, 0.55], [0.26, 0.62], [0.01, 0.66]];
       b.add(new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 10), [x, DECK + 0.08, -0.35], C.iron, { b: 'iron' });
     }
-    // lantern posts
-    for (const [x, z] of [[-10.5, -1.1], [9.5, -1.1], [24.2, -8.2], [-31, -8.5], [12.6, -9.6]] as [number, number][]) this.lantern(b, x, z, 3.3);
+    // lantern posts, and the light they throw on the boards after dark
+    const posts: [number, number][] = [[-10.5, -1.1], [9.5, -1.1], [24.2, -8.2], [-31, -8.5], [12.6, -9.6]];
+    for (const [x, z] of posts) this.lantern(b, x, z, 3.3);
+    this.group.add(lampPools(posts.map(([x, z]) => [x, z + 0.6]), DECK + 0.01, 0.25));
     // stairs down to the beach at the back
     const back = -D;
     for (let i = 0; i < 5; i++) b.box(3, 0.16, 0.5, [-4, DECK - 0.36 * i - 0.1, back - 0.25 - i * 0.48], shade(C.timber, 1.05 - i * 0.03), { r: 0.04 });
@@ -871,7 +874,7 @@ export class Port {
     b.cyl(0.55, 0.55, 0.35, [cx, y0 + 0.18, cz], C.timberDark, { seg: 10 });
     const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78 }), { clouds: true });
     const iron = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.7 }), { clouds: true });
-    const glow = new THREE.MeshBasicMaterial({ vertexColors: true });
+    const glow = lampMaterial();
     const gold = iron;
     b.finish(this.group, { wood, iron, glow, gold });
     // the slewing boom

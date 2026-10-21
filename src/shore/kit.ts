@@ -5,6 +5,7 @@ import { clamp, mulberry32 } from '../core/noise';
 import { Bucket, Builder, C, colorize, lin, shade } from '../port/port';
 import { PropGeo } from '../port/pirates';
 import type { CampSite, Disc } from './ground';
+import { lampMaterial } from '../render/lamps';
 
 // The things a landing party finds and brings: the ship's boat pulled up on
 // the sand, and the cutthroats' camps (a patched tent, a smoking fire with a
@@ -29,7 +30,7 @@ export function shoreMats(): ShoreMats {
     wood: patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.78, envMapIntensity: 0.8 }), { clouds: true, caustics: true }),
     iron: patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.7, envMapIntensity: 1.2 }), { clouds: true }),
     gold: patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, metalness: 1, envMapIntensity: 1.6, emissive: new THREE.Color(0.35, 0.22, 0.03) }), { clouds: true }),
-    glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
+    glow: lampMaterial(),
     flag: patchMaterial(new THREE.MeshStandardMaterial({ map: jollyRoger(), side: THREE.DoubleSide, roughness: 0.8, alphaTest: 0.5 }), { flag: true }),
   };
 }

@@ -13,6 +13,27 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T22:00Z',
+    entries: [
+      {
+        title: 'Port lights that glow instead of blinding you',
+        notes: [
+          'At night the ports were dotted with huge white blots of light. Lamps are painted to look right in daylight, and after dark the view opens up to let you see by moonlight, which made every lamp more than twice as bright as it should be. The worst blot wasn\'t a lamp at all: it was the moon glinting off the gilded tops of the feast poles, about ninety times brighter than anything else in the harbour.',
+          'Every lamp in the game now keeps a warm, steady glow through the night: harbour lamps, the lighthouse, house windows, ships\' stern lanterns and windows, camp braziers and fort lamps. Each one is brightest at its heart where you look straight into the glass, with the rim fading off. It flickers very slightly, like a flame.',
+          'Lamp posts now throw warm pools of light onto the quay boards after dark, so a quiet harbour at night glows where its lamps stand.',
+          'The paper lanterns strung across the quay on feast nights and the lantern boats on the water now glow in their own colours instead of burning out to white, and the moon no longer turns gold, brass and polished metal into glaring sparks. Gilded domes no longer glow like lanterns after dark.',
+        ],
+      },
+      {
+        title: 'The sea keeps its detail when you zoom out',
+        notes: [
+          'Zoomed far out, the sea used to go smooth and plain, and showed faint squares. To save work at that distance the sea is built from a coarser grid, and its waves were shaded from that grid, so the shading blurred and showed the grid\'s squares.',
+          'The shape of the waves is now worked out for every pixel on screen, so the sea is never shaded from the grid underneath. Wave detail now fades by how the waves look on screen at the normal camera height, not by raw distance. Zoomed all the way out, the sea keeps the same waves, ripples and glitter it has up close, just smaller. The grid stays light, so this costs no extra triangles.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T20:00Z',
     entries: [
       {
