@@ -17,7 +17,7 @@ const DECK_PITCH = 0.98;
 /** Cinematic tilt at its fullest: radians above the horizon, a modest lean from the 1.1 of the farthest zoom. */
 const CINE_PITCH = 0.74;
 /** How long the zoom must rest against its stop before a fresh push starts tilting toward the horizon. */
-const TILT_GATE = 1;
+const TILT_GATE = 0.2;
 
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
@@ -29,7 +29,7 @@ export class CameraRig {
   /**
    * Past the farthest zoom: 0 = the usual high view .. 1 = leaned a little
    * further over at the same distance, for a more cinematic angle. Zooming out further only stirs it
-   * after the wheel (or pinch) has rested a second against the stop, so a
+   * after the wheel (or pinch) has rested a beat (`TILT_GATE`) against the stop, so a
    * flick to full zoom never tips the camera by accident.
    */
   tilt = 0;
