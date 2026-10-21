@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T02:00Z',
     entries: [
       {
+        title: 'A band aboard: five songs for fair sailing',
+        notes: [
+          'Sailing among the islands now has music of its own: five new songs, played live by a little ship\'s band, one after another with a stretch of wind and waves between them.',
+          'Fair Winds, a lilting ballad on tin whistle and fiddle. Coral Lagoon, a sunny calypso on steel pan. Lantern Waltz, a bittersweet accordion waltz for dusk. The Corsair\'s Jig, a rollicking jig with a driving bodhrán. Siesta Isles, a drowsy kalimba and wooden flute lullaby.',
+          'The band leans toward the gentler songs after dark, and every play is a fresh performance, never quite the same twice.',
+          'They step aside for the bigger moments: the harbour theme, the open-sea theme on the high seas, a storm and the Kraken all have the stage to themselves, and the band picks up again once things are calm. The Music switch and slider in Settings cover them too.',
+        ],
+      },
+      {
         title: 'Merchant convoys on the high seas',
         notes: [
           'Out on Mar Sereno the trading houses now run their cargoes between the two archipelagos in convoys of two or three ships sailing in line, at the pace of the slowest. "Sail ho!" goes up when one heaves into sight, and they show on your minimap and chart in trade-gold.',
