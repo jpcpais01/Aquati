@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T01:00Z',
+    entries: [
+      {
+        title: 'Dolphins sound like dolphins',
+        notes: [
+          'Dolphins diving back into the sea no longer thump like cannonballs landing. They make a light, bright little plip with a fizz of spray, quieter and cleaner.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T18:00Z',
     entries: [
       {

@@ -835,6 +835,56 @@ export class Audio {
     this.emit(pick(this.bank.water), { vol: vol * 0.5, pan, dist, rate: 0.85 + Math.random() * 0.3, wet: 0.3 });
   }
 
+  /**
+   * A dolphin slipping back in: a bright little "plip" (a quick rising
+   * bubble tone) over a short airy fizz of spray. Small and clean, nothing
+   * like the deep thump of a ball striking the sea.
+   */
+  dolphinSplash(vol: number, pan: number, dist = 0) {
+    const v = this.voice(vol * Math.min(1, 90 / (90 + dist)), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime + Math.min(dist / SPEED_OF_SOUND, 0.6);
+    const f0 = 700 + Math.random() * 300;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f0 * 2.6, t + 0.07);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.32, t + 0.008);
+    og.gain.exponentialRampToValueAtTime(0.0005, t + 0.11);
+    o.connect(og).connect(out);
+    o.start(t);
+    o.stop(t + 0.13);
+    // a second, higher droplet just after
+    const o2 = ctx.createOscillator();
+    o2.type = 'sine';
+    const f1 = f0 * 1.5;
+    o2.frequency.setValueAtTime(f1, t + 0.05);
+    o2.frequency.exponentialRampToValueAtTime(f1 * 2.2, t + 0.1);
+    const og2 = ctx.createGain();
+    og2.gain.setValueAtTime(0.0001, t + 0.05);
+    og2.gain.exponentialRampToValueAtTime(0.14, t + 0.056);
+    og2.gain.exponentialRampToValueAtTime(0.0005, t + 0.13);
+    o2.connect(og2).connect(out);
+    o2.start(t + 0.05);
+    o2.stop(t + 0.15);
+    // the spray: high, airy and short
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2600;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.linearRampToValueAtTime(0.16, t + 0.012);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+    src.connect(hp).connect(ng).connect(out);
+    src.start(t, Math.random());
+    src.stop(t + 0.24);
+  }
+
   hit(vol: number, pan: number, dist = 0) {
     this.emit(pick(this.bank.wood), { vol: vol * 0.8, pan, dist, rate: 0.8 + Math.random() * 0.14, wet: 0.45 });
   }

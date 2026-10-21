@@ -704,7 +704,7 @@ export class Game {
     this.dolphins.onSplash = (at, size) => {
       this.particles.splash(at, size);
       const [vol, pan, d] = this.world.soundAt(at);
-      this.audio.splash(vol * 0.35 * size, pan, d);
+      this.audio.dolphinSplash(vol * 0.3 * size, pan, d);
     };
     // the breath: a little puff of spray from the blowhole, gone on the wind
     this.dolphins.onBlow = (at) => {
