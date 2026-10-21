@@ -43,6 +43,11 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Now and then a gull flies in from port with a scroll tied across her back, lands on your rail with a long call and drops off her news. She brings prize money from the merchants for every third pirate you sink, warns you which named captain the Brethren have sent after you (and how much is on their head), brings rumours of a chest washed up off an island with the spot pinned on your chart, and on feast days invites you to the night\u2019s festival in port.',
         ],
       },
+    ],
+  },
+  {
+    hour: '2026-10-21T02:00Z',
+    entries: [
       {
         title: 'Whales on the high seas',
         notes: [
