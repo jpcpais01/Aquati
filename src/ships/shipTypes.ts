@@ -10,10 +10,17 @@ export interface MastDef {
   rig: 'square' | 'gaff' | 'lateen';
   tiers: number; // square sails stacked on the mast
   top?: boolean; // fighting top platform
+  /** Fore-and-aft canvas (gaff boom and gaff, lateen yard) scaled from the class's usual spread. */
+  span?: number;
 }
 
 export interface ShipClass {
+  /** For a merchant hull, the warship class she is crewed and fitted like. */
   id: ShipClassId;
+  /** A hull of her own (the merchantmen): keys her cached paint instead of `id`. */
+  key?: string;
+  /** Deck cargo stacked in her waist, 0 none .. 1 piled high (merchantmen). */
+  cargo?: number;
   name: string;
   title: string;
   blurb: string;

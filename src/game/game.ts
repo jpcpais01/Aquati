@@ -69,7 +69,8 @@ import { findPortSite, findTradeSites, portClearings } from '../port/site';
 import { TradePort, TradePorts } from '../port/tradePort';
 import { Festivals, FULL_MOON } from '../port/festival';
 import { LanternBoats } from '../fx/lanternBoats';
-import { Aboard, holdPeek, MarketUI } from '../ui/market';
+import { Aboard, holdPeek, MarketUI, WareOffer } from '../ui/market';
+import { Convoy, Convoys, Merchant, MERCHANT_KINDS, merchantKindOf } from './convoys';
 import { lootIcon } from '../ui/lootArt';
 import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood, Stowed } from './treasure';
 import { Kraken } from './kraken';
@@ -174,7 +175,7 @@ const loadView = (): { zoom: number; tilt: number } | null => {
 /** `?maelstrom` / `?reef` set sail a little way off the first maelstrom / reef (for trying them out). */
 const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(location.search) ? 'maelstrom' : /[?&]reef\b/.test(location.search) ? 'reef' : null) : null;
 /** `?brumas` / `?highseas` set sail off Las Brumas / out on the high seas between the archipelagos (for a look). */
-const SEA_TEST = typeof location !== 'undefined' ? (/[?&]brumas\b/.test(location.search) ? 'brumas' : /[?&]highseas\b/.test(location.search) ? 'highseas' : null) : null;
+const SEA_TEST = typeof location !== 'undefined' ? (/[?&]brumas\b/.test(location.search) ? 'brumas' : /[?&]highseas\b/.test(location.search) ? 'highseas' : /[?&]convoy\b/.test(location.search) ? 'convoy' : null) : null;
 /** `?kraken` brews a storm at once and sends the Kraken a few seconds into the voyage. */
 const KRAKEN_TEST = typeof location !== 'undefined' && /[?&]kraken\b/.test(location.search);
 
@@ -238,6 +239,11 @@ export class Game {
   private whales = new Whales();
   /** A breach in the golden light has been called this voyage. */
   private goldenBreach = false;
+  /** Merchant convoys crossing the high seas, and the one you're alongside trading with. */
+  private convoys!: Convoys;
+  private trader: Merchant | null = null;
+  /** The fighting ships and the merchantmen afloat together, for the crews, collisions and charts. */
+  private afloat: Ship[] = [];
   private charts = new ChartStore();
   /** "Where shall we sail?": the archipelago picker after Set Sail. */
   private seaPick = new SeaPick();
@@ -763,6 +769,7 @@ export class Game {
     this.opaque.add(this.dolphins.mesh);
     // and its whales, the same way
     this.opaque.add(this.whales.mesh);
+    this.convoys = new Convoys(this.opaque, this.water);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
     await mark(0.54, 900);
@@ -861,6 +868,12 @@ export class Game {
       if (!this.whales.golden || this.goldenBreach || this.state !== 'playing') return;
       this.goldenBreach = true;
       this.ui.toast('Breach!', 'A humpback leaps clear in the golden light', 3.6);
+    };
+    this.convoys.onSighted = (c) => this.sightConvoy(c);
+    this.convoys.onScatter = (_c, m) => {
+      this.ui.toast('The convoy scatters', `You fired on the ${m.ship.name}. No ship in her line will trade with you now`, 4.5);
+      this.note('trade', `Fired on the ${m.ship.name}`, `${m.kind.house} · the convoy scattered`);
+      this.audio.shoalBell();
     };
     this.world.onHazard = (ship, kind, dmg, at) => this.onHazard(ship as Ship, kind, dmg, at);
     this.hzHud = new HazardHud(document.getElementById('hud')!);
@@ -1011,10 +1024,12 @@ export class Game {
     this.ghostKeeper = keeper;
     // pirate paint only: the player's own ship is in the scene and gets the warm-up draw below.
     // One paint a frame: each is painted, then pushed to the GPU, without starving the page
-    const paints = (Object.keys(SHIP_CLASSES) as ShipClassId[]).flatMap((id) => [...PIRATE_LIVERIES, HUNTER_HULL, GHOST_LIVERY].map((liv) => [id, liv] as const));
+    // (and the merchant houses' hulls, so a convoy never paints a texture mid-voyage)
+    const paints = (Object.keys(SHIP_CLASSES) as ShipClassId[]).flatMap((id) => [...PIRATE_LIVERIES, HUNTER_HULL, GHOST_LIVERY].map((liv) => [SHIP_CLASSES[id], liv] as const));
+    for (const k of MERCHANT_KINDS) paints.push([k.cls, k.livery]);
     for (let i = 0; i < paints.length; i++) {
-      const [id, liv] = paints[i];
-      for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
+      const [cls, liv] = paints[i];
+      for (const t of ShipModel.textures(cls, liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
       await mark(0.78 + (0.04 * (i + 1)) / paints.length, 250);
     }
     // KHR_parallel_shader_compile: every program compiles on the driver's own threads while we wait
@@ -1745,9 +1760,15 @@ export class Game {
       this.audio.knock();
     };
     m.onDock = () => {
-      const near = this.player && this.tradePorts.nearest(this.player.pos.x, this.player.pos.z);
-      if (near) this.dock(near.port);
+      const p = this.player;
+      const near = p && this.tradePorts.nearest(p.pos.x, p.pos.z);
+      if (near && near.port.inReach(p.pos.x, p.pos.z)) this.dock(near.port);
+      else {
+        const ship = p && this.convoys.hailable(p);
+        if (ship) this.hail(ship);
+      }
     };
+    m.onBuyWare = (id) => this.buyWare(id);
     m.onSell = (id) => this.sell(id);
     m.onSellAll = () => this.sell(null);
     m.onRepair = () => this.buyRepair();
@@ -1852,10 +1873,7 @@ export class Game {
   private updateDockPrompt(p: Ship) {
     const near = p.alive ? this.tradePorts.nearest(p.pos.x, p.pos.z) : null;
     const port = near && near.port.inReach(p.pos.x, p.pos.z) ? near.port : null;
-    if (!port) {
-      this.market.setDock(null);
-      return false;
-    }
+    if (!port) return this.updateHail(p);
     const hunted = this.huntedNear(p);
     const beast = this.kraken.fighting && !this.kraken.docile;
     const chased = !!this.lastFoe || hunted || beast;
@@ -3137,8 +3155,10 @@ export class Game {
   /** Sells one lot (or the whole fleet's cargo) at today's prices: the escorts' holds go ashore with yours. */
   private sell(id: LootId | null) {
     const port = this.dockPort;
+    const tr = this.trader;
     const p = this.player;
-    if (!port || !p || this.state !== 'docked') return;
+    if ((!port && !tr) || !p || this.state !== 'docked') return;
+    const market = port ? port.market : tr!.market;
     const t = this.world.time;
     const goods: LootId[] = [];
     let total = 0;
@@ -3148,7 +3168,7 @@ export class Game {
       const lots = id ? [{ id, n: h.hold.has(id) }] : h.hold.list();
       for (const lot of lots) {
         if (!lot.n) continue;
-        total += port.market.price(lot.id, t) * lot.n;
+        total += market.price(lot.id, t) * lot.n;
         best = Math.max(best, LOOT[lot.id].rarity);
         h.hold.take(lot.id, lot.n, false);
         for (let i = 0; i < lot.n; i++) goods.push(lot.id);
@@ -3165,11 +3185,14 @@ export class Game {
     this.refreshServices();
     this.refreshParts();
     // the porters carry it ashore, finest first, and the quay cheers a good sale
-    port.unload(goods);
-    port.cheer(total >= 1500 || best >= 4 ? 2 : total >= 250 || best >= 2 ? 1 : 0.5);
+    if (port) {
+      port.unload(goods);
+      port.cheer(total >= 1500 || best >= 4 ? 2 : total >= 250 || best >= 2 ? 1 : 0.5);
+    }
     this.audio.sale(total, best);
     const fleetLine = fromEscorts ? ` · ${fromEscorts} from your escorts` : '';
-    this.note('trade', id ? `Sold ${goods.length > 1 ? `${goods.length} × ` : ''}${LOOT[id].name}` : fromEscorts ? `Sold the fleet's cargo (${goods.length} goods)` : `Sold the hold (${goods.length} goods)`, `${port.name} · +${total} gold${fleetLine}`);
+    this.note('trade', id ? `Sold ${goods.length > 1 ? `${goods.length} × ` : ''}${LOOT[id].name}` : fromEscorts ? `Sold the fleet's cargo (${goods.length} goods)` : `Sold the hold (${goods.length} goods)`, `${port ? port.name : `The ${tr!.ship.name}`} · +${total} gold${fleetLine}`);
+    if (tr) this.market.setWares(this.wareOffers(tr), p.gold);
   }
 
   private buyRepair() {
@@ -3207,9 +3230,10 @@ export class Game {
   private castOff() {
     const p = this.player;
     const port = this.dockPort;
-    if (!p || !port || this.state !== 'docked' || this.swBusy) return;
+    if (!p || (!port && !this.trader) || this.state !== 'docked' || this.swBusy) return;
     this.veil.innerHTML = '<span>Casting off…</span>';
-    this.audio.portDepart();
+    if (port) this.audio.portDepart();
+    else this.audio.bosunPipe();
     void this.fade(() => this.undock(true));
   }
 
@@ -3218,6 +3242,7 @@ export class Game {
     const p = this.player;
     const port = this.dockPort;
     this.market.close();
+    if (this.trader) return this.leaveTrader(sail);
     this.audio.harbour(false);
     this.dockPort = null;
     port?.setShip(null);
@@ -3318,6 +3343,8 @@ export class Game {
    * say so.
    */
   private quarrel(s: Ship, by: Ship) {
+    // a merchantman struck (shot or rammed): her whole convoy runs
+    if (s.team === 'merchant') return this.convoys.offend(s, by);
     if (by.team !== 'player' || s.team !== 'pirate' || s.prize) return;
     const now = this.world.time;
     const side = sideOf(by);
@@ -3705,7 +3732,10 @@ export class Game {
         const ids = Object.keys(Game.STOCK) as ShipClassId[];
         const id = ids.find((k) => this.shipyard.filter((m) => m.cls.id === k).length < Game.STOCK[k]);
         const q = this.quality.physicalHull ? 1 : 0;
-        if (id) this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(id), q, true);
+        // the merchant houses' hulls once the pirates are stocked (first, out on the high seas where no pirate sails)
+        const trade = this.convoys.wanted();
+        if (trade && (this.onHighSeas || (!id && this.ghostyard))) this.keel = new ShipModel(trade.cls, trade.livery, q, true);
+        else if (id) this.keel = new ShipModel(SHIP_CLASSES[id], this.pirateLivery(id), q, true);
         else if (!this.ghostyard) {
           // once the pirates are stocked, one phantom waits in the yard's shadow
           const r = Math.random();
@@ -3728,6 +3758,7 @@ export class Game {
           this.preload.add(k.root);
         } else {
           if (k.livery.ghost) this.ghostyard = k;
+          else if (merchantKindOf(k.cls)) this.convoys.launch(k);
           else this.shipyard.push(k);
           this.preload.add(k.root);
         }
@@ -4014,7 +4045,8 @@ export class Game {
   }
 
   private resetWorld() {
-    if (this.dockPort) this.undock(false);
+    if (this.dockPort || this.trader) this.undock(false);
+    for (const s of this.convoys.clear()) this.scrapMerchant(s);
     this.leaveShore();
     this.boarding.reset();
     this.boardable = null;
@@ -5256,7 +5288,7 @@ export class Game {
       this.dolphinT = 30;
       this.whaleT = 3;
     }
-    else this.atmos.climate = 'mist';
+    else if (SEA_TEST === 'brumas') this.atmos.climate = 'mist';
   }
 
   // ------------------------------------------------------------------ the one sea
@@ -5373,6 +5405,171 @@ export class Game {
     this.whaleT = this.whales.summon(p, course, this.world) ? 110 + Math.random() * 90 : 8;
   }
 
+  // ------------------------------------------------------------------ merchant convoys
+
+  /** The convoys sail on (and now and then one heaves into sight while you cross the high seas). */
+  private sailConvoys(dt: number) {
+    const p = this.player;
+    const playing = this.state === 'playing' && !this.shore.active;
+    // `?convoy`: one sent out right across your bows as soon as the yard has the hulls
+    if (SEA_TEST === 'convoy' && playing && p && !this.convoys.convoy && !this.testConvoy && this.convoys.stocked >= 2) this.testConvoy = this.convoys.spawn(p, this.rig.groundRadius(), true);
+    const scrap = this.convoys.update(dt, this.world, p, this.rig.target, this.rig.groundRadius(), this.onHighSeas && !!p, playing);
+    for (const s of scrap) this.scrapMerchant(s);
+  }
+
+  private testConvoy = false;
+
+  /** A hull fired on (or rammed) goes to the breakers instead of back to the yard. */
+  private scrapMerchant(s: Ship) {
+    this.preload.drop(s.root);
+    s.root.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.geometry) m.geometry.dispose();
+    });
+    s.model.dispose();
+    s.dispose();
+  }
+
+  private sightConvoy(c: Convoy) {
+    const [lead, ...rest] = c.fleet;
+    const more = rest.length === 1 ? ` and the ${rest[0].kind.title} ${rest[0].ship.name}` : rest.length ? ` and ${rest.length} consorts` : '';
+    this.ui.toast('Sail ho! A merchant convoy', `The ${lead.kind.title} ${lead.ship.name}${more}, bound for ${c.dest.name}. Come alongside to trade`, 5.5);
+    this.note('trade', 'Sighted a merchant convoy', `${c.fleet.map((m) => m.ship.name).join(', ')} · bound for ${c.dest.name}`);
+    this.audio.bell(2, 0.16);
+  }
+
+  /** Close aboard a merchantman: offer to hail her (F or a tap), unless something is on your tail. */
+  private updateHail(p: Ship) {
+    const m = p.alive ? this.convoys.hailable(p) : null;
+    if (!m) {
+      this.market.setDock(null);
+      return false;
+    }
+    const beast = this.kraken.fighting && !this.kraken.docile;
+    const chased = !!this.lastFoe || this.huntedNear(p) || beast;
+    const why = chased ? 'Shake off your pursuers first: no merchant heaves to with a fight on' : `${m.kind.title} · buys your hold, sells her cargo`;
+    this.market.setDock({ name: `the ${m.ship.name}`, ok: !chased, why, verb: 'Hail' });
+    if (!chased && !this.fpv && this.input.state.helm) this.hail(m);
+    return true;
+  }
+
+  /** She heaves to and comes alongside; her master opens the hatches and the trading begins. */
+  private hail(m: Merchant) {
+    const p = this.player;
+    if (!p || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.kraken.fighting) return;
+    this.wanted.hideMark();
+    this.setChart(false);
+    this.setView(false);
+    this.input.releaseLook();
+    this.input.enabled = false;
+    this.peek.classList.remove('on');
+    this.veil.innerHTML = `<span>Coming alongside the ${m.ship.name}…</span>`;
+    this.audio.bosunPipe();
+    void this.fade(() => {
+      const c = this.convoys.convoy;
+      if (this.state !== 'playing' || !p.alive || !c || c.scattered || !c.fleet.includes(m)) {
+        this.input.enabled = true;
+        return;
+      }
+      this.state = 'docked';
+      this.trader = m;
+      this.ui.showHud(false);
+      this.market.setDock(null);
+      p.anchored = true;
+      p.sailTarget = 0.25;
+      p.rudder = 0;
+      p.speed = 0;
+      this.convoys.parley(m, p);
+      this.syncFleet();
+      this.market.open(`The ${m.ship.name}`, `${m.kind.house} · Master ${m.master} · bound for ${c.dest.name}`, m.market, this.holds(), p.gold, this.world.time, { kicker: m.kind.title, wares: this.wareOffers(m) });
+      this.dockT = 0;
+      this.rig.mode = 'port';
+      this.frameTrade(0);
+      this.rig.snapShot();
+      this.note('trade', `Came alongside the ${m.ship.name}`, m.kind.house);
+      this.audio.bell(1, 0.14);
+    });
+  }
+
+  /** The two ships lying side by side on the swell, seen from off their bows with the panel's room left free. */
+  private frameTrade(dt: number) {
+    const m = this.trader;
+    const p = this.player;
+    if (!m || !p) return;
+    this.dockT += dt;
+    const s = m.ship;
+    const fit = this.fitPanel(this.market.panelRect());
+    const settle = 1 + 0.8 * Math.exp(-this.dockT * 0.7);
+    const fx = Math.sin(p.heading);
+    const fz = Math.cos(p.heading);
+    const px = Math.cos(p.heading);
+    const pz = -Math.sin(p.heading);
+    const side = (s.pos.x - p.pos.x) * px + (s.pos.z - p.pos.z) * pz >= 0 ? 1 : -1;
+    const look = this.rig.shotLook.set((p.pos.x + s.pos.x) * 0.5, 2.4, (p.pos.z + s.pos.z) * 0.5);
+    // off the bows, round on your own free beam, swaying slowly
+    const a = 0.7 + Math.sin(this.dockT * 0.13) * 0.08;
+    const dx = fx * Math.cos(a) - px * side * Math.sin(a);
+    const dz = fz * Math.cos(a) - pz * side * Math.sin(a);
+    const elev = 0.5;
+    const dist = (26 + (p.cls.length + s.cls.length) * 0.72) * fit * settle;
+    this.rig.shotPos.set(look.x + dx * Math.cos(elev) * dist, look.y + Math.sin(elev) * dist, look.z + dz * Math.cos(elev) * dist);
+  }
+
+  /** Lets go of her: she sails on with her convoy, and you get under way. */
+  private leaveTrader(sail: boolean) {
+    const p = this.player;
+    this.trader = null;
+    this.convoys.release();
+    this.rig.camera.clearViewOffset();
+    this.rig.viewShift.x = this.rig.viewShift.y = 0;
+    if (!p || !sail) return;
+    p.anchored = false;
+    p.speed = 2;
+    p.sailTarget = 2 / 3;
+    this.state = 'playing';
+    this.input.enabled = true;
+    this.ui.showHud(true);
+    this.rig.mode = 'follow';
+    this.rig.snapTo(p.pos);
+    this.formFleet();
+    this.last = performance.now();
+  }
+
+  /** A hold in reach with room for one more of `id`, the flagship's first (bought goods are never stowed by tossing others). */
+  private roomFor(id: LootId): Hold | null {
+    const size = LOOT[id].size;
+    if (this.hold.capacity - this.hold.used >= size) return this.hold;
+    const p = this.player;
+    if (!p) return null;
+    for (const a of this.carriers()) if (Math.hypot(a.ship.pos.x - p.pos.x, a.ship.pos.z - p.pos.z) < 520 && a.hold.capacity - a.hold.used >= size) return a.hold;
+    return null;
+  }
+
+  private wareOffers(m: Merchant): WareOffer[] {
+    return m.wares.filter((w) => w.n > 0).map((w) => ({ ...w, room: !!this.roomFor(w.id) }));
+  }
+
+  /** Buys one of a lot off her counter, into whichever hold in the fleet has room. */
+  private buyWare(id: LootId) {
+    const m = this.trader;
+    const p = this.player;
+    if (!m || !p || this.state !== 'docked') return;
+    const w = m.wares.find((x) => x.id === id && x.n > 0);
+    const hold = this.roomFor(id);
+    if (!w || !hold || w.price > p.gold) return;
+    hold.stow([id]);
+    w.n--;
+    p.gold -= w.price;
+    this.refreshHold();
+    this.syncFleet();
+    this.market.setGold(p.gold);
+    this.market.reholds(this.holds());
+    this.market.setWares(this.wareOffers(m), p.gold, id);
+    this.audio.purchase('shot');
+    this.audio.coin(0, 0.35);
+    if (LOOT[id].rarity >= 2) this.note('trade', `Bought ${LOOT[id].name}`, `The ${m.ship.name} · ${w.price.toLocaleString('en-US')} gold`);
+  }
+
   /** `?maelstrom` / `?reef`: set sail just off one, bows on. */
   private testHazard(p: Ship) {
     const m = this.hazards.maelstroms[0];
@@ -5392,7 +5589,7 @@ export class Game {
     const k = this.kraken;
     this.krHud = new KrakenHud(document.getElementById('hud')!);
     // a ball may find the Kraken, or the stone of a fort
-    this.projectiles.strike = (b) => (k.active && k.strike(b, this.world)) || this.forts.strike(b, this.world);
+    this.projectiles.strike = (b) => (k.active && k.strike(b, this.world)) || this.forts.strike(b, this.world) || this.convoys.strike(b, this.world);
     this.projectiles.onBlast = (at, r, dmg, owner) => {
       if (k.active) k.blast(at, r, dmg, owner, this.world);
     };
@@ -5984,9 +6181,11 @@ export class Game {
     P.begin('Ship physics & rigging', 'ships');
     if (dt > 0) this.boarding.pin(dt);
     if (dt > 0) for (const s of this.ships) s.update(dt, w);
+    this.sailConvoys(dt);
+    let hulls = this.convoys.with(this.ships, this.afloat);
     P.end();
     P.begin('Collisions', 'ships');
-    this.collisions.resolve(this.ships, w);
+    this.collisions.resolve(hulls, w);
     for (const s of this.ships.slice()) if (s.removed && s !== this.player) this.removeShip(s);
     this.retireWrecks();
     P.end();
@@ -6033,6 +6232,9 @@ export class Game {
       this.dockPort!.pin(this.player!);
       this.market.tick(realDt, w.time);
       this.frameDock(realDt);
+    } else if (this.state === 'docked' && this.trader) {
+      this.market.tick(realDt, w.time);
+      this.frameTrade(realDt);
     }
     P.end();
     if (inPort) {
@@ -6158,11 +6360,12 @@ export class Game {
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
     this.crew.setView(this.rig.camera, this.toSun);
-    this.crew.update(dt, w, this.ships, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position, this.rig.camera.fov / this.rig.camera.zoom);
+    hulls = this.convoys.with(this.ships, this.afloat);
+    this.crew.update(dt, w, hulls, this.rig.target, this.rig.groundRadius() * 1.5 + eb * 260, this.rig.camera.position, this.rig.camera.fov / this.rig.camera.zoom);
     // laid rope, blocks and deck clutter only on ships big enough on screen to show them
     const cam = this.rig.camera;
     const pxK = innerHeight / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) / cam.zoom);
-    for (const s of this.ships) s.model.updateDetail(pxK / Math.max(1, cam.position.distanceTo(s.root.position)));
+    for (const s of hulls) s.model.updateDetail(pxK / Math.max(1, cam.position.distanceTo(s.root.position)));
     P.end();
 
     // gusts roll across whatever the camera is looking at
@@ -6186,7 +6389,7 @@ export class Game {
     this.spirits.update(dt, w.time);
     P.end();
     P.begin('Birds', 'fx');
-    this.birds.update(dt, w, this.ships, this.rig.camera);
+    this.birds.update(dt, w, hulls, this.rig.camera);
     P.end();
     P.begin('Reef fish', 'fx');
     this.reef.update(dt, w, this.ships, this.rig.camera);
@@ -6228,7 +6431,7 @@ export class Game {
       if (this.mapT <= 0) {
         this.mapT = 0.05;
         const camps = this.shore.camps.filter((c) => !c.fort).map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
-        this.ui.drawMap(p, this.ships, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks(), this.hzMarks);
+        this.ui.drawMap(p, hulls, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks(), this.hzMarks);
       }
       this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
@@ -6239,7 +6442,7 @@ export class Game {
     }
     if (p && this.chartOpen) {
       this.ui.drawChart({
-        player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
+        player: p, ships: this.convoys.with(this.ships, this.afloat), loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
         ports: this.tradePorts.ports.map((tp) => ({ x: tp.x, z: tp.z, name: tp.name, festive: tp.festive > 0.3 })),
         pins: this.waypoints.pins,
         treasure: this.maps.target,

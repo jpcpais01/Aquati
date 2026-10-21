@@ -514,6 +514,8 @@ export class ShipModel {
     yield;
     this.buildDeckLife();
     yield;
+    if (this.cls.cargo) this.buildCargo(this.cls.cargo);
+    yield;
     this.buildParts();
     yield;
     yield* this.finish();
@@ -575,7 +577,7 @@ export class ShipModel {
   }
 
   private paint(quality: number): MaterialSet {
-    const key = `${this.cls.id}|${this.livery.id}|${quality}`;
+    const key = `${this.cls.key ?? this.cls.id}|${this.livery.id}|${quality}`;
     const cached = this.owned ? undefined : materialCache.get(key);
     if (cached) return cached;
     const s = this.shape;
@@ -1609,8 +1611,8 @@ export class ShipModel {
         this.foreAftPivots.push(pivot);
         const footY = y0 + 1.9;
         const throatY = y0 + H * 0.78;
-        const boomLen = c.length * 0.5;
-        const gaffLen = c.length * 0.36;
+        const boomLen = c.length * 0.5 * (m.span ?? 1);
+        const gaffLen = c.length * 0.36 * (m.span ?? 1);
         const peakY = throatY + gaffLen * 0.55;
         const peakA = gaffLen * 0.83;
         const boom = spar(new THREE.Vector3(0, footY, 0), new THREE.Vector3(0, footY, -boomLen), 0.13, 0.09);
@@ -1690,8 +1692,9 @@ export class ShipModel {
         this.root.add(pivot);
         this.foreAftPivots.push(pivot);
         const lowY = y0 + H * 0.3;
-        const fwd = new THREE.Vector3(0, y0 + H * 0.42, c.length * 0.12);
-        const aft = new THREE.Vector3(0, y0 + H * 1.0, -c.length * 0.2);
+        const k = m.span ?? 1;
+        const fwd = new THREE.Vector3(0, y0 + H * 0.42, c.length * 0.12 * k);
+        const aft = new THREE.Vector3(0, y0 + H * 1.0, -c.length * 0.2 * k);
         const yard = spar(fwd, aft, 0.1, 0.06);
         const yardMesh = new THREE.Mesh(colorize(yard, darkWood), this.mats.wood);
         yardMesh.castShadow = true;
@@ -2429,6 +2432,117 @@ export class ShipModel {
       // glossy dark eyes and a pink nose
       for (const ex of [-1, 1]) this.fineIron.push(new THREE.SphereGeometry(0.011, 5, 4).translate(ex * 0.023, 0.282, 0.118).applyMatrix4(at));
       this.fineWood.push(colorize(new THREE.SphereGeometry(0.008, 4, 3).translate(0, 0.27, 0.147).applyMatrix4(at), hexL(0xd27a82)));
+    }
+  }
+
+  /**
+   * A merchantman's deck cargo: tarpaulins lashed down over her hatches,
+   * crates stacked in pairs, barrels laid in tiers and chocked, sacks piled
+   * against the bulwarks. Stowed clear of the masts and capstan, and set down
+   * as deck props so the crew walk round it.
+   */
+  private buildCargo(amount: number) {
+    const s = this.shape;
+    const c = this.cls;
+    const L = c.length;
+    const B = c.beam;
+    // a fixed pattern per hull, so every ship of a kind is stowed alike
+    let seed = Math.round(L * 131 + B * 17);
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const crateCols = [hexL(0xb08356), hexL(0x9c7046), hexL(0xc29a68), hexL(0x8a6a48)];
+    const stripe = hexL(this.livery.strake);
+    // weathered tarpaulin, tarred dark against the spray
+    const tarp = hexL(0x6e6853);
+    const barrelCol = hexL(0x8b5a33);
+    const hoop = hexL(0x2f2a26);
+    const burlap = hexL(0xb39566);
+    const clear = (t: number, r: number) => c.masts.every((m) => Math.abs(m.t - t) * L > 1.5 + r) && Math.abs(t - 0.53) * L > 1.1 + r;
+    const prop = (x: number, z: number, r: number) => this.deckProps.push({ x, z, r });
+
+    // tarpaulins over the hatches, humped over the goods beneath and roped down
+    for (const t of [0.46, 0.6]) {
+      if (c.masts.some((m) => Math.abs(m.t - t) < 0.05)) continue;
+      const y = s.mainDeckY(t);
+      const z = s.z(t);
+      const w = B * 0.34;
+      const l = L * 0.085;
+      const h = 0.55 + 0.35 * amount;
+      this.woodParts.push(colorize(rbox(w, h, l, Math.min(0.3, h * 0.45), 2).translate(0, y + h / 2, z), tarp, 0.03));
+      for (const f of [-0.3, 0.3]) {
+        const band = new THREE.TorusGeometry(w * 0.5, 0.03, 3, 12, Math.PI);
+        band.scale(1, (h + 0.04) / (w * 0.5), 1);
+        this.smallWood.push(colorize(band.translate(0, y + 0.02, z + f * l), HEMP));
+      }
+      prop(0, z, Math.max(w, l) * 0.55);
+    }
+
+    const crate = (x: number, y: number, z: number, sz: number, rot: number) => {
+      const col = crateCols[Math.floor(rnd() * crateCols.length)];
+      this.woodParts.push(colorize(rbox(sz, sz * 0.82, sz, sz * 0.1, 1).rotateY(rot).translate(x, y + sz * 0.41, z), col, 0.04));
+      // a painted house band round some of them
+      if (rnd() < 0.45) this.smallWood.push(colorize(new THREE.BoxGeometry(sz * 1.02, sz * 0.12, sz * 1.02).rotateY(rot).translate(x, y + sz * 0.5, z), stripe));
+    };
+    const barrel = lathe(
+      [
+        [0, 0],
+        [0.2, 0],
+        [0.23, 0.08],
+        [0.255, 0.3],
+        [0.23, 0.52],
+        [0.2, 0.6],
+        [0, 0.6],
+      ],
+      9,
+    );
+    const cask = (x: number, y: number, z: number) => {
+      // laid on her side, fore and aft
+      this.woodParts.push(colorize(barrel.clone().translate(0, -0.3, 0).rotateX(Math.PI / 2).translate(x, y + 0.25, z), barrelCol, 0.06));
+      for (const dz of [-0.17, 0.17]) this.smallWood.push(colorize(new THREE.TorusGeometry(0.24, 0.02, 3, 10).translate(x, y + 0.25, z + dz), hoop));
+    };
+    const sack = (x: number, y: number, z: number, k: number) => {
+      const g = new THREE.SphereGeometry(0.3 * k, 7, 5).scale(1, 0.55, 0.78).rotateY(rnd() * Math.PI);
+      this.woodParts.push(colorize(g.translate(x, y + 0.14 * k, z), burlap, 0.08));
+    };
+
+    // stacks along both sides of the waist, clear of the masts, the capstan and the gangway down the middle
+    const sc = c.sternCastle?.t ?? 0.12;
+    const fc = c.foreCastle?.t ?? 0.86;
+    for (let t = sc + 1.4 / L; t < fc - 1.2 / L; t += 1.35 / L) {
+      for (const side of [1, -1]) {
+        if (rnd() > 0.45 + amount * 0.5) continue;
+        const kind = rnd();
+        const y = s.mainDeckY(t);
+        const hw = s.halfWidthAtY(t, y + 0.3) - 0.2;
+        const z = s.z(t);
+        if (kind < 0.42) {
+          const sz = 0.55 + rnd() * 0.2;
+          if (!clear(t, sz * 0.7)) continue;
+          const x = side * (hw - sz * 0.62);
+          if (Math.abs(x) < B * 0.2) continue;
+          crate(x, y, z, sz, (rnd() - 0.5) * 0.3);
+          // a second crate stacked on top, a little askew
+          if (rnd() < 0.55 * amount + 0.15) crate(x + (rnd() - 0.5) * 0.1, y + sz * 0.82, z + (rnd() - 0.5) * 0.12, sz * 0.82, (rnd() - 0.5) * 0.6);
+          prop(x, z, sz * 0.75);
+        } else if (kind < 0.74) {
+          if (!clear(t, 0.7)) continue;
+          // a tier of casks: two below, one chocked in on top
+          const x = side * (hw - 0.3);
+          if (Math.abs(x) < B * 0.2) continue;
+          const xi = x - side * 0.5;
+          cask(x, y, z);
+          cask(xi, y, z);
+          if (rnd() < 0.6) cask((x + xi) / 2, y + 0.42, z);
+          prop((x + xi) / 2, z, 0.75);
+        } else {
+          if (!clear(t, 0.5)) continue;
+          const x = side * (hw - 0.32);
+          if (Math.abs(x) < B * 0.2) continue;
+          sack(x, y, z - 0.25, 1);
+          sack(x - side * 0.08, y, z + 0.3, 0.9);
+          if (rnd() < 0.7) sack(x - side * 0.04, y + 0.2, z + 0.02, 0.85);
+          prop(x, z, 0.6);
+        }
+      }
     }
   }
 
