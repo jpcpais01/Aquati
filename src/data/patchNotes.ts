@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T02:00Z',
+    entries: [
+      {
+        title: 'Figureheads you can actually see',
+        notes: [
+          'Every figurehead is now about twice as big, sized to each hull: around three and a half metres on a galleon, a little less on the brigantine and the sloop. They lean out over the waves as far as the bowsprit allows, so you can make them out from the normal sailing view.',
+          'Each ship grows a proper carved head to carry its figure: a deep rounded timber run out ahead of the stem, edged in gold beading, with a scrolled trailboard on each side and the head rails sweeping down to meet it. The bobstay is now made fast to it, under the figure.',
+          'The standard gilded mermaid is carved anew. She holds a pearl out ahead of the ship, wears a crown of seven pearl-tipped points and a sash of pearls, her long hair streams back over her shoulders, and her scaled tail runs down the cutwater to a fluke flicked up over the sea.',
+          'The upgrade figureheads are rebuilt too. The Oak Lion has a thick mane, a snarl and a gold shield between his paws. The Sea Eagle flings his wings wide along the bows. The Gilded Kraken dives forward with ruby eyes, arms coiling round the bow. The Golden Dragon gets belly plates, fangs, whiskers and half-spread wings. The Celestial Seraph raises crystal wings with her halo level over her head.',
+          'If your bowsprit is shot away, the figurehead now stays on the bow.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T01:00Z',
     entries: [
       {

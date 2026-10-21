@@ -7,8 +7,9 @@ import { shadowOnly } from '../render/passCull';
 import { Livery, ShipClass } from './shipTypes';
 import type { SkinItem } from './cosmetics';
 import { loadoutParts, type Part, type PartSlot } from './parts';
-import { buildFigure, buildHullPart, buildSailPart, GLOW, gunBarrel, METAL, type MastInfo, type PartKit, type Spinner } from './partModels';
+import { buildHullPart, buildSailPart, GLOW, gunBarrel, METAL, type MastInfo, type PartKit, type Spinner } from './partModels';
 import { ball, colorize, hexL, lathe, rbox, spar, spiral, squareRing, surfaceMatrix, sweep, tube } from './geo';
+import { bowHead, buildFigure, buildKnee, type BowHead } from './figureheads';
 import { deckTextures, FLAG_ASPECT, flagTexture, hullTextures, sailNormalTexture, sailTexture, sternTexture } from './shipTextures';
 
 // Fully procedural ships: a lofted hull with real sheer, tumblehome, bilge
@@ -405,6 +406,12 @@ export class ShipModel {
   readonly flagPivot = new THREE.Group();
   /** Where a gull can land (hull-root space): mast caps, fighting-top rails, the jib-boom knob. `spar` is the mast index, -1 the bowsprit. */
   readonly perches: { pos: THREE.Vector3; spar: number }[] = [];
+  /** The middle of the figurehead (hull-root space), for cameras. */
+  readonly figureAt = new THREE.Vector3();
+  /** How far forward the figurehead reaches (hull-root z): a shot-away bowsprit leaves everything under it and short of this. */
+  figureReach = 0;
+  /** Where the knee of the head and its figure go. */
+  private readonly head: BowHead;
   /** Ensign on a staff over the taffrail; it flies the same flag. */
   readonly ensignPivot = new THREE.Group();
   readonly sailMaterial: THREE.MeshStandardMaterial;
@@ -475,6 +482,7 @@ export class ShipModel {
     if (this.owned) this.skinUniforms.uPartSail.value.set(this.parts.sails ? this.parts.sails.tier + 1 : 0, 0, 0, Math.random() * 10);
     this.detail = quality > 0;
     this.shape = new HullShape(cls);
+    this.head = bowHead(this.shape, cls);
     this.stairs = castleStairs(cls, this.shape);
     this.mats = this.materials(quality);
     this.sailMaterial = this.makeSailMaterial(this.mats.sailPlain);
@@ -1731,7 +1739,7 @@ export class ShipModel {
     const fore = c.masts[c.masts.length - 1];
     const foreTop = mastTops[mastTops.length - 1];
     this.rope(foreTop, tip, 0.038, TAR, 0.1);
-    this.rope(tip, new THREE.Vector3(0, -0.2, s.z(1) - 0.1), 0.05); // bobstay
+    this.rope(tip, this.head.foot, 0.05); // bobstay, down to the knee's cutwater under the figure
     // dolphin striker under the cap spreading the martingale, gammoning lashed round the heel,
     // and footropes slung under the jib-boom
     const strikerTop = tip.clone().add(new THREE.Vector3(0, -0.12, -0.05));
@@ -1832,60 +1840,14 @@ export class ShipModel {
     const L = c.length;
     const darkWood = hexL(0x3e2a1a);
     const stemTop = new THREE.Vector3(0, s.top(1) - 0.55, s.z(1) + 0.25);
-    // figurehead: a gilded mermaid leaning out over the cutwater, arms swept back,
-    // hair streaming, her tail curling down the stem. Built upright facing +z, then tilted out.
-    const fs = 0.78 + L * 0.016;
-    const fig: THREE.BufferGeometry[] = [];
-    const V = (x: number, y: number, zz: number) => new THREE.Vector3(x, y, zz);
-    const body = lathe(
-      [
-        [0, 0.22],
-        [0.15, 0.26],
-        [0.17, 0.4],
-        [0.13, 0.56],
-        [0.15, 0.68],
-        [0.18, 0.78],
-        [0.14, 0.88],
-        [0.06, 0.93],
-        [0, 0.94],
-      ],
-      12,
-    );
-    body.scale(1, 1, 0.78);
-    fig.push(body);
-    fig.push(spar(V(0, 0.9, 0), V(0, 1.0, 0.01), 0.055, 0.05, 6));
-    const headG = new THREE.SphereGeometry(0.115, 12, 9);
-    headG.scale(0.92, 1.05, 1);
-    fig.push(headG.translate(0, 1.07, 0.03));
-    fig.push(ball(0.028, V(0, 1.05, 0.14), 5, 4)); // nose
-    // a little crown
-    const crown = new THREE.CylinderGeometry(0.085, 0.07, 0.06, 10, 1, true);
-    fig.push(crown.translate(0, 1.17, 0.0));
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * Math.PI * 2;
-      fig.push(ball(0.022, V(Math.sin(a) * 0.085, 1.215, Math.cos(a) * 0.085), 5, 3));
-    }
-    // flowing hair down her back
-    fig.push(sweep([V(0, 1.15, -0.04), V(0, 1.06, -0.15), V(0, 0.88, -0.2), V(0, 0.68, -0.18), V(0, 0.5, -0.24)], (u) => lerp(0.1, 0.035, u), 7, 14));
-    for (const sx of [-1, 1]) {
-      fig.push(sweep([V(sx * 0.08, 1.12, -0.02), V(sx * 0.12, 0.98, -0.1), V(sx * 0.1, 0.8, -0.16), V(sx * 0.13, 0.62, -0.2)], (u) => lerp(0.05, 0.02, u), 5, 10));
-      // arms swept back along her sides, hands meeting the stem
-      fig.push(sweep([V(sx * 0.16, 0.82, 0), V(sx * 0.22, 0.66, -0.08), V(sx * 0.17, 0.5, -0.2), V(sx * 0.08, 0.42, -0.27)], (u) => lerp(0.05, 0.035, u), 6, 10));
-    }
-    // the tail curls down and under, ending in a fluke
-    const tailPts = [V(0, 0.26, 0), V(0, 0.08, 0.02), V(0, -0.12, -0.05), V(0, -0.28, -0.2), V(0, -0.32, -0.42), V(0, -0.2, -0.56)];
-    fig.push(sweep(tailPts, (u) => lerp(0.14, 0.04, Math.pow(u, 0.8)), 8, 18));
-    for (const sx of [-1, 1]) {
-      const fl = new THREE.SphereGeometry(0.12, 8, 5);
-      fl.scale(1.5, 0.35, 0.8);
-      fl.rotateZ(sx * 0.5);
-      fig.push(fl.translate(sx * 0.13, -0.12, -0.6));
-    }
-    const lean = 0.85;
-    const figM = new THREE.Matrix4().compose(stemTop.clone().add(new THREE.Vector3(0, -0.12, -0.18)), new THREE.Quaternion().setFromEuler(new THREE.Euler(lean, 0, 0)), new THREE.Vector3(fs, fs, fs));
-    if (this.parts.figure) buildFigure(this.partKit(), this.parts.figure, figM, lean);
-    else for (const g of fig) this.trimParts.push(g.applyMatrix4(figM));
-    // gilded trailboards: carved scrolls down each side of the cutwater, laid on the planking
+    // the knee of the head run out from the stem, and the figure on its tip (see figureheads.ts)
+    const head = this.head;
+    this.figureAt.copy(head.centre);
+    this.figureReach = head.P(1.45, 0.8).z;
+    const waleCol = hexL(this.livery.wale).lerp(hexL(this.livery.hull), 0.4);
+    const knee = buildKnee(s, c, head, this.woodParts, this.trimParts, waleCol, this.detail);
+    buildFigure(this.partKit(), this.parts.figure, head);
+    // gilded trailboards: carved scrolls down each side of the bows, laid on the planking
     const onBow = (y: number, zz: number, side: number) => {
       const t = clamp(zz / L + 0.5, 0, 1);
       return new THREE.Vector3(side * (s.halfWidthAtY(t, y) + 0.05), y, zz);
@@ -1907,21 +1869,22 @@ export class ShipModel {
       this.trimParts.push(sweep(pts, (u) => lerp(0.085, 0.035, u), 6, 26));
       this.trimParts.push(ball(0.06, pts[pts.length - 1], 6, 4));
     }
-    // curved head rails sweeping from the bows to the figurehead
+    // curved head rails sweeping from the bows out along the knee to the figure's back
     for (const side of [1, -1]) {
-      for (const [h, r] of [
-        [0, 0.055],
-        [0.42, 0.045],
+      for (const [h, r, u] of [
+        [0, 0.06, 0.32],
+        [0.42, 0.048, 0.62],
       ]) {
         const t0 = 0.93;
         const y0 = s.top(t0) - 0.3 - h;
         const n = s.skinNormal(t0, y0, side);
         const p0 = s.skinPoint(t0, y0, side).addScaledVector(n, r);
-        const p1 = new THREE.Vector3(side * (0.32 - h * 0.25), s.top(1) - 0.42 - h * 0.6, s.z(1) + 0.18);
-        const p2 = new THREE.Vector3(side * 0.1, stemTop.y + 0.05 - h * 0.35, stemTop.z + 0.22);
-        // each rail ends in a little carved curl tucked in under the figure
-        const curl = spiral(p2.clone().add(new THREE.Vector3(0, -0.09, 0)), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), 0.09, 0.85, Math.PI / 2, 8);
-        this.trimParts.push(sweep([p0, p1, ...curl], (u) => (u < 0.75 ? r : lerp(r, r * 0.45, (u - 0.75) / 0.25)), 5, 20));
+        const kt = knee.top.getPoint(u);
+        const p2 = new THREE.Vector3(side * (knee.half + r * 0.6), kt.y - r, kt.x);
+        const p1 = new THREE.Vector3(side * lerp(Math.abs(p0.x), knee.half + 0.2, 0.6), lerp(p0.y, p2.y, 0.5) - 0.12, lerp(p0.z, p2.z, 0.55));
+        // each rail ends in a little carved curl on the knee's cheek
+        const curl = spiral(p2.clone().add(new THREE.Vector3(0, -0.1, 0)), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0), 0.1, 0.85, Math.PI / 2, 8);
+        this.trimParts.push(sweep([p0, p1, ...curl], (v) => (v < 0.75 ? r : lerp(r, r * 0.45, (v - 0.75) / 0.25)), 5, 22));
       }
       // cathead with an anchor hanging from it
       const ct = 0.88;

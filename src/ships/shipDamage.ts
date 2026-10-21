@@ -722,9 +722,13 @@ export class ShipDamage {
     const c = this.ship.cls;
     const zc = s.z(1) - 0.35;
     const yMin = s.top(0.97) - 1.1;
+    // the spar and all it carries go; the figurehead on the knee below it stays
+    const z0 = s.z(0.985);
+    const y0 = s.top(0.985) - 0.1;
+    const reach = this.ship.model.figureReach;
     const cut: Cut = {
       plane: new THREE.Plane(new THREE.Vector3(0, 0, 1), -zc),
-      lateral: (p) => p.y > yMin && Math.abs(p.x) < 1.6,
+      lateral: (p) => p.y > yMin && Math.abs(p.x) < 1.6 && (p.z > reach || p.y > y0 + Math.tan(0.32) * (p.z - z0) - 0.4),
     };
     const long = new THREE.Vector3(0, Math.sin(0.32), Math.cos(0.32));
     const at = world.time;

@@ -1474,9 +1474,8 @@ export class Port {
         break;
       case 'bow': {
         // the figurehead: from ahead and a little off to the side
-        const s = ship.model.shape;
-        look = ship.root.localToWorld(new THREE.Vector3(0, s.top(1) - 0.2, s.z(1) + 0.4));
-        dist = 6.5 + L * 0.2;
+        look = ship.root.localToWorld(ship.model.figureAt.clone());
+        dist = 8 + L * 0.22;
         elev = 0.1;
         a0 = 0.62 * Math.sign(ship.forward.dot(this.along) || 1);
         break;
