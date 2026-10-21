@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T01:00Z',
     entries: [
       {
+        title: 'A snappier cinematic lean',
+        notes: [
+          'Leaning the camera over past the farthest zoom no longer needs a full second\'s pause. Rest for just a moment, then keep zooming out, and the camera tips into its cinematic angle almost straight away.',
+        ],
+      },
+      {
         title: 'Storm seas that roll instead of jumping',
         notes: [
           'In a storm the breaking whitecaps could suddenly vanish and reappear somewhere else, again and again, most of all far out at sea after the wind had shifted. They now ride their waves smoothly from start to finish.',
@@ -229,7 +235,7 @@ export const PATCH_NOTES: PatchGroup[] = [
         title: 'A cinematic view past the farthest zoom',
         notes: [
           'Zooming all the way out still stops where it always did, so a quick flick of the wheel never throws the camera somewhere unexpected.',
-          'But rest at the farthest zoom for a second and then keep zooming out, and the camera leans over a little further, for a more cinematic angle on your ship.',
+          'But rest at the farthest zoom for a moment and then keep zooming out, and the camera leans over a little further, for a more cinematic angle on your ship.',
           'Each push leans it a touch more, in a slow, weighty glide. Zoom back in and the camera straightens up first, then closes in as usual.',
           'Works with a mouse wheel, a trackpad and a two-finger pinch on phones and tablets.',
         ],
