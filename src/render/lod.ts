@@ -101,6 +101,20 @@ function hash(a: Uint32Array, h = 0x811c9dc5) {
 }
 
 /**
+ * The vertex positions' hash, worked out once per buffer: a damaged ship's cut
+ * meshes are new indices over the same vertices, asked for mid-battle.
+ */
+const posHashes = new WeakMap<THREE.BufferAttribute, { version: number; h: number }>();
+function posHash(pos: THREE.BufferAttribute) {
+  const had = posHashes.get(pos);
+  if (had && had.version === pos.version) return had.h;
+  const a = pos.array as Float32Array;
+  const h = hash(new Uint32Array(a.buffer, a.byteOffset, pos.count * 3));
+  posHashes.set(pos, { version: pos.version, h });
+  return h;
+}
+
+/**
  * Copies of `geo` drawing the same vertices through simplified indices, one
  * per job, each null where the simplifier isn't available or can't save at
  * least a quarter of the triangles.
@@ -123,7 +137,6 @@ export async function simplifiedLevels(geo: THREE.BufferGeometry, jobs: LodJob[]
   const count = Math.min(idx.length - start, geo.drawRange.count);
   if (start > 0 || count < idx.length) idx = idx.slice(start, start + count);
   if (idx.length < minTris * 3) return none;
-  const positions = (pos.array as Float32Array).slice(0, n * 3);
   let packed: Float32Array | undefined;
   if (attrs) {
     // the named attributes, every component, packed vertex by vertex
@@ -134,11 +147,12 @@ export async function simplifiedLevels(geo: THREE.BufferGeometry, jobs: LodJob[]
       for (const a of list) for (let c = 0; c < a.itemSize; c++) packed[o++] = a.getComponent(v, c);
     }
   }
-  let key = `${n}:${hash(new Uint32Array(positions.buffer), hash(idx))}:${JSON.stringify(jobs)}`;
+  let key = `${n}:${posHash(pos)}:${hash(idx)}:${JSON.stringify(jobs)}`;
   if (packed) key += `:${hash(new Uint32Array(packed.buffer))}`;
   let job = cache.get(key);
   if (!job) {
     const w = worker;
+    const positions = (pos.array as Float32Array).slice(0, n * 3);
     job = new Promise<(Uint32Array | null)[]>((resolve) => {
       const id = nextId++;
       waiting.set(id, resolve);
