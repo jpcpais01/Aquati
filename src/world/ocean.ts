@@ -1,11 +1,12 @@
 import * as THREE from 'three';
-import { GLSL_AERIAL, GLSL_ATMOS, globalUniforms } from '../render/environment';
+import { GLSL_AERIAL, GLSL_ATMOS, GLSL_FW, globalUniforms } from '../render/environment';
 import { getSharedTextures } from '../render/textures';
 import { GLSL_WAVES, packWaves, Wave } from './waves';
 import { WORLD_SIZE } from './terrain';
 import { WakeField } from './wakeField';
 import { GLSL_SURF, shoreUniforms } from './shore';
 import { GLSL_VORTEX, VORTEX_N, VORTEX_RIM, vortexDepth } from './vortex';
+import { viewCull } from '../render/viewCull';
 
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
@@ -132,6 +133,84 @@ function gridMesh(tiles: THREE.BufferGeometry[], material: THREE.Material, order
     g.add(m);
   }
   return g;
+}
+
+const _tc = new THREE.Vector3();
+
+/**
+ * The tiled grid drawn a row of tiles at a time. Every tile's triangles sit in
+ * one index buffer, tile after tile along each row, so the tiles in view along
+ * a row (always one unbroken run: the view's footprint on the sea has no
+ * holes) are one contiguous range of it, and each row is a single draw over
+ * just that range. Eight draws at most for the whole sea, where a mesh per
+ * tile took thirty or forty, each paying three's full cost per object.
+ */
+class TileRows {
+  readonly group = new THREE.Group();
+  private readonly rows: THREE.Mesh[] = [];
+  /** Per density: each row's geometry (sharing one index buffer), where each tile's indices start, and its bounds. */
+  private readonly levels: { geos: THREE.BufferGeometry[]; starts: number[]; bounds: THREE.Sphere[] }[] = [];
+  private level = 0;
+
+  constructor(densities: THREE.BufferGeometry[][], material: THREE.Material, order = 0) {
+    for (const tiles of densities) {
+      const total = tiles.reduce((n, t) => n + t.index!.count, 0);
+      const idx = new Uint32Array(total);
+      const starts: number[] = [];
+      let o = 0;
+      for (const t of tiles) {
+        starts.push(o);
+        idx.set(t.index!.array as Uint32Array, o);
+        o += t.index!.count;
+      }
+      starts.push(o);
+      const index = new THREE.BufferAttribute(idx, 1);
+      const geos: THREE.BufferGeometry[] = [];
+      for (let r = 0; r < TILES; r++) {
+        const g = new THREE.BufferGeometry();
+        for (const [name, a] of Object.entries(tiles[0].attributes)) g.setAttribute(name, a);
+        g.setIndex(index);
+        geos.push(g);
+      }
+      this.levels.push({ geos, starts, bounds: tiles.map((t) => t.boundingSphere!) });
+    }
+    for (let r = 0; r < TILES; r++) {
+      const m = new THREE.Mesh(this.levels[0].geos[r], material);
+      m.renderOrder = order;
+      // culled here, tile by tile (see fit)
+      m.frustumCulled = false;
+      this.rows.push(m);
+      this.group.add(m);
+    }
+  }
+
+  /** Switches every row to another density (an index into the constructor's list). */
+  setLevel(i: number) {
+    if (i === this.level) return;
+    this.level = i;
+    this.rows.forEach((m, r) => (m.geometry = this.levels[i].geos[r]));
+  }
+
+  /** Narrows each row to its run of tiles in the camera's view (where the group stands now). */
+  fit() {
+    const L = this.levels[this.level];
+    const p = this.group.position;
+    for (let r = 0; r < TILES; r++) {
+      let first = -1;
+      let last = -1;
+      for (let i = 0; i < TILES; i++) {
+        const b = L.bounds[r * TILES + i];
+        if (!viewCull.sees(_tc.copy(b.center).add(p), b.radius)) continue;
+        if (first < 0) first = i;
+        last = i;
+      }
+      const m = this.rows[r];
+      m.visible = first >= 0;
+      if (first < 0) continue;
+      const s = L.starts[r * TILES + first];
+      m.geometry.setDrawRange(s, L.starts[r * TILES + last + 1] - s);
+    }
+  }
 }
 
 /**
@@ -309,7 +388,11 @@ const OCEAN_VERT = /* glsl */ `
     if (reach * (1.0 - smoothstep(4.5, 8.0, -th)) > 0.001) {
       float sth = fract(psi);
       vec3 sw = surfWave(wp.xz, floor(psi) + step(0.7, sth), max(-th, 0.0), reach);
-      wp.y += sw.x * (surfShape(sth, 0.3) - 0.37);
+      // the breaker's face is sharp: where the grid is stretched and gliding,
+      // its vertices would hop over it, so the lift fades there (the foam,
+      // drawn per pixel, still shows every wave)
+      float span = max(aqGridSpan.x, aqGridSpan.y);
+      wp.y += sw.x * (surfShape(sth, 0.3) - 0.37) * (span > 0.0 ? 1.0 - smoothstep(2.8, 5.0, span) : 1.0);
     }
     vShore = vec4(psi, sf.gb, reach);
     vWorld = wp.xyz;
@@ -489,6 +572,9 @@ export interface OceanOptions {
 
 export class Ocean {
   readonly mesh: THREE.Group;
+  /** The sea's grid, a draw per row of tiles in view. */
+  private readonly rows: TileRows;
+  private readonly reflRows: TileRows;
   readonly material: THREE.ShaderMaterial;
   /** Far sea out to the horizon; only worth drawing when the horizon is in view. */
   readonly apron: THREE.Mesh;
@@ -513,8 +599,6 @@ export class Ocean {
    */
   readonly funnels = new THREE.Group();
   private readonly reflFunnels = new THREE.Group();
-  /** Each sea tile's grid, fine and coarse (see fitGrid). */
-  private readonly gridLevels: [THREE.BufferGeometry, THREE.BufferGeometry][] = [];
   private gridCoarse = false;
   /** Each slot's ring mesh, fine and coarse: the coarse one serves a maelstrom seen small. */
   private readonly funnelLevels: [THREE.BufferGeometry, THREE.BufferGeometry][] = [];
@@ -574,6 +658,7 @@ export class Ocean {
         uniform vec4 uWaveA[8];
         uniform vec4 uWaveB[8];
         ${GLSL_AERIAL}
+        ${GLSL_FW}
         ${GLSL_SURF}
         varying vec3 vWorld;
         varying vec3 vNormal;
@@ -767,20 +852,25 @@ export class Ocean {
 
           // ---- surf: the breaker under this pixel and the one rolling in behind it
           float fp = length(fwidth(p));
-          float sDepth = max(-vTerrain, 0.0);
-          float sth = fract(vShore.x);
+          // read per pixel, not passed down from the vertices: away from the
+          // ship the grid glides with her, and a breaker's phase or the depth
+          // under it, blended between moving vertices, would crawl and jump
+          float sDepth = max(-texture(uHeightTex, (p - uWorldRect.xy) * uWorldRect.w).r, 0.0);
+          vec4 sField = shoreField(p);
+          vec4 shore = vec4(surfPhase(p, sField.r), sField.gb, mix(0.22, 1.0, sField.a) * (1.0 - smoothstep(12.0, 17.0, sField.r)));
+          float sth = fract(shore.x);
           float sAge = sth * SURF_T; // seconds since the last crest went by
           float swf = 0.16;
           bool sFace = sth > 1.0 - swf;
           vec3 sPrev = vec3(0.0);
           vec3 sNext = vec3(0.0);
-          if (vShore.w * (1.0 - smoothstep(4.5, 8.0, sDepth)) > 0.001) {
-            float sn = floor(vShore.x);
-            sPrev = surfWave(p, sn, sDepth, vShore.w);
-            sNext = surfWave(p, sn + 1.0, sDepth, vShore.w);
+          if (shore.w * (1.0 - smoothstep(4.5, 8.0, sDepth)) > 0.001) {
+            float sn = floor(shore.x);
+            sPrev = surfWave(p, sn, sDepth, shore.w);
+            sNext = surfWave(p, sn + 1.0, sDepth, shore.w);
             vec3 sCur = sFace ? sNext : sPrev;
             // the phase climbs 1 / (c T) per metre out to sea, c = sqrt(g d)
-            vec2 sdir = vShore.yz / max(length(vShore.yz), 0.2);
+            vec2 sdir = shore.yz / max(length(shore.yz), 0.2);
             float sg = sCur.x * surfSlope(sth, swf) / (sqrt(9.81 * max(sDepth, 0.15)) * SURF_T);
             // a broken face is a rumpled tumble of water, not a clean slope
             sg *= 1.0 - sCur.y * 0.45;
@@ -885,9 +975,12 @@ export class Ocean {
           // open water drifts between deep sapphire and a slightly brighter cobalt
           vec3 scatterDeep = mix(vec3(0.004, 0.058, 0.16), vec3(0.007, 0.086, 0.19), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
           vec3 scatterShallow = vec3(0.035, 0.34, 0.37);
-          // a storm churns the sea into a dark slate green
-          scatterDeep = mix(scatterDeep, vec3(0.012, 0.05, 0.062), uStorm * 0.7);
-          scatterShallow = mix(scatterShallow, vec3(0.05, 0.2, 0.2), uStorm * 0.55);
+          // a storm churns the sea into a deep bottle-green slate
+          scatterDeep = mix(scatterDeep, vec3(0.006, 0.036, 0.042), uStorm * 0.8);
+          scatterShallow = mix(scatterShallow, vec3(0.04, 0.17, 0.16), uStorm * 0.6);
+          // rain dulls it to a soft grey-teal, beaten matt by the drops
+          scatterDeep = mix(scatterDeep, vec3(0.01, 0.05, 0.075), uRain * (1.0 - uStorm) * 0.45);
+          scatterShallow = mix(scatterShallow, vec3(0.05, 0.22, 0.24), uRain * (1.0 - uStorm) * 0.35);
           vec3 scatter = mix(scatterShallow, scatterDeep, smoothstep(0.0, 13.0, path));
           // light travels further through the upper layer at oblique angles
           scatter *= 1.0 + (1.0 - NdV) * 0.4;
@@ -900,12 +993,16 @@ export class Ocean {
           // Broken up by the macro noise so it never traces the interference.
           float hgt = clamp(vWorld.y * 0.6 + 0.5, 0.0, 1.0);
           body *= 0.88 + 0.2 * hgt;
+          // a big sea under a grey sky: the troughs fall into shadow and the
+          // steep crests let a cold green light through their thin tops
+          body *= mix(1.0, 0.72 + 0.5 * hgt, uStorm);
           // swell faces turned toward the sun read a shade brighter, sculpting
           // the long rollers without painting a pattern on them
           body *= 1.0 + clamp(dot(Ns.xz, normalize(L.xz)) * 1.1, -0.18, 0.18);
           float sssView = pow(max(dot(V, -L + vec3(0.0, 0.6, 0.0)), 0.0), 2.0);
           float sss = hgt * hgt * (0.3 + sssView) * (0.35 + 0.65 * mac2.r);
           body += vec3(0.02, 0.19, 0.22) * sss * 0.11 * light * (1.0 - T);
+          body += vec3(0.02, 0.2, 0.16) * smoothstep(0.15, 0.75, vCrest) * uStorm * (0.45 + sssView) * light * 0.3;
           // wake crests glow translucent turquoise, troughs sink a touch deeper
           body += vec3(0.04, 0.36, 0.34) * clamp(wakeH * 1.6, -0.25, 1.0) * (0.45 + sssView) * light * 0.5;
           // ruffled water under a gust scatters less light back up: darker, matte
@@ -993,6 +1090,12 @@ export class Ocean {
 
           vec3 col = mix(body, refl, F) + uSunColor * spec * 0.55;
 
+          // fireworks overhead: each burst mirrored as a shimmering column in
+          // the chop, and its colour washed over the water beneath it
+          if (uFwLight[0].w + uFwLight[1].w + uFwLight[2].w + uFwLight[3].w > 0.0) {
+            col += fwMirror(vWorld, R) * mix(0.3, 1.0, F) + body * fwLightAt(vWorld, N) * 0.5;
+          }
+
           // ---- foam
           vec4 nz = texture(uNoiseTex, vWorld.xz * 0.06 + vec2(t * 0.01, -t * 0.013));
           vec4 nz2 = texture(uNoiseTex, vWorld.xz * 0.15 - vec2(t * 0.017, t * 0.009));
@@ -1027,21 +1130,57 @@ export class Ocean {
           float wakeFoam = foamCut(fv, wCover, fp) * smoothstep(0.01, 0.06, wf);
           wakeFoam *= 0.7 + 0.3 * smoothstep(0.0, 0.6, wf);
           // whitecaps break only here and there, and more often where a gust blows
-          float breaking = smoothstep(0.54 - uStorm * 0.34, 0.8 - uStorm * 0.22, texture(uNoiseTex, p * 0.0093 - wdrift * 0.017).g + gust * 0.35);
-          float crestFoam = smoothstep(0.5 - uStorm * 0.22, 0.95, vCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.3);
-          // storm spume: long streaks of foam torn off the crests and laid down the wind
+          float breaking = smoothstep(0.54 - uStorm * 0.16, 0.8 - uStorm * 0.1, texture(uNoiseTex, p * 0.0093 - wdrift * 0.017).g + gust * 0.35);
+          float crestFoam = smoothstep(0.5 - uStorm * 0.1, 0.95, vCrest + nz2.g * 0.35) * breaking * (0.6 + uStorm * 0.15);
+          // In a blow the long swells break along their crests: white water
+          // tumbles down each face as the crest runs on and is left lying on
+          // its back, thinning to lace. The breaking stretches ride with the
+          // waves (noise in each wave's own frame), and every crest breaks in
+          // different places, so the caps march across the sea in broken lines.
+          float caps = 0.0;
+          float aerated = 0.0;
           float spume = 0.0;
-          if (uStorm > 0.05) {
-            vec2 sp = vec2(dot(p - uWindPivot, wdir) * 0.011, dot(p - uWindPivot, wperp) * 0.14) - vec2(t * 0.05, 0.0);
-            float sn = texture(uNoiseTex, sp).g * 0.7 + texture(uNoiseTex, sp * 2.3 + 0.5).a * 0.3;
-            spume = smoothstep(0.62, 0.8, sn) * uStorm * 0.55 * (0.4 + 0.6 * hgt);
+          if (uStorm > 0.02) {
+            float capN = texture(uNoiseTex, p * 0.043 + vec2(0.37, 0.11)).g;
+            // the crest lines meander (a real sea is never ruled straight)
+            vec2 cw = (texture(uNoiseTex, p * 0.0037 + vec2(0.17, 0.53)).rg - 0.5) * 3.2
+                    + (texture(uNoiseTex, p * 0.011 + vec2(0.71, 0.29)).ba - 0.5) * 1.1;
+            for (int i = 0; i < 3; i++) {
+              vec4 wa = uWaveA[i];
+              vec4 wb = uWaveB[i];
+              float th = wa.z * dot(wa.xy, p) - wb.x * t + wb.z + (i == 1 ? cw.y : cw.x);
+              // how far behind its crest (sin = 1) this point lies, in wavelengths
+              float cd = fract((1.5708 - th) * 0.159155);
+              vec2 cu = vec2(dot(p, vec2(-wa.y, wa.x)) * 0.0105, th * 0.0447 + float(i) * 0.37);
+              float seg = texture(uNoiseTex, cu).g * 0.7 + texture(uNoiseTex, cu * 2.7 + 0.19).a * 0.3;
+              float brk = smoothstep(0.54 - uStorm * 0.08 - gust * 0.15, 0.74, seg + (capN - 0.5) * 0.35);
+              float wgt = wa.w / max(uWaveA[0].w, 1e-3);
+              // a bright tumbling lip right at the crest, the spilt foam fanning out behind it
+              caps += brk * wgt * (smoothstep(0.0, 0.006, cd) * (exp(-cd * 7.5) * 1.1 + exp(-cd * 45.0) * 0.6) + smoothstep(0.975, 1.0, cd) * 0.8);
+              aerated += brk * wgt * exp(-cd * 3.5);
+            }
+            caps = clamp(caps * uStorm, 0.0, 1.0);
+            aerated = clamp(aerated * uStorm, 0.0, 1.0);
+            // spume: foam blown off the caps in long streaks down the wind,
+            // meandering, gathered in bands and woven of the same bubble lace
+            vec2 sq = p - uWindPivot;
+            vec2 sp = vec2(dot(sq, wdir) * 0.005, dot(sq, wperp) * 0.055) - vec2(t * 0.028, 0.0);
+            sp.y += (texture(uNoiseTex, p * 0.0031 - wdrift * 0.002).g - 0.5) * 0.9;
+            float sn = texture(uNoiseTex, sp).g * 0.75 + texture(uNoiseTex, sp * vec2(2.3, 1.7) + 0.5).a * 0.25;
+            float sBand = smoothstep(0.45, 0.75, texture(uNoiseTex, vec2(dot(sq, wperp), dot(sq, wdir) * 0.3) * 0.0045 + vec2(0.61, 0.23)).r + aerated * 0.4);
+            // gone where the streaks would come thinner than a pixel or two (no shimmer at range)
+            float sAA = 1.0 - smoothstep(0.2, 0.55, fwidth(sp.y));
+            spume = smoothstep(0.58, 0.82, sn) * sBand * sAA * uStorm * 0.75;
           }
+          // the sea under a breaking cap is beaten full of air: milky bottle green
+          col = mix(col, vec3(0.13, 0.3, 0.27) * light * (0.55 + 0.45 * cloud), aerated * 0.32 * (1.0 - F));
           float foam = surfFoam * (0.82 + 0.18 * clamp(surfCover, 0.0, 1.0));
           foam += wakeFoam * (0.8 + 0.2 * bubbles);
           // whitecaps break up softly; the cellular lace alone reads as polka dots on a big cap
           float capBreak = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
           foam += crestFoam * mix(capBreak, bubbles, 0.3);
-          foam += spume * (0.5 + 0.5 * bubbles) + rainSplash * 0.7;
+          foam += foamCut(fv, caps * 0.97, fp) * (0.75 + 0.25 * capBreak) + smoothstep(0.55, 1.0, caps) * 0.25;
+          foam += spume * (0.3 + 0.7 * bubbles) + rainSplash * 0.7;
           // a maelstrom's arms, cut from the bubble web swept round with them
           float vxFoam = 0.0;
           if (vxCover + vxWall > 0.002) {
@@ -1076,7 +1215,7 @@ export class Ocean {
           // ---- bioluminescence: on dark nights churned water glows blue-green
           if (uNight > 0.05) {
             float churn = wakeFoam * 0.9 * bubbles + surfFoam * 0.5 + krSpiral * 0.45 + vxFoam * 0.5 + reefFoam * 0.4
-              + (crestFoam * 0.18 * capBreak + spume * 0.08) * (1.0 - 0.5 * uStorm);
+              + (crestFoam * 0.18 * capBreak + spume * 0.08 + caps * 0.12) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;
           }
@@ -1091,14 +1230,28 @@ export class Ocean {
           // sky just above it, so the horizon stays a crisp line instead of
           // melting into one milky band (mist and a closing sky soften it)
           vec3 seaHaze = hazeColor(-V) * mix(vec3(1.0), vec3(0.8, 0.88, 0.97), (1.0 - uMist * 0.85) * (1.0 - uCloudCover * 0.45));
+          // a lightning strike lights the sea round it, and its glare skates off the swell
+          if (uStrike.w > 0.001) {
+            vec2 sk = p - uStrike.xy;
+            float sk2 = dot(sk, sk) / (uStrike.z * uStrike.z);
+            col += vec3(0.55, 0.62, 0.95) * uStrike.w * (exp(-sk2) * 0.35 + exp(-sk2 * 14.0) * 1.6) * (0.35 + F * 2.5);
+          }
           col = mix(col, seaHaze, aerialAt(vViewDist, 0.0) * 0.88);
+          // banks of mist and curtains of rain drifting over the water
+          col = mix(col, hazeColor(-V), veilAt(vWorld));
 
           gl_FragColor = ghostSee > 0.0 ? vec4(col * ghostSee, ghostSee) : vec4(col, 1.0);
         }`,
     });
     // a vertex slides at most a cell with the ship and morphs at most another
     const pad = this.cell * 2;
-    this.mesh = gridMesh(buildGrid(opts.segments, opts.half, true, pad), this.material, -10);
+    const fine = buildGrid(opts.segments, opts.half, true, pad);
+    // at half the resolution the reflections need half the grid: the trace starts a few
+    // centimetres off the true crest at most, well under the ripple wobble (and the
+    // sea itself takes it, pulled well back: see fitGrid)
+    const coarse = buildGrid(opts.segments >> 1, opts.half, false, pad);
+    this.rows = new TileRows([fine, coarse], this.material, -10);
+    this.mesh = this.rows.group;
     // the rim glides in and out with the ship: start the apron well inside it
     this.apron = new THREE.Mesh(buildApron(opts.half * 0.94, 3400), this.material);
     this.apron.frustumCulled = false;
@@ -1113,13 +1266,8 @@ export class Ocean {
       vertexShader: OCEAN_VERT,
       fragmentShader: REFL_FRAG,
     });
-    // at half the resolution it needs half the grid: the trace starts a few
-    // centimetres off the true crest at most, well under the ripple wobble
-    this.reflMesh = gridMesh(buildGrid(opts.segments >> 1, opts.half, false, pad), this.reflMaterial);
-    // the main sea's tiles in both densities, the coarse ones shared with the reflection
-    for (const [i, t] of this.mesh.children.filter((o) => o !== this.apron).entries()) {
-      this.gridLevels.push([(t as THREE.Mesh).geometry, (this.reflMesh.children[i] as THREE.Mesh).geometry]);
-    }
+    this.reflRows = new TileRows([coarse], this.reflMaterial);
+    this.reflMesh = this.reflRows.group;
     this.reflApron = new THREE.Mesh(this.apron.geometry, this.reflMaterial);
     this.reflApron.frustumCulled = false;
     this.reflApron.visible = false;
@@ -1139,9 +1287,8 @@ export class Ocean {
     this.reflScene.add(this.reflFunnels);
 
     // the same patches as the sea above, so it is culled the same way
-    const tiles = this.mesh.children.filter((o) => o !== this.apron).map((o) => (o as THREE.Mesh).geometry);
     this.underside = gridMesh(
-      tiles,
+      fine,
       new THREE.ShaderMaterial({
         uniforms: { ...uniforms },
         // too rare a view for ring meshes of its own: the coarse grid takes the funnel
@@ -1301,6 +1448,8 @@ export class Ocean {
     u.uCamNearFar.value.set(cam.near, cam.far);
     this.fitFunnels(cam, h);
     this.fitGrid(cam);
+    this.rows.fit();
+    if (this.reflecting) this.reflRows.fit();
   }
 
   /**
@@ -1317,7 +1466,6 @@ export class Ocean {
     const coarse = m > 0.999;
     if (coarse === this.gridCoarse) return;
     this.gridCoarse = coarse;
-    const tiles = this.mesh.children.filter((o) => o !== this.apron) as THREE.Mesh[];
-    tiles.forEach((t, i) => (t.geometry = this.gridLevels[i][coarse ? 1 : 0]));
+    this.rows.setLevel(coarse ? 1 : 0);
   }
 }

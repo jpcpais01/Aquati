@@ -86,6 +86,12 @@ export const globalUniforms = {
   uWet: { value: 0 }, // surface wetness, lags the rain
   uFlash: { value: 0 }, // lightning
   uMist: { value: 0 }, // low sea mist / rain haze, thickens with distance
+  // weather lying low on the sea (see veilAt): x density at sea level (1/m),
+  // y its height scale (m), z how patchy it lies (0 an even sheet .. 1 banks
+  // with clear water between), w how fast its patches drift with the wind (m/s)
+  uVeil: { value: new THREE.Vector4(0, 20, 0, 0) },
+  // a lightning strike lighting the sea round it: xz where it hit, z its reach (m), w its light
+  uStrike: { value: new THREE.Vector4(0, 0, 1, 0) },
   // the night sky (see render/nightSky.ts): world directions into the slowly
   // wheeling star sphere; the moon's place and visibility, and its phase as
   // the sun's direction seen from it (w the lit share of the disc)
@@ -110,7 +116,46 @@ export const globalUniforms = {
   // the maelstroms (see game/hazards.ts, world/vortex.ts): xz centre, radius (m),
   // strength signed by the way it turns; an unused slot has strength 0
   uVortex: { value: Array.from({ length: VORTEX_N }, () => new THREE.Vector4(0, 0, 1, 0)) },
+  // fireworks bursting overhead (see fx/fireworks.ts): xyz where, w how bright
+  // (0 = dark slot), and each one's colour
+  uFwLight: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+  uFwColor: { value: Array.from({ length: 4 }, () => new THREE.Vector3(1, 1, 1)) },
 };
+
+// Light from the fireworks: a few bursts at most, each a soft round lamp in
+// the sky. Compiled into every lit surface at load, so a show never compiles
+// anything; a dark sky costs four skipped iterations.
+export const GLSL_FW = /* glsl */ `
+uniform vec4 uFwLight[4];
+uniform vec3 uFwColor[4];
+// light reaching a point facing n (world space); n = 0 lights from every side (smoke)
+vec3 fwLightAt(vec3 wp, vec3 n) {
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec4 l = uFwLight[i];
+    if (l.w <= 0.0) continue;
+    vec3 d = l.xyz - wp;
+    float r2 = dot(d, d);
+    float ndl = dot(n, n) > 0.0 ? max(dot(n, d * inversesqrt(r2 + 1e-4)), 0.0) * 0.8 + 0.2 : 1.0;
+    acc += uFwColor[i] * (l.w * ndl / (1.0 + r2 * 0.0011));
+  }
+  return acc;
+}
+// the bursts mirrored in a wavy surface: a shimmering column under each
+vec3 fwMirror(vec3 wp, vec3 R) {
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 4; i++) {
+    vec4 l = uFwLight[i];
+    if (l.w <= 0.0) continue;
+    vec3 d = l.xyz - wp;
+    float r2 = dot(d, d);
+    float s = max(dot(R, d * inversesqrt(r2 + 1e-4)), 0.0);
+    float s2 = s * s; float s4 = s2 * s2; float s8 = s4 * s4; float s16 = s8 * s8; float s32 = s16 * s16;
+    acc += uFwColor[i] * l.w * (s32 * s16 * 2.6 + s8 * 0.22) / (1.0 + r2 * 0.00025);
+  }
+  return acc;
+}
+`;
 
 export const GLSL_GUST = /* glsl */ `
 uniform vec3 uWind;
@@ -134,6 +179,22 @@ float gustAt(vec2 p) {
 }
 `;
 
+/**
+ * Where the low weather lies thick and where it opens up (see veilAt): the rain
+ * draws its curtains from this too, so the drops fall where the murk is.
+ * Needs uNoiseTex, uWindDrift and uVeil declared.
+ */
+export const GLSL_VEIL_PATCH = /* glsl */ `
+float veilPatch(vec2 xz) {
+  vec2 d = uWindDrift * uVeil.w;
+  float n = texture(uNoiseTex, xz * 0.0013 - d * 0.0013 + vec2(0.31, 0.77)).r * 0.6
+          + texture(uNoiseTex, xz * 0.0047 - d * 0.0047 * 1.3 + vec2(0.71, 0.13)).g * 0.4;
+  // the baked noise hugs 0.5: stretch it into banks and gaps
+  float bank = smoothstep(0.34, 0.68, n);
+  return mix(1.0, bank * 1.75 + 0.06, uVeil.z);
+}
+`;
+
 export const GLSL_ATMOS = /* glsl */ `
 uniform float uTime;
 uniform vec3 uSunDir;
@@ -153,13 +214,30 @@ uniform float uStorm;
 uniform float uWet;
 uniform float uFlash;
 uniform float uMist;
+uniform vec4 uVeil;
+uniform vec4 uStrike;
 uniform mat3 uStarRot;
 uniform sampler2D uLowCloudTex;
 uniform vec4 uLowCloudXf;
 
-// how much low mist lies between the eye and a point d metres away
-float mistAt(float d) {
-  return (1.0 - exp(-d * 0.0045)) * uMist * 0.7;
+// Weather lying low on the water: banks of sea mist, curtains of rain. Its
+// density falls away with height, so from up high you look down through it
+// (a veil over the sea, thinner over the masts) and from the deck you look
+// into it; and it lies in drifting patches, so the view sails in and out of
+// banks with clear water between instead of sinking into one even wall.
+// Returns how much of the light from wp it hides.
+${GLSL_VEIL_PATCH}
+float veilAt(vec3 wp) {
+  if (uVeil.x <= 0.0) return 0.0;
+  vec3 c = cameraPosition;
+  float H = uVeil.y;
+  float yc = max(c.y, 0.0);
+  float yp = max(wp.y, 0.0);
+  float dy = yc - yp;
+  // mean of exp(-y / H) along the ray
+  float e = abs(dy) > 0.05 ? H * (exp(-yp / H) - exp(-yc / H)) / dy : exp(-yp / H);
+  float tau = uVeil.x * length(wp - c) * e * veilPatch(wp.xz);
+  return 1.0 - exp(-tau);
 }
 
 vec3 aqHash32(vec2 p) {
@@ -392,14 +470,114 @@ export const GLSL_AERIAL = /* glsl */ `
 vec3 hazeColor(vec3 d) {
   float mu = dot(normalize(vec3(d.x, max(d.y, 0.0) * 0.4, d.z) + vec3(0.0, 1e-4, 0.0)), uSunDir);
   float sd = max(mu, 0.0);
-  return uFogColor * (0.94 + 0.08 * mu * mu) + uHaze * (pow(sd, 5.0) * 0.26 + pow(sd, 40.0) * 0.3);
+  return uFogColor * (0.94 + 0.08 * mu * mu) + uHaze * (pow(sd, 5.0) * 0.26 + pow(sd, 40.0) * 0.3)
+    // lightning lights the rain and the murk from inside
+    + vec3(0.62, 0.7, 0.95) * uFlash * 0.3;
 }
 float aerialAt(float dist, float y) {
   float near = uFogRange.x * 0.8;
   float r = max(dist - near, 0.0) / max(uFogRange.y - near, 1.0);
   float a = 1.0 - exp(-r * r * 2.2 - r * 0.5);
   a *= mix(1.0, 0.72, smoothstep(12.0, 170.0, y));
-  return max(a, mistAt(dist));
+  return a;
+}
+// the air and the low weather together, between the eye and world point wp
+float airAt(vec3 wp) {
+  float a = aerialAt(length(wp - cameraPosition), wp.y);
+  float v = veilAt(wp);
+  return 1.0 - (1.0 - a) * (1.0 - v);
+}
+`;
+
+/**
+ * Plants up close (patchMaterial `leaves` / `bark`). A canopy is a few soft
+ * puffs: here each breaks up into lit clusters of leaves with dark gaps
+ * between them, every cluster turning its own face to the sun, and a leafy
+ * grain within them once you stand beneath the tree. Wood (painted with
+ * negative colour, see flora.ts) gets fissured plates of bark with moss low on
+ * the trunk (1) or a palm's ring scars and fibres (2). All of it in the
+ * plant's own frame, so it never swims as the wind bends the plant, and all
+ * of it skipped once a pixel spans more than the detail it would draw.
+ */
+const GLSL_PLANT_DETAIL = /* glsl */ `
+varying vec3 vAqObj;
+varying vec3 vAqObjN;
+float aqPlantBump = 0.0;
+
+// Mikkelsen's derivative bump mapping (unnormalised: h is in metres)
+vec3 aqPlantNormal(vec3 surfPos, vec3 surfNorm, float h, float faceDir) {
+  vec3 sx = dFdx(surfPos);
+  vec3 sy = dFdy(surfPos);
+  vec2 dh = vec2(dFdx(h), dFdy(h));
+  vec3 r1 = cross(sy, surfNorm);
+  vec3 r2 = cross(surfNorm, sx);
+  float det = dot(sx, r1) * faceDir;
+  vec3 grad = sign(det) * (dh.x * r1 + dh.y * r2);
+  return normalize(abs(det) * surfNorm - grad);
+}
+
+void aqPlantDetail(inout vec3 col, vec3 vcol) {
+  float fp = length(fwidth(vAqObj));
+  vec3 on = normalize(vAqObjN);
+#ifdef AQ_BARK
+  if (vcol.g < 0.0) {
+    col = abs(col);
+    float w = 1.0 - smoothstep(0.03, 0.09, fp);
+    if (w > 0.0) {
+      float wx = on.x * on.x / (on.x * on.x + on.z * on.z + 1e-4);
+#if AQ_BARK == 1
+      // plates split by long, wandering vertical fissures
+      vec2 sc = vec2(2.2, 0.32);
+      vec4 a = texture(uNoiseTex, vec2(vAqObj.x, vAqObj.y) * sc + vec2(0.13, 0.6));
+      vec4 b = texture(uNoiseTex, vec2(vAqObj.z, vAqObj.y) * sc + vec2(0.57, 0.2));
+      vec4 t = mix(a, b, wx);
+      float fiss = 1.0 - smoothstep(0.0, 0.07, abs(t.g - 0.5) + (t.a - 0.5) * 0.04);
+      float plate = smoothstep(0.3, 0.7, t.a);
+      vec3 c = col * (0.86 + plate * 0.3) * (1.0 - fiss * 0.55);
+      // moss creeps up the foot of the trunk, pale lichen higher on the plates
+      float moss = smoothstep(0.45, 0.65, t.r + (1.0 - smoothstep(0.3, 2.2, vAqObj.y)) * 0.35) * (1.0 - fiss);
+      c = mix(c, c * vec3(0.75, 1.15, 0.6), moss * 0.5);
+      c = mix(c, c * vec3(1.3, 1.3, 1.2), smoothstep(0.66, 0.74, t.b + plate * 0.1) * (1.0 - moss) * 0.3);
+      col = mix(col, c, w);
+      aqPlantBump = (plate * 0.006 - fiss * 0.02) * w;
+#else
+      // a palm's stem: rings where old fronds fell, fibres running up between them
+      vec4 a = texture(uNoiseTex, vec2(vAqObj.x * 3.1, vAqObj.y * 0.4) + vec2(0.41, 0.3));
+      vec4 b = texture(uNoiseTex, vec2(vAqObj.z * 3.1, vAqObj.y * 0.4) + vec2(0.07, 0.77));
+      vec4 t = mix(a, b, wx);
+      float ring = fract(vAqObj.y * 5.2 + (t.r - 0.5) * 0.5);
+      float scar = smoothstep(0.0, 0.07, ring) * (1.0 - smoothstep(0.1, 0.24, ring));
+      float fibre = (t.a - 0.5) * 2.0;
+      vec3 c = col * (1.0 + fibre * 0.12) * (1.0 - scar * 0.38);
+      c = mix(c, c * vec3(1.15, 1.1, 1.02), smoothstep(0.55, 0.75, t.g) * 0.5);
+      col = mix(col, c, w);
+      aqPlantBump = (-scar * 0.012 + fibre * 0.0025) * w;
+#endif
+    }
+    return;
+  }
+#endif
+#ifdef AQ_LEAVES
+  // clusters of leaves half a metre across (worley cells), the leaf grain within them
+  float w = 1.0 - smoothstep(0.08, 0.3, fp);
+  if (w > 0.0) {
+    vec3 an = on * on;
+    an *= an;
+    an /= an.x + an.y + an.z;
+    vec3 p = vAqObj * 0.11;
+    vec4 t = texture(uNoiseTex, p.zy + vec2(0.31, 0.12)) * an.x + texture(uNoiseTex, p.xz + vec2(0.71, 0.53)) * an.y + texture(uNoiseTex, p.xy + vec2(0.05, 0.88)) * an.z;
+    // worley cells broken up by the fbm, so clusters are ragged, not round
+    float cl = 1.0 - smoothstep(0.05, 0.78, t.b + (t.g - 0.5) * 0.55);
+    float fine = 1.0 - smoothstep(0.012, 0.05, fp);
+    // flowers stay bright: the contrast is for leaves
+    float leafy = 0.45 + 0.55 * smoothstep(0.0, 0.04, col.g - max(col.r, col.b));
+    vec3 c = col * mix(1.0, 0.72 + cl * 0.42 + (t.a - 0.5) * 0.3 * fine, leafy);
+    // the cluster crowns catch the sun warm and yellow-green
+    c = mix(c, c * vec3(1.1, 1.08, 0.8), cl * cl * 0.3 * leafy);
+    col = mix(col, c, w);
+    aqPlantBump = (cl * 0.035 + (t.a - 0.5) * 0.018 * fine) * (1.0 - smoothstep(0.03, 0.12, fp));
+  }
+#endif
 }
 `;
 
@@ -417,6 +595,8 @@ export interface PatchOptions {
   solid?: boolean; // never cut by damage holes (inner surfaces)
   skin?: 1 | 2 | 3; // takes a vault skin: 1 hull planking, 2 painted woodwork, 3 sailcloth
   ghost?: boolean; // a ghost ship's timber and canvas: spectral, rotting, half see-through (needs uGhost)
+  leaves?: boolean; // canopy puffs break up into lit leaf clusters up close
+  bark?: 1 | 2; // wood painted with negative colour (flora.ts barkSign) gets 1 fissured bark, 2 ringed palm stems
 }
 
 /** How each material was patched, so ships can re-patch per-hull damage clones. */
@@ -448,6 +628,8 @@ export function patchMaterial<T extends THREE.MeshStandardMaterial>(mat: T, opts
     if (opts.cut) defs.push('#define AQ_DMG_CUT');
     if (opts.skin) defs.push(`#define AQ_SKIN ${opts.skin}`);
     if (opts.ghost) defs.push('#define AQ_GHOST');
+    if (opts.leaves) defs.push('#define AQ_LEAVES');
+    if (opts.bark) defs.push(`#define AQ_BARK ${opts.bark}`);
     const head = defs.join('\n') + '\n';
 
     shader.vertexShader = shader.vertexShader
@@ -474,7 +656,11 @@ varying vec3 vSkinN;
 varying float vSkinW;
 #endif
 #endif
-${GLSL_DAMAGE_VERTEX_PARS}`,
+${GLSL_DAMAGE_VERTEX_PARS}
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+varying vec3 vAqObj;
+varying vec3 vAqObjN;
+#endif`,
       )
       .replace(
         '#include <color_vertex>',
@@ -504,6 +690,11 @@ ${GLSL_DAMAGE_VERTEX_PARS}`,
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+  // the plant's own frame, before the wind moves it: leaf and bark detail stays put on the plant
+  vAqObj = position;
+  vAqObjN = objectNormal;
+#endif
 #if defined(AQ_SKIN) && AQ_SKIN < 3
   vSkinP = transformed;
   vSkinN = objectNormal;
@@ -592,8 +783,12 @@ uniform vec4 uUnder;
 uniform vec3 uUnderColor;
 ${GLSL_ATMOS}
 ${GLSL_AERIAL}
+${GLSL_FW}
 ${GLSL_DAMAGE_FRAGMENT_PARS}
 ${GLSL_GHOST_FRAGMENT_PARS}
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+${GLSL_PLANT_DETAIL}
+#endif
 #ifdef AQ_SKIN
 ${GLSL_SKIN}
 uniform vec3 uSkinCloth;
@@ -626,7 +821,7 @@ varying float vSkinW;
       vec3 aqWater = uUnderColor * (1.0 - clamp(-vAqWorld.y / 22.0, 0.0, 1.0) * 0.5);
       gl_FragColor.rgb = mix(aqCol, aqWater, 1.0 - exp(-aqD / uUnder.z));
     } else {
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), aerialAt(length(aqView), vAqWorld.y));
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, hazeColor(normalize(aqView)), airAt(vAqWorld));
     }
   }`,
       )
@@ -650,6 +845,13 @@ varying float vSkinW;
 ${GLSL_SKIN_FRAGMENT}
 ${GLSL_DAMAGE_FRAGMENT}
 ${GLSL_GHOST_COLOR}
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+  #ifdef USE_COLOR
+  aqPlantDetail(diffuseColor.rgb, vColor.rgb);
+  #else
+  aqPlantDetail(diffuseColor.rgb, vec3(1.0));
+  #endif
+#endif
 #ifdef AQ_DETAIL
   {
     vec4 nz = texture(uNoiseTex, vAqWorld.xz * 0.021);
@@ -666,6 +868,13 @@ ${GLSL_GHOST_COLOR}
         `#include <roughnessmap_fragment>
   roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.42, uWet);
 `,
+      )
+      .replace(
+        '#include <normal_fragment_maps>',
+        `#include <normal_fragment_maps>
+#if defined(AQ_LEAVES) || defined(AQ_BARK)
+  normal = aqPlantNormal(-vViewPosition, normal, aqPlantBump, faceDirection);
+#endif`,
       )
       .replace(
         '#include <metalnessmap_fragment>',
@@ -696,6 +905,11 @@ ${GLSL_GHOST_EMISSIVE}`,
       .replace(
         '#include <lights_fragment_end>',
         `#include <lights_fragment_end>
+  // fireworks overhead light the decks, sails and hillsides in their colours
+  if (uFwLight[0].w + uFwLight[1].w + uFwLight[2].w + uFwLight[3].w > 0.0) {
+    vec3 aqFwN = inverseTransformDirection(normal, viewMatrix);
+    reflectedLight.indirectDiffuse += diffuseColor.rgb * fwLightAt(vAqWorld, aqFwN);
+  }
 #ifdef AQ_FOLIAGE
   {
     // leaves are thin: the sun glows through to their shaded side, warm and

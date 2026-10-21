@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { staticLod } from '../render/staticLod';
 import { skipWhenHidden } from '../render/staticScene';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -399,6 +400,7 @@ export class TradePort {
   private near = new THREE.Group();
   private far = new THREE.Group();
   private detail = true;
+  private folkShown = true;
   private time = Math.random() * 100;
   private ship: Ship | null = null;
   private docked = false;
@@ -451,6 +453,8 @@ export class TradePort {
     this.far.visible = false;
     this.build();
     this.group.updateMatrixWorld(true);
+    staticLod.add(this.near);
+    staticLod.add(this.far);
     // the town far off, or the half of it swapped out by distance, skips the per-frame matrix walk
     for (const o of [this.group, this.near, this.far]) skipWhenHidden(o);
   }
@@ -997,7 +1001,12 @@ export class TradePort {
 
     // the townsfolk: skeletons live in the port frame
     const f = this.figures;
-    for (const fig of f) this.group.add(fig.root);
+    for (const fig of f) {
+      this.group.add(fig.root);
+      // an idle town's skeletons (thirteen of them, fifteen joints each) stay
+      // out of every per-frame walk until the town comes alive again
+      skipWhenHidden(fig.root);
+    }
     f[9].root.scale.setScalar(0.66); // the kid
     f[12].hips.add(this.rod);
     this.rod.position.set(0, 0.36, 0.38);
@@ -1141,7 +1150,18 @@ export class TradePort {
       this.far.visible = !want;
     }
     this.group.visible = d < 1650;
+    const live = this.detail && this.group.visible;
+    if (live !== this.folkShown) {
+      this.folkShown = live;
+      for (const f of this.figures) f.root.visible = live;
+    }
     return d;
+  }
+
+  /** Every skeleton back in the walk (the warm-up poses them all); lod() puts the idle ones away again. */
+  showFolk() {
+    this.folkShown = true;
+    for (const f of this.figures) f.root.visible = true;
   }
 
   /** Whether the townsfolk are close enough to be drawn and animated. */
@@ -1654,7 +1674,11 @@ export class TradePorts {
   readonly ports: TradePort[] = [];
   private crowd: Crowd;
 
-  constructor(sites: PortSite[], heightAt: (x: number, z: number) => number) {
+  /**
+   * Builds the towns all at once. During loading use `TradePorts.build`, which hands
+   * the browser a frame between towns instead of building all six in one go.
+   */
+  constructor(sites: PortSite[], heightAt: (x: number, z: number) => number, deferTowns = false) {
     this.root.name = 'trade-ports';
     const specs = TRADE_SPECS.slice(0, sites.length);
     const kit = makeKit(TRADE_SPECS);
@@ -1667,11 +1691,24 @@ export class TradePorts {
     this.crowd = new Crowd(styles, 0.62, 0.38, 10);
     this.crowd.group.name = 'townsfolk';
     this.root.add(this.crowd.group);
-    sites.forEach((site, i) => {
+    this.pending = sites.map((site, i) => () => {
       const port = new TradePort(site, specs[i], i, kit, this.crowd.figures.slice(i * FOLK, (i + 1) * FOLK), heightAt);
       this.ports.push(port);
       this.root.add(port.group);
     });
+    if (!deferTowns) for (const town of this.pending.splice(0)) town();
+  }
+
+  private pending: (() => void)[];
+
+  /** Builds the trade ports one town at a time, awaiting `rest` (a frame) between towns. */
+  static async build(sites: PortSite[], heightAt: (x: number, z: number) => number, rest: () => Promise<void>) {
+    const tp = new TradePorts(sites, heightAt, true);
+    for (const town of tp.pending.splice(0)) {
+      await rest();
+      town();
+    }
+    return tp;
   }
 
   /** The port whose quay is nearest a point. */
@@ -1703,13 +1740,18 @@ export class TradePorts {
       const port = this.ports[Math.floor(i / FOLK)];
       if (!port || !lively.includes(port)) return 0;
       f.hips.getWorldPosition(_w);
-      return _w.distanceToSquared(cam) < 60 * 60 ? 1 : 2;
+      // and the lightest cut once they're a few dozen pixels tall
+      const d2 = _w.distanceToSquared(cam);
+      return d2 < 60 * 60 ? 1 : d2 < 75 * 75 ? 2 : 3;
     });
   }
 
   /** Warm-up: every townsperson drawn once in both sculpts. */
   warm() {
-    for (const p of this.ports) p.group.updateMatrixWorld(true);
+    for (const p of this.ports) {
+      p.showFolk();
+      p.group.updateMatrixWorld(true);
+    }
     let n = 0;
     this.crowd.sync(() => (n++ % 2 ? 1 : 2));
   }

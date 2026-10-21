@@ -5,6 +5,7 @@ import { Ship, gunRange } from './ship';
 import { AMMO, AmmoId } from '../game/ammo';
 import { ShipClassId } from './shipTypes';
 import { clampToRegion } from '../world/regions';
+import { Grudge, sideOf } from '../game/peace';
 
 // How often each class of pirate loads something nastier than round shot.
 const PIRATE_AMMO: Record<ShipClassId, [AmmoId, number][]> = {
@@ -49,6 +50,14 @@ export class PirateAI {
   /** Something in the sea even pirates run from (the Kraken): they flee it while it's near. */
   fear: { x: number; z: number } | null = null;
   private scared = false;
+  /**
+   * Who has given her cause to fight. On peaceful seas she only ever hunts
+   * the sides in here; everywhere it keeps a fight she's in from cooling
+   * while blows are still being traded.
+   */
+  readonly grudge = new Grudge();
+  /** Peaceful seas: a named hunter with no excuse yet keeps you in sight, just out of reach of her guns. */
+  private shadow: Ship | null = null;
 
   constructor(readonly ship: Ship, difficulty: number, hunt?: { ammo: [AmmoId, number][] }) {
     this.hunter = !!hunt;
@@ -119,8 +128,11 @@ export class PirateAI {
     let best: Ship | null = null;
     let bs = Infinity;
     let curScore = Infinity;
+    const now = world.time;
     for (const c of player ? [player, ...escorts] : escorts) {
       if (!c.alive || c.removed) continue;
+      // peaceful seas: nobody she hasn't been given cause to fight
+      if (world.peaceful && !this.grudge.against(c, now)) continue;
       let score = Math.hypot(c.pos.x - s.pos.x, c.pos.z - s.pos.z);
       if (c === player) score *= this.hunter ? 0.35 : 0.8;
       if (s.lastAttacker === c && world.time - s.lastHit < 12) score *= 0.6;
@@ -155,6 +167,10 @@ export class PirateAI {
 
     if (this.think <= 0) {
       this.think = 0.4 + this.rnd() * 0.3;
+      // still under her guns: the quarrel doesn't cool
+      if (target && dist < range * 1.1 && this.grudge.against(target, world.time)) this.grudge.mark(sideOf(target), world.time);
+      s.wrath = this.grudge.mask(world.time);
+      this.shadow = world.peaceful && this.hunter && !target && player && player.alive ? player : null;
       let provoked = !!s.lastAttacker && (s.lastAttacker === player || escorts.includes(s.lastAttacker)) && world.time - s.lastHit < 25;
       const pk = this.pack;
       if (pk && pk.leader && !pk.leader.ship.alive) pk.leader = null;
@@ -180,7 +196,23 @@ export class PirateAI {
       }
 
       const lead = pk && pk.leader && pk.leader !== this ? pk.leader.ship : null;
-      if (this.mode === 'patrol' && lead) {
+      if (this.mode === 'patrol' && this.shadow && !lead) {
+        // off your quarter, a little beyond her guns' reach, matching your pace: waiting for her excuse
+        const q = this.shadow;
+        const sh = Math.sin(q.heading);
+        const ch = Math.cos(q.heading);
+        const far = range * 1.35;
+        const sx = this.sideBias * far * 0.62;
+        const sz = far * 0.78;
+        const tx = q.pos.x + ch * sx - sh * sz;
+        const tz = q.pos.z - sh * sx - ch * sz;
+        const gap = Math.hypot(tx - s.pos.x, tz - s.pos.z);
+        const close = Math.hypot(q.pos.x - s.pos.x, q.pos.z - s.pos.z) < far * 0.8;
+        this.desired = gap < 18 ? q.heading : Math.atan2(tx + sh * 24 - s.pos.x, tz + ch * 24 - s.pos.z);
+        // never closer than that: she bears away if you sail at her
+        if (close) this.desired = Math.atan2(s.pos.x - q.pos.x, s.pos.z - q.pos.z);
+        s.sailTarget = close ? 1 : gap > 70 ? 1 : gap > 30 ? 0.75 : clamp(q.sailTarget + 0.1, 0.3, 1);
+      } else if (this.mode === 'patrol' && lead) {
         // keep station on the flagship's quarter
         const sh = Math.sin(lead.heading);
         const ch = Math.cos(lead.heading);

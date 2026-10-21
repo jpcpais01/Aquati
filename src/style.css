@@ -1,5 +1,5 @@
 /* =====================================================================
-   Shores of Fortune UI: glass over a living sea.
+   Shores O’ Fortune UI: glass over a living sea.
    Inter for the interface, Cinzel only for proper names (the logo, ships,
    isles). Frosted ocean glass, warm gold for the one thing you should
    press, a white focus glow for whatever you're on.
@@ -158,7 +158,7 @@ button:focus {
   -webkit-backdrop-filter: blur(calc(10px * var(--u))) saturate(1.15);
   z-index: 30;
   animation: fade 0.35s ease;
-  padding: calc(calc(16px * var(--u)) + var(--safe-t)) calc(calc(16px * var(--u)) + var(--safe-r)) calc(calc(16px * var(--u)) + var(--safe-b)) calc(calc(16px * var(--u)) + var(--safe-l));
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
 }
 
 #notes,
@@ -213,10 +213,11 @@ button:focus {
   width: 100%;
   height: 100%;
   display: block;
-  filter: drop-shadow(0 calc(4px * var(--u)) calc(14px * var(--u)) rgba(0, 0, 0, 0.35));
 }
 
-.crest > svg {
+.crest > svg,
+.crest > span,
+.crest > span > svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -224,24 +225,45 @@ button:focus {
   display: block;
 }
 
-.crest-slot.spin .crest-rose {
-  /* transform on the rose's own <svg> box: animated by the compositor, never the main thread */
-  will-change: transform;
-  animation: rose 6s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+/* the shadow lives on each still piece and as a centred glow on the turning ones (a
+   filter over the whole crest would sit above the spinning layers and re-filter them) */
+.crest-ring {
+  filter: drop-shadow(0 calc(4px * var(--u)) calc(14px * var(--u)) rgba(0, 0, 0, 0.35));
 }
 
-@keyframes rose {
-  0% {
-    transform: rotate(0deg);
+.crest-rose > svg {
+  filter: drop-shadow(0 0 calc(6px * var(--u)) rgba(0, 0, 0, 0.4));
+}
+
+/* Only the HTML spans turn, with transform alone, each on its own layer: the compositor
+   runs them, so nothing on the main thread (or the GPU's shader work) can hold them up.
+   Constant speed, no easing: a wheel that never hesitates. */
+.crest-slot.spin .crest-rose,
+.crest-slot.spin .crest-dial {
+  will-change: transform;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  animation: crestTurn 9s linear infinite;
+}
+
+.crest-slot.spin .crest-dial {
+  animation-duration: 28s;
+  animation-direction: reverse;
+}
+
+@keyframes crestTurn {
+  from {
+    transform: translateZ(0) rotate(0deg);
   }
-  40% {
-    transform: rotate(200deg);
+  to {
+    transform: translateZ(0) rotate(360deg);
   }
-  55% {
-    transform: rotate(170deg);
-  }
-  100% {
-    transform: rotate(360deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crest-slot.spin .crest-rose,
+  .crest-slot.spin .crest-dial {
+    animation: none;
   }
 }
 
@@ -443,6 +465,14 @@ kbd {
 
 .load-scenes .scene.ready {
   animation: kenBurns 14s ease-out both;
+}
+
+/* phones held upright see a narrow slice of the 16:9 scene: keep the ship and the
+   pink Brumas shore in it rather than the open water at the centre */
+@media (orientation: portrait) {
+  .load-scenes .scene {
+    object-position: 37% 50%;
+  }
 }
 
 .load-scenes .scene.on.ready {
@@ -693,8 +723,8 @@ kbd {
 
 .menu-head {
   position: absolute;
-  left: calc(calc(40px * var(--u)) + var(--safe-l));
-  top: calc(calc(30px * var(--u)) + var(--safe-t));
+  left: var(--ml);
+  top: var(--mt);
   display: flex;
   align-items: center;
   gap: calc(16px * var(--u));
@@ -719,8 +749,8 @@ kbd {
 /* system row, top right: round glass icons with a label that slides out */
 .menu-tools {
   position: absolute;
-  right: calc(calc(32px * var(--u)) + var(--safe-r));
-  top: calc(calc(34px * var(--u)) + var(--safe-t));
+  right: var(--mr);
+  top: var(--mt);
   display: flex;
   gap: calc(10px * var(--u));
   animation: rise 0.9s 0.15s var(--ease) both;
@@ -863,8 +893,8 @@ kbd {
 
 .dock {
   position: absolute;
-  left: calc(calc(40px * var(--u)) + var(--safe-l));
-  bottom: calc(calc(32px * var(--u)) + var(--safe-b));
+  left: var(--ml);
+  bottom: var(--mb);
   width: calc(410px * var(--u));
   display: flex;
   flex-direction: column;
@@ -1408,8 +1438,8 @@ kbd {
   }
 
   .menu-head {
-    left: calc(calc(18px * var(--u)) + var(--safe-l));
-    top: calc(calc(12px * var(--u)) + var(--safe-t));
+    left: var(--ml);
+    top: var(--mt);
     gap: calc(9px * var(--u));
   }
 
@@ -1427,8 +1457,8 @@ kbd {
   }
 
   .menu-tools {
-    right: calc(calc(16px * var(--u)) + var(--safe-r));
-    top: calc(calc(12px * var(--u)) + var(--safe-t));
+    right: var(--mr);
+    top: var(--mt);
     gap: calc(7px * var(--u));
   }
 
@@ -1466,8 +1496,8 @@ kbd {
   /* the ship's card: name, numbers and bars, no box, straight on the sea */
   .ship-detail {
     position: absolute;
-    left: calc(calc(20px * var(--u)) + var(--safe-l));
-    top: calc(calc(88px * var(--u)) + var(--safe-t));
+    left: var(--ml);
+    top: calc(var(--mt) + 76px * var(--u));
     width: calc(250px * var(--u));
     padding: 0;
     text-shadow: 0 1px 12px rgba(0, 10, 18, 0.55);
@@ -1494,8 +1524,8 @@ kbd {
   /* picker, bottom left */
   .ship-tabs {
     position: absolute;
-    left: calc(calc(20px * var(--u)) + var(--safe-l));
-    bottom: calc(calc(14px * var(--u)) + var(--safe-b));
+    left: var(--ml);
+    bottom: var(--mb);
     width: calc(290px * var(--u));
     gap: calc(4px * var(--u));
     padding: calc(5px * var(--u));
@@ -1533,8 +1563,8 @@ kbd {
   /* actions, bottom right: the Shipwright and the Vault, then Set Sail at the end of the row */
   .dock-actions {
     position: absolute;
-    right: calc(calc(16px * var(--u)) + var(--safe-r));
-    bottom: calc(calc(14px * var(--u)) + var(--safe-b));
+    right: var(--mr);
+    bottom: var(--mb);
     display: flex;
     align-items: center;
     gap: calc(8px * var(--u));
@@ -1601,7 +1631,7 @@ kbd {
   .menu-head {
     left: 0;
     right: 0;
-    top: calc(calc(16px * var(--u)) + var(--safe-t));
+    top: var(--mt);
     justify-content: center;
     gap: calc(10px * var(--u));
   }
@@ -1623,7 +1653,7 @@ kbd {
     top: auto;
     right: 0;
     left: 0;
-    bottom: calc(calc(12px * var(--u)) + var(--safe-b));
+    bottom: var(--mb);
     justify-content: center;
     gap: calc(10px * var(--u));
   }
@@ -1648,9 +1678,9 @@ kbd {
   }
 
   .dock {
-    left: calc(calc(12px * var(--u)) + var(--safe-l));
-    right: calc(calc(12px * var(--u)) + var(--safe-r));
-    bottom: calc(calc(64px * var(--u)) + var(--safe-b));
+    left: var(--ml);
+    right: var(--mr);
+    bottom: calc(var(--mb) + 52px * var(--u));
     width: auto;
     max-width: calc(480px * var(--u));
     margin: 0 auto;
@@ -1885,7 +1915,7 @@ kbd {
   align-items: stretch;
   justify-content: flex-start;
   overflow-y: auto;
-  padding: calc(calc(20px * var(--u)) + var(--safe-t)) calc(calc(24px * var(--u)) + var(--safe-r)) calc(calc(20px * var(--u)) + var(--safe-b)) calc(calc(24px * var(--u)) + var(--safe-l));
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
   background: linear-gradient(90deg, rgba(2, 12, 19, 0.9) 0%, rgba(2, 12, 19, 0.66) 42%, rgba(2, 12, 19, 0.3) 100%);
   backdrop-filter: blur(calc(8px * var(--u))) saturate(1.1);
   -webkit-backdrop-filter: blur(calc(8px * var(--u))) saturate(1.1);
@@ -2112,7 +2142,7 @@ kbd {
    without scrolling. .pause-main dissolves so its pieces join the grid. */
 @media (max-height: 560px) and (min-width: 641px) {
   #pause {
-    padding: calc(calc(10px * var(--u)) + var(--safe-t)) calc(calc(16px * var(--u)) + var(--safe-r)) calc(calc(10px * var(--u)) + var(--safe-b)) calc(calc(16px * var(--u)) + var(--safe-l));
+    padding: var(--mt) var(--mr) var(--mb) var(--ml);
   }
 
   .pause-wrap {
@@ -2752,7 +2782,7 @@ button.reset-row:focus-visible .set-go {
   #controls,
   #settings,
   #dead {
-    padding: calc(calc(8px * var(--u)) + var(--safe-t)) calc(calc(12px * var(--u)) + var(--safe-r)) calc(calc(8px * var(--u)) + var(--safe-b)) calc(calc(12px * var(--u)) + var(--safe-l));
+    padding: var(--mt) var(--mr) var(--mb) var(--ml);
   }
 
   .sheet {
@@ -3088,7 +3118,11 @@ body[data-hud='large'] #hud {
 .nav-btns {
   order: 2;
   display: flex;
-  gap: calc(8px * var(--k));
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: calc(6px * var(--k)) calc(8px * var(--k));
+  /* three to a row, centred under the chart */
+  width: calc(3 * max(28px, calc(32px * var(--k))) + 16px * var(--k));
 }
 
 .nav-btns .icon-btn {
@@ -3134,6 +3168,75 @@ body[data-hud='large'] #hud {
 
 .icon-btn:active {
   transform: scale(0.92);
+}
+
+/* the touch zoom button: steps close / mid / far / cinematic, four pips under the glass */
+.zoom-btn {
+  display: none;
+}
+
+.is-touch .zoom-btn {
+  display: flex;
+}
+
+#hud.fpv .zoom-btn {
+  display: none;
+}
+
+.zoom-btn .ti {
+  transform: translateY(-2px);
+}
+
+.zoom-pips {
+  position: absolute;
+  left: 50%;
+  bottom: 13%;
+  display: flex;
+  gap: 2px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.zoom-pips i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  transition: background 0.25s, box-shadow 0.25s, transform 0.25s var(--ease);
+}
+
+.zoom-pips i.on {
+  background: var(--gold);
+  box-shadow: 0 0 4px rgba(244, 213, 138, 0.7);
+}
+
+/* the cinematic view: the last pip burns brightest */
+.zoom-btn[data-view='3'] .zoom-pips i:last-child {
+  transform: scale(1.35);
+}
+
+.zoom-btn::after {
+  content: attr(data-name);
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke);
+  background: rgba(10, 28, 40, 0.86);
+  color: var(--ink);
+  font: 600 11px/1.2 Inter, system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(6px, -50%);
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.3s var(--ease);
+}
+
+.zoom-btn.tag::after {
+  opacity: 1;
+  transform: translate(0, -50%);
 }
 
 .view-btn.on {
@@ -3767,16 +3870,7 @@ body[data-hud='large'] #hud {
   color: var(--ink-3);
 }
 
-.hint {
-  font: 600 8.5px var(--sans);
-  letter-spacing: 0.12em;
-  color: var(--ink-4);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 /* on touch the console is just sails & speed, low and centred between the thumbs */
-.is-touch .hint,
 .is-touch .rack,
 .is-touch .ammo-tag {
   display: none;
@@ -3795,12 +3889,98 @@ body[data-hud='large'] #hud {
   border: 0;
 }
 
+/* touch: the knots sit on top of the sail lever, the number big, the unit a small "kn" */
+.is-touch .bottom {
+  left: var(--ml);
+  transform: none;
+  bottom: calc(var(--mb) + 164px * var(--kt) + 8px);
+  padding: calc(3px * var(--k)) calc(10px * var(--k)) calc(3px * var(--k)) calc(9px * var(--k));
+  background: rgba(6, 20, 30, 0.5);
+  box-shadow: none;
+}
+
+.is-touch .speed b {
+  font-size: max(17px, calc(22px * var(--k)));
+}
+
+.is-touch .speed small {
+  margin-left: 2px;
+  font-size: 0;
+  letter-spacing: 0;
+}
+
+.is-touch .speed small::after {
+  content: 'kn';
+  font: 700 max(8.5px, calc(9.5px * var(--k))) var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.is-touch #hud.ashore .bottom {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: var(--mb);
+}
+
+/* touch: the ship card loses its box: a small name over a slim hull bar,
+   straight on the sea with a soft shade behind for legibility */
+.is-touch .status {
+  width: calc(196px * var(--k));
+}
+
+.is-touch .ship-panel {
+  padding: calc(3px * var(--k)) calc(8px * var(--k)) calc(4px * var(--k)) calc(4px * var(--k));
+  border-color: transparent;
+  border-radius: calc(10px * var(--k));
+  background: linear-gradient(90deg, rgba(4, 16, 24, 0.5), rgba(4, 16, 24, 0.12));
+  box-shadow: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.is-touch .hud-ship {
+  width: calc(22px * var(--k));
+  height: calc(15px * var(--k));
+}
+
+.is-touch .ship-id {
+  gap: calc(5px * var(--k));
+}
+
+/* type and name on one line */
+.is-touch .ship-name {
+  flex-direction: row;
+  align-items: baseline;
+  gap: calc(6px * var(--k));
+}
+
+.is-touch .ship-name span {
+  font-size: max(10px, calc(12px * var(--k)));
+}
+
+.is-touch .ship-name small {
+  flex: none;
+  font-size: max(6.5px, calc(7px * var(--k)));
+}
+
+.is-touch .hull-row {
+  margin-top: calc(3px * var(--k));
+  gap: calc(6px * var(--k));
+}
+
+.is-touch .hull {
+  height: max(3px, calc(4px * var(--k)));
+}
+
+.is-touch .hull-num b {
+  font-size: max(9px, calc(10.5px * var(--k)));
+}
+
+.is-touch .stats-row .chip {
+  height: max(16px, calc(19px * var(--k)));
+  background: rgba(6, 20, 30, 0.45);
+}
+
 @media (orientation: portrait) and (max-width: 600px) {
-  .is-touch .bottom {
-    left: var(--ml);
-    transform: none;
-    bottom: calc(var(--mb) + 6px);
-  }
 
   .status {
     width: calc(216px * var(--k));
@@ -3836,9 +4016,10 @@ body[data-hud='large'] #hud {
   padding: calc(5px * var(--k)) calc(14px * var(--k)) calc(6px * var(--k));
   border-radius: 999px;
   /* no backdrop blur: re-blurring the live 3D view under a sliding card hitches the frame */
-  background: linear-gradient(180deg, rgba(12, 32, 44, 0.92), rgba(6, 20, 30, 0.86));
-  border: 1px solid rgba(244, 199, 101, 0.38);
-  box-shadow: 0 14px 40px rgba(0, 8, 14, 0.35), var(--hi);
+  background: linear-gradient(180deg, rgba(12, 32, 44, 0.7), rgba(6, 20, 30, 0.6));
+  border: 1px solid rgba(244, 199, 101, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 8, 14, 0.22), var(--hi);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
   animation: toastIn 0.55s var(--spring), toastOut 0.6s ease forwards;
   animation-delay: 0s, var(--life, 3.4s);
 }
@@ -4392,7 +4573,7 @@ body[data-hud='large'] #hud {
 
 @media (orientation: portrait) and (max-width: 600px) {
   .sail-lever {
-    bottom: calc(var(--mb) + 6px + 52px * var(--k));
+    bottom: calc(var(--mb) - 6px);
   }
 }
 
@@ -4828,7 +5009,7 @@ body[data-hud='large'] #hud {
 /* ------------------------------------------------------------------ sea chart */
 
 #chart {
-  padding: calc(14px + var(--safe-t)) calc(14px + var(--safe-r)) calc(14px + var(--safe-b)) calc(14px + var(--safe-l));
+  padding: var(--mt) var(--mr) var(--mb) var(--ml);
 }
 
 .chart-frame {
@@ -5046,7 +5227,7 @@ body[data-hud='large'] #hud {
 
 @media (max-width: 640px), (max-height: 520px) {
   #chart {
-    padding: calc(8px + var(--safe-t)) calc(8px + var(--safe-r)) calc(8px + var(--safe-b)) calc(8px + var(--safe-l));
+    padding: var(--mt) var(--mr) var(--mb) var(--ml);
   }
 
   .chart-frame {
@@ -5091,7 +5272,7 @@ body[data-hud='large'] #hud {
 
 #fps {
   position: fixed;
-  top: calc(2px + var(--safe-t));
+  top: 2px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
@@ -5125,13 +5306,13 @@ body[data-hud='large'] #hud {
 /* frame profiler: tap the FPS counter */
 #prof {
   position: fixed;
-  top: calc(24px + var(--safe-t));
+  top: 24px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 49;
   width: min(380px, calc(100vw - 32px));
-  max-height: calc(100vh - 40px - var(--safe-t));
-  max-height: calc(100dvh - 40px - var(--safe-t));
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
   overflow-y: auto;
   overscroll-behavior: contain;
   box-sizing: border-box;
@@ -5485,4 +5666,268 @@ body[data-hud='large'] #hud {
 @media (max-width: 520px) {
   .set-row.has-vol { flex-wrap: wrap; gap: 6px 18px; }
   .set-row.has-vol .vol { flex: 1 1 100%; }
+}
+
+/* ------------------------------------------------------------------ fireworks
+   The sixth slot wears the kind of firework chosen; clicked again (or 6) the
+   locker opens over it: a grid of every kind with how many are aboard. */
+
+.fw-ico {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.slot.fw .fw-ico {
+  width: 96%;
+  height: 96%;
+}
+
+.slot.fw .fw-caret {
+  position: absolute;
+  top: calc(1px * var(--k));
+  right: calc(2px * var(--k));
+  width: calc(9px * var(--k));
+  height: calc(9px * var(--k));
+  border-radius: 3px;
+  background: rgba(4, 16, 24, 0.7);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.slot.fw .fw-caret::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: var(--ac);
+  clip-path: polygon(0 30%, 100% 30%, 50% 85%);
+  transform: rotate(180deg);
+}
+
+.slot.fw.on .fw-caret,
+.slot.fw:hover .fw-caret {
+  opacity: 1;
+}
+
+.chip-a.fw .fw-ico {
+  width: 66%;
+  height: 66%;
+  margin-top: -6%;
+}
+
+.fbtn.ammo .ab .fw-ico {
+  width: 112%;
+  height: 112%;
+}
+
+/* six chips on the quarter arc now */
+.ammo-fan .chip-a {
+  --ang: calc(-90deg - var(--i) * 18deg);
+  --r: calc(156px * var(--kt));
+}
+
+.fw-pick {
+  --fc: #ff8ad8;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  width: min(372px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 10px 10px 8px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(14, 30, 46, 0.95), rgba(5, 14, 24, 0.97));
+  border: 1px solid var(--stroke);
+  box-shadow: 0 18px 44px rgba(0, 6, 12, 0.5), var(--hi);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px) scale(0.98);
+  transform-origin: 50% 100%;
+  transition: opacity 0.18s, transform 0.28s var(--spring), visibility 0s 0.2s;
+  pointer-events: auto;
+  scrollbar-width: none;
+}
+
+.fw-pick.open {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity 0.18s, transform 0.28s var(--spring), visibility 0s;
+}
+
+.fw-pick header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px 8px;
+}
+
+.fw-h,
+.fw-show-h span {
+  font: 700 9.5px var(--sans);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.fw-sel {
+  display: flex;
+  flex-direction: column;
+  min-height: 34px;
+}
+
+.fw-sel b {
+  font: 800 13px var(--sans);
+  color: var(--fc);
+  letter-spacing: 0.02em;
+}
+
+.fw-sel small {
+  font: 500 10.5px/1.35 var(--sans);
+  color: var(--ink-2);
+}
+
+.fw-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.fw-grid.show {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.fw-show-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 4px 6px;
+}
+
+.fw-show-h::before,
+.fw-show-h::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 215, 110, 0.5), transparent);
+}
+
+.fw-show-h span {
+  color: var(--gold-hi, #ffe08a);
+}
+
+.fw-opt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 2px 5px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--fc) 16%, rgba(6, 18, 30, 0.9)), rgba(3, 10, 18, 0.9) 75%);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: transform 0.2s var(--spring), border-color 0.2s, opacity 0.2s;
+  touch-action: manipulation;
+}
+
+.fw-opt .fw-art {
+  width: 38px;
+  height: 38px;
+}
+
+.fw-opt b {
+  font: 700 9.5px var(--sans);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.fw-opt .n {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-width: 15px;
+  padding: 0 3px;
+  border-radius: 99px;
+  background: rgba(4, 16, 24, 0.9);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+  font: 800 9px/1.5 var(--sans);
+  font-style: normal;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.fw-opt:hover:not(.none) {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--fc) 55%, transparent);
+}
+
+.fw-opt.on {
+  color: var(--ink);
+  border-color: transparent;
+  box-shadow: 0 0 0 2px #fff, 0 0 16px color-mix(in srgb, var(--fc) 45%, transparent);
+}
+
+.fw-opt.none {
+  opacity: 0.32;
+  filter: saturate(0.4);
+}
+
+.fw-opt.none .n {
+  color: #ff9d8c;
+}
+
+.fw-opt.deny {
+  animation: deny 0.38s ease;
+}
+
+.fw-grid.show .fw-opt {
+  border-color: rgba(255, 215, 110, 0.4);
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--fc) 22%, rgba(30, 22, 6, 0.9)), rgba(10, 8, 4, 0.92) 75%);
+}
+
+.fw-grid.show .fw-opt .fw-art {
+  width: 46px;
+  height: 46px;
+}
+
+.fw-grid.show .fw-opt:not(.none) .fw-art {
+  animation: fw-shimmer 2.6s ease-in-out infinite;
+}
+
+@keyframes fw-shimmer {
+  50% {
+    filter: drop-shadow(0 0 6px var(--fc)) brightness(1.15);
+  }
+}
+
+.fw-foot {
+  margin: 8px 4px 0;
+  font: 500 10px/1.35 var(--sans);
+  color: var(--ink-4);
+  text-align: center;
+}
+
+@media (max-height: 460px) {
+  .fw-pick header {
+    padding-bottom: 4px;
+  }
+  .fw-sel small,
+  .fw-foot {
+    display: none;
+  }
+  .fw-sel {
+    min-height: 0;
+  }
+  .fw-opt .fw-art {
+    width: 30px;
+    height: 30px;
+  }
+  .fw-grid.show .fw-opt .fw-art {
+    width: 34px;
+    height: 34px;
+  }
 }

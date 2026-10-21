@@ -10,6 +10,8 @@ export interface Settings {
   fps: boolean;
   hud: HudSize;
   shake: ShakePref;
+  /** Peaceful seas: nobody fires first (see game/peace.ts). */
+  peaceful: boolean;
   /** Volume sliders, 0..1. */
   volMaster: number;
   volMusic: number;
@@ -19,7 +21,7 @@ export interface Settings {
 
 const KEY = 'aquati.settings';
 
-const DEFAULTS: Settings = { sound: true, music: true, fps: true, hud: 'standard', shake: 'full', volMaster: 1, volMusic: 0.8, volEffects: 1, volAmbience: 1 };
+const DEFAULTS: Settings = { sound: true, music: true, fps: true, hud: 'standard', shake: 'full', peaceful: false, volMaster: 1, volMusic: 0.8, volEffects: 1, volAmbience: 1 };
 
 export type VolumeKey = 'volMaster' | 'volMusic' | 'volEffects' | 'volAmbience';
 

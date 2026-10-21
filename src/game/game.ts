@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { staticLod } from '../render/staticLod';
+import { viewCull } from '../render/viewCull';
 import { setBowWaveScene } from '../fx/bowWave';
 import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
@@ -13,6 +15,7 @@ import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDrawSliced } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
 import { Particles } from '../fx/particles';
+import { Fireworks } from '../fx/fireworks';
 import { Bubbles } from '../fx/bubbles';
 import { Birds } from '../fx/birds';
 import { ReefLife } from '../fx/fish';
@@ -20,14 +23,17 @@ import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Spirits, SpiritFrom } from '../fx/spirits';
 import { Rain } from '../fx/rain';
+import { Spindrift } from '../fx/spindrift';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
+import type { TerrainLod } from '../world/terrainLod';
 import { Seas } from '../world/seas';
-import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, REGIONS, seaEdge, STREAM_R } from '../world/regions';
+import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, RegionId, regionById, REGIONS, seaEdge, STREAM_R } from '../world/regions';
 import { Dolphins } from '../fx/dolphins';
 import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
+import { Grass, GRASS_PUSHERS } from '../world/grass';
 import { installPassCulling } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { buildShore, setShoreField, setSurf } from '../world/shore';
@@ -42,6 +48,7 @@ import { GHOST_LIVERY, Livery, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from
 import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
+import { readStartSea, SeaCard, SeaPick } from '../ui/seaPick';
 import { loadRecords, type VoyageEvent, type WreckReport } from '../ui/wreck';
 import { SHAKE_SCALE } from '../ui/settings';
 import { GraphicsPanel } from '../ui/graphics';
@@ -78,9 +85,12 @@ import { Projectiles } from './projectiles';
 import { Item, Loot, RARITY } from './loot';
 import { PIN_COLORS, Waypoints } from './waypoints';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
+import { FIREWORKS, FireworkCounts, FireworkId, FireworkLocker, fireworkLoot, FW_ORDER, pyroStock } from './fireworks';
+import { fireworkIcon } from '../ui/fireworkArt';
 import { ShipStatus, World } from './world';
 import { campClearings, digSite, Disc, findCampSites, Ground, Landing } from '../shore/ground';
 import { Camp, Shore, ShoreInput } from '../shore/shore';
+import type { Walker } from '../shore/walker';
 import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
 import { rollTier } from './loot';
 import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarned, KILL_INFAMY, NamedCaptain, REPUTE, wantedLevel } from './bounty';
@@ -90,9 +100,11 @@ import { TreasureMapUI } from '../ui/treasureMap';
 import { EscortAI, EscortRec, FleetStore, holdCargo, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
 import { EscortRow, FleetHud } from '../ui/fleet';
 import { Fort, FORT_RANGE, Forts, FortStore, Gun, HAVEN_R, TRIBUTE_HOUR } from './forts';
-import { BRUMAS_FORT_NAMES, findFortSites, fortClearings } from '../shore/fortKit';
+import { BRUMAS_FORT_KINDS, BRUMAS_FORT_NAMES, findFortSites, fortClearings } from '../shore/fortKit';
 import { shoreMats } from '../shore/kit';
 import { FortHud } from '../ui/fort';
+import { PeaceHud } from '../ui/peace';
+import { FORGET, FORT_RALLY, HUNTER_RALLY, RALLY, setSideOf, sideOf } from './peace';
 import { gunRange } from '../ships/ship';
 import { Coop, CoopGame, Recipe, Role } from '../net/coop';
 import { CrewPanel } from '../ui/crew';
@@ -105,6 +117,7 @@ const _shear = new THREE.Matrix4();
 const SHADOW_TOP = 320;
 const SHADOW_FLOOR = -140;
 import { ShipCollisions } from './collisions';
+import { FootEye } from './footEye';
 
 type State = 'loading' | 'menu' | 'port' | 'playing' | 'paused' | 'docked' | 'dead';
 
@@ -130,10 +143,31 @@ const WRECK_REACH = 520;
 
 const _cineV = new THREE.Vector3();
 const _swayV = new THREE.Vector3();
+/** Who parts the grass this frame (see Grass.setPushers). */
+const _pushers: { x: number; y: number; z: number }[] = [];
 /** Planking torn from a sinking hull. */
 const WRECK_TIMBER = [new THREE.Color(0.42, 0.29, 0.18), new THREE.Color(0.55, 0.4, 0.26), new THREE.Color(0.33, 0.24, 0.16)];
 
 const BOARD_SEEN_KEY = 'aquati.boardSeen';
+/** Walking islands through the captain's eyes ('1', the default) or from above ('0'). */
+const SHORE_EYE_KEY = 'aquati.shoreEye';
+const loadShoreEye = () => {
+  try {
+    return localStorage.getItem(SHORE_EYE_KEY) !== '0';
+  } catch {
+    return true;
+  }
+};
+/** The camera view you last sailed with (zoom 0..1 and the cinematic lean), restored on the next launch. */
+const VIEW_KEY = 'aquati.view';
+const loadView = (): { zoom: number; tilt: number } | null => {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null');
+    return v && Number.isFinite(v.zoom) && Number.isFinite(v.tilt) ? v : null;
+  } catch {
+    return null;
+  }
+};
 /** `?maelstrom` / `?reef` set sail a little way off the first maelstrom / reef (for trying them out). */
 const HAZARD_TEST = typeof location !== 'undefined' ? (/[?&]maelstrom\b/.test(location.search) ? 'maelstrom' : /[?&]reef\b/.test(location.search) ? 'reef' : null) : null;
 /** `?brumas` / `?highseas` set sail off Las Brumas / out on the high seas between the archipelagos (for a look). */
@@ -182,6 +216,8 @@ export class Game {
   private dolphinT = 20;
   private dolphins = new Dolphins();
   private charts = new ChartStore();
+  /** "Where shall we sail?": the archipelago picker after Set Sail. */
+  private seaPick = new SeaPick();
   private ocean!: Ocean;
   private wake!: WakeField;
   private particles!: Particles;
@@ -213,6 +249,8 @@ export class Game {
   private lastFoe: Ship | null = null;
   private player: Ship | null = null;
   private veg?: Vegetation;
+  /** Blades of grass around the eye (none on the lightest devices). */
+  private grass?: Grass;
   private preview: Ship | null = null;
   private state: State = 'loading';
   private discovered = new Set<string>();
@@ -241,6 +279,11 @@ export class Game {
   private gunTipShown = false;
   /** Special shot aboard this voyage, in broadsides' worth (round shot never runs out). */
   private ammoStock: AmmoStock = freshStock();
+  /** Fireworks: the locker (it follows the captain from voyage to voyage) and the kind loaded. */
+  private fwLocker = new FireworkLocker();
+  private fwType: FireworkId = 'peony';
+  private fireworks!: Fireworks;
+  private fwTipShown = false;
   private smokeT = 0;
   private spawnPoint = new THREE.Vector3(40, 0, 210);
   private dpr = 1;
@@ -257,6 +300,9 @@ export class Game {
   private skyEnv: SkyEnvironment;
   private envT = 0;
   private rain!: Rain;
+  private spindrift!: Spindrift;
+  /** The last lightning strike: xz, reach of its light (m), its strength. */
+  private strikeAt = new THREE.Vector4();
   private clouds!: LowClouds;
   private lightning!: Lightning;
   private baseWaves: Wave[] = [];
@@ -264,7 +310,6 @@ export class Game {
   private swellAngle = 0;
   private baseAngle = 0;
   private cloudOff = new THREE.Vector2();
-  private sprayT = 0;
   private crew!: CrewSystem;
   private settings: Settings;
   private softShadows = false;
@@ -336,7 +381,18 @@ export class Game {
   private landT = 0;
   /** The zoom you had at sea, given back when you row out again. */
   private seaZoom = 0.42;
-  private shoreIn: ShoreInput = { mx: 0, mz: 0, run: false, strike: false, pistol: false, interact: false, aim: null };
+  private shoreIn: ShoreInput = { mx: 0, mz: 0, run: false, strike: false, pistol: false, interact: false, aim: null, face: null, jump: false };
+  /** Ashore, the captain's own eyes: the look, the gait in the head, the kicks. */
+  private footEye = new FootEye();
+  /** Walking islands through the captain's eyes (V switches to the bird's-eye view; remembered). */
+  private shoreEyePref = loadShoreEye();
+  /** A beat after a landing before the camera drops into the captain's eyes. */
+  private eyeWait = 0;
+  /** Swooping up out of the captain's eyes before the boat pushes off. */
+  private shoreLeaving = false;
+  private eyeLook = { x: 0, y: 0 };
+  private eyeAim = { x: 0, z: 0 };
+  private lastLockT = -9;
   private shoreFocus = new THREE.Vector3();
   private shoreVel = new THREE.Vector3();
   private partyRows: PartyRow[] = [];
@@ -432,6 +488,18 @@ export class Game {
   // sailing together: other captains' ships in this sea (see net/coop.ts)
   private coop = new Coop(this.coopBridge());
   private crewUi!: CrewPanel;
+  // peaceful seas: nobody fires first (see game/peace.ts)
+  /** The host's rule while we sail in their sea (null: our own setting). */
+  private roomPeace: boolean | null = null;
+  private peaceHud = new PeaceHud(document.querySelector<HTMLElement>('#hud .map-wrap')!);
+  /** When each ship last called out that you'd provoked her. */
+  private provokedAt = new WeakMap<Ship, number>();
+  private provokeToastT = -100;
+  /** How many ships and forts were at war with you last frame (for "tempers cool"). */
+  private warN = 0;
+  /** How many of the gunnery's marks this frame are the Kraken's (the rest are forts'). */
+  private krMarkN = 0;
+  private calmMarks: SeaMark[] = [];
   /** This frame's ships the pirates may hunt besides you: your escorts and the other captains'. */
   private hunt: Ship[] = [];
   /** Captains at sea the pirates gather round (you and your crewmates). */
@@ -581,10 +649,11 @@ export class Game {
       ui.progress(p, ms);
       return nextFrame();
     };
-    await mark(0.12, 700);
+    await mark(0.08, 700);
     // the Fortunate Isles you sail from, and Las Brumas far out across the high seas
     const [homeR, mistR] = REGIONS;
     const home = new Terrain(homeR.seed);
+    await mark(0.13, 500);
     const mist = new Terrain(mistR.seed, { ox: mistR.x, oz: mistR.z, style: 'brumas' });
     this.terrain = new Seas([home, mist]);
     await mark(0.18, 300);
@@ -599,7 +668,7 @@ export class Game {
     // (and out of gunshot of the harbour mouth, so no voyage opens under a fort's guns); two more hold the mist
     const fortSites = [
       ...findFortSites(home, [...towns, { x: this.spawnPoint.x, z: this.spawnPoint.z, r: 380 }], [site.island], 3),
-      ...findFortSites(mist, towns, [], 2, BRUMAS_FORT_NAMES),
+      ...findFortSites(mist, towns, [], 2, BRUMAS_FORT_NAMES, BRUMAS_FORT_KINDS),
     ];
     const fortGround = fortSites.flatMap(fortClearings);
     // maelstroms in deep water, well clear of every harbour mouth, fort and the
@@ -618,8 +687,8 @@ export class Game {
     const camps = [...findCampSites(home, [...towns, ...fortGround], site.island), ...findCampSites(mist, [...towns, ...fortGround], null)];
     this.digAvoid = [...towns, ...campClearings(camps), ...fortGround];
     const veg = (this.veg = new Vegetation(this.terrain, q.vegetation, [...towns, ...campClearings(camps), ...fortGround], q.tier === 0));
-    await mark(0.31, 700);
     for (const t of [home, mist]) {
+      await mark(t === home ? 0.28 : 0.33, 700);
       const land = t.buildMeshes(q.terrainLod, q.tier === 0);
       // the seabeds reach out under the high seas to meet, so they're always drawn
       const bed = land.getObjectByName('seabed')!;
@@ -630,18 +699,25 @@ export class Game {
     }
     // the far archipelago's land goes up to the GPU during the loading screen, not as it comes over the horizon
     this.preload.add(this.regions[1].land);
+    await mark(0.36, 400);
     // the plants never move once placed (culling only repacks their instances)
     const plants = veg.build();
     this.opaque.add(plants);
     freezeStatic(plants);
-    await mark(0.37, 900);
+    if (q.tier > 0) {
+      this.grass = new Grass([home, mist], [...towns, ...campClearings(camps), ...fortGround], q.tier === 1 ? 0.8 : 1);
+      this.opaque.add(this.grass.group);
+      freezeStatic(this.grass.group);
+    }
+    await mark(0.4, 900);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);
     skipWhenHidden(this.port.root);
-    await mark(0.45, 1200);
-    this.tradePorts = new TradePorts(tradeSites, (x, z) => this.terrain.heightAt(x, z));
+    // one town a frame, each nudging the bar along
+    let town = 0;
+    this.tradePorts = await TradePorts.build(tradeSites, (x, z) => this.terrain.heightAt(x, z), () => mark(0.41 + (0.1 * ++town) / tradeSites.length, 400));
     this.opaque.add(this.tradePorts.root);
     for (const tp of this.tradePorts.ports) {
       tp.onBell = () => this.audio.bell(2, tp === this.dockPort ? 0.22 : 0.08);
@@ -659,7 +735,7 @@ export class Game {
     this.opaque.add(this.dolphins.mesh);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
-    await mark(0.53, 900);
+    await mark(0.54, 900);
 
     const windAngle = this.atmos.windAngle;
     const waves = buildWaves(windAngle, 1);
@@ -672,6 +748,8 @@ export class Game {
     for (const r of this.regions) for (const tex of [r.seabed, r.surf]) this.renderer.initTexture(tex);
     this.particles = new Particles(q.particles);
     this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
+    // built now (and drawn by the warm-up) so the first rocket compiles nothing
+    this.fireworks = new Fireworks(q.particles, this.particles);
     this.bubbles = new Bubbles(this.particles.uniforms);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.waypoints.buildFx(this.particles.uniforms, globalUniforms.uTime, globalUniforms.uLight);
@@ -690,12 +768,18 @@ export class Game {
       this.audio.explosion(vol * 0.18, pan, 160);
     };
     this.ocean.placeVortices(this.hazards.maelstroms.map((m) => ({ x: m.x, z: m.z, r: m.r0 })));
-    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.bubbles.mesh, this.loot.fx, this.waypoints.fx);
+    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.fireworks.mesh, this.bubbles.mesh, this.loot.fx, this.waypoints.fx);
     // the sea from beneath: hidden until the farewell follows a wreck under (the warm-up still draws it)
     this.opaque.add(this.ocean.underside);
     this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
     this.world = new World(this.terrain, waves, this.particles, this.wake, this.audio, windAngle);
     this.world.debris = this.debris;
+    this.world.fireworks = this.fireworks;
+    this.fireworks.onSound = (kind, at, power) => {
+      const [vol, pan, d] = this.world.soundAt(at);
+      // a burst high overhead is still as far off as its height
+      this.audio.firework(kind, Math.min(1.2, vol * power), pan, Math.hypot(d, at.y * 0.8));
+    };
     this.world.onShot = (s) => this.projectiles.add(s);
     this.world.onShake = (a) => this.rig.shake(a);
     this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
@@ -731,9 +815,11 @@ export class Game {
     this.world.gustAt = (x, z) => this.windField.at(x, z);
     this.wisps = new WindWisps(this.windField, q.tier === 0 ? 12 : 22, (x, z) => this.terrain.heightAt(x, z));
     this.water.add(this.wisps.mesh);
-    this.rain = new Rain([2400, 4800, 7200][q.tier]);
+    const waveU = this.ocean.material.uniforms as unknown as { uWaveA: THREE.IUniform; uWaveB: THREE.IUniform };
+    this.rain = new Rain([2400, 4800, 7200][q.tier], waveU);
+    this.spindrift = new Spindrift([140, 260, 400][q.tier], waveU);
     this.lightning = new Lightning();
-    this.water.add(this.rain.mesh, this.lightning.mesh);
+    this.water.add(this.rain.mesh, this.spindrift.mesh, this.lightning.mesh);
     this.clouds = new LowClouds(this.terrain.islands, q.tier);
     this.cumulus.budget = q.tier === 0 ? 1600 : 4200;
     this.water.add(this.clouds.mesh);
@@ -760,12 +846,15 @@ export class Game {
       },
       shake: (a) => this.rig.shake(a),
       alarm: (c) => {
+        const calm = this.world.peaceful;
+        // a garrison at arms is its fort at war with you (on peaceful seas, this is the quarrel)
+        const f = c.fort ? this.forts.forts.find((o) => o.garrison === c) : undefined;
+        if (f) this.forts.rile(f, this.coop.me, this.world.time);
         if (!this.shore.active) return;
         if (c.fort) {
-          const f = this.forts.forts.find((o) => o.garrison === c);
-          this.ui.toast('The garrison sallies!', `Soldiers pour out of the gate of ${f?.name ?? 'the fort'}`, 3.2);
+          this.ui.toast('The garrison sallies!', calm ? `You drew first: soldiers pour out of the gate of ${f?.name ?? 'the fort'}` : `Soldiers pour out of the gate of ${f?.name ?? 'the fort'}`, 3.2);
           this.audio.wanted(3);
-        } else this.ui.toast('To arms!', 'Cutthroats come running from their camp', 2.8);
+        } else this.ui.toast('To arms!', calm ? 'You drew first: the whole camp comes for you' : 'Cutthroats come running from their camp', 2.8);
       },
       routed: (c) => this.onCampRouted(c),
       plunder: (c) => this.plunderCamp(c),
@@ -781,9 +870,21 @@ export class Game {
         this.audio.footstep(1);
         if (cap) this.rig.shake(0.1);
       },
+      hop: (up, k, wet, deck) => {
+        const cap = this.shore.captain;
+        const hard = deck || (cap && this.ground.lifted(cap.x, cap.z) !== null);
+        this.audio.hop(up, k, wet, !!hard);
+        if (!up && k > 0.5) this.rig.shake(0.04 * k);
+      },
       step: (k, wet, deck) => (deck || this.ground.lifted(this.shore.captain?.x ?? 0, this.shore.captain?.z ?? 0) !== null ? this.audio.footstep(k) : this.audio.sandStep(k, wet)),
     }, this.forts.garrisons());
     this.opaque.add(this.shore.group);
+    // peaceful seas: a camp keeps its blades sheathed unless you strike first (a garrison, unless its fort is at war with you)
+    this.shore.calm = (c) => {
+      if (!this.world.peaceful) return false;
+      const f = c.fort ? this.forts.forts.find((o) => o.garrison === c) : undefined;
+      return !f || !f.grudge.holds(this.coop.me, this.world.time);
+    };
     // each fort's garrison is a camp ashore: they're appended after the cutthroats' camps
     const g0 = this.shore.camps.length - this.forts.forts.length;
     this.forts.forts.forEach((f, i) => (f.garrison = this.shore.camps[g0 + i]));
@@ -814,7 +915,7 @@ export class Game {
       else this.goAshore();
     };
     this.shoreHud.onPrize = (k) => this.choosePrize(k);
-    this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol);
+    this.input.bindShoreButtons(this.shoreHud.strike, this.shoreHud.pistol, this.shoreHud.jump);
     this.mapUi.onOpen = () => this.setMapView(true);
     this.mapUi.onClose = () => this.setMapView(false);
     this.mapUi.onCoin = () => this.audio.coin(0, 0.22);
@@ -833,11 +934,13 @@ export class Game {
     this.opaque.add(this.kraken.view.group);
     this.water.add(this.kraken.view.fx);
     this.wireKraken();
-    await mark(0.72, 1200);
+    await mark(0.72, 500);
 
     this.applySettings(this.settings.value);
     this.resize();
+    await mark(0.75, 900);
     this.enterMenu();
+    await mark(0.77, 400);
     // warm up before the first visible frame: compile every shader, upload every
     // ship texture, then draw the whole world once for real (see render/warmup)
     this.rig.update(0.016, this.spawnPoint, new THREE.Vector3(), 0);
@@ -854,7 +957,7 @@ export class Game {
     for (let i = 0; i < paints.length; i++) {
       const [id, liv] = paints[i];
       for (const t of ShipModel.textures(SHIP_CLASSES[id], liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
-      await mark(0.74 + (0.06 * (i + 1)) / paints.length, 250);
+      await mark(0.78 + (0.04 * (i + 1)) / paints.length, 250);
     }
     // KHR_parallel_shader_compile: every program compiles on the driver's own threads while we wait
     await this.renderer.compileAsync(this.opaque, this.rig.camera);
@@ -901,9 +1004,11 @@ export class Game {
     await mark(1, 250);
     ui.hideLoading();
     this.last = performance.now();
-    this.renderer.setAnimationLoop(() => this.frame());
+    this.renderer.setAnimationLoop((t) => this.frame(t));
     // sign-in loads once the harbour is up, off the critical path
     setTimeout(() => this.cloudSave.start(), 900);
+    // the picker's painted charts, made while the captain admires the ship
+    setTimeout(() => this.seaPick.prepare(this.seaCards(), (x, z) => this.terrain.heightAt(x, z)), 2200);
     // came by an invite link: the crew card opens, one tap from aboard
     const join = new URLSearchParams(location.search).get('join');
     if (join) {
@@ -921,6 +1026,7 @@ export class Game {
     if (parts.has('bounty')) this.bounty.reload();
     if (parts.has('fleet')) this.fleet.reload();
     if (parts.has('charts')) this.charts.reload();
+    if (parts.has('fireworks')) this.fwLocker.reload();
     if (parts.has('forts')) {
       this.fortStore.reload();
       // a fort taken on another device changes hands here too (between voyages)
@@ -964,10 +1070,20 @@ export class Game {
       this.audio.click();
     };
     ui.onSelect = (id) => this.setPreview(id);
-    ui.onSail = () => this.startVoyage();
+    ui.onSail = () => this.chooseSea();
+    this.seaPick.onClick = () => ui.onClick();
     ui.onAmmo = (id) => this.selectAmmo(id);
+    ui.onFirework = (id) => this.chooseFirework(id);
+    ui.fwCount = (id) => this.fwLocker.count(id);
+    this.fwLocker.subscribe(() => ui.refreshFwPicker());
     ui.onResume = () => this.setPaused(false);
     ui.onPause = () => this.setPaused(true);
+    ui.onZoomView = () => {
+      const i = (this.rig.view + 1) % CameraRig.VIEWS.length;
+      const v = CameraRig.VIEWS[i];
+      this.rig.setView(v.zoom, v.tilt);
+      this.ui.setZoomView(i, v.name, true);
+    };
     ui.onMap = (on) => this.setChart(on);
     ui.onPin = (x, z, pick) => this.tapPin(x, z, pick);
     ui.onClearPins = () => {
@@ -1002,7 +1118,11 @@ export class Game {
       this.audio.setMusicEnabled(st.music);
       this.audio.setVolumes({ master: st.volMaster, music: st.volMusic, effects: st.volEffects, ambience: st.volAmbience });
       this.rig.shakeScale = SHAKE_SCALE[st.shake];
+      this.applyPeace();
     };
+    // peaceful seas: a blow from our side is how every quarrel starts, and a grudge is held against a captain's whole side
+    Ship.onStruck = (s, by) => this.quarrel(s, by);
+    setSideOf((s) => this.coop.ownerOf(s));
     this.audio.setMuted(!ui.settings.sound);
     ui.onSettings(ui.settings);
     const openBoard = () => {
@@ -1122,14 +1242,16 @@ export class Game {
       },
       atSea: () => this.state !== 'menu' && this.state !== 'port' && this.state !== 'loading',
       suggest: () => this.cloudSave.user?.name.split(/\s+/)[0] || this.look.name.trim() || 'Captain',
+      peaceful: () => this.world.peaceful,
     });
     this.cloudSave.onApplied = (parts) => this.applyCloud(parts);
     this.cloudSave.onAdmin = () => {
       const parts = this.partStore.grantAll();
-      if (!this.vaultStore.grantAll(ADMIN_GOLD) && !parts) return;
+      const rockets = this.fwLocker.fill();
+      if (!this.vaultStore.grantAll(ADMIN_GOLD) && !parts && !rockets) return;
       this.applyCosmetics();
       this.shipwright.refresh();
-      this.ui.toast('Admiral of the fleet', 'A billion gold, every treasure and every ship part are yours', 6);
+      this.ui.toast('Admiral of the fleet', 'A billion gold, every treasure, every ship part and a locker full of fireworks are yours', 6);
     };
     sw.setVault(this.vaultStore);
     sw.setParts(this.partStore);
@@ -1573,6 +1695,7 @@ export class Game {
     m.onHire = (id) => this.hire(id);
     m.onPayOff = (id) => this.payOff(id);
     m.onShot = () => this.buyShot();
+    m.onBuyFirework = (id) => this.buyFirework(id);
     m.onLeave = () => this.castOff();
     // the hold chip opens a peek at what's aboard
     const chip = document.getElementById('hud-hold-chip')!;
@@ -1674,7 +1797,7 @@ export class Game {
       return false;
     }
     const hunted = this.huntedNear(p);
-    const beast = this.kraken.fighting;
+    const beast = this.kraken.fighting && !this.kraken.docile;
     const chased = !!this.lastFoe || hunted || beast;
     const n = this.holds().reduce((c, h) => c + h.hold.count, 0);
     const why = beast ? 'No harbour opens to a ship the Kraken hunts' : hunted && !this.lastFoe ? 'A hunter is on your tail: no harbour will let you in' : chased ? 'Shake off your pursuers to dock' : n ? `Sell ${n} ${n === 1 ? 'good' : 'goods'} · repairs · shot` : 'Repairs and fresh shot';
@@ -1685,7 +1808,8 @@ export class Game {
 
   /** A named hunter closing in: she won't wait politely outside a harbour or off a beach. */
   private huntedNear(p: Ship) {
-    for (const s of this.hunters.keys()) if (s.alive && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) < 380) return true;
+    // (on peaceful seas, only one you've given cause)
+    for (const s of this.hunters.keys()) if (s.alive && !s.calm && Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z) < 380) return true;
     return false;
   }
 
@@ -1709,7 +1833,8 @@ export class Game {
     const camp = this.shore.camps.find((c) => c.site.island === L.island && !c.routed && !c.fort);
     const fort = this.forts.forts.find((f) => f.site.island === L.island && f.owner === 'brethren');
     // no boat lives long under a fort's guns: silence them, or land out of their reach
-    const guns = this.forts.covering(L.x, L.z) ?? this.forts.covering(p.pos.x, p.pos.z);
+    const calm = this.world.peaceful ? { side: this.coop.me, now: this.world.time } : null;
+    const guns = this.forts.covering(L.x, L.z, calm) ?? this.forts.covering(p.pos.x, p.pos.z, calm);
     const blocked = chased || !!guns;
     const sub = beast
       ? 'Not with the Kraken in these waters'
@@ -1722,7 +1847,7 @@ export class Game {
       : fort
       ? `${fort.name} holds this isle: storm its gate`
       : camp
-      ? 'Cutthroats are camped on this isle: bring blades'
+      ? this.world.peaceful ? 'Cutthroats are camped on this isle: they won\'t draw first' : 'Cutthroats are camped on this isle: bring blades'
       : 'The captain and four hands row in';
     this.shoreHud.setPrompt({ key: 'land', title: `Go ashore on ${L.island.name}`, sub, ok: !blocked });
     if (!blocked && this.input.state.helm) this.goAshore();
@@ -1733,7 +1858,8 @@ export class Game {
     const p = this.player;
     const L = this.landing;
     if (!p || !L || !p.alive || this.state !== 'playing' || this.swBusy || this.lastFoe || this.kraken.active || this.shore.active || this.wreck.t >= 0) return;
-    if (this.forts.covering(L.x, L.z) || this.forts.covering(p.pos.x, p.pos.z)) return;
+    const calm = this.world.peaceful ? { side: this.coop.me, now: this.world.time } : null;
+    if (this.forts.covering(L.x, L.z, calm) || this.forts.covering(p.pos.x, p.pos.z, calm)) return;
     this.setChart(false);
     this.setView(false);
     this.input.releaseLook();
@@ -1759,13 +1885,25 @@ export class Game {
       this.rig.snapFoot();
       const cap = this.shore.captain!;
       this.rig.snapTo(this.shoreFocus.set(cap.x, cap.y + 1, cap.z));
+      // the veil lifts on the party at the waterline, seen from behind the captain,
+      // then the camera drops into their eyes
+      this.footEye.begin(cap);
+      this.rig.footAz = this.shoreEyePref ? cap.yaw + Math.PI : 0;
+      this.rig.snapFoot();
+      this.eyeWait = 0.5;
+      this.shoreLeaving = false;
       this.input.enabled = true;
       this.note('isle', `Went ashore on ${L.island.name}`);
       this.audio.splash(0.35, 0, 20);
       this.ui.toast('Ashore', `${L.island.name}: your hands follow your lead`, 3.2);
       if (!this.shoreTipShown) {
         this.shoreTipShown = true;
-        const how = this.input.isTouch ? 'Tap Strike to swing, chain three for a lunge · Pistol fires once, then reloads' : 'Space or click swings, chain three for a lunge · Q fires your pistol · Shift runs';
+        const eye = this.shoreEyePref;
+        const how = this.input.isTouch
+          ? `${eye ? 'Drag on the right to look · ' : ''}Tap Strike to swing, chain three for a lunge · Pistol fires once, then reloads · Jump to hop`
+          : eye
+            ? 'Click to grab the mouse and look around · Click swings, chain three for a lunge · Right-click fires your pistol · Space jumps · V for the bird\'s-eye view'
+            : 'Click swings, chain three for a lunge · Q fires your pistol · Space jumps · Shift runs';
         setTimeout(() => {
           if (this.shore.active) this.ui.toast('Cutlass and pistol', how, 6);
         }, 3800);
@@ -1777,18 +1915,27 @@ export class Game {
   /** Back into the boat and out to the ship, which weighs anchor. */
   private returnToShip(why = '') {
     const p = this.player;
-    if (!p || !this.shore.active || this.swBusy) return;
+    if (!p || !this.shore.active || this.swBusy || this.shoreLeaving) return;
     this.input.enabled = false;
+    this.input.releaseLook();
     this.setChart(false);
-    this.veil.innerHTML = `<span>${why || `Rowing back to the ${p.name}…`}</span>`;
-    void this.fade(() => {
-      this.leaveShore();
-      p.anchored = false;
-      p.sailTarget = 1 / 3;
-      this.input.enabled = this.state === 'playing';
-      this.rig.snapTo(p.pos);
-      this.last = performance.now();
-    });
+    const row = () => {
+      if (!this.shore.active) return;
+      this.veil.innerHTML = `<span>${why || `Rowing back to the ${p.name}…`}</span>`;
+      void this.fade(() => {
+        this.leaveShore();
+        p.anchored = false;
+        p.sailTarget = 1 / 3;
+        this.input.enabled = this.state === 'playing';
+        this.rig.snapTo(p.pos);
+        this.last = performance.now();
+      });
+    };
+    // up out of the captain's eyes over the beach first, then the veil
+    if (this.rig.eyeBlend > 0.05) {
+      this.shoreLeaving = true;
+      setTimeout(row, 720);
+    } else row();
   }
 
   /** Everyone aboard: the HUD, controls and camera go back to sailing. */
@@ -1800,10 +1947,33 @@ export class Game {
     this.shoreHud.showPrize(null);
     this.shoreHud.show(false);
     this.input.foot = false;
+    this.input.eye = false;
+    this.input.releaseLook();
+    this.shoreLeaving = false;
+    this.shore.eyes = false;
+    this.shoreHud.setEye(false, false, false);
+    this.ui.setFpv(false);
+    if (!this.fpv) this.rig.resetEye();
     this.rig.foot = false;
     this.rig.deck = false;
+    this.rig.footAz = 0;
     this.rig.snapFoot();
     this.rig.zoom = this.seaZoom;
+  }
+
+  /** Ashore: through the captain's eyes, or the bird's-eye view over their shoulder (V). */
+  private setShoreEye(on: boolean) {
+    if (on === this.shoreEyePref) return;
+    this.shoreEyePref = on;
+    try {
+      localStorage.setItem(SHORE_EYE_KEY, on ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+    const cap = this.shore.captain;
+    if (on && cap) this.footEye.begin(cap);
+    if (!on) this.input.releaseLook();
+    this.eyeWait = 0;
   }
 
   /** F or a tap ashore: row back, or open a chest (on a boarded deck: fall back aboard, or take the prize). */
@@ -1828,6 +1998,7 @@ export class Game {
     const p = this.player;
     if (!p) return;
     const L = c.layout.chest;
+    this.footEye.glance(L, 1.1, 4, true);
     const at = new THREE.Vector3(L.x, L.y + 1.2, L.z);
     const fort = !!c.fort;
     // a fort's pay chest holds a garrison's wages, not a cutthroat's pickings
@@ -1877,6 +2048,7 @@ export class Game {
         if (ok) this.ui.floater(`${Math.round(dmg)}`, x, y);
       },
       silenced: (f, g, last) => this.gunSilenced(f, g, last),
+      riled: (f, side, by) => this.fortRiled(f, side, by),
     };
   }
 
@@ -1947,6 +2119,10 @@ export class Game {
         const near = Math.hypot(f.site.x - p.pos.x, f.site.z - p.pos.z) < FORT_RANGE + 30;
         hint = near ? (this.gunnery.combat ? 'Silence its guns' : 'Close in: its walls stand high') : 'Silence its guns';
         hot = near && f.alert;
+        if (this.world.peaceful && !f.grudge.holds(this.coop.me, this.world.time)) {
+          hint = 'Holding its fire · fire first and it answers';
+          hot = false;
+        }
       } else if (ashore) {
         hint = f.garrison?.alert ? 'Beat the garrison' : 'Storm the gate';
         hot = true;
@@ -1954,7 +2130,7 @@ export class Game {
         hint = 'Guns silent · land and storm the fort';
         hot = true;
       }
-      this.fortHud.set({ name: f.name, ours, guns, garrison: ours ? -1 : gar, hint, hot });
+      this.fortHud.set({ name: f.name, kind: f.style.kind, ours, guns, garrison: ours ? -1 : gar, hint, hot });
     }
     // tribute: the garrison rows it out as you pass
     this.tributeT -= dt;
@@ -2082,6 +2258,7 @@ export class Game {
   private onUnearthed(at: THREE.Vector3) {
     const p = this.player;
     if (!p) return;
+    this.footEye.glance(at, 1.6, 3, true);
     const gold = 450 + Math.round(Math.random() * 450);
     p.gold += gold;
     this.vaultStore.earn(gold);
@@ -2239,7 +2416,7 @@ export class Game {
     this.ui.toast('Over the side!', named ? `Cut down ${named.epithet} and her crew will strike` : 'Cut down her captain and her crew will strike', 3.2);
     if (!this.boardTipShown) {
       this.boardTipShown = true;
-      const how = this.input.isTouch ? 'Strike to swing, Pistol to fire · back to your own rail to fall back' : 'Space or click swings · Q fires your pistol · F at your own rail falls back';
+      const how = this.input.isTouch ? 'Strike to swing, Pistol to fire · back to your own rail to fall back' : 'Click swings · Q fires your pistol · Space jumps · F at your own rail falls back';
       setTimeout(() => {
         if (this.shore.deck) this.ui.toast('Fight for her deck', how, 5.5);
       }, 3600);
@@ -2569,10 +2746,16 @@ export class Game {
     foes.length = es.length = 0;
     // the ship your boarders are fighting on is nobody's target
     const lashed = this.boarding.prize;
+    const w = this.world;
+    // peaceful seas: who holds her fire against us (her own captain's word, or her owner's for another game's pirate)
+    const bit = 1 << this.coop.me;
     for (const s of this.ships) {
+      if (s.team === 'pirate') s.calm = w.peaceful && !s.prize && !(s.wrath & bit);
       if (!s.alive || s.removed || s === lashed) continue;
-      if (s.team === 'pirate' && !s.prize) foes.push(s);
-      else if (this.escorts.has(s)) es.push(s);
+      // and your escorts never fire first either
+      if (s.team === 'pirate' && !s.prize) {
+        if (!s.calm) foes.push(s);
+      } else if (this.escorts.has(s)) es.push(s);
     }
     if (!this.escorts.size || dt <= 0) return;
     if (this.state !== 'playing' && this.state !== 'dead') return;
@@ -2581,8 +2764,15 @@ export class Game {
     if (this.markedFoe && (!this.markedFoe.alive || this.markedFoe.removed || this.markedFoe.team !== 'pirate')) this.markedFoe = null;
     const marks = this.seaMarks;
     marks.length = 0;
-    for (let i = 0; i < this.gunnery.nMarks; i++) marks.push(this.gunnery.marks[i]);
-    const w = this.world;
+    if (!w.peaceful) for (let i = 0; i < this.gunnery.nMarks; i++) marks.push(this.gunnery.marks[i]);
+    else {
+      // peaceful seas: only a Kraken that's been woken, and forts already at war with you
+      if (!this.kraken.docile) for (let i = 0; i < this.krMarkN; i++) marks.push(this.gunnery.marks[i]);
+      if (flag && !this.shore.active) {
+        const n = this.forts.marks(this.calmMarks, 0, flag, gunRange(flag.muzzleSpeed), { now: w.time, riledOnly: true });
+        for (let i = 0; i < n; i++) marks.push(this.calmMarks[i]);
+      }
+    }
     for (const [s, ai] of this.escorts) {
       ai.update(dt, w, flag, foes, this.markedFoe, this.ships, marks);
       // a quiet spell lets her carpenters get to work (more slowly than the flagship's)
@@ -2748,23 +2938,38 @@ export class Game {
     return { x: r.origin.x + r.direction.x * t, z: r.origin.z + r.direction.z * t };
   }
 
-  /** Ashore: up the screen is north, the cutlass on Space or a click, the pistol on Q / E, F acts. */
+  /** Ashore: up the screen is north, Space jumps, the cutlass on a click, the pistol on Q / E, F acts. */
   private controlShore() {
     const st = this.input.state;
     const si = this.shoreIn;
-    // screen-up walks the way the camera looks (north ashore; across her deck when boarding)
-    const az = this.rig.azimuth;
-    const ca = Math.cos(az);
-    const sa = Math.sin(az);
-    si.mx = st.walkX * ca - st.walkY * sa;
-    si.mz = -st.walkX * sa - st.walkY * ca;
+    const cap = this.shore.captain;
     si.run = st.run;
     si.strike = st.fireAuto || st.fireAim;
     si.pistol = st.firePort || st.fireStarboard;
-    si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
+    si.jump = st.jump;
+    if (this.input.eye && cap) {
+      // through their eyes: walk where you look, cut and shoot at whatever's under the sight
+      const fe = this.footEye;
+      fe.look(st.lookX, st.lookY);
+      this.eyeLook.x += st.lookX;
+      this.eyeLook.y += st.lookY;
+      fe.walk(st.walkX, st.walkY, si);
+      si.face = fe.yaw;
+      si.aim = si.strike || si.pistol ? fe.ahead(cap, si.pistol ? 12 : 2.4, this.eyeAim) : null;
+    } else {
+      // screen-up walks the way the camera looks (north ashore; across her deck when boarding)
+      const az = this.rig.azimuth;
+      const ca = Math.cos(az);
+      const sa = Math.sin(az);
+      si.mx = st.walkX * ca - st.walkY * sa;
+      si.mz = -st.walkX * sa - st.walkY * ca;
+      si.face = null;
+      si.aim = st.fireAim || (si.pistol && !this.input.isTouch) ? this.groundPick() : null;
+    }
     if (this.prizeOpen && st.ammoPick >= 0 && st.ammoPick <= 2) this.choosePrize((['prize', 'scuttle', 'fleet'] as const)[st.ammoPick]);
     else if (st.helm) this.shoreAct();
-    if (st.zoom) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.zoom && !this.input.eye) this.rig.zoomBy(st.zoom, performance.now() / 1000);
+    if (st.view && !this.shore.deck && !this.shoreLeaving) this.setShoreEye(!this.shoreEyePref);
     if (st.fleet) this.cycleOrder();
     if (st.pause) {
       if (this.mapUi.isOpen) this.setMapView(false);
@@ -2841,6 +3046,32 @@ export class Game {
   private refreshServices() {
     this.market.setServices(this.serviceCosts());
     this.market.setGold(this.player?.gold ?? 0);
+    this.refreshPyro();
+  }
+
+  /** The pyrotechnist's stall: today's rockets, what's in your locker and what the purse stretches to. */
+  private refreshPyro() {
+    const port = this.dockPort;
+    if (!port) return;
+    const k = this.tradePorts.ports.indexOf(port);
+    const day = Math.floor(Date.now() / 86400000);
+    const offers = pyroStock(k + 1, day).map((id) => ({ id, price: FIREWORKS[id].price, owned: this.fwLocker.count(id), room: this.fwLocker.room(id) }));
+    this.market.setPyro(offers, this.player?.gold ?? 0);
+  }
+
+  private buyFirework(id: FireworkId) {
+    const p = this.player;
+    const port = this.dockPort;
+    if (!p || !port || this.state !== 'docked') return;
+    const f = FIREWORKS[id];
+    if (f.price > p.gold || this.fwLocker.room(id) <= 0) return;
+    p.gold -= f.price;
+    this.stockFireworks({ [id]: 1 }, null);
+    port.unload(['calico'] as LootId[], true);
+    port.cheer(f.tier === 2 ? 2 : 0.5);
+    this.audio.purchase('shot');
+    this.refreshServices();
+    if (f.tier === 2) this.note('trade', `Bought a showpiece: ${f.name}`, `${port.name} · ${f.price.toLocaleString('en-US')} gold`);
   }
 
   /** Sells one lot (or the whole fleet's cargo) at today's prices: the escorts' holds go ashore with yours. */
@@ -3001,6 +3232,149 @@ export class Game {
     return s;
   }
 
+  // ------------------------------------------------------------------ peaceful seas
+
+  /** Peaceful seas as they stand (the host's rule in a shared sea), put to everything that might fire first. */
+  private applyPeace() {
+    const w = this.world;
+    if (!w) return;
+    const guest = this.coop.guest;
+    const on = guest ? this.roomPeace ?? false : this.ui.settings.peaceful;
+    this.ui.setSeaRule(guest ? on : null);
+    if (w.peaceful === on) return;
+    w.peaceful = on;
+    this.kraken.calm = on;
+    // the crew hears the host's new rule at once
+    if (this.coop.hosting) this.coop.skyNow();
+    this.crewUi?.render();
+    if (this.state === 'playing' || this.state === 'paused' || this.state === 'docked')
+      this.ui.toast(on ? 'Peaceful seas' : 'Adventure', on ? (guest ? 'Your host calls a truce: nobody fires unless you fire first' : 'Nobody fires on you unless you fire first') : guest ? 'Your host lets the Brethren loose: they hunt on sight' : 'The Brethren hunt on sight again', 3.4);
+  }
+
+  /**
+   * Someone of another team laid a blow on `s` (Ship.onStruck). When it's our
+   * side striking a pirate, that's a quarrel: with her, her flotilla and the
+   * company she keeps. Another game's pirate is her owner's to rouse; we only
+   * say so.
+   */
+  private quarrel(s: Ship, by: Ship) {
+    if (by.team !== 'player' || s.team !== 'pirate' || s.prize) return;
+    const now = this.world.time;
+    const side = sideOf(by);
+    const ai = this.ais.get(s);
+    if (!ai) {
+      if (s.remote && s.calm && side === this.coop.me) this.provoked(s, 0, null);
+      return;
+    }
+    const fresh = !ai.grudge.holds(side, now);
+    ai.grudge.mark(side, now);
+    s.wrath = ai.grudge.mask(now);
+    if (!fresh) return;
+    const { n, fort } = this.rally(s, ai, side, now);
+    if (side === this.coop.me) this.provoked(s, n, fort);
+  }
+
+  /** Her flotilla, the Brethren in hail (a hunter from further off) and any fort covering her take up her quarrel with captain `side`. The dead keep to their own. */
+  private rally(s: Ship, ai: PirateAI, side: number, now: number): { n: number; fort: Fort | null } {
+    let n = 0;
+    for (const [o, oa] of this.ais) {
+      if (oa === ai || !o.alive || o.removed || o.prize || o.ghost !== s.ghost || oa.grudge.holds(side, now)) continue;
+      const d = Math.hypot(o.pos.x - s.pos.x, o.pos.z - s.pos.z);
+      if (!((!!ai.pack && oa.pack === ai.pack) || d < RALLY || (!!oa.hunter && d < HUNTER_RALLY))) continue;
+      oa.grudge.mark(side, now);
+      o.wrath = oa.grudge.mask(now);
+      n++;
+    }
+    let fort: Fort | null = null;
+    if (!s.ghost) {
+      for (const f of this.forts.forts) {
+        if (f.owner !== 'brethren' || f.grudge.holds(side, now) || f.guns.every((g) => g.dead)) continue;
+        if (Math.hypot(f.site.x - s.pos.x, f.site.z - s.pos.z) > FORT_RALLY) continue;
+        this.forts.rile(f, side, now);
+        fort = f;
+      }
+    }
+    return { n, fort };
+  }
+
+  /** A fort has cause to fight captain `side`: the Brethren lying under its guns come about with it. */
+  private fortRiled(f: Fort, side: number, by: Ship | null) {
+    const now = this.world.time;
+    let n = 0;
+    for (const [o, oa] of this.ais) {
+      if (!o.alive || o.removed || o.prize || o.ghost || oa.grudge.holds(side, now)) continue;
+      if (Math.hypot(o.pos.x - f.site.x, o.pos.z - f.site.z) > FORT_RALLY) continue;
+      oa.grudge.mark(side, now);
+      o.wrath = oa.grudge.mask(now);
+      n++;
+    }
+    // a ball of ours on its walls: say so (a ship's quarrel or a garrison's says its own)
+    if (!by || side !== this.coop.me || !this.world.peaceful || this.state !== 'playing') return;
+    this.ui.toast('You fired first', `${f.name} runs out its guns${n ? `, and ${n} ${n === 1 ? 'ship' : 'ships'} under them come about` : ''}`, 3.4);
+    this.audio.wanted(2);
+  }
+
+  /** Peaceful seas: you fired first. Say so over her, and who comes with her. */
+  private provoked(s: Ship, n: number, fort: Fort | null) {
+    if (!this.world.peaceful || this.state !== 'playing') return;
+    const t = this.world.time;
+    if (t - (this.provokedAt.get(s) ?? -100) < 10) return;
+    this.provokedAt.set(s, t);
+    const [x, y, ok] = this.screenOf(_a.set(s.pos.x, s.root.position.y + s.cls.freeboard + 6, s.pos.z));
+    if (ok) this.ui.floater('Provoked!', x, y - 30, 'bad');
+    // one call for a broadside that rouses a whole flotilla
+    if (t - this.provokeToastT < 5) return;
+    this.provokeToastT = t;
+    const named = s.hunter ? CAPTAIN.get(s.hunter) : undefined;
+    const more = n ? ` and ${n} ${n === 1 ? 'ship' : 'ships'} in hail` : '';
+    const guns = fort ? `${n ? ',' : ''} with the guns of ${fort.name}` : '';
+    const line = named
+      ? `${named.epithet} has the excuse she was waiting for${guns}`
+      : s.ghost
+      ? `The ${s.name} turns her dead eyes on you${n ? `, and ${n} more of the dead with her` : ''}`
+      : n || fort
+      ? `The ${s.name}${more} come about to fight${guns}`
+      : `The ${s.name} runs out her guns`;
+    this.ui.toast('You fired first', line, 3.6);
+    if (named) this.audio.horn();
+    else this.audio.wanted(1);
+  }
+
+  /** The HUD's dove (or blades, and how long until tempers cool), and word when the last quarrel is forgotten. */
+  private updatePeace(p: Ship) {
+    const w = this.world;
+    if (!w.peaceful) {
+      this.peaceHud.set(false, 0, 0);
+      this.warN = 0;
+      return;
+    }
+    const now = w.time;
+    const me = this.coop.me;
+    let war = 0;
+    let left = 0;
+    for (const s of this.ships) {
+      if (s.team !== 'pirate' || !s.alive || s.removed || s.prize || s.calm) continue;
+      war++;
+      const ai = this.ais.get(s);
+      left = Math.max(left, ai ? ai.grudge.left(me, now) : FORGET);
+    }
+    for (const f of this.forts.forts) {
+      if (f.owner !== 'brethren' || !f.grudge.holds(me, now) || f.guns.every((g) => g.dead)) continue;
+      war++;
+      left = Math.max(left, f.grudge.left(me, now));
+    }
+    if (this.kraken.fighting && this.kraken.calm && this.kraken.provoked) {
+      war++;
+      left = FORGET;
+    }
+    this.peaceHud.set(true, war, left / FORGET);
+    if (this.warN && !war && p.alive && !this.shore.active) {
+      this.ui.toast('Tempers cool', 'The sea is at peace with you again', 3);
+      this.audio.chime();
+    }
+    this.warN = war;
+  }
+
   // ------------------------------------------------------------------ sailing together
 
   /** What the crew layer may see and do (see net/coop.ts). */
@@ -3048,12 +3422,21 @@ export class Game {
       },
       adopt: (s) => {
         // the host has gone: her pirates are ours to fight now
-        g.ais.set(s, new PirateAI(s, (g.player?.kills ?? 0) / 4));
+        const ai = new PirateAI(s, (g.player?.kills ?? 0) / 4);
+        // whoever she was at war with, the quarrel is ours now
+        if (s.wrath) ai.grudge.mark(g.coop.me, g.world.time);
+        g.ais.set(s, ai);
       },
       struck: (s, by, dmg) => g.onHit(s, by as Ship, dmg, s.pos),
       sunk: (s, by) => g.onRemoteSunk(s, by),
-      sky: () => ({ day: g.atmos.day, kind: g.atmos.kind, windTo: g.atmos.windTo, run: g.atmos.timeMode === 'auto' }),
-      follow: (sky) => (sky ? g.atmos.follow(sky.day, sky.kind, sky.windTo, sky.run) : g.atmos.unfollow()),
+      sky: () => ({ day: g.atmos.day, kind: g.atmos.kind, windTo: g.atmos.windTo, run: g.atmos.timeMode === 'auto', calm: g.world.peaceful }),
+      follow: (sky) => {
+        if (sky) g.atmos.follow(sky.day, sky.kind, sky.windTo, sky.run);
+        else g.atmos.unfollow();
+        // the host's word on peaceful seas holds for everyone aboard
+        g.roomPeace = sky ? !!sky.calm : null;
+        g.applyPeace();
+      },
       toast: (title, line, secs = 3) => g.ui.toast(title, line, secs),
       clearSea: () => {
         for (const s of [...g.ais.keys()]) {
@@ -3414,8 +3797,85 @@ export class Game {
     }
   }
 
-  private startVoyage() {
+  /** Set Sail: choose the archipelago to weigh anchor in (a guest just joins the host, wherever she is). */
+  private chooseSea() {
+    if (!this.preview || this.swBusy || this.state !== 'menu') return;
+    if (this.coop.guest) return this.startVoyage();
+    this.ui.showMenu(false);
+    this.seaPick.open(
+      this.seaCards(),
+      (x, z) => this.terrain.heightAt(x, z),
+      (id) => this.sailFrom(id),
+      () => this.ui.showMenu(true),
+    );
+  }
+
+  /** Weighs anchor in the chosen archipelago: at home straight away, or across the sea under the veil. */
+  private sailFrom(id: RegionId) {
+    if (this.state !== 'menu' || !this.preview) return;
+    if (id === 'home') return this.startVoyage();
+    this.veil.innerHTML = `<span>Setting a course for ${regionById(id).name}…</span>`;
+    void this.fade(() => this.startVoyage(id));
+  }
+
+  /** What the picker shows of each archipelago: its isles, where you'd weigh anchor and what lies there. */
+  private seaCards(): SeaCard[] {
+    const vibe: Record<RegionId, string> = {
+      home: 'Sunlit lagoons, white beaches and your home port. The easy way in.',
+      brumas: 'Limestone towers and jade jungle in a drifting mist, a long voyage from home.',
+    };
+    return REGIONS.map((r) => {
+      const inR = (x: number, z: number) => nearestRegion(x, z).region === r;
+      const markets = this.tradePorts.ports.filter((tp) => inR(tp.site.x, tp.site.z)).length;
+      const forts = this.forts.forts.filter((f) => inR(f.site.x, f.site.z)).length;
+      const chips = [`${markets} market${markets === 1 ? '' : 's'}`, `${forts} fort${forts === 1 ? '' : 's'}`];
+      if (r.id === 'home') chips.unshift('Home harbour');
+      else chips.push(this.charts.has(r.id) ? 'Charted' : '+600 gold landfall');
+      const berth = r.id === 'home' ? this.spawnPoint : this.berthIn(r);
+      return {
+        id: r.id,
+        name: r.name,
+        motto: r.motto,
+        vibe: vibe[r.id],
+        chips,
+        isles: this.terrain.islands.filter((i) => inR(i.x, i.z)).map((i) => ({ x: i.x, z: i.z, r: i.r })),
+        berth: { x: berth.x, z: berth.z },
+        style: r.id === 'home' ? 'home' : 'brumas',
+      };
+    });
+  }
+
+  /** Where a voyage begins in an archipelago away from home: off its first market's quay, bows to the sea. */
+  private berthIn(region: Region) {
+    const tp = this.tradePorts.ports.find((t) => nearestRegion(t.site.x, t.site.z).region === region);
+    if (tp) {
+      const { x, z, nx, nz } = tp.site;
+      return { x: x + nx * 75, z: z + nz * 75, h: Math.atan2(nx, nz) };
+    }
+    const at = this.findOpenWater(region.x, region.z, 300, 600);
+    return { x: at.x, z: at.z, h: Math.atan2(at.x - region.x, at.z - region.z) };
+  }
+
+  /** Moves the anchored flagship and her escorts to `region`'s berth, the menu camera with them. */
+  private moorIn(region: Region) {
+    const p = this.preview!;
+    const b = this.berthIn(region);
+    const at = this.deepFor(p, b.x, b.z, b.h);
+    p.place(at.x, at.z, b.h);
+    this.rig.orbitCenter.set(p.pos.x, 0, p.pos.z);
+    this.rig.orbitQuat = p.root.quaternion.clone();
+    let i = 0;
+    for (const s of this.escorts.keys()) {
+      const a = this.anchorage(at.x, at.z, b.h, p.cls.length, i++, this.escorts.size, s, 1.5);
+      s.place(a.x, a.z, a.h);
+    }
+    this.rig.snapTo(p.pos);
+  }
+
+  private startVoyage(from: RegionId = 'home') {
     if (!this.preview) return;
+    const away = from !== 'home' && !this.coop.guest ? regionById(from) : null;
+    if (away) this.moorIn(away);
     this.audio.start();
     this.audio.setMusic(false);
     const p = this.preview;
@@ -3439,6 +3899,9 @@ export class Game {
     this.forts.setColours(p);
     this.fortHud.clear();
     this.ammoStock = freshStock();
+    if (this.fwLocker.count(this.fwType) <= 0) this.fwType = this.fwLocker.next(this.fwType) ?? this.fwType;
+    this.syncFw();
+    this.ui.closeFwPicker();
     this.hold.capacity = HOLD_ROOM[p.cls.id] ?? 12;
     this.hold.clear();
     p.ammo = 'round';
@@ -3448,7 +3911,12 @@ export class Game {
     this.ui.showHud(true);
     this.rig.mode = 'follow';
     this.rig.menuShift = { x: 0, y: 0, w: 1, h: 1 };
-    this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
+    this.rig.resetTilt();
+    // pick up the view you last sailed with, else a comfortable middle distance
+    const saved = loadView();
+    if (saved) this.rig.setView(saved.zoom, saved.tilt);
+    else this.rig.zoom = innerWidth < innerHeight ? 0.5 : 0.42;
+    this.viewSaved = `${this.rig.zoom.toFixed(3)},${this.rig.tilt.toFixed(3)}`;
     if (SEA_TEST) {
       this.testSea(p);
       this.rig.snapTo(p.pos);
@@ -3479,7 +3947,8 @@ export class Game {
       }
       this.rig.snapTo(p.pos);
       this.ui.toast('Weigh anchor', `The ${p.name} falls in with ${lead.captain ?? 'the host'}'s ${lead.name}`, 3.4);
-    } else
+    } else if (away) this.arrive(away, p);
+    else
     this.ui.toast('Weigh anchor', fleet.length ? `The ${p.name} sets sail with ${fleet.join(' and ')}` : `The ${p.name} sets sail`, 3);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
@@ -3726,7 +4195,7 @@ export class Game {
       const file = new File([blob], name, { type: 'image/png' });
       if (navigator.canShare({ files: [file] })) {
         try {
-          await navigator.share({ files: [file], title: 'Shores of Fortune' });
+          await navigator.share({ files: [file], title: 'Shores O’ Fortune' });
           this.photo.saved(blob, 'Photo shared', size);
           return;
         } catch (e) {
@@ -4046,6 +4515,8 @@ export class Game {
     const gold = Math.round(c.bounty * this.bounty.bonus);
     this.banner.hunt(c, gold);
     this.audio.horn();
+    // peaceful seas: she won't fire first, but she won't let you out of her sight
+    if (this.world.peaceful) setTimeout(() => this.state === 'playing' && s.alive && s.calm && this.ui.toast('She shadows you', `${c.epithet} won't fire first, but she's waiting for an excuse`, 4.2), 4600);
     this.note('bounty', `${c.epithet} came hunting`, `${c.ship} · ${gold.toLocaleString()} gold on her`);
   }
 
@@ -4094,6 +4565,7 @@ export class Game {
     const at = new THREE.Vector3(it.x, 2, it.z);
     // the fleet shares one magazine: shot she finds is sent across to the flagship's racks
     this.stockAmmo(ammoLoot(it.tier), at);
+    this.stockFireworks(fireworkLoot(it.tier), at);
     const res = by ? { ...by.hold.stow(it.goods), across: [] } : this.stowFleet(it.goods);
     const [x, y] = this.screenOf(at);
     const kept = res.kept.slice().sort((a, b) => LOOT[b].rarity - LOOT[a].rarity || LOOT[b].price - LOOT[a].price);
@@ -4569,7 +5041,7 @@ export class Game {
       this.enterMenu();
       if (again && this.preview) {
         if (this.preview.cls.id !== cls) this.setPreview(cls);
-        this.startVoyage();
+        this.startVoyage(readStartSea());
       }
     });
   }
@@ -4863,6 +5335,12 @@ export class Game {
       // the moment it breaks the surface plays out slowly
       this.krakenSlowT = 1.8;
       this.pipeline.flash(0.2);
+      if (k.docile) setTimeout(() => k.docile && k.fighting && this.ui.toast('It watches you, and waits', 'Leave it be and it sinks away. Fire, and it fights', 4.4), 2600);
+    };
+    k.onProvoked = () => {
+      this.ui.toast('You woke the Kraken', 'Now it fights', 3);
+      this.rig.shake(0.5);
+      this.pipeline.flash(0.12);
     };
     k.onStage = (n) => {
       this.audio.krakenMusic(true, n);
@@ -4870,7 +5348,7 @@ export class Game {
       this.rig.shake(0.5);
     };
     k.onHead = (up) => {
-      if (up) this.ui.toast('Its head breaks the surface', 'Strike the eye!', 2.6);
+      if (up) this.ui.toast('Its head breaks the surface', k.docile ? 'It looks you over, unblinking' : 'Strike the eye!', 2.6);
     };
     k.onGrab = (on, freed) => {
       if (on) {
@@ -4913,13 +5391,13 @@ export class Game {
     const playing = this.state === 'playing' && !!p && p.alive;
     if (dt > 0) this.krakenCool -= dt;
     if (!k.active) {
-      this.gunnery.nMarks = 0;
+      this.gunnery.nMarks = this.krMarkN = 0;
       if (playing && dt > 0 && !this.shore.active) this.watchForKraken(dt, p!);
       return;
     }
     k.update(dt, w, playing ? p : null);
     // the guns lay on its arms and eye like on any ship
-    this.gunnery.nMarks = k.marks(this.gunnery.marks);
+    this.gunnery.nMarks = this.krMarkN = k.marks(this.gunnery.marks);
     // every pirate in these waters runs for it
     const dread = k.phase === 'omen' || k.phase === 'fight' ? k.body : null;
     for (const ai of this.ais.values()) ai.fear = dread;
@@ -4938,8 +5416,8 @@ export class Game {
     const grip = k.grip;
     this.krHud.setGrab(grip);
     this.krHud.setHint(
-      grip !== null ? 'Break its grip' : k.headUp ? 'Strike the eye!' : k.stage === 2 ? 'Fight the maelstrom · sever its arms' : 'Sever its arms',
-      grip !== null || k.headUp,
+      k.docile ? 'It watches you · fire, and it fights' : grip !== null ? 'Break its grip' : k.headUp ? 'Strike the eye!' : k.stage === 2 ? 'Fight the maelstrom · sever its arms' : 'Sever its arms',
+      !k.docile && (grip !== null || k.headUp),
     );
     const n = k.warnings(this.krWarn);
     let m = 0;
@@ -5015,11 +5493,14 @@ export class Game {
     const skin = this.vaultStore.award('skin:kraken');
     p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.35);
     this.stockAmmo({ shell: 3, fire: 3, chain: 3, grape: 3 }, p.pos.clone().setY(p.root.position.y + 6));
+    // and in its ink-black hoard, a showpiece made in its own likeness
+    this.stockFireworks({ kraken: 1 }, null);
     this.note('kill', 'Slew the Kraken', `+${bounty} gold · its hoard rose from the deep`);
     const rewards: KrakenReward[] = [
       { art: '', label: `+${bounty.toLocaleString()} gold bounty`, rarity: -1 },
       { art: lootIcon('krakenBeak'), label: LOOT.krakenBeak.name, rarity: 4 },
       { art: lootIcon('krakenInk'), label: LOOT.krakenInk.name, rarity: 3 },
+      { art: fireworkIcon('kraken'), label: `${FIREWORKS.kraken.name} showpiece`, rarity: 4 },
     ];
     if (skin) rewards.push({ art: '<span class="kr-skin"></span>', label: skin.fresh ? 'Kraken Ink skin unlocked' : `Kraken Ink skin · +${skin.refund} gold`, rarity: 3 });
     this.krHud.victory(rewards);
@@ -5033,8 +5514,10 @@ export class Game {
 
   private tryFire(side: Side) {
     const p = this.player!;
+    this.syncFw();
     // a special the magazine has run out of: load round shot rather than leave the guns cold
     if (this.ammoStock[p.ammo] <= 0) this.selectAmmo('round', true);
+    if (p.ammo === 'firework') return this.fireRockets(side);
     const a = this.gunnery.aim(p, side);
     const shot = p.ammo;
     if (p.fire(side, this.world, a.target, a.point)) {
@@ -5051,30 +5534,135 @@ export class Game {
     } else this.ui.flashBroadside(side);
   }
 
+  /** Fireworks loaded: a rocket off each chosen gun, and one volley out of the locker. */
+  private fireRockets(side: Side) {
+    const p = this.player!;
+    const id = this.fwType;
+    p.firework = id;
+    if (!p.fire(side, this.world, null, null)) {
+      this.ui.flashBroadside(side);
+      return;
+    }
+    this.ui.closeFwPicker();
+    this.fwLocker.take(id);
+    if (FIREWORKS[id].tier === 2) this.note('trade', `Lit the ${FIREWORKS[id].name}`, 'A showpiece over the sea');
+    if (this.fwLocker.count(id) > 0) return this.syncFw();
+    const next = this.fwLocker.next(id);
+    if (next) {
+      this.fwType = p.firework = next;
+      this.syncFw();
+      this.ui.toast(`That was the last ${FIREWORKS[id].name}`, `${FIREWORKS[next].name} loaded`, 2.6);
+    } else {
+      this.syncFw();
+      this.ui.toast('The firework locker is empty', 'Round shot loaded · trading ports have a pyrotechnist', 3.2);
+      this.selectAmmo('round', true);
+    }
+  }
+
+  /** The rack's count for fireworks is the kind loaded. */
+  private syncFw() {
+    this.ammoStock.firework = this.fwLocker.count(this.fwType);
+  }
+
   /** Load a kind of shot for the next broadsides. Specials need some aboard. */
   private selectAmmo(id: AmmoId, quiet = false) {
     const p = this.player;
     if (!p || !p.alive || (this.state !== 'playing' && this.state !== 'paused')) return;
+    if (id === 'firework') {
+      // 6 again with rockets already loaded: the next kind in the locker
+      if (p.ammo === 'firework' && !quiet) return this.cycleFirework();
+      if (this.fwLocker.count(this.fwType) <= 0) this.fwType = this.fwLocker.next(this.fwType) ?? this.fwType;
+      this.syncFw();
+    }
     if (this.ammoStock[id] <= 0) {
       this.ui.ammoDenied(id);
-      if (!quiet) this.ui.toast(`No ${AMMO[id].name.toLowerCase()} left`, 'Salvage, chests and new isles restock the magazine', 2.8);
+      if (!quiet) {
+        if (id === 'firework') this.ui.toast('The firework locker is empty', 'Pyrotechnists in the trading ports sell them, and fine chests hide a few', 3);
+        else this.ui.toast(`No ${AMMO[id].name.toLowerCase()} left`, 'Salvage, chests and new isles restock the magazine', 2.8);
+      }
       return;
     }
+    if (id === 'firework') p.firework = this.fwType;
     if (p.ammo === id) {
-      if (!quiet) this.ui.showTag(id);
+      if (!quiet) this.ui.showTag(id, true, this.fwType);
       return;
     }
     p.ammo = id;
     if (!quiet) {
       this.audio.ammoSwap(AMMO_ORDER.indexOf(id));
-      this.ui.showTag(id);
+      this.ui.showTag(id, true, this.fwType);
     }
+  }
+
+  /** The next kind of firework in the locker. */
+  private cycleFirework() {
+    const next = this.fwLocker.next(this.fwType);
+    if (next) this.chooseFirework(next);
+  }
+
+  /** A kind picked from the locker: loaded at once (fireworks too, if shot was in the guns). */
+  private chooseFirework(id: FireworkId) {
+    const p = this.player;
+    if (!p || !p.alive || (this.state !== 'playing' && this.state !== 'paused')) return;
+    if (this.fwLocker.count(id) <= 0) {
+      this.ui.ammoDenied('firework');
+      return;
+    }
+    const same = p.ammo === 'firework' && this.fwType === id;
+    this.fwType = p.firework = id;
+    p.ammo = 'firework';
+    this.syncFw();
+    if (!same) this.audio.ammoSwap(AMMO_ORDER.indexOf('firework'));
+    this.ui.showTag('firework', true, id);
+  }
+
+  /** Fireworks found or bought: into the locker, with a "+n" off the rack. */
+  private stockFireworks(add: FireworkCounts, at: THREE.Vector3 | null) {
+    const got = this.fwLocker.add(add);
+    let line = '';
+    let n = 0;
+    let show: FireworkId | null = null;
+    for (const id of FW_ORDER) {
+      const k = got[id] ?? 0;
+      if (!k) continue;
+      n += k;
+      if (FIREWORKS[id].tier === 2) show = id;
+      line += `${line ? ' · ' : ''}+${k} ${FIREWORKS[id].short}`;
+    }
+    if (!n) return '';
+    if (this.fwLocker.count(this.fwType) <= 0) this.fwType = this.fwLocker.next(this.fwType) ?? this.fwType;
+    this.syncFw();
+    this.ui.ammoGain('firework', n);
+    if (at) {
+      const [x, y, ok] = this.screenOf(at);
+      if (ok) this.ui.floater(line, x, y - 44, show ? 'legendary' : 'ammo');
+    }
+    if (show && this.state === 'playing') {
+      this.ui.toast(`A showpiece: ${FIREWORKS[show].name}`, this.input.isTouch ? 'Pick it from the fireworks in the shot fan' : 'Load fireworks (6) and pick it from the locker', 4.5);
+      this.audio.treasure(3);
+    }
+    return line;
+  }
+
+  /** The first night at sea with rockets aboard: say how to light them, once per device. */
+  private fireworkTip() {
+    if (this.fwTipShown || globalUniforms.uNight.value < 0.6 || this.fwLocker.total <= 0 || this.gunnery.combat) return;
+    this.fwTipShown = true;
+    try {
+      if (localStorage.getItem('aquati.fwTip') === '1') return;
+      localStorage.setItem('aquati.fwTip', '1');
+    } catch {
+      /* private mode: show it anyway */
+    }
+    const how = this.input.isTouch ? 'Tap the shot button, choose the rocket, then fire a broadside' : 'Press 6 to load fireworks (6 again picks another kind), then fire a broadside';
+    this.ui.toast('A fine night for fireworks', how, 6);
   }
 
   /** R: the next kind of shot that's aboard. */
   private cycleAmmo() {
     const p = this.player;
     if (!p) return;
+    this.syncFw();
     const i = AMMO_ORDER.indexOf(p.ammo);
     for (let k = 1; k <= AMMO_ORDER.length; k++) {
       const id = AMMO_ORDER[(i + k) % AMMO_ORDER.length];
@@ -5131,7 +5719,7 @@ export class Game {
     const how = this.input.isTouch ? 'then tap Fire' : 'then click, or press Q / E';
     this.ui.toast('Guns fire to the sides', `Turn until a foe is off your beam and warm light gathers around her, ${how}`, 5.5);
     // and a little later, the shot rack
-    const pick = this.input.isTouch ? 'Tap the shot button above Fire' : 'Press 1 to 5, or click the rack';
+    const pick = this.input.isTouch ? 'Tap the shot button above Fire' : 'Press 1 to 6, or click the rack';
     setTimeout(() => {
       if (this.state === 'playing') this.ui.toast('Choose your shot', `${pick}: shells burst, fire burns, chain shreds sails, grape cuts down crews`, 6);
     }, 7000);
@@ -5180,7 +5768,7 @@ export class Game {
       if (hs) this.tryFire(hs);
       else this.fireAuto();
     }
-    if (st.zoom && !this.fpv) this.rig.zoom = clamp(this.rig.zoom + st.zoom * 0.06, 0, 1);
+    if (st.zoom && !this.fpv) this.rig.zoomBy(st.zoom, performance.now() / 1000);
     if (st.pause) {
       if (this.mapUi.isOpen) this.setMapView(false);
       else if (this.chartOpen) this.setChart(false);
@@ -5192,15 +5780,27 @@ export class Game {
 
   // ------------------------------------------------------------------ frame
 
-  private frame() {
+  /**
+   * `vsync` is the frame's own timestamp from requestAnimationFrame: steady,
+   * where reading the clock once the callback finally runs wobbles by however
+   * late the browser got round to it. Motion paced by that wobble lands on
+   * an even vsync grid uneven, a judder that shows only while things move.
+   */
+  private frame(vsync = performance.now()) {
     const now = performance.now();
-    let dt = (now - this.last) / 1000;
-    this.last = now;
+    let dt = Math.max(0, (vsync - this.last) / 1000);
+    this.last = vsync;
     const P = this.prof;
     P.tick(now);
     this.fps = P.fps;
+    // a frame is shown a whole number of refreshes after the last: snap a
+    // near miss onto that grid, so the camera moves the same each refresh
+    // (the scaler learns the refresh rate from the raw intervals)
+    if (this.scaler.sample(Math.min(dt, 0.05), this.cpuMs)) this.resize();
+    const slot = this.scaler.slotMs / 1000;
+    const n = Math.round(dt / slot);
+    if (n >= 1 && n <= 3 && Math.abs(dt - n * slot) < slot * 0.12) dt = n * slot;
     dt = Math.min(dt, 0.05);
-    if (this.scaler.sample(dt, this.cpuMs)) this.resize();
     // Auto's last resort: still slow at the lowest resolution, so shed effects
     if (this.scaler.pressure >= 2) {
       this.scaler.pressure = 0;
@@ -5301,7 +5901,7 @@ export class Game {
     const target = this.player && this.player.alive && this.state === 'playing' && this.wreck.t < 0 ? this.player : null;
     if (dt > 0) this.forts.update(dt, w, target, this.ships, this.rig.target);
     // her guns lay on the forts' guns too, wherever she can reach them
-    if (target && !this.shore.active) this.gunnery.nMarks = this.forts.marks(this.gunnery.marks, this.gunnery.nMarks, target, gunRange(target.muzzleSpeed));
+    if (target && !this.shore.active) this.gunnery.nMarks = this.forts.marks(this.gunnery.marks, this.gunnery.nMarks, target, gunRange(target.muzzleSpeed), w.peaceful ? { now: w.time, riledOnly: false } : null);
     P.end();
     P.begin('Debris & flotsam', 'fx');
     this.pushers.length = 0;
@@ -5373,6 +5973,7 @@ export class Game {
       this.checkDiscoveries(p);
       this.updateForts(p, dt);
       this.updateHazards(p, dt);
+      this.updatePeace(p);
       // rammed or holed on a reef: no cannonball to report it
       if (!p.alive) this.onPlayerSunk('hull');
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));
@@ -5415,6 +6016,7 @@ export class Game {
     const fvel = walker ? this.shoreVel.set(walker.vx, 0, walker.vz) : focusShip && this.rig.mode === 'follow' ? focusShip.vel : new THREE.Vector3();
     if (this.preview) this.rig.orbitCenter.set(this.preview.pos.x, this.preview.root.position.y, this.preview.pos.z);
     this.updateCaptain(dt);
+    if (walker) this.updateFootEye(realDt, walker);
     if (this.photo.active) {
       const ph = this.photo;
       ph.cam.ground = (x, z) => Math.max(this.terrain.heightAt(x, z) + 1.4, w.waterHeight(x, z) + 0.9);
@@ -5443,10 +6045,14 @@ export class Game {
     w.listenerZoom = this.rig.distance;
     this.hazards.sound(w);
     this.updateSeas(dt);
-    // ashore, the leaves between the camera and the captain thin away
+    // ashore, the leaves between the camera and the captain thin away (not once you're behind their eyes)
     const see = globalUniforms.uSeeThru.value;
-    if (walker && !this.photo.active) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5));
+    if (walker && !this.photo.active && eb < 0.9) see.set(walker.x, walker.y + 1.1, walker.z, clamp(this.rig.distance * 0.13, 2.6, 5.5) * (1 - eb));
     else see.w = 0;
+    // the hands follow the camera wherever it went this frame
+    const sh = this.shore;
+    sh.hands.update(realDt, this.rig.camera, walker, this.photo.active ? 0 : eb, this.eyeLook.x, this.eyeLook.y, sh.pistolLoad, w);
+    this.eyeLook.x = this.eyeLook.y = 0;
     P.end();
     // the spyglass can pick out a crew at the far side of a battle
     P.begin('Crew', 'ships');
@@ -5474,6 +6080,8 @@ export class Game {
     P.end();
     P.begin('Particles', 'fx');
     this.particles.update(dt);
+    this.fireworks.view(this.rig.camera, this.rig.distance, this.rig.eyeBlend, innerHeight);
+    this.fireworks.update(dt);
     this.spirits.update(dt, w.time);
     P.end();
     P.begin('Birds', 'fx');
@@ -5496,7 +6104,9 @@ export class Game {
     if (p && (this.state === 'playing' || this.state === 'paused') && !this.photo.active) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
-      this.ui.updateAmmo(p.ammo, this.ammoStock);
+      this.syncFw();
+      this.ui.updateAmmo(p.ammo, this.ammoStock, this.fwType);
+      if (this.state === 'playing') this.fireworkTip();
       // the fleet panel, and the crossed swords over whoever the escorts are fighting
       const rows = this.fleetRows;
       rows.length = 0;
@@ -5564,6 +6174,51 @@ export class Game {
       bars.push({ id: f.id, x: f.x, y: f.y + 2.25 * f.height, z: f.z, hp: f.hp, max: f.maxHp, boss: f.maxHp > 100, label: f.title });
     }
     this.shoreHud.updateBars(bars, this.rig.camera, innerWidth, innerHeight);
+  }
+
+  /**
+   * Ashore: drops the camera into the captain's eyes (or lifts it out), poses
+   * the head on their gait, hides their own figure from themselves and keeps
+   * the sight and the first-person chrome in step.
+   */
+  private updateFootEye(dt: number, cap: Walker) {
+    const sh = this.shore;
+    this.eyeWait = Math.max(0, this.eyeWait - dt);
+    const able = !sh.deck;
+    const want = able && this.shoreEyePref && !this.shoreLeaving && this.eyeWait <= 0 && this.wreck.t < 0;
+    this.rig.firstPerson = want;
+    this.input.eye = want && this.state === 'playing' && !this.photo.active;
+    const fe = this.footEye;
+    // around the eyes the camera keeps behind the captain; from above, north is up again
+    this.rig.footAz = want || this.rig.eyeBlend > 0 ? fe.yaw + Math.PI : 0;
+    // a cut or a shot that found a foe turns the head toward them (more firmly on touch)
+    if (sh.lockT > this.lastLockT) {
+      this.lastLockT = sh.lockT;
+      const f = sh.lockOn;
+      if (f && want) fe.glance(_a.set(f.x, f.y + 1.45 * f.height, f.z), 0.16, this.input.isTouch ? 10 : 5, true);
+    }
+    if (want || this.rig.eyeBlend > 0) {
+      fe.pose(this.state === 'playing' ? dt : 0, cap, this.world.time, sh.treasure, this.rig.eyePos, this.rig.eyeQuat);
+      const a = this.rig.camera.aspect;
+      const base = clamp((2 * Math.atan(Math.tan((42 * Math.PI) / 180) / a) * 180) / Math.PI, 55, 84);
+      // a few degrees wider at a run
+      this.rig.eyeFov = base + fe.sprint * 7;
+    }
+    const eb = this.rig.eyeBlend;
+    cap.hidden = eb > 0.55;
+    sh.eyes = eb > 0.9;
+    const on = eb > 0.5;
+    this.shoreHud.setEye(on, able, this.input.mouseLocked || this.input.isTouch);
+    if (on) {
+      // the sight closes in on a foe within the cutlass's reach, dead ahead
+      let foe = false;
+      for (const f of sh.foes) {
+        if (!f.standing) continue;
+        const d = Math.hypot(f.x - cap.x, f.z - cap.z);
+        if (d < 3.6 && Math.abs(angleDelta(fe.yaw, Math.atan2(f.x - cap.x, f.z - cap.z))) < 0.5) foe = true;
+      }
+      this.shoreHud.setReticle(foe, sh.pistolLoad);
+    }
   }
 
   /** Walks the captain, aims their eyes, and keeps the deck chrome in step. */
@@ -5649,7 +6304,7 @@ export class Game {
     fog.near = a.fogRange.x;
     fog.far = a.fogRange.y;
     this.pipeline.exposure = a.exposure;
-    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat);
+    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat, a.vignette);
   }
 
   /** Rain, lightning, thunder, spindrift and the clock badge. */
@@ -5678,26 +6333,15 @@ export class Game {
     }
     const flash = this.lightning.flash;
     globalUniforms.uFlash.value = flash;
+    // the sea round the strike lights up with it (a sheet flash, far off, only faintly)
+    if (strike) this.strikeAt.set(strike.x, strike.z, strike.bolt ? 140 : 420, strike.bolt ? 1 : 0.22);
+    const sa = this.strikeAt;
+    globalUniforms.uStrike.value.set(sa.x, sa.y, sa.z, flash * sa.w);
     this.pipeline.lightning = Math.min(flash, 1.5) * 0.55;
     this.opaque.environmentIntensity = SKY_LIGHT * (1 + flash * 5);
 
-    // spindrift: gusts tear spray off the crests in a blow
-    if (a.storm > 0.35 && dt > 0) {
-      this.sprayT += dt * a.storm * 14;
-      const reach = this.rig.distance * 0.7;
-      while (this.sprayT > 1) {
-        this.sprayT -= 1;
-        const x = tgt.x + (Math.random() - 0.5) * reach * 2;
-        const z = tgt.z + (Math.random() - 0.5) * reach * 1.4;
-        if (this.terrain.heightAt(x, z) > -2) continue;
-        const sp = 7 + a.wind * 6;
-        w.particles.emit({
-          x, y: w.waterHeight(x, z) + 0.4, z,
-          vx: w.wind.dirX * sp, vy: 1 + Math.random() * 1.5, vz: w.wind.dirZ * sp,
-          life: 1.4 + Math.random() * 1.2, size: 1.2, sizeEnd: 5 + Math.random() * 3, color: [1.2, 1.26, 1.3], alpha: 0.32, drag: 0.9, grav: 1.2, kind: 1, fadeIn: 0.15,
-        });
-      }
-    }
+    // spindrift: in a blow the wind tears the tops off the crests
+    this.spindrift.update(smoothstep(0.25, 0.9, a.storm) + Math.max(0, a.wind - 1) * 0.5, tgt.x, tgt.z, this.rig.distance, a.wind);
 
     this.audio.setWeather(a.rain, a.storm, a.wind);
     this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
@@ -5794,8 +6438,32 @@ export class Game {
     (sh as unknown as { _updateMatrix(c: THREE.Camera, m: THREE.Matrix4, f: THREE.Frustum): void })._updateMatrix(cam, sh.matrix, sh.getFrustum());
   }
 
+  private viewSaved = '';
+  private viewSaveT = 0;
+
+  /** Keeps the zoom button's pips on the current view and remembers it (at sea; ashore, the sea view waiting for you). */
+  private syncView() {
+    if (this.state !== 'playing') return;
+    const r = this.rig;
+    const v = r.view;
+    this.ui.setZoomView(v, CameraRig.VIEWS[v].name);
+    const now = performance.now();
+    if (now < this.viewSaveT) return;
+    this.viewSaveT = now + 600;
+    const zoom = r.foot ? this.seaZoom : r.zoom;
+    const key = `${zoom.toFixed(3)},${r.tilt.toFixed(3)}`;
+    if (key === this.viewSaved) return;
+    this.viewSaved = key;
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify({ zoom: +zoom.toFixed(3), tilt: +r.tilt.toFixed(3) }));
+    } catch {
+      /* private mode */
+    }
+  }
+
   private render(dt: number) {
     if (!this.ocean) return;
+    this.syncView();
     const P = this.prof;
     P.begin('Shadow & scene setup', 'render');
     const cam = this.rig.camera;
@@ -5850,8 +6518,27 @@ export class Game {
       }
     }
 
+    viewCull.off = this.warming;
+    viewCull.set(cam, this.shadowC, this.shadowR, this.shadowK);
     P.begin('Vegetation culling', 'sim');
-    this.veg?.update(cam, this.toSun);
+    // from eye level the far LOD takes over from ~85 m out, even on the island underfoot
+    if (this.veg) this.veg.detail = this.rig.eyeBlend > 0.5 && !this.photo.active ? 85 : Infinity;
+    this.veg?.update(cam, this.toSun, this.shadowC, this.shadowR);
+    if (this.grass) {
+      // feet walking through the meadow part it
+      const sh = this.shore;
+      const pu = _pushers;
+      pu.length = 0;
+      if (sh.active) {
+        if (sh.captain) pu.push(sh.captain);
+        for (const m of sh.party) if (pu.length < GRASS_PUSHERS && m.walker !== sh.captain && m.walker.visible) pu.push(m.walker);
+        for (const f of sh.foes) if (pu.length < GRASS_PUSHERS && f.visible && Math.hypot(f.x - cam.position.x, f.z - cam.position.z) < 30) pu.push(f);
+      }
+      this.grass.setPushers(pu);
+      this.grass.update(cam, this.veg?.hold);
+    }
+    for (const r of this.regions) (r.land.userData.lod as TerrainLod | undefined)?.update(cam);
+    staticLod.update(cam);
     P.end();
     P.begin('Wake simulation', 'ocean', true);
     this.wake.update(this.renderer, target.x, target.z, dt);
@@ -5862,6 +6549,8 @@ export class Game {
     this.particles.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.rain.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.spindrift.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.spirits.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.kraken.view.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
@@ -5871,7 +6560,10 @@ export class Game {
     const cl = this.clouds;
     cl.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     const keep = this.player && this.player.alive && this.state === 'playing' && !this.photo.active ? this.player.pos : null;
-    cl.update(dt, cam, target, this.toSun, this.atmos, this.world.wind.dirX, this.world.wind.dirZ, keep);
+    // out on the open ocean with no fight on, the clouds sail right over you like over anything else
+    const pl = this.player;
+    const fight = !!this.lastFoe || this.kraken.active || (!!pl && this.world.time - pl.lastHit < 12);
+    cl.update(dt, cam, target, this.toSun, this.atmos, this.world.wind.dirX, this.world.wind.dirZ, keep, !this.onHighSeas || fight);
     cl.renderShadow(this.renderer);
     P.end(true);
     P.begin('Camera & sky binding', 'render');
@@ -5881,6 +6573,8 @@ export class Game {
     // the horizon only exists from the deck (and in the shipwright's harbour)
     const cine = this.rig.cine ? this.rig.cine.w : 0;
     if (cine > 0) this.pipeline.tilt *= 1 - cine * 0.7;
+    // leaned over past the farthest zoom: ease the diorama blur a little
+    if (this.rig.mode === 'follow') this.pipeline.tilt *= 1 - this.rig.tiltBlend * 0.4;
     // only the farewell ever takes the camera below the waves
     const k = this.wreck;
     const under = k.t >= 0 && cam.position.y < this.world.waterHeight(cam.position.x, cam.position.z) - 0.2;
@@ -5895,6 +6589,7 @@ export class Game {
     // no rain or wind wisps down here
     if (under) {
       this.rain.mesh.visible = false;
+      this.spindrift.mesh.visible = false;
       this.clouds.mesh.visible = false;
     }
     this.wisps.mesh.visible = !under;

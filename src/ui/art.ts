@@ -156,9 +156,12 @@ export const ICONS = {
   map: '<path d="M3 6.5 8.5 4l7 2.5L21 4v13.5L15.5 20l-7-2.5L3 20z"/><path d="M8.5 4v13.5M15.5 6.5V20"/>',
   target: '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/>',
   flag: '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
+  dove: '<path d="M3 15.4c2.6.5 5-.3 6.8-2.2l2.6-2.9a3.1 3.1 0 0 1 4.7.1l.6.8 2.8.4-2.4 1.5c-.4 3.9-3.6 6.5-7.6 6.3l-2.6-.1-3.4 2.2.7-3C4.6 17.9 3.6 17 3 15.4z"/><path d="M9.8 13.2C8.3 10.2 8.7 6.6 11.4 4c1.4 2.2 1.8 4.7.9 7"/><path d="M16.3 10.7h.01"/>',
+  swords: '<path d="M4.5 4.5l10 10M14 18l4-4M16 16l3.6 3.6M19.5 4.5l-10 10M6 14l4 4M8 16l-3.6 3.6"/>',
   crew: '<circle cx="8.5" cy="8" r="3"/><path d="M3 19c.6-3.6 2.8-5.6 5.5-5.6s4.9 2 5.5 5.6"/><circle cx="16.5" cy="9" r="2.4"/><path d="M15.4 13.5c.4-.1.8-.1 1.1-.1 2.3 0 4.1 1.7 4.6 4.8"/>',
   wind: '<path d="M3 8.5h11a3 3 0 1 0-3-3M3 12.5h16a3 3 0 1 1-3 3M3 16.5h7"/>',
   sweep: '<path d="M14.5 3.5 10 12M6.5 12.5h7.2l2.3 8H4.2z"/><path d="M8 16.5l-.6 4M11.2 16.5l.2 4M18.5 6.5l.8-1.6M20.5 9.5l1.6-.6M17 3.2l.4-1.4"/>',
+  zoom: '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5.5 5.5M8 10.5h5M10.5 8v5"/>',
   camera: '<path d="M3.5 8.5a2 2 0 0 1 2-2h2.2l1.5-2h5.6l1.5 2h2.2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.8" r="3.6"/>',
   eyeOff: '<path d="M3 3l18 18M10.6 5.6A9.6 9.6 0 0 1 12 5.5c5.9 0 9.5 6.5 9.5 6.5a17 17 0 0 1-3 3.7M6.6 6.7C4 8.4 2.5 12 2.5 12s3.6 6.5 9.5 6.5a9 9 0 0 0 4.3-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   orbit: '<circle cx="12" cy="12" r="2.6"/><ellipse cx="12" cy="12" rx="9.5" ry="4.2"/><path d="M19.6 9.4l1.4-1.6.4 2.1"/>',
@@ -168,6 +171,7 @@ export const ICONS = {
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4.5 19.5h15"/>',
   cutlass: '<path d="M5 19c6-3 11.5-9 14.5-15.5C14 6 8.5 11 6.6 16.4"/><path d="M3.5 15.5l5 5M4.6 20.3l-1.4 1.4"/>',
   pistol: '<path d="M3 8.5h16.5V12H11l-1.2 1.4.6 1.6-1.7 4.5H5.4l1.7-6.2L3 12z"/><path d="M10.2 12.4c.6 1.4 1.8 1.7 2.6.8M18 8.5V7"/>',
+  jump: '<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 20c2.5-2 5-2 8 0s5.5 2 8 0"/>',
   spade: '<path d="M8.5 3.5h7M12 3.5v10"/><path d="M8.5 13.5h7v2.8a3.5 3.5 0 0 1-7 0z"/>',
   grapnel: '<circle cx="12" cy="3.8" r="1.6"/><path d="M12 5.4V19M12 19c-3.6 0-6.5-2.6-6.5-6.2L4 14.3M12 19c3.6 0 6.5-2.6 6.5-6.2l1.5 1.5M12 19v-3.4M9 9.5h6"/>',
   boat: '<path d="M2.5 12.5h19l-2.6 5a2.4 2.4 0 0 1-2.1 1.3H7.2a2.4 2.4 0 0 1-2.1-1.3z"/><path d="M8 12.5 5.5 6M16 12.5l2.5-6.5"/>',
@@ -178,8 +182,10 @@ export const ICONS = {
 let crestN = 0;
 /**
  * Compass-rose crest; each copy gets its own gradient ids so hidden copies don't break visible ones.
- * The rose is its own <svg> over the rings: spinning an HTML-level element runs on the
- * compositor, so the loading screen's compass keeps turning while the main thread is busy.
+ * The rose and the dashed dial each sit in their own HTML <span>, and only those spans
+ * turn (CSS transform). Browsers won't hand an animation on an SVG element to the
+ * compositor, but an HTML box on its own layer they will: the loading screen's compass
+ * keeps spinning at full frame rate while the main thread is busy building the world.
  */
 export const crest = () => {
   const id = `crest-g${crestN++}`;
@@ -187,13 +193,14 @@ export const crest = () => {
     `<defs><linearGradient id="${id}${k}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff2c4"/><stop offset=".55" stop-color="#efc463"/><stop offset="1" stop-color="#b98227"/></linearGradient></defs>`;
   return `<span class="crest" aria-hidden="true"><svg class="crest-ring" viewBox="0 0 64 64">${grad('a')}
   <circle cx="32" cy="32" r="27" fill="none" stroke="url(#${id}a)" stroke-width="1.6" opacity=".85"/>
-  <circle cx="32" cy="32" r="22.5" fill="none" stroke="url(#${id}a)" stroke-width=".8" stroke-dasharray="1.2 3.2" opacity=".8"/>
-</svg><svg class="crest-rose" viewBox="0 0 64 64">${grad('b')}
+</svg><span class="crest-dial"><svg viewBox="0 0 64 64">${grad('c')}
+  <circle cx="32" cy="32" r="22.5" fill="none" stroke="url(#${id}c)" stroke-width=".8" stroke-dasharray="1.2 3.2" opacity=".8"/>
+</svg></span><span class="crest-rose"><svg viewBox="0 0 64 64">${grad('b')}
   <path d="M32 6 36 28 32 32 28 28Z M32 58 28 36 32 32 36 36Z M6 32 28 28 32 32 28 36Z M58 32 36 36 32 32 36 28Z" fill="url(#${id}b)"/>
   <path d="M32 6 32 32 28 28Z M32 58 32 32 36 36Z M6 32 32 32 28 36Z M58 32 32 32 36 28Z" fill="#8a5a17" opacity=".45"/>
   <path d="M32 16 34 30 32 32 30 30Z M32 48 30 34 32 32 34 34Z M16 32 30 30 32 32 30 34Z M48 32 34 34 32 32 34 30Z" fill="url(#${id}b)" opacity=".7" transform="rotate(45 32 32)"/>
   <circle cx="32" cy="32" r="2.4" fill="#0b3546" stroke="url(#${id}b)" stroke-width="1.2"/>
-</svg></span>`;
+</svg></span></span>`;
 };
 
 /** Compass bezel for the round minimap: a fine ring, ticks every 15°, cardinal letters and a gold north pip. */

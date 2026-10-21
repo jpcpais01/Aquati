@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { skipWhenHidden } from '../render/staticScene';
+import { staticLod } from '../render/staticLod';
 import { angleDelta, clamp, damp, lerp, mulberry32, smoothstep } from '../core/noise';
 import { Builder, Bucket } from '../port/port';
 import { CrewSystem, Look, makeLook } from '../ships/crew';
@@ -10,6 +12,7 @@ import { CampSite, Ground, Landing } from './ground';
 import { fortToWorld, worldToFort } from './fortKit';
 import { DeckFloor, Floor, Lines, railPoint } from './deck';
 import { Cut, CUT_HIT, CUT_WIND, RUN, WALK, Walker } from './walker';
+import { Hands } from './hands';
 
 // Going ashore. The captain rows in with four hands, walks the islands on foot
 // and the hands follow in a loose wedge, guard the captain's back and settle
@@ -35,6 +38,8 @@ const PISTOL_RELOAD = 7;
 const PISTOL_RANGE = 18;
 /** Camps nearer the camera than this are simulated and drawn. */
 const CAMP_LIVE = 270;
+/** Camps further than this (m) from the ship or party are lost in the haze: not drawn. */
+const CAMP_SHOW = 1500;
 /** Spade-seconds to dig a treasure up (three diggers share them). */
 const DIG_WORK = 16;
 /** A camp takes up arms when the landing party comes this close to its fire. */
@@ -74,6 +79,10 @@ export interface ShoreInput {
   interact: boolean;
   /** Where a mouse click points on the ground, to cut toward. */
   aim: { x: number; z: number } | null;
+  /** Seen through the captain's own eyes: they face where they look (null: they face where they walk). */
+  face: number | null;
+  /** Pulse: jump. */
+  jump: boolean;
 }
 
 export interface ShoreHooks {
@@ -96,6 +105,8 @@ export interface ShoreHooks {
   /** A boarder lands on her deck. */
   landed(w: Walker, captain: boolean): void;
   step(k: number, wet: boolean, deck: boolean): void;
+  /** The captain springs up (k = 0) or comes down from a jump (k: how hard, 0..1). */
+  hop(up: boolean, k: number, wet: boolean, deck: boolean): void;
 }
 
 /** A boarder on the way across: perched on your rail, then out over the gap on a line. */
@@ -123,6 +134,8 @@ export interface FortWalls {
   /** Half-width to the outer face, and the walls' thickness. */
   H: number;
   T: number;
+  /** How far its corner works stand out past the curtain (walkers give them room). */
+  pad?: number;
 }
 
 /** A fort's garrison, handed to the shore like a camp. */
@@ -144,6 +157,8 @@ export interface Camp {
   readonly flag: THREE.Group;
   readonly lid: THREE.Group;
   readonly chest: THREE.Group;
+  /** The camp's huts, colours and chest, put away whole when it's far out of sight. */
+  readonly holder: THREE.Group;
   alert: boolean;
   routed: boolean;
   opened: boolean;
@@ -153,6 +168,8 @@ export interface Camp {
   strike: number;
   live: boolean;
   fireT: number;
+  /** Peaceful seas: the party is close, and the camp is on its feet watching them (but has drawn no blade). */
+  wary?: boolean;
   /** Seat or post each cutthroat keeps when at ease. */
   spots: { x: number; z: number; yaw: number; idle: 'sit' | 'warm' | 'watch' | 'lean' | 'chat' | 'stand'; seatH: number }[];
 }
@@ -218,7 +235,14 @@ export type Prompt = { key: 'boat' | 'chest' | 'fight' | 'dig' | 'retreat'; titl
 export class Shore {
   readonly group = new THREE.Group();
   readonly camps: Camp[] = [];
-  private mats: ShoreMats;
+  readonly mats: ShoreMats;
+  /** The captain's hands and what's in them, for the first-person view. */
+  readonly hands: Hands;
+  /** Through the captain's eyes: their own figure is not drawn, the muzzle flash comes from the hands. */
+  eyes = false;
+  /** The foe the last cut or shot locked onto, and when (shore time), so the eyes can follow. */
+  lockOn: Walker | null = null;
+  lockT = -9;
   private boat = new THREE.Group();
   private boatBlocks: { x: number; z: number; r: number }[] = [];
   active = false;
@@ -283,6 +307,9 @@ export class Shore {
   /** Forts' walls, for walking round them to the gate. */
   private walls: FortWalls[] = [];
 
+  /** Peaceful seas: a camp that holds its blades until the party strikes first (the game decides, per camp). */
+  calm: (c: Camp) => boolean = () => false;
+
   constructor(
     readonly ground: Ground,
     sites: CampSite[],
@@ -293,6 +320,8 @@ export class Shore {
     this.group.name = 'shore';
     this.floor = ground;
     const mats = (this.mats = shoreMats());
+    this.hands = new Hands(mats);
+    this.group.add(this.hands.group);
     this.lines = new Lines(mats);
     this.group.add(this.lines.ropes, this.lines.hooks);
     // the ship's boat, hidden until it's pulled up on a beach
@@ -325,11 +354,14 @@ export class Shore {
       const g = new THREE.Group();
       g.name = `camp-${i}`;
       b.finish(g, mats as unknown as Record<Bucket, THREE.Material>);
-      this.group.add(g);
+      const holder = new THREE.Group();
+      this.group.add(holder);
+      holder.add(g);
+      staticLod.add(g);
       for (const d of layout.blocks) ground.blocks.push(d);
       const flag = campFlag(mats.flag);
       flag.position.copy(layout.flagTop);
-      this.group.add(flag);
+      holder.add(flag);
       // the chest: a body and a lid on its hinge
       const chest = new THREE.Group();
       const lid = new THREE.Group();
@@ -339,8 +371,9 @@ export class Shore {
       chest.add(lid);
       chest.position.copy(layout.chest);
       chest.rotation.y = layout.chestYaw;
-      this.group.add(chest);
-      const camp: Camp = { index: i, site, layout, gang: [], flag, lid, chest, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
+      holder.add(chest);
+      skipWhenHidden(holder);
+      const camp: Camp = { index: i, site, layout, gang: [], flag, lid, chest, holder, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
       this.muster(camp, i);
       this.camps.push(camp);
     });
@@ -353,7 +386,9 @@ export class Shore {
       const flag = campFlag(mats.flag);
       flag.scale.setScalar(2.3);
       flag.position.copy(gr.layout.flagTop);
-      this.group.add(flag);
+      const holder = new THREE.Group();
+      this.group.add(holder);
+      holder.add(flag);
       const chest = new THREE.Group();
       const lid = new THREE.Group();
       for (const [k, geo] of Object.entries(parts.body)) if (geo) chest.add(this.mesh(geo, k as Bucket));
@@ -363,8 +398,9 @@ export class Shore {
       chest.scale.setScalar(1.25);
       chest.position.copy(gr.layout.chest);
       chest.rotation.y = gr.layout.chestYaw;
-      this.group.add(chest);
-      const camp: Camp = { index: i, site: gr.site, layout: gr.layout, fort: gr.walls, gang: [], flag, lid, chest, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
+      holder.add(chest);
+      skipWhenHidden(holder);
+      const camp: Camp = { index: i, site: gr.site, layout: gr.layout, fort: gr.walls, gang: [], flag, lid, chest, holder, alert: false, routed: false, opened: false, open: 0, strike: 0, live: false, fireT: 0, spots: [] };
       this.muster(camp, i);
       this.camps.push(camp);
     });
@@ -479,6 +515,7 @@ export class Shore {
     const fx = landing.dx;
     const fz = landing.dz;
     cap.place(sx + fx * 1.2, sz + fz * 1.2, yaw);
+    this.hands.dress(cap.look);
     this.march = yaw;
     this.party.slice(1).forEach((p, i) => {
       const side = i % 2 ? 1 : -1;
@@ -854,22 +891,55 @@ export class Shore {
     for (const w of all) {
       const run = clamp((w.stride - WALK) / (RUN - WALK), 0, 1);
       w.animate(dt, world.time, run);
-      this.stand(w, air);
+      this.stand(w, air, dt, world);
       this.bladeTrail(w, world);
     }
     this.gather();
   }
 
   /** Poses a walker onto whatever is under its feet (or in the air on a line). */
-  private stand(w: Walker, air: Set<Walker> | null) {
+  private stand(w: Walker, air: Set<Walker> | null, dt: number, world: World) {
     const d = this.deck;
     const sw = air?.has(w) ? this.swings.get(w) : undefined;
-    if (sw) w.place3(sw.y);
-    else if (d) {
+    if (sw) {
+      w.place3(sw.y);
+      return;
+    }
+    let g: number;
+    if (d) {
       const l = d.toLocal(w.x, w.z, _o);
-      w.place3(d.localY(l.x, l.z));
-      d.ride(w);
-    } else w.place3(this.ground.height(w.x, w.z));
+      g = d.localY(l.x, l.z);
+    } else g = this.ground.height(w.x, w.z);
+    const hit = w.fly(dt, g);
+    w.place3(g);
+    if (d) d.ride(w);
+    if (hit > 0) this.touchDown(w, hit, world);
+  }
+
+  /** Feet back on the ground after a jump: a thud, a puff of sand or a splash. */
+  private touchDown(w: Walker, hit: number, world: World) {
+    const k = clamp((hit - 2) / 4, 0, 1);
+    const wet = w.wade > 0.08;
+    if (w === this.captain) this.hooks.hop(false, k, wet, !!this.deck);
+    if (this.deck) return;
+    const p = world.particles;
+    const y = wet ? world.waterHeight(w.x, w.z) : w.y + 0.05;
+    const n = wet ? 10 : 7;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+      const sp = (wet ? 1.6 : 1.1) + Math.random() * 1.2;
+      p.emit(
+        wet
+          ? {
+              x: w.x, y, z: w.z, vx: Math.sin(a) * sp + w.vx * 0.2, vy: 1.8 + Math.random() * 1.8, vz: Math.cos(a) * sp + w.vz * 0.2,
+              life: 0.5 + Math.random() * 0.3, size: 0.1 + Math.random() * 0.08, sizeEnd: 0.05, color: [1.3, 1.4, 1.45], alpha: 0.85, grav: 11, drag: 0.8, kind: 0, fadeIn: 0.01,
+            }
+          : {
+              x: w.x + Math.sin(a) * 0.2, y, z: w.z + Math.cos(a) * 0.2, vx: Math.sin(a) * sp, vy: 0.4 + Math.random() * 0.5, vz: Math.cos(a) * sp,
+              life: 0.45 + Math.random() * 0.3, size: 0.12 + Math.random() * 0.1, sizeEnd: 0.32, color: [0.95, 0.86, 0.68], alpha: 0.35, grav: 1.5, drag: 3.5, kind: 0, fadeIn: 0.02,
+            },
+      );
+    }
   }
 
   /** The alert foes near the party, nearest first (for bars and the battle check). */
@@ -901,11 +971,14 @@ export class Shore {
       return;
     }
     const len = Math.min(1, Math.hypot(inp.mx, inp.mz));
-    // on the spade: walking off, or reaching for a weapon, puts it down (the hole stays dug)
+    // a jump: not mid-cut, not with the pistol up, not from deep water
+    const hop = inp.jump && !cap.airborne && cap.ready && !cap.cutting && cap.aim <= 0 && cap.wade < 0.5;
+    // on the spade: walking off, jumping, or reaching for a weapon puts it down (the hole stays dug)
     if (this.digging) {
-      if (len > 0.3 || inp.strike || inp.pistol) this.stopDig();
+      if (len > 0.3 || inp.strike || inp.pistol || hop) this.stopDig();
       else return;
     }
+    if (hop && cap.jump()) this.hooks.hop(true, 0, cap.wade > 0.08, !!this.deck);
     const fighting = this.fighting;
     // a fighting stance is a shuffle; out of a fight you can run
     const top = inp.run && !cap.cutting ? RUN : WALK;
@@ -913,10 +986,13 @@ export class Shore {
     const busy = cap.cutting ? 0.25 : cap.aim > 0 ? 0.35 : 1;
     const wx = (len > 0.02 ? inp.mx : 0) * top * wade * busy;
     const wz = (len > 0.02 ? inp.mz : 0) * top * wade * busy;
-    const k = damp(len > 0.02 ? 10 : 14, dt);
+    // aloft there's little to push against: the jump carries the run-up
+    const k = damp(len > 0.02 ? 10 : 14, dt) * (cap.airborne ? 0.12 : 1);
     cap.vx += (wx - cap.vx) * k;
     cap.vz += (wz - cap.vz) * k;
-    if (len > 0.1 && !cap.cutting) cap.wantYaw = Math.atan2(inp.mx, inp.mz);
+    if (inp.face !== null) {
+      if (!cap.cutting) cap.wantYaw = inp.face;
+    } else if (len > 0.1 && !cap.cutting) cap.wantYaw = Math.atan2(inp.mx, inp.mz);
     this.stillT = len > 0.05 ? 0 : this.stillT + dt;
     // the wedge follows the way you walk, not every twitch of the stick
     if (Math.hypot(cap.vx, cap.vz) > 1) this.march += angleDelta(this.march, Math.atan2(cap.vx, cap.vz)) * damp(2.2, dt);
@@ -942,7 +1018,11 @@ export class Shore {
     this.pistolT = Math.max(0, this.pistolT - dt);
     if (inp.pistol && this.pistolT <= 0 && this.shotAt < 0) {
       const t = this.pistolTarget(cap, inp.aim);
-      if (t) cap.wantYaw = Math.atan2(t.x - cap.x, t.z - cap.z);
+      if (t) {
+        cap.wantYaw = Math.atan2(t.x - cap.x, t.z - cap.z);
+        this.lockOn = t;
+        this.lockT = this.time;
+      }
       else if (inp.aim) cap.wantYaw = Math.atan2(inp.aim.x - cap.x, inp.aim.z - cap.z);
       cap.target = t;
       this.shotAt = 0;
@@ -979,6 +1059,10 @@ export class Shore {
     }
     if (best) cap.wantYaw = Math.atan2(best.x - cap.x, best.z - cap.z);
     else if (aim) cap.wantYaw = want;
+    if (best) {
+      this.lockOn = best;
+      this.lockT = this.time;
+    }
     cap.yaw += angleDelta(cap.yaw, cap.wantYaw) * 0.6;
     if (!cap.swing(cut)) return;
     this.combo++;
@@ -1017,6 +1101,8 @@ export class Shore {
     const s = Math.sin(cap.yaw);
     const c = Math.cos(cap.yaw);
     _hand.set(cap.x + s * 0.75 + c * 0.2, cap.y + 1.42, cap.z + c * 0.75 - s * 0.2);
+    // seen from the captain's eyes, the shot leaves the flintlock in their hand
+    if (this.eyes && this.hands.group.visible) _hand.copy(this.hands.muzzle);
     const p = world.particles;
     p.emit({ x: _hand.x, y: _hand.y, z: _hand.z, life: 0.08, size: 0.5, sizeEnd: 0.9, color: [9, 6, 2.4], colorEnd: [4, 1.6, 0.3], kind: 0, fadeIn: 0.001 }, true);
     for (let i = 0; i < 6; i++) {
@@ -1340,7 +1426,8 @@ export class Shore {
     const f = c.layout.fire;
     const alarm = c.fort ? FORT_ALARM : CAMP_ALARM;
     const leash = c.fort ? FORT_LEASH : LEASH;
-    // the party comes too close: up and at them
+    // the party comes too close: up and at them (on peaceful seas, up and watching)
+    c.wary = false;
     if (!c.alert && !c.routed && cap && !this.defeated) {
       let near = Infinity;
       for (const p of this.party) {
@@ -1348,7 +1435,10 @@ export class Shore {
         near = Math.min(near, Math.hypot(w.x - f.x, w.z - f.z) - alarm);
         for (const g of c.gang) if (g.alive && !g.down) near = Math.min(near, Math.hypot(w.x - g.x, w.z - g.z) - 9);
       }
-      if (near < 0) this.raise(c, world);
+      if (near < 0) {
+        if (this.calm(c)) c.wary = true;
+        else this.raise(c, world);
+      }
     }
     const party = this.active ? this.party.map((p) => p.walker) : [];
     c.gang.forEach((w, k) => {
@@ -1423,6 +1513,9 @@ export class Shore {
       w.idle = s.idle;
       w.seatH = s.seatH;
       w.wantYaw = s.yaw;
+      // wary: those on their feet keep an eye on the captain
+      const cap = this.captain;
+      if (c.wary && cap && s.idle !== 'sit') w.wantYaw = Math.atan2(cap.x - w.x, cap.z - w.z);
       if (!c.alert) w.armed = false;
     }
     w.turn(dt, 6);
@@ -1484,7 +1577,8 @@ export class Shore {
       const moved = Math.hypot(w.x - px, w.z - pz) / Math.max(dt, 1e-4);
       w.stride += ((w.down ? 0 : moved) - w.stride) * damp(12, dt);
       w.wade = this.deck ? 0 : Math.max(0, -g.height(w.x, w.z));
-      if (w.stride < 0.08) continue;
+      // no footfalls in mid-air
+      if (w.stride < 0.08 || w.airborne) continue;
       // footfalls twice a stride: ~1.4 m walking, longer at a run
       const before = w.phase;
       w.phase += ((moved * dt) / w.stepLen()) * Math.PI;
@@ -1496,7 +1590,7 @@ export class Shore {
   /** A pale smear of light along the cutlass's arc, from the wind-up through the blow. */
   private bladeTrail(w: Walker, world: World) {
     const c = w.cut;
-    const on = w.cutting && w.cutT > CUT_WIND[c] * 0.8 && w.cutT < CUT_HIT[c] + 0.09 && w.visible;
+    const on = w.cutting && w.cutT > CUT_WIND[c] * 0.8 && w.cutT < CUT_HIT[c] + 0.09 && w.visible && !w.hidden;
     if (!on) {
       w.tipLive = false;
       return;
@@ -1620,6 +1714,11 @@ export class Shore {
     b.kx += (dx / d) * push;
     b.kz += (dz / d) * push;
     if (b.team === 'foe' && !b.target) b.target = a;
+    // a blade drawn on one of them is drawn on them all (peaceful seas: this is how it starts)
+    if (b.team === 'foe' && a.team !== 'foe') {
+      const camp = this.camps.find((c) => c.gang.includes(b));
+      if (camp && !camp.alert && !camp.routed) this.raise(camp, world);
+    }
     const at = _v.set(b.x, b.y + 1.2, b.z);
     const [vol, pan, dd] = world.soundAt(at);
     world.audio.thwack(vol, pan, dd, heavy);
@@ -1722,8 +1821,8 @@ export class Shore {
         const atGate = Math.abs(a.x) < 1.7 && a.z > mouthOut - 0.9;
         tx = 0;
         tz = atGate ? mouthIn : mouthOut;
-        if (!atGate) [tx, tz] = roundWalls(a.x, a.z, tx, tz, H);
-      } else [tx, tz] = roundWalls(a.x, a.z, tx, tz, H);
+        if (!atGate) [tx, tz] = roundWalls(a.x, a.z, tx, tz, H, f.pad);
+      } else [tx, tz] = roundWalls(a.x, a.z, tx, tz, H, f.pad);
       if (tx === b.x && tz === b.z) return out;
       fortToWorld(f, tx, tz, _wp);
       out.x = _wp.x;
@@ -1738,6 +1837,9 @@ export class Shore {
   private campFx(c: Camp, dt: number, world: World, focus: THREE.Vector3) {
     const L = c.layout;
     const d = Math.hypot(L.fire.x - focus.x, L.fire.z - focus.z);
+    // far out past the haze the whole camp leaves the scene's per-frame walks
+    const show = d < CAMP_SHOW;
+    if (c.holder.visible !== show) c.holder.visible = show;
     // the jolly roger flies downwind (and comes down when the camp is routed)
     if (d < 520) {
       c.flag.rotation.y = Math.atan2(-world.wind.dirZ, world.wind.dirX);
@@ -2079,10 +2181,10 @@ function cuts(ax: number, az: number, bx: number, bz: number, E: number) {
 }
 
 /** From a (outside a fort of half-width H, fort frame) toward t: straight on, or to the corner that gets you round. */
-function roundWalls(ax: number, az: number, tx: number, tz: number, H: number): [number, number] {
-  const E = H + 0.6;
+function roundWalls(ax: number, az: number, tx: number, tz: number, H: number, pad = 1): [number, number] {
+  const E = H + Math.max(0.6, pad * 0.5);
   if (!cuts(ax, az, tx, tz, E)) return [tx, tz];
-  const C = H + 3.4;
+  const C = H + pad + 2.4;
   let best: [number, number] = [tx, tz];
   let bd = Infinity;
   for (const [cx, cz] of [[C, C], [-C, C], [C, -C], [-C, -C]]) {

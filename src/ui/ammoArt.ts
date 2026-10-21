@@ -54,6 +54,18 @@ const ART: Record<AmmoId, string> = {
       .join('')}
     <path d="M10 20.5c-1 6 3 10.5 10 10.8 7-.3 11-4.8 10-10.8" stroke="#b49a6c" stroke-width="0.9" fill="none" opacity="0.65" stroke-dasharray="1.6 1.4"/>`,
 
+  // a rocket on its stick, striped like a barber's pole, its fuse spitting
+  firework: `<defs><linearGradient id="aqa-tube" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#8a1f3a"/><stop offset="0.45" stop-color="#ff5a7a"/><stop offset="1" stop-color="#7a1530"/></linearGradient><radialGradient id="aqa-burst"><stop offset="0" stop-color="#fff"/><stop offset="0.3" stop-color="#ffe27a"/><stop offset="1" stop-color="#ff8ad8" stop-opacity="0"/></radialGradient></defs>
+    <circle cx="29" cy="10" r="9" fill="url(#aqa-burst)" opacity="0.8"/>
+    <path d="M29 3.5v3M29 13.5v3M22.5 10h3M32.5 10h3M24.6 5.6l2 2M31.4 12.4l2 2M33.4 5.6l-2 2M26.6 12.4l-2 2" stroke="#fff3c0" stroke-width="1.1" stroke-linecap="round"/>
+    <path d="M9.5 37.5 20.5 22.5" stroke="#b49a6c" stroke-width="1.5" stroke-linecap="round"/>
+    <g transform="rotate(36 21 20)">
+      <rect x="17.4" y="13" width="7.2" height="15" rx="1.2" fill="url(#aqa-tube)"/>
+      <path d="M17.4 17h7.2M17.4 21.5h7.2M17.4 26h7.2" stroke="#fff1e0" stroke-width="1.3" opacity="0.85"/>
+      <path d="M16.6 13.4 21 6.5l4.4 6.9z" fill="#ffd27a"/>
+      <path d="M19 28v2.4M23 28v2.4" stroke="#6b5a40" stroke-width="1"/>
+    </g>`,
+
   // a phantom's shot: a ball of cold green ghost-fire with a wisp curling off it
   wraith: `<defs><radialGradient id="aqa-wraith" cx="0.4" cy="0.38" r="0.65"><stop offset="0" stop-color="#f2fff8"/><stop offset="0.35" stop-color="#7dffc4"/><stop offset="1" stop-color="#0c6b45"/></radialGradient><radialGradient id="aqa-wglow"><stop offset="0" stop-color="#5dffb5" stop-opacity="0.6"/><stop offset="1" stop-color="#5dffb5" stop-opacity="0"/></radialGradient></defs>
     <circle cx="20" cy="22" r="17" fill="url(#aqa-wglow)"/>

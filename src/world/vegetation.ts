@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mulberry32, Simplex2, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import { shadowOnly } from '../render/passCull';
+import { simplifiedLevels, type LodJob } from '../render/lod';
 import { SeaFloor, Island } from './terrain';
 import {
   palmGeometry, broadleafGeometry, treeFernGeometry, bananaGeometry, fernGeometry, bushGeometry, flowerBushGeometry,
@@ -64,6 +65,23 @@ interface Batch {
   shown: Uint32Array;
   n: number;
   shadows: boolean;
+  /**
+   * near: the detailed plant of a set of levels, which decides each plant's
+   * level; mid: the in-between one (the shadow stand-in's own cut, for
+   * palms); shadow: the stand-in casting for near and mid;
+   * far: the light twin, and
+   * farShadow its shadow; cover: ground cover and the like, with no twin.
+   * The two shadow roles only draw plants whose shadow lands on the shadow map.
+   */
+  role: 'near' | 'mid' | 'shadow' | 'far' | 'farShadow' | 'cover';
+  /** Per plant, shared by a set of levels (and its stand-in): 2 detailed, 1 mid, 0 light. */
+  lvl: Uint8Array | null;
+  /** The set has a mid level between the detailed and the light one. */
+  hasMid: boolean;
+  /** On-screen radius (CSS px) under which the set's plants go light. */
+  lodPx: number;
+  /** How far out it is drawn up close, as a share of the detail radius (cover reaches further than its LOD'd plants). */
+  reach: number;
 }
 
 interface IslandFlora {
@@ -86,6 +104,20 @@ const _pv = new THREE.Matrix4();
 const _dir = new THREE.Vector3();
 const _sphere = new THREE.Sphere();
 const _m4 = new THREE.Matrix4();
+/** The sun's shadow map this frame: centre x, z and half size (m). */
+const _shadowBox = new THREE.Vector4();
+/**
+ * On-screen radius (CSS px) below which a tree or shrub shows its light mesh:
+ * at that size the detailed one's extra fronds and puffs merge into the same
+ * silhouette.
+ */
+const LOD_PX = 22;
+/** Above this (CSS px radius) palms show every frond, nut and trunk ring. */
+const MID_PX = 55;
+/** Ground cover smaller than this on screen (radius, CSS px) isn't drawn at all. */
+const COVER_MIN_PX = 0.6;
+/** The light plants' shadow casters: welded and held to 20 cm. */
+const FAR_SHADOW: LodJob = { error: 0.2, weld: true, permissive: true };
 /** Frustum margin (m): small camera moves never uncover an unculled plant. */
 const MARGIN = 14;
 
@@ -97,6 +129,15 @@ export class Vegetation {
   private flora: IslandFlora[] = [];
   /** While set (the loading screen's warm-up draw), nothing is culled or swapped. */
   hold = false;
+  /**
+   * From eye level (the captain's own eyes, ashore or on deck) a whole island
+   * stands in view at once: plants further than this (m) from the camera are
+   * drawn with the far LOD even on the island underfoot, and ground cover
+   * stops a little beyond it. Infinity (the bird's-eye views) keeps every
+   * plant of a near island detailed.
+   */
+  detail = Infinity;
+  private cullDetail = Infinity;
   /** Trunks and boulders people on foot walk round, bucketed on an 8 m grid (see solidsNear). */
   private solids = new Map<number, { x: number; z: number; r: number }[]>();
   // the view the batches were last culled for
@@ -104,6 +145,7 @@ export class Vegetation {
   private cullDir = new THREE.Vector3();
   private cullLight = new THREE.Vector3();
   private cullProj = new Float32Array(2);
+  private cullBox = new THREE.Vector4();
 
   constructor(
     private terrain: SeaFloor,
@@ -279,6 +321,46 @@ export class Vegetation {
       }
     }
 
+    // ---------------------------------------------------------------- karst creepers
+    // Shrubs, ferns and the odd stunted tree clinging to the towers' walls and
+    // ledges, too steep for the forest proper (their own stream, so the rest
+    // of the island's planting stays as it was)
+    if (karst) {
+      const kr = mulberry32(Math.floor(isl.seed * 613) + 77);
+      const kext = ext * 1.3;
+      const kTries = Math.floor(((kext * kext * 4) / 10) * this.density);
+      let placed = 0;
+      for (let n = 0; n < kTries && placed < 700; n++) {
+        const x = isl.x + (kr() * 2 - 1) * kext;
+        const z = isl.z + (kr() * 2 - 1) * kext;
+        const h = t.heightAt(x, z);
+        if (h < 5 || cleared(x, z)) continue;
+        t.gradientAt(x, z, grad);
+        const slope = grad.length();
+        if (slope < 0.5 || slope > 4.5) continue;
+        // in clumps and tongues, not sprinkled evenly
+        const clump = s.noise(x * 0.07 + 3.3, z * 0.07 - h * 0.05) * 0.5 + 0.5;
+        if (kr() > clump * clump * 0.9) continue;
+        const k = kr();
+        if (slope < 0.85 && k < 0.18) {
+          if (!free(x, z, 1.8)) continue;
+          take(x, z, 1.8);
+          L.tree.push(pl(x, h - 0.6, z, 0.5 + kr() * 0.3, T_ROUND + Math.floor(kr() * 2)));
+          t.stampCanopy(x, z, 2.4, 0.6);
+        } else if (k < 0.72 || slope > 2.4) {
+          if (!free(x, z, 0.9)) continue;
+          take(x, z, 0.9);
+          L.bush.push(pl(x, h - 0.3 - Math.min(slope, 3) * 0.3, z, 0.7 + kr() * 0.8, 1));
+        } else {
+          if (!free(x, z, 0.6)) continue;
+          take(x, z, 0.6);
+          L.fern.push(pl(x, h - 0.15, z, 0.9 + kr() * 0.7, Math.floor(kr() * 2)));
+        }
+        t.stampAO(x, z, 1.6, 0.22);
+        placed++;
+      }
+    }
+
     // ---------------------------------------------------------------- understorey
     for (const tr of forest) {
       const n = rnd() < 0.75 ? 1 + Math.floor(rnd() * 2.5) : 0;
@@ -409,15 +491,16 @@ export class Vegetation {
 
   build() {
     const lo = 1;
-    const palms = [palmGeometry(8.5, 1.6, 3), palmGeometry(10.5, 2.4, 7), palmGeometry(7, 0.9, 13)];
-    const palmsLo = [palmGeometry(8.5, 1.6, 3, lo), palmGeometry(10.5, 2.4, 7, lo), palmGeometry(7, 0.9, 13, lo)];
-    const palmsSh = [palmGeometry(8.5, 1.6, 3, 0, true), palmGeometry(10.5, 2.4, 7, 0, true), palmGeometry(7, 0.9, 13, 0, true)];
+    // (trunks flagged as bark: see flora.ts barkSign)
+    const palms = [palmGeometry(8.5, 1.6, 3, 0, false, true), palmGeometry(10.5, 2.4, 7, 0, false, true), palmGeometry(7, 0.9, 13, 0, false, true)];
+    const palmsLo = [palmGeometry(8.5, 1.6, 3, lo, false, true), palmGeometry(10.5, 2.4, 7, lo, false, true), palmGeometry(7, 0.9, 13, lo, false, true)];
+    const palmsSh = [palmGeometry(8.5, 1.6, 3, 0, true, true), palmGeometry(10.5, 2.4, 7, 0, true, true), palmGeometry(7, 0.9, 13, 0, true, true)];
     const treeSpec: [number, 'round' | 'tall' | 'flame' | 'blossom'][] = [[5, 'round'], [17, 'round'], [29, 'tall'], [41, 'flame'], [52, 'blossom'], [63, 'blossom']];
-    const trees = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st));
-    const treesLo = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, lo));
-    const treesSh = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, true));
-    const treeFerns = [treeFernGeometry(3), treeFernGeometry(8), treeFernGeometry(14)];
-    const treeFernsLo = [treeFernGeometry(3, lo), treeFernGeometry(8, lo), treeFernGeometry(14, lo)];
+    const trees = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, false, true));
+    const treesLo = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, lo, false, true));
+    const treesSh = treeSpec.map(([sd, st]) => broadleafGeometry(sd, st, 0, true, true));
+    const treeFerns = [treeFernGeometry(3, 0, true), treeFernGeometry(8, 0, true), treeFernGeometry(14, 0, true)];
+    const treeFernsLo = [treeFernGeometry(3, lo, true), treeFernGeometry(8, lo, true), treeFernGeometry(14, lo, true)];
     const bananas = [bananaGeometry(2), bananaGeometry(9)];
     const bananasLo = [bananaGeometry(2, lo), bananaGeometry(9, lo)];
     const ferns = [fernGeometry(4), fernGeometry(12)];
@@ -440,15 +523,18 @@ export class Vegetation {
     ];
     const rocks = [rockGeometry(4), rockGeometry(9)];
     const mossRocks = [rockGeometry(4, true), rockGeometry(9, true)];
+    const rocksLo = [rockGeometry(4, false, 1), rockGeometry(9, false, 1)];
+    const mossRocksLo = [rockGeometry(4, true, 1), rockGeometry(9, true, 1)];
     const beach = [starfishGeometry(), shellGeometry(3), shellGeometry(8)];
     const coconuts = [coconutsGeometry(2), coconutsGeometry(5)];
     const drift = [driftwoodGeometry(1), driftwoodGeometry(6)];
 
     const std = (o: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial({ vertexColors: true, envMapIntensity: 0.8, ...o });
-    const palmMat = patchMaterial(std({ roughness: 0.7, side: THREE.DoubleSide }), { clouds: true, sway: 0.0028, foliage: true });
-    const treeMat = patchMaterial(std({ roughness: 0.8 }), { clouds: true, sway: 0.0018, foliage: true });
+    // up close: ringed, fibrous palm and tree-fern stems; fissured broadleaf bark under crowns of leaf clusters
+    const palmMat = patchMaterial(std({ roughness: 0.7, side: THREE.DoubleSide }), { clouds: true, sway: 0.0028, foliage: true, bark: 2 });
+    const treeMat = patchMaterial(std({ roughness: 0.8 }), { clouds: true, sway: 0.0018, foliage: true, bark: 1, leaves: true });
     const bananaMat = patchMaterial(std({ roughness: 0.62, side: THREE.DoubleSide }), { clouds: true, sway: 0.02, foliage: true });
-    const bushMat = patchMaterial(std({ roughness: 0.82 }), { clouds: true, foliage: true });
+    const bushMat = patchMaterial(std({ roughness: 0.82 }), { clouds: true, foliage: true, leaves: true });
     const coverMat = patchMaterial(std({ roughness: 0.86, side: THREE.DoubleSide, envMapIntensity: 0.7 }), { clouds: true, sway: 0.12, foliage: true, fade: 300 });
     const rockMat = patchMaterial(std({ roughness: 0.78 }), { clouds: true, caustics: true });
     const beachMat = patchMaterial(std({ roughness: 0.6 }), { caustics: true, clouds: true, fade: 200 });
@@ -465,11 +551,16 @@ export class Vegetation {
       lo?: THREE.BufferGeometry[];
       /** a lighter shadow caster standing in for the near mesh */
       shadow?: THREE.BufferGeometry[];
+      /** an in-between level for plants a few dozen pixels across */
+      mid?: THREE.BufferGeometry[];
+      /** on-screen radius (CSS px) under which the light mesh takes over */
+      lodPx?: number;
       tilt?: boolean;
       shadows?: boolean;
       always?: boolean;
     }
 
+    const farShadows: THREE.InstancedMesh[] = [];
     this.terrain.islands.forEach((isl, i) => {
       const L = this.lists[i];
       const f: IslandFlora = {
@@ -478,11 +569,10 @@ export class Vegetation {
       };
       f.near.name = `flora-near-${i}`;
       f.far.name = `flora-far-${i}`;
-      f.far.visible = false;
       this.group.add(f.near, f.far, f.always);
       this.flora.push(f);
 
-      const batch = (mesh: THREE.InstancedMesh, geo: THREE.BufferGeometry, mats: Float32Array, shadows: boolean): Batch => {
+      const batch = (mesh: THREE.InstancedMesh, geo: THREE.BufferGeometry, mats: Float32Array, shadows: boolean, role: Batch['role'] = 'cover', lvl: Uint8Array | null = null, hasMid = false, lodPx = LOD_PX): Batch => {
         const n = mesh.count;
         if (!geo.boundingSphere) geo.computeBoundingSphere();
         const sph = new Float32Array(n * 4);
@@ -498,7 +588,7 @@ export class Vegetation {
         mesh.instanceColor!.setUsage(THREE.DynamicDrawUsage);
         const shown = new Uint32Array(n);
         for (let k = 0; k < n; k++) shown[k] = k;
-        return { mesh, mat: mats, col: (mesh.instanceColor!.array as Float32Array).slice(), sph, shown, n, shadows };
+        return { mesh, mat: mats, col: (mesh.instanceColor!.array as Float32Array).slice(), sph, shown, n, shadows, role, lvl, hasMid, lodPx, reach: 1 };
       };
 
       const add = (list: Placement[], geos: THREE.BufferGeometry[], mat: THREE.Material, tint: Tint, o: Opts = {}) => {
@@ -520,37 +610,65 @@ export class Vegetation {
           inst.receiveShadow = true;
           inst.computeBoundingSphere();
           const mats = (inst.instanceMatrix.array as Float32Array).slice();
+          const lvl = o.lo ? new Uint8Array(sub.length).fill(2) : null;
           (o.always ? f.always : f.near).add(inst);
-          (o.always ? f.alwaysB : f.nearB).push(batch(inst, geos[v], mats, inst.castShadow));
+          const nb = batch(inst, geos[v], mats, inst.castShadow, lvl ? 'near' : 'cover', lvl, !!o.mid, o.lodPx);
+          // ground cover has no far LOD to hand over to: past the detail radius it carries on a little further, then stops
+          if (!o.lo && !o.shadow) nb.reach = 1.6;
+          (o.always ? f.alwaysB : f.nearB).push(nb);
+          if (o.mid && lvl) {
+            const mid = new THREE.InstancedMesh(o.mid[v], mat, sub.length);
+            (mid.instanceMatrix.array as Float32Array).set(mats);
+            mid.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
+            mid.castShadow = inst.castShadow;
+            mid.receiveShadow = true;
+            mid.boundingSphere = inst.boundingSphere;
+            f.near.add(mid);
+            f.nearB.push(batch(mid, o.mid[v], mats, mid.castShadow, 'mid', lvl));
+          }
           if (o.shadow) {
             const sh = shadowOnly(new THREE.InstancedMesh(o.shadow[v], mat, sub.length));
             (sh.instanceMatrix.array as Float32Array).set(mats);
             sh.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
             sh.boundingSphere = inst.boundingSphere;
             f.near.add(sh);
-            f.nearB.push(batch(sh, o.shadow[v], mats, true));
+            f.nearB.push(batch(sh, o.shadow[v], mats, true, lvl ? 'shadow' : 'cover', lvl));
           }
           if (o.lo) {
-            // the far LOD plants the very same instances, culled on their own
+            // the far LOD plants the very same instances, each plant taking
+            // whichever level suits its own size on screen; a light plant
+            // casts its own (light) shadow
             const far = new THREE.InstancedMesh(o.lo[v], mat, sub.length);
             (far.instanceMatrix.array as Float32Array).set(mats);
             far.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
-            far.castShadow = inst.castShadow;
+            far.castShadow = false;
             far.receiveShadow = true;
             far.computeBoundingSphere();
             f.far.add(far);
-            f.farB.push(batch(far, o.lo[v], mats, far.castShadow));
+            f.farB.push(batch(far, o.lo[v], mats, false, 'far', lvl));
+            if (o.shadows ?? true) {
+              const fsh = shadowOnly(new THREE.InstancedMesh(o.lo[v], mat, sub.length));
+              farShadows.push(fsh);
+              (fsh.instanceMatrix.array as Float32Array).set(mats);
+              fsh.instanceColor = new THREE.InstancedBufferAttribute((inst.instanceColor!.array as Float32Array).slice(), 3);
+              fsh.boundingSphere = far.boundingSphere;
+              f.far.add(fsh);
+              f.farB.push(batch(fsh, o.lo[v], mats, true, 'farShadow', lvl));
+            }
           }
         }
       };
 
       const leafy: Tint = (t, c) => c.setRGB(0.88 + t * 0.24, 0.93 + t * 0.12, 0.84 + (1 - t) * 0.14);
-      add(L.palm, palms, palmMat, (t, c) => c.setRGB(0.9 + t * 0.2, 0.95 + t * 0.1, 0.85 + (1 - t) * 0.1), { lo: palmsLo, shadow: palmsSh });
-      add(L.tree, trees, treeMat, leafy, { lo: treesLo, shadow: treesSh });
+      add(L.palm, palms, palmMat, (t, c) => c.setRGB(0.9 + t * 0.2, 0.95 + t * 0.1, 0.85 + (1 - t) * 0.1), { lo: palmsLo, shadow: palmsSh, mid: palmsSh });
+      // a broadleaf crown's lumpy, leaf-clustered puffs show at any size worth
+      // drawing: it keeps them until it's a speck, then goes straight to the light mesh
+      add(L.tree, trees, treeMat, leafy, { lo: treesLo, shadow: treesSh, lodPx: 10 });
       add(L.treeFern, treeFerns, palmMat, leafy, { lo: treeFernsLo });
       add(L.banana, bananas, bananaMat, leafy, { lo: bananasLo });
-      add(L.bush, bushes, bushMat, leafy, { lo: bushesLo });
-      add(L.flowerBush, flowerBushes, bushMat, (t, c) => c.setRGB(0.92 + t * 0.16, 0.95 + t * 0.05, 0.92), { lo: flowerBushesLo });
+      // a shrub's light mesh is a smooth blob: it only takes over once the shrub is a speck
+      add(L.bush, bushes, bushMat, leafy, { lo: bushesLo, lodPx: 4 });
+      add(L.flowerBush, flowerBushes, bushMat, (t, c) => c.setRGB(0.92 + t * 0.16, 0.95 + t * 0.05, 0.92), { lo: flowerBushesLo, lodPx: 4 });
       // ground cover lives only in the near set and casts no shadow (contact AO instead)
       add(L.fern, ferns, coverMat, leafy, { shadows: false });
       add(L.tuft, tufts, coverMat, (t, c) => c.setRGB(0.85 + t * 0.3, 0.92 + t * 0.12, 0.8 + t * 0.15), { shadows: false });
@@ -561,10 +679,17 @@ export class Vegetation {
       // rocks take on the island's own stone: sandstone, basalt or mossy granite
       const stone = isl.style === 'brumas' ? [1.22, 1.2, 1.1] : isl.kind === 'rocky' ? [1.42, 1.02, 0.72] : isl.kind === 'volcanic' ? [0.72, 0.68, 0.66] : [1, 1, 0.96];
       add(L.rock, isl.kind === 'lush' || isl.kind === 'karst' ? mossRocks : rocks, rockMat, (t, c) => c.setRGB(stone[0] * (0.9 + t * 0.2), stone[1] * (0.9 + t * 0.15), stone[2] * (0.88 + t * 0.1)), {
-        tilt: true, always: true,
+        tilt: true, always: true, lo: isl.kind === 'lush' || isl.kind === 'karst' ? mossRocksLo : rocksLo, lodPx: 6,
       });
       add(L.drift, drift, driftMat, (t, c) => c.setRGB(0.95 + t * 0.1, 0.95 + t * 0.08, 0.95), { always: true });
     });
+    // the light plants' shadows from a coarser cut still (worked out in the
+    // background): a shadow-map texel out there is a hand's breadth or more
+    for (const geo of new Set(farShadows.map((m) => m.geometry))) {
+      void simplifiedLevels(geo, [FAR_SHADOW], undefined, 20).then(([g]) => {
+        if (g) for (const m of farShadows) if (m.geometry === geo) m.geometry = g;
+      });
+    }
     return this.group;
   }
 
@@ -579,18 +704,25 @@ export class Vegetation {
    * widened by MARGIN and is only redone once the camera has moved or turned
    * enough to use that margin up, so a steady view uploads nothing.
    */
-  update(camera: THREE.Camera, toSun: THREE.Vector3) {
+  update(camera: THREE.Camera, toSun: THREE.Vector3, shadowC?: THREE.Vector2, shadowR = Infinity) {
+    if (shadowC) {
+      _shadowBox.set(shadowC.x, shadowC.y, shadowR, 0);
+      // the map moves in whole texels and resizes in steps: re-cull when it does
+      if (Math.abs(_shadowBox.x - this.cullBox.x) + Math.abs(_shadowBox.y - this.cullBox.y) + Math.abs(_shadowBox.z - this.cullBox.z) > 8) this.cullPos.set(Infinity, 0, 0);
+    } else _shadowBox.set(0, 0, Infinity, 0);
     if (this.hold) return;
     const cam = camera.position;
     const reach = (this.lite ? 150 : 210) + Math.max(cam.y, 0) * 0.9;
-    let swapped = false;
+    const R = this.detail;
+    let swapped = R !== this.cullDetail;
+    this.cullDetail = R;
     for (const f of this.flora) {
       const d = Math.hypot(cam.x - f.cx, cam.y - f.cy, cam.z - f.cz) - f.ext;
       const near = d < reach + (f.isNear ? 30 : 0);
       if (near === f.isNear) continue;
+      // the ground cover goes with the island; trees and shrubs pick their
+      // level plant by plant (see cullBatches)
       f.isNear = near;
-      f.near.visible = near;
-      f.far.visible = !near;
       swapped = true;
     }
 
@@ -602,11 +734,14 @@ export class Vegetation {
       cam.distanceToSquared(this.cullPos) < 16 &&
       _dir.dot(this.cullDir) > 0.99985 &&
       toSun.dot(this.cullLight) > 0.9998 &&
-      pe[0] === this.cullProj[0] &&
-      pe[5] === this.cullProj[1]
+      // (the follow camera's lens breathes by hundredths of a degree every
+      // frame; the frustum's margin covers far more than that)
+      Math.abs(pe[0] - this.cullProj[0]) < Math.abs(pe[0]) * 2e-3 &&
+      Math.abs(pe[5] - this.cullProj[1]) < Math.abs(pe[5]) * 2e-3
     )
       return;
     this.cullPos.copy(cam);
+    this.cullBox.copy(_shadowBox);
     this.cullDir.copy(_dir);
     this.cullLight.copy(toSun);
     this.cullProj[0] = pe[0];
@@ -620,12 +755,15 @@ export class Vegetation {
     const sx = -toSun.x / ly;
     const sy = -toSun.y / ly;
     const sz = -toSun.z / ly;
+    // pixels per metre at 1 m (CSS pixels of the viewport's height)
+    const pxK = pe[5] * 0.5 * (typeof innerHeight === 'number' ? innerHeight : 1080);
     for (const f of this.flora) {
       // the whole island first: plants and shadows wholly out of view drop out at once
       const L = f.peak + 24;
       const island = this.inView(f.cx, f.cy, f.cz, f.ext * 1.42 + f.peak, sx * L, sy * L, sz * L);
-      this.cullBatches(f.alwaysB, island, sx, sy, sz);
-      this.cullBatches(f.isNear ? f.nearB : f.farB, island, sx, sy, sz);
+      this.cullBatches(f.alwaysB, island, sx, sy, sz, cam, pxK, true, R);
+      this.cullBatches(f.nearB, island, sx, sy, sz, cam, pxK, f.isNear, R);
+      this.cullBatches(f.farB, island, sx, sy, sz, cam, pxK, f.isNear, R);
     }
   }
 
@@ -640,17 +778,53 @@ export class Vegetation {
     return true;
   }
 
-  private cullBatches(list: Batch[], island: boolean, sx: number, sy: number, sz: number) {
+  /**
+   * Packs the plants in view to the front of each batch. `detail` (from eye
+   * level) is how far out anything is drawn detailed: past it every plant
+   * shows its light mesh, and ground cover stops at its batch's reach of it.
+   */
+  private cullBatches(list: Batch[], island: boolean, sx: number, sy: number, sz: number, cam: THREE.Vector3, pxK: number, cover: boolean, detail: number) {
     for (const b of list) {
-      const { sph, shown, mat, col } = b;
+      const { sph, shown, mat, col, role, lvl } = b;
+      if (role === 'near' && lvl) {
+        // each plant's level by its size on screen: the light mesh once its
+        // radius is under LOD_PX pixels, back to the detailed one a little above
+        for (let i = 0; i < b.n; i++) {
+          const d = Math.hypot(sph[i * 4] - cam.x, sph[i * 4 + 1] - cam.y, sph[i * 4 + 2] - cam.z);
+          const px = (sph[i * 4 + 3] * pxK) / Math.max(d, 1);
+          const was = lvl[i];
+          if (d > detail) lvl[i] = 0;
+          else if (b.hasMid && px > (was === 2 ? MID_PX * 0.88 : MID_PX)) lvl[i] = 2;
+          else if (px > (was ? b.lodPx * 0.88 : b.lodPx)) lvl[i] = b.hasMid ? 1 : 2;
+          else lvl[i] = 0;
+        }
+      }
+      const on = role === 'cover' ? island && cover : island;
       const dst = b.mesh.instanceMatrix.array as Float32Array;
       const dcol = b.mesh.instanceColor!.array as Float32Array;
       let k = 0;
       // the first slot whose plant differs from last time; everything after it is rewritten
       let first = -1;
-      if (island) {
+      const caster = role === 'shadow' || role === 'farShadow';
+      if (on) {
         for (let i = 0; i < b.n; i++) {
+          if (lvl) {
+            const l = lvl[i];
+            if (role === 'near' ? l !== 2 : role === 'mid' ? l !== 1 : role === 'shadow' ? l === 0 : l !== 0) continue;
+          }
           const r = sph[i * 4 + 3];
+          if (role === 'cover') {
+            // a fallen coconut or a tuft of grass under a pixel across is left out
+            const d = Math.max(1, Math.hypot(sph[i * 4] - cam.x, sph[i * 4 + 1] - cam.y, sph[i * 4 + 2] - cam.z));
+            if ((r * pxK) / d < COVER_MIN_PX || d >= detail * b.reach) continue;
+          }
+          if (caster) {
+            // where its shadow falls (the map is a square straight down; the
+            // sun's slant moves the shadow off downwind of the plant)
+            const y = Math.max(sph[i * 4 + 1], 0) + r;
+            const reach = _shadowBox.z + r + y * Math.hypot(sx, sz);
+            if (Math.abs(sph[i * 4] - _shadowBox.x) > reach || Math.abs(sph[i * 4 + 2] - _shadowBox.y) > reach) continue;
+          }
           // the shadow can run on down the slope as far as the sea
           const L = b.shadows ? Math.max(2 * r, sph[i * 4 + 1] + r) + 1 : 0;
           if (!this.inView(sph[i * 4], sph[i * 4 + 1], sph[i * 4 + 2], r, sx * L, sy * L, sz * L)) continue;

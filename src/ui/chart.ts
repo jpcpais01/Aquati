@@ -1244,7 +1244,7 @@ export class SeaChart {
         continue;
       }
       if (Math.hypot(sh.pos.x - p.pos.x, sh.pos.z - p.pos.z) > SPYGLASS) continue;
-      tri(sh, sh.ghost ? '#7dffc4' : '#ff6a55', 10);
+      tri(sh, sh.calm ? (sh.ghost ? '#c8f5e2' : '#f2ece0') : sh.ghost ? '#7dffc4' : '#ff6a55', 10);
     }
 
     // you are here

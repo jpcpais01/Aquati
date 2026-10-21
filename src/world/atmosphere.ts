@@ -244,6 +244,13 @@ export class Atmosphere {
   readonly gradeLo = new THREE.Vector3(0.94, 1.02, 1.06);
   readonly gradeHi = new THREE.Vector3(1.05, 1.0, 0.94);
   gradeSat = 1.12;
+  /** How hard the frame's corners fall away: a storm closes in round the ship. */
+  vignette = 0.55;
+  /**
+   * Weather lying on the water (see veilAt in GLSL): density at sea level
+   * (1/m), height scale (m), patchiness, drift speed (m/s).
+   */
+  readonly veil = new THREE.Vector4(0, 20, 0, 0);
   /** Called when the weather turns, with a short title and a line of flavour. */
   onChange: (kind: WeatherKind, title: string, line: string) => void = () => {};
   /** Called as a marked wind shift gets under way, with a title and a line naming where it now blows from. */
@@ -516,15 +523,20 @@ export class Atmosphere {
     const c = smooth(0.45, 1.0, this.cover) * 0.94;
     if (c > 0.001) {
       const L = lum(this.horizon);
-      const dim = 1 - 0.55 * this.storm;
-      // an overcast sky is a flat grey that keeps a little of the hour's tint
+      const dim = 1 - 0.6 * this.storm;
+      // an overcast sky is a flat grey that keeps a little of the hour's tint;
+      // a storm's is a colder, deeper slate blue
+      const st = this.storm;
+      const gr = 0.8 - 0.08 * st;
+      const gg = 0.85 - 0.02 * st;
+      const gb = 0.93 + 0.04 * st;
       const ov = (dst: THREE.Vector3, k: number) => {
         const l = L * k * dim;
-        const tint = 0.18;
+        const tint = 0.18 * (1 - 0.65 * st);
         dst.set(
-          dst.x * tint + l * 0.8 * (1 - tint),
-          dst.y * tint + l * 0.85 * (1 - tint),
-          dst.z * tint + l * 0.93 * (1 - tint),
+          dst.x * tint + l * gr * (1 - tint),
+          dst.y * tint + l * gg * (1 - tint),
+          dst.z * tint + l * gb * (1 - tint),
         );
       };
       const z = this.tmp.copy(this.zenith);
@@ -539,11 +551,26 @@ export class Atmosphere {
     }
     // mist glows with whatever light there is
     if (this.fog > 0.01) this.fogColor.lerp(this.tmp.copy(this.horizon).multiplyScalar(1.02), this.fog * 0.5);
+    // the far air thickens a little; the weather on the water itself is the veil below
     const fogAmt = this.fog;
-    this.fogRange.set(380 * (1 - 0.95 * fogAmt), 1500 * (1 - 0.75 * fogAmt));
+    this.fogRange.set(380 * (1 - 0.55 * fogAmt), 1500 * (1 - 0.5 * fogAmt));
+    // Low weather on the sea. Sea mist lies in shallow banks with clear water
+    // between them, drifting slowly; rain hangs in tall curtains that sweep by
+    // on the wind; a storm's are darker, denser and quicker still.
+    const mistK = smooth(0.4, 0.9, this.fog) * (1 - this.rain);
+    const rainK = this.rain;
+    const lowK = 0.1 * smooth(0.45, 1, this.cover);
+    const veilSum = mistK + rainK + lowK + 1e-4;
+    this.veil.set(
+      mistK * 0.012 + rainK * 0.0026 + this.storm * 0.0012 + lowK * 0.004,
+      (mistK * 15 + rainK * 58 + lowK * 40) / veilSum,
+      0.4 + 0.58 * (mistK / veilSum),
+      1.2 + this.wind * 2.5 + this.storm * 7,
+    );
 
     // ---------------------------------------------------------- exposure & ambient
-    this.exposure = (1 + 1.3 * this.night) * (1 + 0.16 * this.cover) * (1 + 0.12 * this.storm);
+    // a grey day is lifted a little; a storm is let fall darker and moodier
+    this.exposure = (1 + 1.3 * this.night) * (1 + 0.16 * this.cover) * (1 - 0.1 * this.storm * (1 - this.night));
     const key = Math.max(this.keyDir.y, 0) * 0.22;
     const ref = this.dayRef;
     const tintR = (this.horizon.x * 0.55 + this.zenith.x * 0.45 + this.keyColor.x * key) / ref;
@@ -565,6 +592,7 @@ export class Atmosphere {
     u.uStorm.value = this.storm;
     u.uWet.value = this.wet;
     u.uMist.value = this.fog;
+    u.uVeil.value.copy(this.veil);
     this.updateLook(sy, sunVis);
     const hazeK = 1 - 0.85 * this.cover;
     if (sy > -0.03) {
@@ -618,7 +646,7 @@ export class Atmosphere {
     // cool and blue after dark, flat and grey under a storm
     const golden = smooth(-0.06, 0.04, sy) * smooth(0.36, 0.1, sy) * sunVis;
     const dusk = smooth(0.06, -0.12, sy) * (1 - this.night * 0.5);
-    const grey = Math.max(this.storm, smooth(0.6, 1, this.cover) * 0.6, this.rain * 0.5, this.fog * 0.35);
+    const grey = Math.max(this.storm * 0.85, smooth(0.45, 1, this.cover) * 0.55, this.rain * 0.5, this.fog * 0.3);
     const lo = this.gradeLo.set(0.94, 1.02, 1.06);
     const hi = this.gradeHi.set(1.05, 1.0, 0.94);
     let sat = 1.12;
@@ -631,7 +659,14 @@ export class Atmosphere {
     lo.lerp(_lo.set(0.97, 1.0, 1.03), grey);
     hi.lerp(_hi.set(1.0, 1.0, 0.99), grey);
     sat -= grey * 0.16;
+    // a storm's shade goes cold teal and its lights steely: moody, not merely grey
+    lo.lerp(_lo.set(0.9, 1.0, 1.07), this.storm * (1 - this.night * 0.6));
+    hi.lerp(_hi.set(0.98, 1.0, 1.02), this.storm);
+    // mist softens the light into a pearly glow
+    lo.lerp(_lo.set(0.98, 1.0, 1.04), this.fog * (1 - this.rain) * 0.6);
+    hi.lerp(_hi.set(1.06, 1.02, 0.97), this.fog * (1 - this.rain) * golden * 0.8);
     this.gradeSat = sat;
+    this.vignette = 0.55 + this.storm * 0.4 + this.rain * 0.12 + this.fog * 0.1;
   }
 }
 

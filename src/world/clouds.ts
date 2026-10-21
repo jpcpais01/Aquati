@@ -115,7 +115,7 @@ export class LowClouds {
     uSceneDepth: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCamNearFar: { value: new THREE.Vector2(1, 1000) },
-    uFocus: { value: new THREE.Vector3(0, 0, 0) }, // px x, y, and 1 when a ship is being kept clear
+    uFocus: { value: new THREE.Vector3(0, 0, 0) }, // px x, y, and how much (0..1) the ship there is kept clear
     uGrey: { value: 0 },
     uCloudTime: { value: 0 },
     uDrift: { value: new THREE.Vector2() }, // how far the wind has carried the clouds (m)
@@ -131,6 +131,8 @@ export class LowClouds {
   private time = 0;
   private few: boolean;
   private shadowLive = false;
+  /** How far the clouds are thinning over the player's ship right now (eases toward `clear`). */
+  private focusW = 1;
   /** Set while the loading screen's warm-up draw runs: both batches draw (empty) so their shaders compile. */
   warm = false;
   private order: number[] = [];
@@ -260,7 +262,7 @@ export class LowClouds {
           // the ships stay in view: a cloud thins out where it would hide the one you sail
           if (uFocus.z > 0.0) {
             float fd = length(gl_FragCoord.xy - uFocus.xy) / uResolution.y;
-            a *= mix(0.22, 1.0, smoothstep(0.07, 0.2, fd));
+            a *= mix(1.0, mix(0.22, 1.0, smoothstep(0.07, 0.2, fd)), uFocus.z);
           }
           // soft where it meets a peak (or the photo camera tucks one behind an island)
           vec2 suv = gl_FragCoord.xy / uResolution;
@@ -412,7 +414,9 @@ export class LowClouds {
   /**
    * Drifts and grows the clouds, then gathers the ones in view (sorted for
    * blending) and every shadow that lands near the view.
-   * `focus` is the ship to keep clear of cloud, or null.
+   * `focus` is the ship to keep clear of cloud, or null; `clear` false lets
+   * the clouds sail over her as they would anything else (it eases over a
+   * couple of seconds, so the hole never pops in or out).
    */
   update(
     dt: number,
@@ -423,6 +427,7 @@ export class LowClouds {
     windX: number,
     windZ: number,
     focus: THREE.Vector3 | null,
+    clear = true,
   ) {
     this.time += dt;
     this.uniforms.uCloudTime.value = this.time;
@@ -600,12 +605,13 @@ export class LowClouds {
 
     // keep the ship you sail in sight
     const fu = this.uniforms.uFocus.value;
+    this.focusW += ((clear ? 1 : 0) - this.focusW) * (1 - Math.exp(-dt * 1.6));
     fu.z = 0;
-    if (focus && nv > 0) {
+    if (focus && nv > 0 && this.focusW > 0.005) {
       _v.copy(focus).project(cam);
       if (_v.z < 1 && Math.abs(_v.x) < 1.2 && Math.abs(_v.y) < 1.2) {
         const res = this.uniforms.uResolution.value;
-        fu.set((_v.x * 0.5 + 0.5) * res.x, (_v.y * 0.5 + 0.5) * res.y, 1);
+        fu.set((_v.x * 0.5 + 0.5) * res.x, (_v.y * 0.5 + 0.5) * res.y, this.focusW);
       }
     }
 

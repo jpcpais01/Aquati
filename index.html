@@ -4,28 +4,28 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#0b3a4a" />
-    <meta name="description" content="Shores of Fortune: sail, explore and battle across a sun-drenched pirate archipelago." />
+    <meta name="description" content="Shores O’ Fortune: sail, explore and battle across a sun-drenched pirate archipelago." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Fortune" />
-    <meta name="application-name" content="Shores of Fortune" />
+    <meta name="application-name" content="Shores O’ Fortune" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32" />
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <link rel="preload" as="image" type="image/webp" imagesrcset="/scenes/archipelago-1280.webp 1280w, /scenes/archipelago-2560.webp 2560w" imagesizes="100vw" fetchpriority="high" />
-    <title>Shores of Fortune</title>
+    <link rel="preload" as="image" type="image/webp" imagesrcset="/scenes/brumas-1280.webp 1280w, /scenes/brumas-1920.webp 1920w, /scenes/brumas-2560.webp 2560w" imagesizes="(orientation: portrait) 178vh, 100vw" fetchpriority="high" />
+    <title>Shores O’ Fortune</title>
   </head>
   <body>
     <canvas id="game"></canvas>
 
     <div id="loading" class="screen">
-      <div class="load-scenes" id="load-scenes" style="background-image:url(data:image/webp;base64,UklGRgYBAABXRUJQVlA4IPoAAACwBQCdASogABIAPtFapU0oJSOiMBgIAQAaCWwAnTKDGANJApTqUsS5Bpv2LbrYS4Db+xAmDMAA/XhlvAJ8rk74DAGdcpQLbw4fNUF9xjb5EzU+BWb1JoHV5a4Ujg5uY3tSlbY/ERaD6Q7p8xE2LuVBP9laYqOEp+VP44K0fV0WEPprmIORDz12CysqBjR1uKJ37VTtdloQTJ3BIcWxCBj7L4NpW6uoYBeXUqvzSzhp96U2scy3WBnJkOGN1MyjbKYbocmAKL72iqn6zvFwY3uNc9KQYPA9+qqtL1RF93J6JKCFRNm8dU2kNRfFEVznHKw1BTEHiWJBcAAA)" aria-hidden="true">
-        <img class="scene on" src="/scenes/archipelago-1280.webp" srcset="/scenes/archipelago-1280.webp 1280w, /scenes/archipelago-2560.webp 2560w" sizes="100vw" alt="" fetchpriority="high" decoding="async" />
+      <div class="load-scenes" id="load-scenes" style="background-image:url(data:image/webp;base64,UklGRqgAAABXRUJQVlA4IJwAAADwBACdASogABIAPu1mqk2ppaQiMAgBMB2JagCdMyGCe4P7o+mFLspJNV+2a2ntC2AAzHnxQgfiMJja8Eko5zU1UTAwNRcrz/ZQL5i748C71DIQJgKs6CYxA5Nau4olsz7CZgHmzTgyi97JubRiH4Z52NJPH2ub7ZYXa2ra6yvvXCRsGZ2O83q3tFQntSfwW8idw6XPShfEoyGkcAA=)" aria-hidden="true">
+        <img class="scene on" src="/scenes/brumas-1280.webp" srcset="/scenes/brumas-1280.webp 1280w, /scenes/brumas-1920.webp 1920w, /scenes/brumas-2560.webp 2560w" sizes="(orientation: portrait) 178vh, 100vw" alt="" fetchpriority="high" decoding="async" />
       </div>
       <div class="brand">
         <div class="crest-slot spin"></div>
-        <div class="logo" aria-label="Shores of Fortune"><span class="logo-pre" aria-hidden="true">Shores <em>of</em></span><span class="logo-main" aria-hidden="true">Fortune</span></div>
+        <div class="logo" aria-label="Shores O’ Fortune"><span class="logo-pre" aria-hidden="true">Shores <em>O’</em></span><span class="logo-main" aria-hidden="true">Fortune</span></div>
         <div class="tag" id="load-tip">Charting the archipelago…</div>
         <div class="bar"><i id="load-bar"></i></div>
       </div>
@@ -35,7 +35,7 @@
       <header class="menu-head">
         <div class="crest-slot"></div>
         <div class="title-block">
-          <div class="logo" aria-label="Shores of Fortune"><span class="logo-pre" aria-hidden="true">Shores <em>of</em></span><span class="logo-main" aria-hidden="true">Fortune</span></div>
+          <div class="logo" aria-label="Shores O’ Fortune"><span class="logo-pre" aria-hidden="true">Shores <em>O’</em></span><span class="logo-main" aria-hidden="true">Fortune</span></div>
           <div class="tag">Sail the turquoise archipelago</div>
         </div>
       </header>
@@ -55,6 +55,11 @@
         <div class="dock-label"><span>Choose your ship</span><span class="dock-count" id="dock-count"></span></div>
         <div class="ship-tabs" id="ship-tabs" role="tablist"></div>
         <div class="ship-detail" id="ship-detail"></div>
+        <div class="sea-mode" id="sea-mode" role="radiogroup" aria-label="Seas" data-sea="adventure">
+          <button data-sea="adventure" role="radio" aria-checked="true" class="sel"><span class="ti" data-icon="swords"></span><b>Adventure</b><small>Pirates hunt on sight</small></button>
+          <button data-sea="peaceful" role="radio" aria-checked="false"><span class="ti" data-icon="dove"></span><b>Peaceful</b><small>Nobody fires first</small></button>
+          <em class="sea-rule">Host's rule</em>
+        </div>
         <div class="dock-actions" id="dock-actions">
           <button class="btn primary big sail-btn" id="btn-sail"><span class="ti" data-icon="anchor"></span><span>Set Sail</span><kbd class="kd">Enter</kbd></button>
         </div>
@@ -86,6 +91,7 @@
         <div class="nav-btns">
           <button class="icon-btn" id="btn-pause" title="Pause (Esc)" aria-label="Pause"><span class="ti" data-icon="pause"></span></button>
           <button class="icon-btn view-btn" id="btn-view" title="Captain's view (V)" aria-label="Captain's view"><span class="ti" data-icon="eye"></span></button>
+          <button class="icon-btn zoom-btn" id="btn-zoom" title="Camera view" aria-label="Camera view: Mid"><span class="ti" data-icon="zoom"></span><span class="zoom-pips" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
           <button class="icon-btn" id="btn-photo" title="Photo mode (P)" aria-label="Photo mode"><span class="ti" data-icon="camera"></span></button>
           <button class="icon-btn crew-btn" id="btn-crew3" title="Sail together" aria-label="Sail together"><span class="ti" data-icon="crew"></span></button>
           <button class="icon-btn" id="btn-sweep" title="Clear wrecks &amp; debris" aria-label="Clear wrecks and debris"><span class="ti" data-icon="sweep"></span></button>
@@ -106,7 +112,6 @@
         <div class="helm">
           <div class="sails" id="hud-sails"><i></i><i></i><i></i></div>
           <div class="speed"><b id="hud-speed">0</b><small>knots</small></div>
-          <div class="hint kd">W / S sails · A / D helm · Q / E fire</div>
         </div>
         <div class="rack" id="ammo-rack" role="radiogroup" aria-label="Shot"></div>
         <div class="ammo-tag" id="ammo-tag"><b></b><span></span></div>
@@ -213,8 +218,14 @@
         <header class="wk-head">
           <div class="kicker">Shipwrecked <i></i> <span id="wk-cause"></span></div>
           <h2 class="wk-title" id="wk-title">Lost to the Depths</h2>
-          <p class="wk-epitaph" id="wk-epitaph"></p>
-          <p class="wk-quip" id="wk-quip"></p>
+          <div class="wk-plaque">
+            <div class="wk-port" aria-hidden="true"><div class="wk-port-ship" id="wk-port-ship"></div><div class="wk-port-sea"></div><i></i><i></i><i></i></div>
+            <div class="wk-plaque-text">
+              <div class="wk-ship"><span id="wk-ship-name"></span><small id="wk-ship-cls"></small></div>
+              <p class="wk-epitaph" id="wk-epitaph"></p>
+              <p class="wk-quip" id="wk-quip"></p>
+            </div>
+          </div>
         </header>
         <div class="wk-body">
           <section class="wk-panel wk-rank">
@@ -230,12 +241,17 @@
               <div class="wk-score"><b id="wk-score">0</b><em id="wk-score-best" class="hidden">New best</em></div>
               <div class="wk-rank-name" id="wk-rank-name"></div>
               <div class="wk-rank-line" id="wk-rank-line"></div>
+              <div class="wk-ladder" id="wk-ladder" aria-hidden="true"></div>
               <div class="wk-rank-next" id="wk-rank-next"></div>
             </div>
           </section>
           <section class="wk-stats">
             <div class="wk-tiles" id="wk-tiles"></div>
-            <div class="wk-panel wk-minor" id="wk-minor"></div>
+            <div class="wk-panel wk-voyage">
+              <div class="kicker">The voyage <small id="wk-voy-len"></small></div>
+              <div class="wk-voy" id="wk-voy"></div>
+              <div class="wk-minor" id="wk-minor"></div>
+            </div>
           </section>
           <section class="wk-panel wk-log">
             <div class="kicker">Ship's log <small id="wk-log-more"></small></div>
@@ -243,7 +259,7 @@
           </section>
         </div>
         <footer class="wk-actions">
-          <button class="btn primary big" id="btn-retry"><span class="ti" data-icon="refresh"></span>Sail again<kbd>Enter</kbd></button>
+          <button class="btn primary big" id="btn-retry"><span class="ti" data-icon="refresh"></span><span class="wk-retry"><span>Sail again</span><small id="wk-retry-sub"></small></span><kbd>Enter</kbd></button>
           <button class="btn" id="btn-again"><span class="ti" data-icon="anchor"></span>Choose a new ship<kbd>Esc</kbd></button>
         </footer>
       </div>
@@ -327,8 +343,8 @@
             <h4>Ashore</h4>
             <div class="ctl"><span><kbd>F</kbd></span><span>Off a beach: row the captain and four hands ashore</span></div>
             <div class="ctl"><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>Walk (<kbd>Shift</kbd> to run)</span></div>
-            <div class="ctl"><span><kbd>Space</kbd></span><span>Cutlass: chain three cuts, the last a lunge</span></div>
-            <div class="ctl"><span><kbd>Click</kbd></span><span>Cut toward where you point</span></div>
+            <div class="ctl"><span><kbd>Space</kbd></span><span>Jump</span></div>
+            <div class="ctl"><span><kbd>Click</kbd></span><span>Cutlass toward where you point: chain three cuts, the last a lunge</span></div>
             <div class="ctl"><span><kbd>Q</kbd><kbd>E</kbd></span><span>Fire your pistol (a slow reload)</span></div>
             <div class="ctl"><span><kbd>F</kbd></span><span>Open a chest, dig at the X, or row back by the boat</span></div>
             <div class="ctl"><span><kbd>T</kbd></span><span>Unroll your treasure map</span></div>

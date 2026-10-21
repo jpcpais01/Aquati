@@ -817,6 +817,123 @@ export function fireCrackle(sr: number, seed: number): Float32Array {
   return peakNorm(out, 0.8);
 }
 
+// ---------------------------------------------------------------- fireworks
+
+/**
+ * A rocket leaving its tube: the fuse catches with a soft pop and the charge
+ * roars up into a hiss that thins and rises as it climbs away. The whistling
+ * kind screams up a long rising glide instead.
+ */
+export function rocketLaunch(sr: number, seed: number, whistle: boolean): Float32Array {
+  const r = rng(seed);
+  const dur = whistle ? 1.9 : 1.6;
+  const n = Math.floor(sr * dur);
+  const out = new Float32Array(n);
+  const bp = new SVF(sr, 1200, 1.1);
+  const hp = new SVF(sr, 4000, 0.7);
+  const fl = flutter(r, sr, n, 0.012, 0.45);
+  let ph = 0;
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    const k = t / dur;
+    if ((i & 15) === 0) bp.set(700 + 3800 * k * k, 1.1);
+    const w = r() * 2 - 1;
+    bp.run(w);
+    hp.run(w);
+    const env = (1 - Math.exp(-t / 0.03)) * Math.pow(1 - k, 1.6);
+    out[i] = (bp.bp * 1.3 + hp.hp * 0.35) * env * fl[i];
+    if (whistle) {
+      // the whistle: a narrow glide from a hoot to a shriek, wavering as the rocket spins
+      const f = 850 + 2300 * Math.pow(k, 0.8) + Math.sin(t * 38) * 40;
+      ph += (TAU * f) / sr;
+      const we = Math.min(1, t / 0.08) * (1 - smoothK(k, 0.82, 1));
+      out[i] += (Math.sin(ph) + 0.25 * Math.sin(ph * 2) + 0.08 * Math.sin(ph * 3)) * we * 0.55;
+    }
+  }
+  // the fuse catching
+  snap(out, sr, r, 0.002, 0.6, 900, 2600, 0.012);
+  noiseGrains(out, sr, r, { count: 40, t0: 0, spread: 0.35, skew: 1.4, fLo: 2000, fHi: 8000, q: 1.2, durLo: 0.0005, durHi: 0.003, amp: 0.35, env: (t) => Math.exp(-t / 0.3) });
+  fadeTail(out, sr, 0.2);
+  return peakNorm(out, whistle ? 0.85 : 0.75);
+}
+
+const smoothK = (x: number, a: number, b: number) => {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * A shell breaking high overhead: the crack of the bursting charge, a round
+ * thump that rolls across the water, and the faint fizz of the stars burning
+ * as they spread. `big` is a showpiece's heavier double-charge.
+ */
+export function shellBoom(sr: number, seed: number, big: boolean): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * (big ? 3.6 : 2.8));
+  const out = new Float32Array(n);
+  mix(out, cannonBlast(sr, big ? 1.15 : 0.7, seed * 5 + 3), big ? 0.75 : 0.55);
+  // the bursting charge: brittle, papery and bright on top of the thump
+  snap(out, sr, r, 0, 1.6, 2400, 7600, 0.005);
+  snap(out, sr, r, 0.003, 1.0, 900, 3000, 0.012);
+  if (big) snap(out, sr, r, 0.06, 0.9, 1400, 5000, 0.01);
+  // the stars burning as they fly: a soft fizz that swells and dies away
+  const hp = new SVF(sr, 5200, 0.6);
+  const fl = flutter(r, sr, n, 0.02, 0.5);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    hp.run(r() * 2 - 1);
+    const env = (1 - Math.exp(-t / 0.12)) * Math.exp(-t / (big ? 1.2 : 0.8));
+    out[i] += hp.hp * env * fl[i] * 0.12;
+  }
+  saturate(out, 1.3);
+  fadeTail(out, sr, 0.3);
+  return peakNorm(out, 0.92);
+}
+
+/** Dragon's eggs hatching: a long, irregular hail of sharp little pops. */
+export function crackleHail(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 1.8);
+  const out = new Float32Array(n);
+  for (let k = 0; k < 110; k++) {
+    const t = Math.pow(r(), 1.3) * 1.25;
+    snap(out, sr, r, t, 0.25 + r() * 0.6, 1600, 7000, 0.003 + r() * 0.004);
+  }
+  crackle(out, sr, r, 160, 0, 1.4, 2400, 8000, 0.3);
+  fadeTail(out, sr, 0.2);
+  return peakNorm(out, 0.85);
+}
+
+/** A willow's long golden fall: a soft, glittering hiss that hangs in the air. */
+export function willowSizzle(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 2.8);
+  const out = new Float32Array(n);
+  const bp = new SVF(sr, 6000, 0.9);
+  const fl = flutter(r, sr, n, 0.03, 0.6);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr;
+    bp.run(r() * 2 - 1);
+    const env = Math.min(1, t / 0.4) * Math.exp(-t / 1.1);
+    out[i] = bp.bp * env * fl[i];
+  }
+  noiseGrains(out, sr, r, { count: 180, t0: 0.1, spread: 2.4, skew: 1.2, fLo: 3000, fHi: 9000, q: 1.6, durLo: 0.0004, durHi: 0.002, amp: 0.4, env: (t) => Math.exp(-t / 1.4) });
+  fadeTail(out, sr, 0.3);
+  return peakNorm(out, 0.7);
+}
+
+/** Crossette comets splitting: a ragged handful of pops almost at once. */
+export function splitPops(sr: number, seed: number): Float32Array {
+  const r = rng(seed);
+  const n = Math.floor(sr * 0.7);
+  const out = new Float32Array(n);
+  for (let k = 0; k < 9; k++) snap(out, sr, r, r() * 0.16, 0.6 + r() * 0.5, 1200, 5200, 0.008 + r() * 0.006);
+  modal(out, sr, r, [180, 260], [0.05, 0.03], [0.3, 0.15], 0);
+  saturate(out, 1.2);
+  fadeTail(out, sr, 0.15);
+  return peakNorm(out, 0.85);
+}
+
 // ---------------------------------------------------------------- the port
 
 /**
@@ -1114,7 +1231,8 @@ export function crowdMurmur(sr: number, seed: number): Float32Array {
 
 export type BankKind =
   | 'reverb' | 'cannon' | 'recoil' | 'wood' | 'water' | 'earth' | 'whoosh' | 'blast' | 'crunch' | 'shell' | 'ignite' | 'steam' | 'grape' | 'chain' | 'flames'
-  | 'coin' | 'pour' | 'purse' | 'creak' | 'mallet' | 'clunk' | 'lap' | 'murmur';
+  | 'coin' | 'pour' | 'purse' | 'creak' | 'mallet' | 'clunk' | 'lap' | 'murmur'
+  | 'rocket' | 'fwBoom' | 'fwCrackle' | 'fwSizzle' | 'fwPop';
 export const CALIBERS = 3;
 
 /** Everything the game plays, cheapest/most needed first. Cannon index = caliber * 2 + variant. */
@@ -1145,5 +1263,11 @@ export function bankJobs(sr: number): { kind: BankKind; index: number; render: (
   for (let v = 0; v < 2; v++) jobs.push({ kind: 'clunk', index: v, render: () => [ironClunk(sr, 2101 + v)] });
   jobs.push({ kind: 'lap', index: 0, render: () => [harbourLap(sr, 2201)] });
   jobs.push({ kind: 'murmur', index: 0, render: () => [crowdMurmur(sr, 2301)] });
+  // fireworks: rockets (index 0-1 plain, 2 whistling), bursts (2 shells, then a showpiece), crackle, willow, crossette
+  for (let v = 0; v < 3; v++) jobs.push({ kind: 'rocket', index: v, render: () => [rocketLaunch(sr, 2401 + v, v === 2)] });
+  for (let v = 0; v < 3; v++) jobs.push({ kind: 'fwBoom', index: v, render: () => [shellBoom(sr, 2501 + v, v === 2)] });
+  for (let v = 0; v < 2; v++) jobs.push({ kind: 'fwCrackle', index: v, render: () => [crackleHail(sr, 2601 + v)] });
+  jobs.push({ kind: 'fwSizzle', index: 0, render: () => [willowSizzle(sr, 2701)] });
+  jobs.push({ kind: 'fwPop', index: 0, render: () => [splitPops(sr, 2801)] });
   return jobs;
 }

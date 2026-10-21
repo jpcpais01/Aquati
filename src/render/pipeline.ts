@@ -642,6 +642,18 @@ export class Pipeline {
 
     P?.end(true);
 
+    if (P?.on) {
+      // The first touch of the screen's own buffer can wait for the browser to
+      // hand it back from the display. Timed alone (one cleared pixel), so the
+      // final pass below shows only its own work.
+      P.begin('Waiting for the screen', 'render', true);
+      r.setRenderTarget(null);
+      r.setScissorTest(true);
+      r.setScissor(0, 0, 1, 1);
+      r.clear(true, false, false);
+      r.setScissorTest(false);
+      P.end(true);
+    }
     P?.begin('Final grade & sharpen', 'render', true);
     fu.uOpaque.value = this.rtOpaque.texture;
     fu.uWater.value = this.rtWater.texture;
@@ -705,10 +717,11 @@ export class Pipeline {
   /**
    * The hour's look, from the atmosphere: the sun shafts' lit haze colour (rgb,
    * 0 = none) and the glow lit haze adds on its own (w), the beams' colour
-   * in the shallows, the haze's density and how dark its shaded columns read, and the grade. Uniforms only.
+   * in the shallows, the haze's density and how dark its shaded columns read, the grade and the vignette. Uniforms only.
    */
-  setLook(air: THREE.Vector4, sea: THREE.Vector3, haze: THREE.Vector2, lo: THREE.Vector3, hi: THREE.Vector3, sat: number) {
+  setLook(air: THREE.Vector4, sea: THREE.Vector3, haze: THREE.Vector2, lo: THREE.Vector3, hi: THREE.Vector3, sat: number, vignette = 0.55) {
     const u = this.finalMat.uniforms;
+    u.uVignette.value = vignette;
     u.uShaftAir.value.copy(air);
     u.uShaftSea.value.copy(sea);
     u.uShaftHaze.value.copy(haze);

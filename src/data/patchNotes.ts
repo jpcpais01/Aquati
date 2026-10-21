@@ -24,8 +24,263 @@ export const PATCH_NOTES: PatchGroup[] = [
     ],
   },
   {
+    hour: '2026-10-21T01:00Z',
+    entries: [
+      {
+        title: 'A snappier cinematic lean',
+        notes: [
+          'Leaning the camera over past the farthest zoom no longer needs a full second\'s pause. Rest for just a moment, then keep zooming out, and the camera tips into its cinematic angle almost straight away.',
+        ],
+      },
+      {
+        title: 'Storm seas that roll instead of jumping',
+        notes: [
+          'In a storm the breaking whitecaps could suddenly vanish and reappear somewhere else, again and again, most of all far out at sea after the wind had shifted. They now ride their waves smoothly from start to finish.',
+          'Wind-torn spray and rain no longer hop to new spots whenever the camera moves in or out, which in a battle was all the time. Each sheet of spray and each raindrop now finishes its flight where it started, and the next ones fill the new view.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-21T00:00Z',
+    entries: [
+      {
+        title: 'A much lighter frame',
+        notes: [
+          'The game now does far less behind-the-scenes work every frame, with nothing looking any different. In our tests the processor time per frame fell by over a third, and the graphics card waits on it less too.',
+          'Island plants were re-checking which of them were in view on every single frame, because the camera\u2019s lens drifts by a hair while you sail. Now they only re-check once the view has really moved.',
+          'Townsfolk in ports you aren\u2019t visiting, camps lost in the haze and island ground out of view are now set aside completely, instead of being checked and skipped several times a frame.',
+          'The sea is drawn in at most eight pieces instead of thirty to forty. Each crew sends its poses to the graphics card in one go, shadows no longer swap shaders back and forth mid-frame, and the shadow pass no longer paints a colour image that nobody looks at.',
+          'The frame profiler (F3) now shows time spent waiting for the screen on its own row, so the final pass only counts its own work.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T22:00Z',
+    entries: [
+      {
+        title: 'Forts rebuilt: five different strongholds that fall apart under your guns',
+        notes: [
+          'No two forts look alike any more. Castillo São Felipe keeps its round bastions and domed sentry boxes. Forte Sainte-Bárbara is now a star fort with arrowhead bastions, five guns and a little chapel with a bell. Kasteel do Morro is a squat sandstone tower fort with crenellated corner towers round a tall keep. Up in Las Brumas, Fortaleza da Bruma is a dark, mossy sea keep under steep slate roofs, and Kasteel Nevelrots is a mist castle with tall round towers and cone roofs. Both of those have a timber gallery hung over the gate. Every fort has lanterns lit by its gate at night.',
+          'Forts now show the beating they take. Every ball that hits stone leaves a blackened scar, and blocks break off and tumble down the wall to pile up at its foot (or splash into the sea). Shoot up a gun and the parapet round it caves in before the gun itself is knocked off its carriage and rolls over burning.',
+          'Keep firing at a corner and its tower top comes down in a roar of dust, sentry box, roof and all. When the last gun falls silent, the seaward towers collapse and fire spreads through the barracks roof, leaving charred rafters and a long column of smoke. A shell or hot shot landing in the plaza can set the roof alight sooner.',
+          'A fort you have taken stays scarred. On later voyages its guns are remounted behind wicker gabions and plank barricades where the parapet came down, its seaward towers are still broken, the scars stay on its walls, and your flag flies over it. The fort bar now names what kind of fort it is.',
+        ],
+      },
+      {
+        title: 'Camera views at a tap, and the game remembers yours',
+        notes: [
+          'On phones and tablets a new magnifier button sits with the others under the map. Tap it to step through four views: Close, Mid, Far, and Cinematic, which is the far view leaned over at that more dramatic angle. Four little gold dots on the button show which one you are on, and the name pops up beside it as you tap.',
+          'Pinching to zoom still works as before, and the dots follow along.',
+          'The game now remembers the view you last sailed with, on every device. Close it zoomed right out on the cinematic angle and that is exactly how the camera greets you next time you set sail.',
+        ],
+      },
+      {
+        title: 'A lighter HUD on phones, and menus that use the whole screen',
+        notes: [
+          'The home screen, the archipelago picker, the crew card, the Shipwright, the Vault, the market, photo mode and the sunk screen now run edge to edge like the game itself, instead of leaving a band for the notch and system bars. Everything keeps the same even 3% margin from every edge.',
+          'The minimap sits right in the corner now, with pause, captain\'s view, photo, crew and clear-debris arranged in tidy rows of three beneath it.',
+          'The "Peaceful seas" pill is gone. While the seas are calm, a soft blue-white light glows around the minimap instead. Provoke someone and the glow turns ember red, a little crossed-blades tag on the rim counts who has taken up arms, and the glow fades as tempers cool.',
+          'On phones the speed sits on top of the sail lever: the number as big as before, with a small "kn" beside it.',
+          'Prompts like "Go ashore", "Enter port" or a fort covering the shore are now a slim chip at the bottom of the screen. The reason is written as a line of shadowed text just above it, with no box over the sea. Alerts and the fort strip are more see-through, and on phones the ship card loses its box: class and name on one small line over a slim hull bar.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T21:00Z',
+    entries: [
+      {
+        title: 'Jump!',
+        notes: [
+          'On foot, Space now jumps instead of swinging your cutlass. Hop over the surf, leap down off a dune or spring up onto the beach from the shallows. On touch screens there is a new Jump button just above Strike.',
+          'Through your own eyes the jump feels like one: the view springs up and tips back a touch, floats at the top, then sinks through your knees as you land, with your hands lagging the lift and dipping on the landing. A running jump carries you a good way.',
+          'You hear it, too: a breath as you push off, then a thud and a crunch of sand, a slap of water in the shallows, or a knock of boots on a deck or rock. Sand puffs up round your boots, and the shallows splash.',
+          'From the bird\'s-eye view your captain tucks their knees on the way up and reaches for the ground on the way down. The cutlass is still on a click (and the Strike button), and Space still fires your broadside at sea.',
+        ],
+      },
+      {
+        title: 'Storms worth sailing into, and every weather reworked',
+        notes: [
+          'Storms look like storms now. The sea turns a deep bottle-green slate, the troughs fall into shadow and the steep crests glow a cold green where the light comes through them. The flat grey haze and the hard white hatching that used to cover the water are gone.',
+          'The big swells break for real: white caps spill along their crests in broken, wandering lines, ride along with the waves and leave foam fading to lace behind them, with milky green water churned up underneath. Long soft streaks of spume trail away down the wind between them.',
+          'The wind tears spray off the tops of the breaking crests and flings it downwind in torn white sheets, more of it under a gust. It replaces the old puffs of smoke-like spray.',
+          'Rain finally shows up. Fine streaks fall past the camera and burst on the swell in little rings and crowns of spray, and the showers sweep across the sea in curtains that drift with the wind. Lightning lights up the patch of sea where it strikes, and the murk glows with each flash.',
+          'Every weather got a pass. Sea mist now lies in drifting banks with clear water between them instead of a white-out, rain dulls the sea to a soft grey-teal, cloudy days are a little softer and greyer, and storms get a cold, moody grade that closes in round your ship. Clear and fair days keep their colour.',
+        ],
+      },
+      {
+        title: 'Shores O\u2019 Fortune',
+        notes: [
+          'The game now goes by Shores O\u2019 Fortune, with a salty pirate swagger in the gilded wordmark. Same sea, same ships, same saves.',
+        ],
+      },
+      {
+        title: 'Grass you can walk through',
+        notes: [
+          'The meadows on every island now grow real grass. Walk ashore and you wade through clumps of blades that sway in the wind, roll in waves as the breeze crosses the hillside and bow flat as each gust passes. They part around your boots and your crew\'s as you walk through them.',
+          'Each blade grows out of ground of exactly its own colour, so the grass is lush and dark in the damp hollows, sun-gold on the high ridges and blue-green in Las Brumas. It stops cleanly where the turf meets the sand or bare rock and thins out under the trees.',
+          'It only grows around you and fades out smoothly with distance, so it costs nothing out at sea.',
+        ],
+      },
+      {
+        title: 'Islands up close',
+        notes: [
+          'The ground under your feet has real texture now. Sand is grainy, with bits of shell and grit washed into drifts, and pink coral fragments in Las Brumas. Turf shows soil and sun-dried thatch between the clumps, the forest floor is littered with fallen leaves, and rock is gritty, finely cracked and freckled with lichen.',
+          'Tree crowns break up into lit clusters of leaves with shadowy gaps between them, and each cluster catches the sun on its own side. Broadleaf trunks have fissured bark with moss creeping up from the roots, and palms and tree ferns show the ring scars where old fronds fell.',
+          'All of this detail only shows when you are close enough to see it, and fades away smoothly further out.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T20:00Z',
+    entries: [
+      {
+        title: 'A new view while you load',
+        notes: [
+          'The loading screen now opens on Las Brumas: a ship riding the turquoise shallows off a pink beach under the limestone towers, still drifting slowly while the sea is made ready.',
+          'Held upright, a phone frames the ship and the shore instead of open water, and it loads a sharper image to match its screen.',
+        ],
+      },
+      {
+        title: 'Steady surf on every beach',
+        notes: [
+          'The white surf along the beaches no longer flickers and slides about while you sail. Away from your ship the sea is built more coarsely and glides along with you, and the breakers were worked out on that moving framework, so their foam crawled and jumped. Every breaker is now worked out right where you see it, so the surf rolls in steadily on every beach in view.',
+        ],
+      },
+      {
+        title: 'Islands drawn far lighter',
+        notes: [
+          'Islands now cost your graphics card well under half of what they did, with no change you can see. Hills and beaches far from you are drawn with fewer, larger pieces, only as fine as your screen can actually show at that distance, and the shoreline itself never moves.',
+          'Towns, forts and pirate camps do the same: once they are a little way off, their buildings switch to lighter versions you cannot tell apart from the real thing, and their shadows come from simple stand-ins.',
+          'Palms, bushes and rocks on distant hillsides get lighter versions too, and plants far outside the area where shadows fall no longer spend time casting them.',
+          'All of this is worked out in the background while you sail, so nothing stutters while it happens.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:30Z',
+    entries: [
+      {
+        title: 'Peaceful seas',
+        notes: [
+          'A new way to sail: pick Peaceful under your ship in the harbour (or in Settings, under World). Every pirate, bounty hunter, ghost ship, fort, camp and even the Kraken is still out there, but none of them fires until you do. Adventure plays exactly as before.',
+          'Fire first and you have a fight. The ship you hit comes about, and so do her flotilla, any Brethren within hail and any fort whose guns cover her. A blow on a fort\'s walls brings out the ships under them, and a cutlass drawn on one cutthroat ashore brings the whole camp running. The dead only stand by their own.',
+          'Bounty hunters still come after a big enough infamy, but they shadow you just out of reach of their guns, waiting for an excuse. Give one and she comes at you, along with any hunter within earshot.',
+          'The Kraken still rises in storms, but it only watches. Leave it be and it sinks away; strike it and it fights. Your escorts never fire first either, and calm forts no longer stop you going ashore.',
+          'You can always see who is calm: ships at peace carry a pale bar with a little dove and a pale mark on the minimap and chart. The HUD shows a dove while all is quiet, or crossed blades with a count and a burning wick once you have provoked someone. Sail clear and the wick burns down until tempers cool. In a shared voyage the host\'s choice holds for the whole crew, and each captain\'s quarrel is their own: a ship you provoke comes after you and your escorts, not your crewmates.',
+        ],
+      },
+      {
+        title: 'Smoother sailing and zooming',
+        notes: [
+          'The view no longer judders while you sail or zoom. The game used to time each frame by when it got round to drawing it, and that wobbles a little from frame to frame, so the camera moved a touch too far on some frames and too little on others. Frames are now timed by your screen\'s own refresh, so the sea, the islands and your ship all glide past evenly.',
+          'Spinning the mouse wheel now zooms in one smooth glide. Each click used to give the camera a little shove and then let it coast, so a fast spin zoomed in surges that were most noticeable at the edges of the screen.',
+        ],
+      },
+      {
+        title: 'A farewell worthy of your ship',
+        notes: [
+          'The "Lost to the Depths" screen is rebuilt bigger and bolder. The title is huge and lit from above, white where the light catches it and sinking to sea-green, and its letters tumble down into place.',
+          'Your ship gets a brass nameplate: a porthole with her silhouette heeled over and settling into the water, bubbles rising off her, her name in gold, where she went down, how many fathoms she lies in and a parting line.',
+          'A new voyage chart draws your whole voyage as a line from harbour to the sea floor, with every prize, chest, isle, bounty and ghost pinned along it at the moment it happened, popping up as the line runs out to the red marker where she sank.',
+          'Every stat tile now shows the record it is measured against: the best to beat, or the old best crossed out when you beat it. Your rank shows as nine pips with yours glowing, so you can see how far up the ladder you have climbed.',
+          'Bigger buttons: Sail again glints now and then and tells you you will get a fresh ship of the same class. The whole card fits a laptop screen without scrolling and stacks neatly on phones held either way.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'Choose your archipelago',
+        notes: [
+          'Set Sail now asks where you want to start. Two cards show each archipelago as a little painted chart of its real islands, with a gold anchor where you will weigh anchor: Las Afortunadas, your home harbour, or Las Brumas, the misty isles far across the high seas. One tap on a card and you are away.',
+          'Starting in Las Brumas puts you just off its first market with your fleet around you. It goes straight onto your chart, and the first time you start there you get the +600 gold for new waters, the same as if you had sailed all the way.',
+          'The game remembers your last choice and marks it, so Enter (or 1 and 2) picks it again on a keyboard, and Esc or Back takes you to the harbour. Sail Again after a sinking starts you in the same waters. In a shared sea, crew who join a captain still sail straight to the host\'s ship.',
+        ],
+      },
+      {
+        title: 'Fireworks',
+        notes: [
+          'Your gun rack has a sixth slot: fireworks. Load them with 6 (or the rocket in the shot fan on touch) and fire a broadside, and the rockets climb away at a steep 70 degrees and burst high over the sea, lighting the water, your sails and every ship nearby in their colours.',
+          'Ten kinds to collect: Coral Peony, Gold Chrysanthemum, Weeping Willow, Island Palm, Halo Ring, Crossette, Lighthouse Strobe, Dragon\'s Eggs, Shoal of Fish and Saturn. Press 6 again, or tap the loaded slot, to open the locker and pick which goes up next.',
+          'Three showpieces are rare and worth the wait. Kraken\'s Bloom opens a sea-green maw with eight curling arms of fire, the Jolly Roger writes a skull and crossbones across the sky inside a crimson crown, and Fortune\'s Finale fills the night with a golden crown, rings of every colour and a rain of gold coins.',
+          'Every port now has a pyrotechnist on the market with a few kinds for sale, and sometimes a showpiece. Treasure hauls can turn up fireworks too, and the kraken always leaves a Kraken\'s Bloom behind. You start with a small welcome crate.',
+          'Fireworks are only for show: they do no damage. Your locker is saved to your profile, and in co-op your crew sees exactly which kind you fired.',
+        ],
+      },
+      {
+        title: 'A compass that turns like clockwork while you load',
+        notes: [
+          'The compass on the loading screen now spins at a perfectly steady pace, with no speeding up, slowing down or hesitating, and its dotted inner dial slowly turns the other way.',
+          'It is drawn as its own layer that the browser animates on its own, so it keeps turning smoothly even while the islands, towns and ships are being built behind it.',
+          'Loading also now builds the two archipelagos, the six trading towns and your ship in the harbour in separate short steps instead of a few long ones, so the progress bar moves along steadily.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-20T19:00Z',
+    entries: [
+      {
+        title: 'Las Brumas, carved by the weather',
+        notes: [
+          'The limestone towers of Las Brumas have been reshaped to look like real karst, the kind you find in Ha Long Bay or El Nido. They are no longer straight stone drums: each one narrows as it rises and leans a little to one side, steps back in ledges and rounds over into a lumpy, wooded crown.',
+          'Their outlines are uneven, with bays and buttresses, and their heights vary a lot more, from squat stumps to tall pinnacles. Towers that stand close together now merge into one massif over a saddle.',
+          'The jungle clings to them: shrubs, ferns and stunted trees grow on the ledges and hang down the walls, with long green tongues of creepers between the grey, rain-streaked and ochre-stained stone.',
+          'The sea has gnawed a dark notch into the foot of every wall, and fallen blocks lie just under the water round the sea stacks. Every port, fort and island is still where it was.',
+        ],
+      },
+      {
+        title: 'A gentler cinematic angle',
+        notes: [
+          'The cinematic view past the farthest zoom no longer swoops down to the horizon. It now keeps exactly the same distance and framing as your farthest zoom and only leans the camera over a little more.',
+        ],
+      },
+      {
+        title: 'A cinematic view past the farthest zoom',
+        notes: [
+          'Zooming all the way out still stops where it always did, so a quick flick of the wheel never throws the camera somewhere unexpected.',
+          'But rest at the farthest zoom for a moment and then keep zooming out, and the camera leans over a little further, for a more cinematic angle on your ship.',
+          'Each push leans it a touch more, in a slow, weighty glide. Zoom back in and the camera straightens up first, then closes in as usual.',
+          'Works with a mouse wheel, a trackpad and a two-finger pinch on phones and tablets.',
+        ],
+      },
+      {
+        title: 'A treasure map at the helm',
+        notes: [
+          'Your treasure map has moved from the top corner down to the helm console, right after your shot, and it is bigger and much easier to read and tap. It is a little parchment tile: a rolled chart with three torn slots that fill in as you find the pieces, and a count of how many you have.',
+          'Once the map is whole the chart turns into a small gilt compass sealed in red wax. Its needle points the way to the X across your screen, with the distance beside it. Reach the spot and it turns into a glowing red seal with a spade that says Dig here.',
+          'It stays at the bottom of the screen when you go ashore, and it fits on phones held either way without getting under your thumbs. Held upright, it sits on top of your speed.',
+          'The little line of key hints under your speed is gone, so the console is cleaner.',
+        ],
+      },
+      {
+        title: 'Clouds over the open ocean',
+        notes: [
+          'Out on the high seas, when no fight is on, the little clouds no longer thin out into a see-through hole over your ship. They drift right over you, shadow and all, and you sail on underneath. As soon as a battle starts, or the Kraken rises, the clouds clear around your ship again so you can see what you are doing. The change fades in and out over a couple of seconds.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T18:00Z',
     entries: [
+      {
+        title: 'Walk the islands through your own eyes',
+        notes: [
+          'Going ashore now brings the camera down out of the sky, round behind your captain and into their eyes. The palms tower over you, the surf runs up the sand at your feet and your ship rides at anchor out in the bay. Look around with the mouse (click once to grab it) or drag on the right of a touch screen, and walk where you look with WASD or the stick.',
+          'The view moves like a person walking: it dips at every footfall, sways from foot to foot, opens up a little when you run and breathes when you stand still. Steps and rocks are smoothed out instead of jolting you.',
+          'You can see your own hands. The cutlass comes up when you draw it and sweeps across the view in each of the three cuts, with the lunge driving you forward. The flintlock rises on right-click (or Q, or Pistol on touch), kicks when it fires and smokes from its own muzzle. At the X you dig with your own spade while your eyes stay on the hole. A blow knocks your head aside, and if you go down the world tips over onto the sand.',
+          'A small sight in the middle of the screen closes in when a cutthroat is within reach of your blade, and a ring around it shows the pistol reloading. Cuts and shots still lock onto the nearest foe in front of you, and your head turns to follow them.',
+          'Prefer the old view? V or the eye button switches to the view from above and back again, and the game remembers your choice. Boarding fights keep their deck camera. From eye level, trees far across the island use their lighter models, so walking the islands stays smooth.',
+        ],
+      },
       {
         title: 'A tidier sky badge',
         notes: [
