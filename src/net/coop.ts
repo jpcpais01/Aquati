@@ -87,7 +87,8 @@ export interface CoopGame {
   launch(r: Recipe, m: ShipModel): Ship;
   remove(s: Ship): void;
   /** The host has gone: one of the host's pirates is ours to sail from now on. */
-  adopt(s: Ship): void;
+  /** `angry`: she was at war with us when her captain's game let her go. */
+  adopt(s: Ship, angry: boolean): void;
   /** A blow decided in another game landed on one of ours. */
   struck(s: Ship, by: Ship | null, dmg: number): void;
   /** Another game's ship went down. */
@@ -269,6 +270,8 @@ export class Coop implements NetRules {
   /** The crew is gone: the host's pirates become ours to fight, everyone else's ships sail away. */
   private detach(why: string) {
     const wasGuest = this.session && !this.session.isHost;
+    // our place in the crew, while it still means something to her wrath
+    const bit = 1 << this.me;
     this.session = null;
     Ship.net = null;
     this.phase = 'off';
@@ -276,7 +279,7 @@ export class Coop implements NetRules {
       const s = p.ship;
       if (s && !s.removed && s.alive && wasGuest && p.st.team === 'pirate') {
         s.remote = false;
-        this.g.adopt(s);
+        this.g.adopt(s, !!(s.wrath & bit));
       } else if (s && !s.removed) this.g.remove(s);
       else if (p.model) this.g.scrap(p.model);
     }

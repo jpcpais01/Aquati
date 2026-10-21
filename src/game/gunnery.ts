@@ -371,10 +371,10 @@ export class Gunnery {
     return this.pointerSide;
   }
 
-  /** Target or point to lay a broadside on. */
-  aim(p: Ship, side: Side): { target: Ship | null; point: THREE.Vector3 } {
+  /** Target or point to lay a broadside on (`calm`: peaceful seas, laid on something that holds its fire). */
+  aim(p: Ship, side: Side): { target: Ship | null; point: THREE.Vector3; calm?: boolean } {
     const st = this.sides[side];
-    if (st.target || st.mark) return { target: st.target, point: st.impact.clone() };
+    if (st.target || st.mark) return { target: st.target, point: st.impact.clone(), calm: st.target ? st.target.calm : !!st.mark?.calm };
     if (st.hover && st.aimDist > 0) return { target: null, point: st.impact.clone() };
     // no mark: square off the beam at a good fighting range
     const R = this.range(p);
