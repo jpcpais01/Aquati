@@ -1366,9 +1366,9 @@ export class SeaChart {
     g.fillStyle = 'rgba(190, 236, 240, 0.9)';
     g.fillText(`${HIGH_SEAS_NAME}`, 0, -14);
     g.font = 'italic 500 11px Georgia, serif';
-    g.strokeText('the high seas · calm water, dolphins', 0, 6);
+    g.strokeText('the high seas · calm water, dolphins, whales', 0, 6);
     g.fillStyle = 'rgba(190, 236, 240, 0.7)';
-    g.fillText('the high seas · calm water, dolphins', 0, 6);
+    g.fillText('the high seas · calm water, dolphins, whales', 0, 6);
     g.restore();
     for (const r of REGIONS) {
       const [x, y] = toS(r.x, r.z - 1120);

@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T02:00Z',
     entries: [
       {
+        title: 'Whales on the high seas',
+        notes: [
+          'Out on Mar Sereno you now meet humpback whales on their long migration across the open ocean. Every few minutes a pod of two to four crosses ahead of you in a long line, often with a mother and her small, pale calf tucked in at her side. The lookout calls \u201cThar she blows!\u201d and tells you where to look.',
+          'They come up to breathe every few breaths: the blowholes break the surface and a tall, bushy column of spray booms up and drifts off on the wind, then the long dark back and the little dorsal fin roll through and under. After the last breath each one arches over and dives, lifting its great flukes clear of the sea with water pouring off them, and leaves a smooth ring where it went down.',
+          'Now and then one breaches: it runs up from the deep, hurls two thirds of itself clear of the water with its long white flippers spread, twists onto its back and comes down in a thunderous tower of white water. At the golden hours, morning and evening, a breach is far likelier. Some lie on their side and slap a flipper flat on the water, again and again.',
+          'Every whale is its own: the white of its belly, the knobs and barnacles on its head and the black-and-white pattern under its flukes all differ. Steer too close and they dive to let you pass over them.',
+          'While they are near you can hear them sing through the hull: long sliding moans, high cries, whoops and deep groans, each theme sung a few times over before the song moves on. Heave to and it comes through louder.',
+        ],
+      },
+      {
         title: 'Feast nights in the ports',
         notes: [
           'Every trading port now keeps its own feast, one night in three: the Spice Feast at Porto Cinabre, Gold Night at Aguadouro, the Night of the Coral Saints at Sainte-Corália, the Rum Harvest at Ronvliet, the Drizzle Lanterns at Vila Garoa and the Jade Moon at Esmeraldeau. On the night of the full moon every port in the isles celebrates at once. Word goes round at dusk, and a ring of little lanterns circles the town on your minimap and chart.',
