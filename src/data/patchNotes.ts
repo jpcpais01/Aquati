@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T15:00Z',
     entries: [
       {
+        title: 'The cinematic angle stays as you zoom in',
+        notes: [
+          'Once you have leaned the camera into its cinematic angle at the farthest zoom, zooming back in now keeps that angle all the way down to your ship, instead of straightening up first. Up close it leans a touch lower still, for a proper over-the-water shot.',
+          'To go back to the usual high view, zoom out to the farthest zoom, pause for a moment and zoom out once more: the camera straightens up. On phones and tablets, the zoom button still steps through Close, Mid, Far and Cinematic.',
+        ],
+      },
+      {
         title: 'Smoother zooming out',
         notes: [
           'Pulling the camera back, by hand or when a battle widens the view, no longer stutters as the far islands come in.',
