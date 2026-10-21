@@ -7240,7 +7240,7 @@ export class Game {
     fog.far = a.fogRange.y;
     this.pipeline.exposure = a.exposure;
     this.pipeline.heat = a.heat;
-    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat, a.vignette);
+    this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat, a.vignette, a.grade);
   }
 
   /** Rain, lightning, thunder, spindrift and the clock badge. */
