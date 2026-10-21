@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T03:00Z',
+    entries: [
+      {
+        title: 'No more work on empty effects',
+        notes: [
+          'Splashes, sparks, lanterns, loot and other effects keep a slot ready even when none are showing. The game used to fully prepare a draw for each empty slot every frame, about fifty of them, only to draw nothing. Now it skips them.',
+          'That is about a fifth fewer graphics calls a frame, and roughly 15% less render work for the processor. Nothing on screen changes.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T02:00Z',
     entries: [
       {

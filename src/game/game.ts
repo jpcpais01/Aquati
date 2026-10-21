@@ -37,7 +37,7 @@ import { Whales } from '../fx/whales';
 import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
 import { Grass, GRASS_PUSHERS } from '../world/grass';
-import { installPassCulling } from '../render/passCull';
+import { emptyDraws, installPassCulling, skipEmptyDraws } from '../render/passCull';
 import { Ocean } from '../world/ocean';
 import { buildShore, setShoreField, setSurf } from '../world/shore';
 import { WakeField } from '../world/wakeField';
@@ -576,6 +576,7 @@ export class Game {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.shadowMap.autoUpdate = true;
     installPassCulling(this.renderer);
+    skipEmptyDraws(this.renderer);
     this.quality = detectQuality(this.renderer);
     this.prof = new Profiler(this.renderer, () => ({
       scale: this.scaler.scale,
@@ -7179,6 +7180,7 @@ export class Game {
     }
 
     viewCull.off = this.warming;
+    emptyDraws.skip = !this.warming;
     viewCull.set(cam, this.shadowC, this.shadowR, this.shadowK);
     P.begin('Vegetation culling', 'sim');
     // from eye level the far LOD takes over from ~85 m out, even on the island underfoot
