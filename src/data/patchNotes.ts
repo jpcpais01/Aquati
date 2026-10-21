@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T23:00Z',
     entries: [
       {
+        title: 'A livelier home page',
+        notes: [
+          'The game\'s home page got a big second pass. The top of the page is now a short film of a ship sailing past the islands, rendered live by the game, and Watch the trailer plays the 22-second trailer.',
+          'Pick a ship and drag her picture to turn her all the way around. The map is now an old hand-inked sea chart of both archipelagos, drawn from the game\'s own map, with your voyage to Las Brumas sailing across it. Point at an island to read its name.',
+          'A ship\'s clock in the corner runs from afternoon into night as you scroll down, the sound button plays the game\'s music, and a strip under the top shows the newest patch notes.',
+        ],
+      },
+      {
         title: 'Shores O’ Fortune is coming to Android',
         notes: [
           'The game is being rebuilt as a native Android app, made for phones from the keel up. The first build is out now: Download for Android on the home page, or the newest release on the game\'s GitHub page. It is the open sea and your sloop, the Kestrel, with the same swells, sun glitter, wakes, sky and turning day as here.',
