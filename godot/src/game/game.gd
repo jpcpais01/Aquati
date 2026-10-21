@@ -5,7 +5,8 @@ extends Node3D
 ##
 ## Command-line (after --): --smoke runs a few seconds and prints SMOKE OK;
 ## --shot PATH saves a frame and quits, with --hour H, --view N (0 close ..
-## 3 leaned over), --frames N to let it settle first and --heading R.
+## 3 leaned over) or --zoom Z (0..1) and --tilt T (0..1), --frames N to let
+## it settle first and --heading R.
 
 const WIND_ANGLE := 0.6
 
@@ -145,6 +146,8 @@ func _build_camera() -> void:
 	if _args.has("view"):
 		var v: Array = CameraRig.VIEWS[clampi(int(_args.view), 0, 3)]
 		camera.set_view(v[0], v[1])
+	if _args.has("zoom"):
+		camera.set_view(float(_args.zoom), float(_args.get("tilt", 0.0)))
 	camera.snap_to(player.pos)
 
 

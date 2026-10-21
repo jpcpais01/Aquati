@@ -132,6 +132,10 @@ jobs:
         working-directory: godot
         run: |
           set -uo pipefail
+          # the first pass fills the import cache (on a fresh checkout the theme
+          # is read before its font is imported, a harmless one-off error);
+          # the second has everything in place and must come out clean
+          godot --headless --import > "$RUNNER_TEMP/import-first.log" 2>&1 || true
           godot --headless --import 2>&1 | tee "$RUNNER_TEMP/import.log"
           if grep -E "Parse Error|SCRIPT ERROR|Failed to load script|Compile Error" "$RUNNER_TEMP/import.log"; then
             echo "::error::GDScript errors while importing"
