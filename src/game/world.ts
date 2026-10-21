@@ -57,6 +57,8 @@ export class World {
   readonly vortices: Vortex[] = [];
   /** What a captain can tell of the maelstroms ahead (see game/hazards.ts). */
   hazards: HazardSense | null = null;
+  /** Something loud happened at a point (a ball into a hillside, a pistol shot): the island beasts within `radius` startle. */
+  onScare: (at: THREE.Vector3, radius: number) => void = () => {};
   /** A ship took a beating from the sea itself: grinding on a reef, or wrung in a maelstrom's throat. */
   onHazard: (ship: unknown, kind: 'reef' | 'maelstrom', damage: number, at: THREE.Vector3) => void = () => {};
 
