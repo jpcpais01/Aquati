@@ -21,11 +21,6 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Dolphins diving back into the sea no longer thump like cannonballs landing. They make a light, bright little plip with a fizz of spray, quieter and cleaner.',
         ],
       },
-    ],
-  },
-  {
-    hour: '2026-10-21T01:00Z',
-    entries: [
       {
         title: 'A snappier cinematic lean',
         notes: [
