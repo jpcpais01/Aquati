@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { globalUniforms, GLSL_GUST } from '../render/environment';
 import { GLSL_WAVES } from '../world/waves';
+import { GLSL_ZOOM_BOX, ZoomBox } from './zoomBox';
 
 // Spindrift: in a blow the wind tears the tops off the breaking crests and
 // flings them downwind as sheets of spray. One static buffer of sheets,
@@ -16,13 +17,16 @@ export class Spindrift {
   private geo = new THREE.BufferGeometry();
   readonly uniforms = {
     uCenter: { value: new THREE.Vector3() },
-    uBox: { value: 120 }, // half size of the tile (m)
+    uBox: { value: new THREE.Vector2(120, 0) }, // half size of the tile (m)
     uAmount: { value: 0 },
     uSpeed: { value: 14 },
     uSceneDepth: { value: null as THREE.Texture | null },
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCamNearFar: { value: new THREE.Vector2(1, 1000) },
   };
+  /** The tile resizes only between sheets' lives (cycles run up to 3.7 s). */
+  private zoomBox = new ZoomBox(3.8);
+  private wantBox = new THREE.Vector2();
 
   constructor(
     private count: number,
@@ -49,6 +53,8 @@ export class Spindrift {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         ...this.uniforms,
+        uBoxPrev: this.zoomBox.uBoxPrev,
+        uBoxAt: this.zoomBox.uBoxAt,
         uWaveA: waves.uWaveA,
         uWaveB: waves.uWaveB,
         uTime: g.uTime,
@@ -69,17 +75,20 @@ export class Spindrift {
       premultipliedAlpha: true,
       side: THREE.DoubleSide,
       vertexShader: /* glsl */ `
-        uniform vec3 uCenter; uniform float uBox; uniform float uAmount; uniform float uSpeed; uniform float uTime;
+        uniform vec3 uCenter; uniform vec2 uBox; uniform float uAmount; uniform float uSpeed; uniform float uTime;
         ${GLSL_GUST}
+        ${GLSL_ZOOM_BOX}
         ${GLSL_WAVES}
         attribute vec4 aSeed; attribute vec2 aCorner;
         varying vec3 vR; varying float vA; varying float vSeed; varying float vViewZ;
         void main() {
-          float B = uBox * 2.0;
           float cyc = 2.2 + aSeed.w * 1.5;
           float t = uTime + aSeed.z * cyc;
           float k = fract(t / cyc);
           float n = floor(t / cyc);
+          // the tile as it was when this sheet was born, so a zoom never moves it mid-flight
+          float box = bornBox(uBox, n, cyc, aSeed.z).x;
+          float B = box * 2.0;
           vec2 p0 = fract(aSeed.xy + vec2(0.6180339, 0.4142135) * n) * B;
           vec2 rel = mod(p0 - uCenter.xz + B * 0.5, B) - B * 0.5;
           vec2 birth = uCenter.xz + rel;
@@ -89,7 +98,7 @@ export class Spindrift {
           vec3 o = gerstner(birth, uTime - k * cyc, 1.0, camD, nrm, crest);
           float gust = gustAt(birth);
           float str = smoothstep(0.14 - gust * 0.1, 0.4, crest + (aSeed.y - 0.5) * 0.2) * uAmount * (0.75 + gust * 0.5);
-          vec2 e = abs(rel) / uBox;
+          vec2 e = abs(rel) / box;
           str *= 1.0 - smoothstep(0.7, 1.0, max(e.x, e.y));
           if (str < 0.01) {
             gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -159,7 +168,8 @@ export class Spindrift {
     const u = this.uniforms;
     u.uAmount.value = Math.min(1, amount);
     u.uCenter.value.set(cx, 0, cz);
-    u.uBox.value = THREE.MathUtils.clamp(camDist * 0.8, 50, 230);
+    this.wantBox.set(THREE.MathUtils.clamp(camDist * 0.8, 50, 230), 0);
+    this.zoomBox.update(u.uBox.value, this.wantBox, globalUniforms.uTime.value);
     u.uSpeed.value = 8 + wind * 7;
   }
 

@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T01:00Z',
+    entries: [
+      {
+        title: 'Storm seas that roll instead of jumping',
+        notes: [
+          'In a storm the breaking whitecaps could suddenly vanish and reappear somewhere else, again and again, most of all far out at sea after the wind had shifted. They now ride their waves smoothly from start to finish.',
+          'Wind-torn spray and rain no longer hop to new spots whenever the camera moves in or out, which in a battle was all the time. Each sheet of spray and each raindrop now finishes its flight where it started, and the next ones fill the new view.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T00:00Z',
     entries: [
       {
