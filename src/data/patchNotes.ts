@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T01:00Z',
     entries: [
       {
+        title: 'Even less work per frame',
+        notes: [
+          'Island ground and plants never move once the game has loaded, but every frame the game still worked out where each of their couple of thousand pieces sat. Now it leaves them alone, which cuts that part of the frame by almost half.',
+          'The underside of the sea, which you only see when the camera follows a wreck down, is no longer kept up to date while you sail above it.',
+          'Low clouds work out which islands they are growing over with a quick distance check first, so faraway islands cost almost nothing.',
+        ],
+      },
+      {
         title: 'Dolphins sound like dolphins',
         notes: [
           'Dolphins diving back into the sea no longer thump like cannonballs landing. They make a light, bright little plip with a fizz of spray, quieter and cleaner.',

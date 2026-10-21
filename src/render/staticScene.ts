@@ -34,3 +34,24 @@ export function skipWhenHidden(obj: THREE.Object3D) {
     stale = false;
   };
 }
+
+/**
+ * freezeStatic, and the per-frame walk doesn't even descend into the subtree:
+ * frozen children cost nothing to compose, but the scene forces every frame's
+ * walk, so each of a couple of thousand of them (every plant batch, every
+ * ground chunk) still multiplied its matrix again. Only for a subtree sitting
+ * straight in a scene that never moves. It is walked again once after a child
+ * is added or removed directly under `root`, or after
+ * `root.matrixWorldNeedsUpdate` is set; anything moved deeper inside updates
+ * itself with its own `updateMatrixWorld(true)`.
+ */
+export function sealStatic(root: THREE.Object3D) {
+  freezeStatic(root);
+  const walk = root.updateMatrixWorld;
+  let kids = root.children.length;
+  root.updateMatrixWorld = function () {
+    if (this.children.length === kids && !this.matrixWorldNeedsUpdate) return;
+    kids = this.children.length;
+    walk.call(this, true);
+  };
+}

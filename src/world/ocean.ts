@@ -7,6 +7,7 @@ import { WakeField } from './wakeField';
 import { GLSL_SURF, shoreUniforms } from './shore';
 import { GLSL_VORTEX, VORTEX_N, VORTEX_RIM, vortexDepth } from './vortex';
 import { viewCull } from '../render/viewCull';
+import { skipWhenHidden } from '../render/staticScene';
 
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
@@ -1299,6 +1300,7 @@ export class Ocean {
       }),
     );
     this.underside.visible = false;
+    skipWhenHidden(this.underside);
   }
 
   /** Air breaking the surface over a wreck, as seen from beneath (strength 0 hides it). */
