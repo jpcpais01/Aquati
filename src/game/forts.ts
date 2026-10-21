@@ -1249,8 +1249,13 @@ export class Forts {
   }
 
   /** A hostile fort that's firing on you right now, for the camera to keep in frame. */
-  engaging(x: number, z: number): Fort | null {
-    for (const f of this.forts) if (f.owner === 'brethren' && f.alert && f.guns.some((g) => g.target) && Math.hypot(f.site.x - x, f.site.z - z) < FORT_RANGE + 40) return f;
+  engaging(x: number, z: number, calm: { side: number; now: number } | null = null): Fort | null {
+    for (const f of this.forts) {
+      if (f.owner !== 'brethren' || !f.alert || !f.guns.some((g) => g.target) || Math.hypot(f.site.x - x, f.site.z - z) >= FORT_RANGE + 40) continue;
+      // peaceful seas: only a fort at war with this captain (not one trading shot with another)
+      if (calm && !f.grudge.holds(calm.side, calm.now)) continue;
+      return f;
+    }
     return null;
   }
 

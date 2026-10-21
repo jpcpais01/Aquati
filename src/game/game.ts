@@ -155,6 +155,8 @@ const DIVE = 8.6;
 /** Lasting wrecks kept afloat at once, and how far from you one may linger. */
 const MAX_WRECKS = 3;
 const WRECK_REACH = 520;
+/** Peaceful seas: seconds a "hold your fire?" stands for a second press to fire first. */
+const HOLD_FIRE = 3.5;
 
 const _cineV = new THREE.Vector3();
 const _swayV = new THREE.Vector3();
@@ -566,6 +568,8 @@ export class Game {
   /** When each ship last called out that you'd provoked her. */
   private provokedAt = new WeakMap<Ship, number>();
   private provokeToastT = -100;
+  /** Peaceful seas: the guns were laid on someone holding their fire, and asked first (see fireFirst). */
+  private holdFire: { target: Ship | null; t: number } | null = null;
   /** How many ships and forts were at war with you last frame (for "tempers cool"). */
   private warN = 0;
   /** How many of the gunnery's marks this frame are the Kraken's (the rest are forts'). */
@@ -3607,11 +3611,12 @@ export class Game {
         s.removed = true;
         g.removeShip(s);
       },
-      adopt: (s) => {
+      adopt: (s, angry) => {
         // the host has gone: her pirates are ours to fight now
         const ai = new PirateAI(s, (g.player?.kills ?? 0) / 4);
-        // whoever she was at war with, the quarrel is ours now
-        if (s.wrath) ai.grudge.mark(g.coop.me, g.world.time);
+        // a quarrel she had with us carries on (one with another captain sails away with them)
+        if (angry) ai.grudge.mark(g.coop.me, g.world.time);
+        s.wrath = ai.grudge.mask(g.world.time);
         g.ais.set(s, ai);
       },
       struck: (s, by, dmg) => g.onHit(s, by as Ship, dmg, s.pos),
@@ -4630,8 +4635,8 @@ export class Game {
   private battleFoe(): THREE.Vector3 | null {
     const p = this.player;
     if (!p || !p.alive) return null;
-    // nothing else matters while the Kraken is up
-    const kf = this.kraken.focus(this.krFocus);
+    // nothing else matters while the Kraken is up (and fighting: on peaceful seas a sleepy one is only scenery)
+    const kf = this.kraken.docile ? null : this.kraken.focus(this.krFocus);
     if (kf && Math.hypot(kf.x - p.pos.x, kf.z - p.pos.z) < 220) {
       this.lastFoe = null;
       return kf;
@@ -4640,7 +4645,8 @@ export class Game {
     let best: Ship | null = null;
     let bd = Infinity;
     for (const s of this.ships) {
-      if (!s.alive || s.removed || s.team !== 'pirate') continue;
+      // peaceful seas: a ship holding her fire is no duel, however close she sails
+      if (!s.alive || s.removed || s.team !== 'pirate' || s.calm || s.prize) continue;
       const ai = this.ais.get(s);
       if (!ai && !s.remote) continue;
       const d = Math.hypot(s.pos.x - p.pos.x, s.pos.z - p.pos.z);
@@ -4657,7 +4663,7 @@ export class Game {
     this.lastFoe = best;
     if (best) return best.pos;
     // a fort's guns on you: keep its walls in the frame
-    const f = this.forts.engaging(p.pos.x, p.pos.z);
+    const f = this.forts.engaging(p.pos.x, p.pos.z, this.world.peaceful ? { side: this.coop.me, now: t } : null);
     return f ? this.fortFocus.set(f.site.x, 0, f.site.z) : null;
   }
 
@@ -6346,6 +6352,8 @@ export class Game {
     if (this.ammoStock[p.ammo] <= 0) this.selectAmmo('round', true);
     if (p.ammo === 'firework') return this.fireRockets(side);
     const a = this.gunnery.aim(p, side);
+    // peaceful seas: the guns laid on someone holding their fire wait for a second word
+    if (a.calm && this.world.peaceful && !this.fireFirst(side, a.target)) return;
     const shot = p.ammo;
     if (p.fire(side, this.world, a.target, a.point)) {
       if (a.target) this.markedFoe = a.target;
@@ -6359,6 +6367,26 @@ export class Game {
         }
       }
     } else this.ui.flashBroadside(side);
+  }
+
+  /**
+   * Peaceful seas: the first press with the guns laid on a ship (or a fort, or
+   * the Kraken) that holds its fire only asks; a second within a few seconds
+   * fires first, and starts the fight. No more quarrels from a stray click.
+   */
+  private fireFirst(side: Side, target: Ship | null): boolean {
+    const t = this.world.time;
+    const h = this.holdFire;
+    if (h && h.target === target && t - h.t < HOLD_FIRE) {
+      this.holdFire = null;
+      return true;
+    }
+    this.holdFire = { target, t };
+    const who = target ? `The ${target.name} holds hers` : 'They hold theirs';
+    const again = this.input.isTouch ? 'tap Fire again' : 'fire again';
+    this.ui.toast('Hold your fire?', `${who}: ${again} to fire first and start a fight`, HOLD_FIRE);
+    this.ui.flashBroadside(side);
+    return false;
   }
 
   /** Fireworks loaded: a rocket off each chosen gun, and one volley out of the locker. */

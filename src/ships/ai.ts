@@ -257,6 +257,9 @@ export class PirateAI {
           const away = Math.atan2(-ox, -oz);
           this.desired += angleDelta(this.desired, away) * 0.5;
         }
+        // peaceful seas: a captain with no quarrel gives your ships a wide berth,
+        // reading where your course and hers meet, rather than bumping you into a fight
+        if (world.peaceful && o.team === 'player' && !this.grudge.against(o, world.time)) this.giveWay(o, od, ox, oz);
       }
     }
 
@@ -291,6 +294,36 @@ export class PirateAI {
         }
       }
     }
+  }
+
+  /**
+   * Keep clear of one of your ships she has no quarrel with: if their courses
+   * bring them within a hull's length or so in the next few seconds she bears
+   * away from the meeting point, and shortens sail if you're the one coming up
+   * on her, so you can sail past.
+   */
+  private giveWay(o: Ship, od: number, ox: number, oz: number) {
+    const s = this.ship;
+    const clear = (o.cls.length + s.cls.length) * 0.85 + 6;
+    if (od > clear * 3.5) return;
+    const rvx = o.vel.x - s.vel.x;
+    const rvz = o.vel.z - s.vel.z;
+    const rv2 = rvx * rvx + rvz * rvz;
+    // when (within the next 9 s) the two pass closest, and how close
+    const t = rv2 > 1e-4 ? clamp(-(ox * rvx + oz * rvz) / rv2, 0, 9) : 0;
+    const mx = ox + rvx * t;
+    const mz = oz + rvz * t;
+    const miss = Math.hypot(mx, mz);
+    if (miss > clear && od > clear * 1.3) return;
+    // bear away from where she'd meet you (straight off you when already close)
+    const near = od < clear * 1.3;
+    const away = near || miss < 1 ? Math.atan2(-ox, -oz) : Math.atan2(-mx, -mz);
+    const k = near ? 0.85 : 0.65 * (1 - t / 12);
+    this.desired += angleDelta(this.desired, away) * k;
+    if (!near) return;
+    // across her bow she spills her wind and lets you by; coming up on her quarter, she makes way
+    const ahead = Math.sin(s.heading) * ox + Math.cos(s.heading) * oz > 0;
+    s.sailTarget = ahead ? Math.min(s.sailTarget, 0.35) : Math.max(s.sailTarget, 0.75);
   }
 
   /** Now and then a pirate crew rams home something nastier, if it will reach and isn't wasted. */

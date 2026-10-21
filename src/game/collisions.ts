@@ -16,6 +16,8 @@ import { World } from './world';
 const RESTITUTION = 0.22;
 const RAM_MIN = 1.3; // m/s closing speed before timbers break
 const COOLDOWN = 0.7;
+/** A hull carrying at least this share of the closing speed was driving into the other (a ram); less, she was struck. */
+const FAULT = 0.3;
 
 const _ca = new THREE.Vector2();
 const _cb = new THREE.Vector2();
@@ -170,10 +172,15 @@ export class ShipCollisions {
     }
     if (since < COOLDOWN) return;
     this.last.set(key, world.time);
-    this.impact(a, b, px, pz, nx, nz, closing, this.t[0], this.t[1], world);
+    // who drove into whom: each hull's own way along the line between them
+    // (a ship lying still is rammed, she doesn't ram; a head-on meeting is both their doing)
+    const ca = vax * nx + vaz * nz;
+    const cb = -(vbx * nx + vbz * nz);
+    this.impact(a, b, px, pz, nx, nz, closing, this.t[0], this.t[1], world, ca > closing * FAULT && ca > RAM_MIN * 0.5, cb > closing * FAULT && cb > RAM_MIN * 0.5);
   }
 
-  private impact(a: Ship, b: Ship, px: number, pz: number, nx: number, nz: number, closing: number, ta: number, tb: number, world: World) {
+  /** `aRams` / `bRams`: that hull drove into the other, so the blow it deals is hers (and, on peaceful seas, a quarrel). */
+  private impact(a: Ship, b: Ship, px: number, pz: number, nx: number, nz: number, closing: number, ta: number, tb: number, world: World, aRams: boolean, bRams: boolean) {
     const force = clamp((closing - RAM_MIN) / 11, 0, 1);
     // the bow is built to take a blow; a beam or quarter is not
     const bowA = ta > 0.55 && Math.sin(a.heading) * nx + Math.cos(a.heading) * nz > 0.45;
@@ -190,8 +197,9 @@ export class ShipCollisions {
 
     const y = world.waterHeight(px, pz);
     const deckY = y + 1 + Math.min(a.cls.draft, b.cls.draft) * 0.4;
-    if (dmgA > 1) a.damage(dmgA, same ? null : b, world, _p.set(px, deckY, pz));
-    if (dmgB > 1) b.damage(dmgB, same ? null : a, world, _p.set(px, deckY, pz));
+    // a pirate sailing into your side is her doing, not yours
+    if (dmgA > 1) a.damage(dmgA, same || !bRams ? null : b, world, _p.set(px, deckY, pz));
+    if (dmgB > 1) b.damage(dmgB, same || !aRams ? null : a, world, _p.set(px, deckY, pz));
 
     // splinters bursting out of both hulls, water flung up between them
     world.particles.woodHit(_p.set(px, deckY, pz), _n.set(-nx, 0, -nz));

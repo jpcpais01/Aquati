@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T20:00Z',
+    entries: [
+      {
+        title: 'Peaceful seas really are peaceful',
+        notes: [
+          'On peaceful seas pirates could still turn on you when you never fired a shot. The usual cause was a bump: when a pirate sailed into your side, the game blamed you for the collision and counted it as you attacking her, so she and every ship nearby came about to fight. Now a collision is only your doing when your ship was the one driving into hers. A ship that runs into you starts nothing.',
+          'Pirates with no quarrel with you now give your ships a wide berth. They read where your course meets theirs, bear away early, and ease off or make sail so you can pass, so accidental bumps are rare now.',
+          'The camera no longer swings over to frame a pirate just because she sails close. The battle view now only comes on for a ship, fort or Kraken that is actually fighting you. That also means a pirate sailing peacefully nearby no longer stops you docking, going ashore or repairing under your fort.',
+          'Firing on a ship that is holding her fire now asks first. The first click, key press or tap shows "Hold your fire?", and a second one within a few seconds fires the broadside and starts the fight. A stray click can no longer start a war.',
+          'In a shared voyage, when the host leaves, their pirates only keep a grudge against you if they were really fighting you, and not if they were fighting another captain.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T19:00Z',
     entries: [
       {
