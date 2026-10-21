@@ -1,0 +1,3 @@
+# The native Android game (Godot) and its CI never go into the web build.
+godot/
+.github/

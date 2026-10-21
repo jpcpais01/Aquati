@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T23:00Z',
+    entries: [
+      {
+        title: 'Shores O’ Fortune is coming to Android',
+        notes: [
+          'The game is being rebuilt as a native Android app, made for phones from the keel up. The first build is out now: Download for Android on the home page, or the newest release on the game\'s GitHub page. It is the open sea and your sloop, the Kestrel, with the same swells, sun glitter, wakes, sky and turning day as here.',
+          'She sails just as she does here: fastest with the wind on her beam, heeling, pitching and riding every swell. Drag on the left of the screen and she turns to point where your finger points, and the lever on the right sets Stop, Slow, Half or Full sail.',
+          'Islands and ports, the other ships, cannons and pirates follow in the next builds, until the whole game sails on Android.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T22:00Z',
     entries: [
       {
