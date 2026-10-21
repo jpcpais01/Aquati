@@ -92,6 +92,9 @@ export const globalUniforms = {
   uVeil: { value: new THREE.Vector4(0, 20, 0, 0) },
   // a lightning strike lighting the sea round it: xz where it hit, z its reach (m), w its light
   uStrike: { value: new THREE.Vector4(0, 0, 1, 0) },
+  // the rare weathers (see world/atmosphere.ts): x mirror calm, y how brightly the
+  // sea-spark blooms glow tonight (world/seaGlow.ts), z a scorching noon's heat, w ash in the air
+  uSpecial: { value: new THREE.Vector4() },
   // the night sky (see render/nightSky.ts): world directions into the slowly
   // wheeling star sphere; the moon's place and visibility, and its phase as
   // the sun's direction seen from it (w the lit share of the disc)
@@ -211,6 +214,7 @@ uniform float uNight;
 uniform float uCloudCover;
 uniform float uRain;
 uniform float uStorm;
+uniform vec4 uSpecial;
 uniform float uWet;
 uniform float uFlash;
 uniform float uMist;

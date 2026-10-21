@@ -48,7 +48,7 @@ const FRAMES: [string, string, number][] = [
   ['cine', 'Cinema', 2.39],
 ];
 
-const WEATHERS: (WeatherKind | 'asis')[] = ['asis', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm'];
+const WEATHERS: (WeatherKind | 'asis')[] = ['asis', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm', 'calm', 'hot', 'embers'];
 
 type Tab = 'camera' | 'scene' | 'lens' | 'filter';
 const TABS: [Tab, string][] = [
