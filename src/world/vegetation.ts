@@ -31,7 +31,7 @@ export { palmGeometry } from './flora';
 
 const TAU = Math.PI * 2;
 
-interface Placement {
+export interface Placement {
   x: number;
   y: number;
   z: number;
@@ -473,6 +473,12 @@ export class Vegetation {
     solid(L.treeFern, 0.3);
     solid(L.banana, 0.2);
     solid(L.rock, 0.95);
+  }
+
+  /** Where island `i`'s palms, trees, flowering shrubs, wildflowers and boulders stand (the wildlife climbs, perches and feeds on them). */
+  plantsOf(i: number) {
+    const L = this.lists[i];
+    return { palm: L.palm, tree: L.tree, flowers: L.flowerBush, wild: L.wildflower, rock: L.rock };
   }
 
   /** Every trunk or boulder whose disc might reach within `r` of (x, z). */

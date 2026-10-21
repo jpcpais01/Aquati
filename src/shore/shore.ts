@@ -1113,6 +1113,7 @@ export class Shore {
     }
     const [vol, pan, d] = world.soundAt(_hand);
     world.audio.pistol(vol, pan, d);
+    world.onScare(_hand, 75);
     this.hooks.shake(0.06);
     if (!t || !t.standing) return;
     const dist = Math.hypot(t.x - cap.x, t.z - cap.z);
@@ -1674,6 +1675,8 @@ export class Shore {
       }
       const at = _w.set(a.x + Math.sin(a.yaw) * 1.1, a.y + 1.15, a.z + Math.cos(a.yaw) * 1.1);
       const [vol, pan, dd] = world.soundAt(at);
+      // a blade swung (or steel ringing on steel) puts the beasts close by to flight
+      world.onScare(at, hits.length ? 22 : 10);
       if (!hits.length) {
         world.audio.swish(vol, pan);
         continue;

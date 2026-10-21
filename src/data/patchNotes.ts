@@ -16,6 +16,16 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T02:00Z',
     entries: [
       {
+        title: 'Island wildlife: fifteen kinds of beast',
+        notes: [
+          'The isles are alive. Each island now has its own creatures, chosen to suit it: wild goats on the crags, red deer and wild boar in the meadows and woods, capuchin monkeys in the trees, scarlet macaws, flamingos in the shallows, egrets and grey herons, brown pelicans and blue-footed boobies along the coast, green iguanas, giant tortoises, sea lions on the beaches, red land crabs, blue morpho butterflies and hummingbirds round the flowers.',
+          'Every kind has its own ways. Goat kids play and the billies butt heads, deer stot away with their white tails up, a sow bluff-charges while her striped piglets trot behind her in a line. Monkeys groom and scold you from the branches and leap from tree to tree. Flamingos feed with heads upside down, rest on one leg and march in a pink crowd. Pelicans patrol the shore in a line and dive for fish, boobies show off their blue feet in a slow dance, and herons stalk and strike.',
+          'Iguanas bask and bob their heads at each other with their dewlaps out, tortoises pull into their shells, sea lions loll on the sand, bark and wave a flipper, and crabs scuttle sideways, raise their claws and dig themselves in. Butterflies come out on sunny days, and a hummingbird may stop to hover right in front of your face.',
+          'They notice you. Walk ashore and they keep an eye on you, then shy away or bolt if you come too close, and running scares them sooner than walking. A broadside, a ball landing on the island or a pistol shot sends the whole island fleeing: herds stampede, birds burst into the air, crabs vanish into the sand. Sail too close to a beach and the sea lions flop into the water.',
+          'Each has its own voice: bleats, snorts, grunts and squeals, monkey chatter, macaw squawks, flamingo honking, sea lion barks and more. The first time you see each kind up close you get a note of it, up to all fifteen.',
+        ],
+      },
+      {
         title: 'Merchant convoys on the high seas',
         notes: [
           'Out on Mar Sereno the trading houses now run their cargoes between the two archipelagos in convoys of two or three ships sailing in line, at the pace of the slowest. "Sail ho!" goes up when one heaves into sight, and they show on your minimap and chart in trade-gold.',

@@ -19,6 +19,7 @@ import { Fireworks } from '../fx/fireworks';
 import { Bubbles } from '../fx/bubbles';
 import { Birds } from '../fx/birds';
 import { ReefLife } from '../fx/fish';
+import { Wildlife } from '../fx/wild/wildlife';
 import { Debris, Pusher } from '../fx/debris';
 import { WindField, WindWisps } from '../fx/wind';
 import { Spirits, SpiritFrom } from '../fx/spirits';
@@ -323,6 +324,7 @@ export class Game {
   private baseDpr = 1;
   private birds!: Birds;
   private reef!: ReefLife;
+  private wild!: Wildlife;
   private windField!: WindField;
   private wisps!: WindWisps;
   /** Fallen pirates' ghosts on their way up. */
@@ -772,6 +774,10 @@ export class Game {
     this.convoys = new Convoys(this.opaque, this.water);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
+    // the isles' beasts: every species' mesh is in the scene from the start (the warm-up draws them), empty till an isle comes near
+    this.wild = new Wildlife(this.terrain, veg, this.digAvoid, q.tier === 0);
+    this.opaque.add(this.wild.group);
+    this.wild.onSpot = (name, n, total) => this.ui.toast(`New wildlife · ${n} of ${total} kinds seen`, name, 3.6);
     await mark(0.54, 900);
 
     const windAngle = this.atmos.windAngle;
@@ -836,6 +842,7 @@ export class Game {
       this.audio.firework(kind, Math.min(1.2, vol * power), pan, Math.hypot(d, at.y * 0.8));
     };
     this.world.onShot = (s) => this.projectiles.add(s);
+    this.world.onScare = (p, r) => this.wild.scare(p.x, p.z, r);
     this.world.onShake = (a) => this.rig.shake(a);
     this.world.onDot = (ship, by, dmg) => this.onBurn(ship as Ship, by as Ship | null, dmg);
     this.world.onStatus = (ship, st, by) => this.onStatus(ship as Ship, st, by as Ship | null);
@@ -6393,6 +6400,15 @@ export class Game {
     P.end();
     P.begin('Reef fish', 'fx');
     this.reef.update(dt, w, this.ships, this.rig.camera);
+    P.end();
+    P.begin('Wildlife', 'fx');
+    {
+      const sh = this.shore;
+      const feet = sh.active ? sh.party.map((m) => m.walker).filter((wk) => wk.visible) : [];
+      const c = this.rig.camera;
+      const k = innerHeight / ((2 * Math.tan(THREE.MathUtils.degToRad(c.fov / 2))) / c.zoom);
+      this.wild.update(dt, w, this.ships, c, this.rig.target, feet, this.atmos, k);
+    }
     P.end();
     this.pipeline.decayFlash(realDt);
     P.begin('Gunnery & aiming', 'ships');
