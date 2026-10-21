@@ -1,0 +1,24 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="ad.css">
+<style>
+.bg { background-image: url(img/brumas.jpg); background-size: 1140px auto; background-position: 50% -210px; filter: saturate(1.15) contrast(1.08); }
+.top { background: linear-gradient(180deg, rgba(4,20,30,.85) 0%, rgba(4,20,30,.55) 13%, rgba(4,20,30,.12) 24%, rgba(4,20,30,0) 30%); }
+.bot { background: linear-gradient(0deg, rgba(2,14,22,.97) 0%, rgba(2,16,26,.85) 14%, rgba(3,22,34,.3) 22%, rgba(3,22,34,0) 27%); }
+.hd { top: 52px; }
+.title { top: 214px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.h1 { font-size: 118px; }
+.kicker { color: #9fe8c8; }
+.feat { bottom: 292px; }
+.foot { bottom: 80px; }
+</style></head><body><div class="ad">
+<div class="bg"></div><div class="shade top"></div><div class="shade bot"></div><div class="shade vig"></div>
+<div class="layer hd brand"><div data-part="logo" data-cls="sm"></div></div>
+<div class="layer title">
+  <div class="kicker">Discover Las Brumas</div>
+  <div class="h1">Beyond<br><span class="g">the mist</span></div>
+</div>
+<div class="layer feat chips sm">
+  <span class="chip" data-icon="tower">A second archipelago</span>
+  <span class="chip" data-icon="dolphin">Dolphins on the high seas</span>
+</div>
+<div class="layer foot" data-part="cta" data-label="Set sail free"></div>
+</div><script src="parts.js"></script><script src="icons.js"></script></body></html>
