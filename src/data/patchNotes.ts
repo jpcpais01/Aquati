@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T01:00Z',
     entries: [
       {
+        title: 'Dolphins sound like dolphins',
+        notes: [
+          'Dolphins diving back into the sea no longer thump like cannonballs landing. They make a light, bright little plip with a fizz of spray, quieter and cleaner.',
+        ],
+      },
+      {
         title: 'A snappier cinematic lean',
         notes: [
           'Leaning the camera over past the farthest zoom no longer needs a full second\'s pause. Rest for just a moment, then keep zooming out, and the camera tips into its cinematic angle almost straight away.',
