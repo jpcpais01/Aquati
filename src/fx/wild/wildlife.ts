@@ -227,6 +227,8 @@ const _th: { d: number; t: Threat | null } = { d: Infinity, t: null };
 
 /** An island comes alive when the view comes this near its shore (m). */
 const ACTIVE = 320;
+/** How far past ACTIVE isles are surveyed ahead of time (m), so they're ready when the view arrives. */
+const AHEAD = 260;
 /** Below this many pixels tall a beast isn't drawn. */
 const MIN_PX = 2.2;
 /**
@@ -278,7 +280,8 @@ export class Wildlife {
   private seen = new Set<number>();
   /** A new kind of beast was seen up close for the first time. */
   onSpot: (name: string, count: number, total: number) => void = () => {};
-  private builtThisFrame = false;
+  /** The isle being surveyed, and how far it has got. */
+  private job: { p: Pop; steps: Generator<void, void> } | null = null;
 
   constructor(
     private floor: SeaFloor,
@@ -358,8 +361,13 @@ export class Wildlife {
   }
 
   /** Surveys an island (once, the first time it comes near) and lets loose its beasts. */
-  private build(p: Pop) {
-    p.built = true;
+  /**
+   * Surveys an isle's habitats and settles its fauna, a slice at a time (see
+   * update): a big isle's survey is thousands of height and slope samples,
+   * and a zoom-out or a battle's pull-back brings several isles in range on
+   * consecutive frames.
+   */
+  private *survey(p: Pop): Generator<void, void> {
     const isl = p.isl;
     const rnd = mulberry32(Math.floor(isl.seed * 9973) + p.i * 31 + 5);
     const ext = p.ext;
@@ -408,8 +416,10 @@ export class Wildlife {
     }
     if (p.blooms.length > 40) p.blooms = p.blooms.filter((_b, i) => i % Math.ceil(p.blooms.length / 40) === 0);
     if (p.flowers.length > 60) p.flowers = p.flowers.filter((_b, i) => i % Math.ceil(p.flowers.length / 60) === 0);
+    yield;
 
     for (let gx = -ext; gx <= ext; gx += step) {
+      yield;
       for (let gz = -ext; gz <= ext; gz += step) {
         const x = isl.x + gx + (rnd() - 0.5) * step;
         const z = isl.z + gz + (rnd() - 0.5) * step;
@@ -428,6 +438,7 @@ export class Wildlife {
         if (h > 6 && sl > 0.45 && sl < 1.7) p.crags.push(spot);
       }
     }
+    yield;
     // the ring: out from the middle until there's three metres of water under the keel
     for (let k = 0; k < 24; k++) {
       const a = (k / 24) * TAU;
@@ -444,6 +455,7 @@ export class Wildlife {
       }
     }
 
+    yield;
     // who lives here: each kind of isle has its own fauna, and no two isles quite the same
     const kind = isl.kind;
     const chance = (base: Partial<Record<Island['kind'], number>>, need: number, have: number) => have >= need && rnd() < (base[kind] ?? 0);
@@ -2796,20 +2808,42 @@ export class Wildlife {
   update(dt: number, w: World, ships: Ship[], cam: THREE.PerspectiveCamera, focus: THREE.Vector3, walkers: Walkerish[], env: WildEnv, pxK: number) {
     this.w = w;
     this.env = env;
-    this.builtThisFrame = false;
-    // which isles are alive
+    // which isles are alive (and the nearest one still to survey, if none is under way)
     this.active.length = 0;
+    let want: Pop | null = null;
+    let wantD = Infinity;
+    let jobD = Infinity;
     for (const p of this.pops) {
       const dc = Math.hypot(p.isl.x - cam.position.x, p.isl.z - cam.position.z) - p.ext;
       const df = Math.hypot(p.isl.x - focus.x, p.isl.z - focus.z) - p.ext;
-      if (Math.min(dc, df) > ACTIVE) continue;
+      const d = Math.min(dc, df);
+      if (p === this.job?.p) jobD = d;
       if (!p.built) {
-        // one survey a frame at most
-        if (this.builtThisFrame) continue;
-        this.builtThisFrame = true;
-        this.build(p);
+        // in range soon (or now): worth surveying ahead, nearest first
+        if (d < ACTIVE + AHEAD && d < wantD) {
+          want = p;
+          wantD = d;
+        }
+        continue;
       }
+      if (d > ACTIVE) continue;
       this.active.push(p);
+    }
+    if (!this.job && want) {
+      this.job = { p: want, steps: this.survey(want) };
+      jobD = wantD;
+    }
+    if (this.job) {
+      // a little each frame; an isle the view has already reached gets a bigger slice
+      const budget = jobD <= ACTIVE ? 1.5 : 0.6;
+      const t0 = performance.now();
+      while (performance.now() - t0 < budget) {
+        if (this.job.steps.next().done) {
+          this.job.p.built = true;
+          this.job = null;
+          break;
+        }
+      }
     }
     if (dt > 0 && this.active.length) this.step(Math.min(dt, 0.1), ships, walkers);
     this.pack(cam, pxK);

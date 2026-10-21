@@ -10,7 +10,7 @@ import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { freezeStatic, sealStatic, skipWhenHidden } from '../render/staticScene';
-import { initLod } from '../render/lod';
+import { initLod, lodUploads } from '../render/lod';
 import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDrawSliced } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
@@ -47,6 +47,7 @@ import { Atmosphere, AtmosSnapshot, TIMES, WEATHER, WeatherKind } from '../world
 import { Ship } from '../ships/ship';
 import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
+import { loadFigureheads } from '../ships/figureheads';
 import { ShipModel } from '../ships/shipModel';
 import { GHOST_LIVERY, Livery, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
 import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
@@ -615,6 +616,8 @@ export class Game {
 
     // the key light: the sun by day, the moon by night (see world/atmosphere.ts)
     this.preload = new BufferPreloader(this.renderer);
+    // every level of detail the worker hands back goes up ahead of its first draw
+    lodUploads.sink = (g) => this.preload.addLevel(g);
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.quality.shadowSize, this.quality.shadowSize);
@@ -709,6 +712,8 @@ export class Game {
   async init() {
     // the mesh simplifier (WebAssembly) for the ships' levels of detail, before any ship is built
     initLod();
+    // the baked figureheads, decoded before the first ship is built
+    const figures = loadFigureheads();
     const ui = this.ui;
     const q = this.quality;
     // webfonts load on first use: fetch every weight now so a toast or banner
@@ -788,6 +793,7 @@ export class Game {
     }
     await mark(0.4, 900);
     this.port = new Port(site, (x, z) => this.terrain.heightAt(x, z));
+    await figures;
     await preloadPaint(this.look.flag.paint);
     await this.port.build(this.look);
     this.opaque.add(this.port.root);

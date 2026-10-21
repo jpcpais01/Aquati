@@ -389,19 +389,50 @@ const LOD_SHADOW: LodJob = { error: 0.05, weld: true, prune: true, permissive: t
 /** Its twin for a ship on the distant cut, held to a shadow-map texel at that zoom. */
 const LOD_SHADOW_FAR: LodJob = { error: 0.13, weld: true, prune: true, permissive: true };
 
-interface LodSet {
-  mesh: THREE.Mesh;
-  full: THREE.BufferGeometry;
+/** A mesh's simplified levels: index buffers over its own vertices (see render/lod.ts). */
+interface Levels {
   near: THREE.BufferGeometry | null;
   far: THREE.BufferGeometry | null;
   distant: THREE.BufferGeometry | null;
-  /** Coarse twin drawn into the shadow map in the mesh's place. */
-  proxy: THREE.Mesh | null;
-  /** The proxy's own shapes: close, and for a ship on the distant cut. */
+  /** Welded and pruned, for the shadow map only (and coarser, for a ship on the distant cut). */
   shadow: THREE.BufferGeometry | null;
   shadowFar: THREE.BufferGeometry | null;
 }
+
+interface LodSet {
+  mesh: THREE.Mesh;
+  /** Casts a shadow of its own when drawn in full (the stand-in casts it while the levels show). */
+  casts: boolean;
+  /** Its stand-in in the shadow map, made the first time it's wanted. */
+  proxy: THREE.Mesh | null;
+  /** The geometry it draws in full, while the levels are showing (null when they aren't). */
+  full: THREE.BufferGeometry | null;
+  /** The same mesh on the bow half of a wreck broken in two, and its stand-in. */
+  twin: THREE.Mesh | null;
+  twinProxy: THREE.Mesh | null;
+  twinOn: boolean;
+}
 const _spinQ = new THREE.Quaternion();
+
+/** A mesh's shadow-map stand-in drawing `geo` (made the first time, beside the mesh, in its frame and paint). */
+function standIn(mesh: THREE.Mesh, proxy: THREE.Mesh | null, geo: THREE.BufferGeometry) {
+  if (!proxy || proxy.parent !== mesh.parent) {
+    proxy?.removeFromParent();
+    proxy = shadowOnly(new THREE.Mesh(geo, mesh.material));
+    proxy.receiveShadow = false;
+    proxy.userData.dmgSkip = true;
+    proxy.userData.lodProxy = true;
+    mesh.parent!.add(proxy);
+  }
+  proxy.geometry = geo;
+  proxy.material = mesh.material;
+  proxy.customDepthMaterial = mesh.customDepthMaterial;
+  proxy.position.copy(mesh.position);
+  proxy.quaternion.copy(mesh.quaternion);
+  proxy.scale.copy(mesh.scale);
+  proxy.visible = true;
+  return proxy;
+}
 
 export class ShipModel {
   readonly root = new THREE.Group();
@@ -452,11 +483,18 @@ export class ShipModel {
   private fineOn = true;
   private readonly detail: boolean;
   private lods: LodSet[] = [];
-  /** Off while the damage model is cutting the full meshes (and until the rig is whole again). */
+  /**
+   * Simplified levels by the geometry they were made from: the whole ship's,
+   * kept for her life, and those of her meshes as the damage model has cut
+   * them (a shot-away mast, a hull broken in two), kept while they're in use.
+   */
+  private levels = new Map<THREE.BufferGeometry, Levels>();
+  private readonly whole = new Set<THREE.BufferGeometry>();
+  /** Geometries still with the simplifier. */
+  private asking = new Set<THREE.BufferGeometry>();
+  /** Off while the damage model is cutting the full meshes. */
   private lodLive = false;
   private lodLevel = -1;
-  /** Meshes still with the simplifier. */
-  private lodPending = 0;
   /** The damage model has the full meshes out: no levels until it hands them back. */
   private lodHeld = false;
   private lodGone = false;
@@ -2723,6 +2761,12 @@ export class ShipModel {
    * near and a far one for the main view, and a welded, pruned stand-in that
    * casts the shadow instead of the full mesh. Each is only an index over the
    * mesh's own vertices (see render/lod.ts).
+   *
+   * A ship in a fight keeps them. When the damage model cuts a mesh (a mast
+   * shot away, the hull broken in two), the cut mesh gets levels of its own,
+   * so a battered ship or a wreck costs what a whole one does: drawing every
+   * damaged hull and wreck in full used to put several times the triangles of
+   * the rest of the scene into a battle, and again into its shadows.
    */
   private buildLods() {
     for (const child of [...this.root.children]) {
@@ -2731,35 +2775,74 @@ export class ShipModel {
       const opts = patchInfo.get(mesh.material)?.opts;
       // the sails and flags bend in the vertex shader: their flat rest pose would fold away
       if (opts?.sail || opts?.flag) continue;
-      const full = mesh.geometry;
-      const jobs = [LOD_NEAR.job, LOD_FAR.job, LOD_DISTANT.job];
-      if (mesh.castShadow) jobs.push(LOD_SHADOW, LOD_SHADOW_FAR);
-      this.lodPending++;
-      void simplifiedLevels(full, jobs).then(([near, far, distant, shadow0, shadowFar0]) => {
-        this.lodPending--;
-        // gone, or already cut up by a hit while the worker was busy
-        if (this.lodGone || mesh.geometry !== full || mesh.parent !== this.root || mesh.userData.dmgOff) {
-          for (const g of [near, far, distant, shadow0, shadowFar0]) if (g) disposeLevel(g);
-          return;
-        }
-        const shadow = shadow0 ?? shadowFar0;
-        const shadowFar = shadow0 ? shadowFar0 : null;
-        let proxy: THREE.Mesh | null = null;
-        if (shadow) {
-          proxy = shadowOnly(new THREE.Mesh(shadow, mesh.material));
-          proxy.customDepthMaterial = mesh.customDepthMaterial;
-          proxy.position.copy(mesh.position);
-          proxy.quaternion.copy(mesh.quaternion);
-          proxy.scale.copy(mesh.scale);
-          proxy.receiveShadow = false;
-          proxy.visible = false;
-          proxy.userData.dmgSkip = true;
-          proxy.userData.lodProxy = true;
-          this.root.add(proxy);
-        }
-        if (near || far || distant || proxy) this.lods.push({ mesh, full, near, far, distant, proxy, shadow, shadowFar });
-        if (!this.lodPending && !this.lodHeld) this.resumeLods();
-      });
+      this.lods.push({ mesh, casts: mesh.castShadow, proxy: null, full: null, twin: null, twinProxy: null, twinOn: false });
+      this.whole.add(mesh.geometry);
+      this.ask(mesh.geometry, mesh.castShadow);
+    }
+  }
+
+  /** Sends one geometry to the simplifier (once), and tries the levels again when the last one is back. */
+  private ask(g: THREE.BufferGeometry, shadow: boolean) {
+    if (this.levels.has(g) || this.asking.has(g)) return;
+    this.asking.add(g);
+    const jobs = [LOD_NEAR.job, LOD_FAR.job, LOD_DISTANT.job];
+    if (shadow) jobs.push(LOD_SHADOW, LOD_SHADOW_FAR);
+    void simplifiedLevels(g, jobs).then(([near, far, distant, sh, shFar]) => {
+      this.asking.delete(g);
+      // gone, or cut again while the worker was busy
+      if (this.lodGone || !this.inUse(g)) {
+        for (const l of [near, far, distant, sh, shFar]) if (l) disposeLevel(l);
+        return;
+      }
+      this.levels.set(g, { near, far, distant, shadow: sh ?? shFar ?? null, shadowFar: sh ? (shFar ?? null) : null });
+      if (!this.asking.size) this.engage();
+    });
+  }
+
+  private inUse(g: THREE.BufferGeometry) {
+    if (this.whole.has(g)) return true;
+    for (const l of this.lods) if (l.mesh.geometry === g || l.full === g) return true;
+    return false;
+  }
+
+  /** Still part of the ship as she stands: not carried off on a broken spar, not put out. */
+  private shows(l: LodSet) {
+    return l.mesh.parent === this.root && l.mesh.visible && !l.mesh.userData.dmgOff;
+  }
+
+  /** The levels go on, once every mesh showing has its own (asking for those it lacks). */
+  private engage() {
+    if (this.lodLive || this.lodHeld || this.lodGone) return;
+    // one mesh at a time to the simplifier: a cut hull's request is a copy of
+    // all its vertices, and a whole broadside's breaks shouldn't land on one frame
+    if (this.asking.size) return;
+    for (const l of this.lods) {
+      if (!this.shows(l) || this.levels.has(l.mesh.geometry)) continue;
+      this.ask(l.mesh.geometry, l.mesh.castShadow);
+      return;
+    }
+    // the levels of geometries the damage model has since swapped out
+    this.levels.forEach((lv, g) => {
+      if (this.inUse(g)) return;
+      for (const x of [lv.near, lv.far, lv.distant, lv.shadow, lv.shadowFar]) if (x) disposeLevel(x);
+      this.levels.delete(g);
+    });
+    this.lodLive = true;
+    this.lodLevel = -1;
+    for (const l of this.lods) {
+      if (!this.shows(l)) continue;
+      const full = l.mesh.geometry;
+      l.full = full;
+      l.casts = l.mesh.castShadow;
+      l.twinOn = !!l.twin && l.twin.parent !== null && l.twin.geometry === full;
+      const sh = this.levels.get(full)?.shadow;
+      if (!sh || !l.casts) continue;
+      l.proxy = standIn(l.mesh, l.proxy, sh);
+      l.mesh.castShadow = false;
+      if (l.twinOn) {
+        l.twinProxy = standIn(l.twin!, l.twinProxy, sh);
+        l.twin!.castShadow = false;
+      }
     }
   }
 
@@ -2770,25 +2853,54 @@ export class ShipModel {
     this.lodLive = false;
     this.lodLevel = -1;
     for (const l of this.lods) {
+      if (!l.full) continue;
       l.mesh.geometry = l.full;
-      if (l.proxy) {
+      if (l.proxy?.visible) {
         l.proxy.visible = false;
-        l.mesh.castShadow = true;
+        l.mesh.castShadow = l.casts;
       }
+      if (l.twinOn) {
+        l.twin!.geometry = l.full;
+        if (l.twinProxy?.visible) {
+          l.twinProxy.visible = false;
+          l.twin!.castShadow = l.casts;
+        }
+      }
+      l.twinOn = false;
+      l.full = null;
     }
   }
 
-  /** Back to the light levels once the rig is whole and every mesh has its own geometry again. */
+  /** The damage model has the full meshes out. */
+  get lodsHeld() {
+    return this.lodHeld;
+  }
+
+  /** Back to the light levels: the damage model is done cutting (for now), or the rig is whole again. */
   resumeLods() {
     this.lodHeld = false;
-    if (this.lodLive || this.lodPending || !this.lods.length) return;
-    for (const l of this.lods) if (l.mesh.geometry !== l.full || l.mesh.userData.dmgOff || l.mesh.parent !== this.root) return;
-    this.lodLive = true;
-    for (const l of this.lods) {
-      if (!l.proxy) continue;
-      l.proxy.visible = true;
-      l.mesh.castShadow = false;
+    this.engage();
+  }
+
+  /**
+   * The hull has broken in two: `bow` is a copy of the ship (sharing her
+   * geometry) that sails on as the bow half. Its meshes follow their
+   * originals' levels. The copied stand-ins are dropped: a copy loses the
+   * shadow-only test, so they'd draw in the main view; fresh ones are made.
+   */
+  twin(bow: THREE.Object3D) {
+    const kids = this.root.children;
+    const copies = bow.children;
+    const drop: THREE.Object3D[] = [];
+    for (let i = 0; i < kids.length && i < copies.length; i++) {
+      if (copies[i].userData.lodProxy) {
+        drop.push(copies[i]);
+        continue;
+      }
+      const l = this.lods.find((x) => x.mesh === kids[i]);
+      if (l && (copies[i] as THREE.Mesh).isMesh) l.twin = copies[i] as THREE.Mesh;
     }
+    for (const o of drop) o.removeFromParent();
   }
 
   /** Laid rope for one assembly (the hull, or a yard that braces round): close range only. */
@@ -2823,8 +2935,17 @@ export class ShipModel {
       if (level !== was) {
         this.lodLevel = level;
         for (const l of this.lods) {
-          l.mesh.geometry = (level === 3 ? (l.distant ?? l.far ?? l.near) : level === 2 ? (l.far ?? l.near) : level === 1 ? l.near : null) ?? l.full;
-          if (l.proxy && l.shadow) l.proxy.geometry = (level === 3 && l.shadowFar) || l.shadow;
+          if (!l.full) continue;
+          const lv = this.levels.get(l.full);
+          const g = (lv && (level === 3 ? (lv.distant ?? lv.far ?? lv.near) : level === 2 ? (lv.far ?? lv.near) : level === 1 ? lv.near : null)) ?? l.full;
+          l.mesh.geometry = g;
+          if (l.twinOn) l.twin!.geometry = g;
+          // the shadow stand-ins coarsen with the distant cut
+          const sh = lv && ((level === 3 && lv.shadowFar) || lv.shadow);
+          if (sh) {
+            if (l.proxy?.visible) l.proxy.geometry = sh;
+            if (l.twinOn && l.twinProxy?.visible) l.twinProxy.geometry = sh;
+          }
         }
       }
     }
@@ -2883,12 +3004,15 @@ export class ShipModel {
   dispose() {
     // the levels not on show (the ship's own traversal disposes the rest)
     this.lodGone = true;
+    const shown = new Set<THREE.BufferGeometry>();
     for (const l of this.lods) {
-      if (l.mesh.geometry !== l.full) l.full.dispose();
-      for (const g of [l.near, l.far, l.distant]) if (g && l.mesh.geometry !== g) disposeLevel(g);
-      // (the proxy, in the root, goes with the traversal: only its spare shape here)
-      for (const g of [l.shadow, l.shadowFar]) if (g && l.proxy?.geometry !== g) disposeLevel(g);
+      for (const m of [l.mesh, l.twin, l.proxy, l.twinProxy]) if (m) shown.add(m.geometry);
+      if (l.full && !shown.has(l.full)) l.full.dispose();
     }
+    this.levels.forEach((lv) => {
+      for (const g of [lv.near, lv.far, lv.distant, lv.shadow, lv.shadowFar]) if (g && !shown.has(g)) disposeLevel(g);
+    });
+    this.levels.clear();
     this.lods = [];
     this.sailMaterial.dispose();
     this.sailEmblemMaterial.dispose();

@@ -13,6 +13,45 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T15:00Z',
+    entries: [
+      {
+        title: 'Smoother zooming out',
+        notes: [
+          'Pulling the camera back, by hand or when a battle widens the view, no longer stutters as the far islands come in.',
+          'Distant islands, towns and ships used to send their lighter detail to the graphics card on the first frame you saw them, dozens at once. That now happens quietly in the background in the first seconds of a voyage.',
+          'The island wildlife no longer settles a whole island in a single frame as it comes into view. Each island is now surveyed a little at a time, and ahead of time, so the animals are ready when you get there.',
+          'The plants on the islands are re-sorted less often while the camera is high up and moving.',
+          'A brief stutter no longer makes Auto resolution drop the picture quality. That drop used to rebuild every screen buffer and cause a second hitch. Now only a slowdown that lasts two seconds lowers it.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-21T14:00Z',
+    entries: [
+      {
+        title: 'Battles run far smoother',
+        notes: [
+          'Sea fights could get laggy, and the reason was hiding in plain sight. Every ship carries lighter versions of her hull for when she is small on screen, but the moment a ship lost a mast, and for every wreck going down, the game dropped back to her full-detail model and its full shadow. A battered galleon cost about eight times what a whole one did, and a sinking ship broken in two cost double that again.',
+          'Now a damaged ship gets lighter versions of her broken hull too, worked out in the background a piece at a time. Damaged ships and wrecks cost what whole ones do, so a busy fight draws less than half the triangles it used to, in the scene and in its shadows. Up close nothing changes: the full detail is still there where you can see it.',
+          'Spars floating in the sea no longer cast shadows, since they lie awash where the shadow barely shows.',
+          'Gun smoke skips the empty edges of each puff and anything hidden behind a hull before it does its texture work. The battle smoke looks exactly the same and costs less to draw.',
+        ],
+      },
+      {
+        title: 'Figureheads, carved properly',
+        notes: [
+          'Every figurehead has been sculpted again from scratch, as smooth carved forms instead of stacked shapes, with real faces, hands and detail.',
+          'The mermaid has a face, a seven-pointed crown tipped with pearls, a pearl held high and a sash of pearls, and a scaled tail running down the cutwater to a fluke spread either side of it.',
+          'The lion roars with fangs bared under a mane of carved locks, his paws on a gilded shield with an anchor on it. The sea eagle grips a golden orb, its wings fanned feather by feather.',
+          'The kraken glares with ruby eyes, its arms lined with suckers. The dragon has scaled coils, belly plates, horns and whiskers, and crimson wings. The seraph has robes, silver hair and crystal wings.',
+          'They still fit every hull and cost no extra draw calls. They load once, with the rest of the game.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T12:00Z',
     entries: [
       {
