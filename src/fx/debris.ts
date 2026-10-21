@@ -322,6 +322,10 @@ export class Debris {
         const wh = world.waterHeight(mid.x, mid.z);
         if (mid.y < wh + 0.4) {
           b.floating = true;
+          // awash, its shadow barely shows on the sea: not worth a second full draw of every spar adrift
+          o.traverse((c) => {
+            c.castShadow = false;
+          });
           b.vel.multiplyScalar(0.2);
           b.vel.y = 0;
           b.settle = 0;

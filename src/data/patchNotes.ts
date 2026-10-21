@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T14:00Z',
     entries: [
       {
+        title: 'Battles run far smoother',
+        notes: [
+          'Sea fights could get laggy, and the reason was hiding in plain sight. Every ship carries lighter versions of her hull for when she is small on screen, but the moment a ship lost a mast, and for every wreck going down, the game dropped back to her full-detail model and its full shadow. A battered galleon cost about eight times what a whole one did, and a sinking ship broken in two cost double that again.',
+          'Now a damaged ship gets lighter versions of her broken hull too, worked out in the background a piece at a time. Damaged ships and wrecks cost what whole ones do, so a busy fight draws less than half the triangles it used to, in the scene and in its shadows. Up close nothing changes: the full detail is still there where you can see it.',
+          'Spars floating in the sea no longer cast shadows, since they lie awash where the shadow barely shows.',
+          'Gun smoke skips the empty edges of each puff and anything hidden behind a hull before it does its texture work. The battle smoke looks exactly the same and costs less to draw.',
+        ],
+      },
+      {
         title: 'Figureheads, carved properly',
         notes: [
           'Every figurehead has been sculpted again from scratch, as smooth carved forms instead of stacked shapes, with real faces, hands and detail.',

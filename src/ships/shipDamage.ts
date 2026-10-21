@@ -870,6 +870,8 @@ export class ShipDamage {
 
   /** Swaps the hoisted copies for the real, whole rig and makes the rigging fast. */
   private finishRig(world: World | null) {
+    // the whole meshes go back in: off the levels of the cut ones first
+    this.ship.model.suspendLods();
     if (this.raising) {
       for (const r of this.raising) {
         r.group.removeFromParent();
@@ -979,7 +981,14 @@ export class ShipDamage {
     }
 
     this.drainBreaks(world);
+    this.relod();
     this.updateHinges(dt, world);
+  }
+
+  /** The cutting is done (for now): the ship goes back on her light levels, cut meshes and all. */
+  private relod() {
+    const model = this.ship.model;
+    if (model.lodsHeld && !this.job && !this.breakQueue.length) model.resumeLods();
   }
 
   /** Called after the hull pose is final this frame (matrices are current). */
@@ -1107,6 +1116,7 @@ export class ShipDamage {
     });
     this.bowSkin = new DamageSkin(this.holeVecs, this.infoVecs, this.count, this.state, this.ghost);
     this.bowSkin.apply(bow);
+    model.twin(bow);
     this.bowRoot = new THREE.Group();
     this.bowRoot.add(bow);
     root.parent!.add(this.bowRoot);
@@ -1200,6 +1210,7 @@ export class ShipDamage {
       }
     }
     this.drainBreaks(world);
+    this.relod();
     this.updateHinges(dt, world);
     this.state.y = this.ship.burning;
     for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40) * afloat * afloat;
