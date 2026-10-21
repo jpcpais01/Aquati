@@ -5,6 +5,8 @@
 
 import { BankKind, bankJobs, CALIBERS } from './sfx';
 import { renderThunder } from './thunder';
+import { KitKind, kitJobs } from './musicKit';
+import { VoyageMusic } from './voyageMusic';
 import { wildCall } from './wildCalls';
 import type { CallKind } from '../fx/wild/wildlife';
 
@@ -14,6 +16,8 @@ const MAX_VOICES = 64;
 const AMBIENCE_LEVEL = 0.35;
 const MUSIC_URL = '/music/sunset-archipelago.mp3';
 const MUSIC_VOL = 0.55;
+/** The voyage band's level under the music slider. */
+const BAND_VOL = 0.55;
 
 const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
 const pick = <T>(a: T[]): T | undefined => a[(Math.random() * a.length) | 0];
@@ -294,6 +298,7 @@ export class Audio {
     this.syncMusic(0.6);
     this.syncBoss();
     this.syncSea();
+    this.syncBand();
   }
 
   /** Volume sliders (0..1 each). Music skips the effects compressor, so it takes master directly. */
@@ -312,6 +317,7 @@ export class Audio {
     if (this.music && !this.musicGain) this.syncMusic(0.1);
     this.syncBoss();
     this.syncSea();
+    this.syncBand();
   }
 
   setMuted(m: boolean) {
@@ -3252,6 +3258,71 @@ export class Audio {
       }
     }, 200);
     this.seaSong = sg;
+  }
+
+  // ---------------------------------------------------------------- the voyage band
+  // Five songs for fair sailing among the islands (./songs, played by
+  // ./voyageMusic), one after another with the sea's own sound between them.
+  // They give way to every grander music: the harbour theme, the high seas,
+  // a storm and the Kraken. The instruments are only rendered the first time
+  // the band is wanted.
+  private bandBus: GainNode | null = null;
+  private band: VoyageMusic | null = null;
+
+  private syncBand() {
+    if (!this.ctx || !this.bandBus) return;
+    this.bandBus.gain.setTargetAtTime(this.musicEnabled ? this.vol.music * BAND_VOL : 0, this.ctx.currentTime, 0.1);
+  }
+
+  /** Lets the band play (or rests it, with a fade); `night` 0 day .. 1 night leans which song comes next. */
+  voyageMusic(on: boolean, night = 0) {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    on = on && this.musicEnabled && !this.muted && !document.hidden;
+    if (!this.band) {
+      if (!on) return;
+      this.bandBus = ctx.createGain();
+      this.bandBus.connect(this.master);
+      this.syncBand();
+      this.band = new VoyageMusic(ctx, this.bandBus, this.noise, kitJobs(ctx.sampleRate).length);
+      this.buildKit(this.band);
+    }
+    this.band.want(on, night);
+  }
+
+  private buildKit(band: VoyageMusic) {
+    const ctx = this.ctx!;
+    const store = (kind: KitKind, index: number, sr: number, data: Float32Array[]) => {
+      const b = ctx.createBuffer(data.length, data[0].length, sr);
+      data.forEach((d, c) => b.getChannelData(c).set(d));
+      band.store(kind, index, b);
+    };
+    const inline = () => {
+      const jobs = kitJobs(ctx.sampleRate);
+      const next = () => {
+        const j = jobs.shift();
+        if (!j) return;
+        store(j.kind, j.index, j.sr, j.render());
+        setTimeout(next, 0);
+      };
+      next();
+    };
+    try {
+      const w = new Worker(new URL('./musicWorker.ts', import.meta.url), { type: 'module' });
+      let got = 0;
+      const total = kitJobs(ctx.sampleRate).length;
+      w.onmessage = (e: MessageEvent<{ kind: KitKind; index: number; sr: number; data: Float32Array[] }>) => {
+        store(e.data.kind, e.data.index, e.data.sr, e.data.data);
+        if (++got === total) w.terminate();
+      };
+      w.onerror = () => {
+        w.terminate();
+        if (!got) inline();
+      };
+      w.postMessage({ sr: ctx.sampleRate });
+    } catch {
+      inline();
+    }
   }
 
   /** A dolphin calls: a rising, warbling whistle, or a quick burst of clicks. */

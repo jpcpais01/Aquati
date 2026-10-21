@@ -6965,6 +6965,10 @@ export class Game {
     this.spindrift.update(smoothstep(0.25, 0.9, a.storm) + Math.max(0, a.wind - 1) * 0.5, tgt.x, tgt.z, this.rig.distance, a.wind);
 
     this.audio.setWeather(a.rain, a.storm, a.wind);
+    // the band plays for fair sailing; the harbour, the open sea, a storm and the Kraken all have music of their own
+    const pl = this.player;
+    const afloat = (this.state === 'playing' || this.state === 'paused' || this.state === 'docked') && !!pl && pl.alive && this.wreck.t < 0;
+    this.audio.voyageMusic(afloat && !this.onHighSeas && !this.kraken.active && a.storm < 0.45, a.night);
     this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
     const k = a.kind;
     const dark = a.sunDir.y < -0.03;

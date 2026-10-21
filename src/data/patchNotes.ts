@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T02:00Z',
     entries: [
       {
+        title: 'A band aboard: five songs for fair sailing',
+        notes: [
+          'Sailing among the islands now has music of its own: five new songs, played live by a little ship\'s band, one after another with a stretch of wind and waves between them.',
+          'Fair Winds, a lilting ballad on tin whistle and fiddle. Coral Lagoon, a sunny calypso on steel pan. Lantern Waltz, a bittersweet accordion waltz for dusk. The Corsair\'s Jig, a rollicking jig with a driving bodhrán. Siesta Isles, a drowsy kalimba and wooden flute lullaby.',
+          'The band leans toward the gentler songs after dark, and every play is a fresh performance, never quite the same twice.',
+          'They step aside for the bigger moments: the harbour theme, the open-sea theme on the high seas, a storm and the Kraken all have the stage to themselves, and the band picks up again once things are calm. The Music switch and slider in Settings cover them too.',
+        ],
+      },
+      {
         title: 'Island wildlife: fifteen kinds of beast',
         notes: [
           'The isles are alive. Each island now has its own creatures, chosen to suit it: wild goats on the crags, red deer and wild boar in the meadows and woods, capuchin monkeys in the trees, scarlet macaws, flamingos in the shallows, egrets and grey herons, brown pelicans and blue-footed boobies along the coast, green iguanas, giant tortoises, sea lions on the beaches, red land crabs, blue morpho butterflies and hummingbirds round the flowers.',
