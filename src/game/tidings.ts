@@ -149,6 +149,23 @@ export function rumourNews(isle: string, port: string): Words {
   };
 }
 
+/** A feast in port tonight: the harbourmaster's invitation. */
+export function feastNews(towns: string[], feast: string, line: string, full: boolean): Words {
+  const where = towns.length > 2 ? 'every port in the isles' : towns.join(' and ');
+  return {
+    title: full ? `${feast} tonight!` : `${feast} at ${where} tonight!`,
+    body: [
+      `${line}.`,
+      pick([
+        'Lanterns at dusk, a band on the quay and fireworks over the harbour after dark. Captains welcome; cannons stay outside.',
+        'Come in by nightfall, Captain: there will be dancing on the quay, lantern boats on the water and rockets over the harbour.',
+        'The taverns are rolling out the barrels already. Moor up before the lanterns are lit and the first drink is on the house.',
+      ]),
+    ],
+    sign: full ? 'The harbourmasters of the isles' : `The harbourmaster of ${towns[0]}`,
+  };
+}
+
 // ------------------------------------------------------------------ survivors
 
 /** What the rescued hands have to say for themselves once they're aboard. */

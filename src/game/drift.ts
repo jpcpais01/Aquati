@@ -74,7 +74,7 @@ function ribbon(rnd: () => number, x: number, z: number, yaw: number, len: numbe
   let pz = z;
   const pts: [number, number, number, number][] = [];
   for (let i = 0; i <= N; i++) {
-    pts.push([px, pz, a, 0.02 + (rnd() - 0.4) * 0.08]);
+    pts.push([px, pz, a, 0.02 + (rnd() - 0.35) * 0.05]);
     a += (rnd() - 0.5) * 0.7;
     px += Math.cos(a) * (len / N);
     pz += Math.sin(a) * (len / N);
@@ -696,7 +696,7 @@ export class Drift {
       _q.multiply(_q2);
       const f = Math.min(1, dt * 4);
       m.quat.slerp(_q, f);
-      m.y += (h0 - (S.kelp ? 0.0 : 0.2) - m.sink - m.y) * Math.min(1, dt * 6);
+      m.y += (h0 + (S.kelp ? 0.07 : -0.2) - m.sink - m.y) * Math.min(1, dt * 6);
     } else m.quat.setFromAxisAngle(UP, m.yaw);
     _m.compose(_v.set(m.x, m.y, m.z), m.quat, _s);
     m.spots.forEach((s, i) => s.copy(S.perch[i]).applyMatrix4(_m));

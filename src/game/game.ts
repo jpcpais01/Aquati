@@ -101,7 +101,7 @@ import { BountyBook, CAPTAIN, CAPTAINS, HEAT_BONUS, HUNTER_HULL, hunterLivery, h
 import { BountyBanner, BountyBoard, portrait, WantedHud } from '../ui/bounty';
 import { Bottle, Drift } from './drift';
 import { Raft, Survivors, survivorsOf } from './survivors';
-import { bountyNews, lostLetter, mapLetter, prizeNews, rivalLetter, rumourNews, survivorThanks } from './tidings';
+import { bountyNews, feastNews, lostLetter, mapLetter, prizeNews, rivalLetter, rumourNews, survivorThanks } from './tidings';
 import { LetterCard, LetterView } from '../ui/letter';
 import { DigTarget, TreasureMaps } from './treasureMaps';
 import { TreasureMapUI } from '../ui/treasureMap';
@@ -275,6 +275,9 @@ export class Game {
   private gullNews: (() => void)[] = [];
   private gullCool = 0;
   private rumourT = 0;
+  /** The feast the gull last brought word of, and when to look again. */
+  private feastTold = '';
+  private feastT = 0;
   /** Pirates sunk since the last purse of prize money. */
   private prizeKills = 0;
   private collisions = new ShipCollisions(() => this.player);
@@ -4866,6 +4869,20 @@ export class Game {
       if (this.birds.carry(p, this.world, news, port ? { x: port.x, z: port.z } : null)) {
         this.gullNews.shift();
         this.gullCool = 45;
+      }
+    }
+    // of an afternoon, word of a feast in port tonight
+    this.feastT -= dt;
+    if (this.feastT <= 0) {
+      this.feastT = 12;
+      const hour = this.atmos.day * 24;
+      // a new day, a new feast to hear of
+      if (hour < 12) this.feastTold = '';
+      const f = hour > 12.5 && hour < 18 ? this.festivalNews() : null;
+      const key = f ? `${f.feast}|${f.towns.join()}` : '';
+      if (f && f.when === 'tonight' && key !== this.feastTold) {
+        this.feastTold = key;
+        this.gullNews.push(() => this.gullLetter({ ...feastNews(f.towns, f.feast, f.line, f.full), seal: 'gold', reward: f.full ? 'Every port lights up tonight' : `Feast night \u00b7 ${f.towns.join(', ')}` }, 12));
       }
     }
     this.rumourT -= dt;
