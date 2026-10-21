@@ -7000,7 +7000,6 @@ export class Game {
 
     this.audio.setWeather(a.rain, a.storm, a.wind);
     // the band plays for fair sailing; the harbour, the open sea, a storm and the Kraken all have music of their own
-    const pl = this.player;
     const afloat = (this.state === 'playing' || this.state === 'paused' || this.state === 'docked') && !!pl && pl.alive && this.wreck.t < 0;
     this.audio.voyageMusic(afloat && !this.onHighSeas && !this.kraken.active && a.storm < 0.45, a.night);
     this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
