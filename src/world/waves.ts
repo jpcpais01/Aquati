@@ -48,16 +48,20 @@ export function buildWaves(windAngle: number, scale = 1): Wave[] {
 /**
  * Sea state: rescales a wave set in place from its calm-weather base. Long
  * swells grow the most in a storm, short chop the least, and the trains get a
- * little steeper so the crests pinch and break.
+ * little steeper so the crests pinch and break. A mirror calm (`calm` 0..1)
+ * all but stills it: the chop dies first, and only the faintest long, glassy
+ * swell is left breathing under the surface. The horizontal pinch shrinks with
+ * it (q·amp is what sways the water sideways), or a flat sea would still slide.
  */
-export function setSeaState(waves: Wave[], base: Wave[], sea: number) {
+export function setSeaState(waves: Wave[], base: Wave[], sea: number, calm = 0) {
   const n = waves.length;
   const steep = 0.66 + Math.max(0, Math.min(sea, 1.2)) * 0.15;
   for (let i = 0; i < n; i++) {
     const grow = 1 + sea * (1.05 - (i / (n - 1)) * 0.6);
+    const still = 1 - calm * (0.8 + 0.17 * (i / (n - 1)));
     const w = waves[i];
-    w.amp = base[i].amp * Math.max(0.6, grow);
-    w.q = steep / (w.k * w.amp * n);
+    w.amp = base[i].amp * Math.max(0.6, grow) * still;
+    w.q = (steep * still) / (w.k * w.amp * n);
   }
 }
 

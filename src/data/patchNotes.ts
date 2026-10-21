@@ -16,6 +16,44 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T02:00Z',
     entries: [
       {
+        title: 'Mirror calm',
+        notes: [
+          'A rare new weather: the wind dies away and the whole sea turns to glass. The sky, its clouds and your ship are mirrored in the water, and only the faintest long swell still breathes under the surface. Your wake draws long ripples across the stillness.',
+          'It comes on about one dawn in five, one night in ten, and now and then at other times of day.',
+        ],
+      },
+      {
+        title: 'Very hot noons and mirages',
+        notes: [
+          'Out on the high seas, about one noon in twenty turns very hot. The horizon bleaches white, the sun blazes down and the air over the water shimmers.',
+          'In that heat the lookout starts seeing things. Every so often a little island shimmers up ahead where no chart shows one: a pale dune, leaning palms and a tiny gilded shrine, floating on a band of sky with its own image hanging upside down beneath it. Sail straight into it and it parts round your hull and frays away.',
+        ],
+      },
+      {
+        title: 'Ember rain',
+        notes: [
+          'Morro Huracão has restless spells. Its plume turns into a dark column of ash bent over by the wind, and the crater spits glowing embers.',
+          'Sail downwind of it then and ash and embers drift down around you. Grey flakes tumble and wink as they fall, live embers glow and flicker, the sky turns rust-red and the light goes coppery. After dark the ash glows red from below. Rain washes it out of the air.',
+        ],
+      },
+      {
+        title: 'Glowing seas',
+        notes: [
+          'Some stretches of the open ocean are thick with glowing plankton. On a dark night your wake, your bow wave, the foam round your hull and every breaking crest and splash there light up electric blue, and tiny sparks wink on and off across the water. A couple of these blooms lie across the crossing between the two archipelagos.',
+        ],
+      },
+      {
+        title: 'Pick the new weathers yourself',
+        notes: [
+          'The weather button and photo mode now also offer Mirror calm, Very hot and Ember rain, each with its own icon.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-21T02:00Z',
+    entries: [
+      {
         title: 'A band aboard: five songs for fair sailing',
         notes: [
           'Sailing among the islands now has music of its own: five new songs, played live by a little ship\'s band, one after another with a stretch of wind and waves between them.',

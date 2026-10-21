@@ -8,6 +8,7 @@ import { GLSL_SURF, shoreUniforms } from './shore';
 import { GLSL_VORTEX, VORTEX_N, VORTEX_RIM, vortexDepth } from './vortex';
 import { viewCull } from '../render/viewCull';
 import { skipWhenHidden } from '../render/staticScene';
+import { GLSL_SEA_GLOW } from './seaGlow';
 
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
@@ -499,7 +500,7 @@ const REFL_FRAG = /* glsl */ `
     vec2 r1 = texture(uNormalTex, mat2(0.825, -0.565, 0.565, 0.825) * p * 0.031 + wdrift * 0.021).xy * 2.0 - 1.0;
     vec2 r2 = texture(uNormalTex, mat2(-0.416, -0.909, 0.909, -0.416) * p * 0.067 + wpdrift * 0.017 + 0.37).xy * 2.0 - 1.0;
     vec2 rip = (r1 * mat2(0.825, -0.565, 0.565, 0.825)) * 0.8 + (r2 * mat2(-0.416, -0.909, 0.909, -0.416)) * 0.7;
-    rip *= (0.6 + 0.4 * (1.0 - smoothstep(140.0, 520.0, vViewDist))) * (1.0 + uStorm * 0.9);
+    rip *= (0.6 + 0.4 * (1.0 - smoothstep(140.0, 520.0, vViewDist))) * (1.0 + uStorm * 0.9) * (1.0 - 0.9 * uSpecial.x);
     vec3 V = normalize(cameraPosition - vWorld);
     vec3 Rs = reflect(-V, normalize(normalize(vNormal) + vec3(rip.x, 0.0, rip.y) * 0.08));
     Rs.y = abs(Rs.y);
@@ -661,6 +662,7 @@ export class Ocean {
         ${GLSL_AERIAL}
         ${GLSL_FW}
         ${GLSL_SURF}
+        ${GLSL_SEA_GLOW}
         varying vec3 vWorld;
         varying vec3 vNormal;
         varying float vCrest;
@@ -774,6 +776,9 @@ export class Ocean {
             }
           #endif
           rip *= (0.6 + 0.4 * detailFade) * (1.0 + uStorm * 0.9);
+          // a mirror calm: barely a breath of ripple left on the glass
+          float glass = uSpecial.x;
+          rip *= 1.0 - 0.9 * glass;
 
           // ---- wind slicks: long glassy streaks lying along the wind, where the
           // surface film calms the ripples. Read mostly in the sun glitter.
@@ -785,7 +790,7 @@ export class Ocean {
           // ---- cat's paws: gust puffs ruffle the surface into darker, matte,
           // finely sparkling patches. Two noise scales fray the puff into soft,
           // irregular fingers so it never reads as a stamped shape.
-          float gust = gustAt(p);
+          float gust = gustAt(p) * (1.0 - glass);
           vec2 gustRip = vec2(0.0);
           if (gust > 0.002) {
             vec4 gn = texture(uNoiseTex, p * 0.017 - wdrift * 0.21);
@@ -1015,6 +1020,13 @@ export class Ocean {
           // churned water behind a breaker is full of bubbles: milky aquamarine
           float sAer = sPrev.y * exp(-sAge * 0.4);
           body = mix(body, vec3(0.3, 0.56, 0.52) * light * (0.55 + 0.45 * cloud), sAer * 0.3);
+          // a scorching noon: the shallows and the open sea both run a brighter, hotter blue
+          body *= 1.0 + vec3(0.02, 0.12, 0.1) * uSpecial.z;
+          // ash settling on the water: a dull grey scum in drifting rafts
+          if (uSpecial.w > 0.001) {
+            float scum = smoothstep(0.35, 0.8, mac2.b * 0.7 + texture(uNoiseTex, p * 0.021 - wdrift * 0.05).r * 0.5);
+            body = mix(body * (1.0 - 0.25 * uSpecial.w), vec3(0.07, 0.065, 0.06) * light, scum * uSpecial.w * 0.35);
+          }
           // under a grey sky the sea loses its blue and turns pewter
           body = mix(body, vec3(dot(body, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), uCloudCover * uCloudCover * 0.4);
 
@@ -1050,7 +1062,7 @@ export class Ocean {
           // far off, the sub-pixel facets of the chop tilt toward the viewer and
           // mirror a little higher, bluer sky than the glassy maths alone would,
           // so the sea darkens toward the horizon instead of turning milky
-          R = normalize(R + vec3(0.0, 0.07 * smoothstep(30.0, 500.0, vViewDist), 0.0));
+          R = normalize(R + vec3(0.0, 0.07 * smoothstep(30.0, 500.0, vViewDist) * (1.0 - 0.8 * glass), 0.0));
           vec3 refl = skyColor(R);
           float F = 0.02 + 0.98 * pow(max(1.0 - NdV, 0.0), 5.0);
           F = min(F * 1.1, 1.0);
@@ -1062,6 +1074,10 @@ export class Ocean {
             refl = mix(refl, ccol, cc.x * smoothstep(0.0, 0.1, R.y));
           }
           refl *= (1.0 - gust * 0.22) * (1.0 - uRain * 0.18);
+          // glassy water mirrors the sky and its clouds even looking straight down,
+          // and lets less of its own blue up from below
+          F = mix(F, max(F, 0.4), glass);
+          body *= 1.0 - 0.3 * glass;
           #if SSR_STEPS > 0
           {
             // the traced reflection (half res, premultiplied), wobbled by the
@@ -1219,6 +1235,26 @@ export class Ocean {
               + (crestFoam * 0.18 * capBreak + spume * 0.08 + caps * 0.12) * (1.0 - 0.5 * uStorm);
             float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(uNoiseTex, p * 0.37 + vec2(t * 0.05, -t * 0.04)).b);
             col += vec3(0.02, 0.42, 0.62) * churn * spark * uNight * 0.4;
+            // ...and out in a sea-spark bloom it blazes: wakes, bow waves, the
+            // collar round a hull, every breaking crest and splash burn electric
+            // blue, the stirred water round them glows, and the plankton wink
+            // on and off across the dark between
+            float bloom = uSpecial.y > 0.01 ? seaGlowAt(p) * uSpecial.y : 0.0;
+            if (bloom > 0.003) {
+              float stir = churn + wChop * 0.45 + clamp(abs(wakeH) * 1.4, 0.0, 0.8) + crestFoam * 0.5 + caps * 0.4;
+              vec3 blue = vec3(0.04, 0.5, 1.0);
+              col += blue * stir * spark * bloom * 1.6;
+              // the swell's crests shimmer faintly as they fold over
+              col += blue * smoothstep(0.25, 0.8, vCrest + nz2.g * 0.4 - 0.2) * 0.012 * bloom;
+              // twinkles: sparse points flaring up and fading, never two alike
+              if (detailFade > 0.0) {
+                vec4 tw = texture(uNoiseTex, p * 3.7 + vec2(0.31, 0.77));
+                float blink = max(sin(t * (1.3 + tw.g * 2.0) + tw.r * 40.0), 0.0);
+                col += vec3(0.1, 0.65, 1.0) * smoothstep(0.9, 0.98, tw.a) * blink * blink * 0.5 * bloom * detailFade;
+              }
+              // the bloom's own faint milky glow, so its edges show far off on the dark
+              col += vec3(0.0, 0.005, 0.011) * bloom * (0.6 + 0.4 * mac.g);
+            }
           }
 
           // ---- down a maelstrom's throat the walls shut out the sky: the

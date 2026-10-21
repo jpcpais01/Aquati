@@ -25,6 +25,7 @@ import { WindField, WindWisps } from '../fx/wind';
 import { Spirits, SpiritFrom } from '../fx/spirits';
 import { Rain } from '../fx/rain';
 import { Spindrift } from '../fx/spindrift';
+import { RareSkies } from './rareSkies';
 import { LowClouds } from '../world/clouds';
 import { Lightning } from '../fx/lightning';
 import { Terrain } from '../world/terrain';
@@ -358,6 +359,8 @@ export class Game {
   private envT = 0;
   private rain!: Rain;
   private spindrift!: Spindrift;
+  /** Ember rain, mirages and the sea-spark blooms: where and when (see rareSkies.ts). */
+  private rare!: RareSkies;
   /** The last lightning strike: xz, reach of its light (m), its strength. */
   private strikeAt = new THREE.Vector4();
   private clouds!: LowClouds;
@@ -632,7 +635,7 @@ export class Game {
     this.opaque.fog = new THREE.Fog(new THREE.Color(), 380, 1500);
     this.skyEnv = new SkyEnvironment(this.renderer);
     this.applyAtmosphere();
-    const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm'] as const;
+    const modes = ['auto', 'clear', 'fair', 'cloudy', 'mist', 'rain', 'storm', 'calm', 'hot', 'embers'] as const;
     const times = ['auto', 'dawn', 'noon', 'golden', 'dusk', 'night'] as const;
     const pins = () => this.ui.skyPins(this.atmos.mode !== 'auto', this.atmos.timeMode !== 'auto');
     pins();
@@ -921,6 +924,16 @@ export class Game {
     this.spindrift = new Spindrift([140, 260, 400][q.tier], waveU);
     this.lightning = new Lightning();
     this.water.add(this.rain.mesh, this.spindrift.mesh, this.lightning.mesh);
+    this.rare = new RareSkies(q.tier, this.terrain.islands, {
+      toast: (k, t, l) => {
+        if (this.state === 'playing') this.ui.toast(k, t, l);
+      },
+      rumble: (vol, d) => this.audio.thunder(vol, 0, d),
+      shimmer: () => this.audio.mirage(),
+      sparkle: (x, y, z) => this.particles.sparkle(_a.set(x, y, z), [0.75, 0.95, 1.25], 2.5),
+      ground: (x, z) => this.terrain.heightAt(x, z),
+    });
+    this.water.add(this.rare.embers.mesh, this.rare.mirage.mesh);
     this.clouds = new LowClouds(this.terrain.islands, q.tier);
     this.cumulus.budget = q.tier === 0 ? 1600 : 4200;
     this.water.add(this.clouds.mesh);
@@ -4015,6 +4028,7 @@ export class Game {
     this.player = p;
     this.state = 'playing';
     this.voyageTime = 0;
+    this.rare.reset();
     this.log = { shots: 0, hits: 0, dealt: 0, chests: 0, best: -1, metres: 0, events: [] };
     this.discovered.clear();
     this.hzSeen.clear();
@@ -6605,17 +6619,31 @@ export class Game {
 
     P.end();
 
-    // volcano plume
+    // volcano plume: a lazy white wisp, or in a restless spell a dark column
+    // of ash bent over downwind, with embers spat glowing from the crater
     this.smokeT += dt;
-    if (this.smokeT > 0.32) {
+    const rest = this.rare.restless;
+    if (this.smokeT > 0.32 - rest * 0.14) {
       this.smokeT = 0;
       const v = this.terrain.islands[0];
       const top = this.terrain.heightAt(v.x, v.z);
+      const g0 = 1.05 - rest * 0.62;
+      const lean = 0.6 + rest * 2.2;
       this.particles.emit({
         x: v.x + (Math.random() - 0.5) * 8, y: top + 4, z: v.z + (Math.random() - 0.5) * 8,
-        vx: w.wind.dirX * 0.6, vy: 3 + Math.random() * 2, vz: w.wind.dirZ * 0.6,
-        life: 16 + Math.random() * 6, size: 8, sizeEnd: 34, color: [1.05, 1.03, 1.0], colorEnd: [0.95, 0.95, 0.97], alpha: 0.3, drag: 0.08, kind: 1, spin: (Math.random() - 0.5) * 0.1, fadeIn: 2,
+        vx: w.wind.dirX * lean, vy: 3 + Math.random() * 2 + rest * 2, vz: w.wind.dirZ * lean,
+        life: 16 + Math.random() * 6 + rest * 8, size: 8 + rest * 4, sizeEnd: 34 + rest * 30, color: [g0, g0 * 0.98, g0 * 0.96], colorEnd: [0.95 - rest * 0.5, 0.95 - rest * 0.52, 0.97 - rest * 0.52],
+        alpha: 0.3 + rest * 0.25, drag: 0.08, kind: 1, spin: (Math.random() - 0.5) * 0.1, fadeIn: 2,
       });
+      if (rest > 0.3 && Math.random() < rest * 0.8) {
+        for (let i = 0; i < 3; i++) {
+          this.particles.emit({
+            x: v.x + (Math.random() - 0.5) * 6, y: top + 2, z: v.z + (Math.random() - 0.5) * 6,
+            vx: (Math.random() - 0.5) * 7 + w.wind.dirX * 2, vy: 9 + Math.random() * 9, vz: (Math.random() - 0.5) * 7 + w.wind.dirZ * 2,
+            life: 2.5 + Math.random() * 2, size: 2, sizeEnd: 0.6, color: [7, 2.6, 0.5], colorEnd: [2.2, 0.35, 0.05], grav: 6, drag: 0.25, kind: 2, fadeIn: 0.01,
+          }, true);
+        }
+      }
     }
 
     // camera
@@ -6902,7 +6930,7 @@ export class Game {
     this.cloudOff.y += dt * w.wind.dirZ * (0.002 + a.wind * 0.002 + a.storm * 0.004);
     globalUniforms.uCloudOffset.value.copy(this.cloudOff);
     // bigger seas: CPU buoyancy and the GPU swell share the very same waves
-    setSeaState(w.waves, this.baseWaves, a.sea);
+    setSeaState(w.waves, this.baseWaves, a.sea, a.calm);
     // the swell comes round after the wind, slowly, turning about the view so it never slides
     const swell = this.swellAngle + (a.windAngle - this.swellAngle) * (1 - Math.exp(-dt / 45));
     if (Math.abs(swell - this.swellAngle) > 1e-6) {
@@ -6925,6 +6953,7 @@ export class Game {
     fog.near = a.fogRange.x;
     fog.far = a.fogRange.y;
     this.pipeline.exposure = a.exposure;
+    this.pipeline.heat = a.heat;
     this.pipeline.setLook(a.shaftAir, a.shaftSea, a.shaftHaze, a.gradeLo, a.gradeHi, a.gradeSat, a.vignette);
   }
 
@@ -6964,15 +6993,21 @@ export class Game {
     // spindrift: in a blow the wind tears the tops off the crests
     this.spindrift.update(smoothstep(0.25, 0.9, a.storm) + Math.max(0, a.wind - 1) * 0.5, tgt.x, tgt.z, this.rig.distance, a.wind);
 
+    // ember rain, mirages and the sea-spark blooms
+    const pl = this.player;
+    const ship = pl && pl.alive ? pl.pos : null;
+    this.rare.update(dt, a, ship && pl ? { x: ship.x, z: ship.z, heading: pl.heading } : null, this.state === 'playing', w.wind, { x: tgt.x, z: tgt.z, dist: this.rig.distance });
+
     this.audio.setWeather(a.rain, a.storm, a.wind);
     // the band plays for fair sailing; the harbour, the open sea, a storm and the Kraken all have music of their own
-    const pl = this.player;
     const afloat = (this.state === 'playing' || this.state === 'paused' || this.state === 'docked') && !!pl && pl.alive && this.wreck.t < 0;
     this.audio.voyageMusic(afloat && !this.onHighSeas && !this.kraken.active && a.storm < 0.45, a.night);
     this.birds.mesh.visible = a.night < 0.75 && a.storm < 0.6;
-    const k = a.kind;
+    // a volcano's ash over whatever else the sky is doing names the weather
+    const k = a.ash > 0.45 ? 'embers' : a.kind;
     const dark = a.sunDir.y < -0.03;
     const icon = k === 'storm' ? 'storm' : k === 'rain' ? 'rain' : k === 'mist' ? 'mist' : k === 'cloudy' ? 'cloud'
+      : k === 'calm' ? (dark ? 'calm-moon' : 'calm') : k === 'hot' ? 'hot' : k === 'embers' ? 'embers'
       : k === 'fair' ? (dark ? 'partly-moon' : 'partly-sun') : dark ? 'moon' : 'sun';
     this.ui.setSky(a.hour, icon, WEATHER[k].name);
   }
@@ -7175,6 +7210,8 @@ export class Game {
     setBowWaveScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.wisps.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.rain.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.rare.embers.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
+    this.rare.mirage.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.spindrift.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.spirits.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
     this.gunnery.setScene(this.pipeline.rtOpaque.depthTexture!, this.pipeline.width, this.pipeline.height, cam);
@@ -7214,6 +7251,7 @@ export class Game {
     // no rain or wind wisps down here
     if (under) {
       this.rain.mesh.visible = false;
+      this.rare.embers.mesh.visible = false;
       this.spindrift.mesh.visible = false;
       this.clouds.mesh.visible = false;
     }

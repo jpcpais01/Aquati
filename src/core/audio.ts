@@ -1188,6 +1188,38 @@ export class Audio {
     });
   }
 
+  /**
+   * A mirage shimmering up out of the heat (or frayed by a passing hull): a
+   * glassy, wavering whole-tone haze, each partial swimming on its own slow
+   * vibrato, that swells in and dies away like the vision itself.
+   */
+  mirage(vol = 0.2) {
+    const v = this.voice(vol, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    const notes = [1046.5, 1174.66, 1318.51, 1479.98, 1661.22];
+    notes.forEach((fr, i) => {
+      const t = ctx.currentTime + i * 0.16;
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = fr;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 3.1 + i * 0.7;
+      const depth = ctx.createGain();
+      depth.gain.value = fr * 0.006;
+      lfo.connect(depth).connect(o.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.16, t + 0.7);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 3.2);
+      o.connect(g).connect(out);
+      o.start(t);
+      lfo.start(t);
+      o.stop(t + 3.3);
+      lfo.stop(t + 3.3);
+    });
+  }
+
   /** A gold doubloon flipped onto the counter: a heavy, warm chink and its bounces. */
   coin(delay = 0, vol = 0.5) {
     this.emit(pick(this.bank.coin), { vol, pan: (Math.random() - 0.5) * 0.3, dist: 0, rate: 0.93 + Math.random() * 0.14, wet: 0.18, delay });

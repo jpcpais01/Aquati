@@ -16,8 +16,13 @@ import { globalUniforms } from '../render/environment';
 // storm). Each state only sets targets; every parameter eases toward its own
 // target at its own pace, so clouds gather first, then the rain, and the sea
 // takes longest of all to build and to settle.
+//
+// And now and then something rarer: a mirror calm (mostly at dawn), a very hot
+// noon out on the high seas whose shimmer conjures mirages, and ember rain
+// wherever the wind carries a restless volcano's ash (an overlay on whatever
+// weather is about, see ashTo).
 
-export type WeatherKind = 'clear' | 'fair' | 'cloudy' | 'mist' | 'rain' | 'storm';
+export type WeatherKind = 'clear' | 'fair' | 'cloudy' | 'mist' | 'rain' | 'storm' | 'calm' | 'hot' | 'embers';
 
 interface WeatherDef {
   name: string;
@@ -60,6 +65,25 @@ export const WEATHER: Record<WeatherKind, WeatherDef> = {
     name: 'Storm', cover: 1, rain: 1, storm: 1, fog: 0.62, wind: 1.28, dur: [90, 160],
     next: [['rain', 0.7], ['cloudy', 0.3]],
     arrive: ['Storm', 'Thunder rolls in and the seas are building'],
+  },
+  // never in the chain's own lists: rolled once a dawn / night / spell of the
+  // day (see rollRare), the wind dies and the sea goes to glass
+  calm: {
+    name: 'Mirror calm', cover: 0.26, rain: 0, storm: 0, fog: 0.14, wind: 0.12, dur: [170, 270],
+    next: [['clear', 0.45], ['fair', 0.4], ['mist', 0.15]],
+    arrive: ['Mirror calm', 'The wind dies away and the sea turns to glass'],
+  },
+  // only at noon on the high seas (one noon in twenty)
+  hot: {
+    name: 'Very hot', cover: 0.03, rain: 0, storm: 0, fog: 0.12, wind: 0.5, dur: [150, 230],
+    next: [['clear', 0.6], ['fair', 0.4]],
+    arrive: ['Very hot', 'The sun blazes down, the air shimmers and the lookout starts seeing things'],
+  },
+  // picked by hand (or ?wx=embers); out at sea it comes from a volcano's plume instead
+  embers: {
+    name: 'Ember rain', cover: 0.5, rain: 0, storm: 0, fog: 0.16, wind: 0.85, dur: [120, 200],
+    next: [['cloudy', 0.5], ['fair', 0.5]],
+    arrive: ['Ember rain', 'Warm ash and glowing embers drift down on the wind'],
   },
 };
 
@@ -171,6 +195,9 @@ export interface AtmosSnapshot {
   wind: number;
   wet: number;
   sea: number;
+  calm: number;
+  heat: number;
+  ash: number;
 }
 
 /** The prevailing wind: the heading the weather keeps bringing it back toward. */
@@ -213,6 +240,19 @@ export class Atmosphere {
   wind = WEATHER.clear.wind;
   wet = 0;
   sea = 0; // 0 calm .. ~1.3 storm swell (lags the storm)
+  /** 0 .. 1 a mirror calm: the swell all but gone, the sea a looking glass. */
+  calm = 0;
+  /** 0 .. 1 a very hot noon: bleached sky, shimmering air, mirages. */
+  heat = 0;
+  /** 0 .. 1 ash and embers in the air, the sky gone red. */
+  ash = 0;
+  /** Ash the volcanoes' plumes put in the air round the ship (set by the game, 0 .. 1). */
+  ashTo = 0;
+  /** How brightly the sea-spark blooms glow tonight (0 by day, see world/seaGlow.ts). */
+  glow = 0;
+  /** The stretch of the day the last rare-weather roll was for, and the next weather it picked. */
+  private period = '';
+  private rare: WeatherKind | null = null;
 
   // wind heading: the bearing the wind blows toward (x = sin, z = cos). Never
   // wrapped, so it eases (and the HUD arrow turns) the short way round.
@@ -318,6 +358,9 @@ export class Atmosphere {
       this.wind = d.wind;
       this.wet = Math.min(1, d.rain * 1.6);
       this.sea = this.seaTarget();
+      this.calm = kind === 'calm' ? 1 : 0;
+      this.heat = kind === 'hot' ? 1 : 0;
+      this.ash = kind === 'embers' ? 1 : 0;
     }
   }
 
@@ -352,7 +395,10 @@ export class Atmosphere {
 
   /** Everything photo mode may change, so leaving it puts the sky back exactly as it was. */
   snapshot(): AtmosSnapshot {
-    return { day: this.day, kind: this.kind, cover: this.cover, rain: this.rain, storm: this.storm, fog: this.fog, wind: this.wind, wet: this.wet, sea: this.sea };
+    return {
+      day: this.day, kind: this.kind, cover: this.cover, rain: this.rain, storm: this.storm, fog: this.fog, wind: this.wind, wet: this.wet, sea: this.sea,
+      calm: this.calm, heat: this.heat, ash: this.ash,
+    };
   }
 
   restore(s: AtmosSnapshot) {
@@ -376,6 +422,9 @@ export class Atmosphere {
     this.wind = d ? d.wind : base.wind;
     this.wet = d ? Math.min(1, d.rain * 1.6) : base.wet;
     this.sea = base.sea;
+    this.calm = d ? (kind === 'calm' ? 1 : 0) : base.calm;
+    this.heat = d ? (kind === 'hot' ? 1 : 0) : base.heat;
+    this.ash = d ? (kind === 'embers' ? 1 : 0) : base.ash;
     this.update(0);
   }
 
@@ -424,12 +473,29 @@ export class Atmosphere {
       if (c === 'open') w *= k === 'storm' ? 0.2 : k === 'rain' ? 0.35 : k === 'cloudy' ? 0.7 : k === 'mist' ? 0.5 : 1.6;
       return [k, w] as [WeatherKind, number];
     });
-    const k = pick(opts);
+    // (a scorching noon that the ship sailed back in among the islands from, or that came too late, is off)
+    if (this.rare === 'hot' && (this.climate !== 'open' || this.period !== 'noon')) this.rare = null;
+    const k = this.rare ?? pick(opts);
+    this.rare = null;
     this.setWeather(k);
     // a change of weather brings the wind round with it: hardest into a storm
-    this.shiftWind(k === 'storm' ? 1.7 : k === 'rain' ? 1.15 : k === 'mist' ? 0.5 : 0.8, 6);
+    this.shiftWind(k === 'storm' ? 1.7 : k === 'rain' ? 1.15 : k === 'mist' || k === 'calm' ? 0.4 : 0.8, 6);
     const a = WEATHER[k].arrive;
     if (a) this.onChange(k, a[0], a[1]);
+  }
+
+  /**
+   * The rare weathers, rolled once as each stretch of the day begins: a
+   * mirror calm comes with one dawn in five, one night in ten and one spell of
+   * the day in twenty; a very hot noon only out on the high seas, one in twenty.
+   * A hit brings the weather round to it within half a minute or so.
+   */
+  private rollRare(per: string) {
+    if (this.locked || this.following) return;
+    if (per === 'noon' && this.climate === 'open' && Math.random() < 0.05) this.rare = 'hot';
+    else if (this.kind !== 'storm' && Math.random() < (per === 'dawn' ? 0.2 : per === 'night' ? 0.1 : 0.05)) this.rare = 'calm';
+    else return;
+    this.hasten(4 + Math.random() * 22);
   }
 
   /** Brings the next turn of the weather within `s` seconds (out onto the calm of the high seas). */
@@ -456,6 +522,14 @@ export class Atmosphere {
     if (dt > 0 && dd < 0.5) this.moonPhase = (this.moonPhase + dd / 8) % 1;
 
     // ---------------------------------------------------------- weather
+    const hr = this.hour;
+    const per = hr >= 4.8 && hr < 8.5 ? 'dawn' : hr >= 11 && hr < 14 ? 'noon' : hr >= 20.5 || hr < 4.8 ? 'night' : hr < 11 ? 'morning' : 'afternoon';
+    if (per !== this.period) {
+      this.period = per;
+      if (dt > 0) this.rollRare(per);
+    }
+    // the great heat only lasts the noon, and only out where no land cools the air
+    if (this.kind === 'hot' && !this.locked && (per !== 'noon' || this.climate !== 'open')) this.hasten(20);
     this.stateT += dt;
     if (!this.locked && !this.hold && !this.following && this.stateT > this.stateDur) this.nextWeather();
     const d = WEATHER[this.kind];
@@ -470,6 +544,10 @@ export class Atmosphere {
     this.fog = ease(this.fog, d.fog, 25);
     this.wind = ease(this.wind, d.wind, 18);
     this.sea = ease(this.sea, this.seaTarget(), 32);
+    this.calm = ease(this.calm, this.kind === 'calm' ? 1 : 0, 20);
+    this.heat = ease(this.heat, this.kind === 'hot' ? 1 : 0, 22);
+    // rain washes the ash out of the air
+    this.ash = ease(this.ash, Math.max(this.kind === 'embers' ? 1 : 0, this.ashTo) * (1 - 0.7 * this.rain), 9);
 
     // ---------------------------------------------------------- wind heading
     // now and then the breeze veers or backs; squalls shove it about more often
@@ -507,13 +585,18 @@ export class Atmosphere {
       const r = 1.0;
       const gg = 0.42 + g * 0.3 + w * 0.18;
       const b = 0.16 + g * 0.29 + w * 0.31;
-      const I = SUN_I * sunVis * clouded;
+      const I = SUN_I * sunVis * clouded * (1 + 0.14 * this.heat);
       this.keyColor.set(r * I, gg * I, b * I);
     } else {
       this.keyDir.copy(this.moonDir);
       // a thin moon lights the sea less (never so little the night can't be sailed)
       const I = 0.62 * moonVis * clouded * (0.72 + 0.28 * this.moonLit);
       this.keyColor.set(0.55 * I, 0.68 * I, 1.0 * I);
+    }
+    // through a pall of ash the light comes dim and coppery
+    if (this.ash > 0.001) {
+      const a = this.ash;
+      this.keyColor.set(this.keyColor.x * (1 - 0.3 * a), this.keyColor.y * (1 - 0.5 * a), this.keyColor.z * (1 - 0.66 * a));
     }
 
     // ---------------------------------------------------------- sky & fog
@@ -549,10 +632,28 @@ export class Atmosphere {
       ov(f, 0.92);
       this.fogColor.lerp(f, c);
     }
+    // a scorching noon bleaches the horizon to a white-hot glare under a deep blue crown
+    if (this.heat > 0.001) {
+      const k = this.heat * sunVis;
+      const L = lum(this.horizon) * 1.22;
+      this.horizon.lerp(this.tmp.set(L * 1.02, L * 0.97, L * 0.86), k * 0.6);
+      this.fogColor.lerp(this.tmp.set(L * 0.97, L * 0.94, L * 0.86), k * 0.55);
+      this.zenith.multiply(this.tmp.set(1 - 0.12 * k, 1 - 0.02 * k, 1 + 0.06 * k));
+    }
+    // ash: the sky goes rust and smoulder, and after dark the pall glows a dull red from below
+    if (this.ash > 0.001) {
+      const a = this.ash * 0.8;
+      const Lh = lum(this.horizon);
+      const Lz = lum(this.zenith);
+      const glow = this.night * 0.06;
+      this.horizon.lerp(this.tmp.set(Lh * 1.5 + glow, Lh * 0.7 + glow * 0.28, Lh * 0.42 + glow * 0.1), a);
+      this.fogColor.lerp(this.tmp.set(Lh * 1.3 + glow * 0.8, Lh * 0.68 + glow * 0.2, Lh * 0.48 + glow * 0.08), a);
+      this.zenith.lerp(this.tmp.set(Lz * 1.05 + glow * 0.4, Lz * 0.6 + glow * 0.1, Lz * 0.52), a * 0.85);
+    }
     // mist glows with whatever light there is
     if (this.fog > 0.01) this.fogColor.lerp(this.tmp.copy(this.horizon).multiplyScalar(1.02), this.fog * 0.5);
     // the far air thickens a little; the weather on the water itself is the veil below
-    const fogAmt = this.fog;
+    const fogAmt = Math.max(this.fog, this.ash * 0.3);
     this.fogRange.set(380 * (1 - 0.55 * fogAmt), 1500 * (1 - 0.5 * fogAmt));
     // Low weather on the sea. Sea mist lies in shallow banks with clear water
     // between them, drifting slowly; rain hangs in tall curtains that sweep by
@@ -560,17 +661,20 @@ export class Atmosphere {
     const mistK = smooth(0.4, 0.9, this.fog) * (1 - this.rain);
     const rainK = this.rain;
     const lowK = 0.1 * smooth(0.45, 1, this.cover);
-    const veilSum = mistK + rainK + lowK + 1e-4;
+    // ash hangs in drifting smoky banks; a hot noon in a thin shimmering haze on the water
+    const ashK = this.ash * 0.6;
+    const heatK = this.heat * 0.25;
+    const veilSum = mistK + rainK + lowK + ashK + heatK + 1e-4;
     this.veil.set(
-      mistK * 0.012 + rainK * 0.0026 + this.storm * 0.0012 + lowK * 0.004,
-      (mistK * 15 + rainK * 58 + lowK * 40) / veilSum,
-      0.4 + 0.58 * (mistK / veilSum),
+      mistK * 0.012 + rainK * 0.0026 + this.storm * 0.0012 + lowK * 0.004 + ashK * 0.0022 + heatK * 0.0016,
+      (mistK * 15 + rainK * 58 + lowK * 40 + ashK * 50 + heatK * 9) / veilSum,
+      0.4 + 0.58 * ((mistK + ashK * 0.6) / veilSum),
       1.2 + this.wind * 2.5 + this.storm * 7,
     );
 
     // ---------------------------------------------------------- exposure & ambient
     // a grey day is lifted a little; a storm is let fall darker and moodier
-    this.exposure = (1 + 1.3 * this.night) * (1 + 0.16 * this.cover) * (1 - 0.1 * this.storm * (1 - this.night));
+    this.exposure = (1 + 1.3 * this.night) * (1 + 0.16 * this.cover) * (1 - 0.1 * this.storm * (1 - this.night)) * (1 + 0.05 * this.heat);
     const key = Math.max(this.keyDir.y, 0) * 0.22;
     const ref = this.dayRef;
     const tintR = (this.horizon.x * 0.55 + this.zenith.x * 0.45 + this.keyColor.x * key) / ref;
@@ -593,11 +697,14 @@ export class Atmosphere {
     u.uWet.value = this.wet;
     u.uMist.value = this.fog;
     u.uVeil.value.copy(this.veil);
+    // the sea-spark blooms light up on a dark night (a gale breaks them up)
+    this.glow = smooth(0.3, 0.85, this.night) * (1 - 0.7 * this.storm);
+    u.uSpecial.value.set(this.calm, this.glow, this.heat, this.ash);
     this.updateLook(sy, sunVis);
     const hazeK = 1 - 0.85 * this.cover;
     if (sy > -0.03) {
       const g = smooth(0.0, 0.3, sy);
-      u.uHaze.value.set(1, 0.55 + 0.25 * g, 0.25 + 0.3 * g).multiplyScalar(sunVis * hazeK);
+      u.uHaze.value.set(1, 0.55 + 0.25 * g - 0.25 * this.ash, 0.25 + 0.3 * g - 0.2 * this.ash).multiplyScalar(sunVis * hazeK * (1 + 0.9 * this.heat));
     } else {
       u.uHaze.value.set(0.3, 0.38, 0.55).multiplyScalar(0.3 * moonVis * hazeK * (0.35 + 0.65 * this.moonLit));
     }
@@ -637,7 +744,7 @@ export class Atmosphere {
     // the haze glows a little warmer than the light itself: it scatters the
     // sun's red end forward (cool and faint by moonlight)
     this.shaftAir.set(k.x * amt * 1.06, k.y * amt, k.z * amt * 0.9, 0.05);
-    this.shaftHaze.set(0.0014 * (1 + this.fog * 2.5 + this.wet * 0.5), 10 * amt);
+    this.shaftHaze.set(0.0014 * (1 + this.fog * 2.5 + this.wet * 0.5 + this.ash * 2), 10 * amt);
     // in the shallows: sunlight through clear water, killed by a grey sky
     const sea = (1 - smooth(0.55, 0.95, this.cover)) * (1 - this.storm);
     this.shaftSea.set(k.x * 0.36, k.y * 0.84, k.z * 0.8).multiplyScalar(sea * (sy > -0.03 ? 1 : 0.6));
@@ -665,8 +772,17 @@ export class Atmosphere {
     // mist softens the light into a pearly glow
     lo.lerp(_lo.set(0.98, 1.0, 1.04), this.fog * (1 - this.rain) * 0.6);
     hi.lerp(_hi.set(1.06, 1.02, 0.97), this.fog * (1 - this.rain) * golden * 0.8);
+    // a scorching noon: blown, honeyed highlights and a little colour burnt out of it
+    hi.lerp(_hi.set(1.1, 1.02, 0.86), this.heat * 0.7);
+    lo.lerp(_lo.set(1.0, 0.99, 0.98), this.heat * 0.5);
+    sat -= this.heat * 0.05;
+    // ash: smouldering copper light, plum-brown shade
+    lo.lerp(_lo.set(0.98, 0.9, 0.93), this.ash * 0.7);
+    hi.lerp(_hi.set(1.15, 0.95, 0.78), this.ash * 0.75);
+    // a glassy calm: soft pastel light
+    sat += this.calm * 0.04;
     this.gradeSat = sat;
-    this.vignette = 0.55 + this.storm * 0.4 + this.rain * 0.12 + this.fog * 0.1;
+    this.vignette = 0.55 + this.storm * 0.4 + this.rain * 0.12 + this.fog * 0.1 + this.ash * 0.14;
   }
 }
 

@@ -176,7 +176,7 @@ export class Pipeline {
       uniform sampler2D uOpaque; uniform sampler2D uWater; uniform sampler2D uHalf; uniform sampler2D uBloom;
       uniform vec2 uHalfTexel; uniform float uExposure; uniform float uBloomStrength; uniform float uTilt;
       uniform float uTime; uniform float uVignette; uniform float uFlash; uniform vec3 uFlashColor; uniform float uLightning;
-      uniform vec2 uTexel; uniform float uSharpen; uniform float uDepth; uniform float uDesat;
+      uniform vec2 uTexel; uniform float uSharpen; uniform float uDepth; uniform float uDesat; uniform float uHeat;
       // photo mode: depth of field and a film look, uniforms only (see PhotoLook)
       uniform float uPhoto; uniform vec4 uPGrade; uniform vec3 uPTint; uniform vec4 uPMono; uniform float uPVig;
       uniform vec4 uDof; uniform sampler2D uDofDepth; uniform vec2 uDofNearFar; uniform mat4 uInvProj; uniform mat3 uCamRot; uniform float uCamY;
@@ -213,6 +213,12 @@ export class Pipeline {
         if (uDepth > 0.0) {
           uv += vec2(sin(vUv.y * 17.0 + uTime * 1.3) + sin(vUv.y * 31.0 - uTime * 0.9) * 0.5,
                      cos(vUv.x * 13.0 + uTime * 1.1)) * 0.0028 * uDepth;
+        }
+        // a scorching noon: the air over the sea swims in fine rising ripples, most toward the far edge
+        if (uHeat > 0.0) {
+          float k = uHeat * (0.3 + 0.7 * smoothstep(0.15, 0.95, vUv.y));
+          uv += vec2(sin(vUv.y * 170.0 - uTime * 5.3 + sin(vUv.x * 23.0 + uTime * 0.7) * 2.0),
+                     sin(vUv.x * 110.0 + vUv.y * 60.0 - uTime * 3.4)) * 0.001 * k;
         }
         vec3 col = comb(uv);
 
@@ -423,6 +429,7 @@ export class Pipeline {
         uFlashColor: { value: new THREE.Color(1, 0.6, 0.3) },
         uLightning: { value: 0 },
         uDepth: { value: 0 },
+        uHeat: { value: 0 },
         uDesat: { value: 0 },
         uPhoto: { value: 0 },
         uPGrade: { value: new THREE.Vector4(1, 1, 0, 0) },
@@ -728,6 +735,10 @@ export class Pipeline {
     u.uSplitLo.value.copy(lo);
     u.uSplitHi.value.copy(hi);
     u.uSat.value = sat;
+  }
+  /** A scorching noon's heat shimmer (0 none .. 1). Uniform only. */
+  set heat(v: number) {
+    this.finalMat.uniforms.uHeat.value = v;
   }
   /** Drains colour and deepens the vignette for a sombre beat (0 none .. 1 grey). */
   set desat(v: number) {
