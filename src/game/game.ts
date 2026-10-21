@@ -31,6 +31,7 @@ import type { TerrainLod } from '../world/terrainLod';
 import { Seas } from '../world/seas';
 import { clampToRegion, HIGH_SEAS_R, nearestRegion, Region, RegionId, regionById, REGIONS, seaEdge, STREAM_R } from '../world/regions';
 import { Dolphins } from '../fx/dolphins';
+import { Whales } from '../fx/whales';
 import { ChartStore } from './charts';
 import { Vegetation } from '../world/vegetation';
 import { Grass, GRASS_PUSHERS } from '../world/grass';
@@ -180,6 +181,21 @@ const KRAKEN_TEST = typeof location !== 'undefined' && /[?&]kraken\b/.test(locat
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 0)));
 
 /** Every texture a model's materials use (uploaded a frame at a time before she's drawn). */
+/** Where `at` lies from `ship`, the way a lookout calls it: "off the starboard bow", "dead ahead"... */
+function bearing(ship: Ship, at: THREE.Vector3) {
+  const fx = Math.sin(ship.heading);
+  const fz = Math.cos(ship.heading);
+  const dx = at.x - ship.pos.x;
+  const dz = at.z - ship.pos.z;
+  const ahead = dx * fx + dz * fz;
+  const port = dx * fz - dz * fx;
+  const a = Math.atan2(Math.abs(port), ahead);
+  const side = port > 0 ? 'port' : 'starboard';
+  if (a < 0.2) return 'dead ahead';
+  if (a > Math.PI - 0.25) return 'astern';
+  return a < 1.1 ? `off the ${side} bow` : a < 2.05 ? `on the ${side} beam` : `off the ${side} quarter`;
+}
+
 function texturesOf(root: THREE.Object3D): THREE.Texture[] {
   const out = new Set<THREE.Texture>();
   root.traverse((o) => {
@@ -217,6 +233,11 @@ export class Game {
   /** Seconds until the next dolphin pod may come. */
   private dolphinT = 20;
   private dolphins = new Dolphins();
+  /** Seconds until the next pod of humpbacks may pass on its migration. */
+  private whaleT = 40;
+  private whales = new Whales();
+  /** A breach in the golden light has been called this voyage. */
+  private goldenBreach = false;
   private charts = new ChartStore();
   /** "Where shall we sail?": the archipelago picker after Set Sail. */
   private seaPick = new SeaPick();
@@ -738,6 +759,8 @@ export class Game {
     this.opaque.add(this.birds.mesh);
     // the high seas' dolphins: one mesh, empty until a pod comes (drawn once in the warm-up)
     this.opaque.add(this.dolphins.mesh);
+    // and its whales, the same way
+    this.opaque.add(this.whales.mesh);
     this.reef = new ReefLife(this.terrain, q.tier === 0);
     this.opaque.add(this.reef.group);
     await mark(0.54, 900);
@@ -826,6 +849,16 @@ export class Game {
     this.dolphins.onCall = (at, whistle) => {
       const [vol, pan] = this.world.soundAt(at);
       this.audio.dolphin(vol, pan, whistle);
+    };
+    this.whales.onSighted = (at) => {
+      const p = this.player;
+      if (!p || this.state !== 'playing') return;
+      this.ui.toast('Thar she blows!', `Humpback whales ${bearing(p, at)}, on their long migration across Mar Sereno`, 4.2);
+    };
+    this.whales.onBreach = () => {
+      if (!this.whales.golden || this.goldenBreach || this.state !== 'playing') return;
+      this.goldenBreach = true;
+      this.ui.toast('Breach!', 'A humpback leaps clear in the golden light', 3.6);
     };
     this.world.onHazard = (ship, kind, dmg, at) => this.onHazard(ship as Ship, kind, dmg, at);
     this.hzHud = new HazardHud(document.getElementById('hud')!);
@@ -996,6 +1029,7 @@ export class Game {
     this.warming = true;
     this.tradePorts.warm();
     this.dolphins.warm(this.spawnPoint);
+    this.whales.warm(this.spawnPoint);
     this.shore.warm();
     this.forts.warm();
     // the shipyard's uploader compiles its one plain program now, not mid-voyage
@@ -1017,6 +1051,7 @@ export class Game {
     );
     veg.hold = false;
     this.dolphins.clear();
+    this.whales.clear();
     this.clouds.warm = false;
     this.shore.unwarm();
     this.forts.unwarm();
@@ -5215,7 +5250,10 @@ export class Game {
     const at = SEA_TEST === 'brumas' ? this.findOpenWater(hero.x, hero.z, hero.r + 200, hero.r + 320) : _a.set(home.x + (mist.x - home.x) * 0.42, 0, home.z + (mist.z - home.z) * 0.42).clone();
     p.place(at.x, at.z, Math.atan2(mist.x - at.x, mist.z - at.z));
     p.speed = p.cls.maxSpeed * 0.5;
-    if (SEA_TEST === 'highseas') this.dolphinT = 3;
+    if (SEA_TEST === 'highseas') {
+      this.dolphinT = 30;
+      this.whaleT = 3;
+    }
     else this.atmos.climate = 'mist';
   }
 
@@ -5229,7 +5267,11 @@ export class Game {
    */
   private updateSeas(dt: number) {
     if (this.dolphins.active || this.onHighSeas) this.dolphins.update(dt, this.world, this.player);
-    if (this.onHighSeas && this.player && this.state === 'playing') this.callDolphins(dt);
+    if (this.whales.active) this.whales.update(dt, this.world, this.player);
+    if (this.onHighSeas && this.player && this.state === 'playing') {
+      this.callDolphins(dt);
+      this.callWhales(dt);
+    }
     this.seasT -= dt;
     if (this.seasT > 0) return;
     this.seasT = 0.25;
@@ -5267,6 +5309,7 @@ export class Game {
     // the storm blows itself out behind you
     if (this.atmos.kind === 'storm' || this.atmos.kind === 'rain') this.atmos.hasten(25);
     this.dolphinT = Math.min(this.dolphinT, 14 + Math.random() * 16);
+    this.whaleT = Math.min(this.whaleT, 30 + Math.random() * 25);
     this.ui.toast('The high seas · Mar Sereno', 'Open ocean, a fair trade wind and a long, easy swell. No pirate hunts this far out', 5);
   }
 
@@ -5274,6 +5317,8 @@ export class Game {
   private leaveHighSeas(quiet: boolean) {
     if (quiet) {
       this.dolphins.clear();
+      this.whales.clear();
+      this.goldenBreach = false;
       this.atmos.climate = 'home';
     } else this.dolphins.dismiss();
     if (!this.onHighSeas) return;
@@ -5306,6 +5351,24 @@ export class Game {
     this.dolphins.summon(p);
     this.dolphinT = 55 + Math.random() * 70;
     this.ui.toast('Dolphins!', 'A pod comes racing in to ride your bow wave', 3.4);
+  }
+
+  /**
+   * Now and then a pod of humpbacks passes ahead of you, bound across the
+   * high seas: their migration runs athwart the lane between the archipelagos.
+   */
+  private callWhales(dt: number) {
+    const p = this.player!;
+    const h = this.atmos.hour;
+    // the golden hours, in fair weather: the likeliest time of all for a breach
+    this.whales.golden = ((h > 5.9 && h < 7.8) || (h > 16.6 && h < 18.9)) && this.atmos.kind !== 'storm' && this.atmos.kind !== 'rain';
+    if (this.whales.active) return;
+    this.whaleT -= dt;
+    if (this.whaleT > 0 || !p.alive) return;
+    const [home, mist] = REGIONS;
+    const lane = Math.atan2(mist.x - home.x, mist.z - home.z);
+    const course = lane + (Math.random() < 0.5 ? 1 : -1) * Math.PI * 0.5 + (Math.random() - 0.5) * 0.6;
+    this.whaleT = this.whales.summon(p, course, this.world) ? 110 + Math.random() * 90 : 8;
   }
 
   /** `?maelstrom` / `?reef`: set sail just off one, bows on. */

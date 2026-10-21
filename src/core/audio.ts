@@ -86,6 +86,16 @@ const REELS = [
   ),
 ];
 
+/** One sound in a humpback's song: a sliding moan, a high cry, a swooping whoop or a deep, rattling groan. */
+export interface SongUnit {
+  kind: 'moan' | 'cry' | 'whoop' | 'groan';
+  f0: number;
+  f1: number;
+  f2: number;
+  len: number;
+  gap: number;
+}
+
 export class Audio {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -3272,5 +3282,185 @@ export class Audio {
         s.connect(bp).connect(g).connect(out);
       }
     }
+  }
+
+  // ------------------------------------------------------------------ the whales
+
+  /** A humpback breathing out: an explosive, hollow whoosh, then the quick draw of breath back in. */
+  whaleBlow(vol: number, pan: number, dist = 0, size = 1) {
+    const b = this.bigVoice(vol * 0.9, pan, dist);
+    if (!b) return;
+    const [ctx, out, t] = b;
+    // the far ones come across the water softened
+    const air = ctx.createBiquadFilter();
+    air.type = 'lowpass';
+    air.frequency.value = Math.max(700, 9000 * Math.exp(-dist / 160));
+    air.connect(out);
+    const n = this.noiseSrc(ctx, t, 1.7, 0.6);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.7;
+    bp.frequency.setValueAtTime(1300 / size, t);
+    bp.frequency.exponentialRampToValueAtTime(420 / size, t + 1.3);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(1, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.4, t + 0.45);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
+    n.connect(bp).connect(g).connect(air);
+    // the great chest behind it
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(82 / size, t);
+    o.frequency.exponentialRampToValueAtTime(50 / size, t + 0.5);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, t);
+    og.gain.exponentialRampToValueAtTime(0.45, t + 0.03);
+    og.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+    o.connect(og).connect(air);
+    o.start(t);
+    o.stop(t + 0.75);
+    // and the breath back in, a beat later
+    const ti = t + 1.75;
+    const n2 = this.noiseSrc(ctx, ti, 0.8, 0.8);
+    const bp2 = ctx.createBiquadFilter();
+    bp2.type = 'bandpass';
+    bp2.Q.value = 1.4;
+    bp2.frequency.setValueAtTime(450 / size, ti);
+    bp2.frequency.exponentialRampToValueAtTime(900 / size, ti + 0.7);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.0001, ti);
+    g2.gain.exponentialRampToValueAtTime(0.22, ti + 0.35);
+    g2.gain.exponentialRampToValueAtTime(0.001, ti + 0.75);
+    n2.connect(bp2).connect(g2).connect(air);
+  }
+
+  /** A flipper brought down flat on the water: a sharp, ringing smack. */
+  whaleSlap(vol: number, pan: number, dist = 0) {
+    const v = Math.max(vol, 0.15);
+    this.emit(pick(this.bank.water), { vol: v * 0.9, pan, dist, rate: 0.8 + Math.random() * 0.1, wet: 0.55 });
+    this.emit(pick(this.bank.water), { vol: v * 0.5, pan, dist, rate: 1.1, wet: 0.4, delay: 0.25 });
+    const b = this.bigVoice(v * 0.6, pan, dist);
+    if (!b) return;
+    const [ctx, out, t] = b;
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(140, t);
+    o.frequency.exponentialRampToValueAtTime(55, t + 0.22);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.7, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.3);
+  }
+
+  /** Thirty tonnes of whale coming down on the sea: a thunderous boom and a long fall of spray. */
+  whaleSlam(vol: number, pan: number, dist = 0, size = 1) {
+    const v = Math.max(vol, 0.25) * (0.7 + 0.3 * size);
+    const at = this.emit(pick(this.bank.water), { vol: v, pan, dist, rate: 0.45 / Math.sqrt(size), wet: 0.75 });
+    this.emit(pick(this.bank.water), { vol: v * 0.8, pan: pan * 0.7, dist, rate: 0.6, wet: 0.6, delay: 0.07 });
+    this.emit(pick(this.bank.water), { vol: v * 0.5, pan: pan * 1.2, dist, rate: 0.9, wet: 0.5, delay: 0.75 });
+    const b = this.bigVoice(v * 0.9, pan, dist);
+    if (b) {
+      const [ctx, out, t] = b;
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(60 / Math.sqrt(size), t);
+      o.frequency.exponentialRampToValueAtTime(24, t + 1.1);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.9, t + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 1.25);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 1.3);
+      const n = this.noiseSrc(ctx, t, 2.8, 0.5);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(1400, t);
+      lp.frequency.exponentialRampToValueAtTime(150, t + 2.6);
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(0.6, t + 0.05);
+      ng.gain.exponentialRampToValueAtTime(0.001, t + 2.7);
+      n.connect(lp).connect(ng).connect(out);
+    }
+    if (at >= 0 && dist < 120) this.duck(at, 0.35);
+  }
+
+  /**
+   * A phrase of humpback song heard through the hull: each unit a voice
+   * sliding through its pitches, muffled by the water and washed out in a
+   * long reverb. Returns how long the phrase lasts (s).
+   */
+  whaleSong(units: SongUnit[], vol: number, pan: number) {
+    let len = 0;
+    for (const u of units) len += u.len + u.gap;
+    const ctx = this.ctx;
+    if (!ctx || this.muted || vol < 0.02) return len;
+    const out = ctx.createGain();
+    out.gain.value = vol;
+    const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (p) p.pan.value = clamp1(pan);
+    (p ? out.connect(p) : out).connect(this.ambBus);
+    const send = ctx.createGain();
+    send.gain.value = 0.9;
+    out.connect(send).connect(this.reverbIn);
+    // the water takes the edge off everything
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1500;
+    lp.Q.value = 0.4;
+    lp.connect(out);
+    let t = ctx.currentTime + 0.05;
+    for (const u of units) {
+      const end = t + u.len;
+      const o = ctx.createOscillator();
+      o.type = u.kind === 'cry' ? 'sine' : u.kind === 'whoop' ? 'triangle' : 'sawtooth';
+      o.frequency.setValueAtTime(u.f0, t);
+      o.frequency.exponentialRampToValueAtTime(u.f1, t + u.len * 0.55);
+      o.frequency.exponentialRampToValueAtTime(u.f2, end);
+      // a slow, wavering vibrato
+      const vib = ctx.createOscillator();
+      vib.frequency.value = 3 + Math.random() * 4;
+      const vg = ctx.createGain();
+      vg.gain.value = u.f0 * (u.kind === 'cry' ? 0.02 : 0.012);
+      vib.connect(vg).connect(o.frequency);
+      const g = ctx.createGain();
+      const peak = u.kind === 'groan' ? 0.55 : u.kind === 'moan' ? 0.34 : u.kind === 'cry' ? 0.16 : 0.24;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + Math.min(0.25, u.len * 0.3));
+      g.gain.setValueAtTime(peak, t + u.len * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, end);
+      let src: AudioNode = o;
+      if (u.kind === 'moan' || u.kind === 'groan') {
+        // a throat: the buzz shaped through a slowly opening vowel
+        const f = ctx.createBiquadFilter();
+        f.type = 'bandpass';
+        f.Q.value = u.kind === 'groan' ? 1.2 : 2.4;
+        f.frequency.setValueAtTime(u.f0 * 2.2, t);
+        f.frequency.exponentialRampToValueAtTime(u.f1 * 2, end);
+        src = o.connect(f);
+      }
+      if (u.kind === 'groan') {
+        // the rattle of a groan, pulsed many times a second
+        const am = ctx.createOscillator();
+        am.frequency.value = 14 + Math.random() * 12;
+        const depth = ctx.createGain();
+        depth.gain.value = 0.5;
+        const pulse = ctx.createGain();
+        pulse.gain.value = 0.5;
+        am.connect(depth).connect(pulse.gain);
+        src = src.connect(pulse);
+        am.start(t);
+        am.stop(end + 0.05);
+      }
+      src.connect(g).connect(lp);
+      o.start(t);
+      o.stop(end + 0.05);
+      vib.start(t);
+      vib.stop(end + 0.05);
+      t = end + u.gap;
+    }
+    return len;
   }
 }
