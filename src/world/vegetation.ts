@@ -117,7 +117,7 @@ const LOD_PX = 30;
 /** Above this (CSS px radius) palms show every frond, nut and trunk ring. */
 const MID_PX = 75;
 /** Ground cover smaller than this on screen (radius, CSS px) isn't drawn at all. */
-const COVER_MIN_PX = 2.4;
+const COVER_MIN_PX = 5;
 /** The light plants' shadow casters: welded and held to 20 cm. */
 const FAR_SHADOW: LodJob = { error: 0.2, weld: true, permissive: true };
 /** Frustum margin (m): small camera moves never uncover an unculled plant. */
@@ -709,7 +709,7 @@ export class Vegetation {
       // a broadleaf crown keeps its every puff at every level: finely cut up
       // close, coarser (the shadow stand-in's cut) from mid zoom, and as
       // twelve-sided lumps once the whole tree is a few dozen pixels across
-      add(L.tree, trees, treeMat, leafy, { lo: treesLo, shadow: treesSh, mid: treesSh, lodPx: 34, midPx: 70 });
+      add(L.tree, trees, treeMat, leafy, { lo: treesLo, shadow: treesSh, mid: treesSh, lodPx: 40, midPx: 75 });
       add(L.treeFern, treeFerns, palmMat, leafy, { lo: treeFernsLo });
       add(L.banana, bananas, bananaMat, leafy, { lo: bananasLo });
       // a shrub's light mesh is a smooth blob: it takes over once the shrub is a few pixels across

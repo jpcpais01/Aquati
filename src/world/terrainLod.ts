@@ -30,7 +30,7 @@ const COARSE = 0.3;
 /** The shadow stand-in's deviation (m): about a shadow-map texel at the widest zoom, under the soft penumbra. */
 const SHADOW_ERROR = 0.3;
 /** How far a level's error may show on screen (CSS px). */
-const SUB_PX = 1.5;
+const SUB_PX = 2.4;
 /** Underwater ground is seen through the waves: it can stray further. */
 const UNDER_SCALE = 1.8;
 /** How far below the edge the skirts hang (m), well past any level's error. */

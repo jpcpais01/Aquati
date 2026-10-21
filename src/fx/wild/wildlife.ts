@@ -230,7 +230,7 @@ const ACTIVE = 320;
 /** How far past ACTIVE isles are surveyed ahead of time (m), so they're ready when the view arrives. */
 const AHEAD = 260;
 /** Below this many pixels tall a beast isn't drawn. */
-const MIN_PX = 2.2;
+const MIN_PX = 3;
 /**
  * Each species also has a light cut, held to LIGHT_ERROR (model units). A
  * species draws it while that error stays under LIGHT_PX pixels on every one
