@@ -217,7 +217,7 @@ export class ShoreHud {
     d.classList.toggle('ok', p.ok);
     d.querySelector('b')!.textContent = p.title;
     d.querySelector('small')!.textContent = p.sub;
-    d.querySelector('.dp-ico')!.innerHTML = icon(p.key === 'retreat' ? STAT_ICONS.hull : ICONS[p.key === 'boat' || p.key === 'land' ? 'boat' : p.key === 'fight' ? 'cutlass' : p.key === 'dig' ? 'spade' : p.key === 'board' ? 'grapnel' : 'anchor']);
+    d.querySelector('.dp-ico')!.innerHTML = icon(p.key === 'retreat' ? STAT_ICONS.hull : ICONS[p.key === 'boat' || p.key === 'land' ? 'boat' : p.key === 'fight' ? 'cutlass' : p.key === 'dig' ? 'spade' : p.key === 'board' ? 'grapnel' : p.key === 'rescue' ? 'crew' : 'anchor']);
     d.classList.toggle('board', p.key === 'board');
   }
 

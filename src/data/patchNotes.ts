@@ -25,6 +25,15 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Messages in bottles, flotsam, shipwreck survivors and a carrier gull',
+        notes: [
+          'Corked bottles now drift on the open sea, glinting in the sun, with a rolled letter showing through the glass. Sail over one to fish it out and the letter unrolls at the side of the screen. It might be a castaway\u2019s torn third of a treasure map, a taunt from one of the Brethren\u2019s named captains (with their portrait, what makes them dangerous, and their poster pinned on your Wanted Board), or somebody\u2019s lost letter: a bank note, a love letter, a grog recipe, each worth some gold.',
+          'Far from land you also pass rafts of sun-bleached driftwood and golden tangles of kelp with their little floats. Crabs scuttle sideways about on them and wave their claws, and bolt over the edge with a plop when a hull comes close. A gull or two loafs on top, taking off as you pass and settling again behind you. Now and then a barrel or chest has fetched up in the weed. Hulls push the flotsam aside, and there is more of it out on the high seas.',
+          'When a pirate goes down, a few of her crew often make it to the wreckage: a broken yard trailing a rag of sail, or a torn-off hatch cover. They cling to it with their arms over the wood, and one of them waves both arms and shouts as you come near. Sail alongside and throw them a line (F, or tap the prompt) and they swim for your side and climb up the hull one by one. Every hand you rescue makes your guns reload a little faster (up to 20%), every two add one more to your boarding parties, and now and then a grateful bosun has a piece of a treasure map in his boot. Sail on and the current takes them.',
+          'Now and then a gull flies in from port with a scroll tied across her back, lands on your rail with a long call and drops off her news. She brings prize money from the merchants for every third pirate you sink, warns you which named captain the Brethren have sent after you (and how much is on their head), brings rumours of a chest washed up off an island with the spot pinned on your chart, and on feast days invites you to the night\u2019s festival in port.',
+        ],
+      },
+      {
         title: 'Whales on the high seas',
         notes: [
           'Out on Mar Sereno you now meet humpback whales on their long migration across the open ocean. Every few minutes a pod of two to four crosses ahead of you in a long line, often with a mother and her small, pale calf tucked in at her side. The lookout calls \u201cThar she blows!\u201d and tells you where to look.',
