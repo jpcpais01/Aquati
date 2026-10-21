@@ -16,6 +16,8 @@ const _sq = new THREE.Euler();
 const DECK_PITCH = 0.98;
 /** Cinematic tilt at its fullest: radians above the horizon, a modest lean from the 1.1 of the farthest zoom. */
 const CINE_PITCH = 0.74;
+/** ...and close in: the lean holds while you zoom, a little lower still up close. */
+const CINE_PITCH_NEAR = 0.6;
 /** How long the zoom must rest against its stop before a fresh push starts tilting toward the horizon. */
 const TILT_GATE = 0.2;
 
@@ -30,13 +32,16 @@ export class CameraRig {
    * Past the farthest zoom: 0 = the usual high view .. 1 = leaned a little
    * further over at the same distance, for a more cinematic angle. Zooming out further only stirs it
    * after the wheel (or pinch) has rested a beat (`TILT_GATE`) against the stop, so a
-   * flick to full zoom never tips the camera by accident.
+   * flick to full zoom never tips the camera by accident. The lean then holds
+   * as you zoom back in; the same rest-and-push at the stop straightens it up.
    */
   tilt = 0;
   private tiltSmooth = 0;
   /** When the last zoom-out pushed against the stop with the tilt still locked. */
   private pushedAt = -1e9;
   private tiltOpen = false;
+  /** Which way an opened push moves the lean: +1 leaning over, -1 straightening up. */
+  private tiltDir = 1;
   private trauma = 0;
   mode: 'follow' | 'orbit' | 'port' = 'orbit';
   private orbitAngle = 0.6;
@@ -114,7 +119,7 @@ export class CameraRig {
   /**
    * Wheel / trackpad / pinch zoom (positive = out). Out at the stop, the push is
    * held back until it has rested `TILT_GATE` seconds; after that the camera
-   * tips toward the horizon. Zooming in levels it again before it closes in.
+   * tips toward the horizon (or, already leaning, straightens up). Zooming in keeps the lean.
    */
   zoomBy(d: number, now: number) {
     const step = d * 0.06;
@@ -123,15 +128,7 @@ export class CameraRig {
       return;
     }
     if (step < 0) {
-      if (this.tilt > 0) {
-        this.tilt = Math.max(0, this.tilt + step * 1.6);
-        // levelled out: lock the tilt again, and the pause starts over
-        if (this.tilt <= 0) {
-          this.tiltOpen = false;
-          this.pushedAt = now;
-        }
-        return;
-      }
+      // in: the lean is a camera mode, so it holds while you close in
       this.zoom = Math.max(0, this.zoom + step);
       return;
     }
@@ -145,9 +142,16 @@ export class CameraRig {
       const rested = now - this.pushedAt >= TILT_GATE;
       this.pushedAt = now;
       if (!rested) return;
+      // a fresh push out at the stop leans the camera over, or, when it already leans, straightens it up
       this.tiltOpen = true;
+      this.tiltDir = this.tilt >= 0.5 ? -1 : 1;
     }
-    this.tilt = Math.min(1, this.tilt + step * 1.6);
+    this.tilt = clamp(this.tilt + step * 1.6 * this.tiltDir, 0, 1);
+    if (this.tilt <= 0 || this.tilt >= 1) {
+      // there: lock again, and the pause starts over
+      this.tiltOpen = false;
+      this.pushedAt = now;
+    }
   }
 
   /**
@@ -174,8 +178,8 @@ export class CameraRig {
   /** Glide to a zoom and lean (a saved view, or a step of the zoom button). */
   setView(zoom: number, tilt: number) {
     this.zoom = clamp(zoom, 0, 1);
-    this.tilt = this.zoom >= 1 ? clamp(tilt, 0, 1) : 0;
-    this.tiltOpen = this.tilt > 0;
+    this.tilt = clamp(tilt, 0, 1);
+    this.tiltOpen = false;
   }
 
   /** Back to the plain high view (new voyage, ashore). */
@@ -368,7 +372,7 @@ export class CameraRig {
     // (ashore it sits lower, more over the shoulder than overhead)
     const dkb = this.dk * this.dk * (3 - 2 * this.dk);
     const tw = this.tiltBlend;
-    const pitch = lerp(lerp(lerp(0.91, 1.1, this.zoomSmooth), CINE_PITCH, tw), lerp(lerp(0.62, 0.98, this.zoomSmooth), DECK_PITCH, dkb), fb); // radians above the horizon
+    const pitch = lerp(lerp(lerp(0.91, 1.1, this.zoomSmooth), lerp(CINE_PITCH_NEAR, CINE_PITCH, this.zoomSmooth), tw), lerp(lerp(0.62, 0.98, this.zoomSmooth), DECK_PITCH, dkb), fb); // radians above the horizon
     const dist = this.followDistance;
     const az = this.azimuth;
     const flat = Math.cos(pitch) * dist;
