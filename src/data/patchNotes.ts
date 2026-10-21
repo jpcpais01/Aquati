@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T15:00Z',
     entries: [
       {
+        title: 'Pins land right where you tap',
+        notes: ['Waypoint pins on the sea chart now land exactly under your finger or cursor. Before, they could drift a little down and to the right of the tap, on every screen size.'],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-21T15:00Z',
+    entries: [
+      {
         title: 'Cannon trails stay behind the sails',
         notes: ['The glowing trail behind a flying cannonball no longer shines through sails, hulls or hills when the shot passes behind them. It now tucks neatly out of sight, with a soft edge where it just grazes the canvas.'],
       },
