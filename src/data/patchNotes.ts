@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T22:00Z',
+    entries: [
+      {
+        title: 'A new app icon',
+        notes: [
+          'The game has a new icon: your brig seen from above, gliding over a turquoise reef beside a sandy beach. It was rendered by the game itself with the real ship, water and reef, so it looks just like the game.',
+          'It appears on your home screen, in the app switcher and on the browser tab. If you installed the game earlier, your phone may take a little while to show the new icon.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T21:00Z',
     entries: [
       {
