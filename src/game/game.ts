@@ -91,7 +91,10 @@ import { createSkyDome } from '../render/sky';
 import { SkyCumulus } from '../render/cumulus';
 import { Projectiles } from './projectiles';
 import { Item, Loot, RARITY } from './loot';
-import { PIN_COLORS, Waypoints } from './waypoints';
+import { Pin, PIN_COLORS, Waypoints } from './waypoints';
+import { Autopilot, HelmTarget } from './autopilot';
+import { fmtDist } from '../ui/chart';
+import { fmtEta, type ChartCardInfo } from '../ui/helm';
 import { AMMO, AMMO_ORDER, AmmoId, AmmoStock, SPECIALS, ammoLoot, freshStock } from './ammo';
 import { FIREWORKS, FireworkCounts, FireworkId, FireworkLocker, fireworkLoot, FW_ORDER, pyroStock } from './fireworks';
 import { fireworkIcon } from '../ui/fireworkArt';
@@ -264,6 +267,10 @@ export class Game {
   private projectiles = new Projectiles();
   private loot = new Loot();
   private waypoints = new Waypoints();
+  /** The helmsman: sails her to a place picked on the sea chart (see autopilot.ts). */
+  private pilot!: Autopilot;
+  /** What the chart's card is open over: the course it offers, and the mark's colour. */
+  private chartSel: { target: HelmTarget; card: ChartCardInfo; pin: Pin | null; css: string } | null = null;
   private debris = new Debris();
   /** Bottles, driftwood and kelp mats out on the open sea (see drift.ts). */
   private drift = new Drift();
@@ -935,6 +942,12 @@ export class Game {
       ...this.hazards.maelstroms.map((m): HazardMark => ({ kind: 'vortex', name: m.name, x: m.x, z: m.z, r: m.vortex.r, dir: m.vortex.dir })),
       ...this.hazards.reefs.map((r): HazardMark => ({ kind: 'reef', name: r.name, x: r.x, z: r.z, r: r.r, dir: 1 })),
     ];
+    this.pilot = new Autopilot(this.terrain, () => this.hazards.maelstroms.map((m) => ({ x: m.x, z: m.z, r: Math.max(m.r0, m.vortex.r) })));
+    this.pilot.onArrive = (t) => this.pilotArrived(t);
+    this.pilot.onGiveUp = (why) => {
+      this.ui.toast('The helmsman gives up', why, 3.6);
+      this.audio.click();
+    };
     globalUniforms.uWind.value.set(this.world.wind.dirX, this.world.wind.dirZ, this.world.wind.strength);
     this.windField = new WindField(this.world.wind.dirX, this.world.wind.dirZ, q.tier === 0 ? 6 : 8);
     this.world.gustAt = (x, z) => this.windField.at(x, z);
@@ -1234,9 +1247,23 @@ export class Game {
     ui.onMap = (on) => this.setChart(on);
     ui.onPin = (x, z, pick) => this.tapPin(x, z, pick);
     ui.onClearPins = () => {
+      if (this.pilot.target?.pin !== undefined) this.stopPilot('Course cleared');
       this.waypoints.clear();
+      if (this.chartSel?.pin) this.closeChartCard();
       this.audio.click();
     };
+    ui.chartCard.onSail = () => this.chartSel && this.sailTo(this.chartSel.target);
+    ui.chartCard.onStop = () => this.stopPilot('You have the helm');
+    ui.chartCard.onClose = () => this.closeChartCard();
+    ui.chartCard.onLift = () => {
+      const pin = this.chartSel?.pin;
+      if (!pin) return;
+      if (this.pilot.target?.pin === pin.id) this.stopPilot('Course cleared');
+      this.waypoints.lift(pin);
+      this.closeChartCard();
+      this.audio.click();
+    };
+    ui.helmHud.onCancel = () => this.stopPilot('You have the helm');
     ui.onPhoto = () => this.openPhoto();
     ui.onSweep = () => this.sweepWrecks();
     this.fleetHud.onOrder = (o) => {
@@ -4397,18 +4424,191 @@ export class Game {
     this.photo.saved(blob, 'Photo saved', `${size} · Downloads`);
   }
 
-  /** Tap on the chart: lift the pin under the finger, else drop a new one there. */
+  /**
+   * Tap on the chart: open the card over whatever lies under the finger (a pin,
+   * a port, a fort, an isle, the X); on open sea, drop a pin there and open its
+   * card. With a card already open, a tap on open sea only closes it.
+   */
   private tapPin(x: number, z: number, pick: number) {
-    const hit = this.waypoints.near(x, z, pick);
+    const hit = this.chartPick(x, z, pick);
     if (hit) {
-      this.waypoints.lift(hit);
+      this.selectOnChart(hit);
       this.audio.click();
+      return;
+    }
+    if (this.ui.chartCard.isOpen) {
+      this.closeChartCard();
       return;
     }
     // anywhere on the known sea: an archipelago's waters or the high seas between
     if (seaEdge(x, z) > 0) return;
-    this.waypoints.add(x, z, this.player?.pos);
+    const pin = this.waypoints.add(x, z, this.player?.pos);
     this.audio.knock();
+    this.selectOnChart(this.pinTarget(pin));
+  }
+
+  // ------------------------------------------------------------------ the helmsman
+
+  /** Whether the chart shows this spot (not inside an archipelago you've only heard of). */
+  private onChart(x: number, z: number) {
+    const id = nearestRegion(x, z).region.id;
+    return id === 'home' || nearestRegion(x, z).dist > HIGH_SEAS_R || id in this.charts.state.seen;
+  }
+
+  private pinTarget(pin: Pin) {
+    const n = this.waypoints.pins.indexOf(pin) + 1;
+    return { target: { kind: 'pin' as const, name: `Waypoint ${n}`, x: pin.x, z: pin.z, pin: pin.id }, pin, css: PIN_COLORS[pin.hue].css, kicker: 'Waypoint' };
+  }
+
+  /** What lies under a tap on the chart, nearest kind first: pins, the X, ports, forts, isles. */
+  private chartPick(x: number, z: number, pick: number) {
+    // a pin's teardrop stands above its spot: a tap on the head counts too
+    const pin = this.waypoints.near(x, z, pick * 1.4) ?? this.waypoints.near(x, z + pick * 1.1, pick * 1.2);
+    if (pin) return this.pinTarget(pin);
+    const tx = this.maps.target;
+    if (tx && Math.hypot(tx.x - x, tx.z - z) < pick * 1.8) {
+      return { target: { kind: 'treasure' as const, name: 'X marks the spot', x: tx.x, z: tx.z }, pin: null, css: '#ff8f78', kicker: `Treasure · ${tx.isle}` };
+    }
+    for (const tp of this.tradePorts.ports) {
+      if (!this.onChart(tp.x, tp.z) || Math.hypot(tp.x - x, tp.z - z) > pick * 2) continue;
+      const aim = tp.toWorld(0, 0, 48);
+      return {
+        target: { kind: 'port' as const, name: tp.name, x: tp.x, z: tp.z, aimX: aim.x, aimZ: aim.z, reach: (px: number, pz: number) => tp.inReach(px, pz) },
+        pin: null,
+        css: '#ffd77a',
+        kicker: tp.festive > 0.3 ? 'Trading port · feast night' : 'Trading port',
+      };
+    }
+    for (const f of this.forts.forts) {
+      if (!this.onChart(f.site.x, f.site.z) || Math.hypot(f.site.x - x, f.site.z - z) > pick * 2) continue;
+      const ours = f.owner === 'player';
+      return { target: { kind: 'fort' as const, name: f.name, x: f.site.x, z: f.site.z }, pin: null, css: ours ? '#9ff3e8' : '#ffb59a', kicker: ours ? 'Fort · yours' : 'Fort · the Brethren' };
+    }
+    for (const isl of this.terrain.islands) {
+      if (!this.onChart(isl.x, isl.z) || Math.hypot(isl.x - x, isl.z - z) > isl.r * 0.85 + pick) continue;
+      const known = this.discovered.has(isl.name);
+      // make for the shore facing her, not the middle of the hills
+      const p = this.player;
+      const a = p ? Math.atan2(p.pos.x - isl.x, p.pos.z - isl.z) : 0;
+      return {
+        target: { kind: 'isle' as const, name: known ? isl.name : 'Uncharted isle', x: isl.x, z: isl.z, aimX: isl.x + Math.sin(a) * isl.r * 0.9, aimZ: isl.z + Math.cos(a) * isl.r * 0.9 },
+        pin: null,
+        css: '#fff1c8',
+        kicker: known ? 'Island' : 'Island · unexplored',
+      };
+    }
+    return null;
+  }
+
+  private selectOnChart(hit: { target: HelmTarget; pin: Pin | null; css: string; kicker: string }) {
+    const card: ChartCardInfo = {
+      kicker: hit.kicker,
+      name: hit.target.name,
+      sub: this.cardSub(hit.target),
+      warn: this.cardWarn(hit.target),
+      accent: hit.css,
+      pin: !!hit.pin,
+      bound: this.boundFor(hit.target),
+    };
+    this.chartSel = { target: hit.target, card, pin: hit.pin, css: hit.css };
+    this.ui.showChartCard(hit.target, card);
+  }
+
+  private closeChartCard() {
+    this.chartSel = null;
+    this.ui.hideChartCard();
+  }
+
+  /** She's already bound for this very place. */
+  private boundFor(t: HelmTarget) {
+    const c = this.pilot.target;
+    return this.pilot.active && !!c && c.kind === t.kind && c.x === t.x && c.z === t.z;
+  }
+
+  /** How far, how long, and a word on the wind. */
+  private cardSub(t: HelmTarget) {
+    const p = this.player;
+    if (!p) return '';
+    if (this.boundFor(t)) {
+      const v = this.pilot.view(p);
+      if (v) return `${fmtDist(v.left)}${v.eta >= 0 ? ` · ${fmtEta(v.eta)}` : ''} · under way`;
+    }
+    const d = Math.hypot((t.aimX ?? t.x) - p.pos.x, (t.aimZ ?? t.z) - p.pos.z);
+    if (d < 40) return 'Right here';
+    // a rough reckoning: the course runs a little longer than the crow flies
+    const eta = (d * 1.2) / Math.max(3, p.cls.maxSpeed * 0.8);
+    const w = this.world.wind;
+    const up = Math.abs(angleDelta(Math.atan2(-w.dirX, -w.dirZ), Math.atan2((t.aimX ?? t.x) - p.pos.x, (t.aimZ ?? t.z) - p.pos.z))) < 0.7;
+    const open = nearestRegion(p.pos.x, p.pos.z).dist > HIGH_SEAS_R;
+    return `${fmtDist(d)} · ${fmtEta(eta)}${up && !open && d > 200 ? ' · upwind, she’ll beat' : ''}`;
+  }
+
+  private cardWarn(t: HelmTarget) {
+    if (t.kind === 'fort') {
+      const f = this.forts.forts.find((q) => q.name === t.name);
+      if (f && f.owner === 'brethren' && !f.guns.every((g) => g.dead) && !this.world.peaceful) return 'Her guns will open on you as you close';
+    }
+    if (t.kind === 'isle' && t.name === 'Uncharted isle') return 'Charting it pays a bounty';
+    return '';
+  }
+
+  /** "Sail there": the helmsman plans her course and takes the wheel. */
+  private sailTo(t: HelmTarget) {
+    const p = this.player;
+    if (!p || !p.alive || this.state !== 'playing') return;
+    if (this.shore.active || this.boarding.busy) {
+      this.ui.toast('All hands aboard first', 'The helmsman waits for the landing party', 2.6);
+      return;
+    }
+    if (this.dockPort) return;
+    if (!this.pilot.engage(p, t)) {
+      this.ui.toast('No way through', 'Not even the old charts show a passage there', 3);
+      this.audio.click();
+      return;
+    }
+    const v = this.pilot.view(p);
+    this.ui.toast(this.pilot.short ? 'As near as she can get' : 'Course set', `${t.name}${v ? ` · ${fmtDist(v.left)}` : ''}`, 2.6);
+    this.audio.bosunPipe();
+    this.ui.chartCard.setBound(true);
+    // a beat to watch the course draw itself, then back to the sea (unless a hand is on the chart)
+    const at = performance.now();
+    window.setTimeout(() => {
+      if (this.chartOpen && this.ui.chartPoked < at && this.pilot.active && this.state === 'playing') this.setChart(false);
+    }, 1400);
+  }
+
+  /** The captain takes the helm back. */
+  private stopPilot(why: string | null) {
+    const p = this.player;
+    const was = this.pilot.active;
+    this.pilot.disengage();
+    // her canvas back on one of the lever's notches
+    if (p && was) p.sailTarget = Math.round(p.sailTarget * 3) / 3;
+    if (was && why) this.ui.toast('Autopilot off', why, 1.8);
+    if (this.chartSel) this.ui.chartCard.setBound(false);
+  }
+
+  private pilotArrived(t: HelmTarget) {
+    if (t.kind === 'pin') return; // the pin's own flare and chime say it
+    this.audio.chime();
+    const sub =
+      t.kind === 'port'
+        ? this.input.isTouch
+          ? 'Tap the prompt to come alongside'
+          : 'Press F to come alongside'
+        : t.kind === 'treasure'
+          ? 'Go ashore and dig'
+          : t.kind === 'isle'
+            ? 'Lying off the shore'
+            : 'Hove to off her walls';
+    this.ui.toast(`Arrived · ${t.name}`, sub, 3.4);
+  }
+
+  /** Each frame he has the wheel: steer her, and keep the HUD and the chart card current. */
+  private steerPilot(p: Ship, dt: number) {
+    const t = this.pilot.target;
+    const pinGone = !!t && t.pin !== undefined && this.pilot.active && !this.waypoints.pins.some((q) => q.id === t.pin);
+    this.pilot.steer(p, dt, this.world.wind, this.convoys.with(this.ships, this.afloat), pinGone);
   }
 
   /** The sea chart overlays live play: the world keeps sailing underneath. */
@@ -4420,6 +4620,7 @@ export class Game {
       this.ui.showChart(true, this.player);
     } else if (!on && this.chartOpen) {
       this.chartOpen = false;
+      this.chartSel = null;
       this.ui.showChart(false);
     }
   }
@@ -6351,10 +6552,12 @@ export class Game {
     }, 7000);
   }
 
-  private controlPlayer() {
+  private controlPlayer(dt: number) {
     const p = this.player;
     const st = this.input.state;
     if (!p || !p.alive) return;
+    // ashore, or grappling a prize: the helmsman stands down
+    if (this.pilot.state !== 'idle' && (this.shore.active || this.boarding.busy)) this.pilot.disengage();
     if (this.shore.active) {
       this.controlShore();
       return;
@@ -6370,13 +6573,28 @@ export class Game {
       this.input.helmMode = this.captain.atHelm;
       this.captain.spyWanted = st.spy;
     }
-    if (st.sailDelta) p.sailTarget = clamp(Math.round(p.sailTarget * 3 + st.sailDelta) / 3, 0, 1);
-    if (st.sailSet >= 0) p.sailTarget = clamp(st.sailSet, 0, 3) / 3;
+    // a hand on the wheel (or the touch helm) takes it back from the helmsman
+    if (this.pilot.active && (st.rudder !== 0 || st.steerHeading !== null)) this.stopPilot('You have the helm');
+    if (this.pilot.active && (st.sailDelta || st.sailSet >= 0)) {
+      // under the helmsman the captain still sets the canvas he cruises under; furling it all stops her
+      let c = this.pilot.cruise;
+      if (st.sailDelta) c = clamp(Math.round(c * 3 + st.sailDelta) / 3, 0, 1);
+      if (st.sailSet >= 0) c = clamp(st.sailSet, 0, 3) / 3;
+      if (c > 0) this.pilot.cruise = p.sailTarget = c;
+      else {
+        this.stopPilot('Sails furled');
+        p.sailTarget = 0;
+      }
+    } else {
+      if (st.sailDelta) p.sailTarget = clamp(Math.round(p.sailTarget * 3 + st.sailDelta) / 3, 0, 1);
+      if (st.sailSet >= 0) p.sailTarget = clamp(st.sailSet, 0, 3) / 3;
+    }
     // the touch helm only steers: the sails stay wherever the lever (or W / S) left them
     if (st.steerHeading !== null && !this.fpv) {
       p.rudder = clamp(angleDelta(p.heading, st.steerHeading) * 2.4, -1, 1);
       this.input.helmShow(p.heading, st.steerHeading);
     } else p.rudder = st.rudder;
+    if (this.pilot.state !== 'idle') this.steerPilot(p, dt);
     if (st.ammoPick >= 0) this.selectAmmo(AMMO_ORDER[st.ammoPick]);
     if (st.ammoNext) this.cycleAmmo();
     if (st.fleet) this.cycleOrder();
@@ -6482,8 +6700,10 @@ export class Game {
 
     P.begin('Input & helm', 'sim');
     this.input.poll();
+    // docked, sunk, back in harbour: the helmsman's watch is over
+    if (this.pilot.state !== 'idle' && this.state !== 'playing' && this.state !== 'paused') this.pilot.disengage();
     if (this.state === 'playing') {
-      this.controlPlayer();
+      this.controlPlayer(dt);
       this.voyageTime += dt;
       const pl = this.player;
       if (pl) this.log.metres += Math.abs(pl.speed) * dt;
@@ -6776,6 +6996,8 @@ export class Game {
     P.begin('HUD, minimap & chart', 'ui');
     if (p && (this.state === 'playing' || this.state === 'paused') && !this.photo.active) {
       this.ui.updateHud(p, this.discovered.size, this.terrain.islands.length);
+      const hv = this.pilot.view(p);
+      this.ui.helmHud.set(hv && { name: hv.target.name, left: hv.left, done: hv.done, eta: hv.eta, how: hv.how, arrived: hv.arrived }, p.rudder, realDt);
       this.ui.updateGunnery(this.gunnery.sides, p.alive ? this.gunnery.autoSide(p) : null);
       this.syncFw();
       this.ui.updateAmmo(p.ammo, this.ammoStock, this.fwType);
@@ -6800,7 +7022,7 @@ export class Game {
       if (this.mapT <= 0) {
         this.mapT = 0.05;
         const camps = this.shore.camps.filter((c) => !c.fort).map((c) => ({ x: c.site.x, z: c.site.z, routed: c.routed }));
-        this.ui.drawMap(p, hulls, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks(), this.hzMarks);
+        this.ui.drawMap(p, hulls, this.loot.all(), this.terrain.islands, this.discovered, this.tradePorts.ports, camps, ashore && cap ? { x: cap.x, z: cap.z, yaw: cap.yaw } : null, this.waypoints.pins, this.maps.target, this.fortMarks(), this.hzMarks, this.pilot.route(p.pos));
       }
       this.ui.updatePins(this.waypoints.pins.map((pin) => ({ ...pin, y: Math.max(0, this.terrain.heightAt(pin.x, pin.z)) })), ashore && cap ? cap : p.pos, this.rig.camera, innerWidth, innerHeight);
       if (ashore) this.updateShoreHud(p);
@@ -6808,6 +7030,16 @@ export class Game {
       if (tx) this.mapX.set(tx.x, Math.max(0, this.terrain.heightAt(tx.x, tx.z)), tx.z);
       this.mapUi.setChip(this.maps.state, ashore && cap ? cap : p.pos, tx ? this.mapX : null, this.rig.camera);
       this.mapUi.setDig(ashore ? this.shore.digView : null);
+    }
+    if (p && this.chartOpen && this.chartSel) {
+      // the card's distance runs down as she sails, and its button follows the helmsman
+      const sel = this.chartSel;
+      if (sel.pin && !this.waypoints.pins.includes(sel.pin)) this.closeChartCard();
+      else {
+        this.ui.chartCard.setSub(this.cardSub(sel.target));
+        const b = this.boundFor(sel.target);
+        if (b !== sel.card.bound) this.ui.chartCard.setBound((sel.card.bound = b));
+      }
     }
     if (p && this.chartOpen) {
       this.ui.drawChart({
@@ -6817,6 +7049,8 @@ export class Game {
         treasure: this.maps.target,
         forts: this.fortMarks().map((f, i) => ({ ...f, name: this.forts.forts[i].name })),
         hazards: this.hzMarks,
+        route: this.pilot.route(p.pos),
+        selected: this.chartSel && { x: this.chartSel.target.x, z: this.chartSel.target.z, css: this.chartSel.css },
         charted: new Set(Object.keys(this.charts.state.seen)),
         windX: w.wind.dirX, windZ: w.wind.dirZ, time: performance.now() / 1000,
       });

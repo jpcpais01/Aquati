@@ -1,0 +1,436 @@
+/* The helmsman's pill: low in the middle of the screen, dark glass edged in
+   gold, a ship's wheel that turns as he steers and a thread of gold along its
+   foot that fills as the course falls behind her. No backdrop blur (it would
+   re-blur the live sea every frame). Sized off --k like the rest of the HUD. */
+
+.helm-ap {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--mb) + 66px * var(--k));
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--k));
+  max-width: min(calc(420px * var(--k)), calc(100% - var(--ml) - var(--mr) - 24px));
+  padding: calc(6px * var(--k)) calc(6px * var(--k)) calc(8px * var(--k)) calc(7px * var(--k));
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(26, 22, 12, 0.88), rgba(10, 10, 8, 0.86));
+  border: 1px solid rgba(244, 199, 101, 0.42);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36), 0 0 calc(18px * var(--k)) rgba(244, 190, 90, 0.16), inset 0 1px 0 rgba(255, 240, 200, 0.1);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 16px) scale(0.94);
+  transition: opacity 0.4s ease, transform 0.6s var(--spring), bottom 0.45s var(--spring);
+}
+
+.helm-ap.on {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.helm-ap.done {
+  border-color: rgba(255, 220, 140, 0.8);
+}
+
+.helm-ap.flare {
+  animation: apFlare 1.1s ease;
+}
+
+@keyframes apFlare {
+  0% {
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36), 0 0 0 0 rgba(255, 214, 120, 0.7), inset 0 1px 0 rgba(255, 240, 200, 0.1);
+  }
+  35% {
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.36), 0 0 calc(34px * var(--k)) calc(4px * var(--k)) rgba(255, 214, 120, 0.55), inset 0 1px 0 rgba(255, 240, 200, 0.2);
+  }
+}
+
+.ap-wheel {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: max(30px, calc(36px * var(--k)));
+  height: max(30px, calc(36px * var(--k)));
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 220, 140, 0.2), rgba(255, 200, 100, 0.04) 70%);
+  color: var(--gold);
+}
+
+.ap-wheel span {
+  display: block;
+  width: 82%;
+  height: 82%;
+  filter: drop-shadow(0 0 4px rgba(255, 196, 90, 0.5));
+  will-change: transform;
+}
+
+.ap-wheel svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ap-txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.15;
+}
+
+.ap-txt small {
+  font: 700 max(7.5px, calc(8.5px * var(--k))) var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.ap-txt b {
+  display: flex;
+  align-items: baseline;
+  gap: calc(7px * var(--k));
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ap-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: 700 max(11.5px, calc(13.5px * var(--k))) var(--serif);
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.ap-dist {
+  flex: none;
+  font: 600 max(10px, calc(11px * var(--k))) var(--sans);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.ap-how {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: italic 500 max(9.5px, calc(10.5px * var(--k))) Georgia, serif;
+  color: rgba(255, 232, 190, 0.78);
+}
+
+.ap-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: max(30px, calc(34px * var(--k)));
+  height: max(30px, calc(34px * var(--k)));
+  margin-left: calc(4px * var(--k));
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--ink-2);
+  pointer-events: auto;
+  touch-action: manipulation;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.2s var(--ease);
+}
+
+.ap-x svg {
+  width: 52%;
+  height: 52%;
+}
+
+.ap-x:hover {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--ink);
+}
+
+.ap-x:active {
+  transform: scale(0.9);
+}
+
+.helm-ap.done .ap-x {
+  visibility: hidden;
+}
+
+/* the course behind her: a gold thread along the pill's foot */
+.ap-bar {
+  position: absolute;
+  left: calc(20px * var(--k));
+  right: calc(20px * var(--k));
+  bottom: 2px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.ap-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(244, 199, 101, 0.5), #ffe3a0);
+  box-shadow: 0 0 6px rgba(255, 214, 120, 0.8);
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  transition: transform 0.5s linear;
+}
+
+/* the dock prompt and the helmsman share the bottom middle: the prompt steps up */
+#hud.ap-on .dock-prompt {
+  bottom: calc(var(--mb) + 160px * var(--k));
+}
+
+#hud.fpv .helm-ap {
+  bottom: calc(var(--mb) + 8px);
+}
+
+#hud.ashore .helm-ap,
+#hud.sunk .helm-ap {
+  display: none;
+}
+
+/* touch: the knots ride above the sail lever, so the bottom middle is free */
+.is-touch .helm-ap {
+  bottom: var(--mb);
+}
+
+.is-touch #hud.ap-on .dock-prompt {
+  bottom: calc(var(--mb) + 58px * var(--k));
+}
+
+@media (orientation: portrait) and (max-width: 600px) {
+  .is-touch .helm-ap {
+    bottom: calc(var(--mb) + 160px * var(--kt, 1));
+    max-width: calc(100% - var(--ml) - var(--mr) - 16px);
+  }
+
+  .is-touch #hud.ap-on .dock-prompt {
+    bottom: calc(var(--mb) + 160px * var(--kt, 1) + 58px * var(--k));
+  }
+}
+
+/* ------------------------------------------------------------------ chart card */
+
+/* Over the place you tapped on the sea chart: its name, how far, and the word to sail there. */
+.chart-card {
+  --cc: #f4c765;
+  --tail: 50%;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  width: max-content;
+  min-width: 190px;
+  max-width: min(280px, calc(100% - 20px));
+  padding: 12px 14px 12px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, rgba(14, 30, 40, 0.96), rgba(6, 16, 24, 0.95));
+  border: 1px solid color-mix(in srgb, var(--cc) 38%, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 0 22px color-mix(in srgb, var(--cc) 14%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  color: var(--ink);
+  transform-origin: var(--tail) 100%;
+}
+
+.chart-card.below {
+  transform-origin: var(--tail) 0;
+}
+
+.chart-card.on {
+  display: flex;
+  animation: ccIn 0.32s var(--spring);
+}
+
+.chart-card.hop {
+  animation: ccHop 0.3s var(--spring);
+}
+
+@keyframes ccIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+}
+
+@keyframes ccHop {
+  from {
+    opacity: 0.4;
+    transform: scale(0.94);
+  }
+}
+
+/* the little tail pointing down at the mark (or up, when the card sits below it) */
+.chart-card::after {
+  content: '';
+  position: absolute;
+  left: var(--tail);
+  bottom: -7px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  background: rgba(6, 16, 24, 0.95);
+  border-right: 1px solid color-mix(in srgb, var(--cc) 38%, rgba(255, 255, 255, 0.1));
+  border-bottom: 1px solid color-mix(in srgb, var(--cc) 38%, rgba(255, 255, 255, 0.1));
+  transform: rotate(45deg);
+}
+
+.chart-card.below::after {
+  top: -7px;
+  bottom: auto;
+  background: rgba(14, 30, 40, 0.96);
+  transform: rotate(225deg);
+}
+
+.cc-x {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.cc-x svg {
+  width: 15px;
+  height: 15px;
+}
+
+.cc-x:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.cc-kick {
+  padding-right: 22px;
+  font: 700 9.5px var(--sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cc);
+}
+
+.cc-name {
+  padding-right: 18px;
+  font: 700 16px var(--serif);
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+
+.cc-sub {
+  font: 600 11.5px var(--sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+
+.cc-warn {
+  font: italic 500 11.5px Georgia, serif;
+  color: #ffb59a;
+}
+
+.cc-warn:empty {
+  display: none;
+}
+
+.cc-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.cc-go,
+.cc-lift {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px 0 11px;
+  border-radius: 999px;
+  font: 700 13px var(--sans);
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.18s var(--ease), filter 0.2s, background 0.2s;
+}
+
+.cc-go {
+  flex: 1;
+  border: 0;
+  background: var(--gold-grad);
+  color: var(--gold-ink);
+  box-shadow: 0 6px 18px rgba(240, 180, 70, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.cc-go:hover {
+  filter: brightness(1.06);
+}
+
+.cc-go:active,
+.cc-lift:active {
+  transform: scale(0.95);
+}
+
+.cc-ico {
+  display: grid;
+  width: 18px;
+  height: 18px;
+}
+
+.cc-ico svg,
+.cc-lift svg {
+  width: 100%;
+  height: 100%;
+}
+
+.chart-card.bound .cc-go {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.chart-card.bound .cc-ico {
+  animation: ccRock 2.4s ease-in-out infinite;
+}
+
+@keyframes ccRock {
+  50% {
+    transform: rotate(-8deg) translateY(-1px);
+  }
+}
+
+.cc-lift {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-2);
+}
+
+.cc-lift svg {
+  width: 16px;
+  height: 16px;
+}
+
+.cc-lift:hover {
+  background: rgba(255, 255, 255, 0.13);
+  color: var(--ink);
+}
+
+.cc-lift[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .helm-ap.flare,
+  .chart-card.on,
+  .chart-card.hop,
+  .chart-card.bound .cc-ico {
+    animation: none;
+  }
+}

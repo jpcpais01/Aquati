@@ -8,7 +8,8 @@ import { HOLD_ROOM } from '../game/treasure';
 import { WORLD_SIZE, Island } from '../world/terrain';
 import type { Seas } from '../world/seas';
 import { HIGH_SEAS_R, nearestRegion, REGIONS } from '../world/regions';
-import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark, fortMark, vortexMark, reefMark, HazardMark } from './chart';
+import { SeaChart, ChartScene, portMark, pinMark, fmtDist, xMark, fortMark, vortexMark, reefMark, HazardMark, drawRoute } from './chart';
+import { ChartCard, HelmHud } from './helm';
 import { PIN_COLORS } from '../game/waypoints';
 import { compassBezel, crest, ICONS, STAT_ICONS, STAT_LABELS, icon, shipSilhouette } from './art';
 import { loadSettings, saveSettings, Settings, VolumeKey } from './settings';
@@ -77,6 +78,14 @@ export class UI {
   /** Each archipelago's minimap, and the corner of its square. */
   private mapImages: { img: HTMLCanvasElement; x0: number; z0: number }[] = [];
   readonly chart = new SeaChart($<HTMLCanvasElement>('chart-canvas'));
+  /** The card over whatever was last tapped on the chart. */
+  readonly chartCard = new ChartCard(document.querySelector('#chart .chart-frame') as HTMLElement);
+  /** The helmsman's pill on the HUD. */
+  readonly helmHud = new HelmHud($('hud'));
+  /** When the chart was last touched (performance.now ms): a hand on it keeps it open. */
+  chartPoked = 0;
+  /** Where the chart card stands, in the world. */
+  private cardAt: { x: number; z: number } | null = null;
   private chartPlayer: Ship | null = null;
   private barEls = new Map<number, HTMLDivElement>();
   private pinEls = new Map<number, HTMLDivElement>();
@@ -259,6 +268,7 @@ export class UI {
     $('chart-close').addEventListener('click', () => this.onMap(false));
     $('chart-center').addEventListener('click', () => this.chartPlayer && this.chart.recenter(this.chartPlayer));
     this.chart.onTap = (x, z, pick) => this.onPin(x, z, pick);
+    $('chart-canvas').addEventListener('pointerdown', () => (this.chartPoked = performance.now()));
     $('chart-clear').addEventListener('click', () => this.onClearPins());
     // tapping the dimmed sea around the chart closes it too
     $('chart').addEventListener('click', (e) => {
@@ -819,6 +829,23 @@ export class UI {
   showChart(on: boolean, player?: Ship) {
     $('chart').classList.toggle('hidden', !on);
     if (on && player) this.chart.open(player);
+    if (!on) this.hideChartCard();
+  }
+
+  /** Opens the chart's card over a place in the world. */
+  showChartCard(at: { x: number; z: number }, info: Parameters<ChartCard['show']>[0]) {
+    this.cardAt = at;
+    this.chartCard.show(info);
+  }
+
+  hideChartCard() {
+    this.cardAt = null;
+    this.chartCard.hide();
+  }
+
+  /** The world spot the chart's card stands over, while it's open. */
+  get chartCardAt() {
+    return this.cardAt;
   }
 
   drawChart(sc: ChartScene) {
@@ -831,6 +858,11 @@ export class UI {
     }
     $('chart-isles').textContent = `${sc.discovered.size} / ${sc.islands.length} isles charted`;
     this.chart.draw(sc);
+    if (this.cardAt) {
+      const [x, y] = this.chart.toScreen(this.cardAt.x, this.cardAt.z);
+      const [w, h] = this.chart.size;
+      this.chartCard.place(x, y, w, h);
+    }
   }
 
   /** She's lost: fade the HUD and letterbox the view while the camera follows her down. */
@@ -1601,6 +1633,8 @@ export class UI {
     treasure: { x: number; z: number } | null = null,
     forts: { x: number; z: number; ours: boolean; quiet: boolean }[] = [],
     hazards: HazardMark[] = [],
+    /** The helmsman's course, from her bow to the goal. */
+    route: { x: number; z: number }[] | null = null,
   ) {
     const g = this.map;
     const S = this.mapCanvas.width;
@@ -1758,6 +1792,8 @@ export class UI {
         vortexMark(g, x, y, Math.max(11, Math.min(30, rr * 0.5)), now * 0.8, hz.dir);
       } else reefMark(g, x, y, 9);
     }
+    // the helmsman's course, flowing on ahead of her
+    if (route && route.length > 1 && !walker) drawRoute(g, route.map((q) => toMap(q.x, q.z)), now, 1.5);
     if (treasure) {
       const [x, y] = toMap(treasure.x, treasure.z);
       const r = S / 2 - 16;
