@@ -138,6 +138,8 @@ export class Vegetation {
    */
   detail = Infinity;
   private cullDetail = Infinity;
+  /** Frustum margin (m) of the last cull (see MARGIN; wider from high up). */
+  private cullMargin = MARGIN;
   /** Trunks and boulders people on foot walk round, bucketed on an 8 m grid (see solidsNear). */
   private solids = new Map<number, { x: number; z: number; r: number }[]>();
   // the view the batches were last culled for
@@ -767,9 +769,14 @@ export class Vegetation {
     camera.updateMatrixWorld();
     camera.getWorldDirection(_dir);
     const pe = camera.projectionMatrix.elements;
+    // the margin the plants are culled with grows with the camera's height: up
+    // high a few metres of glide is nothing on screen, and a zoom-out or a
+    // battle's pull-back moves the camera several metres every frame, each of
+    // which would otherwise re-cull and re-upload every plant in view
+    const hold = this.cullMargin * 0.29;
     if (
       !swapped &&
-      cam.distanceToSquared(this.cullPos) < 16 &&
+      cam.distanceToSquared(this.cullPos) < hold * hold &&
       _dir.dot(this.cullDir) > 0.99985 &&
       toSun.dot(this.cullLight) > 0.9998 &&
       // (the follow camera's lens breathes by hundredths of a degree every
@@ -779,6 +786,7 @@ export class Vegetation {
     )
       return;
     this.cullPos.copy(cam);
+    this.cullMargin = MARGIN + Math.max(0, cam.y - 60) * 0.06;
     this.cullBox.copy(_shadowBox);
     this.cullDir.copy(_dir);
     this.cullLight.copy(toSun);
@@ -811,7 +819,7 @@ export class Vegetation {
       const n = pl.normal;
       const d0 = n.x * x + n.y * y + n.z * z + pl.constant;
       const d1 = d0 + n.x * dx + n.y * dy + n.z * dz;
-      if (Math.max(d0, d1) < -r - MARGIN) return false;
+      if (Math.max(d0, d1) < -r - this.cullMargin) return false;
     }
     return true;
   }
@@ -824,7 +832,8 @@ export class Vegetation {
   private cullBatches(list: Batch[], island: boolean, sx: number, sy: number, sz: number, cam: THREE.Vector3, pxK: number, cover: boolean, detail: number) {
     for (const b of list) {
       const { sph, shown, mat, col, role, lvl } = b;
-      if (role === 'near' && lvl) {
+      // (an island out of view keeps its levels until it's back: nothing reads them meanwhile)
+      if (role === 'near' && lvl && island) {
         // each plant's level by its size on screen: the light mesh once its
         // radius is under LOD_PX pixels, back to the detailed one a little above
         for (let i = 0; i < b.n; i++) {

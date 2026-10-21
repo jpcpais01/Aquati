@@ -10,7 +10,7 @@ import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
 import { freezeStatic, sealStatic, skipWhenHidden } from '../render/staticScene';
-import { initLod } from '../render/lod';
+import { initLod, lodUploads } from '../render/lod';
 import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDrawSliced } from '../render/warmup';
 import { installSoftShadows, updateSoftShadows } from '../render/softShadows';
@@ -615,6 +615,8 @@ export class Game {
 
     // the key light: the sun by day, the moon by night (see world/atmosphere.ts)
     this.preload = new BufferPreloader(this.renderer);
+    // every level of detail the worker hands back goes up ahead of its first draw
+    lodUploads.sink = (g) => this.preload.addLevel(g);
     this.sun = new THREE.DirectionalLight(0xffffff, 1);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(this.quality.shadowSize, this.quality.shadowSize);

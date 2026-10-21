@@ -159,13 +159,25 @@ export class BufferPreloader {
   private scene = new THREE.Scene();
   private camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private target = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false });
-  private proxy = new THREE.Mesh(undefined, undefined);
+  private proxies: THREE.Mesh[] = [];
   private queue: THREE.BufferGeometry[] = [];
+  /**
+   * Levels of detail (see render/lod.ts lodUploads): each only a small index
+   * over vertices already resident, so several go up in one draw, after
+   * anything in the main queue.
+   */
+  private low: THREE.BufferGeometry[] = [];
+  private lowSet = new Set<THREE.BufferGeometry>();
 
   constructor(private renderer: THREE.WebGLRenderer) {
     this.scene.overrideMaterial = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false });
-    this.proxy.frustumCulled = false;
-    this.scene.add(this.proxy);
+    for (let i = 0; i < LOW_BATCH; i++) {
+      const proxy = new THREE.Mesh(undefined, undefined);
+      proxy.frustumCulled = false;
+      proxy.visible = false;
+      this.proxies.push(proxy);
+      this.scene.add(proxy);
+    }
   }
 
   /** Queues every geometry under `root`. */
@@ -175,6 +187,36 @@ export class BufferPreloader {
       if (g && !this.queue.includes(g)) this.queue.push(g);
     });
   }
+
+  /** Queues a level of detail's index (low priority); it leaves the queue if disposed first. */
+  addLevel(g: THREE.BufferGeometry) {
+    if (this.lowSet.has(g)) return;
+    this.lowSet.add(g);
+    this.low.push(g);
+    g.addEventListener('dispose', this.onDispose);
+    // the mesh it simplifies may go first (a hull cut up or sunk): its vertex
+    // buffers are freed then, and drawing the level would only upload them again
+    const src = g.userData.lodOf as THREE.BufferGeometry | undefined;
+    if (src && !this.watched.has(src)) {
+      this.watched.add(src);
+      src.addEventListener('dispose', this.onSourceGone);
+    }
+  }
+
+  private watched = new WeakSet<THREE.BufferGeometry>();
+  private gone = new WeakSet<THREE.BufferGeometry>();
+  private onSourceGone = (e: { target: THREE.BufferGeometry }) => {
+    e.target.removeEventListener('dispose', this.onSourceGone);
+    this.gone.add(e.target);
+  };
+
+  private onDispose = (e: { target: THREE.BufferGeometry }) => {
+    const g = e.target;
+    g.removeEventListener('dispose', this.onDispose);
+    if (!this.lowSet.delete(g)) return;
+    const i = this.low.indexOf(g);
+    if (i >= 0) this.low.splice(i, 1);
+  };
 
   /** Forgets whatever of `root` is still queued (its ship is gone). */
   drop(root: THREE.Object3D) {
@@ -195,21 +237,45 @@ export class BufferPreloader {
 
   /** Geometries still waiting to be uploaded. */
   get pending() {
-    return this.queue.length;
+    return this.queue.length + this.low.length;
   }
 
-  /** Uploads the next queued geometry; `force` empties the queue (behind the loading screen). */
+  /** Uploads the next queued geometry (or a few queued levels); `force` empties the queues (behind the loading screen). */
   step(force = false) {
     do {
+      let n = 0;
       const g = this.queue.shift();
-      if (!g) return;
-      if (!g.getAttribute('position')) continue;
+      if (g) {
+        if (g.getAttribute('position')) this.proxies[n++].geometry = g;
+      } else {
+        while (n < LOW_BATCH && this.low.length) {
+          const l = this.low.shift()!;
+          this.lowSet.delete(l);
+          l.removeEventListener('dispose', this.onDispose);
+          const src = l.userData.lodOf as THREE.BufferGeometry | undefined;
+          if (l.getAttribute('position') && !(src && this.gone.has(src))) this.proxies[n++].geometry = l;
+        }
+      }
+      if (!n) {
+        if (!this.pending) return;
+        continue;
+      }
+      for (let i = 0; i < LOW_BATCH; i++) this.proxies[i].visible = i < n;
       const r = this.renderer;
       const prev = r.getRenderTarget();
-      this.proxy.geometry = g;
       r.setRenderTarget(this.target);
       r.render(this.scene, this.camera);
       r.setRenderTarget(prev);
-    } while (force);
+      for (let i = 0; i < n; i++) {
+        this.proxies[i].visible = false;
+        // let go, so a level dropped later can be collected
+        this.proxies[i].geometry = EMPTY;
+      }
+      if (!force) return;
+    } while (this.pending);
   }
 }
+
+/** How many levels of detail one upload step sends up together. */
+const LOW_BATCH = 6;
+const EMPTY = new THREE.BufferGeometry();

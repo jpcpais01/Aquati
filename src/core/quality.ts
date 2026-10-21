@@ -77,6 +77,8 @@ export class ResolutionScaler {
   private cooldown = 2;
   private avg = 16;
   private calm = 0;
+  /** Slow windows in a row. */
+  private slowRun = 0;
   /** A scale that proved too much recently, and how long it stays off limits. */
   private ceiling = 1;
   private ceilingT = 0;
@@ -115,7 +117,13 @@ export class ResolutionScaler {
       return changed;
     }
     if (this.cooldown > 0) return false;
-    const slow = missRate > 0.1 && !cpuBound;
+    // one bad window is a passing stutter (a zoom-out, a battle's first
+    // broadside, a hull breaking up): dropping the scale would rebuild every
+    // render target on top of it, a second hitch for nothing. Only a slowdown
+    // that holds through two windows running costs pixels.
+    const missing = missRate > 0.1 && !cpuBound;
+    this.slowRun = missing ? this.slowRun + 1 : 0;
+    const slow = this.slowRun >= 2;
     this.pressure = slow && this.scale <= 0.56 ? this.pressure + 1 : 0;
     let next = this.scale;
     if (slow) {
@@ -126,14 +134,16 @@ export class ResolutionScaler {
       }
       next = Math.max(0.55, this.scale - (missRate > 0.35 ? 0.12 : 0.07));
       this.calm = 0;
-    } else if (missRate < 0.02 && this.scale < Math.min(1, this.ceiling)) {
+    } else if (!missing && missRate < 0.02 && this.scale < Math.min(1, this.ceiling)) {
       if (++this.calm >= 4) next = Math.min(1, this.ceiling, this.scale + 0.05);
     } else this.calm = 0;
-    this.raisedAt = -1;
+    // (a raise is only cleared once a window has held it: the first bad one after it may yet be confirmed)
+    if (!missing) this.raisedAt = -1;
     if (next !== this.scale) {
       if (next > this.scale) this.raisedAt = 0;
       this.scale = Math.round(next * 100) / 100;
       this.calm = 0;
+      this.slowRun = 0;
       this.cooldown = 2.5;
       return true;
     }
