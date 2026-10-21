@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T21:00Z',
+    entries: [
+      {
+        title: 'Shores O’ Fortune has a home page',
+        notes: [
+          'The game now has its own landing page to share with friends: a tour of the three ships, both archipelagos, the living sky and the adventures waiting at sea, every picture a real moment from the game.',
+          'Pick a ship to see her stats, drag the sun across the sky to watch the same scene go from morning to golden hour, moonlight and storm, and flip through postcards from the islands.',
+          'Play now opens the game straight in your browser. Download for Android links to the newest Android app as soon as it is released.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T20:00Z',
     entries: [
       {
