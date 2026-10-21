@@ -29,7 +29,7 @@ export default defineConfig({
       // Registered by hand in main.ts: pages are network-first, so a new worker
       // taking over never needs to reload a page that is already current.
       injectRegister: false,
-      includeAssets: ['favicon.ico', 'icons/icon.svg', 'icons/apple-touch-icon.png'],
+      includeAssets: ['favicon.ico', 'icons/apple-touch-icon.png'],
       manifest: {
         name: 'Shores O’ Fortune',
         short_name: 'Fortune',
@@ -43,7 +43,6 @@ export default defineConfig({
         icons: [
           { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-          { src: '/icons/icon.svg', sizes: 'any', type: 'image/svg+xml' },
           { src: '/icons/icon-maskable-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
           { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
