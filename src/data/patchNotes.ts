@@ -31,6 +31,26 @@ export const PATCH_NOTES: PatchGroup[] = [
           'The shape of the waves is now worked out for every pixel on screen, so the sea is never shaded from the grid underneath. Wave detail now fades by how the waves look on screen at the normal camera height, not by raw distance. Zoomed all the way out, the sea keeps the same waves, ripples and glitter it has up close, just smaller. The grid stays light, so this costs no extra triangles.',
         ],
       },
+      {
+        title: 'A new app icon',
+        notes: [
+          'The game has a new icon: your brig seen from above, gliding over a turquoise reef beside a sandy beach. It was rendered by the game itself with the real ship, water and reef, so it looks just like the game.',
+          'It appears on your home screen, in the app switcher and on the browser tab. If you installed the game earlier, your phone may take a little while to show the new icon.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-21T21:00Z',
+    entries: [
+      {
+        title: 'Shores O’ Fortune has a home page',
+        notes: [
+          'The game now has its own landing page to share with friends: a tour of the three ships, both archipelagos, the living sky and the adventures waiting at sea, every picture a real moment from the game.',
+          'Pick a ship to see her stats, drag the sun across the sky to watch the same scene go from morning to golden hour, moonlight and storm, and flip through postcards from the islands.',
+          'Play now opens the game straight in your browser. Download for Android links to the newest Android app as soon as it is released.',
+        ],
+      },
     ],
   },
   {
