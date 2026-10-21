@@ -5300,7 +5300,8 @@ export class Game {
     const az = k.az + T * 0.07 * smoothstep(0, 2.5, T);
     const cp = this.cinePos.set(c.x + Math.sin(az) * Math.cos(elev) * dist, Math.sin(elev) * dist + 1.5, c.z + Math.cos(az) * Math.cos(elev) * dist);
     cp.y = Math.max(cp.y, w.waterHeight(cp.x, cp.z) + 1.6);
-    this.cineLook.set(c.x, lerp(lerp(4, L * 0.3, settle), -6, dive), c.z);
+    // down a maelstrom's funnel she lies far below the open sea: look down into it, at her
+    this.cineLook.set(c.x, lerp(lerp(4, L * 0.3, settle), -6, dive) - w.funnelAt(c.x, c.z), c.z);
     let fov = lerp(lerp(34, 29, settle), 44, dive);
     let roll = 0;
     if (k.deep) {
@@ -5546,13 +5547,15 @@ export class Game {
       const grip = clamp((0.95 - vs.u) / 0.85, 0, 1);
       state = 'caught';
       const out = hz.escape(p.pos.x, p.pos.z);
+      // the throat dragging her under: the gauge is how close the sea is to her rail
+      const under = p.drawn > 0.02;
       v = {
         kind: 'vortex',
-        level: free ? 'warn' : 'danger',
-        title: throat ? 'In the maelstrom\'s throat!' : free ? 'Breaking free' : 'Caught in the maelstrom',
-        sub: throat ? 'Her timbers are giving way · run before the wind!' : free ? `${vs.m.name} · hold your course` : `${vs.m.name} · sail out with the wind`,
-        gauge: grip,
-        spin: lerp(3.2, 0.7, grip),
+        level: free && !under ? 'warn' : 'danger',
+        title: under ? (p.drawn > 0.6 ? 'She\'s going under!' : 'The throat has her!') : throat ? 'In the maelstrom\'s throat!' : free ? 'Breaking free' : 'Caught in the maelstrom',
+        sub: under ? 'The sea is dragging her down · crowd on sail and claw out!' : throat ? 'Her timbers are giving way · run before the wind!' : free ? `${vs.m.name} · hold your course` : `${vs.m.name} · sail out with the wind`,
+        gauge: under ? Math.max(grip, p.drawn) : grip,
+        spin: lerp(3.2, 0.7, grip) * (1 - p.drawn * 0.6),
         arrow: out === null ? null : arrowFor(out),
       };
     } else if (p.scrape > 0.08) {

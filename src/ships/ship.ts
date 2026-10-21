@@ -194,6 +194,13 @@ export class Ship {
   readonly current = new THREE.Vector2();
   /** How fast the turning water swings her head round (rad/s), likewise. */
   spin = 0;
+  /**
+   * How far a maelstrom's throat has dragged her under (0 riding its wall ..
+   * 1 the sea pouring over her rail, when she goes), set by the hazards.
+   */
+  drawn = 0;
+  /** Swallowed by a maelstrom: her wreck goes on down its throat into the dark, not lingering on the surface. */
+  swallowed = false;
   /** How hard her keel is grinding on coral (0 clear .. 1 hard aground), eased. */
   scrape = 0;
   /** Water over the coral where she last struck it (m). */
@@ -330,8 +337,14 @@ export class Ship {
     this.pos.set(x, 0, z);
     this.heading = heading;
     this.speed = 0;
+    this.drawn = 0;
     this.root.position.copy(this.pos);
     this.root.rotation.y = heading;
+  }
+
+  /** How far below her riding height a maelstrom has dragged her (m). */
+  drawnSink() {
+    return Math.pow(Math.min(this.drawn, 1.2), 1.6) * (this.cls.freeboard + this.cls.draft * 0.35);
   }
 
   /** How hard the yards and booms are swinging (crews haul on the braces while they do). */
@@ -495,6 +508,13 @@ export class Ship {
       // no blast: the curse breaks, and she comes apart into the mist she came from
       world.particles.exorcism(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), this.cls.length);
       world.audio.exorcise(vol, pan, d);
+    } else if (this.swallowed) {
+      // no blast: the sea closes over her rail and she goes, in a burst of white water
+      for (let i = 0; i < 3; i++) {
+        const a = (i / 3 - 0.33) * this.cls.length;
+        world.particles.splash(new THREE.Vector3(this.pos.x + Math.sin(this.heading) * a, this.root.position.y + 0.5, this.pos.z + Math.cos(this.heading) * a), 0.9 + i * 0.2);
+      }
+      world.audio.splash(vol, pan, d);
     } else {
       world.particles.explosion(this.pos.clone().setY(this.model.shape.mainDeckY(0.5)), 0.6 + this.cls.length / 40);
       world.audio.explosion(vol, pan, d);
@@ -681,6 +701,22 @@ export class Ship {
       this.dmg.update(dt, world);
       sinkY = -this.dmg.lowered;
       targetRoll += this.dmg.list;
+      if (this.drawn > 0) {
+        // a maelstrom's throat dragging her down: settling by the head, her
+        // timbers shuddering, until the sea comes in over the rail
+        const d = this.drawn;
+        sinkY -= this.drawnSink();
+        pitchTarget += d * d * 0.22;
+        targetRoll += Math.sin(world.time * 7.3 + this.pos.x) * 0.03 * d + Math.sin(world.time * 2.1) * 0.05 * d;
+        if (Math.random() < dt * 6 * d) {
+          // green water pouring in over her gunwales
+          const a = (Math.random() - 0.5) * c.length * 0.8;
+          const side = Math.random() < 0.5 ? 1 : -1;
+          const x = this.pos.x + fx * a + port.x * side * c.beam * 0.5;
+          const z = this.pos.z + fz * a + port.z * side * c.beam * 0.5;
+          world.particles.splash(_fp.set(x, world.waterHeight(x, z), z), 0.3 + d * 0.35);
+        }
+      }
     }
     this.swellHeave += (targetHeave * swell - this.swellHeave) * resp;
     this.heave = this.swellHeave - funnel;

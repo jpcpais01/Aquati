@@ -951,6 +951,8 @@ export class Ocean {
           float vxDark = 0.0;
           float vxEye = 0.0;
           float vxMilk = 0.0;
+          float vxGlass = 0.0;
+          float vxStreak = 0.5;
           for (int i = 0; i < ${VORTEX_N}; i++) {
             vec4 v4 = uVortex[i];
             float k = abs(v4.w);
@@ -1002,6 +1004,7 @@ export class Ocean {
             // the churning collar round the throat
             float ring = exp(-pow((u - 0.115) / 0.045, 2.0)) * k;
             cov = max(cov, ring * (0.3 + 0.4 * streak));
+            if (cov > vxCover) vxStreak = streak;
             vxCover = max(vxCover, clamp(cov, 0.0, 0.97));
             // down the steep walls, white streaks drawn out along the flow
             vxWall = max(vxWall, k * smoothstep(0.58, 0.85, streak + fil * 0.25) * smoothstep(0.02, 0.07, u) * (1.0 - smoothstep(0.3, 0.55, u)));
@@ -1014,6 +1017,9 @@ export class Ocean {
             vxEye = max(vxEye, k * (1.0 - smoothstep(0.0, 0.07, u)));
             // churned to milk where the walls steepen: water beaten full of air
             vxMilk = max(vxMilk, k * smoothstep(0.07, 0.14, u) * (1.0 - smoothstep(0.16, 0.5, u)) * (0.6 + 0.4 * streak));
+            // the steep upper walls are a thin sheet of racing water: the sun shines
+            // through them jade green, brightest along the ridges riding round
+            vxGlass = max(vxGlass, k * smoothstep(0.08, 0.17, u) * (1.0 - smoothstep(0.28, 0.6, u)) * (0.55 + 0.45 * streak) * (0.75 + 0.25 * sin(armPh)));
           }
           vec3 Ng = normalize(N + vec3(gustRip.x, 0.0, gustRip.y) * 0.5);
 
@@ -1109,7 +1115,10 @@ export class Ocean {
 
           // the funnel's walls fall away into shadow, its throat into black water
           if (vxDark > 0.001) {
-            body *= 1.0 - vxDark * 0.25;
+            // the bowl deepens from the open sea's sapphire to a dark bottle green
+            body = mix(body * (1.0 - vxDark * 0.2), vec3(0.006, 0.07, 0.075) * light, vxDark * vxDark * 0.4);
+            float vxSteep = smoothstep(0.05, 0.4, 1.0 - normalize(vNormal).y);
+            body += vec3(0.03, 0.34, 0.27) * vxGlass * vxSteep * (0.45 + sssView * 1.5) * light * 0.85;
             body = mix(body, vec3(0.13, 0.24, 0.25) * light, clamp(vxMilk * 0.5, 0.0, 0.45));
             body = mix(body, vec3(0.002, 0.018, 0.028) * light, clamp(vxEye, 0.0, 0.92));
           }
@@ -1262,7 +1271,9 @@ export class Ocean {
             // the bubble web lies flat on the sea; on the funnel's walls it would
             // smear down the slope, so there the streaks take over
             float steep = smoothstep(0.1, 0.35, 1.0 - normalize(vNormal).y);
-            vxFoam = mix(foamCut(fv, vxCover, fp) * 0.95, vxWall * 0.8, steep);
+            // torn along the flow as well as by the bubbles, so the arms read as racing water
+            float vxWeb = mix(foamCut(fv, vxCover, fp), clamp((vxStreak - 1.0 + vxCover) * 4.0, 0.0, 1.0) * vxCover, 0.35);
+            vxFoam = mix(vxWeb * 0.95, vxWall * 0.8, steep);
             foam += vxFoam;
           }
           // the swell trips over an open-sea reef: each crest stands up and spills

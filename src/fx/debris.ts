@@ -59,6 +59,7 @@ export interface Pusher {
 
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
+const _flow = new THREE.Vector2();
 const _q2 = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -287,6 +288,14 @@ export class Debris {
         p.pos.x += p.vel.x * dt;
         p.pos.z += p.vel.z * dt;
         if (p.age > p.life) p.sink += dt * 0.35;
+        // a maelstrom sweeps flotsam round and down: what reaches its eye goes under
+        const hz = world.hazards;
+        if (hz && hz.flowAt(p.pos.x, p.pos.z, _flow) !== 0) {
+          p.pos.x += _flow.x * dt * 0.9;
+          p.pos.z += _flow.y * dt * 0.9;
+          const eye = hz.eyeAt(p.pos.x, p.pos.z, 0.08);
+          if (eye > 0) p.sink += dt * (0.5 + eye * 2.5);
+        }
         const ground = world.terrain.heightAt(p.pos.x, p.pos.z);
         const wh = world.waterHeight(p.pos.x, p.pos.z);
         const float = p.kind === 0 ? 0.0 : p.kind === 1 ? 0.12 : 0.08;
