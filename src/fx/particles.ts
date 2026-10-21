@@ -128,6 +128,11 @@ class Pool {
         void main() {
           float r = length(vUv);
           if (r > 1.0) discard;
+          // soft-depth fade and the particle's own fade first: a puff behind a hull or all
+          // but faded out is dropped before any of the smoke's noise is fetched
+          vec2 suv = gl_FragCoord.xy / uResolution;
+          float soft = clamp((linearDepth(texture(uSceneDepth, suv).r) - vViewZ) * 0.6, 0.0, 1.0) * vCol.a;
+          if (soft < 0.0015) discard;
           float a;
           vec3 lit = uLight + uFlash * 0.8;
           if (vKind < 0.5) {
@@ -135,6 +140,9 @@ class Pool {
           } else if (vKind < 1.5) {
             // real smoke, not a ball: domain-warped fbm eroded by age into torn wisps and filaments.
             // Young smoke is dense and billowy (worley cauliflower), old smoke thins into curling strands.
+            // past where even the densest billow can reach (dens <= 0 below): nothing to draw
+            float fall = 1.0 - smoothstep(0.1, 1.0, r);
+            if (fall * 2.3 <= 0.32 + vAge * 0.38) discard;
             vec2 drift = vec2(uTime * 0.021, -uTime * 0.014);
             vec2 base = vNuv * 0.2 + vec2(vSeed * 3.1, vSeed * 5.3);
             vec2 warp = texture(uNoiseTex, base * 0.6 + drift).rg - 0.5;
@@ -146,7 +154,6 @@ class Pool {
             float billow = mix(cell * 0.55 + fbm * 0.45, fbm, smoothstep(0.0, 0.45, vAge));
             billow = clamp((billow - 0.5) * 2.4 + 0.5, 0.0, 1.0); // the baked fbm hugs 0.5: stretch its contrast
             float ridge = clamp(1.0 - abs(n2 - 0.5) * 5.0, 0.0, 1.0);
-            float fall = 1.0 - smoothstep(0.1, 1.0, r);
             float dens = billow * fall * 2.3 - (0.32 + vAge * 0.38);
             a = smoothstep(0.0, 0.3 + (1.0 - vAge) * 0.25, dens);
             a *= mix(1.0, 0.35 + ridge * 0.9, vAge * 0.8); // ageing smoke frays into strands
@@ -173,10 +180,7 @@ class Pool {
           } else {
             a = 1.0 - smoothstep(0.55, 0.8, r);
           }
-          vec2 suv = gl_FragCoord.xy / uResolution;
-          float sz = linearDepth(texture(uSceneDepth, suv).r);
-          a *= clamp((sz - vViewZ) * 0.6, 0.0, 1.0);
-          a *= vCol.a;
+          a *= soft;
           if (a < 0.003) discard;
           #if ADDITIVE
             gl_FragColor = vec4(vCol.rgb * a, 0.0);
