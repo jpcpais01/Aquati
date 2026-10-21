@@ -97,8 +97,12 @@ import { Camp, Shore, ShoreInput } from '../shore/shore';
 import type { Walker } from '../shore/walker';
 import { PartyRow, ShoreHud, FoeBar } from '../ui/shore';
 import { rollTier } from './loot';
-import { BountyBook, CAPTAIN, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarned, KILL_INFAMY, NamedCaptain, REPUTE, wantedLevel } from './bounty';
-import { BountyBanner, BountyBoard, WantedHud } from '../ui/bounty';
+import { BountyBook, CAPTAIN, CAPTAINS, HEAT_BONUS, HUNTER_HULL, hunterLivery, huntersEarned, KILL_INFAMY, NamedCaptain, REPUTE, wantedLevel } from './bounty';
+import { BountyBanner, BountyBoard, portrait, WantedHud } from '../ui/bounty';
+import { Bottle, Drift } from './drift';
+import { Raft, Survivors, survivorsOf } from './survivors';
+import { bountyNews, lostLetter, mapLetter, prizeNews, rivalLetter, rumourNews, survivorThanks } from './tidings';
+import { LetterCard, LetterView } from '../ui/letter';
 import { DigTarget, TreasureMaps } from './treasureMaps';
 import { TreasureMapUI } from '../ui/treasureMap';
 import { EscortAI, EscortRec, FleetStore, holdCargo, hireOffers, Order, ORDER_INFO, ORDERS, prizeMaster, SeaMark, station } from './fleet';
@@ -257,6 +261,22 @@ export class Game {
   private loot = new Loot();
   private waypoints = new Waypoints();
   private debris = new Debris();
+  /** Bottles, driftwood and kelp mats out on the open sea (see drift.ts). */
+  private drift = new Drift();
+  /** Pirates' hands clinging to the wreckage of their ship (see survivors.ts). */
+  private survivors!: Survivors;
+  private letter!: LetterCard;
+  /** Survivors who signed on this voyage: each one makes the gun crews a little quicker. */
+  private rescued = 0;
+  private rescuable: Raft | null = null;
+  private rescueT = 0;
+  private cryT = 0;
+  /** News waiting for the carrier gull, and the breather between her flights. */
+  private gullNews: (() => void)[] = [];
+  private gullCool = 0;
+  private rumourT = 0;
+  /** Pirates sunk since the last purse of prize money. */
+  private prizeKills = 0;
   private collisions = new ShipCollisions(() => this.player);
   private pushers: Pusher[] = [];
   private wrecks: Ship[] = [];
@@ -897,6 +917,13 @@ export class Game {
     await mark(0.6, 700);
     this.crew = new CrewSystem(q.tier);
     this.opaque.add(this.crew.mesh);
+    this.survivors = new Survivors(this.crew);
+    this.survivors.onAboard = (r, left) => this.handAboard(r, left);
+    this.opaque.add(this.survivors.group, this.drift.group, this.birds.scroll);
+    this.drift.onCrate = (x, z, kelp) => this.loot.place(x, z, kelp && Math.random() < 0.4 ? 1 : 0);
+    this.drift.onRider = (spot) => this.birds.ride(spot, null);
+    this.drift.onRiderGone = (spot) => this.birds.unride(spot, this.world);
+    this.letter = new LetterCard(document.getElementById('hud')!);
     this.spirits = new Spirits(q.tier === 0 ? 14 : 28, this.particles);
     this.water.add(this.spirits.mesh);
     this.spirits.onRise = (at) => {
@@ -983,6 +1010,7 @@ export class Game {
     this.shoreHud.onInteract = () => {
       if (this.shore.active) this.shoreAct();
       else if (this.boardable) this.startBoarding();
+      else if (this.rescuable) this.throwLine();
       else this.goAshore();
     };
     this.shoreHud.onPrize = (k) => this.choosePrize(k);
@@ -2469,7 +2497,8 @@ export class Game {
       return;
     }
     const named = e.hunter ? CAPTAIN.get(e.hunter) : undefined;
-    const hands = { sloop: 3, brig: 4, galleon: 6 }[p.cls.id] ?? 4;
+    // survivors you fished out of the sea are first over her rail
+    const hands = ({ sloop: 3, brig: 4, galleon: 6 }[p.cls.id] ?? 4) + Math.min(3, Math.floor(this.rescued / 2));
     const foes = ({ sloop: 4, brig: 6, galleon: 8 }[e.cls.id] ?? 5) + (named ? 1 : 0);
     const ok = this.shore.board(p, e, {
       hands, foes,
@@ -3996,6 +4025,11 @@ export class Game {
     this.hold.capacity = HOLD_ROOM[p.cls.id] ?? 12;
     this.hold.clear();
     p.ammo = 'round';
+    this.rescued = 0;
+    p.boost.reload = 1;
+    this.gullCool = 90;
+    this.rumourT = 300 + Math.random() * 180;
+    this.prizeKills = 0;
     this.ui.setFan(false);
     this.input.enabled = true;
     this.ui.showMenu(false);
@@ -4075,6 +4109,12 @@ export class Game {
     this.debris.clear();
     this.lanterns.clear();
     this.festivals.reset();
+    this.drift.clear();
+    this.survivors.clear();
+    this.birds.recall();
+    this.letter.clear();
+    this.gullNews.length = 0;
+    this.rescuable = null;
     this.crew.clear();
     this.spirits.clear();
     this.kraken.reset();
@@ -4439,6 +4479,7 @@ export class Game {
     if (ship.team === 'player') return this.onEscortLost(ship);
     // the replacement waits until the wreck has settled
     this.spawnTimer = Math.max(this.spawnTimer, 10);
+    this.castAdrift(ship);
     const named = ship.hunter ? CAPTAIN.get(ship.hunter) : undefined;
     if (named) return this.claimHunter(ship, named, attacker);
     // the Crown pays more the more the Brethren hate you, and more again for your infamy;
@@ -4467,6 +4508,7 @@ export class Game {
       this.ui.toast(`+${bounty} gold ${ship.ghost ? 'cursed bounty' : 'bounty'}`, ship.ghost ? `The ${ship.name} is laid to rest` : `${ship.name} sunk`, 3.6);
       this.audio.coin();
       this.addInfamy(KILL_INFAMY[ship.cls.id]);
+      this.prizeEarned();
       // whatever she had bolted on is yours to pull from the wreck
       const prize = Object.values(ship.livery.parts ?? {})[0];
       if (prize) setTimeout(() => this.findPart(prize, 'Salvaged from the wreck', ship.pos), 1400);
@@ -4526,6 +4568,7 @@ export class Game {
     if (lv > was) {
       this.bounty.reached(lv);
       this.audio.wanted(lv);
+      if (lv < 5) this.warnOfHunter();
       this.ui.toast(`Wanted · ${'☠'.repeat(lv)}`, lv >= 5 ? 'The whole Brethren is hunting you' : `A hunter sets out · pirate bounties +${Math.round(lv * HEAT_BONUS * 100)}%`, 3.6);
     }
     if (rank >= 0) this.ui.toast('Your infamy grows', `${REPUTE[rank][1]} · Crown bounties +${Math.round((this.bounty.bonus - 1) * 100)}%`, 4.2);
@@ -4764,6 +4807,240 @@ export class Game {
       return;
     }
     this.ui.toast(tossed ? `Hold full · ${tossed} cheap ${tossed === 1 ? 'good' : 'goods'} over the side` : this.carriers().length ? 'Every hold in the fleet is full' : 'Hold full', where, 3.4);
+  }
+
+  // ---------------------------------------------------------------- bottles, survivors and the carrier gull
+
+  /** The isles of whichever archipelago she sails in. */
+  private islesHere(p: Ship) {
+    const here = nearestRegion(p.pos.x, p.pos.z).region;
+    return this.terrain.islands.filter((i) => nearestRegion(i.x, i.z).region === here);
+  }
+
+  private portName(p: Ship) {
+    return this.tradePorts.nearest(p.pos.x, p.pos.z)?.port.name ?? 'Goldwater Quay';
+  }
+
+  /** A bottle hauled out of the sea: a piece of a treasure map, a rival's taunt or somebody's lost letter. */
+  private openBottle(p: Ship, b: Bottle) {
+    const at = new THREE.Vector3(b.x, 1.5, b.z);
+    const [sx, sy, ok] = this.screenOf(at);
+    if (ok) this.ui.floater('A message in a bottle!', sx, sy - 20, 'rare');
+    this.audio.parchment();
+    this.world.particles.splash(at.setY(this.world.waterHeight(b.x, b.z)), 0.3);
+    const kicker = 'Message in a bottle';
+    const r = Math.random();
+    if (!this.maps.complete && (r < 0.5 || this.maps.count === 0)) {
+      const n = this.maps.count + 1;
+      this.letter.show({ via: 'bottle', kicker, ...mapLetter(n), reward: `Treasure map piece · ${n} of 3` });
+      setTimeout(() => this.foundPiece(at), 1100);
+      return;
+    }
+    if (r < 0.78) {
+      const lv = wantedLevel(this.heat.pts);
+      const pool = CAPTAINS.filter((k) => k.tier <= lv + 1);
+      const c = this.heat.next ?? pool[Math.floor(Math.random() * pool.length)] ?? CAPTAINS[0];
+      const gold = Math.round(c.bounty * this.bounty.bonus);
+      this.bounty.sighted(c.id);
+      this.markBoard();
+      this.letter.show({ via: 'bottle', kicker, ...rivalLetter(c, p.name), art: portrait(c.face), seal: 'black', reward: `${c.epithet} · ${gold.toLocaleString('en-US')} gold on her head` }, 13);
+      this.note('bounty', `A bottle from ${c.epithet}`, c.taunt);
+      return;
+    }
+    const isles = this.islesHere(p);
+    const isle = isles.length ? isles[Math.floor(Math.random() * isles.length)].name : 'a nameless rock';
+    const l = lostLetter(this.portName(p), isle);
+    p.gold += l.gold;
+    this.vaultStore.earn(l.gold);
+    this.audio.coin(0.4);
+    this.letter.show({ via: 'bottle', kicker, ...l.words, seal: l.seal, reward: `+${l.gold} gold` });
+    this.note('chest', 'A message in a bottle', `${l.words.title.replace(/[,:.]$/, '')} · +${l.gold} gold`);
+  }
+
+  /** The carrier's errands, rumours of salvage, and the survivors' cries across the water. */
+  private updateTidings(p: Ship, dt: number) {
+    this.gullCool -= dt;
+    if (this.gullNews.length && this.gullCool <= 0 && p.alive && !this.shore.active && !this.boarding.busy && !this.birds.carrying) {
+      const port = this.tradePorts.nearest(p.pos.x, p.pos.z)?.port;
+      const news = this.gullNews[0];
+      if (this.birds.carry(p, this.world, news, port ? { x: port.x, z: port.z } : null)) {
+        this.gullNews.shift();
+        this.gullCool = 45;
+      }
+    }
+    this.rumourT -= dt;
+    if (this.rumourT <= 0) {
+      this.rumourT = 420 + Math.random() * 240;
+      if (!this.onHighSeas) this.gullNews.push(() => this.rumour());
+    }
+    this.cryT -= dt;
+    if (this.cryT <= 0) {
+      this.cryT = 2.4 + Math.random() * 2.6;
+      const n = this.survivors.nearest(p.pos.x, p.pos.z);
+      if (n && n.d < 140) {
+        const [vol, pan, d] = this.world.soundAt(_a.set(n.raft.x, 1, n.raft.z));
+        this.audio.shout(vol, pan, d, false, 2);
+      }
+    }
+  }
+
+  /** A letter off the carrier's back, unrolled. */
+  private gullLetter(v: Omit<LetterView, 'via' | 'kicker'>, life = 11) {
+    this.letter.show({ via: 'gull', kicker: 'A gull brings word', ...v }, life);
+    this.audio.parchment(0.8);
+  }
+
+  /** Every third pirate sunk, the merchants send prize money by gull. */
+  private prizeEarned() {
+    if (++this.prizeKills < 3) return;
+    const k = this.prizeKills;
+    this.prizeKills = 0;
+    const gold = Math.round((110 + Math.random() * 60) * k * this.bounty.bonus);
+    this.gullNews.push(() => {
+      const p = this.player;
+      if (!p) return;
+      p.gold += gold;
+      this.vaultStore.earn(gold);
+      this.audio.coin(0.3);
+      this.gullLetter({ ...prizeNews(k, gold, this.portName(p)), seal: 'gold', reward: `+${gold.toLocaleString('en-US')} gold` });
+      this.note('trade', 'Prize money came by gull', `+${gold} gold`);
+    });
+  }
+
+  /** Your name climbs the Brethren's list: a friend sends word of who is coming. */
+  private warnOfHunter() {
+    const c = this.heat.next;
+    if (!c || this.onHighSeas) return;
+    const gold = Math.round(c.bounty * this.bounty.bonus);
+    this.gullNews.push(() => {
+      this.bounty.sighted(c.id);
+      this.markBoard();
+      this.gullLetter({ ...bountyNews(c, gold), art: portrait(c.face), seal: 'black', reward: `${c.epithet} · ${gold.toLocaleString('en-US')} gold` }, 12);
+    });
+    // she should beat the hunter to you
+    this.gullCool = Math.min(this.gullCool, 4);
+  }
+
+  /** Salvage washed up off one of the isles: a fine chest in the shallows, and a pin on the chart. */
+  private rumour() {
+    const p = this.player;
+    if (!p) return;
+    const isles = this.islesHere(p).filter((i) => {
+      const d = Math.hypot(i.x - p.pos.x, i.z - p.pos.z);
+      return d > 300 && d < 1500;
+    });
+    for (let k = 0; k < 12 && isles.length; k++) {
+      const isl = isles[Math.floor(Math.random() * isles.length)];
+      const a = Math.random() * Math.PI * 2;
+      for (let f = 1.0; f < 1.8; f += 0.1) {
+        const x = isl.x + Math.cos(a) * isl.r * f;
+        const z = isl.z + Math.sin(a) * isl.r * f;
+        const h = this.terrain.heightAt(x, z);
+        if (h > -6 && h < -2) {
+          this.loot.place(x, z, rollTier(0.5, 2), true);
+          this.waypoints.add(x, z, p.pos);
+          this.gullLetter({ ...rumourNews(isl.name, this.portName(p)), reward: `Pinned on your chart · ${isl.name}` });
+          return;
+        }
+        if (h < -6) break;
+      }
+    }
+  }
+
+  /** Some of a sunk pirate's hands make it to the wreckage. */
+  private castAdrift(ship: Ship) {
+    const p = this.player;
+    if (ship.ghost || ship.prize || !p || this.state !== 'playing' || Math.random() > 0.8) return;
+    if (Math.hypot(ship.pos.x - p.pos.x, ship.pos.z - p.pos.z) > 650) return;
+    const groups = survivorsOf(ship.cls.id);
+    const x = ship.pos.x;
+    const z = ship.pos.z;
+    const from = ship.name;
+    setTimeout(() => {
+      if (this.state !== 'playing' && this.state !== 'paused') return;
+      groups.forEach((n, i) => {
+        const a = Math.random() * Math.PI * 2;
+        const r = 5 + i * 7 + Math.random() * 4;
+        this.survivors.spawn(x + Math.cos(a) * r, z + Math.sin(a) * r, n, from);
+      });
+      if (!this.rescued && !this.survivorTip) {
+        this.survivorTip = true;
+        this.ui.toast('Survivors in the water', 'Sail alongside the wreckage and throw them a line: they’ll sign on with your crew', 4.6);
+      }
+    }, 4500);
+  }
+
+  private survivorTip = false;
+
+  /** Alongside a raft of survivors: offer them a line (F or a tap). */
+  private updateRescuePrompt(p: Ship, dt: number) {
+    this.rescueT -= dt;
+    if (this.rescueT <= 0) {
+      this.rescueT = 0.25;
+      this.rescuable = p.alive && !this.fpv ? this.survivors.reachable(p) : null;
+    }
+    const r = this.rescuable;
+    if (!r || !r.hands.length) return false;
+    const n = r.hands.length;
+    this.shoreHud.setPrompt({ key: 'rescue', title: 'Throw them a line', sub: `${n === 1 ? 'A sailor' : `${n} sailors`} off the ${r.from} ${n === 1 ? 'clings' : 'cling'} to the wreckage`, ok: true });
+    if (this.input.state.helm) this.throwLine();
+    return true;
+  }
+
+  private throwLine() {
+    const r = this.rescuable;
+    const p = this.player;
+    if (!r || !p || this.state !== 'playing') return;
+    this.survivors.rescue(r, p);
+    this.rescuable = null;
+    this.shoreHud.setPrompt(null);
+    const [vol, pan, d] = this.world.soundAt(_a.set(r.x, 1, r.z));
+    this.audio.shout(vol, pan, d, true, 3);
+    this.audio.splash(vol * 0.3, pan, d);
+    const [x, y, ok] = this.screenOf(_a.set(r.x, 2, r.z));
+    if (ok) this.ui.floater('Line away!', x, y, 'fleet');
+  }
+
+  /** One more over the rail: the gun crews grow, and the last of them tells you what they know. */
+  private handAboard(r: Raft, left: number) {
+    const p = this.player;
+    if (!p || !p.alive) return;
+    const MAX = 8;
+    this.rescued++;
+    p.boost.reload = 1 - 0.025 * Math.min(this.rescued, MAX);
+    const at = _a.set(p.pos.x, p.root.position.y + p.cls.freeboard + 2, p.pos.z);
+    const [x, y, ok] = this.screenOf(at);
+    if (ok) this.ui.floater(this.rescued > MAX ? 'Works their passage' : '+1 hand', x, y, 'fleet');
+    if (left > 0) return;
+    const n = r.crew;
+    const [vol, pan, d] = this.world.soundAt(at);
+    this.audio.shout(vol, pan, d, true, 4);
+    const pct = Math.round(2.5 * Math.min(this.rescued, MAX));
+    const board = this.rescued >= 2 ? ` · +${Math.min(3, Math.floor(this.rescued / 2))} in a boarding party` : '';
+    this.ui.toast(`${n === 1 ? 'A survivor' : `${n} survivors`} hauled aboard`, survivorThanks(r.from, n), 4.6);
+    setTimeout(() => this.state === 'playing' && this.ui.toast(`${this.rescued} ${this.rescued === 1 ? 'hand' : 'hands'} rescued this voyage`, this.rescued > MAX ? 'The crew is full: they work their passage' : `The guns reload ${pct}% faster${board}`, 3.8), 2600);
+    this.note('fleet', `Rescued ${n === 1 ? 'a survivor' : `${n} survivors`} of the ${r.from}`, 'They signed on with the crew');
+    if (this.rescued > MAX) {
+      const gold = 60 * n;
+      p.gold += gold;
+      this.vaultStore.earn(gold);
+    }
+    // a grateful bosun has something to show for it
+    if (Math.random() < 0.35) {
+      setTimeout(() => {
+        if (this.state !== 'playing') return;
+        if (!this.maps.complete) {
+          this.ui.toast('The bosun pulls something from his boot', 'A torn piece of his captain’s treasure map', 3.6);
+          this.foundPiece(null);
+        } else if (this.player) {
+          const gold = 120 + Math.round(Math.random() * 120);
+          this.player.gold += gold;
+          this.vaultStore.earn(gold);
+          this.audio.coin();
+          this.ui.toast(`+${gold} gold`, `The ${r.from}’s purser kept her purse dry`, 3.4);
+        }
+      }, 5400);
+    }
   }
 
   /** A line in the ship's log, for the farewell. */
@@ -6264,12 +6541,17 @@ export class Game {
       };
       const got = this.loot.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2, refuse);
       for (const it of got) this.haul(p, it);
+      const bottles = this.drift.update(dt, w, p.alive ? p.pos : null, (p.cls.beam * 0.5 + 5) * 2, this.ships, { ship: p.alive && !this.shore.active ? p : null, highSeas: this.onHighSeas });
+      for (const b of bottles) this.openBottle(p, b);
+      this.updateTidings(p, dt);
       if (p.alive) this.sweepSalvage(p, dt);
       this.holdNagT -= dt;
       if (!this.shore.active) {
         // with the grapnels flying, nothing else is on offer
         const docking = this.boarding.busy ? true : this.updateDockPrompt(p);
-        if (this.boarding.busy || !this.updateBoardPrompt(p, dt)) this.updateLandPrompt(p, dt, docking);
+        if (this.boarding.busy || !this.updateBoardPrompt(p, dt)) {
+          if (docking || !this.updateRescuePrompt(p, dt)) this.updateLandPrompt(p, dt, docking);
+        }
         // hunters follow the host's infamy (a guest's sea is the host's to fill)
         if (!this.coop.guest) this.updateHunters(dt);
       }
@@ -6282,7 +6564,9 @@ export class Game {
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));
     } else {
       this.loot.update(dt, w, null, 0);
+      this.drift.update(dt, w, null, 0, this.ships, { ship: null, highSeas: this.onHighSeas });
     }
+    this.survivors.update(dt, w, this.rig.target);
     // fresh pirates gather round every captain at sea (none round one who's ashore)
     if (!this.coop.guest) this.directSpawns(dt);
     // on foot ashore, it is the captain who walks into a pin
