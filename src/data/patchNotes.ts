@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T11:00Z',
+    entries: [
+      {
+        title: 'Pick the rare weathers yourself',
+        notes: [
+          'The weather button now also cycles through Mirror calm, Very hot, Ember rain and the new Glowing seas, each with its own icon.',
+          'The rare ones keep to their time and place. If one can\'t happen where you are, tapping it shows a little card saying what it needs: Very hot only at noon out on the high seas, Ember rain only downwind of Morro Huracão, Glowing seas only at night in the glowing stretches of the high seas. Tap again to move on.',
+          'Once you sail out of its time or place, a weather you picked hands back to Auto and tells you why.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T03:00Z',
     entries: [
       {

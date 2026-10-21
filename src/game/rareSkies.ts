@@ -37,6 +37,10 @@ export class RareSkies {
   private inAsh = false;
   private inBloom = false;
   private volcanoes: Island[];
+  /** The volcano whose ash makes ember rain (for the crew to name). */
+  get volcanoName() {
+    return this.volcanoes[0]?.name ?? 'the volcano';
+  }
 
   constructor(tier: number, islands: Island[], private hooks: RareHooks) {
     this.embers = new Embers([700, 1400, 2200][tier] ?? 1400);
