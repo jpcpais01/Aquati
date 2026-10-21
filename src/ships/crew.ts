@@ -152,6 +152,20 @@ const TEAM_LOOK = {
     ] as [number, string[]][],
     coat: ['#5e1414', '#1c1717', '#3b1f4f'],
   },
+  // merchant hands: clean linen, company blue and slops, straw against the sun
+  merchant: {
+    shirts: ['#f2ede2', '#e6dcc6', '#3d5a80', '#9bb7c9', '#c9a86a'],
+    stripe: ['#3d5a80', '#2f6e3c'],
+    trousers: ['#d8cba8', '#3d4a63', '#7a6a50', '#a89a7a'],
+    sash: ['#3d5a80', '#d9b44a', '#2f6e3c', '#9a4a3a'],
+    hats: [
+      [HAT.straw, ['#e3c98a', '#d6b871', '#efe0b0']],
+      [HAT.knit, ['#3d5a80', '#7a2f2a']],
+      [HAT.tricorn, ['#2a2622']],
+      [HAT.none, ['#000000']],
+    ] as [number, string[]][],
+    coat: ['#2b3f63'],
+  },
 };
 
 export interface Look {
@@ -166,9 +180,10 @@ export interface Look {
 const VESTS = {
   player: ['#7a2f2a', '#2f3d5c', '#8a6a3c', '#3e6b5a', '#c9b58c'],
   pirate: ['#3a2a22', '#5e1414', '#2d2a33', '#6b4a2b', '#4a3a5a'],
+  merchant: ['#2b3f63', '#6b4a2b', '#c9b58c', '#3e6b5a', '#7a2f2a'],
 };
 
-export function makeLook(team: 'player' | 'pirate', role: Role, ghost = false): Look {
+export function makeLook(team: 'player' | 'pirate' | 'merchant', role: Role, ghost = false): Look {
   const T = TEAM_LOOK[team];
   const pirate = team === 'pirate';
   const chance = (p: number) => Math.random() < p;
@@ -524,7 +539,7 @@ class ShipCrew implements DeckPlan {
       writeLook(row, look);
       const zone = role === 'helm' || role === 'captain' ? this.helmZone : this.main;
       const sl = new Sailor(role, look, row, zone);
-      sl.foe = ship.team !== 'player';
+      sl.foe = ship.team === 'pirate';
       if (role === 'gunner') {
         const posts = this.posts.filter((p) => p.side === 1);
         sl.gun = posts[gunner++ % posts.length];
@@ -611,7 +626,8 @@ class ShipCrew implements DeckPlan {
     this.enemy = null;
     this.enemyDist = 1e9;
     for (const o of ships) {
-      if (o === sh || !o.alive || o.team === sh.team || o.removed || o.prize) continue;
+      // merchantmen are nobody's enemy, and fight nobody
+      if (o === sh || !o.alive || o.team === sh.team || o.removed || o.prize || o.team === 'merchant' || sh.team === 'merchant') continue;
       const d = Math.hypot(o.pos.x - sh.pos.x, o.pos.z - sh.pos.z);
       if (d < this.enemyDist) {
         this.enemyDist = d;

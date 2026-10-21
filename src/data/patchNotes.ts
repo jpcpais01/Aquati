@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T02:00Z',
     entries: [
       {
+        title: 'Merchant convoys on the high seas',
+        notes: [
+          'Out on Mar Sereno the trading houses now run their cargoes between the two archipelagos in convoys of two or three ships sailing in line, at the pace of the slowest. "Sail ho!" goes up when one heaves into sight, and they show on your minimap and chart in trade-gold.',
+          'Three new ships, smaller than any warship and built to carry, not fight: the round-bellied Ronvliet fluyt in green and gold with a star on her sails, the long, low Aguadouro xebec under three blue-striped lateens, and the little Vila Garoa ketch from the mist with tan sails and a crescent moon. Their decks are piled with tarpaulins, crates, casks and sacks, and their crews wear company blue and straw hats.',
+          'Come close alongside one and hail her (F, or tap the prompt). She heaves to beside you and opens her hatches. She buys from your hold at her own house\'s prices, and sells you her cargo: four to six lots of her house\'s goods, now and then one going cheap. Each house pays best for what its home port lacks, so buy at sea and sell dear in the right port.',
+          'Fire on a merchantman, or ram her, and the whole convoy cracks on sail and runs. None of them will trade with you after that.',
+        ],
+      },
+      {
         title: 'Whales on the high seas',
         notes: [
           'Out on Mar Sereno you now meet humpback whales on their long migration across the open ocean. Every few minutes a pod of two to four crosses ahead of you in a long line, often with a mother and her small, pale calf tucked in at her side. The lookout calls \u201cThar she blows!\u201d and tells you where to look.',

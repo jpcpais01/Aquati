@@ -1040,3 +1040,58 @@
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------- trading at sea */
+
+.market.trader .mk-po,
+.market:not(.trader) .mk-to {
+  display: none;
+}
+
+.mk-wlabel {
+  font: 600 11px var(--sans);
+  color: var(--ink-3);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.mk-buyw {
+  min-width: 64px;
+  border-color: rgba(127, 224, 142, 0.45);
+  background: rgba(127, 224, 142, 0.12);
+  color: #a9f0b4;
+}
+
+.mk-buyw:hover {
+  background: rgba(127, 224, 142, 0.26);
+}
+
+.mk-buyw:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.mk-ware.deal {
+  box-shadow: 0 0 0 1px rgba(127, 224, 142, 0.35) inset;
+}
+
+/* redrawn after a purchase: the rows stay put */
+.mk-list.settled > .mk-row:not(.just) {
+  animation: none;
+}
+
+.mk-ware.just {
+  animation: mk-ware-buy 0.5s var(--ease);
+}
+
+@keyframes mk-ware-buy {
+  35% {
+    transform: scale(0.97);
+    background: rgba(127, 224, 142, 0.2);
+  }
+}
+
+/* at sea her cargo is the news: it comes first, your hold below */
+.market.trader .mk-to {
+  order: -1;
+}

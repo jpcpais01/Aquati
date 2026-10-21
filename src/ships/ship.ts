@@ -12,7 +12,8 @@ import { HIGH_SEAS_R, nearestRegion, seaEdge } from '../world/regions';
 
 const _back = { x: 0, z: 0 };
 
-export type Team = 'player' | 'pirate';
+/** `merchant`: a trading convoy's hull (see game/convoys.ts), sailed apart from the fighting ships. */
+export type Team = 'player' | 'pirate' | 'merchant';
 
 /** How a blow lands when other captains share the sea: on her for real, only seen here, or seen here and told to her owner. */
 export type Verdict = 'real' | 'echo' | 'send';

@@ -1756,6 +1756,11 @@ export class UI {
     }
     for (const s of ships) {
       if (s === player || !s.alive) continue;
+      // a merchantman in trade-gold (dimmed once her convoy has scattered from you)
+      if (s.team === 'merchant') {
+        tri(s, s.calm ? '#f6d48a' : 'rgba(246, 212, 138, 0.5)', 10);
+        continue;
+      }
       // your escorts in the fleet's aqua; a prize sailing off for port in faded parchment
       if (s.team === 'player') {
         // a crewmate's flagship in gold, pinned to the rim while she's off the map

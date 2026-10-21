@@ -95,6 +95,23 @@ export interface FleetCounter {
   purse: number;
 }
 
+/** A lot on a merchantman's counter at sea (see game/convoys.ts). */
+export interface WareOffer {
+  id: LootId;
+  n: number;
+  price: number;
+  /** Going under the fair price. */
+  deal: boolean;
+  /** Whether any hold in reach has room for one. */
+  room: boolean;
+}
+
+/** Trading at sea instead of in port: what she is, and what she carries. */
+export interface TraderCounter {
+  kicker: string;
+  wares: WareOffer[];
+}
+
 /** A part on the port shipwright's counter. */
 export interface PartOffer {
   part: Part;
@@ -128,7 +145,10 @@ export class MarketUI {
   onClick: () => void = () => {};
   onBuyPart: (id: string) => void = () => {};
   onBuyFirework: (id: FireworkId) => void = () => {};
+  onBuyWare: (id: LootId) => void = () => {};
   private pyroList: HTMLElement;
+  private wareList: HTMLElement;
+  private trader = false;
   onHire: (id: string) => void = () => {};
   onPayOff: (id: string) => void = () => {};
   private partList: HTMLElement;
@@ -146,26 +166,29 @@ export class MarketUI {
       <div class="mk-card">
         <header class="mk-head">
           <div class="mk-crest">${icon(ICONS.anchor)}</div>
-          <div class="mk-title"><small>Trading port</small><h2 class="mk-name"></h2><p class="mk-tag"></p></div>
+          <div class="mk-title"><small class="mk-kick">Trading port</small><h2 class="mk-name"></h2><p class="mk-tag"></p></div>
           <div class="mk-purse" title="Your gold"><span class="coin"></span><b>0</b></div>
         </header>
         <div class="mk-body">
         <div class="mk-label"><span>Your hold</span><span class="mk-room"></span></div>
         <ul class="mk-list"></ul>
         <button class="btn primary big mk-all"><span class="mk-all-l">Sell everything</span><span class="mk-all-v"><span class="coin"></span><b>0</b></span></button>
-        <div class="mk-label"><span>Chandlery</span></div>
-        <div class="mk-yard">
+        <div class="mk-label mk-to"><span>Her cargo</span><span class="mk-wlabel">Buy here, sell dear in port</span></div>
+        <ul class="mk-list mk-wares mk-to"></ul>
+        <p class="mk-pnote mk-to">Each house carries its own goods and pays best for what its home port lacks. A trading port that craves them pays more.</p>
+        <div class="mk-label mk-po"><span>Chandlery</span></div>
+        <div class="mk-yard mk-po">
           <button class="mk-svc" data-k="repair">${icon(HAMMER)}<span><b>Repair the hull</b><small></small></span><em><span class="coin"></span><i></i></em></button>
           <button class="mk-svc" data-k="shot">${icon(SHOT)}<span><b>Restock the shot</b><small></small></span><em><span class="coin"></span><i></i></em></button>
         </div>
-        <div class="mk-label"><span>Pyrotechnist</span><span class="mk-plabel">Rockets for your firework locker</span></div>
-        <ul class="mk-parts mk-pyro"></ul>
-        <div class="mk-label"><span>Shipwright</span><span class="mk-wpurse" title="Your purse"></span></div>
-        <ul class="mk-parts"></ul>
-        <p class="mk-pnote">Paid from your purse. New parts are fitted at the Shipwright before your next voyage.</p>
-        <div class="mk-label"><span>Harbour master</span><span class="mk-froom"></span><span class="mk-fpurse" title="Your purse"></span></div>
-        <ul class="mk-parts mk-fleet"></ul>
-        <p class="mk-pnote">Escorts sail in formation on your quarters and take your orders (G). They sail with you every voyage until they are sunk.</p>
+        <div class="mk-label mk-po"><span>Pyrotechnist</span><span class="mk-plabel">Rockets for your firework locker</span></div>
+        <ul class="mk-parts mk-pyro mk-po"></ul>
+        <div class="mk-label mk-po"><span>Shipwright</span><span class="mk-wpurse" title="Your purse"></span></div>
+        <ul class="mk-parts mk-po mk-wright"></ul>
+        <p class="mk-pnote mk-po">Paid from your purse. New parts are fitted at the Shipwright before your next voyage.</p>
+        <div class="mk-label mk-po"><span>Harbour master</span><span class="mk-froom"></span><span class="mk-fpurse" title="Your purse"></span></div>
+        <ul class="mk-parts mk-fleet mk-po"></ul>
+        <p class="mk-pnote mk-po">Escorts sail in formation on your quarters and take your orders (G). They sail with you every voyage until they are sunk.</p>
         </div>
         <footer class="mk-foot"><button class="btn mk-leave">${icon(ICONS.flag)}<span>Cast off</span><kbd class="kd">Esc</kbd></button></footer>
       </div>`;
@@ -176,7 +199,8 @@ export class MarketUI {
     this.room = r.querySelector('.mk-room')!;
     this.svcRepair = r.querySelector('[data-k="repair"]')!;
     this.svcShot = r.querySelector('[data-k="shot"]')!;
-    this.partList = r.querySelector('.mk-parts:not(.mk-pyro)')!;
+    this.partList = r.querySelector('.mk-wright')!;
+    this.wareList = r.querySelector('.mk-wares')!;
     this.pyroList = r.querySelector('.mk-pyro')!;
     this.partPurse = r.querySelector('.mk-wpurse')!;
     this.fleetList = r.querySelector('.mk-fleet')!;
@@ -187,7 +211,14 @@ export class MarketUI {
     // the body's own box and every list in it: content growing changes what's left to scroll
     const ro = new ResizeObserver(() => this.edges());
     ro.observe(this.body);
-    for (const el of [this.list, this.partList, this.fleetList, this.pyroList]) ro.observe(el);
+    for (const el of [this.list, this.partList, this.fleetList, this.pyroList, this.wareList]) ro.observe(el);
+    this.wareList.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.mk-sell');
+      if (!b || b.disabled) return;
+      e.stopPropagation();
+      this.onClick();
+      this.onBuyWare(b.dataset.id as LootId);
+    });
     this.pyroList.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('.mk-buy');
       if (!b || b.disabled) return;
@@ -272,20 +303,27 @@ export class MarketUI {
   }
 
   /** The prompt as you come in: null hides it. */
-  setDock(s: { name: string; ok: boolean; why: string } | null) {
-    const key = s ? `${s.name}|${s.ok}|${s.why}` : '';
+  setDock(s: { name: string; ok: boolean; why: string; verb?: string } | null) {
+    const key = s ? `${s.name}|${s.ok}|${s.why}|${s.verb}` : '';
     if (key === this.dockState) return;
     this.dockState = key;
     const d = this.dock;
     d.classList.toggle('on', !!s);
     if (!s) return;
     d.classList.toggle('ok', s.ok);
-    d.querySelector('b')!.textContent = s.ok ? `Dock at ${s.name}` : s.name;
+    d.querySelector('b')!.textContent = s.ok ? `${s.verb ?? 'Dock at'} ${s.name}` : s.name;
     d.querySelector('small')!.textContent = s.why;
   }
 
-  open(name: string, tagline: string, market: Market, holds: Aboard[], gold: number, t: number) {
+  /** `trader`: alongside a merchantman at sea; her cargo is on the counter and the port's services aren't. */
+  open(name: string, tagline: string, market: Market, holds: Aboard[], gold: number, t: number, trader: TraderCounter | null = null) {
     this.market = market;
+    this.trader = !!trader;
+    this.list.classList.remove('settled');
+    this.root.classList.toggle('trader', this.trader);
+    this.root.querySelector('.mk-kick')!.textContent = trader ? trader.kicker : 'Trading port';
+    this.root.querySelector('.mk-crest')!.innerHTML = icon(trader ? ICONS.flag : ICONS.anchor);
+    if (trader) this.setWares(trader.wares, gold);
     this.holds = holds;
     this.gold = this.shown = gold;
     this.time = t;
@@ -303,6 +341,7 @@ export class MarketUI {
   /** The fleet changed while docked (a ship signed on or paid off): lay out the holds afresh. */
   reholds(holds: Aboard[]) {
     this.holds = holds;
+    this.list.classList.add('settled');
     if (this.isOpen) this.render();
   }
 
@@ -391,6 +430,29 @@ export class MarketUI {
   setGold(g: number) {
     this.gold = g;
     this.setServices(this.services);
+  }
+
+  /** A merchantman's cargo: each lot at her asking price, against the fair one. */
+  setWares(wares: WareOffer[], gold: number, bought?: LootId) {
+    // a purchase redraws the counter without every row sliding in again
+    this.wareList.classList.toggle('settled', !!bought);
+    if (!wares.length) {
+      this.wareList.innerHTML = `<li class="mk-empty">${icon(ICONS.anchor)}<p><b>Her hold is bare</b><small>You have bought everything she was carrying.</small></p></li>`;
+      return;
+    }
+    this.wareList.innerHTML = wares
+      .map((w) => {
+        const k = LOOT[w.id];
+        const tr = w.price / k.price - 1;
+        const can = w.room && gold >= w.price;
+        return `<li class="mk-row mk-ware r-${k.rarity}${w.deal ? ' deal' : ''}${bought === w.id ? ' just' : ''}" data-id="${w.id}">
+            <i class="mk-ico">${lootIcon(w.id)}</i>
+            <div class="mk-what"><b>${esc(k.name)}${w.n > 1 ? `<span class="mk-n">×${w.n}</span>` : ''}</b><small><em>${RARITIES[k.rarity].name}</em> · ${CATEGORIES[k.cat]}</small></div>
+            <div class="mk-price"><b>${fmt(w.price)}</b><small class="${w.deal ? 'up' : Math.abs(tr) < 0.03 ? 'even' : 'down'}">${w.deal ? `${Math.round(-tr * 100)}% under fair` : `${Math.round(tr * 100)}% over fair`}</small></div>
+            <button class="mk-sell mk-buyw" data-id="${w.id}"${can ? '' : ' disabled'}>${w.room ? 'Buy' : 'No room'}</button>
+          </li>`;
+      })
+      .join('');
   }
 
   /** The pyrotechnist's stall: today's rockets, how many of each you hold and whether the purse stretches. */

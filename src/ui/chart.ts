@@ -1240,6 +1240,19 @@ export class SeaChart {
         continue;
       }
       if (sh.prize) continue;
+      // a merchantman: trade-gold, under her name, while she's still willing to deal
+      if (sh.team === 'merchant') {
+        const [mx, my] = toS(sh.pos.x, sh.pos.z);
+        tri(sh, sh.calm ? '#f6d48a' : 'rgba(246, 212, 138, 0.5)', 11);
+        g.font = '700 11px Cinzel, Georgia, serif';
+        g.textAlign = 'center';
+        g.lineWidth = 3;
+        g.strokeStyle = 'rgba(30, 20, 4, 0.85)';
+        g.strokeText(sh.name, mx, my + 20);
+        g.fillStyle = '#fbe6b4';
+        g.fillText(sh.name, mx, my + 20);
+        continue;
+      }
       // the Brethren make sure you know where their hunters are
       if (sh.hunter) {
         const [hx, hy] = toS(sh.pos.x, sh.pos.z);
