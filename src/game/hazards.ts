@@ -44,6 +44,10 @@ export interface HazardSense {
   vortexAt(x: number, z: number, margin: number): boolean;
   /** The heading out of a maelstrom's grip for a ship at (x, z), or null when she's clear of it. */
   escape(x: number, z: number): number | null;
+  /** The water's flow at (x, z) (m/s into `out`); returns the swing it gives a hull (rad/s). */
+  flowAt(x: number, z: number, out: THREE.Vector2): number;
+  /** How near the eye of a live maelstrom (x, z) lies: 1 at the eye .. 0 past `reach` radii. */
+  eyeAt(x: number, z: number, reach: number): number;
 }
 
 /** Where a ship stands with a maelstrom: its name, how far in (radius fractions) and how hard it has her. */
@@ -86,6 +90,13 @@ const CORE = 0.17;
 /** Strain from the funnel's walls and its throat, as fractions of max hull per second. */
 const STRAIN = 0.018;
 const THROAT = 0.055;
+/**
+ * The maw: inside this radius fraction the throat drags a hull under, at up
+ * to DRAW of the way per second (light hulls ride it a little longer).
+ * Fight clear in time and she bobs back up; let it reach her rail and she's gone.
+ */
+const MAW = 0.15;
+const DRAW = 0.2;
 
 const _v = new THREE.Vector2();
 
@@ -165,6 +176,17 @@ export class Hazards implements HazardSense {
     return null;
   }
 
+  eyeAt(x: number, z: number, reach: number): number {
+    let best = 0;
+    for (const m of this.maelstroms) {
+      const v = m.vortex;
+      if (v.k <= 0.05) continue;
+      const u = Math.hypot(x - m.x, z - m.z) / v.r;
+      if (u < reach) best = Math.max(best, 1 - u / reach);
+    }
+    return best;
+  }
+
   /** The water's flow at (x, z) (m/s into `out`); returns the swing it gives a hull (rad/s). */
   flowAt(x: number, z: number, out: THREE.Vector2): number {
     out.set(0, 0);
@@ -180,7 +202,8 @@ export class Hazards implements HazardSense {
       const edge = 1 - smoothstep(0.7, 1.3, u);
       // a Rankine vortex: a solid core, then a swirl that falls away with distance
       const vt = v.k * SWIRL * (u < CORE ? u / CORE : Math.pow(CORE / u, 0.62)) * edge;
-      const vr = v.k * INFLOW * edge * (0.35 + 0.65 * (1 - Math.min(u, 1)));
+      // (easing off at the very eye, so what reaches it hangs there rather than jittering across)
+      const vr = v.k * INFLOW * edge * (0.35 + 0.65 * (1 - Math.min(u, 1))) * Math.min(1, u / 0.03);
       const rx = dx / d;
       const rz = dz / d;
       // the water turns toward increasing atan2(z, x) when dir is 1 (as the ocean
@@ -259,7 +282,9 @@ export class Hazards implements HazardSense {
       // a phantom slips half the sea's grip; a heavy hull answers the swing slowly
       const grip = s.ghost ? 0.5 : 1;
       s.current.set(_v.x * grip, _v.y * grip);
-      s.spin = (spin * grip * 0.75) / Math.sqrt(s.cls.mass);
+      // dragged down, she whirls faster and faster with the water
+      s.spin = ((spin * grip * 0.75) / Math.sqrt(s.cls.mass)) * (1 + s.drawn * 1.8);
+      if (!s.ghost) this.drag(s, dt, world);
       if (s.alive && !s.ghost) this.wring(s, dt, world);
     }
     // salvage swept round and down: the throat swallows what it reaches
@@ -278,6 +303,52 @@ export class Hazards implements HazardSense {
       }
     }
     this.spray(dt, world, view);
+  }
+
+  /**
+   * The throat at the heart of the funnel pulls a hull down into it: deeper
+   * and deeper while she lingers there, till the sea pours over her rail and
+   * takes her (no blast, no wreck left wallowing on the surface: she goes on
+   * down the throat). A wreck that drifts into it is swallowed the same way.
+   */
+  private drag(s: Ship, dt: number, world: World) {
+    if (s.swallowed) return;
+    let pull = 0;
+    for (const m of this.maelstroms) {
+      const v = m.vortex;
+      if (v.k <= 0.05) continue;
+      const u = Math.hypot(s.pos.x - m.x, s.pos.z - m.z) / v.r;
+      if (u < MAW) pull = Math.max(pull, (1 - u / MAW) * Math.min(v.k, 1.3));
+    }
+    if (!s.alive) {
+      if (pull > 0.45 && s.sinkT < s.wreckLife) s.swallowed = true;
+      return;
+    }
+    if (pull <= 0) {
+      // clear of the maw she bobs back up, slowly
+      s.drawn = Math.max(0, s.drawn - dt * 0.12);
+      return;
+    }
+    const was = s.drawn;
+    s.drawn += dt * DRAW * Math.pow(pull, 0.75) * (0.8 + 0.2 * s.cls.mass);
+    // the first time the throat really takes hold, her timbers cry out
+    if (was < 0.35 && s.drawn >= 0.35) {
+      const [vol, pan, d] = world.soundAt(s.pos);
+      world.audio.crunch(vol, pan, d, 0.5);
+      world.onShake(s.team === 'player' ? 0.35 : 0, s.pos);
+    }
+    if (s.drawn < 1) return;
+    // the sea comes in over her rail: she's gone
+    s.drawn = 1;
+    s.swallowed = true;
+    world.onHazard(s, 'maelstrom', 0, s.pos);
+    const dealt = s.damage(s.hp * 4 + s.maxHp, null, world, null, false, true);
+    // (in a shared sea another captain's game may yet decide her fate)
+    if (s.alive) {
+      s.swallowed = false;
+      s.drawn = 0.97;
+    }
+    world.onHazard(s, 'maelstrom', dealt, s.pos);
   }
 
   /** The strain of the funnel on a hull: a creak near the eye, ruin in its throat. */

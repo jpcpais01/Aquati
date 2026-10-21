@@ -1154,7 +1154,30 @@ export class ShipDamage {
     let heel = 0;
     let afloat = 1;
     if (t < life) y = Math.max(y, bed + s.cls.draft * 0.55);
-    if (t > life && !founder) {
+    // the seabed as seen from her riding height: a maelstrom's funnel holds
+    // the water (and her) far below the open sea, over its carved abyss
+    const funnel = world.funnelAt(s.pos.x, s.pos.z);
+    let done = !founder && t > life + WRECK_FINAL;
+    if (s.swallowed) {
+      // down a maelstrom's throat: dragged under head first, turning with the
+      // water, and on down through the dark till she lands in the abyss below
+      const rest = bed + funnel + Math.max(s.cls.draft * 0.9, s.cls.beam * 0.38);
+      const top = y - s.drawnSink();
+      if (this.restT < 0) {
+        const left = top - this.fall - rest;
+        this.fallV = Math.min(5.5, this.fallV + dt * 1.1, 0.3 + Math.max(left, 0) * 0.6);
+        this.fall += this.fallV * dt;
+        if (left < 0.12) this.restT = t;
+      }
+      const settled = this.restT < 0 ? 0 : smoothstep(0, 3.5, t - this.restT);
+      y = Math.max(top - this.fall, rest);
+      // bow down into the throat, deeper the further she goes, easing as she lands
+      plunge = -Math.min(0.7, 0.24 + this.fall * 0.025) * (1 - settled * 0.7);
+      heel = Math.sign(k.roll || 1) * Math.min(0.9, 0.12 + this.fall * 0.02 + settled * 0.2);
+      afloat = 1 - smoothstep(0, s.cls.draft * 2 + 1.5, this.fall + s.drawnSink());
+      // nobody follows a stranger's hulk into the abyss: gone once she lands
+      if (!founder) done = this.restT >= 0 ? t - this.restT > 4 : t > 45;
+    } else if (t > life && !founder) {
       const u = t - life;
       y -= u * u * 0.07 + u * 0.15;
     } else if (t > life) {
@@ -1162,7 +1185,7 @@ export class ShipDamage {
       // heels over as she sinks; she glides down at a stately pace and comes
       // to rest on her side on the seabed
       const u = t - life;
-      const rest = bed + Math.max(s.cls.draft * 0.9, s.cls.beam * 0.38);
+      const rest = bed + funnel + Math.max(s.cls.draft * 0.9, s.cls.beam * 0.38);
       if (this.restT < 0) {
         // gathers way, then eases the last couple of metres onto the sand
         const left = y - this.fall - rest;
@@ -1214,7 +1237,7 @@ export class ShipDamage {
     this.updateHinges(dt, world);
     this.state.y = this.ship.burning;
     for (const sk of [this.skin, this.bowSkin]) if (sk) sk.uniforms.uDmgSplit.value.w = Math.max(0, 1 - t / 40) * afloat * afloat;
-    return { y, pitch: k.pitch * e - plunge, roll: k.roll * e + heel, done: !founder && t > life + WRECK_FINAL, afloat };
+    return { y, pitch: k.pitch * e - plunge, roll: k.roll * e + heel, done, afloat };
   }
 
   dispose() {

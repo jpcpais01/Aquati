@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-21T16:00Z',
     entries: [
       {
+        title: 'Maelstroms swallow ships whole',
+        notes: [
+          'Linger in a maelstrom\'s throat and it now drags your ship down into it: she settles by the head, shudders and whirls faster as the sea climbs her sides, until it pours over the rail and she goes under. The hazard banner warns you when the throat has her, and there is still time to crowd on sail and claw your way out.',
+          'A ship lost this way no longer stops at the bottom of the funnel. She goes on down the throat beneath the surface, and the farewell camera follows her down into the abyss under the whirlpool, where she comes to rest. Pirates you lure in go the same way, and wrecks and floating timber that drift into the eye are swept round and pulled under too.',
+          'The maelstroms themselves look richer: the bowl darkens from sapphire to deep bottle green, the steep walls glow jade where the sun shines through the racing water, and the white arms tear into streaks along the flow.',
+        ],
+      },
+      {
         title: 'See when your computer is throttling',
         notes: ['The frame profiler (tap the FPS counter or press F3) now shows CPU pressure. In Chrome and Edge it reads Normal, Fair, Serious or Critical, and Serious or Critical (in amber and red) means the machine is under strain or slowing itself down to stay cool. Browsers never share actual temperatures, and Safari and Firefox don’t report pressure at all.'],
       },
