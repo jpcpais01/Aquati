@@ -298,6 +298,8 @@ export interface MarketTaste {
 /** A trading port's market: its tastes, plus prices that drift a little with the days. */
 export class Market {
   private phase: Record<LootId, number>;
+  /** Everything fetches this much more on a feast night, when the whole town is out spending. */
+  bonus = 1;
 
   constructor(readonly taste: MarketTaste, seed: number) {
     let s = seed * 9301 + 49297;
@@ -311,7 +313,7 @@ export class Market {
     const p = this.phase[id];
     // a slow drift over a few minutes plus a gentle day-to-day wobble
     const drift = 1 + 0.09 * Math.sin(t / 140 + p) + 0.04 * Math.sin(t / 37 + p * 2.3);
-    return Math.max(1, Math.round(k.price * (this.taste.mult[k.cat] ?? 1) * drift));
+    return Math.max(1, Math.round(k.price * (this.taste.mult[k.cat] ?? 1) * drift * this.bonus));
   }
 
   /** Price against the fair price, -1..1 (0 = fair). */

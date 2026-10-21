@@ -66,6 +66,8 @@ import { StageShot, VaultStage } from './vaultStage';
 import { Port, PortFocus } from '../port/port';
 import { findPortSite, findTradeSites, portClearings } from '../port/site';
 import { TradePort, TradePorts } from '../port/tradePort';
+import { Festivals, FULL_MOON } from '../port/festival';
+import { LanternBoats } from '../fx/lanternBoats';
 import { Aboard, holdPeek, MarketUI } from '../ui/market';
 import { lootIcon } from '../ui/lootArt';
 import { HOLD_ROOM, Hold, LOOT, LootId, RARITIES, rollContents, rollGood, Stowed } from './treasure';
@@ -283,6 +285,9 @@ export class Game {
   private fwLocker = new FireworkLocker();
   private fwType: FireworkId = 'peony';
   private fireworks!: Fireworks;
+  /** Feast nights at the trading ports, and the paper-lantern boats they set adrift. */
+  private festivals!: Festivals;
+  private lanterns!: LanternBoats;
   private fwTipShown = false;
   private smokeT = 0;
   private spawnPoint = new THREE.Vector3(40, 0, 210);
@@ -750,6 +755,24 @@ export class Game {
     this.particles.onSplash = (p, scale) => this.reef.splash(p.x, p.z, scale);
     // built now (and drawn by the warm-up) so the first rocket compiles nothing
     this.fireworks = new Fireworks(q.particles, this.particles);
+    this.lanterns = new LanternBoats(this.particles.uniforms);
+    this.opaque.add(this.lanterns.mesh);
+    this.festivals = new Festivals(this.tradePorts.ports, this.fireworks, this.lanterns, this.audio);
+    this.festivals.onDusk = (ports, full) => {
+      // word of it only for the towns in these waters
+      const p = this.player;
+      if (this.state !== 'playing' || !p) return;
+      const here = nearestRegion(p.pos.x, p.pos.z).region;
+      const near = ports.filter((tp) => nearestRegion(tp.x, tp.z).region === here);
+      if (!near.length) return;
+      if (full) this.ui.toast(FULL_MOON.name, FULL_MOON.line, 4.6);
+      else this.ui.toast(`Feast night at ${near.map((tp) => tp.name).join(' and ')}`, near.length > 1 ? 'Lanterns, music and fireworks over the harbours tonight' : `${near[0].feast.name}: ${near[0].feast.line.charAt(0).toLowerCase()}${near[0].feast.line.slice(1)}`, 4.6);
+    };
+    this.festivals.onCheer = (tp) => {
+      const [vol, pan, d] = this.world.soundAt(tp.glowAt());
+      this.audio.shout(Math.min(1, vol * 1.3), pan, d, true, 6);
+      tp.cheer(2);
+    };
     this.bubbles = new Bubbles(this.particles.uniforms);
     this.loot.buildBeacons(this.particles.uniforms, globalUniforms.uTime);
     this.waypoints.buildFx(this.particles.uniforms, globalUniforms.uTime, globalUniforms.uLight);
@@ -768,7 +791,7 @@ export class Game {
       this.audio.explosion(vol * 0.18, pan, 160);
     };
     this.ocean.placeVortices(this.hazards.maelstroms.map((m) => ({ x: m.x, z: m.z, r: m.r0 })));
-    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.fireworks.mesh, this.bubbles.mesh, this.loot.fx, this.waypoints.fx);
+    this.water.add(this.ocean.mesh, this.ocean.funnels, this.particles.group, this.fireworks.mesh, this.lanterns.pools, this.bubbles.mesh, this.loot.fx, this.waypoints.fx);
     // the sea from beneath: hidden until the farewell follows a wreck under (the warm-up still draws it)
     this.opaque.add(this.ocean.underside);
     this.pipeline.onRefl = (z) => this.ocean.setHalfDepth(z);
@@ -3006,7 +3029,7 @@ export class Game {
       p.root.updateMatrixWorld(true);
       this.syncFleet();
       this.moorAtPort(port);
-      this.market.open(port.name, port.spec.taste.tagline, port.market, this.holds(), p.gold, this.world.time);
+      this.market.open(port.name, port.tagline, port.market, this.holds(), p.gold, this.world.time);
       this.refreshServices();
       this.refreshParts();
       // start wide and let the camera settle in on the quay
@@ -3981,6 +4004,8 @@ export class Game {
     this.particles.ribbons.clear();
     this.loot.clear();
     this.debris.clear();
+    this.lanterns.clear();
+    this.festivals.reset();
     this.crew.clear();
     this.spirits.clear();
     this.kraken.reset();
@@ -5836,6 +5861,15 @@ export class Game {
   /** Time until the minimap's next redraw. */
   private mapT = 0;
 
+  /**
+   * Word of the next feast night (tonight's, or the one under way): the towns
+   * keeping it, the feast's name and a line about it. For anything that brings
+   * the news, a carrier gull say. null when no town keeps one.
+   */
+  festivalNews() {
+    return this.festivals.news(this.atmos.day, this.atmos.moonPhase);
+  }
+
   private update(dt: number, realDt: number) {
     const w = this.world;
     const P = this.prof;
@@ -5907,6 +5941,7 @@ export class Game {
     this.pushers.length = 0;
     for (const s of this.ships) if (s.alive || s.sinkT < 20) this.pushers.push({ pos: s.pos, heading: s.heading, length: s.cls.length, beam: s.cls.beam, speed: s.speed });
     this.debris.update(dt, w, this.pushers);
+    this.lanterns.update(dt, w, this.pushers);
     P.end();
     P.begin('Shore & landing party', 'sim');
     this.shore.update(dt, w, this.shoreIn, this.rig.target);
@@ -5928,6 +5963,7 @@ export class Game {
     P.end();
     P.begin('Trading ports', 'sim');
     this.tradePorts.update(dt, w, this.player, this.rig.camera.position, this.ships);
+    this.festivals.update(dt, realDt, w, this.atmos.day, this.atmos.moonPhase, this.rig.camera.position, this.state === 'playing' || this.state === 'docked');
     if (docked) {
       this.dockPort!.pin(this.player!);
       this.market.tick(realDt, w.time);
@@ -6139,7 +6175,7 @@ export class Game {
     if (p && this.chartOpen) {
       this.ui.drawChart({
         player: p, ships: this.ships, loot: this.loot.all(), islands: this.terrain.islands, discovered: this.discovered,
-        ports: this.tradePorts.ports.map((tp) => ({ x: tp.x, z: tp.z, name: tp.name })),
+        ports: this.tradePorts.ports.map((tp) => ({ x: tp.x, z: tp.z, name: tp.name, festive: tp.festive > 0.3 })),
         pins: this.waypoints.pins,
         treasure: this.maps.target,
         forts: this.fortMarks().map((f, i) => ({ ...f, name: this.forts.forts[i].name })),

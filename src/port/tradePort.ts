@@ -14,6 +14,7 @@ import { Carry, LOOT, LootId, Market, MarketTaste } from '../game/treasure';
 import { Builder, C, colorize, DECK, lin, shade } from './port';
 import { Crowd, Figure, HIP, PirateStyle, PropGeo } from './pirates';
 import { PortSite } from './site';
+import { Feast, FEASTS, festoonGeometry, lanternMaterial, Span } from './festival';
 
 // The archipelago's trading ports: busy little market towns on stilts where
 // plunder turns into gold. Each has its own colours, its own landmark and its
@@ -27,8 +28,12 @@ const SHIP_X = -2;
 const LANE = -2.6;
 const HALF = 28.5;
 const TAU = Math.PI * 2;
-/** Townsfolk per port. */
-const FOLK = 13;
+/** Townsfolk per port: the thirteen who keep the town, and six more who only come out on a feast night. */
+const FOLK = 19;
+/** The first of the feast-night revellers. */
+const REVELS = 13;
+/** Where the ring dance turns, clear of the berth and the benches. */
+const RING: [number, number] = [-17, -3.1];
 /** Porters per port (figures 3..6). */
 const PORTERS = 4;
 
@@ -289,8 +294,8 @@ function makeKit(specs: TradeSpec[]): Kit {
 
 // ------------------------------------------------------------------ townsfolk
 
-type Role = 'merchant' | 'porter' | 'stroller' | 'kid' | 'harbourmaster' | 'musician' | 'fisher';
-const ROLES: Role[] = ['merchant', 'merchant', 'merchant', 'porter', 'porter', 'porter', 'porter', 'stroller', 'stroller', 'kid', 'harbourmaster', 'musician', 'fisher'];
+type Role = 'merchant' | 'porter' | 'stroller' | 'kid' | 'harbourmaster' | 'musician' | 'fisher' | 'reveller';
+const ROLES: Role[] = ['merchant', 'merchant', 'merchant', 'porter', 'porter', 'porter', 'porter', 'stroller', 'stroller', 'kid', 'harbourmaster', 'musician', 'fisher', 'reveller', 'reveller', 'reveller', 'reveller', 'reveller', 'reveller'];
 
 function townStyle(role: Role, rnd: () => number, sp: TradeSpec): PirateStyle {
   const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length) % a.length];
@@ -314,6 +319,9 @@ function townStyle(role: Role, rnd: () => number, sp: TradeSpec): PirateStyle {
       return { ...base, hat: 'straw', hatColor: 0xe8cf8a, flags: FLAG.vest | FLAG.rolled };
     case 'fisher':
       return { ...base, hat: 'straw', hatColor: 0xd8c08a, flags: FLAG.rolled | FLAG.barefoot | FLAG.garters };
+    case 'reveller':
+      // in their feast-day best: bright shirts, a sash, a flower in the hat
+      return { ...base, shirt: pick([0xf3ecdc, sp.awning[0], sp.awning[1], 0xe8455a, 0x2f8ad8, 0xf5c542]), hat: pick(['straw', 'bandana', 'none', 'tricorn'] as const), hatColor: pick([0xe8cf8a, 0xc8352b, sp.flag[0], 0x2f6b47]), flags: FLAG.belt | FLAG.kerchief | (rnd() < 0.5 ? FLAG.vest : FLAG.cuffs) | (rnd() < 0.3 ? FLAG.plume : 0) };
   }
 }
 
@@ -369,6 +377,12 @@ class Walker {
   turn(want: number, dt: number, rate = 5) {
     this.yaw += Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw)) * damp(rate, dt);
   }
+}
+
+/** The day-to-day moves update() hands to the feast-night choreography. */
+interface Moves {
+  place: (fig: Figure, x: number, z: number, yaw: number, y?: number) => void;
+  hurrah: (fig: Figure, k: number) => void;
 }
 
 interface Job {
@@ -430,6 +444,25 @@ export class TradePort {
   private plankTop = new THREE.Vector3();
   private v = new THREE.Vector3();
   private inv = new THREE.Matrix4();
+  /** The town's own feast, and how far tonight's has got (0 an ordinary night .. 1 in full swing). */
+  readonly feast: Feast;
+  festive = 0;
+  /** The lantern strings, their poles and the drummer's barrel: hidden till a feast. */
+  private fest = new THREE.Group();
+  private lanterns = lanternMaterial();
+  /** Starts true so the first update puts the revellers (shown for the warm-up) away. */
+  private revels = true;
+  private ringRot = 0;
+  private ringDir = 1;
+  private ringT = 0;
+  /** Since the last shell broke overhead (negative: one is on its way up). */
+  private skyT = 99;
+  /** Since the harbourmaster gave the signal for a rocket. */
+  private fuseT = 99;
+  /** Since the fisherman began to set a lantern boat down. */
+  private relT = 99;
+  /** A lantern boat set down on the water at a point (world), its paper one of the feast's colours. */
+  onLantern: (at: THREE.Vector3) => void = () => {};
   /** Called as each piece of cargo reaches the town (or the ship). */
   onDelivered: (id: LootId, on: boolean, at: THREE.Vector3) => void = () => {};
   onBell: () => void = () => {};
@@ -443,6 +476,7 @@ export class TradePort {
     private heightAt: (x: number, z: number) => number,
   ) {
     this.name = spec.name;
+    this.feast = FEASTS[index % FEASTS.length];
     this.market = new Market(spec.taste, index * 17 + 3);
     this.figures = figures;
     this.group.position.set(site.x, 0, site.z);
@@ -512,6 +546,67 @@ export class TradePort {
     this.flag();
     this.palms();
     this.extras();
+    this.festoon();
+  }
+
+  /** The feast-night dressing: strings of paper lanterns criss-crossing the quay, from poles along its edge to the houses and down from the lighthouse. */
+  private festoon() {
+    const D = this.site.depth;
+    const back = -D + 0.8;
+    const wf = back + 7;
+    const of = back + 6.2;
+    const lf = back + 7;
+    const Y = DECK;
+    const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    const poleX = [-27.6, -19.8, -12.6, -7.4, 2.4, 6.0, 13.6, 20.2, 27.4];
+    const PZ = -0.85;
+    const PH = 4.5;
+    const top = poleX.map((x) => V(x, Y + PH - 0.12, PZ));
+    const bank = this.spec.signature === 'bank';
+    const W1 = V(-21.6, Y + 4.9, wf + 0.25);
+    const W2 = V(-12.4, Y + 4.9, wf + 0.25);
+    const HO = V(-17, Y + 6.75, wf + 1.95);
+    const O1 = V(-7.0, Y + 4.5, of + 1.3);
+    const O2 = V(0.6, Y + 4.5, of + 1.3);
+    const L1 = bank ? V(12.3, Y + 5.5, lf + 1.75) : V(11.4, Y + 4.8, lf + 0.2);
+    const L2 = bank ? V(19.7, Y + 5.5, lf + 1.75) : V(20.6, Y + 4.8, lf + 0.2);
+    // from the lighthouse gallery's rail, fanning down to the quay like a maypole's ribbons
+    const rim = (to: THREE.Vector3) => {
+      const dx = to.x - 26.2;
+      const dz = to.z + 3.2;
+      const d = Math.hypot(dx, dz) || 1;
+      return V(26.2 + (dx / d) * 1.45, Y + 8.85, -3.2 + (dz / d) * 1.45);
+    };
+    const pairs: [THREE.Vector3, THREE.Vector3][] = [];
+    for (let i = 0; i + 1 < top.length; i++) pairs.push([top[i], top[i + 1]]);
+    pairs.push(
+      [top[0], W1], [top[1], HO], [top[2], W2], [HO, W1], [HO, W2], [top[3], O1], [top[4], O2], [top[5], L1], [top[6], L1], [top[7], L2], [W2, O1], [O2, L1],
+      [rim(top[8]), top[8]], [rim(top[7]), top[7]], [rim(top[6]), top[6]], [rim(L2), L2],
+    );
+    const spans: Span[] = pairs.map(([a, b]) => ({ a, b, sag: 0.2 + a.distanceTo(b) * 0.045 }));
+    const g = festoonGeometry(spans, this.feast.colors, 7 + this.index * 13);
+    const lanterns = new THREE.Mesh(g.lanterns, this.lanterns);
+    lanterns.name = 'feast-lanterns';
+    const cords = new THREE.LineSegments(g.cords, lineMat(0x2a1d14, 0.75));
+    // poles with pennants in the town's colours, and an upturned barrel for the drummer
+    const sp = this.spec;
+    const b = new Builder();
+    poleX.forEach((x, i) => {
+      b.cyl(0.06, 0.08, PH, [x, Y + PH / 2, PZ], C.timberDark, { seg: 6 });
+      b.ball(0.1, [x, Y + PH + 0.04, PZ], C.gold, { b: 'gold' });
+      b.add(new THREE.ConeGeometry(0.2, 0.7, 3).rotateZ(-Math.PI / 2).scale(1, 1, 0.14), [x + 0.41, Y + PH - 0.32, PZ], lin(sp.flag[i % 2]));
+    });
+    const drum = PropGeo.barrel(0.9, 0.36);
+    drum.translate(-7.6, Y + 0.45, -6.0);
+    b.parts.wood.push(drum);
+    b.finish(this.fest, this.kit);
+    for (const m of this.fest.children as THREE.Mesh[]) m.castShadow = false;
+    this.fest.add(lanterns, cords);
+    this.figures[18].prop = PROP.mug;
+    this.fest.name = 'feast-dressing';
+    this.fest.visible = false;
+    skipWhenHidden(this.fest);
+    this.group.add(this.fest);
   }
 
   private buildDeck(n: Builder, f: Builder) {
@@ -1153,8 +1248,9 @@ export class TradePort {
     const live = this.detail && this.group.visible;
     if (live !== this.folkShown) {
       this.folkShown = live;
-      for (const f of this.figures) f.root.visible = live;
+      this.figures.forEach((f, i) => (f.root.visible = live && (i < REVELS || this.revels)));
     }
+    this.fest.visible = this.detail && this.festive > 0.005;
     return d;
   }
 
@@ -1162,6 +1258,42 @@ export class TradePort {
   showFolk() {
     this.folkShown = true;
     for (const f of this.figures) f.root.visible = true;
+  }
+
+  /** Whether the feast-night crowd is out (the revellers are only drawn then). */
+  get reveling() {
+    return this.revels;
+  }
+
+  /** Whether a ship is tied up alongside. */
+  get moored() {
+    return this.docked;
+  }
+
+  /** A feast night's line for the market, or the town's usual one. */
+  get tagline() {
+    return this.festive > 0.5 ? `${this.feast.name} tonight: the whole town is out, and every merchant pays more.` : this.spec.taste.tagline;
+  }
+
+  /** Where the town's rockets go up from (port frame): the lighthouse gallery and the far end of the quay. */
+  launchSpot(k: number, out = new THREE.Vector3()) {
+    return k % 2 ? this.toWorld(-27.4, DECK + 0.6, -0.6, out) : this.toWorld(26.2, DECK + 9.2, -3.2, out);
+  }
+
+  /** The town's middle, a few metres up: where its lantern-light comes from. */
+  glowAt(out = new THREE.Vector3()) {
+    return this.toWorld(0, DECK + 6, -3.5, out);
+  }
+
+  /** A rocket going up: the harbourmaster gives the signal and everyone looks up for the break. */
+  rocket(delay: number) {
+    this.fuseT = 0;
+    this.skyT = Math.min(this.skyT, -delay);
+  }
+
+  /** The fisherman leans down and sets a lantern boat on the water. */
+  release() {
+    if (this.relT > 2.2) this.relT = 0;
   }
 
   /** Whether the townsfolk are close enough to be drawn and animated. */
@@ -1180,6 +1312,16 @@ export class TradePort {
     this.bellT += dt;
     this.flagWind(world);
     this.smoke(dt, world);
+    this.skyT += dt;
+    this.fuseT += dt;
+    this.lanterns.uniforms.uLit.value = this.festive * 1.04;
+    const revels = this.festive > 0.3;
+    if (revels !== this.revels) {
+      this.revels = revels;
+      for (let i = REVELS; i < this.figures.length; i++) this.figures[i].root.visible = this.folkShown && revels;
+      // the fisherman puts his rod away for the night
+      this.rod.visible = this.bobber.visible = this.fishLine.visible = !revels;
+    }
     if (!this.lively) return;
 
     const f = this.figures;
@@ -1212,6 +1354,14 @@ export class TradePort {
       fig.pose[P.brow] = 0.8 * k;
       fig.hips.position.y = HIP + Math.abs(Math.sin(t * 9)) * 0.1 * k;
     };
+
+    if (this.festive > 0.5) {
+      this.updatePorters(dt, world, t, cheer);
+      this.feastFolk(dt, t, cheer, { place, hurrah });
+      this.group.updateMatrixWorld(true);
+      this.updateMooring();
+      return;
+    }
 
     // -- merchants keep their stalls and cry their wares
     for (let i = 0; i < 3; i++) {
@@ -1394,6 +1544,238 @@ export class TradePort {
       arr.needsUpdate = true;
     }
     this.updateMooring();
+  }
+
+  // ---------------------------------------------------------------- feast night
+
+  /**
+   * The town on a feast night: everyone not carrying cargo joins a ring dance,
+   * two couples swing each other round, the fiddler and a drummer on a barrel
+   * play for them, the merchants clap along, a fellow with a mug toasts the
+   * night, the harbourmaster sends the rockets up and the fisherman sets
+   * lantern boats on the water. Every face turns up when a shell breaks.
+   */
+  private feastFolk(dt: number, t: number, cheer: number, h: Moves) {
+    const f = this.figures;
+    const beat = t * 2.2; // the band's quarter notes, near enough
+    const bounce = Math.abs(Math.sin(beat * Math.PI));
+    const s = this.skyT;
+    const up = s > 0 && s < 4 ? Math.min(1, s / 0.35) * (1 - smoothstep(2.6, 4, s)) : 0;
+    const gaze = (fig: Figure, k = 1) => {
+      fig.head.rotation.x = Math.min(fig.head.rotation.x, -0.6 * up * k);
+      if (up > 0.5) fig.pose[P.jaw] = Math.max(fig.pose[P.jaw], 0.5 * up * k); // "ooh"
+    };
+    const sing = (fig: Figure, i: number) => {
+      fig.pose[P.smile] = 1;
+      fig.pose[P.jaw] = 0.35 * Math.max(0, Math.sin(t * 6.5 + i * 1.9));
+    };
+
+    // -- the merchants clap along behind their stalls
+    for (let i = 0; i < 3; i++) {
+      const fig = f[i];
+      h.place(fig, this.stalls[i], -6.75, 0);
+      if (cheer > 0 && this.cheerLevel > 0) h.hurrah(fig, cheer);
+      else {
+        // the hands meet on the beat
+        const apart = Math.abs(Math.sin(beat * Math.PI + i * 0.4));
+        fig.reach(true, 1.35, 0.06 + 0.3 * apart, 1.15);
+        fig.reach(false, 1.35, 0.06 + 0.3 * apart, 1.15);
+        fig.pose[P.handL] = fig.pose[P.handR] = 0.1;
+        fig.hips.rotation.z = Math.sin(beat * Math.PI * 0.5 + i) * 0.07;
+        fig.hips.position.y = HIP + bounce * 0.03;
+        sing(fig, i);
+      }
+      fig.head.rotation.y = Math.sin(t * 0.5 + i * 1.7) * 0.5;
+      gaze(fig);
+    }
+
+    // -- the ring dance: idle porters, both strollers and the kid, hand in hand
+    const ring: [Figure, Walker][] = [];
+    for (const p of this.porters) if (p.stage === 'idle') ring.push([p.fig, p.w]);
+    ring.push([f[7], this.walkers[0]], [f[9], this.walkers[2]], [f[8], this.walkers[1]]);
+    const PERIOD = 9;
+    const was = this.ringT % PERIOD;
+    this.ringT += dt;
+    const ph = this.ringT % PERIOD;
+    if (ph < was) this.ringDir = -this.ringDir;
+    const stamp = ph > PERIOD - 1.4;
+    if (!stamp) this.ringRot += this.ringDir * 0.6 * dt;
+    const n = ring.length;
+    const R = 1.1 + n * 0.17;
+    const [cx, cz] = RING;
+    ring.forEach(([fig, w], i) => {
+      fig.rest();
+      const kid = fig === f[9];
+      const a = this.ringRot + (i / n) * TAU;
+      const sx = cx + Math.sin(a) * R;
+      const sz = cz + Math.cos(a) * R;
+      if (Math.hypot(sx - w.x, sz - w.z) > 0.35) {
+        // joining in: hurry to a place in the ring
+        w.path.length = 0;
+        w.path.push([sx, sz]);
+        w.step(dt, kid ? 3.2 : 2.6);
+        h.place(fig, w.x, w.z, w.yaw);
+        fig.walk(w.phase * (kid ? 1.3 : 1), 0.9);
+        fig.pose[P.smile] = 1;
+        return;
+      }
+      w.path.length = 0;
+      w.x = sx;
+      w.z = sz;
+      w.moving = false;
+      w.yaw = Math.atan2(cx - sx, cz - sz);
+      h.place(fig, sx, sz, w.yaw);
+      if (stamp) {
+        // stamp, stamp, a clap over the head, and round the other way
+        const k = (ph - (PERIOD - 1.4)) / 1.4;
+        const apart = Math.abs(Math.sin(k * Math.PI * 3));
+        fig.reach(true, 2.7, 0.08 + 0.3 * apart, 0.5);
+        fig.reach(false, 2.7, 0.08 + 0.3 * apart, 0.5);
+        const lift = Math.max(0, Math.sin(k * Math.PI * 4));
+        (i % 2 ? fig.legL : fig.legR).rotation.x = -0.5 * lift;
+        fig.pose[i % 2 ? P.kneeL : P.kneeR] = 0.8 * lift;
+        fig.pose[P.smile] = 1;
+        fig.pose[P.jaw] = 0.6;
+      } else {
+        // side-stepping round, hands joined with the neighbours, a hop on every beat
+        fig.walk(beat * Math.PI, 0.5);
+        fig.root.position.y = DECK + bounce * (kid ? 0.14 : 0.08);
+        const sw = Math.sin(beat * Math.PI) * 0.12;
+        fig.reach(true, 0.25 + sw, 1.15, 0.3);
+        fig.reach(false, 0.25 - sw, 1.15, 0.3);
+        fig.pose[P.handL] = fig.pose[P.handR] = 0.85;
+        sing(fig, i);
+      }
+      fig.pose[P.brow] = 0.5;
+      if (cheer > 0) h.hurrah(fig, cheer);
+      gaze(fig, 0.7);
+    });
+
+    // -- two couples swinging each other round
+    const swing = (a: Figure, b: Figure, px: number, pz: number, k: number) => {
+      const ang = t * 2.1 + Math.sin(t * 0.37 + k) * 1.4 + k * 2;
+      ([[a, 1], [b, -1]] as [Figure, number][]).forEach(([fig, side], j) => {
+        const x = px + Math.sin(ang) * 0.42 * side;
+        const z = pz + Math.cos(ang) * 0.42 * side;
+        h.place(fig, x, z, Math.atan2(px - x, pz - z), DECK + bounce * 0.06);
+        fig.walk(ang * 2.2 + j * Math.PI, 0.45);
+        // both hands held, leaning back into the spin
+        fig.reach(true, 1.05, 0.2, 0.35);
+        fig.reach(false, 1.05, 0.2, 0.35);
+        fig.pose[P.handL] = fig.pose[P.handR] = 0.85;
+        fig.hips.rotation.x = -0.1;
+        sing(fig, k * 2 + j);
+        if (cheer > 0) h.hurrah(fig, cheer);
+        gaze(fig, 0.6);
+      });
+    };
+    swing(f[13], f[14], 11.8, -3.0, 0);
+    swing(f[15], f[16], 20.6, -3.6, 1);
+
+    // -- the drummer on his barrel, a hand on every beat
+    {
+      const fig = f[17];
+      h.place(fig, -7.6, -6.65, 0);
+      const hit = Math.sin(beat * Math.PI);
+      fig.reach(true, 0.7 + 0.5 * Math.max(0, hit), 0.18, 1.3 - 0.4 * Math.max(0, hit));
+      fig.reach(false, 0.7 + 0.5 * Math.max(0, -hit), 0.18, 1.3 - 0.4 * Math.max(0, -hit));
+      fig.pose[P.handL] = fig.pose[P.handR] = 0.4;
+      fig.hips.position.y = HIP + bounce * 0.03;
+      fig.hips.rotation.x = 0.12;
+      fig.head.rotation.x = 0.15 + 0.15 * bounce;
+      fig.head.rotation.z = Math.sin(beat * Math.PI * 0.5) * 0.1;
+      sing(fig, 17);
+      gaze(fig, 0.5);
+    }
+
+    // -- a fellow with a mug, toasting the night out over the water
+    {
+      const fig = f[18];
+      h.place(fig, -25.5, -1.3, 0.1);
+      const cyc = t % 6.5;
+      const raise = cyc < 1.8 ? Math.sin((cyc / 1.8) * Math.PI) : 0;
+      fig.reach(false, 1.1 + 1.6 * raise, 0.25, 1.4 - 0.9 * raise);
+      fig.reach(true, 0.15, 0.3, 0.3);
+      fig.hips.rotation.z = Math.sin(t * 1.1) * 0.08; // a little unsteady by now
+      fig.pose[P.smile] = 1;
+      fig.pose[P.jaw] = 0.6 * raise;
+      if (cheer > 0) h.hurrah(fig, cheer);
+      gaze(fig);
+    }
+
+    // -- the harbourmaster rings you in, then sends the rockets up
+    {
+      const fig = f[10];
+      h.place(fig, 15.0, -1.5, 0.15);
+      if (this.docked && this.bellT < 4.5) {
+        fig.root.rotation.y = 1.2;
+        const pull = Math.max(0, Math.sin(this.bellT * 5.5));
+        fig.reach(false, 2.1 - pull * 0.6, 0.1, 0.6 + pull * 0.6);
+        fig.pose[P.handR] = 1;
+        this.bell.rotation.x = Math.sin(this.bellT * 5.5) * 0.7 * (1 - this.bellT / 4.5);
+        if (Math.floor((this.bellT * 5.5) / Math.PI) !== Math.floor(((this.bellT - dt) * 5.5) / Math.PI)) this.onBell();
+      } else {
+        this.bell.rotation.x *= 1 - damp(3, dt);
+        if (this.fuseT < 1.6) {
+          // "light her!": an arm flung up at the sky
+          const k = Math.sin(Math.min(1, this.fuseT / 1.6) * Math.PI);
+          fig.reach(false, 1.6 + 1.3 * k, 0.15, 0.1);
+          fig.pose[P.jaw] = 0.7 * k;
+        } else {
+          // tapping a foot, pipe going, a hand beating time
+          fig.reach(false, 1.0 + 0.25 * bounce, 0.25, 1.6);
+          fig.legR.rotation.x = -0.15 * bounce;
+        }
+        fig.reach(true, -0.2, 0.75, 1.8);
+        fig.pose[P.smile] = 1;
+        fig.head.rotation.y = Math.sin(t * 0.4) * 0.4;
+        gaze(fig);
+      }
+    }
+
+    // -- the fiddler, faster now, bouncing on his barrel
+    {
+      const fig = f[11];
+      h.place(fig, -9.5, -6.4, 0.25);
+      fig.sit(0.85);
+      fig.hips.position.y += bounce * 0.03;
+      const w = t * 11;
+      const bow = Math.sin(w * 0.5);
+      fig.reach(true, 1.15, -0.55, 1.95);
+      fig.reach(false, 0.85, 0.45 + 0.14 * bow, 1.1 + 0.5 * bow);
+      fig.head.rotation.set(0.15, 0.35, 0.1 * bow);
+      fig.legR.rotation.x = -1.35 + 0.22 * Math.max(0, Math.sin(beat * Math.PI * 2));
+      fig.pose[P.smile] = 1;
+    }
+
+    // -- the fisherman sets lantern boats down off the end
+    {
+      const fig = f[12];
+      h.place(fig, 22.2, 0.32, 0.1, DECK + 0.02);
+      fig.hips.position.y = 0.12;
+      fig.legL.rotation.x = -0.25 + Math.sin(t * 1.3) * 0.25;
+      fig.legR.rotation.x = -0.25 + Math.sin(t * 1.3 + 2.2) * 0.25;
+      fig.pose[P.kneeL] = fig.pose[P.kneeR] = 0.3;
+      const was = this.relT;
+      this.relT += dt;
+      if (this.relT < 1.8) {
+        // reaching down to the water with the little boat in both hands
+        const k = Math.sin((this.relT / 1.8) * Math.PI);
+        fig.hips.rotation.x = 0.55 * k;
+        fig.reach(true, 0.55 + 0.4 * k, 0.12, 0.25);
+        fig.reach(false, 0.55 + 0.4 * k, 0.12, 0.25);
+        fig.pose[P.handL] = fig.pose[P.handR] = 0.6;
+        fig.head.rotation.x = 0.35 * k;
+        if (was < 0.9 && this.relT >= 0.9) this.onLantern(this.toWorld(22.25, 0, 1.25));
+      } else {
+        // watching them go
+        fig.reach(true, 0.4, 0.3, 0.3);
+        fig.reach(false, 0.4, 0.3, 0.3);
+        fig.head.rotation.x = 0.1;
+        fig.pose[P.smile] = 1;
+        gaze(fig);
+      }
+    }
   }
 
   private sendHome(p: Porter) {
@@ -1599,6 +1981,7 @@ export class TradePort {
     const inv = new THREE.Quaternion().copy(this.group.quaternion).invert();
     const wd = this.v.set(world.wind.dirX, 0, world.wind.dirZ).applyQuaternion(inv);
     this.flagPivot.rotation.y = Math.atan2(-wd.z, wd.x);
+    this.lanterns.uniforms.uSway.value.set(wd.x, wd.z, 0.25 + world.wind.strength * 0.5);
   }
 
   private smoke(dt: number, world: World) {
@@ -1688,7 +2071,7 @@ export class TradePorts {
       for (const role of ROLES) styles.push(townStyle(role, rnd, sp));
     });
     // only the town you're at is drawn up close: its folk get the detailed sculpt nearest the camera
-    this.crowd = new Crowd(styles, 0.62, 0.38, 10);
+    this.crowd = new Crowd(styles, 0.62, 0.38, 12);
     this.crowd.group.name = 'townsfolk';
     this.root.add(this.crowd.group);
     this.pending = sites.map((site, i) => () => {
@@ -1739,6 +2122,8 @@ export class TradePorts {
     this.crowd.sync((f, i) => {
       const port = this.ports[Math.floor(i / FOLK)];
       if (!port || !lively.includes(port)) return 0;
+      // the revellers only come out on a feast night
+      if (i % FOLK >= REVELS && !port.reveling) return 0;
       f.hips.getWorldPosition(_w);
       // and the lightest cut once they're a few dozen pixels tall
       const d2 = _w.distanceToSquared(cam);

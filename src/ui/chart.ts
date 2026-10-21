@@ -106,9 +106,25 @@ const BANK = (() => {
 })();
 
 /** A trading port on a map: a gilt disc with a pair of scales. */
-export function portMark(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
+export function portMark(g: CanvasRenderingContext2D, x: number, y: number, r: number, festive = false) {
   g.save();
   g.translate(x, y);
+  if (festive) {
+    // a feast night: a ring of little lanterns round the medallion, softly glowing
+    const cols = ['#ff7a5a', '#ffd263', '#ff8fb0', '#7fe0c0', '#ffb347', '#c8a0ff'];
+    const n = 8;
+    const rr = r * 1.55;
+    const spin = (performance.now() / 4000) % (Math.PI * 2);
+    g.shadowBlur = r * 0.8;
+    for (let i = 0; i < n; i++) {
+      const a = spin + (i / n) * Math.PI * 2;
+      g.fillStyle = cols[i % cols.length];
+      g.shadowColor = cols[i % cols.length];
+      g.beginPath();
+      g.ellipse(Math.cos(a) * rr, Math.sin(a) * rr, Math.max(1.4, r * 0.2), Math.max(1.8, r * 0.26), 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
   g.shadowColor = 'rgba(255, 196, 80, 0.8)';
   g.shadowBlur = r;
   g.fillStyle = '#f4c255';
@@ -270,7 +286,7 @@ export interface ChartScene {
   islands: Island[];
   discovered: Set<string>;
   /** Trading ports, always marked: sailors know where the markets are. */
-  ports?: { x: number; z: number; name: string }[];
+  ports?: { x: number; z: number; name: string; festive?: boolean }[];
   /** Waypoints dropped by the captain. */
   pins?: { x: number; z: number; hue: number; age: number }[];
   /** A whole treasure map's X. */
@@ -1085,7 +1101,7 @@ export class SeaChart {
     for (const pt of sc.ports ?? []) {
       if (!shown(pt.x, pt.z)) continue;
       const [x, y] = toS(pt.x, pt.z);
-      portMark(g, x, y, detail ? 9 : 5);
+      portMark(g, x, y, detail ? 9 : 5, pt.festive);
       if (!detail) continue;
       g.lineWidth = 4;
       g.strokeStyle = 'rgba(8, 30, 40, 0.8)';

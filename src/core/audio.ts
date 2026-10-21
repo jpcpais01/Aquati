@@ -28,6 +28,64 @@ const FLOURISH: [number, number, number][] = [
   [74, 0, 1], [78, 1, 1], [81, 2, 1], [86, 3, 3], [50, 3, 3], [57, 3, 3], [62, 3, 3],
 ];
 
+/** A feast-night reel: bars of [midi, eighths] over a chord root per bar, oom-pah on the quarters. */
+function reel(bars: [number, number][][], roots: number[]) {
+  const notes: [number, number, number][] = [];
+  bars.forEach((bar, b) => {
+    let at = b * 8;
+    for (const [m, len] of bar) {
+      notes.push([m, at, len * 0.92]);
+      at += len;
+    }
+    // the left hand: root on the one and the three, a major chord on the off-beats
+    const r = roots[b];
+    const third = r % 12 === 4 || r % 12 === 11 ? 3 : 4; // E and B minor, the rest major
+    for (const q of [0, 4]) notes.push([r - 12 + (q ? 7 : 0), b * 8 + q, 1.5]);
+    for (const q of [2, 6]) for (const iv of [third, 7]) notes.push([r - 12 + iv + 12, b * 8 + q, 1.4]);
+  });
+  return { notes, eighths: bars.length * 8 };
+}
+
+/** The town band's book: reels in D and G and a hornpipe in E minor, played round and round. */
+const REELS = [
+  reel(
+    [
+      [[74, 1], [78, 1], [81, 1], [78, 1], [74, 1], [78, 1], [81, 1], [78, 1]],
+      [[79, 1], [83, 1], [81, 1], [78, 1], [76, 1], [74, 1], [76, 1], [78, 1]],
+      [[74, 1], [78, 1], [81, 1], [78, 1], [86, 1], [81, 1], [78, 1], [81, 1]],
+      [[79, 1], [76, 1], [73, 1], [76, 1], [74, 4]],
+    ],
+    [62, 67, 62, 57],
+  ),
+  reel(
+    [
+      [[83, 1], [81, 1], [79, 1], [81, 1], [83, 1], [86, 1], [83, 1], [81, 1]],
+      [[79, 1], [81, 1], [83, 1], [79, 1], [76, 1], [78, 1], [79, 1], [76, 1]],
+      [[74, 1], [76, 1], [78, 1], [81, 1], [86, 1], [85, 1], [83, 1], [81, 1]],
+      [[83, 1], [79, 1], [76, 1], [73, 1], [74, 4]],
+    ],
+    [67, 64, 62, 57],
+  ),
+  reel(
+    [
+      [[76, 1], [79, 1], [83, 1], [79, 1], [76, 1], [79, 1], [83, 1], [88, 1]],
+      [[86, 1], [83, 1], [81, 1], [78, 1], [74, 1], [78, 1], [81, 1], [83, 1]],
+      [[76, 1], [79, 1], [83, 1], [79, 1], [81, 1], [78, 1], [74, 1], [78, 1]],
+      [[79, 1], [78, 1], [76, 1], [75, 1], [76, 4]],
+    ],
+    [64, 62, 64, 59],
+  ),
+  reel(
+    [
+      [[81, 2], [78, 1], [81, 1], [86, 2], [81, 1], [78, 1]],
+      [[79, 1], [78, 1], [76, 1], [78, 1], [79, 2], [83, 2]],
+      [[81, 2], [78, 1], [81, 1], [86, 1], [85, 1], [83, 1], [81, 1]],
+      [[79, 1], [76, 1], [78, 1], [76, 1], [74, 4]],
+    ],
+    [62, 67, 62, 57],
+  ),
+];
+
 export class Audio {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -1363,11 +1421,11 @@ export class Audio {
    * beating), buzzing through the box's wooden resonance, with the bellows
    * breathing behind each note. Notes are [midi, start beat, beats].
    */
-  squeezebox(tune: [number, number, number][], beat: number, vol: number, delay = 0) {
-    const v = this.voice(vol, 0);
+  squeezebox(tune: [number, number, number][], beat: number, vol: number, delay = 0, to: AudioNode | null = null) {
+    const v = to ? this.sub(vol, to) : this.voice(vol, 0);
     if (!v) return;
     const [ctx, out] = v;
-    out.connect(this.reverbIn);
+    if (!to) out.connect(this.reverbIn);
     const body = ctx.createBiquadFilter();
     body.type = 'lowpass';
     body.frequency.value = 2600;
@@ -1414,6 +1472,94 @@ export class Audio {
       honk.disconnect();
       out.disconnect();
     }, (end - ctx.currentTime) * 1000 + 1500);
+  }
+
+  /**
+   * A bar or two of the town band on a feast night, heard from `dist` metres
+   * off: the squeezebox on the tune with its oom-pah, a bodhrán on the beat
+   * and a tambourine shaking the off-beats, all thinning out over the water.
+   * Returns how long the phrase lasts (s), so the next follows on the beat.
+   */
+  festivalTune(i: number, vol: number, pan: number, dist: number) {
+    const tune = REELS[((i % REELS.length) + REELS.length) % REELS.length];
+    const beat = 0.165;
+    const len = tune.eighths * beat;
+    const ctx = this.ctx;
+    if (!ctx || this.muted || vol < 0.01) return len;
+    const out = ctx.createGain();
+    out.gain.value = 1;
+    const air = ctx.createBiquadFilter();
+    air.type = 'lowpass';
+    air.frequency.value = Math.max(700, 16000 * Math.exp(-dist / 90));
+    air.Q.value = 0.5;
+    out.connect(air);
+    let pn: StereoPannerNode | null = null;
+    if (ctx.createStereoPanner) {
+      pn = ctx.createStereoPanner();
+      pn.pan.value = clamp1(pan) * 0.8;
+      air.connect(pn).connect(this.sfxBus);
+    } else air.connect(this.sfxBus);
+    const send = ctx.createGain();
+    send.gain.value = 0.25 + Math.min(0.5, dist / 300);
+    air.connect(send).connect(this.reverbIn);
+    const t0 = 0.04;
+    this.squeezebox(tune.notes, beat, vol, t0, out);
+    // bodhrán and tambourine
+    const start = ctx.currentTime + t0;
+    for (let k = 0; k < tune.eighths; k++) {
+      const t = start + k * beat;
+      if (k % 2 === 0) {
+        const accent = k % 8 === 0;
+        const o = ctx.createOscillator();
+        o.type = 'sine';
+        o.frequency.setValueAtTime(accent ? 125 : 108, t);
+        o.frequency.exponentialRampToValueAtTime(52, t + 0.15);
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(vol * (accent ? 1.6 : 1.05), t + 0.006);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+        o.connect(g).connect(out);
+        o.start(t);
+        o.stop(t + 0.24);
+        o.onended = () => {
+          o.disconnect();
+          g.disconnect();
+        };
+      }
+      const n = ctx.createBufferSource();
+      n.buffer = this.noise;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 6200;
+      const ng = ctx.createGain();
+      const lvl = vol * (k % 2 ? 0.55 : 0.3);
+      ng.gain.setValueAtTime(0.0001, t);
+      ng.gain.exponentialRampToValueAtTime(lvl, t + 0.004);
+      ng.gain.exponentialRampToValueAtTime(0.0001, t + (k % 2 ? 0.09 : 0.05));
+      n.connect(hp).connect(ng).connect(out);
+      n.start(t, Math.random() * 1.5, 0.12);
+      n.onended = () => {
+        n.disconnect();
+        hp.disconnect();
+        ng.disconnect();
+      };
+    }
+    setTimeout(() => {
+      out.disconnect();
+      air.disconnect();
+      pn?.disconnect();
+      send.disconnect();
+    }, (len + 2.5) * 1000);
+    return len;
+  }
+
+  /** A gain into a given node (a group of sounds sharing one filter and pan). */
+  private sub(vol: number, to: AudioNode): [AudioContext, GainNode] | null {
+    if (!this.ctx || this.muted) return null;
+    const g = this.ctx.createGain();
+    g.gain.value = vol;
+    g.connect(to);
+    return [this.ctx, g];
   }
 
   /**

@@ -1580,7 +1580,7 @@ export class UI {
     loot: { x: number; z: number; tier?: number }[],
     islands: Island[],
     discovered: Set<string>,
-    ports: { x: number; z: number }[] = [],
+    ports: { x: number; z: number; festive?: number }[] = [],
     camps: { x: number; z: number; routed: boolean }[] = [],
     /** Ashore: the captain on foot, at the middle of a closer map. */
     walker: { x: number; z: number; yaw: number } | null = null,
@@ -1669,7 +1669,7 @@ export class UI {
     for (const pt of ports) {
       const d = Math.hypot(pt.x - cx, pt.z - cz);
       if (d < R - 20) {
-        portMark(g, ...toMap(pt.x, pt.z), 13);
+        portMark(g, ...toMap(pt.x, pt.z), 13, (pt.festive ?? 0) > 0.3);
         inView = true;
       } else if (d < nd) {
         nd = d;
