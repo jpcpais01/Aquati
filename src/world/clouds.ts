@@ -375,6 +375,9 @@ export class LowClouds {
     const p = 0.5 + 0.5 * this.patch.noise(x / 1150 + this.time * 0.0017, z / 1150 - this.time * 0.0013);
     let isle = 0;
     for (const i of this.islands) {
+      // most islands are far off: a box test spares the square root
+      const far = i.r * 1.1 + 170;
+      if (Math.abs(x - i.x) >= far || Math.abs(z - i.z) >= far) continue;
       const d = Math.hypot(x - i.x, z - i.z);
       const k = smoothstep(i.r * 1.1 + 170, i.r * 0.4, d) * (i.kind === 'atoll' ? 0.55 : 1);
       if (k > isle) isle = k;

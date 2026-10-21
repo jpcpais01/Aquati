@@ -9,7 +9,7 @@ import { detectQuality, QualityProfile, ResolutionScaler } from '../core/quality
 import { Profiler } from '../core/profiler';
 import { GraphicsSettings, Settings } from '../core/settings';
 import { globalUniforms, SkyEnvironment } from '../render/environment';
-import { freezeStatic, skipWhenHidden } from '../render/staticScene';
+import { freezeStatic, sealStatic, skipWhenHidden } from '../render/staticScene';
 import { initLod } from '../render/lod';
 import { Pipeline } from '../render/pipeline';
 import { BufferPreloader, warmDrawSliced } from '../render/warmup';
@@ -719,6 +719,8 @@ export class Game {
       // the seabeds reach out under the high seas to meet, so they're always drawn
       const bed = land.getObjectByName('seabed')!;
       this.opaque.add(land, bed);
+      // (sealed first: skipWhenHidden wraps the sealed walk)
+      sealStatic(land);
       skipWhenHidden(land);
       const region = REGIONS.find((r) => r.x === t.ox && r.z === t.oz)!;
       this.regions.push({ region, terrain: t, land, seabed: t.createHeightTexture(512), surf: buildShore(t) });
@@ -729,7 +731,7 @@ export class Game {
     // the plants never move once placed (culling only repacks their instances)
     const plants = veg.build();
     this.opaque.add(plants);
-    freezeStatic(plants);
+    sealStatic(plants);
     if (q.tier > 0) {
       this.grass = new Grass([home, mist], [...towns, ...campClearings(camps), ...fortGround], q.tier === 1 ? 0.8 : 1);
       this.opaque.add(this.grass.group);
