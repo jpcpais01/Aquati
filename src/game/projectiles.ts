@@ -243,6 +243,7 @@ export class Projectiles {
         const ground = world.terrain.heightAt(b.pos.x, b.pos.z);
         if (ground > 0 && b.pos.y < ground) {
           const p = b.pos.clone().setY(ground + 0.3);
+          world.onScare(p, b.ammo === 'shell' ? 140 : 80);
           if (b.ammo === 'shell') this.detonate(b, p, world, ships, false, null, 0);
           else {
             world.particles.sandHit(p);

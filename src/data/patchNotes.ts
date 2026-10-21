@@ -25,6 +25,16 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Island wildlife: fifteen kinds of beast',
+        notes: [
+          'The isles are alive. Each island now has its own creatures, chosen to suit it: wild goats on the crags, red deer and wild boar in the meadows and woods, capuchin monkeys in the trees, scarlet macaws, flamingos in the shallows, egrets and grey herons, brown pelicans and blue-footed boobies along the coast, green iguanas, giant tortoises, sea lions on the beaches, red land crabs, blue morpho butterflies and hummingbirds round the flowers.',
+          'Every kind has its own ways. Goat kids play and the billies butt heads, deer stot away with their white tails up, a sow bluff-charges while her striped piglets trot behind her in a line. Monkeys groom and scold you from the branches and leap from tree to tree. Flamingos feed with heads upside down, rest on one leg and march in a pink crowd. Pelicans patrol the shore in a line and dive for fish, boobies show off their blue feet in a slow dance, and herons stalk and strike.',
+          'Iguanas bask and bob their heads at each other with their dewlaps out, tortoises pull into their shells, sea lions loll on the sand, bark and wave a flipper, and crabs scuttle sideways, raise their claws and dig themselves in. Butterflies come out on sunny days, and a hummingbird may stop to hover right in front of your face.',
+          'They notice you. Walk ashore and they keep an eye on you, then shy away or bolt if you come too close, and running scares them sooner than walking. A broadside, a ball landing on the island or a pistol shot sends the whole island fleeing: herds stampede, birds burst into the air, crabs vanish into the sand. Sail too close to a beach and the sea lions flop into the water.',
+          'Each has its own voice: bleats, snorts, grunts and squeals, monkey chatter, macaw squawks, flamingo honking, sea lion barks and more. The first time you see each kind up close you get a note of it, up to all fifteen.',
+        ],
+      },
+      {
         title: 'Merchant convoys on the high seas',
         notes: [
           'Out on Mar Sereno the trading houses now run their cargoes between the two archipelagos in convoys of two or three ships sailing in line, at the pace of the slowest. "Sail ho!" goes up when one heaves into sight, and they show on your minimap and chart in trade-gold.',
@@ -33,6 +43,20 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Fire on a merchantman, or ram her, and the whole convoy cracks on sail and runs. None of them will trade with you after that.',
         ],
       },
+      {
+        title: 'Messages in bottles, flotsam, shipwreck survivors and a carrier gull',
+        notes: [
+          'Corked bottles now drift on the open sea, glinting in the sun, with a rolled letter showing through the glass. Sail over one to fish it out and the letter unrolls at the side of the screen. It might be a castaway\u2019s torn third of a treasure map, a taunt from one of the Brethren\u2019s named captains (with their portrait, what makes them dangerous, and their poster pinned on your Wanted Board), or somebody\u2019s lost letter: a bank note, a love letter, a grog recipe, each worth some gold.',
+          'Far from land you also pass rafts of sun-bleached driftwood and golden tangles of kelp with their little floats. Crabs scuttle sideways about on them and wave their claws, and bolt over the edge with a plop when a hull comes close. A gull or two loafs on top, taking off as you pass and settling again behind you. Now and then a barrel or chest has fetched up in the weed. Hulls push the flotsam aside, and there is more of it out on the high seas.',
+          'When a pirate goes down, a few of her crew often make it to the wreckage: a broken yard trailing a rag of sail, or a torn-off hatch cover. They cling to it with their arms over the wood, and one of them waves both arms and shouts as you come near. Sail alongside and throw them a line (F, or tap the prompt) and they swim for your side and climb up the hull one by one. Every hand you rescue makes your guns reload a little faster (up to 20%), every two add one more to your boarding parties, and now and then a grateful bosun has a piece of a treasure map in his boot. Sail on and the current takes them.',
+          'Now and then a gull flies in from port with a scroll tied across her back, lands on your rail with a long call and drops off her news. She brings prize money from the merchants for every third pirate you sink, warns you which named captain the Brethren have sent after you (and how much is on their head), brings rumours of a chest washed up off an island with the spot pinned on your chart, and on feast days invites you to the night\u2019s festival in port.',
+        ],
+      },
+    ],
+  },
+  {
+    hour: '2026-10-21T02:00Z',
+    entries: [
       {
         title: 'Whales on the high seas',
         notes: [

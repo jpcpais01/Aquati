@@ -42,9 +42,11 @@ export interface Item {
   phase: number;
   age: number;
   sparkle: number;
+  /** Fetched up in the shallows: doesn't drift, and keeps three times as long. */
+  moored?: boolean;
 }
 
-function colored(geo: THREE.BufferGeometry, hex: number, boost = 1) {
+export function colored(geo: THREE.BufferGeometry, hex: number, boost = 1) {
   const g = geo.index ? geo.toNonIndexed() : geo;
   g.deleteAttribute('uv');
   const c = new THREE.Color(hex).multiplyScalar(boost);
@@ -55,7 +57,7 @@ function colored(geo: THREE.BufferGeometry, hex: number, boost = 1) {
   return g;
 }
 
-function at<T extends THREE.BufferGeometry>(g: T, x: number, y: number, z: number): T {
+export function at<T extends THREE.BufferGeometry>(g: T, x: number, y: number, z: number): T {
   g.translate(x, y, z);
   return g;
 }
@@ -179,7 +181,7 @@ function chest(s: ChestStyle): [THREE.BufferGeometry, THREE.BufferGeometry | nul
   return [mergeGeometries(solid), glow.length ? mergeGeometries(glow) : null];
 }
 
-function mulberry(seed: number) {
+export function mulberry(seed: number) {
   return () => {
     seed |= 0;
     seed = (seed + 0x6d2b79f5) | 0;
@@ -348,6 +350,11 @@ export class Loot {
     }
   }
 
+  /** One barrel or chest set down on the water just here (tangled in a kelp mat, say). */
+  place(x: number, z: number, tier: Tier, moored = false) {
+    this.items.push({ x, z, tier, goods: rollContents(tier as Rarity), heal: HEAL[tier], spin: (Math.random() - 0.5) * 0.2, phase: Math.random() * 10, age: 0, sparkle: 0, moored });
+  }
+
   /** Puts goods the hold had no room for back on the water, bobbing in a barrel or chest of their rarity. */
   float(x: number, z: number, goods: LootId[], tier: Tier) {
     if (!goods.length) return;
@@ -398,8 +405,10 @@ export class Loot {
       const it = this.items[i];
       it.age += dt;
       // drift with the wind
-      it.x += world.wind.dirX * 0.25 * dt;
-      it.z += world.wind.dirZ * 0.25 * dt;
+      if (!it.moored) {
+        it.x += world.wind.dirX * 0.25 * dt;
+        it.z += world.wind.dirZ * 0.25 * dt;
+      }
       if (collector) {
         const dx = collector.x - it.x, dz = collector.z - it.z;
         const d = Math.hypot(dx, dz);
@@ -416,7 +425,7 @@ export class Loot {
           it.z += (dz / d) * pull;
         }
       }
-      if (it.age > 240 + it.tier * 60) {
+      if (it.age > (240 + it.tier * 60) * (it.moored ? 3 : 1)) {
         this.items.splice(i, 1);
         continue;
       }
@@ -430,7 +439,7 @@ export class Loot {
       if (idx >= MAX) continue;
       const y = world.waterHeight(it.x, it.z);
       // fade in from the deep on drop, fade out in the last few seconds
-      const life = 240 + k * 60;
+      const life = (240 + k * 60) * (it.moored ? 3 : 1);
       const fade = Math.min(1, it.age * 1.5, (life - it.age) / 4);
       this.e.set(Math.sin(world.time * 1.3 + it.phase) * 0.18, it.phase + world.time * it.spin, Math.cos(world.time * 1.1 + it.phase) * 0.15);
       this.q.setFromEuler(this.e);

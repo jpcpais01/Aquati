@@ -7,6 +7,8 @@ import { BankKind, bankJobs, CALIBERS } from './sfx';
 import { renderThunder } from './thunder';
 import { KitKind, kitJobs } from './musicKit';
 import { VoyageMusic } from './voyageMusic';
+import { wildCall } from './wildCalls';
+import type { CallKind } from '../fx/wild/wildlife';
 
 const SPEED_OF_SOUND = 343;
 /** Most bank samples sounding at once; past this a big battle only piles crackle onto the audio thread. */
@@ -2600,6 +2602,24 @@ export class Audio {
     send.gain.value = 0.55;
     out.connect(send).connect(this.reverbIn);
     return [ctx, out, ctx.currentTime + delay + Math.min(dist / SPEED_OF_SOUND, 1.1)];
+  }
+
+  /** One of the island beasts calling (see core/wildCalls.ts); `pitch` lifts a youngster's voice. */
+  wild(kind: CallKind, vol: number, pan: number, n = 1, pitch = 1) {
+    const ctx = this.ctx;
+    if (!ctx || this.muted || vol < 0.01) return;
+    const out = ctx.createGain();
+    out.gain.value = Math.min(1, vol) * 0.22;
+    const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.value = clamp1(pan);
+      out.connect(panner).connect(this.ambBus);
+    } else out.connect(this.ambBus);
+    wildCall(ctx, out, (at, dur, rate) => this.noiseSrc(ctx, at, dur, rate), kind, n, pitch);
+    setTimeout(() => {
+      out.disconnect();
+      panner?.disconnect();
+    }, 4000);
   }
 
   private noiseSrc(ctx: AudioContext, at: number, dur: number, rate = 1) {

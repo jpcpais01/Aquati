@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { angleDelta, clamp, damp, lerp, smoothstep } from '../core/noise';
 import { patchMaterial } from '../render/environment';
 import type { World } from '../game/world';
@@ -15,6 +16,11 @@ import { Island } from '../world/terrain';
 // trailing a ship to circle her masts, landing on mast caps, fighting tops, the
 // jib-boom and the shore rocks, bobbing on the swell, and scattering in a
 // screaming cloud when the guns go off. All of it is one instanced draw.
+//
+// A few more gulls wait off stage: riders, that loaf on drifting kelp and
+// driftwood far out at sea (and wheel round it while a ship goes by), and the
+// carrier, who flies in with a scroll on her back, lands on your rail, calls
+// out her news and is gone again.
 
 const S = 1.5; // model scale: ~2.6 m across the wings, a touch big so it reads from the bird's-eye camera
 const LEG = 0.205 * S; // hip to sole
@@ -22,7 +28,12 @@ const TAU = Math.PI * 2;
 const SCARE_GUNS = 75;
 const SCARE_BOOM = 120;
 
-type Mode = 'soar' | 'land' | 'perch' | 'float' | 'takeoff' | 'flee';
+type Mode = 'soar' | 'land' | 'perch' | 'float' | 'takeoff' | 'flee' | 'off';
+type Kind = 'flock' | 'rider' | 'carrier';
+
+const RIDERS = 6;
+/** Spar index of the carrier's spot on the rail: stands as long as the ship does. */
+const RAIL = -9;
 
 interface Perch {
   ship: Ship | null;
@@ -33,6 +44,7 @@ interface Perch {
 }
 
 interface Gull {
+  kind: Kind;
   home: Island;
   mode: Mode;
   t: number; // time left in this mode
@@ -68,6 +80,14 @@ interface Gull {
   off: THREE.Vector3; // touchdown offset, settled out on the perch
   call: number; // long-call head toss timer
   seed: number;
+  /** A rider's patch of flotsam (its perch moves with it). */
+  raft: Perch | null;
+  /** A rider or carrier with nothing left to do: seconds until it leaves the stage. */
+  life: number;
+  /** The carrier's news, told on touchdown. */
+  news: (() => void) | null;
+  /** The carrier is on her errand: no gunfire turns her back. */
+  errand: boolean;
 }
 
 // ---------------------------------------------------------------- sculpt
@@ -312,6 +332,46 @@ function gullGeometry(): THREE.BufferGeometry {
 
 // ---------------------------------------------------------------- vertex rig
 
+/** A scroll tied across the carrier's back (gull model space, behind the shoulders). */
+function scrollGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const paint = (g: THREE.BufferGeometry, c: number[]) => {
+    const n = g.getAttribute('position').count;
+    const a = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) a.set(c, i * 3);
+    g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+    g.deleteAttribute('uv');
+    return g.index ? g.toNonIndexed() : g;
+  };
+  const roll = new THREE.CylinderGeometry(0.026, 0.026, 0.13, 10);
+  roll.rotateZ(Math.PI / 2);
+  parts.push(paint(roll, [0.93, 0.85, 0.66]));
+  for (const x of [-0.068, 0.068]) {
+    const end = new THREE.CircleGeometry(0.026, 10);
+    end.rotateY(x > 0 ? Math.PI / 2 : -Math.PI / 2);
+    end.translate(x, 0, 0);
+    parts.push(paint(end, [0.78, 0.68, 0.5]));
+  }
+  const band = new THREE.CylinderGeometry(0.029, 0.029, 0.024, 10);
+  band.rotateZ(Math.PI / 2);
+  parts.push(paint(band, [0.78, 0.1, 0.08]));
+  // the ribbon's tails trail back over the rump
+  for (const s of [-1, 1]) {
+    const tail = new THREE.BoxGeometry(0.012, 0.004, 0.07);
+    tail.rotateY(s * 0.25);
+    tail.translate(s * 0.012, 0.018, -0.045);
+    parts.push(paint(tail, [0.78, 0.1, 0.08]));
+  }
+  const g = mergeGeometries(parts);
+  g.translate(0, 0.094, -0.035);
+  return g;
+}
+
+function shipNear(ships: Ship[], at: THREE.Vector3, r: number) {
+  for (const s of ships) if (s.alive && Math.hypot(s.pos.x - at.x, s.pos.z - at.z) < r + s.cls.length * 0.5) return true;
+  return false;
+}
+
 const RIG_GLSL = /* glsl */ `
 attribute vec3 aFold;
 attribute vec4 aRig;   // x shoulder weight, y wrist weight, z head weight, w: 1 legs, -1 tail
@@ -387,12 +447,16 @@ export class Birds {
   private wingB: THREE.InstancedBufferAttribute;
   private cryClock = 3;
   private time = 0;
+  private carrier!: Gull;
+  /** The carrier's scroll, tied across her back with a red ribbon. */
+  readonly scroll: THREE.InstancedMesh;
 
   /** `islands` give every perch; the flock first nests round `homes` (see rehome). */
   constructor(islands: Island[], count: number, heightAt: (x: number, z: number) => number, homes = islands) {
     const geo = gullGeometry();
-    this.wingA = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
-    this.wingB = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);
+    const all = count + RIDERS + 1;
+    this.wingA = new THREE.InstancedBufferAttribute(new Float32Array(all * 4), 4);
+    this.wingB = new THREE.InstancedBufferAttribute(new Float32Array(all * 4), 4);
     this.wingA.setUsage(THREE.DynamicDrawUsage);
     this.wingB.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('aWingA', this.wingA);
@@ -408,11 +472,15 @@ export class Birds {
     const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     depth.onBeforeCompile = (shader) => rigShader(shader, false);
     depth.customProgramCacheKey = () => 'gull-depth';
-    this.mesh = new THREE.InstancedMesh(geo, mat, count);
+    this.mesh = new THREE.InstancedMesh(geo, mat, all);
     this.mesh.customDepthMaterial = depth;
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.castShadow = true;
     this.mesh.frustumCulled = false;
+    this.scroll = new THREE.InstancedMesh(scrollGeometry(), patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.15 }), { clouds: true, caustics: true }), 1);
+    this.scroll.count = 0;
+    this.scroll.castShadow = true;
+    this.scroll.frustumCulled = false;
 
     // shore rocks and beaches to stand on
     for (const isl of islands) {
@@ -431,9 +499,10 @@ export class Birds {
       }
     }
 
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < all; i++) {
       const home = homes[i % homes.length];
       const g: Gull = {
+        kind: i < count ? 'flock' : i < count + RIDERS ? 'rider' : 'carrier',
         home,
         mode: 'soar',
         t: 6 + Math.random() * 20,
@@ -466,7 +535,17 @@ export class Birds {
         off: new THREE.Vector3(),
         call: 0,
         seed: Math.random() * 100,
+        raft: null,
+        life: 0,
+        news: null,
+        errand: false,
       };
+      if (g.kind !== 'flock') {
+        g.mode = 'off';
+        this.gulls.push(g);
+        if (g.kind === 'carrier') this.carrier = g;
+        continue;
+      }
       this.newCircle(g);
       const a = Math.random() * TAU;
       g.pos.set(g.cx + Math.cos(a) * g.r, g.h, g.cz + Math.sin(a) * g.r);
@@ -496,6 +575,7 @@ export class Birds {
   rehome(homes: Island[]) {
     if (!homes.length || this.gulls[0]?.home === homes[0]) return;
     this.gulls.forEach((g, i) => {
+      if (g.kind !== 'flock') return;
       if (g.perch) g.perch.taken = false;
       g.perch = null;
       g.water = null;
@@ -513,6 +593,14 @@ export class Birds {
   private newCircle(g: Gull) {
     const isl = g.home;
     g.escort = null;
+    if (g.raft) {
+      // wheel low over the flotsam, waiting for the ship to pass
+      g.cx = g.raft.local.x;
+      g.cz = g.raft.local.z;
+      g.r = 9 + Math.random() * 8;
+      g.h = 8 + Math.random() * 6;
+      return;
+    }
     g.cx = isl.x + (Math.random() - 0.5) * isl.r;
     g.cz = isl.z + (Math.random() - 0.5) * isl.r;
     g.r = 16 + Math.random() * isl.r * 0.7;
@@ -545,7 +633,7 @@ export class Birds {
 
   private perchOk(p: Perch) {
     const s = p.ship;
-    return !s || (s.alive && s.root.visible && s.dmg.sparStanding(p.spar));
+    return !s || (s.alive && s.root.visible && (p.spar === RAIL || s.dmg.sparStanding(p.spar)));
   }
 
   private perchWorld(p: Perch, out: THREE.Vector3) {
@@ -559,8 +647,111 @@ export class Birds {
     g.water = null;
   }
 
+  /**
+   * A gull comes to loaf on a patch of drifting flotsam. `spot` is the world
+   * point it stands on: the caller keeps it moving with the drift. Returns
+   * false when every rider is already out.
+   */
+  ride(spot: THREE.Vector3, home: Island | null): boolean {
+    const g = this.gulls.find((o) => o.kind === 'rider' && o.mode === 'off');
+    if (!g) return false;
+    const p: Perch = { ship: null, spar: 0, local: spot, taken: true };
+    g.raft = p;
+    g.perch = p;
+    g.water = null;
+    if (home) g.home = home;
+    g.mode = 'perch';
+    g.t = 20 + Math.random() * 40;
+    g.pos.copy(spot).setY(spot.y + LEG);
+    g.vel.set(0, 0, 0);
+    g.yaw = Math.random() * TAU;
+    g.fold = g.legs = 1;
+    g.amp = 0;
+    g.life = 0;
+    return true;
+  }
+
+  /** The flotsam under `spot` is gone: its gull flies off and leaves the stage. */
+  unride(spot: THREE.Vector3, w: World) {
+    for (const g of this.gulls) {
+      if (g.raft?.local !== spot) continue;
+      g.raft = null;
+      g.life = 16;
+      if (g.mode === 'perch') this.takeOff(g, w);
+      else this.release(g);
+    }
+  }
+
+  /** True while the carrier is out on an errand. */
+  get carrying() {
+    return this.carrier.mode !== 'off';
+  }
+
+  /**
+   * The carrier gull flies in from `from` (or upwind) with a scroll on her
+   * back, lands on the ship's rail, and `news` is told the moment her feet
+   * touch the wood. Returns false if she is already out.
+   */
+  carry(ship: Ship, w: World, news: () => void, from: { x: number; z: number } | null = null): boolean {
+    const g = this.carrier;
+    if (g.mode !== 'off' || !ship.alive) return false;
+    const s = ship.model.shape;
+    const t = 0.3;
+    const top = s.top(t);
+    const rail: Perch = { ship, spar: RAIL, local: new THREE.Vector3(s.halfWidthAtY(t, top) - 0.07, top + 0.04, s.z(t)), taken: true };
+    let a = Math.atan2(-w.wind.dirX, -w.wind.dirZ);
+    if (from) a = Math.atan2(from.x - ship.pos.x, from.z - ship.pos.z);
+    a += (Math.random() - 0.5) * 0.6;
+    const d = 150 + Math.random() * 40;
+    g.pos.set(ship.pos.x + Math.sin(a) * d, 30 + Math.random() * 8, ship.pos.z + Math.cos(a) * d);
+    g.vel.set(-Math.sin(a) * 10, 0, -Math.cos(a) * 10);
+    g.yaw = a + Math.PI;
+    g.fold = g.legs = 0;
+    g.raft = null;
+    g.water = null;
+    g.escort = null;
+    g.perch = rail;
+    g.mode = 'land';
+    g.t = 50;
+    g.news = news;
+    g.errand = true;
+    g.life = 0;
+    return true;
+  }
+
+  /** Called home: the carrier (and any riders) leave at once (a new voyage). */
+  recall() {
+    for (const g of this.gulls) {
+      if (g.kind === 'flock') continue;
+      g.mode = 'off';
+      g.raft = g.perch = null;
+      g.news = null;
+      g.errand = false;
+    }
+  }
+
+  /** Tells the carrier's news (once) and sends her about her business. */
+  private deliver(g: Gull) {
+    const f = g.news;
+    g.news = null;
+    f?.();
+  }
+
   /** Decide what to do after a spell of soaring. */
   private plan(g: Gull, ships: Ship[], w: World) {
+    if (g.kind !== 'flock') {
+      const raft = g.raft;
+      if (!raft) {
+        g.mode = 'off';
+        return;
+      }
+      // back down onto the flotsam once no hull is near it
+      if (!raft.taken && !shipNear(ships, raft.local, 34)) return this.startLanding(g, raft, null);
+      this.newCircle(g);
+      g.mode = 'soar';
+      g.t = 4 + Math.random() * 5;
+      return;
+    }
     const r = Math.random();
     let near: Ship | null = null;
     let nd = 150;
@@ -627,7 +818,7 @@ export class Birds {
   private scare(at: THREE.Vector3, radius: number, w: World, ship: Ship | null) {
     let shrieks = 0;
     for (const g of this.gulls) {
-      if (g.mode === 'flee') continue;
+      if (g.mode === 'flee' || g.mode === 'off' || g.errand) continue;
       const onBoard = !!g.perch && g.perch.ship === ship && !!ship;
       const d = Math.hypot(g.pos.x - at.x, g.pos.z - at.z);
       if (!onBoard && (d > radius * (0.7 + Math.random() * 0.3) || (g.mode === 'soar' && Math.random() < 0.35))) continue;
@@ -693,7 +884,17 @@ export class Birds {
     const upwind = Math.atan2(-w.wind.dirX, -w.wind.dirZ);
 
     this.gulls.forEach((g) => {
+      if (g.mode === 'off') return;
       g.t -= dt;
+      // a rider without its flotsam, or the carrier with her errand run, flies off and away
+      if (g.kind !== 'flock' && !g.raft && !g.errand) {
+        g.life -= dt;
+        if (g.life < 0) {
+          this.release(g);
+          g.mode = 'off';
+          return;
+        }
+      }
       let ampT = 0;
       let foldT = 0;
       let legsT = 0;
@@ -712,6 +913,12 @@ export class Birds {
         g.perch.ship.model.root.updateWorldMatrix(true, false);
       }
       if ((g.perch && !this.perchOk(g.perch)) || (g.escort && (!g.escort.alive || !g.escort.root.visible))) {
+        if (g.errand) {
+          // her ship is gone: the news goes back where it came from
+          g.news = null;
+          g.errand = false;
+          g.life = 12;
+        }
         if (g.mode === 'perch') this.takeOff(g, w);
         else {
           this.release(g);
@@ -733,6 +940,9 @@ export class Birds {
           if (g.escort) {
             g.cx = g.escort.pos.x + g.escort.vel.x * 1.2;
             g.cz = g.escort.pos.z + g.escort.vel.z * 1.2;
+          } else if (g.raft) {
+            g.cx = g.raft.local.x;
+            g.cz = g.raft.local.z;
           } else {
             // circles drift downwind like thermals, then the gull works back upwind
             g.cx += w.wind.dirX * 0.7 * dt;
@@ -790,6 +1000,22 @@ export class Birds {
             g.off.subVectors(g.pos, T);
             g.vel.set(0, 0, 0);
             g.call = 0;
+            if (g.errand) {
+              // feet on the rail: a long call to say she's here, and the news is told
+              g.t = 7.5;
+              this.cry(g, w, 4);
+              g.call = 1.6;
+              this.deliver(g);
+            } else if (g.raft) g.t = 25 + Math.random() * 40;
+          } else if (g.errand && g.t < 0) {
+            // she never caught the ship up: the news is shouted down from the sky
+            this.deliver(g);
+            g.errand = false;
+            g.life = 12;
+            this.release(g);
+            this.newCircle(g);
+            g.mode = 'soar';
+            g.t = 10;
           } else if (g.t < 0) {
             this.release(g);
             this.newCircle(g);
@@ -827,8 +1053,10 @@ export class Birds {
               }
             }
           }
-          // face into the wind, looking about
-          const face = upwind + Math.sin(g.seed) * 0.5;
+          // a hull bearing down on the flotsam puts its gull up
+          if (g.raft && g.mode === 'perch' && shipNear(ships, g.pos, 22)) g.t = Math.min(g.t, Math.random() * 0.4);
+          // face into the wind, looking about (the carrier looks aft, along her ship, at whoever reads her news)
+          const face = g.errand && g.perch?.ship ? g.perch.ship.heading + Math.PI - 0.5 : upwind + Math.sin(g.seed) * 0.5;
           g.yaw += angleDelta(g.yaw, face) * damp(1.2, dt);
           g.headClock -= dt;
           if (g.headClock < 0) {
@@ -848,7 +1076,13 @@ export class Birds {
             foldT = 0.35;
             dihT = 0.9;
           }
-          if (g.t < 0) this.takeOff(g, w);
+          if (g.t < 0) {
+            if (g.errand) {
+              g.errand = false;
+              g.life = 14;
+            }
+            this.takeOff(g, w);
+          }
           break;
         }
         case 'takeoff': {
@@ -939,7 +1173,17 @@ export class Birds {
     _pm.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     _fr.setFromProjectionMatrix(_pm);
     let n = 0;
+    const c = this.carrier;
+    if (c.news && c.mode !== 'off') {
+      _e.set(c.pitch, c.yaw, c.bank);
+      _q.setFromEuler(_e);
+      _m.compose(c.pos, _q, _s);
+      this.scroll.setMatrixAt(0, _m);
+      this.scroll.count = 1;
+      this.scroll.instanceMatrix.needsUpdate = true;
+    } else this.scroll.count = 0;
     for (const g of this.gulls) {
+      if (g.mode === 'off') continue;
       // the shadow can land well to the side of a high gull: the sphere grows with height
       _sph.center.copy(g.pos);
       _sph.radius = 2 + Math.max(0, g.pos.y) * 1.6;
