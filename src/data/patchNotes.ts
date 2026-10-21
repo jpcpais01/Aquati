@@ -13,6 +13,15 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T16:00Z',
+    entries: [
+      {
+        title: 'See when your computer is throttling',
+        notes: ['The frame profiler (tap the FPS counter or press F3) now shows CPU pressure. In Chrome and Edge it reads Normal, Fair, Serious or Critical, and Serious or Critical (in amber and red) means the machine is under strain or slowing itself down to stay cool. Browsers never share actual temperatures, and Safari and Firefox don’t report pressure at all.'],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T15:00Z',
     entries: [
       {

@@ -47,6 +47,20 @@ interface PendingFrame {
   queries: { q: WebGLQuery; stat: Stat }[];
 }
 
+/** The Compute Pressure API's CPU states; serious and critical include thermal throttling. */
+type Pressure = 'nominal' | 'fair' | 'serious' | 'critical';
+interface PressureObs {
+  observe(source: 'cpu', opts?: { sampleInterval?: number }): Promise<void>;
+  disconnect(): void;
+}
+type PressureCtor = new (cb: (records: { state: Pressure }[]) => void) => PressureObs;
+const PRESSURE: Record<Pressure, [string, string]> = {
+  nominal: ['Normal', 'ok'],
+  fair: ['Fair · busy', 'ok'],
+  serious: ['Serious · may throttle', 'warn'],
+  critical: ['Critical · throttling', 'bad'],
+};
+
 const HIST = 150;
 const EMA = 0.08;
 
@@ -103,6 +117,9 @@ export class Profiler {
   private nodes!: Record<'fps' | 'ms' | 'verdict' | 'cpuTotal' | 'cpuBar' | 'cpuRows' | 'gpuTotal' | 'gpuBar' | 'gpuRows' | 'facts', HTMLElement>;
   private gpuName = '';
   private gpuWait = 0;
+  /** Latest CPU pressure: undefined until the first reading, null where the browser doesn't report it. */
+  private pressure: Pressure | null | undefined;
+  private pressureObs: PressureObs | null = null;
 
   constructor(private renderer: THREE.WebGLRenderer, private info: () => ProfilerInfo) {
     this.gl = renderer.getContext() as WebGL2RenderingContext;
@@ -165,6 +182,29 @@ export class Profiler {
     } else {
       this.dropPending();
     }
+    this.watchPressure(open);
+  }
+
+  /**
+   * Browsers never expose temperatures; Chrome and Edge do report CPU
+   * pressure, which climbs to serious/critical when the machine throttles.
+   */
+  private watchPressure(on: boolean) {
+    this.pressureObs?.disconnect();
+    this.pressureObs = null;
+    if (!on) return;
+    const PO = (window as unknown as { PressureObserver?: PressureCtor }).PressureObserver;
+    if (!PO) {
+      this.pressure = null;
+      return;
+    }
+    const obs = new PO((records) => {
+      if (records.length) this.pressure = records[records.length - 1].state;
+    });
+    this.pressureObs = obs;
+    obs.observe('cpu', { sampleInterval: 1000 }).catch(() => {
+      this.pressure = null;
+    });
   }
 
   // ------------------------------------------------------------------ frame
@@ -496,7 +536,7 @@ export class Profiler {
     const r = this.renderer.info;
     const inf = this.info();
     const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-    const facts: [string, string][] = [
+    const facts: [string, string, string?][] = [
       ['Draw calls', r.render.calls.toLocaleString()],
       ['Triangles', compact(r.render.triangles)],
       ['Points · lines', `${compact(r.render.points)} · ${compact(r.render.lines)}`],
@@ -506,9 +546,11 @@ export class Profiler {
       ['Quality', `${cap(inf.preset)} · tier ${inf.tier}`],
       ['MSAA · shadows', `${inf.msaa ? `${inf.msaa}×` : 'off'} · ${inf.shadow}px`],
     ];
+    const pr = this.pressure;
+    facts.push(['CPU pressure', pr ? PRESSURE[pr][0] : pr === null ? 'Not reported by this browser' : 'Reading…', pr ? PRESSURE[pr][1] : '']);
     if (mem) facts.push(['JS heap', `${Math.round(mem.usedJSHeapSize / 1048576)} MB`]);
     if (this.gpuName) facts.push(['GPU', this.gpuName]);
-    n.facts.innerHTML = facts.map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
+    n.facts.innerHTML = facts.map(([k, v, c]) => `<div><span>${k}</span><b${c ? ` class="pf-${c}"` : ''}>${v}</b></div>`).join('');
   }
 
   private drawGraph() {
