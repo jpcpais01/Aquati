@@ -70,13 +70,16 @@ export function setSeaState(waves: Wave[], base: Wave[], sea: number) {
 export function turnWaves(waves: Wave[], base: Wave[], turn: number, px: number, pz: number) {
   const c = Math.cos(turn);
   const s = Math.sin(turn);
-  const TAU = Math.PI * 2;
   for (let i = 0; i < waves.length; i++) {
     const w = waves[i];
     const b = base[i];
     const nx = b.dirX * c + b.dirZ * s;
     const nz = b.dirZ * c - b.dirX * s;
-    w.phase = (w.phase + w.k * ((w.dirX - nx) * px + (w.dirZ - nz) * pz)) % TAU;
+    // never wrapped to 2π: the swell itself wouldn't notice, but the storm's
+    // whitecaps key their breaking stretches off the raw phase (one pattern per
+    // crest), and every wrap threw all of them somewhere else at once. Far out
+    // at sea a turning swell wrapped every few seconds.
+    w.phase += w.k * ((w.dirX - nx) * px + (w.dirZ - nz) * pz);
     w.dirX = nx;
     w.dirZ = nz;
   }

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { globalUniforms, GLSL_VEIL_PATCH } from '../render/environment';
 import { GLSL_WAVES } from '../world/waves';
+import { GLSL_ZOOM_BOX, ZoomBox } from './zoomBox';
 
 // Rain as one static buffer of drop quads, animated entirely on the GPU.
 // Each drop has a fixed random slot in a world-locked tile that wraps around
@@ -31,6 +32,9 @@ export class Rain {
     uResolution: { value: new THREE.Vector2(1, 1) },
     uCamNearFar: { value: new THREE.Vector2(1, 1000) },
   };
+  /** The tile resizes only between drops' lives (cycles run up to 1.85 s). */
+  private zoomBox = new ZoomBox(1.9);
+  private wantBox = new THREE.Vector2();
 
   constructor(
     private count: number,
@@ -57,6 +61,8 @@ export class Rain {
     const mat = new THREE.ShaderMaterial({
       uniforms: {
         ...this.uniforms,
+        uBoxPrev: this.zoomBox.uBoxPrev,
+        uBoxAt: this.zoomBox.uBoxAt,
         uWaveA: waves.uWaveA,
         uWaveB: waves.uWaveB,
         uTime: g.uTime,
@@ -80,17 +86,20 @@ export class Rain {
         uniform sampler2D uNoiseTex; uniform vec2 uWindDrift; uniform vec4 uVeil;
         ${GLSL_VEIL_PATCH}
         ${GLSL_WAVES}
+        ${GLSL_ZOOM_BOX}
         attribute vec4 aSeed; attribute vec2 aCorner;
         varying vec3 vR; varying float vA; varying float vViewZ;
         void main() {
-          float B = uBox.x * 2.0;
-          float H = uBox.y;
           // a fixed cycle keeps every drop's phase steady while the box grows
           // and shrinks with the zoom; on screen the speed looks the same
           float cyc = 1.45 + aSeed.w * 0.4;
           float t = uTime + aSeed.z * cyc;
           float k = fract(t / cyc);
           float n = floor(t / cyc);
+          // ...and each drop keeps the box it was born in, so a zoom never moves it mid-fall
+          vec2 box = bornBox(uBox, n, cyc, aSeed.z);
+          float B = box.x * 2.0;
+          float H = box.y;
           float kf = min(k / ${FALL.toFixed(2)}, 1.0); // 0 cloud base .. 1 the sea
           vec2 drift = uFall.xz * kf * cyc * ${FALL.toFixed(2)};
           // world-locked tile of drops wrapped around the view; a fresh slot every fall
@@ -184,7 +193,8 @@ export class Rain {
     u.uAmount.value = amount;
     u.uCenter.value.set(cx, 0, cz);
     // tall enough that the nearest drops stream right past the lens
-    u.uBox.value.set(THREE.MathUtils.clamp(camDist * 0.8, 50, 230), THREE.MathUtils.clamp(camDist * 0.62, 30, 160));
+    this.wantBox.set(THREE.MathUtils.clamp(camDist * 0.8, 50, 230), THREE.MathUtils.clamp(camDist * 0.62, 30, 160));
+    this.zoomBox.update(u.uBox.value, this.wantBox, globalUniforms.uTime.value);
     const slant = 3 + wind * 7;
     u.uFall.value.set(windX * slant, 0, windZ * slant);
     u.uScale.value = 1 + amount * 0.3;
