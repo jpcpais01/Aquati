@@ -28,3 +28,36 @@ export function shadowOnly<T extends THREE.Mesh>(mesh: T): T {
   mesh.castShadow = true;
   return mesh;
 }
+
+// three draws every shadow caster without a depth material of its own with
+// one shared MeshDepthMaterial. Its program depends on whether the mesh is
+// instanced, so each time the shadow pass goes from a plain mesh to an
+// instanced one (or back) three looks the program up afresh: parameters,
+// cache key and all, several times a frame. Instanced casters get their own
+// shared depth material instead, so neither one ever changes program.
+// (Set through the prototype: three's constructor assigns the field, which
+// lands in this setter; a mesh's own depth material still wins.)
+const instancedDepth = new THREE.MeshDepthMaterial();
+type DepthHolder = THREE.InstancedMesh & { _aqDepth?: THREE.Material };
+Object.defineProperty(THREE.InstancedMesh.prototype, 'customDepthMaterial', {
+  configurable: true,
+  get(this: DepthHolder) {
+    if (this._aqDepth) return this._aqDepth;
+    const m = this.material as THREE.Material & { alphaMap?: unknown; displacementMap?: unknown; map?: unknown; alphaTest: number };
+    // the cases three gives a depth variant of their own (alpha-tested cut-outs and the like)
+    if (Array.isArray(m) || m.alphaToCoverage || (m.alphaTest > 0 && (m.map || m.alphaMap)) || m.displacementMap || m.clippingPlanes?.length) return undefined;
+    return instancedDepth;
+  },
+  set(this: DepthHolder, v: THREE.Material | undefined) {
+    this._aqDepth = v;
+  },
+});
+
+// Depth materials only ever draw shadow maps, and three's shadow map reads the
+// depth buffer alone: the colour each one wrote alongside (a whole RGBA target
+// of it, 64 MB a frame at Ultra's 4096) was never looked at. They write depth only.
+Object.defineProperty(THREE.MeshDepthMaterial.prototype, 'colorWrite', {
+  configurable: true,
+  get: () => false,
+  set: () => {},
+});

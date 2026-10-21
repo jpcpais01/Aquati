@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { staticLod } from '../render/staticLod';
+import { viewCull } from '../render/viewCull';
 import { setBowWaveScene } from '../fx/bowWave';
 import { angleDelta, clamp, lerp, smoothstep } from '../core/noise';
 import { Input } from '../core/input';
@@ -6517,6 +6518,8 @@ export class Game {
       }
     }
 
+    viewCull.off = this.warming;
+    viewCull.set(cam, this.shadowC, this.shadowR, this.shadowK);
     P.begin('Vegetation culling', 'sim');
     // from eye level the far LOD takes over from ~85 m out, even on the island underfoot
     if (this.veg) this.veg.detail = this.rig.eyeBlend > 0.5 && !this.photo.active ? 85 : Infinity;

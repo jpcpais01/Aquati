@@ -6,6 +6,7 @@ import { WORLD_SIZE } from './terrain';
 import { WakeField } from './wakeField';
 import { GLSL_SURF, shoreUniforms } from './shore';
 import { GLSL_VORTEX, VORTEX_N, VORTEX_RIM, vortexDepth } from './vortex';
+import { viewCull } from '../render/viewCull';
 
 // The ocean: Gerstner swell on a camera-following, centre-dense grid, shaded
 // with depth-aware Beer–Lambert absorption over the refracted scene, sky
@@ -132,6 +133,84 @@ function gridMesh(tiles: THREE.BufferGeometry[], material: THREE.Material, order
     g.add(m);
   }
   return g;
+}
+
+const _tc = new THREE.Vector3();
+
+/**
+ * The tiled grid drawn a row of tiles at a time. Every tile's triangles sit in
+ * one index buffer, tile after tile along each row, so the tiles in view along
+ * a row (always one unbroken run: the view's footprint on the sea has no
+ * holes) are one contiguous range of it, and each row is a single draw over
+ * just that range. Eight draws at most for the whole sea, where a mesh per
+ * tile took thirty or forty, each paying three's full cost per object.
+ */
+class TileRows {
+  readonly group = new THREE.Group();
+  private readonly rows: THREE.Mesh[] = [];
+  /** Per density: each row's geometry (sharing one index buffer), where each tile's indices start, and its bounds. */
+  private readonly levels: { geos: THREE.BufferGeometry[]; starts: number[]; bounds: THREE.Sphere[] }[] = [];
+  private level = 0;
+
+  constructor(densities: THREE.BufferGeometry[][], material: THREE.Material, order = 0) {
+    for (const tiles of densities) {
+      const total = tiles.reduce((n, t) => n + t.index!.count, 0);
+      const idx = new Uint32Array(total);
+      const starts: number[] = [];
+      let o = 0;
+      for (const t of tiles) {
+        starts.push(o);
+        idx.set(t.index!.array as Uint32Array, o);
+        o += t.index!.count;
+      }
+      starts.push(o);
+      const index = new THREE.BufferAttribute(idx, 1);
+      const geos: THREE.BufferGeometry[] = [];
+      for (let r = 0; r < TILES; r++) {
+        const g = new THREE.BufferGeometry();
+        for (const [name, a] of Object.entries(tiles[0].attributes)) g.setAttribute(name, a);
+        g.setIndex(index);
+        geos.push(g);
+      }
+      this.levels.push({ geos, starts, bounds: tiles.map((t) => t.boundingSphere!) });
+    }
+    for (let r = 0; r < TILES; r++) {
+      const m = new THREE.Mesh(this.levels[0].geos[r], material);
+      m.renderOrder = order;
+      // culled here, tile by tile (see fit)
+      m.frustumCulled = false;
+      this.rows.push(m);
+      this.group.add(m);
+    }
+  }
+
+  /** Switches every row to another density (an index into the constructor's list). */
+  setLevel(i: number) {
+    if (i === this.level) return;
+    this.level = i;
+    this.rows.forEach((m, r) => (m.geometry = this.levels[i].geos[r]));
+  }
+
+  /** Narrows each row to its run of tiles in the camera's view (where the group stands now). */
+  fit() {
+    const L = this.levels[this.level];
+    const p = this.group.position;
+    for (let r = 0; r < TILES; r++) {
+      let first = -1;
+      let last = -1;
+      for (let i = 0; i < TILES; i++) {
+        const b = L.bounds[r * TILES + i];
+        if (!viewCull.sees(_tc.copy(b.center).add(p), b.radius)) continue;
+        if (first < 0) first = i;
+        last = i;
+      }
+      const m = this.rows[r];
+      m.visible = first >= 0;
+      if (first < 0) continue;
+      const s = L.starts[r * TILES + first];
+      m.geometry.setDrawRange(s, L.starts[r * TILES + last + 1] - s);
+    }
+  }
 }
 
 /**
@@ -493,6 +572,9 @@ export interface OceanOptions {
 
 export class Ocean {
   readonly mesh: THREE.Group;
+  /** The sea's grid, a draw per row of tiles in view. */
+  private readonly rows: TileRows;
+  private readonly reflRows: TileRows;
   readonly material: THREE.ShaderMaterial;
   /** Far sea out to the horizon; only worth drawing when the horizon is in view. */
   readonly apron: THREE.Mesh;
@@ -517,8 +599,6 @@ export class Ocean {
    */
   readonly funnels = new THREE.Group();
   private readonly reflFunnels = new THREE.Group();
-  /** Each sea tile's grid, fine and coarse (see fitGrid). */
-  private readonly gridLevels: [THREE.BufferGeometry, THREE.BufferGeometry][] = [];
   private gridCoarse = false;
   /** Each slot's ring mesh, fine and coarse: the coarse one serves a maelstrom seen small. */
   private readonly funnelLevels: [THREE.BufferGeometry, THREE.BufferGeometry][] = [];
@@ -1165,7 +1245,13 @@ export class Ocean {
     });
     // a vertex slides at most a cell with the ship and morphs at most another
     const pad = this.cell * 2;
-    this.mesh = gridMesh(buildGrid(opts.segments, opts.half, true, pad), this.material, -10);
+    const fine = buildGrid(opts.segments, opts.half, true, pad);
+    // at half the resolution the reflections need half the grid: the trace starts a few
+    // centimetres off the true crest at most, well under the ripple wobble (and the
+    // sea itself takes it, pulled well back: see fitGrid)
+    const coarse = buildGrid(opts.segments >> 1, opts.half, false, pad);
+    this.rows = new TileRows([fine, coarse], this.material, -10);
+    this.mesh = this.rows.group;
     // the rim glides in and out with the ship: start the apron well inside it
     this.apron = new THREE.Mesh(buildApron(opts.half * 0.94, 3400), this.material);
     this.apron.frustumCulled = false;
@@ -1180,13 +1266,8 @@ export class Ocean {
       vertexShader: OCEAN_VERT,
       fragmentShader: REFL_FRAG,
     });
-    // at half the resolution it needs half the grid: the trace starts a few
-    // centimetres off the true crest at most, well under the ripple wobble
-    this.reflMesh = gridMesh(buildGrid(opts.segments >> 1, opts.half, false, pad), this.reflMaterial);
-    // the main sea's tiles in both densities, the coarse ones shared with the reflection
-    for (const [i, t] of this.mesh.children.filter((o) => o !== this.apron).entries()) {
-      this.gridLevels.push([(t as THREE.Mesh).geometry, (this.reflMesh.children[i] as THREE.Mesh).geometry]);
-    }
+    this.reflRows = new TileRows([coarse], this.reflMaterial);
+    this.reflMesh = this.reflRows.group;
     this.reflApron = new THREE.Mesh(this.apron.geometry, this.reflMaterial);
     this.reflApron.frustumCulled = false;
     this.reflApron.visible = false;
@@ -1206,9 +1287,8 @@ export class Ocean {
     this.reflScene.add(this.reflFunnels);
 
     // the same patches as the sea above, so it is culled the same way
-    const tiles = this.mesh.children.filter((o) => o !== this.apron).map((o) => (o as THREE.Mesh).geometry);
     this.underside = gridMesh(
-      tiles,
+      fine,
       new THREE.ShaderMaterial({
         uniforms: { ...uniforms },
         // too rare a view for ring meshes of its own: the coarse grid takes the funnel
@@ -1368,6 +1448,8 @@ export class Ocean {
     u.uCamNearFar.value.set(cam.near, cam.far);
     this.fitFunnels(cam, h);
     this.fitGrid(cam);
+    this.rows.fit();
+    if (this.reflecting) this.reflRows.fit();
   }
 
   /**
@@ -1384,7 +1466,6 @@ export class Ocean {
     const coarse = m > 0.999;
     if (coarse === this.gridCoarse) return;
     this.gridCoarse = coarse;
-    const tiles = this.mesh.children.filter((o) => o !== this.apron) as THREE.Mesh[];
-    tiles.forEach((t, i) => (t.geometry = this.gridLevels[i][coarse ? 1 : 0]));
+    this.rows.setLevel(coarse ? 1 : 0);
   }
 }

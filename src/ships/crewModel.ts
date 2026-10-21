@@ -2060,10 +2060,13 @@ function bucketOf(g: number): number {
   return OWN_MESH.has(bit) ? SHOWN(bit) : 0;
 }
 
+/** Floats per sailor in a batch's one instance buffer: matrix, six pose vectors, style. */
+const STRIDE = 16 + 6 * 4 + 4;
+
 interface Batch {
   mesh: THREE.InstancedMesh;
-  poses: THREE.InstancedBufferAttribute[];
-  style: THREE.InstancedBufferAttribute;
+  /** Every per-sailor value, interleaved: one upload a frame instead of eight. */
+  data: THREE.InstancedInterleavedBuffer;
   /** the groups this mesh draws (none: the body, drawn for everyone) */
   groups: number[];
   n: number;
@@ -2154,25 +2157,21 @@ export class CrewRenderer {
         geo.setAttribute(name, a);
       }
       geo.setIndex(sub);
-      const poses = [0, 1, 2, 3, 4, 5].map((k) => {
-        const a = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
-        a.setUsage(THREE.DynamicDrawUsage);
-        geo.setAttribute(`aPose${k}`, a);
-        return a;
-      });
-      const style = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4);
-      style.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute('aStyle', style);
+      const data = new THREE.InstancedInterleavedBuffer(new Float32Array(max * STRIDE), STRIDE);
+      data.setUsage(THREE.DynamicDrawUsage);
+      for (let k = 0; k < 6; k++) geo.setAttribute(`aPose${k}`, new THREE.InterleavedBufferAttribute(data, 4, 16 + k * 4));
+      geo.setAttribute('aStyle', new THREE.InterleavedBufferAttribute(data, 4, 40));
       const mesh = new THREE.InstancedMesh(geo, this.material, max);
       mesh.customDepthMaterial = this.depth;
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      // the matrix rides in the same buffer (three binds an interleaved instanceMatrix as it does any attribute)
+      mesh.instanceMatrix = new THREE.InterleavedBufferAttribute(data, 16, 0) as unknown as THREE.InstancedBufferAttribute;
       mesh.count = 0;
       mesh.visible = false;
       mesh.frustumCulled = false;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.group.add(mesh);
-      return { mesh, poses, style, groups: key === 0 ? [] : members.get(key)!, n: 0 };
+      return { mesh, data, groups: key === 0 ? [] : members.get(key)!, n: 0 };
     });
     return { batches, n: 0, max };
   }
@@ -2214,20 +2213,14 @@ export class CrewRenderer {
     for (const b of l.batches) {
       if (b.groups.length && !b.groups.some((g) => groupShown(g, hat, prop, flags))) continue;
       const n = b.n++;
-      m.toArray(b.mesh.instanceMatrix.array as Float32Array, n * 16);
-      const o = n * 4;
-      for (let k = 0; k < 6; k++) {
-        const arr = b.poses[k].array as Float32Array;
-        arr[o] = pose[k * 4];
-        arr[o + 1] = pose[k * 4 + 1];
-        arr[o + 2] = pose[k * 4 + 2];
-        arr[o + 3] = pose[k * 4 + 3];
-      }
-      const st = b.style.array as Float32Array;
-      st[o] = row;
-      st[o + 1] = hat;
-      st[o + 2] = prop;
-      st[o + 3] = flags;
+      const arr = b.data.array as Float32Array;
+      const o = n * STRIDE;
+      m.toArray(arr, o);
+      for (let k = 0; k < 24; k++) arr[o + 16 + k] = pose[k];
+      arr[o + 40] = row;
+      arr[o + 41] = hat;
+      arr[o + 42] = prop;
+      arr[o + 43] = flags;
     }
   }
 
@@ -2237,14 +2230,9 @@ export class CrewRenderer {
         b.mesh.count = b.n;
         b.mesh.visible = b.n > 0;
         if (b.n === 0) continue;
-        b.mesh.instanceMatrix.clearUpdateRanges();
-        b.mesh.instanceMatrix.addUpdateRange(0, b.n * 16);
-        b.mesh.instanceMatrix.needsUpdate = true;
-        for (const a of [...b.poses, b.style]) {
-          a.clearUpdateRanges();
-          a.addUpdateRange(0, b.n * 4);
-          a.needsUpdate = true;
-        }
+        b.data.clearUpdateRanges();
+        b.data.addUpdateRange(0, b.n * STRIDE);
+        b.data.needsUpdate = true;
       }
     }
   }

@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-21T00:00Z',
+    entries: [
+      {
+        title: 'A much lighter frame',
+        notes: [
+          'The game now does far less behind-the-scenes work every frame, with nothing looking any different. In our tests the processor time per frame fell by over a third, and the graphics card waits on it less too.',
+          'Island plants were re-checking which of them were in view on every single frame, because the camera\u2019s lens drifts by a hair while you sail. Now they only re-check once the view has really moved.',
+          'Townsfolk in ports you aren\u2019t visiting, camps lost in the haze and island ground out of view are now set aside completely, instead of being checked and skipped several times a frame.',
+          'The sea is drawn in at most eight pieces instead of thirty to forty. Each crew sends its poses to the graphics card in one go, shadows no longer swap shaders back and forth mid-frame, and the shadow pass no longer paints a colour image that nobody looks at.',
+          'The frame profiler (F3) now shows time spent waiting for the screen on its own row, so the final pass only counts its own work.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-20T22:00Z',
     entries: [
       {

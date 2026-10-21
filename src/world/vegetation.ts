@@ -734,8 +734,10 @@ export class Vegetation {
       cam.distanceToSquared(this.cullPos) < 16 &&
       _dir.dot(this.cullDir) > 0.99985 &&
       toSun.dot(this.cullLight) > 0.9998 &&
-      pe[0] === this.cullProj[0] &&
-      pe[5] === this.cullProj[1]
+      // (the follow camera's lens breathes by hundredths of a degree every
+      // frame; the frustum's margin covers far more than that)
+      Math.abs(pe[0] - this.cullProj[0]) < Math.abs(pe[0]) * 2e-3 &&
+      Math.abs(pe[5] - this.cullProj[1]) < Math.abs(pe[5]) * 2e-3
     )
       return;
     this.cullPos.copy(cam);

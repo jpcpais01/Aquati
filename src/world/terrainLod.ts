@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { simplifiedLevels, type LodJob } from '../render/lod';
 import { shadowOnly } from '../render/passCull';
+import { viewCull } from '../render/viewCull';
 
 // Distance levels for the island ground. Every 64 m chunk of the 2 m grid is
 // simplified (in the worker) to a few error budgets; each frame a chunk shows
@@ -38,6 +39,9 @@ interface Chunk extends TerrainChunk {
   scale: number;
   level: number;
   proxy: THREE.Mesh | null;
+  /** World-space bounds of the ground (any level, its skirt too). */
+  c: THREE.Vector3;
+  r: number;
 }
 
 export class TerrainLod {
@@ -49,7 +53,7 @@ export class TerrainLod {
     private group: THREE.Group,
   ) {
     for (const c of list) {
-      this.chunks.push({ ...c, levels: [c.mesh.geometry], scale: c.top < -1 ? UNDER_SCALE : 1, level: 0, proxy: null });
+      this.chunks.push({ ...c, levels: [c.mesh.geometry], scale: c.top < -1 ? UNDER_SCALE : 1, level: 0, proxy: null, c: new THREE.Vector3(), r: 0 });
     }
     void this.start();
   }
@@ -82,6 +86,10 @@ export class TerrainLod {
     this.ready = true;
     for (const c of this.chunks) {
       c.mesh.geometry = c.levels[0]!;
+      c.mesh.updateMatrixWorld(true);
+      const s = new THREE.Sphere().copy(c.levels[0]!.boundingSphere!).applyMatrix4(c.mesh.matrixWorld);
+      c.c.copy(s.center);
+      c.r = s.radius + SKIRT_DROP;
       if (!c.proxy) continue;
       c.proxy.visible = true;
       c.mesh.castShadow = false;
@@ -138,8 +146,17 @@ export class TerrainLod {
     const pxK = camera.projectionMatrix.elements[5] * 0.5 * (typeof innerHeight === 'number' ? innerHeight : 1080);
     const cam = camera.position;
     for (const c of this.chunks) {
-      const s = c.mesh.geometry.boundingSphere!;
-      const d = Math.max(1, cam.distanceTo(s.center) - s.radius);
+      // a chunk out of view leaves the scene's walks (its shadow stand-in stays
+      // while its shadow can still reach the map); three's own culling would
+      // only find the same, after visiting it in every pass
+      const seen = viewCull.sees(c.c, c.r) || (!c.proxy && c.mesh.castShadow && viewCull.shades(c.c, c.r));
+      if (c.mesh.visible !== seen) c.mesh.visible = seen;
+      if (c.proxy) {
+        const shade = viewCull.shades(c.c, c.r);
+        if (c.proxy.visible !== shade) c.proxy.visible = shade;
+      }
+      if (!seen) continue;
+      const d = Math.max(1, cam.distanceTo(c.c) - c.r);
       const pxPerM = pxK / d;
       let level = 0;
       for (let i = LEVELS.length; i >= 1; i--) {
