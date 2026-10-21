@@ -5615,6 +5615,18 @@ body[data-hud='large'] #hud {
   text-overflow: ellipsis;
 }
 
+.pf-facts b.pf-ok {
+  color: #7be0a6;
+}
+
+.pf-facts b.pf-warn {
+  color: #ffc861;
+}
+
+.pf-facts b.pf-bad {
+  color: #ff6b6b;
+}
+
 .pf-more {
   all: unset;
   display: block;
