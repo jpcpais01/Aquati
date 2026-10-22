@@ -55,9 +55,20 @@ func pop(text: String, at: Vector2, kind: Kind = Kind.GOOD) -> void:
 	l.size = l.get_combined_minimum_size()
 	l.pivot_offset = l.size * 0.5
 	l.visible = true
+	var p := at + Vector2(randf_range(-12.0, 12.0) * HudStyle.PX, 0.0)
+	# a broadside lands in a burst: stack its numbers up rather than piling them on one another
+	var line := l.size.y * 0.8
+	var moved := true
+	while moved:
+		moved = false
+		for o in _items:
+			var clear := (l.size.x + o.label.size.x) * 0.5 + 4.0 * HudStyle.PX
+			if o != it and o.t < minf(o.life, 0.6) and absf(o.at.x - p.x) < clear and absf(o.at.y - p.y) < line:
+				p.y = o.at.y - line
+				moved = true
 	it.t = 0.0
 	it.life = 1.3
-	it.at = at + Vector2(randf_range(-12.0, 12.0) * HudStyle.PX, 0.0)
+	it.at = p
 	it.vy = -48.0 * HudStyle.PX
 	_place(it)
 

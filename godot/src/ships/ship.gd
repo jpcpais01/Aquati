@@ -186,7 +186,7 @@ func fire(side: int, target: Ship = null, point: Variant = null) -> bool:
 ## and the smoke.
 func _shoot(p: Array) -> void:
 	var m: Dictionary = model.muzzles[int(p[1])]
-	var pos := transform * (m.pos as Vector3)
+	var at := transform * (m.pos as Vector3)
 	var dir := Basis(Vector3.UP, heading) * (m.dir as Vector3)
 	var v := cls.muzzle_speed * randf_range(0.97, 1.03)
 	var mine := team == Team.PLAYER
@@ -203,10 +203,10 @@ func _shoot(p: Array) -> void:
 		var rvx := tv.x - (vel.x if mine else 0.0)
 		var rvz := tv.z - (vel.z if mine else 0.0)
 		var a: Vector3 = aim
-		var tof := Vector2(a.x - pos.x, a.z - pos.z).length() / (v * 0.95)
+		var tof := Vector2(a.x - at.x, a.z - at.z).length() / (v * 0.95)
 		var lead := Vector2.ZERO
 		for it in 2:
-			lead = Vector2(a.x + rvx * tof - pos.x, a.z + rvz * tof - pos.z)
+			lead = Vector2(a.x + rvx * tof - at.x, a.z + rvz * tof - at.z)
 			var e := 0.5 * asin(clampf(GRAVITY * lead.length() / (v * v), 0.0, 1.0))
 			tof = lead.length() / (v * cos(e))
 		dist = lead.length()
@@ -220,9 +220,9 @@ func _shoot(p: Array) -> void:
 	var yaw := atan2(dir.x, dir.z) + (randf() - 0.5) * 0.035 * sloppy
 	var pitch := elev + (randf() - 0.5) * 0.02 * sloppy
 	var bv := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * v + vel
-	world.shots.fire(pos, bv, self, cls.damage)
-	world.fx.muzzle(pos, dir, vel)
-	world.shook.emit(0.35 if mine else 0.12 * world.loudness(pos))
+	world.shots.fire(at, bv, self, cls.damage)
+	world.fx.muzzle(at, dir, vel)
+	world.shook.emit(0.35 if mine else 0.12 * world.loudness(at))
 
 
 ## A blow to her (a ball, a ram, the ground), at a world point or anywhere
@@ -348,12 +348,12 @@ func step(dt: float) -> void:
 	# ------------------------------------------------ buoyancy
 	var hb := world.water_height(pos.x + fx * L * 0.38, pos.z + fz * L * 0.38)
 	var hs := world.water_height(pos.x - fx * L * 0.38, pos.z - fz * L * 0.38)
-	var hp := world.water_height(pos.x + port.x * B * 0.5, pos.z + port.z * B * 0.5)
-	var hst := world.water_height(pos.x - port.x * B * 0.5, pos.z - port.z * B * 0.5)
+	var h_port := world.water_height(pos.x + port.x * B * 0.5, pos.z + port.z * B * 0.5)
+	var h_stbd := world.water_height(pos.x - port.x * B * 0.5, pos.z - port.z * B * 0.5)
 	var resp := MathX.damp(3.2 / c.mass, dt) if dt > 0.0 else 1.0
-	var target_heave := (hb + hs + hp + hst) * 0.25
+	var target_heave := (hb + hs + h_port + h_stbd) * 0.25
 	var target_pitch := -atan2(hb - hs, L * 0.76) * 0.9
-	var target_roll := atan2(hp - hst, B) * 0.8
+	var target_roll := atan2(h_port - h_stbd, B) * 0.8
 	# heel out of the turn, and to leeward under the press of canvas
 	target_roll += ang_vel * speed * 0.022
 	target_roll += -cross * sail_level * w.strength * 0.07 / sqrt(c.mass)
@@ -512,11 +512,11 @@ func _wake(dt: float, fx: float, fz: float, port: Vector3, L: float, B: float) -
 		var surge := 1.0 + 0.22 * sin(tt * 1.37) * sin(tt * 0.53 + 1.1) + _pitch * 3.0
 		var press := 10.5 * (minf(spd, 16.0) / 12.0) * sqrt(B / 6.2) * wake_k * dt * maxf(0.5, surge)
 		var yaw := sin(tt * 0.71) * 0.12 * B
-		for hp: Array in HULL_PRESSURE:
-			var u: float = hp[0]
+		for hpr: Array in HULL_PRESSURE:
+			var u: float = hpr[0]
 			var j := (_rng.randf() - 0.5) * 0.16 * B + yaw * u * 2.0
 			var a := 1.0 + (_rng.randf() - 0.5) * 0.35
-			wake.press(pos.x + fx * L * u + port.x * j, pos.z + fz * L * u + port.z * j, B * float(hp[2]) * (0.9 + _rng.randf() * 0.2), press * float(hp[1]) * a)
+			wake.press(pos.x + fx * L * u + port.x * j, pos.z + fz * L * u + port.z * j, B * float(hpr[2]) * (0.9 + _rng.randf() * 0.2), press * float(hpr[1]) * a)
 	_wake_t += dt
 	if _wake_t > 0.04 and spd > 0.5 and wake_k > 0.0:
 		_wake_t = 0.0

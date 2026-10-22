@@ -1,38 +1,52 @@
-## Shores O' Fortune for Android: the islands
+## Shores O' Fortune for Android: cannons and pirates
 
-The second build brings land into sight. Both archipelagos from the web game
-are here, island for island and palm for palm, with the shallows, the surf
-and the reefs around them. Ports, other ships and battles arrive in the
-builds that follow.
+The third build brings the fight. Pirates now sail both archipelagos, your
+guns answer them, and when your luck runs out the sea takes you down in
+style.
 
-- **Two archipelagos.** The home isles, with their volcano, jungle isles,
-  sandstone bluffs and atolls, and Las Brumas far to the east across the
-  high seas, with karst limestone towers, jade turf and pink coral sand.
-- **Islands that live.** Coconut palms along the beaches, rain-tree jungle
-  in the valleys, banana and fern under the canopy, shrubs, wildflowers and
-  grass on the meadows, mossy rocks, and coconuts and driftwood washed up on
-  the sand. Everything sways in the breeze and leans harder in a gust.
-- **Shallows you can see into.** Sand ripples, seagrass meadows and coral
-  heads lit by the sun, wobbling under the ripples, with the caustic web of
-  sunlight dancing over them. The water deepens from clear turquoise to
-  blue over the drop-off.
-- **Surf on every shore.** Breakers roll in, spill white on the sand and
-  drain back off the beach, leaving it dark and glistening. Out on the open
-  sea, the swell breaks white over the coral reefs, so you can spot them
-  from afar.
-- **Mind your keel.** Sail into the shallows and she runs aground with a
-  jolt. Over a reef the coral grinds along her hull and slows her. Beyond
-  the edge of the known sea, the swell turns you back.
-- **Islands to discover.** Sail close to an island to put it on your
-  chart.
-- **Richer light.** Deep blue tropical skies, a sea and lagoons that keep
-  their colour instead of going milky, warm sunlight against cool shade, and
-  clear air, so far islands keep their colour, just as on the web.
-- **Made for phones.** Plants switch to simpler shapes as they get farther
-  away, just as on the web, and the sun's shadows only cover the ground you
-  can see, so your phone draws no more than the view needs.
+- **Pirates at sea.** Pirate sloops, brigs and galleons patrol the open
+  water under ragged, shot-through black flags. Once they sight you, or the
+  moment you fire on one, they come about to hunt, jockey for a broadside
+  at their own best range, keep off the shallows and run for it when their
+  hull is in tatters. The more ships you sink, the more come, and in time
+  whole flotillas sail in a loose vee behind a flagship and hunt together.
+  Every pirate you sink pays the Crown's bounty in gold.
+- **Broadsides.** Each side's guns cover a fan off the beam. When a foe
+  sits inside a loaded fan, a warm lantern glow gathers on the water round
+  her hull: that's the moment to fire, and the guns lead for both ships'
+  way. Each ball flies with a hot streak and leaves a thread of powder
+  smoke drifting off on the breeze; misses throw up a splash, hits throw
+  splinters.
+- **Damage you can see.** Every hole a ball tears is remembered: a hurt
+  ship floods and settles lower, lists toward her holes and trails smoke
+  once she's badly hurt, and her crew patches her up between fights. When
+  she goes, she rolls onto her beam ends and lingers there smouldering
+  before the sea takes her. Numbers rise off every hit, and a slim red bar
+  rides over every enemy ship.
+- **Hull to hull.** Ships collide for real: a glancing blow slides along
+  her side and swings her round, and a bow driven square into her beam
+  stops dead and staves her in.
+- **Battle controls.** The guns sit bottom right: a big gold Fire button
+  that fires whichever side has a foe in its arc, with Port and Stbd either
+  side. Each ring fills as her guns load and turns gold when they're ready.
+  The sail lever has moved to the bottom left, as on the web, with four
+  notches from Stop to Full. Drag anywhere on the left of the screen to
+  steer: a compass ring under your thumb shows where she points and where
+  she's turning to. Your hull bar shows a pale ghost of every blow before
+  it drains, and pulses red when she's in danger.
+- **Lost to the depths.** When your ship goes down, she founders by the
+  stern and the screen bruises red. In deep water the camera follows her
+  down through the green-blue light while a gauge counts the fathoms to the
+  bottom. Then comes the farewell card: your ship in a brass porthole with
+  her epitaph, your voyage in numbers counting up, your renown medal
+  filling toward the next of nine ranks, a chart of your course, and the
+  ship's log. Tap Sail Again for a fresh ship.
+- **Made for phones.** Pirate ships are built ahead of time in the
+  background, so a new sail on the horizon never stutters the game, and
+  each cannonball, with its streak and its smoke, is set flying with a
+  single write and drawn entirely by your phone's graphics chip, so even a
+  full broadside costs next to nothing.
 
-Still aboard from the first build: the open sea and your sloop, the Kestrel,
-with the same swells, sun glitter, wakes, sky and turning day as on the web.
-Drag on the left of the screen to steer and use the lever on the right for
-the sails.
+Still aboard from the earlier builds: the open sea with its swells, sun
+glitter and turning day, and both archipelagos with their islands, plants,
+shallows and surf.

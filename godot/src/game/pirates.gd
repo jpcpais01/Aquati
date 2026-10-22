@@ -110,7 +110,7 @@ func _alive_pirates() -> int:
 
 func _spawn(dt: float, player: Ship) -> void:
 	var kills := player.kills
-	var want := mini(4, 2 + kills / 4)
+	var want := mini(4, 2 + floori(kills / 4.0))
 	var alive := _alive_pirates()
 	spawn_timer -= dt
 	if alive >= want or spawn_timer > 0.0:

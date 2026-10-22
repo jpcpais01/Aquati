@@ -47,6 +47,7 @@ var _helm: HelmRing
 var _toasts: VBoxContainer
 var _toast_box: StyleBoxFlat
 var _shown := {}
+var _fading: Tween
 
 
 func _ready() -> void:
@@ -172,11 +173,13 @@ func _ready() -> void:
 	_toast_box.shadow_color = Color(0.0, 0.03, 0.055, 0.22)
 	_toast_box.content_margin_bottom = 6
 
-	# numbers rising off a fight, and the bars over enemy ships
+	# numbers rising off a fight, and the bars over enemy ships (those under
+	# the panels, as they're pinned to the ships)
 	_floaters = Floaters.new()
 	root.add_child(_floaters)
 	_bars = EnemyBars.new()
 	root.add_child(_bars)
+	root.move_child(_bars, _status.get_index())
 
 	# touch: the helm ring, the sail lever and the guns
 	_helm = HelmRing.new()
@@ -241,6 +244,8 @@ func show_touch(on: bool) -> void:
 	_touch_ui = on
 	_lever.visible = on
 	_pad.visible = on
+	# the lever shows the canvas, so the pill keeps just the knots
+	_pips.visible = not on
 	_layout()
 
 
@@ -269,7 +274,7 @@ func show_guns(ship: Ship, gun: Gunnery) -> void:
 		return
 	var auto := gun.auto_side(ship) if ship.alive else 0
 	var hot := func(b: Gunnery.Broadside) -> bool: return b.ready and b.target != null
-	var hot_a := auto != 0 and hot.call(gun.side_of(auto))
+	var hot_a: bool = auto != 0 and hot.call(gun.side_of(auto))
 	_pad.show_state(ship.readiness(1), ship.can_fire(1), ship.readiness(-1), ship.can_fire(-1), auto, hot.call(gun.port), hot.call(gun.starboard), hot_a)
 
 
@@ -298,11 +303,26 @@ func floater(text: String, world_at: Vector3, cam: Camera3D, kind: Floaters.Kind
 	_floaters.pop(text, at, kind)
 
 
+## A fresh voyage: a new hull's bar from full, the tally from nothing, the HUD back.
+func reset() -> void:
+	_hull_frac = -1.0
+	for c: _Chip in [_gold, _kills, _isles]:
+		c.reset()
+	fade(true, 0.4)
+
+
 ## Fades the whole HUD out (her farewell) or back in.
 func fade(on: bool, seconds := 0.6) -> void:
 	var root := get_node("Root") as Control
-	var tw := root.create_tween()
-	tw.tween_property(root, "modulate:a", 1.0 if on else 0.0, seconds).set_trans(Tween.TRANS_SINE)
+	if _fading != null:
+		_fading.kill()
+	# hidden, its buttons let go and stop catching touches
+	if on:
+		root.visible = true
+	_fading = root.create_tween()
+	_fading.tween_property(root, "modulate:a", 1.0 if on else 0.0, seconds).set_trans(Tween.TRANS_SINE)
+	if not on:
+		_fading.tween_callback(func() -> void: root.visible = false)
 
 
 func _hull_flash() -> void:
@@ -484,6 +504,10 @@ class _Chip:
 		_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(_label)
 		add_child(row)
+
+	func reset() -> void:
+		_value = -1
+		_text = ""
 
 	func set_value(text: String, value: int) -> void:
 		if text == _text:

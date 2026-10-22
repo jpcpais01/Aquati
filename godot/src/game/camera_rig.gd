@@ -146,8 +146,8 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	# a slow, weighty swing, like a crane shot settling
 	_tilt_smooth += (tilt - _tilt_smooth) * MathX.damp(2.2, dt)
 
-	var look := Vector3(vel.x, 0.0, vel.z) * lerpf(1.4, 3.0, _zoom_smooth)
-	_focus = _focus.lerp(follow + look, MathX.damp(2.2, dt))
+	var ahead := Vector3(vel.x, 0.0, vel.z) * lerpf(1.4, 3.0, _zoom_smooth)
+	_focus = _focus.lerp(follow + ahead, MathX.damp(2.2, dt))
 	target = _focus
 
 	# camera due south of the focus, looking north and down

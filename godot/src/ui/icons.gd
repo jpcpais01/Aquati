@@ -13,6 +13,9 @@ const LINE := {
 	"cannon": '<path d="M3 9.6 15.6 7.2a1 1 0 0 1 1.1.8l.7 3.6a1 1 0 0 1-.8 1.2L4 15.2z" fill="#ffffff" fill-opacity=".9"/><path d="M17.6 7.6l2.6-.5.8 4-2.6.5"/><circle cx="8.5" cy="16.2" r="3.3" fill="#04121a" fill-opacity=".6"/><circle cx="8.5" cy="16.2" r=".8"/><path d="M13 19.5h7"/>',
 	"refresh": '<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/>',
 	"anchor": '<circle cx="12" cy="5" r="2.2"/><path d="M12 7.2V21M8 10.5h8M4.5 13.5c0 4 3.4 7.5 7.5 7.5s7.5-3.5 7.5-7.5M2.8 15.3l1.7-1.8 1.9 1.6M21.2 15.3l-1.7-1.8-1.9 1.6"/>',
+	"target": '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/>',
+	"wind": '<path d="M3 8.5h11a3 3 0 1 0-3-3M3 12.5h16a3 3 0 1 1-3 3M3 16.5h7"/>',
+	"hull": '<path d="M2.5 10h19l-2.5 6.5a3 3 0 0 1-2.8 1.9H7.8A3 3 0 0 1 5 16.4z"/><path d="M4 13.2h16M12 4v6M12 4.5l5 4"/>',
 }
 
 ## The tally badges, as the web draws them in CSS gradients: each a 16 wide
@@ -47,16 +50,18 @@ static func texture(id: String, size: float) -> Texture2D:
 
 
 ## Any SVG art (`inner`, on a `view` grid) drawn `size` HUD units across,
-## kept under `key`.
-static func svg(key: String, inner: String, size: Vector2, view := Rect2(0, 0, 24, 24)) -> Texture2D:
+## kept under `key`; with `mips` for a shader to blur it by its mip levels.
+static func svg(key: String, inner: String, size: Vector2, view := Rect2(0, 0, 24, 24), mips := false) -> Texture2D:
 	var px := Vector2i(maxi(4, ceili(size.x * density())), maxi(4, ceili(size.y * density())))
-	var ck := "%s@%dx%d" % [key, px.x, px.y]
+	var ck := "%s@%dx%d%s" % [key, px.x, px.y, "m" if mips else ""]
 	if _cache.has(ck):
 		return _cache[ck]
 	var doc := '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="%s %s %s %s" preserveAspectRatio="none">%s</svg>' % [px.x, px.y, view.position.x, view.position.y, view.size.x, view.size.y, inner]
 	var img := Image.new()
 	var tex: Texture2D = null
 	if img.load_svg_from_string(doc) == OK:
+		if mips:
+			img.generate_mipmaps()
 		tex = ImageTexture.create_from_image(img)
 	_cache[ck] = tex
 	return tex

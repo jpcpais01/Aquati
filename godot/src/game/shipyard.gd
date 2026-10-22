@@ -61,6 +61,11 @@ func count(id: String) -> int:
 	return n
 
 
+## Ready hulls of every class.
+func stock() -> int:
+	return _stock.size()
+
+
 ## A ready hull of the class, off the slipway (null if none is ready yet).
 func take(id: String) -> ShipModel:
 	for i in _stock.size():
