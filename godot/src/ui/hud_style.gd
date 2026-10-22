@@ -11,9 +11,19 @@ const GOLD_HI := Color("#ffe7a8")
 const GOLD_LO := Color("#d99a35")
 const AQUA := Color("#5ee3d4")
 const AQUA_HI := Color("#bff4ec")
+const CORAL := Color("#ff7563")
+## Dark ink on gold (the Fire button, the gold pills).
+const GOLD_INK := Color("#1f1404")
 const PANEL := Color(0.043, 0.11, 0.157, 0.82)
 const STROKE := Color(1, 1, 1, 0.11)
 const OFF := Color(1, 1, 1, 0.16)
+
+## The web's CSS pixels in HUD units, as it sizes its HUD on a phone held
+## sideways (about 390 CSS px tall to our 720): panels and type (its --k,
+## 0.74 there), touch controls (--kt, 0.84), and what it never scales.
+const K := 1.37
+const KT := 1.55
+const PX := 1.85
 
 static var _fonts := {}
 

@@ -16,10 +16,10 @@ way and keep the APK as a workflow artifact.
 | `src/core` | Settings (quality tiers), small maths helpers |
 | `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky and the hour; the archipelagos (`Region`), their ground (`Ground`) and their planting (`Flora`) |
 | `src/render` | The colour grade (a GPU-baked 3D LUT) |
-| `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics |
+| `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, damage and sinking (`ShipDamage`), the pirate captains (`PirateAI`) |
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave |
-| `src/game` | The voyage scene, the camera rig, the controls |
-| `src/ui` | The HUD, the touch helm, the sail lever |
+| `src/game` | The voyage scene, the camera rig, the controls; the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time |
+| `src/ui` | The HUD, the touch helm, the sail lever and the fire pad, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`) |
 | `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ground, plants, ship lighting) |
 | `art` | The tiling textures every shader samples and the baked figurehead sculptures |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
@@ -34,9 +34,12 @@ or run it from a terminal:
 godot --path godot
 ```
 
-Keys: A / D or the arrows steer, W / S set and take in sail, C changes the
-camera, the mouse wheel zooms. On a phone: drag on the left of the screen to
-steer, use the lever on the right for the sails, pinch to zoom.
+Keys: A / D or the arrows steer, W / S set and take in sail, Q and E fire
+the port and starboard broadsides and Space whichever side bears (or click the
+sea on the side to fire), C changes the camera, the mouse wheel zooms, and
+Enter sails again from the farewell card. On a phone: drag on the left of the
+screen to steer, use the lever bottom left for the sails and the guns bottom
+right, pinch to zoom.
 
 Handy flags (after `--`): `--hour 18.5` sets the time of day, `--view 0..3`
 (or `--zoom 0..1 --tilt 0..1`) picks a camera, `--at X,Z` and `--heading R`
@@ -44,6 +47,11 @@ start somewhere else, `--shot out.png` saves a frame and quits (after
 `--frames N`, and prints the frame's triangles and draw calls), `--smoke`
 runs a few seconds and prints `SMOKE OK`. `--noshadow`, `--noocean` and
 `--noflora` leave a layer out, and `--discover` charts islands during a shot.
+For fights: `--battle brig` puts a pirate off your beam (`--foe-dist M`,
+`--foe-hp F`), `--autofire` fires each side as it bears, `--touch` shows the
+touch controls, `--sink S` sends your ship down after S seconds, `--voyage`
+gives her a long voyage first (a full farewell card), and `--nopirates`
+keeps the sea clear. The header of `src/game/game.gd` lists them all.
 
 ## The checks CI runs
 

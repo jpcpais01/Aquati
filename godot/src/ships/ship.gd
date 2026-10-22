@@ -1,11 +1,13 @@
 class_name Ship
 extends Node3D
-## A ship under sail. She answers her helm and the canvas set, draws on the
-## wind by her point of sail, slips a little to leeward, rides the swell,
-## heels to the breeze and out of her turns, swings her yards and booms across
-## on springs, and leaves a wake, a curling bow wave, spray and a wisp of
-## galley smoke behind her. The web game's Ship, sailing half: the guns and
-## the fighting come aboard with the bigger ships.
+## A ship under sail, and in a fight. She answers her helm and the canvas
+## set, draws on the wind by her point of sail, slips a little to leeward,
+## rides the swell, heels to the breeze and out of her turns, swings her yards
+## and booms across on springs, and leaves a wake, a curling bow wave, spray
+## and a wisp of galley smoke behind her. Her guns fire in a rippling
+## broadside, laid on a ship (leading her) or a point on the sea; blows breach
+## and flood her, set her burning when she is badly hurt, and the last one
+## blows her magazine and sends her down (see ShipDamage). The web game's Ship.
 
 ## Point of sail (degrees off dead downwind) to speed factor.
 const WIND_TABLE := [[0.0, 0.8], [40.0, 0.96], [90.0, 1.0], [120.0, 0.9], [145.0, 0.62], [165.0, 0.38], [180.0, 0.3]]
@@ -17,6 +19,14 @@ const HULL_PRESSURE := [[0.44, 1.0, 0.32], [0.24, -0.75, 0.36], [0.0, -0.5, 0.4]
 ## Where along her keel she feels for the ground (fraction of length from midships).
 const KEEL_PROBES := [0.46, 0.2, -0.1, -0.42]
 const SPRAY := Color(1.4, 1.5, 1.55, 0.9)
+const GRAVITY := 14.0
+## How far the guns can train off the beam (rad): your crews, and a pirate's.
+const PLAYER_ARC := 0.5
+const PIRATE_ARC := 0.32
+## Seconds a wreck lingers afloat before her final plunge.
+const WRECK_LIFE := 180.0
+
+enum Team { PLAYER, PIRATE }
 const SMOKE := Color(0.82, 0.8, 0.78, 0.32)
 const SMOKE_END := Color(1.05, 1.04, 1.02)
 
@@ -30,6 +40,32 @@ var livery: Livery
 var model: ShipModel
 var bow_wave: BowWave
 var world: World
+var dmg: ShipDamage
+var team := Team.PLAYER
+var ship_name := ""
+
+var hp := 0.0
+var max_hp := 0.0
+var alive := true
+## Gone under (or sailed off the edge of the world): the game lets her go.
+var removed := false
+## Seconds since she went, and how long her wreck lingers afloat.
+var sink_t := 0.0
+var wreck_life := WRECK_LIFE
+## Founders go down by the stern and settle on the seabed (your own ship, for
+## the farewell); every other wreck slips under and is gone.
+var founders := false
+## Seconds left loading each broadside (port, starboard), and the full load.
+var reload := PackedFloat32Array([0.0, 0.0])
+var reload_full := PackedFloat32Array([1.0, 1.0])
+var gold := 0
+var kills := 0
+var last_hit := -100.0
+var last_attacker: Ship
+## How the last blow came: "shot", "rammed" or "aground".
+var last_cause := "shot"
+## 0 .. 1: flames along her deck when badly hurt, and as the wreck goes down.
+var burning := 0.0
 
 ## Where she floats (y unused) and how she moves over the ground.
 var pos := Vector3.ZERO
@@ -66,9 +102,13 @@ var _lee_target := 1.0
 var _rng := RandomNumberGenerator.new()
 var _ground_cooldown := 0.0
 var _scrape_t := 0.0
+var _fire_t := 0.0
+# broadside guns waiting their turn in the ripple: [time, muzzle index, target, point]
+var _pending: Array = []
 
 
-static func create(p_cls: ShipClass, p_livery: Livery, p_world: World) -> Ship:
+## `p_model` may be one the shipyard built ahead of time.
+static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: Team = Team.PLAYER, p_model: ShipModel = null) -> Ship:
 	var s := Ship.new()
 	_count += 1
 	s._id = _count
@@ -76,10 +116,16 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World) -> Ship:
 	s.cls = p_cls
 	s.livery = p_livery
 	s.world = p_world
+	s.team = p_team
+	s.ship_name = p_cls.title
+	s.max_hp = p_cls.hp
+	s.hp = p_cls.hp
+	s.reload_full = PackedFloat32Array([p_cls.reload, p_cls.reload])
 	s._rng.seed = 977 * _count
 	s._galley_t = s._rng.randf()
-	s.model = ShipModel.create(p_cls, p_livery)
+	s.model = p_model if p_model != null else ShipModel.create(p_cls, p_livery)
 	s.add_child(s.model)
+	s.dmg = ShipDamage.new(s)
 	s.bow_wave = BowWave.new()
 	s.bow_wave.setup(s.model.shape, p_cls)
 	s.add_child(s.bow_wave)
@@ -93,6 +139,126 @@ func forward() -> Vector3:
 ## The port beam (her left hand, looking forward).
 func port_dir() -> Vector3:
 	return Vector3(cos(heading), 0.0, -sin(heading))
+
+
+## The reach of her guns (m) at the usual elevations.
+func gun_range() -> float:
+	return cls.muzzle_speed * cls.muzzle_speed / GRAVITY * 0.62
+
+
+## Index into reload for a side (+1 port, -1 starboard).
+static func side_index(side: int) -> int:
+	return 0 if side > 0 else 1
+
+
+func can_fire(side: int) -> bool:
+	return alive and reload[side_index(side)] <= 0.0
+
+
+## Reload progress of a side: 0 just fired .. 1 run out.
+func readiness(side: int) -> float:
+	var i := side_index(side)
+	return clampf(1.0 - reload[i] / reload_full[i], 0.0, 1.0)
+
+
+## Begins a rippling broadside from one side (+1 port, -1 starboard), laid on
+## a ship (led) or a point on the sea, or square off the beam. False while
+## the guns are still loading.
+func fire(side: int, target: Ship = null, point: Variant = null) -> bool:
+	if not can_fire(side):
+		return false
+	var ms: Array[int] = []
+	for i in model.muzzles.size():
+		if int(model.muzzles[i].side) == side:
+			ms.append(i)
+	# from the middle outward, for a rolling thunder
+	ms.sort_custom(func(a: int, b: int) -> bool: return absf((model.muzzles[a].pos as Vector3).z) < absf((model.muzzles[b].pos as Vector3).z))
+	for k in ms.size():
+		_pending.append([world.time + k * 0.085 + randf() * 0.05, ms[k], target, point])
+	var si := side_index(side)
+	reload[si] = cls.reload
+	reload_full[si] = cls.reload
+	_roll_kick += side * 0.05 * (cls.cannons_per_side / 5.0) / cls.mass
+	return true
+
+
+## One gun of the ripple going off: the ball laid on its mark, the flash
+## and the smoke.
+func _shoot(p: Array) -> void:
+	var m: Dictionary = model.muzzles[int(p[1])]
+	var at := transform * (m.pos as Vector3)
+	var dir := Basis(Vector3.UP, heading) * (m.dir as Vector3)
+	var v := cls.muzzle_speed * randf_range(0.97, 1.03)
+	var mine := team == Team.PLAYER
+	var dist := 60.0
+	var target: Ship = p[2]
+	var aim: Variant = p[3]
+	if target != null and target.alive:
+		aim = target.pos
+	if aim != null:
+		# Lead the mark. Your own crews also allow for the ship's way, which the
+		# ball keeps (in a running duel that drift alone would carry whole
+		# broadsides past her bow); pirate crews only lead their mark.
+		var tv := target.vel if target != null and target.alive else Vector3.ZERO
+		var rvx := tv.x - (vel.x if mine else 0.0)
+		var rvz := tv.z - (vel.z if mine else 0.0)
+		var a: Vector3 = aim
+		var tof := Vector2(a.x - at.x, a.z - at.z).length() / (v * 0.95)
+		var lead := Vector2.ZERO
+		for it in 2:
+			lead = Vector2(a.x + rvx * tof - at.x, a.z + rvz * tof - at.z)
+			var e := 0.5 * asin(clampf(GRAVITY * lead.length() / (v * v), 0.0, 1.0))
+			tof = lead.length() / (v * cos(e))
+		dist = lead.length()
+		var base := atan2(dir.x, dir.z)
+		var arc := PLAYER_ARC if mine else PIRATE_ARC
+		var fa := base + clampf(MathX.angle_delta(base, atan2(lead.x, lead.y)), -arc, arc)
+		dir = Vector3(sin(fa), 0.0, cos(fa))
+	var elev := clampf(0.5 * asin(clampf(GRAVITY * dist / (v * v), 0.0, 1.0)), 0.015, 0.47)
+	# pirate gun crews are a little less disciplined than yours
+	var sloppy := 1.0 if mine else 2.4
+	var yaw := atan2(dir.x, dir.z) + (randf() - 0.5) * 0.035 * sloppy
+	var pitch := elev + (randf() - 0.5) * 0.02 * sloppy
+	var bv := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * v + vel
+	world.shots.fire(at, bv, self, cls.damage)
+	world.fx.muzzle(at, dir, vel)
+	world.shook.emit(0.35 if mine else 0.12 * world.loudness(at))
+
+
+## A blow to her (a ball, a ram, the ground), at a world point or anywhere
+## along her side; `hull` false for one that misses her timbers. Returns the
+## damage done, after her armour.
+func damage(amount: float, attacker: Ship, at: Variant = null, hull: bool = true, cause: String = "shot") -> float:
+	if not alive:
+		return 0.0
+	var d := amount * (1.0 - cls.armor) * randf_range(0.85, 1.15)
+	hp -= d
+	if hull:
+		dmg.on_hit(at, d)
+	last_hit = world.time
+	last_cause = cause
+	if attacker != null:
+		last_attacker = attacker
+	_roll_kick += (randf() - 0.5) * 0.04
+	if hp <= 0.0:
+		die(attacker)
+	return d
+
+
+## She's done for: the magazine goes up, and the wreck begins to settle.
+func die(attacker: Ship) -> void:
+	if not alive:
+		return
+	hp = 0.0
+	alive = false
+	sink_t = 0.0
+	_pending.clear()
+	if attacker != null:
+		attacker.kills += 1
+	world.fx.explosion(Vector3(pos.x, model.shape.main_deck_y(0.5), pos.z), 0.6 + cls.length / 40.0)
+	world.shook.emit(1.2 if team == Team.PLAYER else 0.5 * world.loudness(pos))
+	dmg.on_death()
+	world.sunk.emit(self, attacker)
 
 
 func place(x: float, z: float, h: float) -> void:
@@ -118,6 +284,17 @@ static func wind_factor(rel_deg: float) -> float:
 
 func step(dt: float) -> void:
 	var c := cls
+	# ------------------------------------------------ cannons
+	if not _pending.is_empty():
+		for i in range(_pending.size() - 1, -1, -1):
+			if world.time >= float(_pending[i][0]):
+				var p: Array = _pending[i]
+				_pending.remove_at(i)
+				if alive:
+					_shoot(p)
+	reload[0] = maxf(0.0, reload[0] - dt)
+	reload[1] = maxf(0.0, reload[1] - dt)
+
 	var fwd := forward()
 	var fx := fwd.x
 	var fz := fwd.z
@@ -128,15 +305,23 @@ func step(dt: float) -> void:
 	var gust := world.gust_at(pos.x, pos.z)
 
 	# ------------------------------------------------ sailing
-	sail_level += clampf(sail_target - sail_level, -dt * 0.6, dt * 0.6)
-	var wf := wind_factor(rel_deg) * (0.75 + 0.25 * w.strength) * (1.0 + gust * 0.08)
-	var target := c.max_speed * sail_level * wf
-	var rate := c.accel if target > speed else c.accel * 1.4
-	speed += (target - speed) * MathX.damp(rate, dt)
-	var steer := clampf(0.28 + 0.9 * (speed / c.max_speed), 0.28, 1.1)
-	var target_ang := rudder * c.turn_rate * steer
-	ang_vel += (target_ang - ang_vel) * MathX.damp(2.6 / sqrt(c.mass), dt)
-	speed *= 1.0 - absf(ang_vel) * 0.08 * dt
+	if alive:
+		sail_level += clampf(sail_target - sail_level, -dt * 0.6, dt * 0.6)
+		# a battered hull drags: she loses way as she floods
+		var hp_f := 0.72 + 0.28 * (hp / max_hp)
+		var wf := wind_factor(rel_deg) * (0.75 + 0.25 * w.strength) * (1.0 + gust * 0.08)
+		var target := c.max_speed * sail_level * wf * hp_f
+		var rate := c.accel if target > speed else c.accel * 1.4
+		speed += (target - speed) * MathX.damp(rate, dt)
+		var steer := clampf(0.28 + 0.9 * (speed / c.max_speed), 0.28, 1.1)
+		var target_ang := rudder * c.turn_rate * steer
+		ang_vel += (target_ang - ang_vel) * MathX.damp(2.6 / sqrt(c.mass), dt)
+		speed *= 1.0 - absf(ang_vel) * 0.08 * dt
+	else:
+		# the wreck loses way, her canvas hanging in rags
+		speed *= 1.0 - MathX.damp(0.8, dt)
+		ang_vel *= 1.0 - MathX.damp(1.0, dt)
+		sail_level = maxf(0.0, sail_level - dt * 0.3)
 	if anchored:
 		speed = 0.0
 		ang_vel = 0.0
@@ -163,21 +348,39 @@ func step(dt: float) -> void:
 	# ------------------------------------------------ buoyancy
 	var hb := world.water_height(pos.x + fx * L * 0.38, pos.z + fz * L * 0.38)
 	var hs := world.water_height(pos.x - fx * L * 0.38, pos.z - fz * L * 0.38)
-	var hp := world.water_height(pos.x + port.x * B * 0.5, pos.z + port.z * B * 0.5)
-	var hst := world.water_height(pos.x - port.x * B * 0.5, pos.z - port.z * B * 0.5)
+	var h_port := world.water_height(pos.x + port.x * B * 0.5, pos.z + port.z * B * 0.5)
+	var h_stbd := world.water_height(pos.x - port.x * B * 0.5, pos.z - port.z * B * 0.5)
 	var resp := MathX.damp(3.2 / c.mass, dt) if dt > 0.0 else 1.0
-	var target_heave := (hb + hs + hp + hst) * 0.25
+	var target_heave := (hb + hs + h_port + h_stbd) * 0.25
 	var target_pitch := -atan2(hb - hs, L * 0.76) * 0.9
-	var target_roll := atan2(hp - hst, B) * 0.8
+	var target_roll := atan2(h_port - h_stbd, B) * 0.8
 	# heel out of the turn, and to leeward under the press of canvas
 	target_roll += ang_vel * speed * 0.022
 	target_roll += -cross * sail_level * w.strength * 0.07 / sqrt(c.mass)
 	_roll_kick *= 1.0 - MathX.damp(2.2, dt)
 	target_roll += _roll_kick
+	var sink_y := 0.0
+	var swell := 1.0
+	if not alive:
+		# the wreck settles into her last pose and lingers before slipping under;
+		# once she's under, the swell no longer lifts her
+		sink_t += dt
+		dmg.wreck_pose(sink_t, dt)
+		sink_y = dmg.pose_y
+		swell = dmg.afloat
+		target_pitch = target_pitch * 0.3 * swell + dmg.pose_pitch
+		target_roll = target_roll * 0.3 * swell + dmg.pose_roll
+		if dmg.done:
+			removed = true
+	elif dt > 0.0:
+		# flooding: she rides lower and lists toward her holes
+		dmg.update(dt)
+		sink_y = -dmg.lowered
+		target_roll += dmg.list
 	_heave += (target_heave - _heave) * resp
 	_pitch += (target_pitch - _pitch) * resp
 	_roll += (target_roll - _roll) * resp
-	transform = Transform3D(Basis.from_euler(Vector3(_pitch, heading, _roll)), Vector3(pos.x, _heave - c.draft * 0.06, pos.z))
+	transform = Transform3D(Basis.from_euler(Vector3(_pitch, heading, _roll)), Vector3(pos.x, _heave + sink_y - c.draft * 0.06, pos.z))
 
 	# ------------------------------------------------ the rig
 	var brace_target := clampf(rel * 0.45, -0.75, 0.75) * minf(1.0, absf(rel_deg) / 30.0)
@@ -208,7 +411,26 @@ func step(dt: float) -> void:
 	if dt <= 0.0:
 		return
 	_wake(dt, fx, fz, port, L, B)
-	_galley(dt, w)
+	if alive:
+		_galley(dt, w)
+	_flames(dt, swell)
+
+
+## Fires when she is badly hurt, or going down, doused as she goes under.
+func _flames(dt: float, swell: float) -> void:
+	var f := hp / max_hp
+	if alive:
+		burning = (0.4 - f) / 0.4 if f < 0.4 else 0.0
+	else:
+		burning = (1.0 - sink_t / 26.0) * swell * swell * swell if sink_t < 22.0 else 0.0
+	if burning <= 0.0:
+		return
+	_fire_t += dt * (2.0 + burning * 10.0)
+	while _fire_t > 1.0:
+		_fire_t -= 1.0
+		var p: Variant = dmg.fire_point()
+		if p != null:
+			world.fx.flame(p, 0.7 + burning * 0.6)
 
 
 ## The ground under her keel. A beach or a rock shelf shoves her back off
@@ -239,8 +461,9 @@ func _land(dt: float, fx: float, fz: float, L: float) -> void:
 		var push := minf(2.5, (h - lim) * 0.6 + 0.05)
 		pos.x -= g.x / gl * push
 		pos.z -= g.y / gl * push
-		if speed > 3.5 and _ground_cooldown <= 0.0:
+		if speed > 3.5 and _ground_cooldown <= 0.0 and alive:
 			_ground_cooldown = 1.2
+			damage(speed * 1.8, null, Vector3(px, 0.2, pz), true, "aground")
 			world.fx.sand_hit(Vector3(px, 0.5, pz))
 			world.fx.splash(Vector3(px, world.water_height(px, pz), pz), 0.5 + minf(0.6, speed / 25.0))
 			struck.emit(0.5)
@@ -279,23 +502,25 @@ func _grind_reef(k: float, p: Vector2, dt: float) -> void:
 func _wake(dt: float, fx: float, fz: float, port: Vector3, L: float, B: float) -> void:
 	var wake := world.wake
 	var spd := absf(speed)
-	if spd > 0.3:
+	# a wreck's wake dies away as she settles
+	var wake_k := 1.0 if alive else maxf(0.0, 1.0 - sink_t / 3.0)
+	if spd > 0.3 and wake_k > 0.0:
 		# pressure every frame: the canvas grows the Kelvin arms and the transverse
 		# swell from it. The bow surges and eases as she pitches and the hull yaws a
 		# touch, so the arms come out uneven; a little jitter roughens the crests.
 		var tt := world.time + _id * 7.31
 		var surge := 1.0 + 0.22 * sin(tt * 1.37) * sin(tt * 0.53 + 1.1) + _pitch * 3.0
-		var press := 10.5 * (minf(spd, 16.0) / 12.0) * sqrt(B / 6.2) * dt * maxf(0.5, surge)
+		var press := 10.5 * (minf(spd, 16.0) / 12.0) * sqrt(B / 6.2) * wake_k * dt * maxf(0.5, surge)
 		var yaw := sin(tt * 0.71) * 0.12 * B
-		for hp: Array in HULL_PRESSURE:
-			var u: float = hp[0]
+		for hpr: Array in HULL_PRESSURE:
+			var u: float = hpr[0]
 			var j := (_rng.randf() - 0.5) * 0.16 * B + yaw * u * 2.0
 			var a := 1.0 + (_rng.randf() - 0.5) * 0.35
-			wake.press(pos.x + fx * L * u + port.x * j, pos.z + fz * L * u + port.z * j, B * float(hp[2]) * (0.9 + _rng.randf() * 0.2), press * float(hp[1]) * a)
+			wake.press(pos.x + fx * L * u + port.x * j, pos.z + fz * L * u + port.z * j, B * float(hpr[2]) * (0.9 + _rng.randf() * 0.2), press * float(hpr[1]) * a)
 	_wake_t += dt
-	if _wake_t > 0.04 and spd > 0.5:
+	if _wake_t > 0.04 and spd > 0.5 and wake_k > 0.0:
 		_wake_t = 0.0
-		var k := clampf(spd / 12.0, 0.0, 1.25)
+		var k := clampf(spd / 12.0, 0.0, 1.25) * wake_k
 		# the stern: churned white wash, a dense core with ragged eddies tumbling off it
 		var sx := pos.x - fx * L * 0.5
 		var sz := pos.z - fz * L * 0.5
@@ -321,13 +546,13 @@ func _wake(dt: float, fx: float, fz: float, port: Vector3, L: float, B: float) -
 		var skid := minf(1.0, absf(ang_vel) * spd * 0.12)
 		if skid > 0.08:
 			var out := -signf(ang_vel) * B * 0.55
-			wake.stamp(pos.x - fx * L * 0.38 + port.x * out, pos.z - fz * L * 0.38 + port.z * out, B * 0.36, 0.22 * skid)
+			wake.stamp(pos.x - fx * L * 0.38 + port.x * out, pos.z - fz * L * 0.38 + port.z * out, B * 0.36, 0.22 * skid * wake_k)
 	# the bow wave sheet rides the waterline, growing with speed
-	var bow_amp := minf(1.2, spd / 12.0)
+	var bow_amp := minf(1.2, spd / 12.0) if alive else 0.0
 	bow_wave.follow(pos.x, _heave, pos.z, heading, _pitch * 0.8, bow_amp, spd, dt)
 	# bow spray: fine droplets thrown off the crest of the sheet at speed, in bursts
 	# when she buries her nose in a swell. Small, quick and falling: water, not smoke.
-	if spd > cls.max_speed * 0.35:
+	if alive and spd > cls.max_speed * 0.35:
 		var fast := (spd / cls.max_speed - 0.35) / 0.65
 		var slam := maxf(0.0, _pitch - 0.02) * 30.0
 		_spray_t += dt * (fast * fast * 40.0 + slam * 50.0)

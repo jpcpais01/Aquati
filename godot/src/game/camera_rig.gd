@@ -22,6 +22,12 @@ var zoom := 0.45
 ## Past the farthest zoom: 0 the usual high view .. 1 leaned over.
 var tilt := 0.0
 var shake_scale := 1.0
+## A shot the camera blends toward (her farewell): where it stands, what it
+## looks at and its lens, and how far blended (0 off .. 1 all the shot).
+var cine_pos := Vector3.ZERO
+var cine_look := Vector3.ZERO
+var cine_fov := FOV
+var cine_w := 0.0
 
 var _focus := Vector3.ZERO
 var _zoom_smooth := 0.45
@@ -140,8 +146,8 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	# a slow, weighty swing, like a crane shot settling
 	_tilt_smooth += (tilt - _tilt_smooth) * MathX.damp(2.2, dt)
 
-	var look := Vector3(vel.x, 0.0, vel.z) * lerpf(1.4, 3.0, _zoom_smooth)
-	_focus = _focus.lerp(follow + look, MathX.damp(2.2, dt))
+	var ahead := Vector3(vel.x, 0.0, vel.z) * lerpf(1.4, 3.0, _zoom_smooth)
+	_focus = _focus.lerp(follow + ahead, MathX.damp(2.2, dt))
 	target = _focus
 
 	# camera due south of the focus, looking north and down
@@ -149,15 +155,21 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	_pitch = pitch
 	var dist := distance()
 	var pos := _focus + Vector3(0.0, sin(pitch) * dist, cos(pitch) * dist)
+	var look := _focus
+	if cine_w > 0.0:
+		# whatever the camera follows now, blended toward the shot and its subject
+		pos = pos.lerp(cine_pos, cine_w)
+		look = look.lerp(cine_look, cine_w)
+		target = target.lerp(Vector3(cine_look.x, 0.0, cine_look.z), cine_w)
 
 	# trauma shake, squared for a punchy falloff
 	_trauma = maxf(0.0, _trauma - dt * 1.6)
 	var s := _trauma * _trauma
 	if s > 0.0:
-		var k := s * (0.6 + _zoom_smooth)
+		var k := s * (0.6 + _zoom_smooth) * (1.0 - cine_w * 0.5)
 		pos += Vector3((sin(time * 47.0) + sin(time * 31.0)) * k * 0.6, sin(time * 53.0) * k * 0.5, sin(time * 41.0 + 1.0) * k * 0.6)
-	global_transform = Transform3D(Basis.looking_at(_focus - pos, Vector3.UP), pos)
-	fov = FOV
+	global_transform = Transform3D(Basis.looking_at(look - pos, Vector3.UP), pos)
+	fov = lerpf(FOV, cine_fov, cine_w)
 	# the near plane rides up with the camera: a far view keeps its depth precision
 	near = clampf(pos.y * 0.08, 2.0, 30.0)
 	far = 2600.0

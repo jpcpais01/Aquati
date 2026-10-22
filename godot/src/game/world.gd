@@ -1,16 +1,30 @@
 class_name World
 extends RefCounted
 ## The sea every ship shares: its swell, the breeze, the canvas of disturbed
-## water, the particles and the clock.
+## water, the particles, the ships on it and the shot flying between them,
+## and the clock. Blows struck and ships lost are told through its signals.
 
 ## The edge of the known sea: a long oval this far (m) round every archipelago
 ## and the lanes between them. Beyond it the swell turns you back.
 const EDGE_R := 1700.0
 
+## A ball struck a hull: `dealt` is the damage done.
+signal hit(ship: Ship, attacker: Ship, dealt: float, at: Vector3)
+## A ship's last blow: she is going down.
+signal sunk(ship: Ship, attacker: Ship)
+## Something the camera should feel (a broadside, a hit, a magazine going up), 0..1.
+signal shook(amount: float)
+
 var waves: Waves
 var wind: Wind
 var wake: WakeField
 var fx: Particles
+var shots: Shots
+## Every ship afloat (and every wreck still going down): yours first.
+var ships: Array[Ship] = []
+## Where the voyage is heard from (the camera's focus), and how far off it hangs.
+var listener := Vector3.ZERO
+var listener_zoom := 100.0
 ## The archipelago under the sea the camera is on (null out on the open ocean before any is loaded).
 var region: Region
 ## Every archipelago, for whatever lies outside the camera's.
@@ -78,3 +92,11 @@ func past_edge(x: float, z: float) -> Vector3:
 
 func gust_at(x: float, z: float) -> float:
 	return wind.gust_at(x, z)
+
+
+## How loudly something at `p` carries to the listener (0..1): the web game's
+## falloff, so far-off cannon only rumble and barely shake the view.
+func loudness(p: Vector3) -> float:
+	var d := Vector2(p.x - listener.x, p.z - listener.z).length()
+	var r := listener_zoom * 0.9
+	return minf(1.0, r / (r + d * 1.4))

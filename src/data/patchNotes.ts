@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-22T05:00Z',
+    entries: [
+      {
+        title: 'Android: cannons and pirates',
+        notes: [
+          'The third Android build is out, and it brings the fight. Pirate sloops, brigs and galleons patrol both archipelagos under ragged black flags, come about to hunt you once they sight you, jockey for a broadside and run for it when they\'re beaten. The more you sink, the more come, in time whole flotillas behind a flagship, and every pirate you sink pays its bounty in gold. Get it from Download for Android on the home page, or the newest release on the game\'s GitHub page.',
+          'Your broadsides work just as they do here: when a foe sits in a loaded arc, a warm glow gathers on the water round her, and that\'s the moment to fire. Each ball flies with its streak and its trail of powder smoke, hurt ships flood, list and smoke, ships collide hull to hull, and numbers rise off every hit. The guns sit bottom right with a big gold Fire button, and the sail lever has moved to the bottom left, as here.',
+          'When you go down, the camera follows your ship to the bottom while a gauge counts the fathoms, and then the farewell card tells the tale: your ship in a brass porthole with her epitaph, the voyage in numbers, your renown medal filling toward the next rank, a chart of your course and the ship\'s log. It is all tuned for phones: pirate ships are built ahead of time in the background, so a new sail never stutters the game, and cannonballs and their smoke are drawn almost entirely by the graphics chip.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-22T02:00Z',
     entries: [
       {

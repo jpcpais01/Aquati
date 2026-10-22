@@ -1,45 +1,85 @@
 class_name SailLever
 extends Control
-## The touch sail lever: four notches from Stop to Full that stay where you
-## leave them, like W / S. Drag the knob or tap a notch; it clicks into each
-## detent as it passes, and the rail fills as the hands actually set (or
-## take in) the canvas.
+## The touch sail lever, bottom left as on the web: four notches from Stop to
+## Full that stay where you leave them, like W / S. Drag the gold knob or tap
+## a notch; it clicks into each detent as it passes and springs home when you
+## let go. The little square-rigger on the knob lets her sail down as you set
+## more canvas, and the rail fills gold as the hands actually set (or take
+## in) the canvas.
 
 signal level_set(level: int)
 
 const LABELS := ["Stop", "Slow", "Half", "Full"]
-const TRACK_W := 44.0
+## The knob and the track's height (the web's --kn and --th).
+const KN := 44.0 * HudStyle.KT
+const TH := 164.0 * HudStyle.KT
+## Fixed CSS-pixel details: the rail and the notch marks.
+const RAIL := 4.0 * HudStyle.PX
+const NOTCH := Vector2(16.0, 2.0) * HudStyle.PX
+const LABEL_PX := 9.0 * HudStyle.KT
+
+const KNOB_SVG := '<defs><radialGradient id="k" cx="0.4" cy="0.32" r="0.907"><stop offset="0" stop-color="#fff6d6"/><stop offset="0.45" stop-color="#f4c765"/><stop offset="1" stop-color="#c08528"/></radialGradient><radialGradient id="i" cx="0.5" cy="0.455" r="0.5"><stop offset="0.8" stop-color="#784610" stop-opacity="0"/><stop offset="1" stop-color="#784610" stop-opacity="0.4"/></radialGradient></defs><circle cx="12" cy="12" r="12" fill="url(#k)"/><circle cx="12" cy="12" r="12" fill="url(#i)"/>'
+## The knob's soft shadow (0 6px 16px rgba(0,0,0,0.35)), as a disc fading out.
+const SHADOW_SVG := '<defs><radialGradient id="s"><stop offset="0.37" stop-color="#000" stop-opacity="0.35"/><stop offset="0.58" stop-color="#000" stop-opacity="0.17"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient></defs><circle cx="12" cy="12" r="12" fill="url(#s)"/>'
 
 ## The ordered notch (0..3) and the canvas really set (0..1).
 var level := 0
 var set_fraction := 0.0
 
 var _touch := -1
+## Where a finger holds the knob (0..1), or -1.
 var _drag := -1.0
+# the knob on its spring, and its swell while held
+var _kpos := 0.0
+var _kvel := 0.0
+var _swell := 1.0
 var _font: Font
+var _track_box: StyleBoxFlat
+var _knob: Texture2D
+var _shadow: Texture2D
+var _cloth: PackedVector2Array
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
-	custom_minimum_size = Vector2(TRACK_W + 52.0, 210.0)
+	_font = HudStyle.font("inter", 800, roundi(LABEL_PX * 0.16))
+	custom_minimum_size = Vector2(KN + 6.0 + 64.0, TH)
 	size = custom_minimum_size
-	_font = HudStyle.font("inter", 700, 1)
+	_track_box = HudStyle.panel(KN * 0.5)
+	_track_box.bg_color = Color(0.043, 0.122, 0.165, 0.74)
+	_track_box.shadow_size = 14
+	_track_box.shadow_offset = Vector2(0, 8)
+	_knob = Icons.svg("lever-knob", KNOB_SVG, Vector2(KN, KN))
+	var sh := (KN * 0.5 + 16.0 * HudStyle.KT) * 2.0
+	_shadow = Icons.svg("lever-shadow", SHADOW_SVG, Vector2(sh, sh))
+	_cloth = _cloth_outline()
+	_kpos = level / 3.0
 
 
-func _track() -> Rect2:
-	return Rect2(Vector2.ZERO, Vector2(TRACK_W, size.y))
+## The cloth's outline on the knob's 24 grid: the web's square sail, its
+## leeches bellying out a touch.
+static func _cloth_outline() -> PackedVector2Array:
+	var pts := PackedVector2Array([Vector2(5.6, 6.6), Vector2(18.4, 6.6)])
+	for i in range(1, 9):
+		pts.append(_bezier(Vector2(18.4, 6.6), Vector2(19.1, 10.3), Vector2(18.9, 13.8), Vector2(17.8, 17.2), i / 8.0))
+	pts.append(Vector2(6.2, 17.2))
+	for i in range(1, 8):
+		pts.append(_bezier(Vector2(6.2, 17.2), Vector2(5.1, 13.8), Vector2(4.9, 10.3), Vector2(5.6, 6.6), i / 8.0))
+	return pts
 
 
-func _notch_y(n: float) -> float:
-	var r := _track()
-	var pad := TRACK_W * 0.5
-	return r.end.y - pad - n / 3.0 * (r.size.y - pad * 2.0)
+static func _bezier(a: Vector2, b: Vector2, c: Vector2, d: Vector2, t: float) -> Vector2:
+	var u := 1.0 - t
+	return a * u * u * u + b * 3.0 * u * u * t + c * 3.0 * u * t * t + d * t * t * t
+
+
+## The knob's centre for a position 0 (Stop) .. 1 (Full).
+func _knob_y(f: float) -> float:
+	return TH - KN * 0.5 - f * (TH - KN)
 
 
 func _fraction_at(y: float) -> float:
-	var r := _track()
-	var pad := TRACK_W * 0.5
-	return clampf((r.end.y - pad - y) / maxf(1.0, r.size.y - pad * 2.0), 0.0, 1.0)
+	return clampf((TH - KN * 0.5 - y) / (TH - KN), 0.0, 1.0)
 
 
 func _gui_input(event: InputEvent) -> void:
@@ -49,9 +89,7 @@ func _gui_input(event: InputEvent) -> void:
 			_move(event.position.y)
 			accept_event()
 		elif not event.pressed and event.index == _touch:
-			_touch = -1
-			_drag = -1.0
-			queue_redraw()
+			_release()
 			accept_event()
 	elif event is InputEventScreenDrag and event.index == _touch:
 		_move(event.position.y)
@@ -61,13 +99,21 @@ func _gui_input(event: InputEvent) -> void:
 			_touch = 99
 			_move(event.position.y)
 		else:
-			_touch = -1
-			_drag = -1.0
-			queue_redraw()
+			_release()
 		accept_event()
 	elif event is InputEventMouseMotion and _touch == 99:
 		_move(event.position.y)
 		accept_event()
+
+
+func _release() -> void:
+	_touch = -1
+	_drag = -1.0
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and not is_visible_in_tree():
+		_release()
 
 
 func _move(y: float) -> void:
@@ -75,7 +121,6 @@ func _move(y: float) -> void:
 	var n := roundi(f * 3.0)
 	# magnetic notches: the knob leans toward the nearest detent rather than floating free
 	_drag = n / 3.0 + (f - n / 3.0) * 0.4
-	queue_redraw()
 	if n != level:
 		level = n
 		level_set.emit(n)
@@ -89,38 +134,80 @@ func show_state(p_level: int, p_set: float) -> void:
 		queue_redraw()
 
 
-func _draw() -> void:
-	var r := _track()
-	var cx := r.get_center().x
-	# the glass track
-	var sb := HudStyle.panel(TRACK_W * 0.5)
-	draw_style_box(sb, r)
-	# the rail, filling with the canvas actually set
-	var top := _notch_y(3.0)
-	var bot := _notch_y(0.0)
-	draw_line(Vector2(cx, bot), Vector2(cx, top), Color(1, 1, 1, 0.14), 4.0, true)
-	var fill_y := lerpf(bot, top, set_fraction)
-	if set_fraction > 0.005:
-		draw_line(Vector2(cx, bot), Vector2(cx, fill_y), HudStyle.GOLD, 4.0, true)
-	# the four notches and their names
-	for i in 4:
-		var y := _notch_y(i)
-		var on := i <= level and level > 0
-		draw_circle(Vector2(cx, y), 4.0, HudStyle.GOLD if on and i > 0 else Color(1, 1, 1, 0.3), true, -1.0, true)
-		var col := HudStyle.INK if i == level else HudStyle.INK_3
-		draw_string(_font, Vector2(r.end.x + 8.0, y + 4.0), LABELS[i].to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, 10, col)
-	# the knob: a little sail, furled at Stop
-	var kf := _drag if _drag >= 0.0 else level / 3.0
-	var ky := lerpf(bot, top, kf)
-	var kc := Vector2(cx, ky)
-	draw_circle(kc, TRACK_W * 0.42, Color(0.96, 0.97, 0.98), true, -1.0, true)
-	draw_circle(kc, TRACK_W * 0.42, Color(0, 0, 0, 0.2), false, 1.0, true)
-	var ink := Color("#1f1404")
-	draw_line(kc + Vector2(0, -11), kc + Vector2(0, 11), ink, 1.8, true)
-	draw_line(kc + Vector2(-8, -7), kc + Vector2(8, -7), ink, 1.8, true)
-	if level == 0:
-		draw_rect(Rect2(kc + Vector2(-8, -8.2), Vector2(16, 2.6)), HudStyle.GOLD_LO)
+func _process(dt: float) -> void:
+	var was := Vector2(_kpos, _swell)
+	if _drag >= 0.0:
+		# held: the knob follows the finger at once
+		_kpos += (_drag - _kpos) * MathX.damp(40.0, dt)
+		_kvel = 0.0
 	else:
-		var h := 4.0 + 10.0 * level / 3.0
-		var cloth := PackedVector2Array([kc + Vector2(-7.4, -6.4), kc + Vector2(7.4, -6.4), kc + Vector2(6.8, -6.4 + h), kc + Vector2(-6.8, -6.4 + h)])
-		draw_colored_polygon(cloth, HudStyle.GOLD)
+		# let go: it springs into its notch with a little overshoot
+		var k := 260.0
+		var c := 2.0 * sqrt(k) * 0.62
+		var h := minf(dt, 0.05)
+		_kvel += ((level / 3.0 - _kpos) * k - _kvel * c) * h
+		_kpos += _kvel * h
+	_swell += ((1.08 if _drag >= 0.0 else 1.0) - _swell) * MathX.damp(14.0, dt)
+	if absf(_kpos - was.x) > 1e-4 or absf(_swell - was.y) > 1e-4:
+		queue_redraw()
+
+
+func _draw() -> void:
+	var cx := KN * 0.5
+	# the glass track
+	draw_style_box(_track_box, Rect2(0.0, 0.0, KN, TH))
+	# the rail runs notch to notch; its gold is the canvas actually set
+	var top := _knob_y(1.0)
+	var bot := _knob_y(0.0)
+	draw_rect(Rect2(cx - RAIL * 0.5, top, RAIL, bot - top), Color(1, 1, 1, 0.12))
+	if set_fraction > 0.003:
+		# (the web scales the gradient with the fill: always gold at its foot, pale at its head)
+		var fy := lerpf(bot, top, set_fraction)
+		var head := Color("#ffe9a8")
+		var foot := Color("#d4952f")
+		draw_polygon(PackedVector2Array([Vector2(cx - RAIL * 0.5, fy), Vector2(cx + RAIL * 0.5, fy), Vector2(cx + RAIL * 0.5, bot), Vector2(cx - RAIL * 0.5, bot)]),
+				PackedColorArray([head, head, foot, foot]))
+	# the notches: Stop's mark longer and brighter
+	for i in 4:
+		var y := _knob_y(i / 3.0)
+		var w := NOTCH.x * (22.0 / 16.0 if i == 0 else 1.0)
+		draw_rect(Rect2(cx - w * 0.5, y - NOTCH.y * 0.5, w, NOTCH.y), Color(1, 1, 1, 0.55 if i == 0 else 0.34))
+	# the names, the set one lit and nudged out
+	var lx := KN + 2.0 + 4.0
+	for i in 4:
+		var y := _knob_y(i / 3.0) + LABEL_PX * 0.36
+		var on := i == level
+		var col := (Color.WHITE if i == 0 else HudStyle.GOLD) if on else Color(1, 1, 1, 0.5)
+		var x := lx + (3.0 * HudStyle.KT if on else 0.0)
+		draw_string(_font, Vector2(x, y + 1.5), LABELS[i].to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(LABEL_PX), Color(0, 0, 0, 0.45))
+		draw_string(_font, Vector2(x, y), LABELS[i].to_upper(), HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(LABEL_PX), col)
+	# the knob: its shadow, the gold boss, and on it a little square-rigger
+	var kc := Vector2(cx, _knob_y(_kpos))
+	var kr := KN * 0.5 * _swell
+	var sh := _shadow.get_size() / Icons.density() * _swell
+	draw_texture_rect(_shadow, Rect2(kc + Vector2(0.0, 6.0 * HudStyle.KT) - sh * 0.5, sh), false)
+	draw_texture_rect(_knob, Rect2(kc - Vector2(kr, kr), Vector2(kr, kr) * 2.0), false)
+	# the icon is 62% of the knob, on a 24 grid
+	var u := KN * 0.62 / 24.0 * _swell
+	var o := kc - Vector2(12.0, 12.0) * u
+	var pos := clampf(_kpos, 0.0, 1.0)
+	var mast := Color("#6b3f0e")
+	draw_line(o + Vector2(12.0, 2.5) * u, o + Vector2(12.0, 21.5) * u, mast, 1.8 * u, true)
+	draw_line(o + Vector2(5.0, 6.2) * u, o + Vector2(19.0, 6.2) * u, mast, 1.8 * u, true)
+	var trim := Color("#8a5718")
+	var ca := minf(1.0, pos * 6.0)
+	if ca > 0.01:
+		# the cloth drops from the yard as more canvas is set
+		var sy := maxf(0.06, pos)
+		var pts := PackedVector2Array()
+		for p in _cloth:
+			pts.append(o + Vector2(p.x, 6.6 + (p.y - 6.6) * sy) * u)
+		draw_colored_polygon(pts, Color(Color("#fffaf0"), ca))
+		pts.append(pts[0])
+		draw_polyline(pts, Color(trim, ca), 0.8 * u, true)
+	var fa := clampf(1.0 - pos * 3.0, 0.0, 1.0)
+	if fa > 0.01:
+		# furled on the yard
+		var fr := Rect2(o + Vector2(5.2, 5.6) * u, Vector2(13.6, 2.4) * u)
+		draw_rect(fr, Color(Color("#f6ead0"), fa))
+		draw_rect(fr, Color(trim, fa), false, 0.7 * u)

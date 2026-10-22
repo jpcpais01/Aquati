@@ -268,6 +268,12 @@ static func _pillow(kit: MeshKit, outline: PackedVector2Array, half_th: float, b
 
 # ------------------------------------------------------------------ baked figures
 
+## Reads the baked figures now (on the main thread), before the shipyard's
+## workers build hulls that carve them.
+static func warm() -> void:
+	_load()
+
+
 static func _load() -> bool:
 	if not _index.is_empty():
 		return true

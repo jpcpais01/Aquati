@@ -6,7 +6,7 @@ extends SceneTree
 ## Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
-const SHIPS := {"sloop": 60000}
+const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
 ## The archipelagos the bake writes.
 const REGIONS := ["home", "brumas"]
 
