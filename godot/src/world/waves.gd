@@ -85,16 +85,17 @@ func set_sea_state(sea: float, calm: float = 0.0) -> void:
 	_pack()
 
 
-## Height of the water at world (x, z). The horizontal pinch is inverted with
-## two fixed-point steps, so this matches the rendered surface to a few cm.
-func height_at(x: float, z: float) -> float:
+## Height of the water at world (x, z), the swell scaled by damp (it dies down
+## over the shallows). The horizontal pinch is inverted with two fixed-point
+## steps, so this matches the rendered surface to a few cm.
+func height_at(x: float, z: float, damp: float = 1.0) -> float:
 	var px := x
 	var pz := z
 	for it in 2:
 		var ox := 0.0
 		var oz := 0.0
 		for i in COUNT:
-			var c := cos(k[i] * (dir_x[i] * px + dir_z[i] * pz) + phase[i]) * q[i] * amp[i]
+			var c := cos(k[i] * (dir_x[i] * px + dir_z[i] * pz) + phase[i]) * q[i] * amp[i] * damp
 			ox += c * dir_x[i]
 			oz += c * dir_z[i]
 		px = x - ox
@@ -102,7 +103,7 @@ func height_at(x: float, z: float) -> float:
 	var y := 0.0
 	for i in COUNT:
 		y += amp[i] * sin(k[i] * (dir_x[i] * px + dir_z[i] * pz) + phase[i])
-	return y
+	return y * damp
 
 
 func _pack() -> void:

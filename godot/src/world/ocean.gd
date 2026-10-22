@@ -69,6 +69,18 @@ func _build_mesh() -> ArrayMesh:
 	return m
 
 
+## Points the shallows, the surf and the wave damping at an archipelago's own maps.
+func set_region(r: Region) -> void:
+	material.set_shader_parameter("seabed_tex", r.height_tex)
+	material.set_shader_parameter("seabed_rect", r.height_rect())
+	material.set_shader_parameter("has_seabed", 1.0)
+	material.set_shader_parameter("ground_tex", r.ground_tex)
+	material.set_shader_parameter("isle_tex", r.isle_tex)
+	material.set_shader_parameter("shore_tex", r.shore_tex)
+	material.set_shader_parameter("shore_rect", r.shore_rect())
+	material.set_shader_parameter("region", Vector4(r.centre.x, r.centre.z, r.biome, 0.0))
+
+
 ## Centres the sea on the camera's focus; `cam_dist` sizes its cells.
 func follow(focus: Vector3, cam_dist: float) -> void:
 	cell = clampf(cam_dist / 52.0, 1.25, 7.0)

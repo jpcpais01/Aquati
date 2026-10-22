@@ -1,24 +1,35 @@
-## Shores O' Fortune for Android: the first voyage
+## Shores O' Fortune for Android: the islands
 
-The game is coming to Android as a native app, rebuilt from the keel up for
-phones. This first build is open water and your sloop: the sea, the sky, the
-light and the feel of sailing her. Islands, ports, other ships and battles
-arrive in the builds that follow.
+The second build brings land into sight. Both archipelagos from the web game
+are here, island for island and palm for palm, with the shallows, the surf
+and the reefs around them. Ports, other ships and battles arrive in the
+builds that follow.
 
-- **The open sea.** Long swells rolling in under the wind, sun glitter that
-  twinkles across the chop, cat's paws where gusts ruffle the water,
-  whitecaps here and there, and your own wake spreading out behind you.
-- **Your sloop, the Kestrel.** Built plank by plank in the game like on the
-  web, with her sails filling and shivering, rigging, flags, a mermaid figurehead and
-  lanterns, a bow wave curling off her stem, spray off the bow and smoke from
-  the galley chimney.
-- **Sailing by the wind.** She is fastest with the wind on her beam, a touch
-  slower running before it, and crawls if you point her up into it. She
-  heels, pitches and rides every swell you see.
-- **Made for touch.** Drag anywhere on the left of the screen and the helm
-  ring turns her to point where your finger points. The lever on the right
-  sets Stop, Slow, Half or Full sail and clicks into each notch. Pinch to
-  zoom; the button at the top right changes the camera.
-- **A turning day.** The sun climbs, sets in gold and red, and the night
-  falls blue and moonlit, with the sea and the sky changing colour through
-  every hour.
+- **Two archipelagos.** The home isles, with their volcano, jungle isles,
+  sandstone bluffs and atolls, and Las Brumas far to the east across the
+  high seas, with karst limestone towers, jade turf and pink coral sand.
+- **Islands that live.** Coconut palms along the beaches, rain-tree jungle
+  in the valleys, banana and fern under the canopy, shrubs, wildflowers and
+  grass on the meadows, mossy rocks, and coconuts and driftwood washed up on
+  the sand. Everything sways in the breeze and leans harder in a gust.
+- **Shallows you can see into.** Sand ripples, seagrass meadows and coral
+  heads lit by the sun, wobbling under the ripples, with the caustic web of
+  sunlight dancing over them. The water deepens from clear turquoise to
+  blue over the drop-off.
+- **Surf on every shore.** Breakers roll in, spill white on the sand and
+  drain back off the beach, leaving it dark and glistening. Out on the open
+  sea, the swell breaks white over the coral reefs, so you can spot them
+  from afar.
+- **Mind your keel.** Sail into the shallows and she runs aground with a
+  jolt. Over a reef the coral grinds along her hull and slows her. Beyond
+  the edge of the known sea, the swell turns you back.
+- **Islands to discover.** Sail close to an island to put it on your
+  chart.
+- **Made for phones.** Plants switch to simpler shapes as they get farther
+  away, just as on the web, and the sun's shadows only cover the ground you
+  can see, so your phone draws no more than the view needs.
+
+Still aboard from the first build: the open sea and your sloop, the Kestrel,
+with the same swells, sun glitter, wakes, sky and turning day as on the web.
+Drag on the left of the screen to steer and use the lever on the right for
+the sails.

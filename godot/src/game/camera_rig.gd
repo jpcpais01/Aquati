@@ -12,6 +12,8 @@ const CINE_PITCH_NEAR := 0.6
 const TILT_GATE := 0.2
 const NEAR_DIST := 70.0
 const FAR_DIST := 300.0
+## The lens (vertical degrees), the web's at sea.
+const FOV := 34.0
 
 ## What the camera looks at, on the water.
 var target := Vector3.ZERO
@@ -29,10 +31,11 @@ var _pushed_at := -1e9
 var _tilt_open := false
 var _tilt_dir := 1.0
 var _trauma := 0.0
+var _pitch := 1.0
 
 
 func _ready() -> void:
-	fov = 30.0
+	fov = FOV
 	near = 2.0
 	far = 2600.0
 
@@ -102,6 +105,20 @@ func ground_radius() -> float:
 	return clampf(distance() * 0.75, 70.0, 260.0)
 
 
+## How far (m) from the lens the sun's shadows need to reach: as far as the
+## ground in view runs, and no further than the web game's shadow square round
+## the focus (the ground radius in 16 m steps), past which it draws none.
+func shadow_reach() -> float:
+	var dist := distance()
+	var h := sin(_pitch) * dist
+	var r := minf(260.0, ceilf(ground_radius() / 16.0) * 16.0)
+	var reach := Vector2(cos(_pitch) * dist + r, h).length()
+	var top := _pitch - deg_to_rad(FOV * 0.5)
+	if top > 0.05:
+		reach = minf(reach, h / sin(top) * 1.05)
+	return reach
+
+
 func shake(a: float) -> void:
 	_trauma = minf(1.2, _trauma + a * shake_scale)
 
@@ -129,6 +146,7 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 
 	# camera due south of the focus, looking north and down
 	var pitch := lerpf(lerpf(0.91, 1.1, _zoom_smooth), lerpf(CINE_PITCH_NEAR, CINE_PITCH, _zoom_smooth), tilt_blend())
+	_pitch = pitch
 	var dist := distance()
 	var pos := _focus + Vector3(0.0, sin(pitch) * dist, cos(pitch) * dist)
 
@@ -139,7 +157,7 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 		var k := s * (0.6 + _zoom_smooth)
 		pos += Vector3((sin(time * 47.0) + sin(time * 31.0)) * k * 0.6, sin(time * 53.0) * k * 0.5, sin(time * 41.0 + 1.0) * k * 0.6)
 	global_transform = Transform3D(Basis.looking_at(_focus - pos, Vector3.UP), pos)
-	fov = 30.0
+	fov = FOV
 	# the near plane rides up with the camera: a far view keeps its depth precision
 	near = clampf(pos.y * 0.08, 2.0, 30.0)
 	far = 2600.0

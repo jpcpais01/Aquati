@@ -14,14 +14,15 @@ way and keep the APK as a workflow artifact.
 | Folder | What lives there |
 | --- | --- |
 | `src/core` | Settings (quality tiers), small maths helpers |
-| `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky and the hour |
+| `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky and the hour; the archipelagos (`Region`), their ground (`Ground`) and their planting (`Flora`) |
 | `src/render` | The colour grade (a GPU-baked 3D LUT) |
 | `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics |
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave |
 | `src/game` | The voyage scene, the camera rig, the controls |
 | `src/ui` | The HUD, the touch helm, the sail lever |
-| `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ship lighting) |
-| `art` | Generated textures and the baked figurehead sculptures |
+| `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ground, plants, ship lighting) |
+| `art` | The tiling textures every shader samples and the baked figurehead sculptures |
+| `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
 | `tools` | The CI checks and the asset generators |
 
 ## Running it
@@ -38,15 +39,18 @@ camera, the mouse wheel zooms. On a phone: drag on the left of the screen to
 steer, use the lever on the right for the sails, pinch to zoom.
 
 Handy flags (after `--`): `--hour 18.5` sets the time of day, `--view 0..3`
-picks a camera, `--shot out.png` saves a frame and quits, `--smoke` runs a few
-seconds and prints `SMOKE OK`.
+(or `--zoom 0..1 --tilt 0..1`) picks a camera, `--at X,Z` and `--heading R`
+start somewhere else, `--shot out.png` saves a frame and quits (after
+`--frames N`, and prints the frame's triangles and draw calls), `--smoke`
+runs a few seconds and prints `SMOKE OK`. `--noshadow`, `--noocean` and
+`--noflora` leave a layer out, and `--discover` charts islands during a shot.
 
 ## The checks CI runs
 
 ```sh
 cd godot
 godot --headless --import                       # compiles every script
-godot --headless --script res://tools/check.gd  # loads every script, builds each ship, checks normals and triangle budgets
+godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world
 godot --headless --script res://tools/bake.gd   # builds every figurehead
 godot --headless --quit-after 600 -- --smoke    # sails for a few seconds
 ```
@@ -87,9 +91,12 @@ signed with your key.
 
 ## Regenerating assets
 
-- `python3 godot/tools/gen_textures.py` (from the repo root, needs numpy and
-  Pillow) rewrites the sea textures in `art/`: the same noise, foam, caustics
-  and ripple maps the web game generates at start.
+- `cd godot && node tools/world/bake_world.mjs` (after `npm ci` at the repo
+  root) runs the web game's own world generator and writes `world/`: the
+  islands, reefs, sites and every plant, exactly as the web game builds them
+  at load. It also writes the tiling textures in `art/` (noise, ripple
+  normals, caustics and foam), byte for byte the ones the web game makes.
+  Run it again whenever the web game's islands or plants change.
 - `cd godot && node tools/bake_figures.mjs` (needs the `meshoptimizer` npm
   package) re-bakes the figurehead sculptures in `art/figures.*` from the web
   game's sources.

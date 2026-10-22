@@ -25,6 +25,8 @@ var _clock: Label
 var _view: _ViewButton
 var _lever: SailLever
 var _helm: HelmRing
+var _toasts: VBoxContainer
+var _toast_box: StyleBoxFlat
 var _shown := {}
 
 
@@ -110,6 +112,19 @@ func _ready() -> void:
 			_lever.visible = true
 			_layout())
 
+	# notes across the top: an island discovered
+	_toasts = VBoxContainer.new()
+	_toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_toasts.add_theme_constant_override("separation", 5)
+	_toasts.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_toasts.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	root.add_child(_toasts)
+	_toast_box = HudStyle.panel(999, Vector2(16, 5))
+	_toast_box.bg_color = Color(0.035, 0.1, 0.145, 0.66)
+	_toast_box.border_color = Color(HudStyle.GOLD, 0.3)
+	_toast_box.shadow_color = Color(0.0, 0.03, 0.055, 0.22)
+	_toast_box.content_margin_bottom = 6
+
 	get_viewport().size_changed.connect(_layout)
 	_layout.call_deferred()
 
@@ -128,6 +143,7 @@ func _layout() -> void:
 	_pill.size = ps
 	_pill.position = Vector2((vp.x - ps.x) * 0.5, vp.y - my - ps.y)
 	_lever.position = Vector2(vp.x - mx - _lever.size.x, vp.y - my - _lever.size.y - 24.0)
+	_toasts.offset_top = my
 
 
 ## The HUD's view of the voyage; text only changes when the number it shows does.
@@ -145,6 +161,48 @@ func show_state(ship: Ship, wind: Wind, hour: float, view: int, vignette: float)
 	_text("class", _ship_class, ship.cls.name.to_upper())
 	_text("name", _ship_name, ship.cls.title)
 	_vig_mat.set_shader_parameter("strength", vignette)
+
+
+## A note across the top of the screen, a gold kicker over a title (an
+## island discovered), gone after `life` seconds; three at most.
+func toast(kicker: String, title: String, life := 3.4) -> void:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_theme_stylebox_override("panel", _toast_box)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	for l: Label in [HudStyle.label(kicker.to_upper(), "inter", 700, 9, HudStyle.GOLD, 2), HudStyle.label(title, "cinzel", 700, 15, HudStyle.INK, 1)]:
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.6))
+		l.add_theme_constant_override("shadow_offset_x", 0)
+		l.add_theme_constant_override("shadow_offset_y", 1)
+		col.add_child(l)
+	panel.add_child(col)
+	# the stack lays out the slot; the card moves freely inside it
+	var slot := Control.new()
+	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	slot.add_child(panel)
+	_toasts.add_child(slot)
+	while _toasts.get_child_count() > 3:
+		var old := _toasts.get_child(0)
+		_toasts.remove_child(old)
+		old.queue_free()
+	var size := panel.get_combined_minimum_size()
+	slot.custom_minimum_size = size
+	panel.size = size
+	panel.pivot_offset = size * 0.5
+	# in on a spring from just above, out drifting up as it fades
+	panel.modulate.a = 0.0
+	panel.position.y = -14.0
+	panel.scale = Vector2(0.94, 0.94)
+	var tw := panel.create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(panel, "modulate:a", 1.0, 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(panel, "position:y", 0.0, 0.55)
+	tw.tween_property(panel, "scale", Vector2.ONE, 0.55)
+	tw.chain().tween_property(panel, "modulate:a", 0.0, 0.6).set_delay(maxf(life - 0.55, 0.0)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(panel, "position:y", -8.0, 0.6).set_delay(maxf(life - 0.55, 0.0)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.chain().tween_callback(slot.queue_free)
 
 
 func _text(key: String, l: Label, text: String) -> void:

@@ -14,11 +14,16 @@ const WIND_TABLE := [[0.0, 0.8], [40.0, 0.96], [90.0, 1.0], [120.0, 0.9], [145.0
 ## quarters draw it down and the stern lifts it again (net zero, so a ship
 ## hove to never digs a hole); the wake canvas grows the V-waves from it.
 const HULL_PRESSURE := [[0.44, 1.0, 0.32], [0.24, -0.75, 0.36], [0.0, -0.5, 0.4], [-0.22, -0.35, 0.38], [-0.42, 0.6, 0.34]]
+## Where along her keel she feels for the ground (fraction of length from midships).
+const KEEL_PROBES := [0.46, 0.2, -0.1, -0.42]
 const SPRAY := Color(1.4, 1.5, 1.55, 0.9)
 const SMOKE := Color(0.82, 0.8, 0.78, 0.32)
 const SMOKE_END := Color(1.05, 1.04, 1.02)
 
 static var _count := 0
+
+## A blow the helm feels (0..1): running aground, the first bite of a reef.
+signal struck(amount: float)
 
 var cls: ShipClass
 var livery: Livery
@@ -41,6 +46,8 @@ var sail_level := 0.5
 ## A shove from another hull, bleeding off against the keel.
 var drift := Vector2.ZERO
 var anchored := false
+## How hard her keel grinds on coral (0 clear .. 1 hard aground).
+var scrape := 0.0
 
 var _id := 0
 var _heave := 0.0
@@ -57,6 +64,8 @@ var _rig_lee := 1.0
 var _rig_lee_v := 0.0
 var _lee_target := 1.0
 var _rng := RandomNumberGenerator.new()
+var _ground_cooldown := 0.0
+var _scrape_t := 0.0
 
 
 static func create(p_cls: ShipClass, p_livery: Livery, p_world: World) -> Ship:
@@ -142,9 +151,16 @@ func step(dt: float) -> void:
 	pos.x += vel.x * dt
 	pos.z += vel.z * dt
 
-	# ------------------------------------------------ buoyancy
 	var L := c.length
 	var B := c.beam
+	_land(dt, fx, fz, L)
+	# the edge of the known sea: past it the swell turns her back
+	var over := world.past_edge(pos.x, pos.z)
+	if over.z > 0.0:
+		pos.x += over.x * over.z * 0.05
+		pos.z += over.y * over.z * 0.05
+
+	# ------------------------------------------------ buoyancy
 	var hb := world.water_height(pos.x + fx * L * 0.38, pos.z + fz * L * 0.38)
 	var hs := world.water_height(pos.x - fx * L * 0.38, pos.z - fz * L * 0.38)
 	var hp := world.water_height(pos.x + port.x * B * 0.5, pos.z + port.z * B * 0.5)
@@ -193,6 +209,71 @@ func step(dt: float) -> void:
 		return
 	_wake(dt, fx, fz, port, L, B)
 	_galley(dt, w)
+
+
+## The ground under her keel. A beach or a rock shelf shoves her back off
+## (hard, if she ran onto it at speed); open-sea coral is a crest she either
+## clears or grinds across, by how much water she draws.
+func _land(dt: float, fx: float, fz: float, L: float) -> void:
+	var c := cls
+	_ground_cooldown -= dt
+	var grind := 0.0
+	var gp := Vector2.ZERO
+	for pf: float in KEEL_PROBES:
+		var px := pos.x + fx * L * pf
+		var pz := pos.z + fz * L * pf
+		var h := world.ground_height(px, pz)
+		var reef := world.reef_at(px, pz) if h < 0.0 else 0.0
+		if reef > 0.3:
+			var k := clampf((h + c.draft * 0.95) / 0.9, 0.0, 1.0) * smoothstep(0.3, 0.6, reef)
+			if k > grind:
+				grind = k
+				gp = Vector2(px, pz)
+			continue
+		var lim := -c.draft * 0.75
+		if h <= lim:
+			continue
+		# up the slope she came: straight back down it
+		var g := world.ground_gradient(px, pz)
+		var gl := maxf(g.length(), 1e-3)
+		var push := minf(2.5, (h - lim) * 0.6 + 0.05)
+		pos.x -= g.x / gl * push
+		pos.z -= g.y / gl * push
+		if speed > 3.5 and _ground_cooldown <= 0.0:
+			_ground_cooldown = 1.2
+			world.fx.sand_hit(Vector3(px, 0.5, pz))
+			world.fx.splash(Vector3(px, world.water_height(px, pz), pz), 0.5 + minf(0.6, speed / 25.0))
+			struck.emit(0.5)
+		# the bow ploughing in stops her hardest
+		speed *= pow(0.86 if pf > 0.3 else 0.95, dt * 60.0)
+	_grind_reef(grind, gp, dt)
+
+
+## Her keel on coral (k 0..1, deepest at p): it drags her up short and
+## stiffens her helm, in shuddering bites, the first strike the worst. Hard
+## aground she barely moves until she works her way off into deeper water.
+func _grind_reef(k: float, p: Vector2, dt: float) -> void:
+	var was := scrape
+	scrape += (k - scrape) * MathX.damp(14.0 if k > scrape else 5.0, dt)
+	if k < 0.02:
+		return
+	var spd := absf(speed)
+	speed *= 1.0 - MathX.damp(k * 1.35, dt)
+	ang_vel *= 1.0 - MathX.damp(k * 1.8, dt)
+	var strike := was < 0.06 and spd > 1.5
+	_scrape_t -= dt
+	if _scrape_t > 0.0 and not strike:
+		return
+	_scrape_t = 0.5 + _rng.randf() * 0.15
+	# she shudders, throws up a cloud of churned sand and splintered coral, and foams at the hull
+	kick_roll((_rng.randf() - 0.5) * 0.06 * k + (signf(_rng.randf() - 0.5) * 0.05 if strike else 0.0))
+	var wy := world.water_height(p.x, p.y)
+	world.fx.sand_hit(Vector3(p.x, wy + 0.1, p.y))
+	if strike or _rng.randf() < 0.5:
+		world.fx.splash(Vector3(p.x, wy, p.y), 0.35 + k * 0.4 + (0.3 if strike else 0.0))
+	world.wake.stamp(p.x, p.y, cls.beam * 0.7, 0.35 * k)
+	if strike:
+		struck.emit(0.45 * k + 0.15)
 
 
 func _wake(dt: float, fx: float, fz: float, port: Vector3, L: float, B: float) -> void:
@@ -284,4 +365,4 @@ func _galley(dt: float, w: Wind) -> void:
 
 ## A sudden lurch (a broadside's recoil, a sea slamming into her quarter).
 func kick_roll(amount: float) -> void:
-	_roll_kick += amount
+	_roll_kick = clampf(_roll_kick + amount, -0.3, 0.3)
