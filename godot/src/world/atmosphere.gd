@@ -9,20 +9,24 @@ extends RefCounted
 ## One full day, in seconds of play.
 const DAY_LENGTH := 20.0 * 60.0
 ## Clear-noon sun irradiance.
-const SUN_I := 3.45
+const SUN_I := 3.8
 ## The sun's highest elevation (40 degrees), and the swing of noon toward the north-west.
 const PEAK := 0.6981317
 const YAW := 0.5
 ## Light from the sky dome, against the sun's (the web's SKY_LIGHT).
 const SKY_LIGHT := 0.72
-## Palette keyframes on the sun's height: [s, zenith, horizon, fog].
+## Palette keyframes on the sun's height: [s, zenith, horizon, fog, L]. The
+## colours are the air's own, before the tone curve: it squeezes bright
+## channels together, so a sky that should read as a clear tropical blue goes
+## in far bluer than it comes out. L is how bright the open sky is, which a
+## closing grey deck keeps to.
 const PALETTE := [
-	[-0.4, Vector3(0.006, 0.011, 0.03), Vector3(0.017, 0.028, 0.056), Vector3(0.015, 0.025, 0.048)],
-	[-0.16, Vector3(0.008, 0.018, 0.05), Vector3(0.04, 0.05, 0.1), Vector3(0.034, 0.045, 0.085)],
-	[-0.05, Vector3(0.06, 0.05, 0.15), Vector3(0.34, 0.2, 0.2), Vector3(0.2, 0.15, 0.17)],
-	[0.03, Vector3(0.2, 0.15, 0.32), Vector3(0.95, 0.52, 0.3), Vector3(0.72, 0.48, 0.38)],
-	[0.16, Vector3(0.15, 0.26, 0.56), Vector3(0.78, 0.72, 0.66), Vector3(0.64, 0.64, 0.68)],
-	[0.42, Vector3(0.11, 0.33, 0.78), Vector3(0.63, 0.8, 0.94), Vector3(0.55, 0.73, 0.86)],
+	[-0.4, Vector3(0.004, 0.009, 0.032), Vector3(0.013, 0.026, 0.062), Vector3(0.011, 0.024, 0.054), 0.027],
+	[-0.16, Vector3(0.006, 0.016, 0.062), Vector3(0.03, 0.048, 0.125), Vector3(0.025, 0.043, 0.105), 0.05],
+	[-0.05, Vector3(0.05, 0.045, 0.17), Vector3(0.4, 0.17, 0.17), Vector3(0.23, 0.13, 0.17), 0.23],
+	[0.03, Vector3(0.035, 0.1, 0.4), Vector3(1.1, 0.5, 0.2), Vector3(0.82, 0.47, 0.3), 0.59],
+	[0.16, Vector3(0.045, 0.17, 0.62), Vector3(0.78, 0.6, 0.44), Vector3(0.58, 0.55, 0.56), 0.72],
+	[0.42, Vector3(0.022, 0.13, 0.66), Vector3(0.24, 0.5, 0.98), Vector3(0.23, 0.46, 0.86), 0.77],
 ]
 
 ## 0 midnight .. 0.5 noon .. 1. The web game starts at 0.36, mid-morning.
@@ -52,9 +56,12 @@ var haze := Vector3.ZERO
 var light_tint := Vector3.ONE
 var night := 0.0
 var exposure := 1.0
-var grade_lo := Vector3(0.94, 1.02, 1.06)
-var grade_hi := Vector3(1.05, 1.0, 0.94)
-var grade_sat := 1.12
+var grade_lo := Vector3(0.9, 1.0, 1.1)
+var grade_hi := Vector3(1.06, 1.0, 0.92)
+var grade_sat := 1.05
+## The grade's contrast (an S-curve on the display values) and vibrance.
+var contrast := 0.24
+var vibrance := 0.3
 var vignette := 0.55
 
 var _day_ref := 1.0
@@ -93,7 +100,7 @@ static func _pace(d: float) -> float:
 	return 1.0 - 0.55 * twilight + 0.4 * nt
 
 
-## [zenith, horizon, fog] for a sun height.
+## [zenith, horizon, fog, L] for a sun height.
 static func _palette(s: float) -> Array:
 	var i := 0
 	while i < PALETTE.size() - 2 and s > PALETTE[i + 1][0]:
@@ -101,7 +108,7 @@ static func _palette(s: float) -> Array:
 	var a: Array = PALETTE[i]
 	var b: Array = PALETTE[i + 1]
 	var t := MathX.smooth(a[0], b[0], s)
-	return [(a[1] as Vector3).lerp(b[1], t), (a[2] as Vector3).lerp(b[2], t), (a[3] as Vector3).lerp(b[3], t)]
+	return [(a[1] as Vector3).lerp(b[1], t), (a[2] as Vector3).lerp(b[2], t), (a[3] as Vector3).lerp(b[3], t), lerpf(a[4], b[4], t)]
 
 
 ## The hour as 0..24.
@@ -135,7 +142,7 @@ func update(dt: float) -> void:
 		var g := MathX.smooth(0.0, 0.16, sy)
 		var w := MathX.smooth(0.12, 0.45, sy)
 		var I := SUN_I * sun_vis * clouded * (1.0 + 0.14 * heat)
-		key_color = Vector3(1.0, 0.42 + g * 0.3 + w * 0.18, 0.16 + g * 0.29 + w * 0.31) * I
+		key_color = Vector3(1.0, 0.42 + g * 0.3 + w * 0.17, 0.15 + g * 0.27 + w * 0.29) * I
 	else:
 		key_dir = moon_dir
 		var I := 0.62 * moon_vis * clouded
@@ -146,25 +153,41 @@ func update(dt: float) -> void:
 	zenith = pal[0]
 	horizon = pal[1]
 	fog_color = pal[2]
+	var sky_l: float = pal[3]
 	# the open sky stays blue between the clouds: only a closing deck greys it over
 	var c := MathX.smooth(0.45, 1.0, cover) * 0.94
 	if c > 0.001:
-		var L := _lum(horizon)
 		var dim := 1.0 - 0.6 * storm
 		var grey := Vector3(0.8 - 0.08 * storm, 0.85 - 0.02 * storm, 0.93 + 0.04 * storm)
 		var tint := 0.18 * (1.0 - 0.65 * storm)
-		zenith = zenith.lerp(zenith * tint + grey * (L * 0.78 * dim) * (1.0 - tint), c)
-		horizon = horizon.lerp(horizon * tint + grey * (L * 0.86 * dim) * (1.0 - tint), c)
-		fog_color = fog_color.lerp(fog_color * tint + grey * (L * 0.92 * dim) * (1.0 - tint), c)
+		zenith = zenith.lerp(zenith * tint + grey * (sky_l * 0.78 * dim) * (1.0 - tint), c)
+		horizon = horizon.lerp(horizon * tint + grey * (sky_l * 0.86 * dim) * (1.0 - tint), c)
+		fog_color = fog_color.lerp(fog_color * tint + grey * (sky_l * 0.92 * dim) * (1.0 - tint), c)
+	# a scorching noon bleaches the horizon to a white-hot glare under a deep blue crown
+	if heat > 0.001:
+		var k := heat * sun_vis
+		var L := sky_l * 1.22
+		horizon = horizon.lerp(Vector3(1.02, 0.97, 0.86) * L, k * 0.6)
+		fog_color = fog_color.lerp(Vector3(0.97, 0.94, 0.86) * L, k * 0.55)
+		zenith *= Vector3(1.0 - 0.12 * k, 1.0 - 0.02 * k, 1.0 + 0.06 * k)
+	# mist glows with whatever light there is, a soft pearl of the hour's colour
 	if fog > 0.01:
-		fog_color = fog_color.lerp(horizon * 1.02, fog * 0.5)
-	fog_range = Vector2(380.0 * (1.0 - 0.55 * fog), 1500.0 * (1.0 - 0.5 * fog))
+		fog_color = fog_color.lerp(horizon.lerp(Vector3.ONE * _lum(horizon), 0.45) * 1.05, fog * 0.5)
+	# clear air is clear, the far islands keeping their colour the way they do
+	# in the tropics; not by night, when the haze keeps far lamps from blooming
+	var clear_air := 1.0 + 0.38 * (1.0 - fog) * (1.0 - rain) * (1.0 - MathX.smooth(0.5, 1.0, cover) * 0.6) * (1.0 - night)
+	fog_range = Vector2(380.0 * (1.0 - 0.55 * fog), 1500.0 * (1.0 - 0.5 * fog)) * clear_air
 
 	# ---- exposure and the light reaching shade and water
-	# a grey day is lifted a little; a storm is let fall darker and moodier
-	exposure = (1.0 + 1.3 * night) * (1.0 + 0.16 * cover) * (1.0 - 0.1 * storm * (1.0 - night)) * (1.0 + 0.05 * heat)
+	# a grey day is lifted a little, a storm let fall darker and moodier, and
+	# the low sun's hour, between the day's light and the night's lift, opened up a little
+	exposure = (1.0 + 1.3 * night) * (1.0 + 0.3 * MathX.smooth(0.2, 0.0, sy) * (1.0 - night)) * (1.0 + 0.16 * cover) * (1.0 - 0.1 * storm * (1.0 - night)) * (1.0 + 0.05 * heat)
 	var key := maxf(key_dir.y, 0.0) * 0.22
-	light_tint = ((horizon * 0.55 + zenith * 0.45 + key_color * key) / _day_ref).min(Vector3(1.3, 1.3, 1.3))
+	# the sky's own blue is far deeper than it reads: unlit things take it at a
+	# little under two thirds strength, or every puff of smoke turns blue
+	var amb := horizon * 0.55 + zenith * 0.45
+	amb = amb.lerp(Vector3.ONE * _lum(amb), 0.4)
+	light_tint = ((amb + key_color * key) / _day_ref).min(Vector3(1.3, 1.3, 1.3))
 	var haze_k := 1.0 - 0.85 * cover
 	if sy > -0.03:
 		var g := MathX.smooth(0.0, 0.3, sy)
@@ -174,16 +197,17 @@ func update(dt: float) -> void:
 	_update_look(sy, sun_vis)
 
 
-## The grade: crisp at noon, honeyed with violet shade at the golden hours,
-## cool and blue after dark, flat and grey under a storm.
+## The grade: crisp at noon, sky-blue shade under warm, sunny light; honeyed
+## with sea-blue shade at the golden hours, cool and blue after dark, flat and
+## grey under a storm.
 func _update_look(sy: float, sun_vis: float) -> void:
 	var golden := MathX.smooth(-0.06, 0.04, sy) * MathX.smooth(0.36, 0.1, sy) * sun_vis
 	var dusk := MathX.smooth(0.06, -0.12, sy) * (1.0 - night * 0.5)
 	var grey := maxf(maxf(storm * 0.85, MathX.smooth(0.45, 1.0, cover) * 0.55), maxf(rain * 0.5, fog * 0.3))
-	var lo := Vector3(0.94, 1.02, 1.06)
-	var hi := Vector3(1.05, 1.0, 0.94)
-	var sat := 1.12
-	lo = lo.lerp(Vector3(0.93, 0.95, 1.1), golden)
+	var lo := Vector3(0.9, 1.0, 1.1)
+	var hi := Vector3(1.06, 1.0, 0.92)
+	var sat := 1.05
+	lo = lo.lerp(Vector3(0.9, 0.97, 1.1), golden)
 	hi = hi.lerp(Vector3(1.12, 1.0, 0.84), golden)
 	sat += golden * 0.08
 	lo = lo.lerp(Vector3(0.9, 0.97, 1.12), maxf(dusk, night))
@@ -196,10 +220,19 @@ func _update_look(sy: float, sun_vis: float) -> void:
 	hi = hi.lerp(Vector3(0.98, 1.0, 1.02), storm)
 	lo = lo.lerp(Vector3(0.98, 1.0, 1.04), fog * (1.0 - rain) * 0.6)
 	hi = hi.lerp(Vector3(1.06, 1.02, 0.97), fog * (1.0 - rain) * golden * 0.8)
+	# a scorching noon: blown, honeyed highlights and a little colour burnt out of it
+	hi = hi.lerp(Vector3(1.1, 1.02, 0.86), heat * 0.7)
+	lo = lo.lerp(Vector3(1.0, 0.99, 0.98), heat * 0.5)
+	sat -= heat * 0.05
 	sat += calm * 0.04
 	grade_lo = lo
 	grade_hi = hi
 	grade_sat = sat
+	# contrast and vibrance: a clear day has the most of both, the golden hours
+	# more still; a grey sky, a mist, a hot glare and the night soften them
+	var soft := fog * (1.0 - rain)
+	contrast = 0.24 + 0.05 * golden - 0.1 * grey - 0.1 * soft - 0.07 * night - 0.06 * heat
+	vibrance = 0.3 + 0.1 * golden - 0.16 * grey - 0.1 * soft - 0.12 * night - 0.1 * heat
 	vignette = 0.55 + storm * 0.4 + rain * 0.12 + fog * 0.1
 
 

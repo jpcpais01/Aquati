@@ -63,7 +63,7 @@ void fragment() {
 	vec3 n = normalize(cross(dFdx(v_world), dFdy(v_world)));
 	n = n.y < 0.0 ? -n : n;
 	float ndl = max(dot(n, sun_dir), 0.0);
-	vec3 light = sun_color * (0.25 + 0.75 * ndl) * 0.42 + sky_zenith * 0.55;
+	vec3 light = sun_color * (0.25 + 0.75 * ndl) * 0.42 + sky_zenith * 0.8;
 	vec3 foam_col = vec3(0.96, 0.98, 1.0) * light;
 	vec3 face_col = vec3(0.06, 0.34, 0.36) * light * 0.9 + sun_color * pow(ndl, 24.0) * 0.12;
 	float face = 0.42 * (1.0 - v * 0.6) * v_env;

@@ -262,7 +262,7 @@ func _tick(dt: float) -> void:
 	for g in grounds:
 		g.material.set_shader_parameter("gusts", w.packed)
 	Flora.set_gusts(w.packed)
-	grade.follow(atmosphere.grade_lo, atmosphere.grade_hi, atmosphere.grade_sat)
+	grade.follow(atmosphere.grade_lo, atmosphere.grade_hi, atmosphere.grade_sat, atmosphere.contrast, atmosphere.vibrance)
 	# the sky reads the hour from globals, which don't mark it dirty: nudge it
 	# whenever the sun has moved enough to show in the reflections
 	if absf(atmosphere.day - _sky_day) > 0.0015:
