@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-22T02:00Z',
+    entries: [
+      {
+        title: 'Android: the islands are here',
+        notes: [
+          'The second Android build is out, with both archipelagos just as they are here, island for island and palm for palm: the home isles with the volcano, the jungle isles, sandstone bluffs and atolls, and Las Brumas across the high seas with its limestone towers, jade turf and pink coral sand. Get it from Download for Android on the home page, or the newest release on the game\'s GitHub page.',
+          'The islands are planted with coconut palms, rain-tree jungle, banana and fern, shrubs, wildflowers and grass, with rocks, coconuts and driftwood on the beaches, all swaying in the breeze. In the shallows you can see the sand, the seagrass and the coral heads wobbling under the ripples, surf runs up every beach and drains back, and the swell breaks white over the open-sea reefs.',
+          'Your keel feels the bottom: she runs aground in the shallows and grinds over coral, and at the edge of the known sea the swell turns you back. Sail close to an island to put it on your chart. It is all tuned for phones: plants far away switch to simpler shapes, and the sun\'s shadows only cover the ground you can see.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-22T00:00Z',
     entries: [
       {

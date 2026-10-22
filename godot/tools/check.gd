@@ -1,10 +1,14 @@
 extends SceneTree
-## CI gate, run headless after the import: every script compiles, and each
-## ship class that is built comes out sound (no NaNs, every solid face wound
-## the way its normals point, within its triangle budget). Prints CHECK OK.
+## CI gate, run headless after the import: every script compiles, each ship
+## class that is built comes out sound (no NaNs, every solid face wound the
+## way its normals point, within its triangle budget), and the baked world
+## loads whole (both archipelagos, their ground maps and their planting).
+## Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000}
+## The archipelagos the bake writes.
+const REGIONS := ["home", "brumas"]
 
 var _errors := 0
 
@@ -13,6 +17,7 @@ func _initialize() -> void:
 	_check_scripts("res://src")
 	for id: String in SHIPS:
 		_check_ship(id, SHIPS[id])
+	_check_world()
 	if _errors == 0:
 		print("CHECK OK")
 	else:
@@ -91,3 +96,47 @@ func _lods(arrays: Array) -> String:
 	for i in im.get_surface_lod_count(0):
 		out += " / %d @ %.3f" % [im.get_surface_lod_indices(0, i).size() / 3, im.get_surface_lod_size(0, i)]
 	return (", LODs" + out) if out != "" else ""
+
+
+func _check_world() -> void:
+	var t0 := Time.get_ticks_usec()
+	var regions := Region.load_all()
+	var ids := regions.map(func(r: Region) -> String: return r.id)
+	if ids != REGIONS:
+		_fail("world: archipelagos %s, not %s (run tools/world/bake_world.mjs)" % [ids, REGIONS])
+		return
+	var plants := 0
+	var batches := 0
+	for r in regions:
+		if r.heights.size() != Region.GRID * Region.GRID:
+			_fail("%s: %d heights" % [r.id, r.heights.size()])
+			continue
+		var lo := INF
+		var hi := -INF
+		for h in r.heights:
+			lo = minf(lo, h)
+			hi = maxf(hi, h)
+		if not (is_finite(lo) and is_finite(hi)) or lo < -150.0 or hi > 400.0:
+			_fail("%s: heights run %.1f .. %.1f m" % [r.id, lo, hi])
+		for tex: Texture2D in [r.height_tex, r.shore_tex, r.ground_tex, r.cover_tex, r.isle_tex]:
+			if tex == null or tex.get_width() == 0:
+				_fail("%s: a ground map is missing" % r.id)
+		if r.islands.is_empty():
+			_fail("%s: no islands" % r.id)
+		# (loaded here, not named: a script this one names compiles before
+		# the autoloads exist, and the planting reads Settings)
+		var f: Node3D = load("res://src/world/flora.gd").new()
+		f.build(r)
+		if f.plants == 0 or f.batches == 0:
+			_fail("%s: nothing planted" % r.id)
+		plants += f.plants
+		batches += f.batches
+		print("  %s: %d islands, %.1f .. %.1f m, %d plants in %d batches" % [r.id, r.islands.size(), lo, hi, f.plants, f.batches])
+		f.free()
+	# a new game starts at sea
+	var spawn: Vector2 = load("res://src/game/game.gd").SPAWN
+	var w := World.new()
+	w.regions = regions
+	if w.ground_height(spawn.x, spawn.y) > -2.0:
+		_fail("world: the spawn point is aground (%.1f m)" % w.ground_height(spawn.x, spawn.y))
+	print("world: %d archipelagos, %d plants in %d batches, loaded in %.0f ms" % [regions.size(), plants, batches, (Time.get_ticks_usec() - t0) / 1000.0])

@@ -111,3 +111,7 @@ wake_rect={
 "type": "vec4",
 "value": Vector4(0.0, 0.0, 300.0, 0.0033333)
 }
+surf={
+"type": "vec4",
+"value": Vector4(0.35, 0.32, 0.0, 0.0)
+}

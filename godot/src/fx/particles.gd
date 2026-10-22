@@ -73,6 +73,33 @@ func emit(pos: Vector3, vel: Vector3, life: float, size: float, size_end: float,
 	_dirty = true
 
 
+## White water thrown up where something strikes the sea: a crown of drops,
+## a central column and a drifting mist.
+func splash(pos: Vector3, scale: float = 1.0) -> void:
+	var white := Color(1.3, 1.4, 1.45, 0.95)
+	for i in int(22.0 * scale):
+		var a := randf() * TAU
+		var r := randf_range(0.5, 3.2)
+		emit(pos + Vector3(cos(a) * 0.3, 0.1, sin(a) * 0.3), Vector3(cos(a) * r, randf_range(7.0, 15.0) * scale, sin(a) * r),
+				randf_range(0.8, 1.4), randf_range(0.35, 0.8), 0.25, white, white, 16.0, 0.6, 0, 0.01)
+	var column := Color(1.3, 1.38, 1.42, 0.7)
+	for i in 4:
+		emit(pos + Vector3(0.0, 0.3 + i * 0.6, 0.0), Vector3(0.0, randf_range(4.0, 9.0) * scale, 0.0),
+				randf_range(0.7, 1.0), scale, 2.4 * scale, column, column, 9.0, 1.2, 1)
+	var mist := Color(1.2, 1.28, 1.32, 0.35)
+	for i in 5:
+		emit(pos + Vector3(randf_range(-1.0, 1.0), 0.4, randf_range(-1.0, 1.0)), Vector3(randf_range(-1.0, 1.0), randf_range(0.5, 1.5), randf_range(-1.0, 1.0)),
+				randf_range(1.4, 2.4), 1.4 * scale, 4.5 * scale, mist, mist, 0.0, 1.5, 1)
+
+
+## A cloud of churned sand where a keel strikes the bottom.
+func sand_hit(pos: Vector3) -> void:
+	var sand := Color(1.0, 0.9, 0.7, 0.55)
+	for i in 10:
+		emit(pos, Vector3(randf_range(-4.0, 4.0), randf_range(2.0, 8.0), randf_range(-4.0, 4.0)),
+				randf_range(1.0, 2.0), 1.0, randf_range(3.0, 5.0), sand, sand, 2.0, 1.6, 1)
+
+
 ## An HDR colour (0..16 a channel) as one exactly representable float, 8 bits
 ## a channel on a square-root scale.
 static func _pack(c: Color) -> float:

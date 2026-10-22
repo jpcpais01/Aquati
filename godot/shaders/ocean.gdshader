@@ -12,6 +12,15 @@
 // paws, wake normals, crest glow where the sun shines through thin water,
 // foam that breaks up into lace, and the seabed seen through the shallows.
 //
+// The floor is drawn here, not by the ground: the ground shader's own
+// colours (bed_color), wet, lit by the sky and by the sun through the water
+// with its caustics, so the beach runs on under the waterline unbroken. Over
+// the shallows the swell dies down (as the keel feels it, World.water_damp),
+// and the surf rolls in (see ground.gdshaderinc): each breaker lifts the
+// water, stands up, glows turquoise through its face and spills into
+// whitewater that thins to lace, in step with the swash the ground draws up
+// the sand. The swell trips over the open-sea reefs too.
+//
 // The light is the web game's own: the sky's reflection is drawn from the
 // same sky_color() the sky uses, and only the parts that a shadow should dim
 // (the sunlit share of the body, the sunlit foam and the glitter) go through
@@ -21,16 +30,17 @@ render_mode blend_mix, depth_draw_opaque, cull_back, world_vertex_coords, ambien
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/sea_common.gdshaderinc"
+#include "res://shaders/inc/ground.gdshaderinc"
+#include "res://shaders/inc/wind.gdshaderinc"
 
-global uniform vec4 wind;
-global uniform vec2 wind_drift;
 global uniform vec4 wake_rect;
+/// x breaker height (m), y swash run-up (m), z storm, w the surf clock (s)
+global uniform vec4 surf;
 
 uniform vec4 wave_a[8];
 uniform vec4 wave_b[8];
 /// x core half-extent (m), y warp coefficient, z cell size (m), w unused
 uniform vec4 grid_warp = vec4(66.0, 0.18, 1.5, 0.0);
-uniform vec4 gusts[8];
 
 uniform sampler2D wake_tex : filter_linear, repeat_disable;
 uniform sampler2D normal_tex : repeat_enable, filter_linear_mipmap_anisotropic;
@@ -38,11 +48,20 @@ uniform sampler2D noise_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D foam_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D caustic_tex : repeat_enable, filter_linear_mipmap;
 
-/// Seabed height (m, negative under water) over the world rect, when islands exist.
+/// The archipelago's floor (Region.height_tex): r its height (m, negative
+/// under water), g the open-sea coral.
 uniform sampler2D seabed_tex : repeat_disable, filter_linear;
 /// x0, z0, size, 1/size of the seabed map
 uniform vec4 seabed_rect = vec4(-1000.0, -1000.0, 2000.0, 0.0005);
 uniform float has_seabed = 0.0;
+/// The ground's own maps (Region), for the floor's colour and slope.
+uniform sampler2D ground_tex : filter_linear_mipmap, repeat_disable;
+uniform sampler2D isle_tex : filter_linear, repeat_disable;
+/// The surf field: travel time to the shore, the seaward direction, the exposure.
+uniform sampler2D shore_tex : filter_linear, repeat_disable;
+uniform vec4 shore_rect = vec4(-1024.0, -1024.0, 2048.0, 0.00048828125);
+/// xy the archipelago's centre (m), z its biome
+uniform vec4 region = vec4(0.0);
 
 varying vec3 v_world;
 varying vec3 v_normal;
@@ -59,6 +78,17 @@ varying float v_gust;
 varying vec3 v_swell_n;
 varying vec3 v_body_lit;
 varying vec3 v_foam_lit;
+varying vec3 v_bed_lit;
+
+// The web game draws no ground deeper than 15.5 m: out past the shelf the
+// sea looks down onto its endless seabed instead, a plain sand plane at
+// 18.2 m (Las Brumas' a hand's breadth lower, Terrain.build), and that much
+// more water deepens the blue.
+const float FLOOR_PLANE_FROM = -15.5;
+
+float seen_floor(float h) {
+	return mix(h, -18.2 - 0.35 * region.z, 1.0 - smoothstep(FLOOR_PLANE_FROM - 0.2, FLOOR_PLANE_FROM + 0.2, h));
+}
 
 float warp1(float s) {
 	float a = abs(s);
@@ -75,7 +105,7 @@ float dwarp1(float s) {
 	return 1.0 + 3.0 * grid_warp.y * e * e;
 }
 
-vec3 gerstner(vec2 p, float lod_dist, vec2 span, out vec3 nrm, out float crest, out vec4 lost) {
+vec3 gerstner(vec2 p, float lod_dist, vec2 span, float damp, out vec3 nrm, out float crest, out vec4 lost) {
 	vec3 o = vec3(0.0);
 	vec3 n = vec3(0.0, 1.0, 0.0);
 	float c = 0.0;
@@ -86,7 +116,7 @@ vec3 gerstner(vec2 p, float lod_dist, vec2 span, out vec3 nrm, out float crest, 
 		float lambda = 6.28319 / a.z;
 		// fades with distance, and where the grid spaces its vertices under
 		// about four to a wavelength (it would alias into racing ripples)
-		float A = a.w * (1.0 - smoothstep(14.0, 28.0, lod_dist / lambda));
+		float A = a.w * damp * (1.0 - smoothstep(14.0, 28.0, lod_dist / lambda));
 		float sp = length(span * a.xy);
 		float carry = smoothstep(2.8, 4.0, lambda / max(sp, 1e-3));
 		if (i >= 4) {
@@ -111,23 +141,6 @@ vec3 gerstner(vec2 p, float lod_dist, vec2 span, out vec3 nrm, out float crest, 
 	return o;
 }
 
-float gust_at(vec2 p) {
-	float s = 0.0;
-	vec2 wd = wind.xy;
-	for (int i = 0; i < 8; i++) {
-		vec4 g = gusts[i];
-		if (g.w <= 0.0) {
-			continue;
-		}
-		vec2 d = p - g.xy;
-		float a = dot(d, wd) / 1.8;
-		float b = dot(d, vec2(-wd.y, wd.x));
-		float r = max(1.0 - (a * a + b * b) / (g.z * g.z), 0.0);
-		s += g.w * r * r;
-	}
-	return min(s, 1.4);
-}
-
 void vertex() {
 	vec2 origin = MODEL_MATRIX[3].xz;
 	vec2 s = VERTEX.xz - origin;
@@ -137,9 +150,12 @@ void vertex() {
 	vec3 n;
 	float crest;
 	vec4 lost;
+	// the swell dies down over the shallows (the keel feels the same, World.water_damp)
+	float th = has_seabed > 0.5 ? textureLod(seabed_tex, (wp - seabed_rect.xy) * seabed_rect.w, 0.0).r : -200.0;
+	float damp = clamp(-th / 8.0, 0.12, 1.0);
 	// the swell fades by how far out across the sea it lies, not by the
 	// camera's height: looking straight down, the sea below keeps its chop
-	vec3 o = gerstner(wp, length(wp - CAMERA_POSITION_WORLD.xz), span, n, crest, lost);
+	vec3 o = gerstner(wp, length(wp - CAMERA_POSITION_WORLD.xz), span, damp, n, crest, lost);
 	vec3 world = vec3(wp.x, 0.0, wp.y) + o;
 	// the wake field's own swell (bow and stern waves, splash rings)
 	vec2 wuv = (world.xz - wake_rect.xy) * wake_rect.w + 0.5;
@@ -147,6 +163,17 @@ void vertex() {
 		vec2 edge = min(wuv, 1.0 - wuv);
 		float k = smoothstep(0.0, 0.05, min(edge.x, edge.y)) * (1.0 - smoothstep(1.6, 3.0, max(span.x, span.y)));
 		world.y += textureLod(wake_tex, wuv, 0.0).g * k;
+	}
+	// surf: breakers lift the water as they roll in over the shallows (the
+	// sharp face and the foam come per pixel). Where the grid is stretched
+	// and gliding its vertices would hop over the face, so the lift fades.
+	vec4 sf = textureLod(shore_tex, (wp - shore_rect.xy) * shore_rect.w, 0.0);
+	float reach = mix(0.22, 1.0, sf.a) * (1.0 - smoothstep(12.0, 17.0, sf.r));
+	if (reach * (1.0 - smoothstep(4.5, 8.0, -th)) > 0.001) {
+		float psi = surf_phase(wp, sf.r, surf.w, noise_tex);
+		float sth = fract(psi);
+		vec3 sw = surf_wave(wp, floor(psi) + step(0.7, sth), max(-th, 0.0), reach, surf.x, noise_tex);
+		world.y += sw.x * (surf_shape(sth, 0.3) - 0.37) * (1.0 - smoothstep(2.8, 5.0, max(span.x, span.y)));
 	}
 	VERTEX = world;
 	NORMAL = normalize(n);
@@ -265,29 +292,110 @@ void fragment() {
 		vec2 wrip = (texture(normal_tex, p * 0.29 - vec2(TIME * 0.07, -TIME * 0.05) + 0.61).xy * 2.0 - 1.0) + (wn2.rb - 0.5) * 1.2;
 		N = normalize(N - vec3(grad.x, 0.0, grad.y) * 1.9 + vec3(wrip.x, 0.0, wrip.y) * 0.22 * wake_chop);
 	}
+	// ---- surf: the breaker under this pixel and the one rolling in behind it
+	// (read per pixel, not handed down from the vertices: away from the ship
+	// the grid glides with her, and a breaker's phase or the depth under it,
+	// blended between moving vertices, would crawl and jump)
+	float fp = length(fwidth(p));
+	// the floor right under this pixel: its height and its coral
+	vec2 floor0 = has_seabed > 0.5 ? texture(seabed_tex, (p - seabed_rect.xy) * seabed_rect.w).rg : vec2(-200.0, 0.0);
+	float s_depth = max(-floor0.r, 0.0);
+	vec4 s_field = texture(shore_tex, (p - shore_rect.xy) * shore_rect.w);
+	float s_reach = mix(0.22, 1.0, s_field.a) * (1.0 - smoothstep(12.0, 17.0, s_field.r));
+	float s_psi = surf_phase(p, s_field.r, surf.w, noise_tex);
+	float sth = fract(s_psi);
+	float s_age = sth * SURF_T; // seconds since the last crest went by
+	float swf = 0.16;
+	vec3 s_prev = vec3(0.0);
+	vec3 s_next = vec3(0.0);
+	if (s_reach * (1.0 - smoothstep(4.5, 8.0, s_depth)) > 0.001) {
+		float sn = floor(s_psi);
+		s_prev = surf_wave(p, sn, s_depth, s_reach, surf.x, noise_tex);
+		s_next = surf_wave(p, sn + 1.0, s_depth, s_reach, surf.x, noise_tex);
+		vec3 s_cur = sth > 1.0 - swf ? s_next : s_prev;
+		// the phase climbs 1 / (c T) per metre out to sea, c = sqrt(g d)
+		vec2 sdir = s_field.gb / max(length(s_field.gb), 0.2);
+		float sg = s_cur.x * surf_slope(sth, swf) / (sqrt(9.81 * max(s_depth, 0.15)) * SURF_T);
+		// a broken face is a rumpled tumble of water, not a clean slope
+		sg *= 1.0 - s_cur.y * 0.45;
+		vec2 s_grad = sdir * clamp(sg, -0.8, 0.8);
+		N = normalize(N - vec3(s_grad.x, 0.0, s_grad.y) * 1.6);
+	}
+
 	vec3 Ng = normalize(N + vec3(gust_rip.x, 0.0, gust_rip.y) * 0.5);
 	float NdV = max(dot(N, V), 0.0);
 
-	// ---- what lies beneath: the seabed through the water, or the deep
+	// ---- what lies beneath: the floor through the water, or the deep
 	float depth = 200.0;
-	vec3 bed = vec3(0.0);
+	// the floor lit by the sky (emitted), and by the sun (left to light(),
+	// which shadows it)
+	vec3 bed_sky = vec3(0.0);
+	vec3 bed_sun = vec3(0.0);
+	vec3 cam_fwd = -INV_VIEW_MATRIX[2].xyz;
 	if (has_seabed > 0.5) {
-		// march the refracted ray to the seabed (a parallax that moves as the
-		// camera does, so the shallows read as a real volume of water)
-		vec3 rd = refract(-V, N, 0.75);
-		vec2 suv = (p - seabed_rect.xy) * seabed_rect.w;
-		float h0 = texture(seabed_tex, suv).r;
-		float d0 = max(wpos.y - h0, 0.0);
-		vec2 hit = p + rd.xz * (d0 / max(-rd.y, 0.3));
-		float h1 = texture(seabed_tex, (hit - seabed_rect.xy) * seabed_rect.w).r;
+		// the floor straight on down the view ray, nudged about by the
+		// ripples as the web game does it: its refraction shifts where it
+		// reads the picture behind the water by up to 4.5% of the frame
+		// (fading far off), so the coral and the seagrass swim and wobble
+		float d0 = max(wpos.y - seen_floor(floor0.r), 0.0);
+		float thick0 = d0 / max(V.y, 0.05) * max(dot(-V, cam_fwd), 0.05);
+		vec2 nudge = N.xz * 0.045 * clamp(thick0 * 0.25, 0.0, 1.0) * (1.0 - smoothstep(200.0, 500.0, v_dist));
+		// (a nudge across the frame, in metres on the floor below)
+		float reach = v_dist + d0 / max(V.y, 0.05);
+		vec3 right = INV_VIEW_MATRIX[0].xyz;
+		vec2 ahead = normalize(INV_VIEW_MATRIX[1].xz + vec2(1e-5));
+		vec2 hit = p - V.xz * (d0 / max(V.y, 0.05))
+				+ right.xz * (nudge.x * 2.0 * reach / PROJECTION_MATRIX[0][0])
+				+ ahead * (nudge.y * 2.0 * reach / PROJECTION_MATRIX[1][1] / max(V.y, 0.2));
+		float hg = texture(seabed_tex, (hit - seabed_rect.xy) * seabed_rect.w).r;
+		float h1 = seen_floor(hg);
+		// (out past the shelf: the plain sand plane, never wet-darkened)
+		float plane = 1.0 - smoothstep(FLOOR_PLANE_FROM - 0.2, FLOOR_PLANE_FROM + 0.2, hg);
 		depth = max(wpos.y - h1, 0.0);
-		// sand lit by the sun through the water and by the sky
-		vec3 lit = sun_color * (max(L.y, 0.0) * 0.318) + (sky_zenith * 0.45 + sky_horizon * 0.55) * 0.72;
-		bed = seabed_color(hit, h1, depth, TIME, noise_tex, caustic_tex, L) * lit;
+		float bd = max(-h1, 0.0);
+		// the ground's own floor, wet; past 14 m only its plain deep silt
+		// shows through that much water, so the deep sea skips the work
+		vec3 alb = T_SAND_DEEP;
+		vec3 bn = vec3(0.0, 1.0, 0.0);
+		float caustic = 0.0;
+		float b_relief = 0.0;
+		float near_t = 1.0 - smoothstep(10.0, 14.0, bd);
+		if (near_t > 0.0) {
+			vec2 at = hit - region.xy;
+			vec4 gm = texture(ground_tex, (at + 1025.0) / 2050.0);
+			vec4 ki = texture(isle_tex, (at + 1028.0) / 2056.0);
+			vec4 nW, nM, nS, nD, nF;
+			ground_noise(hit, noise_tex, nW, nM, nS, nD, nF);
+			float reef_here = texture(seabed_tex, (hit - seabed_rect.xy) * seabed_rect.w).g;
+			vec3 near_alb = bed_color(sand_color(region.z, nS, nF), h1, hit, ki.y, ki.z, reef_here, fp, noise_tex, nM, nS, nD, nF, b_relief);
+			alb = mix(alb, near_alb, near_t);
+			b_relief *= near_t;
+			vec2 nxz = (gm.rg * 2.0 - 1.0) * near_t;
+			bn = vec3(nxz.x, sqrt(max(1.0 - dot(nxz, nxz), 0.0)), nxz.y);
+			caustic = caustics_at(hit, bd, L, TIME, caustic_tex);
+		}
+		// the coral heads and the seagrass stand up off the floor, lit on the
+		// sun's side: Mikkelsen's derivative bump, as the web shades its
+		// ground (unnormalised, so the relief is in metres; read where the
+		// floor was seen, so the bump wobbles with it)
+		vec3 sx = dFdx(vec3(hit.x, h1, hit.y));
+		vec3 sy = dFdy(vec3(hit.x, h1, hit.y));
+		vec3 r1 = cross(sy, bn);
+		vec3 r2 = cross(bn, sx);
+		float det = dot(sx, r1);
+		bn = normalize(abs(det) * bn - sign(det) * (dFdx(b_relief) * r1 + dFdy(b_relief) * r2));
+		alb *= mix(0.62, 1.0, plane);
+		// sunlight thins and turns blue-green on its way down; the swell
+		// focuses it into a dancing web
+		float ndl = max(dot(bn, L), 0.0);
+		bed_sun = alb * sun_color * ndl * (0.318 + 0.9 * caustic) * exp(-bd * vec3(0.16, 0.05, 0.035));
+		bed_sky = alb * (sky_zenith * 0.45 + sky_horizon * 0.55) * 0.72;
 	}
 
-	// ---- Beer-Lambert absorption + in-scattering: the "volume"
-	float path = depth * (1.0 + 1.0 / max(V.y, 0.25)) * 0.5;
+	// ---- Beer-Lambert absorption + in-scattering: the "volume", over the
+	// water's thickness along the view as the web measures it (the depth
+	// buffer's linear z behind the surface less the surface's own)
+	float path = depth / max(V.y, 0.05) * max(dot(-V, cam_fwd), 0.05);
 	vec3 absorb = vec3(0.42, 0.098, 0.066);
 	vec3 T = exp(-absorb * path);
 	vec3 scatter_deep = mix(vec3(0.004, 0.058, 0.16), vec3(0.007, 0.086, 0.19), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
@@ -302,7 +410,8 @@ void fragment() {
 	scatter *= 1.0 + (1.0 - NdV) * 0.4;
 	// the body is split by what lights it: the seabed (already lit) and the
 	// in-scattered sunlight, which the hour tints and a shadow dims
-	vec3 body_bed = bed * T;
+	vec3 body_bed = bed_sky * T;
+	vec3 body_bed_sun = bed_sun * T;
 	vec3 body_sun = scatter * (1.0 - T) * 1.35;
 
 	// wave relief: troughs sink a touch darker; a big sea under a grey sky
@@ -311,6 +420,7 @@ void fragment() {
 	float relief = (0.88 + 0.2 * hgt) * mix(1.0, 0.72 + 0.5 * hgt, storm);
 	relief *= 1.0 + clamp(dot(Ns.xz, normalize(L.xz + 1e-4)) * 1.1, -0.18, 0.18);
 	body_bed *= relief;
+	body_bed_sun *= relief;
 	body_sun *= relief;
 	// crests catch a faint aquamarine glow where the sun shines through the thin water
 	float sss_view = pow(max(dot(V, -L + vec3(0.0, 0.6, 0.0)), 0.0), 2.0);
@@ -321,10 +431,21 @@ void fragment() {
 	body_sun += vec3(0.04, 0.36, 0.34) * clamp(wake_h * 1.6, -0.25, 1.0) * (0.45 + sss_view) * 0.5;
 	// ruffled water under a gust scatters less light back up: darker, matte
 	body_bed *= 1.0 - gust * 0.18;
+	body_bed_sun *= 1.0 - gust * 0.18;
+	// a breaker standing up in the shallows: its thin face glows turquoise
+	// where the light shines through, the moment before the lip spills
+	float s_glass = s_next.z * (1.0 - s_next.y * 0.7) * smoothstep(1.0 - swf - 0.12, 1.0, sth);
+	body_sun += vec3(0.05, 0.42, 0.38) * s_glass * (0.5 + sss_view) * 0.55;
+	// churned water behind a breaker is full of bubbles: milky aquamarine
+	float s_aer = s_prev.y * exp(-s_age * 0.4) * 0.3;
+	body_bed *= 1.0 - s_aer;
+	body_bed_sun *= 1.0 - s_aer;
+	body_sun = mix(body_sun, vec3(0.3, 0.56, 0.52), s_aer);
 	body_sun *= 1.0 - gust * 0.18;
 	// under a grey sky the sea loses its blue and turns pewter
 	float pewter = cover * cover * 0.4;
 	body_bed = mix(body_bed, vec3(dot(body_bed, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), pewter);
+	body_bed_sun = mix(body_bed_sun, vec3(dot(body_bed_sun, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), pewter);
 	body_sun = mix(body_sun, vec3(dot(body_sun, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), pewter);
 	vec3 sun_in = (0.6 + 0.4 * max(L.y, 0.0)) * light_tint;
 
@@ -341,7 +462,6 @@ void fragment() {
 
 	// ---- foam: wake foam through the bubble web (a churned sheet that opens
 	// into holes and thins to threads, never soft puffs), and whitecaps
-	float fp = length(fwidth(p));
 	float fv = foam_field(p, TIME, foam_tex);
 	float bubbles = foam_cut(fv, 0.62, fp);
 	vec4 nz = texture(noise_tex, p * 0.06 + vec2(TIME * 0.01, -TIME * 0.013));
@@ -353,7 +473,34 @@ void fragment() {
 	float breaking = smoothstep(0.54 - storm * 0.16, 0.8 - storm * 0.1, texture(noise_tex, p * 0.0093 - drift * 0.017).g + gust * 0.35);
 	float crest_foam = smoothstep(0.5 - storm * 0.1, 0.95, crest + nz2.g * 0.35) * breaking * (0.6 + storm * 0.15);
 	float cap_break = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
-	float foam = wake_foam * (0.8 + 0.2 * bubbles) + crest_foam * mix(cap_break, bubbles, 0.3);
+	// whitewater: a dense bore right behind each broken crest that leaves a
+	// sheet of foam behind it, opening into lace as the bubbles pop
+	float surf_cover = s_prev.y * (exp(-s_age * 1.4) + 0.4 * exp(-s_age * 0.42));
+	// the spilling lip on the face of a breaking wave
+	surf_cover = max(surf_cover, s_next.y * smoothstep(1.0 - swf * 0.85, 1.0, sth));
+	// stray rafts of old foam drifting about the surf zone between sets
+	float s_zone = max(s_prev.y, s_next.y * 0.7);
+	surf_cover = max(surf_cover, s_zone * 0.26 * smoothstep(0.35, 0.75, nz.g * 0.7 + nz2.a * 0.45));
+	// a thin lacy rim where the water meets the sand or the rock (beaches
+	// shelve so gently that a few centimetres span metres of sand)
+	float rim = 1.0 - smoothstep(0.0, 0.07 + 0.08 * s_zone, max(wpos.y - floor0.r, 0.0));
+	surf_cover = max(surf_cover, rim * 0.6);
+	float surf_foam = foam_cut(fv, clamp(surf_cover, 0.0, 1.0), fp);
+	float foam = surf_foam * (0.82 + 0.18 * clamp(surf_cover, 0.0, 1.0));
+	foam += wake_foam * (0.8 + 0.2 * bubbles) + crest_foam * mix(cap_break, bubbles, 0.3);
+	// the swell trips over an open-sea reef: each crest stands up and spills
+	// white across the coral as it rolls over, then the foam thins to lace
+	// until the next one comes (sailors know a reef by its breakers)
+	if (floor0.g > 0.02) {
+		float shoal = floor0.g * (1.0 - smoothstep(0.9, 3.6, s_depth));
+		float th0 = wave_a[0].z * dot(wave_a[0].xy, p) + wave_b[0].z;
+		float th1 = wave_a[1].z * dot(wave_a[1].xy, p) + wave_b[1].z;
+		float swl = sin(th0) * 0.62 + sin(th1) * 0.38 + (nz.g - 0.5) * 0.55;
+		float burst = smoothstep(0.32, 0.9, swl) * (1.0 - smoothstep(1.4, 3.6, s_depth) * 0.5);
+		float trail = smoothstep(0.1, 0.85, sin(th0 + 0.9) + (nz2.a - 0.5) * 0.5) * 0.45;
+		float r_cover = shoal * (0.15 + 0.75 * burst + 0.3 * trail) * (0.75 + storm * 0.5 + surf.x * 0.3);
+		foam += foam_cut(fv, clamp(r_cover, 0.0, 0.95), fp) * 0.9;
+	}
 	foam = clamp(foam, 0.0, 1.0);
 	float fa = foam * 0.9;
 	vec3 foam_base = vec3(0.96, 0.98, 1.0);
@@ -363,6 +510,7 @@ void fragment() {
 	float keep = (1.0 - fa) * (1.0 - F);
 	EMISSION = (body_bed + body_sun * sun_in * 0.55) * keep + refl * F * (1.0 - fa) + foam_base * sky_zenith * 0.55 * fa;
 	v_body_lit = body_sun * sun_in * 0.45 * keep;
+	v_bed_lit = body_bed_sun * keep;
 	v_foam_lit = foam_base * 0.42 * fa;
 	ALBEDO = vec3(1.0);
 	ROUGHNESS = 1.0;
@@ -389,7 +537,7 @@ void light() {
 		// a ship's shadow on the water only dims it: the sea's body is lit
 		// from all round, and still keeps four tenths of its glow in the shade
 		vec3 sh = mix(vec3(0.42), vec3(1.0), ATTENUATION);
-		DIFFUSE_LIGHT += sh * (v_body_lit + v_foam_lit * LIGHT_COLOR * (0.25 + 0.75 * ndl));
+		DIFFUSE_LIGHT += sh * (v_body_lit + v_foam_lit * LIGHT_COLOR * (0.25 + 0.75 * ndl)) + ATTENUATION * v_bed_lit;
 		// twinkling pinpoints, a tight sheen, and a broad soft path of light
 		// off the swell itself that widens where the water is rougher
 		vec3 H = normalize(LIGHT + VIEW);
