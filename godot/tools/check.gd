@@ -84,7 +84,52 @@ func _check_ship(id: String, budget: int) -> void:
 	print("%s: %d triangles, built in %.0f ms" % [id, total, ms])
 	if total > budget:
 		_fail("%s: %d triangles is over its budget of %d" % [id, total, budget])
+	_check_spars(id, model)
 	model.free()
+
+
+## Every mast and the bowsprit has its piece to fall, and no triangle of the
+## merged meshes (at any level of detail) spans two spars, or a spar and the
+## hull: a shot-away spar's vertices collapse, and such a triangle would
+## stretch across the ship.
+func _check_spars(id: String, model: ShipModel) -> void:
+	if model.spars.size() != model.cls.masts.size() + 1:
+		_fail("%s: %d spars for %d masts and a bowsprit" % [id, model.spars.size(), model.cls.masts.size()])
+	var pieces := ""
+	for sp in model.spars:
+		var n := 0 if sp.piece == null or sp.piece.get_surface_count() == 0 else sp.piece.surface_get_array_index_len(0) / 3
+		pieces += " %d" % n
+		if n == 0:
+			_fail("%s: spar %d has no piece" % [id, sp.group])
+	print("  %s: spar pieces%s triangles" % [id, pieces])
+	for part: String in ["Parts", "Small", "Fine"]:
+		var mi := model.get_node_or_null(part) as MeshInstance3D
+		if mi == null:
+			continue
+		var arrays := mi.mesh.surface_get_arrays(0)
+		var cols: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+		var spar := PackedInt32Array()
+		spar.resize(cols.size())
+		for i in cols.size():
+			spar[i] = int(cols[i].a * 255.0) & 15
+			if spar[i] > model.spars.size():
+				_fail("%s/%s: a vertex stands on spar %d" % [id, part, spar[i]])
+				return
+		var im := ImporterMesh.new()
+		im.add_surface(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		im.generate_lods(60.0, 25.0, [])
+		var levels: Array[PackedInt32Array] = [arrays[Mesh.ARRAY_INDEX]]
+		for l in im.get_surface_lod_count(0):
+			levels.append(im.get_surface_lod_indices(0, l))
+		for l in levels.size():
+			var idx := levels[l]
+			var mixed := 0
+			for k in range(0, idx.size(), 3):
+				var a := spar[idx[k]]
+				if spar[idx[k + 1]] != a or spar[idx[k + 2]] != a:
+					mixed += 1
+			if mixed > 0:
+				_fail("%s/%s: %d triangles at detail level %d span two spars" % [id, part, mixed, l])
 
 
 ## The LOD ladder a surface gets: triangles per level and the switch error (m).

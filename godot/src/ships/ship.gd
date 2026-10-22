@@ -310,7 +310,8 @@ func step(dt: float) -> void:
 		# a battered hull drags: she loses way as she floods
 		var hp_f := 0.72 + 0.28 * (hp / max_hp)
 		var wf := wind_factor(rel_deg) * (0.75 + 0.25 * w.strength) * (1.0 + gust * 0.08)
-		var target := c.max_speed * sail_level * wf * hp_f
+		# and every mast shot away takes a share of her canvas with it
+		var target := c.max_speed * sail_level * wf * hp_f * dmg.speed_factor()
 		var rate := c.accel if target > speed else c.accel * 1.4
 		speed += (target - speed) * MathX.damp(rate, dt)
 		var steer := clampf(0.28 + 0.9 * (speed / c.max_speed), 0.28, 1.1)

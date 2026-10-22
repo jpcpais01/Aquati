@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-22T06:00Z',
+    entries: [
+      {
+        title: 'Android: shot and splinters',
+        notes: [
+          'The fourth Android build brings the battle damage you know from here. Every ball tears a jagged hole in a ship\'s side, ringed with raw splintered wood, soot and embers that slowly cool, with broken planks bristling out of it, and through the bigger holes you can see into her dark hold. Scorch spreads over her as the fight goes on, her sails tear into burnt-edged rags, and once the guns fall quiet her crew boards the holes over with fresh planks. Get it from Download for Android on the home page, or the newest release on the game\'s GitHub page.',
+          'Masts come down: a ball through a mast, or a bad enough beating, snaps it off with a crack, and it topples over the side with its yards, sails and flag, crashes into the sea and floats away. A ship that has lost a mast is slower until her crew re-rigs her, once she\'s sound again.',
+          'A ship going down either breaks her back, the two halves sagging apart round a glowing break with bow and stern rearing out of the sea, or rolls over onto her beam ends. Planks blasted off by every hit, barrels and crates from a dying ship and the spars she loses all bob on the swell, drift with the wind and slowly sink, and hulls push floating junk aside. It is all tuned for phones: the wreckage afloat is moved by the graphics chip, and a ship that has never been hit draws just as cheaply as before.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-22T05:00Z',
     entries: [
       {

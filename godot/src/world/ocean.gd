@@ -16,6 +16,9 @@ var wind: Wind
 var wake: WakeField
 var material: ShaderMaterial
 var cell := 1.5
+## The lattice's warp as the shader has it (see follow): x core half-extent
+## (m), y warp coefficient, z cell size (m).
+var grid_warp := Vector4(66.0, 0.18, 1.5, 0.0)
 
 
 func setup(p_waves: Waves, p_wind: Wind, p_wake: WakeField) -> void:
@@ -90,7 +93,8 @@ func follow(focus: Vector3, cam_dist: float) -> void:
 	var c := CORE * cell
 	var e := (HALF - CORE) * cell
 	var a := (FAR - c - e) / (e * e * e)
-	material.set_shader_parameter("grid_warp", Vector4(c, a, cell, 0.0))
+	grid_warp = Vector4(c, a, cell, 0.0)
+	material.set_shader_parameter("grid_warp", grid_warp)
 	material.set_shader_parameter("wave_a", waves.packed_a)
 	material.set_shader_parameter("wave_b", waves.packed_b)
 	material.set_shader_parameter("gusts", wind.packed)

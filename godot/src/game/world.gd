@@ -1,8 +1,9 @@
 class_name World
 extends RefCounted
 ## The sea every ship shares: its swell, the breeze, the canvas of disturbed
-## water, the particles, the ships on it and the shot flying between them,
-## and the clock. Blows struck and ships lost are told through its signals.
+## water, the particles, the ships on it, the shot flying between them and
+## the wreckage they leave, and the clock. Blows struck and ships lost are
+## told through its signals.
 
 ## The edge of the known sea: a long oval this far (m) round every archipelago
 ## and the lanes between them. Beyond it the swell turns you back.
@@ -20,6 +21,7 @@ var wind: Wind
 var wake: WakeField
 var fx: Particles
 var shots: Shots
+var debris: Debris
 ## Every ship afloat (and every wreck still going down): yours first.
 var ships: Array[Ship] = []
 ## Where the voyage is heard from (the camera's focus), and how far off it hangs.

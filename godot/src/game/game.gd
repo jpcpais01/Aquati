@@ -7,18 +7,22 @@ extends Node3D
 ## (--smoke-at N: after N frames; --again N sails again off the farewell
 ## card at frame N);
 ## --shot PATH saves a frame and quits, with --hour H, --view N (0 close ..
-## 3 leaned over) or --zoom Z (0..1) and --tilt T (0..1), --frames N to let
-## it settle first, --heading R and --at X,Z to start somewhere else,
-## --ship CLASS and --livery ID to sail another hull with --sails N (0..3)
-## of canvas set (--anchor holds her there), --wind A for the breeze's
-## heading, and --discover to chart the islands nearby as play does.
+## 3 leaned over) or --zoom Z (0..1) and --tilt T (0..1), --fov F to narrow
+## the lens for a close-up (degrees), --frames N to let it settle first,
+## --heading R and --at X,Z to start somewhere else, --ship CLASS and
+## --livery ID to sail another hull with --sails N (0..3) of canvas set
+## (--anchor holds her there), --wind A for the breeze's heading, and
+## --discover to chart the islands nearby as play does.
 ## A fight: --battle CLASS puts a pirate of that class off your port beam,
-## spoiling for it (--foe-dist M or --foe-at X,Z,HEADING to place her, --foe-hp F for the
-## share of her hull left), --autofire looses each side the moment it bears,
-## --sink S sends your ship down S seconds in (her farewell; --farewell T
-## starts it T seconds through), --touch shows
-## the touch controls, --nopirates keeps the sea clear, --voyage puts a long
-## voyage behind her (to see a full farewell).
+## spoiling for it (--foe-dist M or --foe-at X,Z,HEADING to place her,
+## --foe-hp F for the share of her hull left, --foe-wounds N for N breaches
+## in her already, --foe-dismast I,J.. to bring masts down (past her last,
+## the bowsprit), --foe-anchor to hold her still, --foe-sink S to sink her
+## S seconds in, --wreck split|capsize for how she goes, --watch to follow
+## her), --autofire looses each side the moment it bears, --sink S sends your
+## ship down S seconds in (her farewell; --farewell T starts it T seconds
+## through), --touch shows the touch controls, --nopirates keeps the sea
+## clear, --voyage puts a long voyage behind her (to see a full farewell).
 
 const WIND_ANGLE := 0.6
 ## Where a voyage starts: out of the home port on a reach, bow to the open
@@ -70,6 +74,7 @@ var _desat := 0.0
 ## The set piece's foe (--battle), and when to send your ship down (--sink).
 var _foe: Ship
 var _sink_at := -1.0
+var _foe_sink_at := -1.0
 
 
 ## A voyage's log: how long, what the guns did, how far she sailed, and the
@@ -103,6 +108,8 @@ class Farewell:
 	## fathoms it last showed.
 	var deep := false
 	var fathoms := -1
+	## The camera has dived for the water where she went down.
+	var dived := false
 
 
 func _ready() -> void:
@@ -149,7 +156,23 @@ func _ready() -> void:
 		_stage_voyage()
 	# one settled frame before anything draws
 	_tick(0.0)
-	camera.snap_to(player.pos)
+	camera.snap_to(_watched().pos)
+	_warm_up()
+
+
+## A first wound, the first plank in the water: none of it may stutter the
+## game. One of everything battle damage draws hangs in front of the camera
+## for a moment, far too small to see, so its shaders are built up front.
+func _warm_up() -> void:
+	var w := Node3D.new()
+	w.name = "WarmUp"
+	w.transform = Transform3D(Basis.from_scale(Vector3.ONE * 1e-4), Vector3(0.0, 0.0, -40.0))
+	for n in ShipDamage.warm_meshes(player.model):
+		w.add_child(n)
+	for n in world.debris.warm_meshes():
+		w.add_child(n)
+	camera.add_child(w)
+	get_tree().create_timer(1.0).timeout.connect(w.queue_free)
 
 
 func _parse_args() -> Dictionary:
@@ -227,6 +250,10 @@ func _build_sea() -> void:
 	add_child(ocean)
 	ocean.setup(world.waves, world.wind, world.wake)
 	ocean.visible = not _args.has("noocean")
+	world.debris = Debris.new()
+	world.debris.name = "Debris"
+	add_child(world.debris)
+	world.debris.setup(world)
 
 
 func _build_islands() -> void:
@@ -259,6 +286,7 @@ func _pick_region(x: float, z: float) -> void:
 	region = best
 	ocean.set_region(region)
 	world.wake.set_seabed(region.height_tex, region.height_rect())
+	world.debris.set_region(region)
 	world.region = region
 
 
@@ -298,6 +326,8 @@ func _build_camera() -> void:
 		camera.set_view(v[0], v[1])
 	if _args.has("zoom"):
 		camera.set_view(float(_args.zoom), float(_args.get("tilt", 0.0)))
+	if _args.has("fov"):
+		camera.lens = float(_args.fov)
 	camera.snap_to(player.pos)
 	player.struck.connect(func(a: float) -> void: camera.shake(a))
 
@@ -347,6 +377,19 @@ func _stage_battle(id: String) -> void:
 	_foe.speed = p.speed
 	if _args.has("foe-hp"):
 		_foe.hp = _foe.max_hp * clampf(float(_args["foe-hp"]), 0.01, 1.0)
+	var shape := _foe.model.shape
+	for i in int(_args.get("foe-wounds", 0)):
+		var t := randf_range(0.12, 0.88)
+		var y := randf_range(0.3, shape.top(t) - 0.4)
+		var side := 1.0 if randf() < 0.5 else -1.0
+		_foe.dmg.on_hit(_foe.transform * Vector3(side * shape.half_width_at_y(t, y), y, shape.z(t)), randf_range(15.0, 30.0))
+	_foe.anchored = _args.has("foe-anchor")
+	if _args.has("foe-dismast"):
+		for m in str(_args["foe-dismast"]).split(","):
+			_foe.dmg.dismast(int(m), randf_range(0.0, 0.3))
+	if _args.has("wreck"):
+		_foe.dmg.wreck_mode = ShipDamage.Mode.SPLIT if str(_args.wreck) == "split" else ShipDamage.Mode.CAPSIZE
+	_foe_sink_at = float(_args.get("foe-sink", -1.0))
 
 
 ## A long voyage behind her already, to see a full farewell card (--voyage):
@@ -388,8 +431,15 @@ func _process(delta: float) -> void:
 		var lost := "" if _farewell == null else "; lost %.1f s ago%s" % [_farewell.t, ", the farewell card up" if _farewell.shown else ""]
 		if _args.has("again") and _farewell == null and _frames > int(_args.again):
 			lost = "; sailing again, the HUD %s" % ("up" if hud.get_node("Root").visible else "hidden")
-		print("SMOKE OK: %d frames, %.0f m sailed, %d triangles in the sloop, %d islands, %d plants; %d ships afloat, %d guns fired, %d hits, %d hulls on the slipway%s" % [
-				_frames, player.pos.length(), player.model.triangles(), isles, plants, world.ships.size(), voyage.shots, voyage.hits, shipyard.stock(), lost])
+		var down := 0
+		var holes := 0
+		for sh in world.ships:
+			holes += sh.dmg.holes.size()
+			for sp in sh.model.spars:
+				down += 1 if sp.broken else 0
+		var junk := world.debris.counts()
+		print("SMOKE OK: %d frames, %.0f m sailed, %d triangles in the sloop, %d islands, %d plants; %d ships afloat, %d guns fired, %d hits, %d breaches, %d spars down, %d pieces of wreckage and %d spars adrift, %d hulls on the slipway%s" % [
+				_frames, player.pos.length(), player.model.triangles(), isles, plants, world.ships.size(), voyage.shots, voyage.hits, holes, down, junk.x, junk.y, shipyard.stock(), lost])
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
 		_save_shot(str(_args.shot))
 
@@ -439,15 +489,25 @@ func _tick(real_dt: float) -> void:
 	_guns()
 	if _sink_at >= 0.0 and player.alive and voyage.time >= _sink_at:
 		player.damage(player.max_hp * 4.0, _foe)
+	if _foe_sink_at >= 0.0 and _foe != null and _foe.alive and world.time >= _foe_sink_at:
+		_foe.damage(_foe.max_hp * 4.0, player)
 	controls.consume()
 
 	world.listener = camera.target
 	world.listener_zoom = camera.distance()
 	if _farewell != null:
 		_farewell_step(real_dt)
-	camera.update_rig(real_dt, player.pos, player.vel, world.time)
+	var focus := _watched()
+	camera.update_rig(real_dt, focus.pos, focus.vel, world.time)
 	ocean.follow(camera.target, camera.distance())
 	world.wake.step(camera.target.x, camera.target.z, dt)
+	# the wreckage afloat, on the very swell the ocean draws (and shouldered aside by hulls still moving)
+	RenderingServer.global_shader_parameter_set("sea_clock", fmod(world.time, Debris.CLOCK_WRAP))
+	var pushers: Array[Ship] = []
+	for s in world.ships:
+		if s.alive or s.sink_t < 20.0:
+			pushers.append(s)
+	world.debris.update(dt, pushers, ocean, camera.global_position)
 
 	# the light
 	atmosphere.apply(sun, env)
@@ -474,6 +534,11 @@ func _tick(real_dt: float) -> void:
 	hud.show_bars(world.ships, player, camera)
 	if player.alive and (not _args.has("shot") or _args.has("discover")):
 		_chart(player.pos)
+
+
+## The ship the camera follows: yours, or a set piece's foe (--watch).
+func _watched() -> Ship:
+	return _foe if _foe != null and _args.has("watch") else player
 
 
 ## The helm and the canvas.
@@ -645,6 +710,20 @@ func _farewell_step(real_dt: float) -> void:
 	var water := MathX.smooth(DIVE + 0.4, DIVE + 2.1, t)
 	_desat = 0.55 * MathX.smooth(0.0, 0.6, t) * (1.0 - water)
 	wreck.water(water)
+	# her last breath of air bursts up as she slips under, and tears loose what
+	# was lashed down: timber floats up past her, the heavy stuff goes down with her
+	if not f.dived and t > DIVE:
+		f.dived = true
+		var y := world.water_height(c.x, c.z)
+		for i in 3:
+			var a := randf() * TAU
+			var r := randf() * p.cls.beam
+			world.fx.splash(Vector3(c.x + cos(a) * r, y, c.z + sin(a) * r), randf_range(1.1, 1.7))
+		world.wake.stamp(c.x, c.z, L * 0.5, 1.0, true)
+		world.wake.push(c.x, c.z, L * 0.4, -1.0)
+		if f.deep:
+			var timber: Array[Color] = [Color(0.42, 0.29, 0.18).linear_to_srgb(), Color(0.55, 0.4, 0.26).linear_to_srgb(), Color(0.33, 0.24, 0.16).linear_to_srgb()]
+			world.debris.drown(Vector3(c.x, minf(p.position.y + p.cls.freeboard, y - 1.5), c.z), 7, timber)
 	# in deep water a gauge in the letterbox counts her down to the sand
 	if f.deep and t > DIVE - 0.5:
 		var fm := roundi(maxf(0.0, (world.water_height(c.x, c.z) - p.position.y) / 1.8288))
@@ -679,10 +758,12 @@ func _sail_again() -> void:
 	world.ships.clear()
 	world.shots.clear()
 	world.fx.clear()
+	world.debris.clear()
 	discovered.clear()
 	voyage = Voyage.new()
 	_foe = null
 	_sink_at = -1.0
+	_foe_sink_at = -1.0
 	_build_player()
 	world.ships.append(player)
 	player.struck.connect(func(a: float) -> void: camera.shake(a))

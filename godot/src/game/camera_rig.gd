@@ -22,6 +22,8 @@ var zoom := 0.45
 ## Past the farthest zoom: 0 the usual high view .. 1 leaned over.
 var tilt := 0.0
 var shake_scale := 1.0
+## The lens in use (vertical degrees): a set piece may narrow it for a close-up.
+var lens := FOV
 ## A shot the camera blends toward (her farewell): where it stands, what it
 ## looks at and its lens, and how far blended (0 off .. 1 all the shot).
 var cine_pos := Vector3.ZERO
@@ -41,7 +43,7 @@ var _pitch := 1.0
 
 
 func _ready() -> void:
-	fov = FOV
+	fov = lens
 	near = 2.0
 	far = 2600.0
 
@@ -169,7 +171,7 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 		var k := s * (0.6 + _zoom_smooth) * (1.0 - cine_w * 0.5)
 		pos += Vector3((sin(time * 47.0) + sin(time * 31.0)) * k * 0.6, sin(time * 53.0) * k * 0.5, sin(time * 41.0 + 1.0) * k * 0.6)
 	global_transform = Transform3D(Basis.looking_at(look - pos, Vector3.UP), pos)
-	fov = lerpf(FOV, cine_fov, cine_w)
+	fov = lerpf(lens, cine_fov, cine_w)
 	# the near plane rides up with the camera: a far view keeps its depth precision
 	near = clampf(pos.y * 0.08, 2.0, 30.0)
 	far = 2600.0
