@@ -16,11 +16,11 @@ way and keep the APK as a workflow artifact.
 | `src/core` | Settings (quality tiers), small maths helpers |
 | `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky and the hour; the archipelagos (`Region`), their ground (`Ground`) and their planting (`Flora`) |
 | `src/render` | The colour grade (a GPU-baked 3D LUT) |
-| `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, damage and sinking (`ShipDamage`), the pirate captains (`PirateAI`) |
-| `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave |
+| `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, battle damage, dismasting, re-rigging and sinking (`ShipDamage`), the pirate captains (`PirateAI`) |
+| `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave, the wreckage afloat (`Debris`) |
 | `src/game` | The voyage scene, the camera rig, the controls; the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time |
 | `src/ui` | The HUD, the touch helm, the sail lever and the fire pad, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`) |
-| `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ground, plants, ship lighting) |
+| `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
 | `art` | The tiling textures every shader samples and the baked figurehead sculptures |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
 | `tools` | The CI checks and the asset generators |
@@ -48,10 +48,14 @@ start somewhere else, `--shot out.png` saves a frame and quits (after
 runs a few seconds and prints `SMOKE OK`. `--noshadow`, `--noocean` and
 `--noflora` leave a layer out, and `--discover` charts islands during a shot.
 For fights: `--battle brig` puts a pirate off your beam (`--foe-dist M`,
-`--foe-hp F`), `--autofire` fires each side as it bears, `--touch` shows the
-touch controls, `--sink S` sends your ship down after S seconds, `--voyage`
-gives her a long voyage first (a full farewell card), and `--nopirates`
-keeps the sea clear. The header of `src/game/game.gd` lists them all.
+`--foe-hp F`, `--foe-wounds N` for breaches already in her, `--foe-dismast
+0,2` to bring masts down, `--foe-anchor` to hold her still, `--foe-sink S` to
+sink her, `--wreck split` or `capsize` for how she goes, `--watch` to follow
+her with the camera, `--fov F` for a close-up lens),
+`--autofire` fires each side as it bears, `--touch` shows the touch
+controls, `--sink S` sends your ship down after S seconds, `--voyage` gives
+her a long voyage first (a full farewell card), and `--nopirates` keeps the
+sea clear. The header of `src/game/game.gd` lists them all.
 
 ## The checks CI runs
 

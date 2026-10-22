@@ -2,9 +2,10 @@ class_name MeshKit
 extends RefCounted
 ## Builds one vertex-painted mesh out of many small procedural parts: spars,
 ## turned profiles, tori, rounded boxes, swept tubes. Every vertex carries its
-## part's paint (sRGB) and, in alpha, what the part is made of, so a whole
-## ship's woodwork, ironwork, gilding and lamps share one draw call and one
-## shader (ship_parts.gdshader).
+## part's paint (sRGB) and, in alpha, what the part is made of and the spar it
+## stands on (see code()), so a whole ship's woodwork, ironwork, gilding and
+## lamps share one draw call and one shader (ship_parts.gdshader), and a mast
+## shot away can be dropped from it whole.
 ##
 ## Primitives take points in counter-clockwise order seen from outside (the
 ## right-hand normal points out) and flip them to Godot's clockwise front
@@ -15,6 +16,8 @@ const ROPE := 0.25
 const IRON := 0.5
 const GLOW := 0.75
 const GILT := 1.0
+## Timber a breach never opens through (the hold's floor): see ship_damage.gdshaderinc.
+const HOLD := 1.25
 
 var verts := PackedVector3Array()
 var normals := PackedVector3Array()
@@ -22,6 +25,12 @@ var colors := PackedColorArray()
 var indices := PackedInt32Array()
 
 var _paint := Color(1, 1, 1, 0)
+var _kind := WOOD
+var _spar := 0
+## Runs of geometry laid down on a spar: [spar, first vertex, end vertex, first index, end index]...
+var _runs := PackedInt32Array()
+var _run_v := 0
+var _run_i := 0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -33,7 +42,57 @@ func _init(seed_value: int = 7) -> void:
 ## nudged a touch lighter or darker so no two timbers match exactly.
 func paint(color: Color, kind: float = WOOD, jitter: float = 0.05) -> void:
 	var k := pow(1.0 + _rng.randf_range(-1.0, 1.0) * jitter, 0.4545)
-	_paint = Color(minf(color.r * k, 1.0), minf(color.g * k, 1.0), minf(color.b * k, 1.0), kind)
+	_kind = kind
+	_paint = Color(minf(color.r * k, 1.0), minf(color.g * k, 1.0), minf(color.b * k, 1.0), code(kind, _spar))
+
+
+## A vertex colour's alpha: the part's kind (in quarters) and the spar it
+## stands on (0 the hull, 1 .. 15 a mast or the bowsprit, see ShipModel.Spar),
+## as one byte. The half step survives the byte's truncation.
+static func code(kind: float, spar: int = 0) -> float:
+	return (roundi(kind * 4.0) * 16 + spar + 0.5) / 255.0
+
+
+static func kind_of(alpha: float) -> float:
+	return float(int(alpha * 255.0) >> 4) * 0.25
+
+
+## What follows stands on spar s (0 the hull): it goes overboard with it.
+func set_spar(s: int) -> void:
+	if s == _spar:
+		return
+	_end_run()
+	_spar = s
+	_run_v = verts.size()
+	_run_i = indices.size()
+	_paint.a = code(_kind, s)
+
+
+func _end_run() -> void:
+	if _spar != 0 and indices.size() > _run_i:
+		_runs.append_array([_spar, _run_v, verts.size(), _run_i, indices.size()])
+
+
+## Copies everything laid down on spar s into `into`, as standing on the hull
+## there (the piece that falls when it breaks).
+func copy_spar(s: int, into: MeshKit) -> void:
+	_end_run()
+	_run_v = verts.size()
+	_run_i = indices.size()
+	for r in range(0, _runs.size(), 5):
+		if _runs[r] != s:
+			continue
+		var v0 := _runs[r + 1]
+		var v1 := _runs[r + 2]
+		var shift := into.verts.size() - v0
+		into.verts.append_array(verts.slice(v0, v1))
+		into.normals.append_array(normals.slice(v0, v1))
+		for i in range(v0, v1):
+			var c := colors[i]
+			c.a = code(kind_of(c.a), 0)
+			into.colors.append(c)
+		for i in range(_runs[r + 3], _runs[r + 4]):
+			into.indices.append(indices[i] + shift)
 
 
 func vertex_count() -> int:

@@ -3,7 +3,9 @@ extends RefCounted
 ## Collects a ship's rigging into one ribbon mesh for ship_rope.gdshader: two
 ## vertices per point along each rope, both on its axis, which the shader
 ## spreads into a camera-facing strip as wide as the rope (never thinner than
-## a pixel). Ropes that sag hang in a gentle curve.
+## a pixel). Ropes that sag hang in a gentle curve. Each rope's colour alpha
+## holds the spars it is made fast to (a bit per spar, see ShipModel.Spar):
+## it goes slack and is gone when any of them is shot away.
 
 const TAR := Color("#2a1f16")
 const HEMP := Color("#8c7150")
@@ -13,6 +15,8 @@ var custom := PackedFloat32Array()
 var uvs := PackedVector2Array()
 var colors := PackedColorArray()
 var indices := PackedInt32Array()
+## The spars the ropes that follow are made fast to (bit s - 1 for spar s).
+var owner := 0
 var _rng := RandomNumberGenerator.new()
 
 
@@ -31,7 +35,7 @@ func rope(a: Vector3, b: Vector3, r: float = 0.03, col: Color = TAR, sag: float 
 		return
 	var segs := 4 if sag > 0.0 and length > 4.0 else 1
 	var jit := pow(0.9 + _rng.randf() * 0.2, 0.4545)
-	var paint := Color(minf(col.r * jit, 1.0), minf(col.g * jit, 1.0), minf(col.b * jit, 1.0))
+	var paint := Color(minf(col.r * jit, 1.0), minf(col.g * jit, 1.0), minf(col.b * jit, 1.0), (owner + 0.5) / 255.0)
 	var base := verts.size()
 	for i in segs + 1:
 		var f := float(i) / segs

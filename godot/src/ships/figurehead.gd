@@ -310,7 +310,7 @@ static func build_figure(fig: String, h: Head, kits: Dictionary, trim_col: Color
 				# gilt in the ship's own trim colour, its carved shading kept
 				var t := _lum(cc.srgb_to_linear()) / gl
 				cc = Color(minf(trim_lin.r * t, 1.0), minf(trim_lin.g * t, 1.0), minf(trim_lin.b * t, 1.0)).linear_to_srgb()
-			cc.a = kind
+			cc.a = MeshKit.code(kind)
 			cols[i] = cc
 		var m := h.place * _frame(pc.frame, h.lean)
 		var kit: MeshKit = kits[bucket]

@@ -17,6 +17,13 @@ extends Node3D
 ## - the rigging as one ribbon mesh;
 ## - each sail, and the two flags, as their own small meshes on pivots.
 ##
+## Every mast, and the bowsprit, is a Spar that a ball can snap: where it
+## breaks is settled as she's built, everything above the break is marked as
+## standing on it (in the vertex paint, and on the ropes made fast to it), and
+## a copy of that part is kept as its own mesh, so a spar shot away drops out
+## of the merged meshes with no cutting at all and its piece goes over the side
+## (see ShipDamage).
+##
 ## Local frame: +Z bow, +Y up, +X port, waterline at y = 0. The castles and
 ## square rigs of the bigger classes come with them.
 
@@ -60,17 +67,47 @@ var chimney := Vector3.ZERO
 ## The middle of the figurehead, for cameras.
 var figure_at := Vector3.ZERO
 
+## {node, tier, fore_aft, pivot, spar (the Spar it hangs from)}.
 var sails: Array[Dictionary] = []
 var yard_pivots: Array[Node3D] = []
 var fore_aft_pivots: Array[Node3D] = []
 var flag_pivot := Node3D.new()
 var ensign_pivot := Node3D.new()
+## The masts, aft to fore, then the bowsprit.
+var spars: Array[Spar] = []
+## The ship's flag and her ensign.
+var flags: Array[MeshInstance3D] = []
+
+
+## A mast or the bowsprit, as a ball can bring it down.
+class Spar:
+	## What its parts are marked with (MeshKit.code): its index + 1; ropes made fast to it carry bit `group` - 1.
+	var group := 1
+	var bowsprit := false
+	## The point it snaps at and topples about (model frame), the middle of
+	## the break, its long axis there, how far it reaches beyond, and its
+	## radius at the break.
+	var pivot := Vector3.ZERO
+	var centre := Vector3.ZERO
+	var long := Vector3.UP
+	var length := 1.0
+	var radius := 0.2
+	## Everything above the break, as one mesh in the model's frame.
+	var piece: ArrayMesh
+	## The pivots, loose sails and flags that come down with it.
+	var nodes: Array[Node3D] = []
+	var broken := false
+	## How it went over (the axis it toppled about, in the model's frame), how
+	## far over the crew finds it when they haul it back up, and the splintered
+	## stump it left.
+	var axis := Vector3.RIGHT
+	var lean := 0.0
+	var stump: Node3D
 
 var _core := MeshKit.new(3)
 var _small := MeshKit.new(5)
 var _fine := MeshKit.new(9)
 var _ropes := RopeKit.new()
-var _flags: Array[MeshInstance3D] = []
 var _mast_tops := PackedVector3Array()
 var _hull_mesh: ArrayMesh
 var _stern_mesh: ArrayMesh
@@ -108,7 +145,9 @@ func _build() -> void:
 
 # ------------------------------------------------------------------ materials
 
-func _material(kind: String) -> ShaderMaterial:
+## The material this class and livery share for one kind of mesh ("hull",
+## "stern", "deck", "parts", "rope", "sail", "flag").
+func shared_material(kind: String) -> ShaderMaterial:
 	var key := kind
 	if kind in ["hull", "stern"]:
 		key = "%s|%s|%s" % [kind, cls.id, livery.id]
@@ -370,6 +409,21 @@ func _build_deck() -> void:
 		var r1 := r0 + 3
 		idx.append_array([r0, r1, r0 + 1, r1, r1 + 1, r0 + 1, r0 + 1, r1 + 1, r0 + 2, r1 + 1, r1 + 2, r0 + 2])
 	_deck_mesh = _uv_mesh(pos, uv, idx)
+	# the hold's floor of dark planks just under the deck: through a breach the
+	# eye finds the gloom of the hold, not the sea inside the hull
+	_core.paint(Color("#1c130c"), MeshKit.HOLD, 0.0)
+	var hb := _core.vertex_count()
+	var hn := 40
+	for k in hn + 1:
+		var t := 0.015 + 0.97 * k / hn
+		var y := s.main_deck_y(t) - 0.18
+		var w := maxf(0.02, s.half_width_at_y(t, y) - 0.03)
+		_core.add_vertex(Vector3(-w, y, s.z(t)), Vector3.UP)
+		_core.add_vertex(Vector3(w, y, s.z(t)), Vector3.UP)
+	for k in hn:
+		var a := hb + k * 2
+		_core.tri(a, a + 2, a + 1)
+		_core.tri(a + 1, a + 2, a + 3)
 
 
 ## Rudder hung on the sternpost, and gilded quarter pieces framing the transom.
@@ -590,6 +644,7 @@ func _build_rig() -> void:
 	var beam := c.beam
 	var max_mast := 0.0
 	var max_top := Vector3.ZERO
+	var tallest := 0
 	for mi in c.masts.size():
 		var m: Dictionary = c.masts[mi]
 		var rig: String = m.rig
@@ -599,17 +654,29 @@ func _build_rig() -> void:
 		var r0 := 0.12 + hh * 0.0085
 		var radial := 10 if detail else 7
 		var has_top: bool = m.get("top", false)
+		# where a ball would snap her: low enough that all she carries comes down
+		var sp := Spar.new()
+		sp.group = mi + 1
+		var y_cut := y0 + maxf(3.2 if rig == "gaff" else 2.4, hh * randf_range(0.24, 0.4))
+		sp.pivot = Vector3(0, y_cut, zz)
+		sp.length = hh - (y_cut - y0)
+		spars.append(sp)
+		var bit := 1 << mi
 		if rig == "lateen":
 			# one long pole, tapering hard toward the head
+			sp.radius = lerpf(r0, r0 * 0.45, (y_cut - y0) / hh)
 			_core.paint(MAST_WOOD)
-			_core.spar(Vector3(0, y0, zz), Vector3(0, y0 + hh, zz), r0, r0 * 0.45, radial)
+			_snapped_spar(_core, Vector3(0, y0, zz), Vector3(0, y0 + hh, zz), r0, r0 * 0.45, radial, sp)
+			_on_spar(sp.group)
 		else:
 			# stepped spars: lower mast, topmast and topgallant overlap at the
 			# doublings under iron-bound caps, so the silhouette reads as a real rig
 			var low_top := y0 + hh * 0.8 if rig == "gaff" else y0 + hh * 0.6 + 0.85
 			var r1 := r0 * 0.78
+			sp.radius = lerpf(r0, r1, (y_cut - y0) / (low_top + 0.1 - y0))
 			_core.paint(MAST_WOOD)
-			_core.spar(Vector3(0, y0, zz), Vector3(0, low_top + 0.1, zz), r0, r1, radial)
+			_snapped_spar(_core, Vector3(0, y0, zz), Vector3(0, low_top + 0.1, zz), r0, r1, radial, sp)
+			_on_spar(sp.group)
 			var tm_base := low_top - (1.6 if rig == "gaff" else 0.9)
 			var tm_top := y0 + hh if rig == "gaff" or not has_top else y0 + hh * 0.87 + 0.55
 			_core.paint(MAST_WOOD)
@@ -620,6 +687,14 @@ func _build_rig() -> void:
 				_core.paint(MAST_WOOD)
 				_core.spar(Vector3(0, y0 + hh * 0.87 - 0.3, zz), Vector3(0, y0 + hh, zz), tg * 0.82, tg * 0.55, radial)
 				_mast_cap(tm_top - 0.05, zz, tg, tg * 0.82)
+		# mast cap
+		_core.paint(livery.trim, MeshKit.GILT, 0.02)
+		_core.sphere(Transform3D(Basis.from_scale(Vector3(1, 0.8, 1)), Vector3(0, y0 + hh + 0.05, zz)), r0 * 0.5, 10, 6)
+		if has_top:
+			_ropes.owner = bit
+			_build_top(mi, zz, y0, hh, r0)
+			_ropes.owner = 0
+		_on_spar(0)
 		# a rounded collar where it passes the deck, and iron bands up the lower mast
 		_core.paint(DARK_WOOD)
 		_core.hoop(Vector3(0, y0 + r0 * 0.3, zz), r0 * 1.15, r0 * 0.45, 6, 14)
@@ -628,6 +703,7 @@ func _build_rig() -> void:
 		var band_fs := PackedFloat32Array([0.1, 0.2, 0.3, 0.4] if detail else [0.15, 0.35])
 		_small.paint(IRON_PAINT, MeshKit.IRON, 0.03)
 		for f in band_fs:
+			_on_spar(sp.group if y0 + hh * f > y_cut else 0)
 			_small.hoop(Vector3(0, y0 + hh * f, zz), r0 * (1.0 - low_taper * minf(1.0, f * hh / low_len)) + 0.012, 0.035, 4, 12)
 		if detail:
 			# rope wooldings bound round the lower mast between the iron hoops
@@ -635,20 +711,19 @@ func _build_rig() -> void:
 			for f: float in [0.15, 0.25, 0.35]:
 				for kk in range(-1, 2):
 					var yy := y0 + hh * f + kk * 0.075
+					_on_spar(sp.group if yy > y_cut else 0)
 					_fine.hoop(Vector3(0, yy, zz), r0 * (1.0 - low_taper * minf(1.0, (yy - y0) / low_len)) + 0.014, 0.026, 4, 12)
-		# mast cap
-		_core.paint(livery.trim, MeshKit.GILT, 0.02)
-		_core.sphere(Transform3D(Basis.from_scale(Vector3(1, 0.8, 1)), Vector3(0, y0 + hh + 0.05, zz)), r0 * 0.5, 10, 6)
+		_on_spar(0)
 		var top := Vector3(0, y0 + hh, zz)
 		_mast_tops.append(top)
 		perches.append({"pos": Vector3(0, y0 + hh + 0.05 + r0 * 0.4, zz), "spar": mi})
 		if hh > max_mast:
 			max_mast = hh
 			max_top = top
-		if has_top:
-			_build_top(mi, zz, y0, hh, r0)
+			tallest = mi
 
-		# shrouds set up on deadeyes along a channel board, with ratlines to climb
+		# shrouds set up on deadeyes along a channel board, with ratlines to
+		# climb: the channels stay with the hull, the shrouds go with the mast
 		var dts: Array[float] = []
 		for dt: float in [-0.055, -0.03, -0.005, 0.02]:
 			dts.append(dt * 21.0 / c.length)
@@ -678,13 +753,17 @@ func _build_rig() -> void:
 					_fine.sphere(Transform3D(Basis.from_scale(Vector3(1, 1, 0.6)), upper), 0.085, 7, 5)
 					for o: float in [-0.045, 0.0, 0.045]:
 						_ropes.rope(eye + Vector3(0, 0, o), upper + Vector3(0, 0, o * 0.9), 0.011, RopeKit.HEMP)
+					_ropes.owner = bit
 					_ropes.rope(upper, mast_head, 0.034)
 				else:
+					_ropes.owner = bit
 					_ropes.rope(eye, mast_head, 0.034)
+				_ropes.owner = 0
 				# chainplate: an iron strap bolted down the side below the channel
 				_small.paint(IRON_PAINT, MeshKit.IRON, 0.03)
 				_small.spar(base + Vector3(0, 0.12, 0), base + n_h * -0.3 + Vector3(0, -0.75, 0), 0.028, 0.028, 4)
 				feet.append(eye)
+			_ropes.owner = bit
 			if detail:
 				var reach := feet[0].distance_to(mast_head)
 				var rungs := floori(reach * 0.85 / 0.6)
@@ -693,23 +772,28 @@ func _build_rig() -> void:
 					for i in feet.size() - 1:
 						_ropes.rope(feet[i].lerp(mast_head, f), feet[i + 1].lerp(mast_head, f), 0.014)
 			_ropes.rope(Vector3(0, y0 + hh * 0.93, zz), Vector3(side * beam * 0.16, y0 + hh * 0.6, zz), 0.028)
+			_ropes.owner = 0
 
 		match rig:
 			"square":
-				_build_square(m, mi, zz, y0, hh)
+				_build_square(m, mi, zz, y0, hh, sp)
 			"gaff":
-				_build_gaff(m, zz, y0, hh, r0)
+				_build_gaff(m, zz, y0, hh, r0, sp)
 			"lateen":
-				_build_lateen(m, zz, y0, hh)
+				_build_lateen(m, zz, y0, hh, sp)
 
 	_build_bowsprit()
 
-	# backstays from the after masthead down to the quarters
+	# backstays from the after masthead down to the quarters, stays from each
+	# masthead to the next one forward
+	_ropes.owner = 1
 	for side: float in [1.0, -1.0]:
 		_ropes.rope(_mast_tops[0], s.skin_point(0.05, s.top(0.05) + 0.05, side, -0.12), 0.03, RopeKit.TAR, 0.1)
 	for i in _mast_tops.size() - 1:
 		var next_h: float = c.masts[i + 1].height
+		_ropes.owner = (1 << i) | (1 << (i + 1))
 		_ropes.rope(_mast_tops[i], _mast_tops[i + 1] + Vector3(0, -next_h * 0.35, 0), 0.038, RopeKit.TAR, 0.12)
+	_ropes.owner = 0
 
 	# the ship's flag on the tallest mast (so no gull sits on that cap)
 	for i in range(perches.size() - 1, -1, -1):
@@ -720,6 +804,7 @@ func _build_rig() -> void:
 	flag_pivot.position = max_top + Vector3(0, 0.35, 0)
 	add_child(flag_pivot)
 	_add_flag(flag_pivot, 2.2 + c.length * 0.07)
+	spars[tallest].nodes.append(flag_pivot)
 	# and again as an ensign on a raked staff over the taffrail
 	var et := 0.03
 	var ex := (0.5 if c.stern_castle.is_empty() else 0.3) * s.half_beam(et)
@@ -733,6 +818,31 @@ func _build_rig() -> void:
 	ensign_pivot.position = e_top
 	add_child(ensign_pivot)
 	_add_flag(ensign_pivot, 1.3 + c.length * 0.045)
+
+
+## What's laid down next stands on spar group g (0 the hull): see Spar.
+func _on_spar(g: int) -> void:
+	_core.set_spar(g)
+	_small.set_spar(g)
+	_fine.set_spar(g)
+
+
+## A tapered spar from a to b that a ball can snap where `sp` breaks: laid in
+## two lengths that meet there (a hair apart, so the levels of detail never
+## weld across the break), the outer one standing on the spar. Leaves the kits
+## on the hull.
+func _snapped_spar(kit: MeshKit, a: Vector3, b: Vector3, r0: float, r1: float, radial: int, sp: Spar) -> void:
+	var axis := b - a
+	var f := clampf((sp.pivot - a).dot(axis) / axis.length_squared(), 0.05, 0.95)
+	var cut := a.lerp(b, f)
+	var dir := axis.normalized()
+	var rc := lerpf(r0, r1, f)
+	sp.centre = cut
+	_on_spar(0)
+	kit.spar(a, cut - dir * 0.002, r0, rc, radial)
+	_on_spar(sp.group)
+	kit.spar(cut + dir * 0.002, b, rc, r1, radial)
+	_on_spar(0)
 
 
 ## The iron-bound cap at a mast's doublings: a block where the lower spar
@@ -784,7 +894,7 @@ func _build_top(mi: int, zz: float, y0: float, hh: float, r0: float) -> void:
 ## tapered both ways from its slings, with yardarm blocks, lifts, footropes
 ## and the clewlines led down to the deck, and a course, topsail and
 ## topgallant (as many tiers as she carries) hanging from them.
-func _build_square(m: Dictionary, mi: int, zz: float, y0: float, hh: float) -> void:
+func _build_square(m: Dictionary, mi: int, zz: float, y0: float, hh: float, sp: Spar) -> void:
 	var c := cls
 	var b := c.beam
 	var tiers: int = m.get("tiers", 1)
@@ -795,7 +905,8 @@ func _build_square(m: Dictionary, mi: int, zz: float, y0: float, hh: float) -> v
 	pivot.position = Vector3(0, 0, zz)
 	add_child(pivot)
 	yard_pivots.append(pivot)
-	var spars := MeshKit.new(19 + mi)
+	sp.nodes.append(pivot)
+	var yards := MeshKit.new(19 + mi)
 	var lines := RopeKit.new(23 + mi)
 	var ys := PackedFloat32Array()
 	var halves := PackedFloat32Array()
@@ -805,20 +916,20 @@ func _build_square(m: Dictionary, mi: int, zz: float, y0: float, hh: float) -> v
 		ys.append(y)
 		halves.append(half)
 		var ry := 0.1 + hh * 0.0022
-		spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
-		spars.spar(Vector3(0, y, 0), Vector3(-half, y, 0), ry, 0.055, 8)
-		spars.spar(Vector3(0, y, 0), Vector3(half, y, 0), ry, 0.055, 8)
-		spars.ball(Vector3(-half, y, 0), 0.075, 6, 4)
-		spars.ball(Vector3(half, y, 0), 0.075, 6, 4)
-		spars.paint(IRON_PAINT, MeshKit.IRON, 0.03)
-		spars.torus(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, y, 0)), ry + 0.02, 0.035, 4, 10)
-		spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
-		spars.rbox(_at(Vector3(0, y + 0.02, -0.12)), Vector3(0.36, 0.3, 0.42), 0.08, 1)
+		yards.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+		yards.spar(Vector3(0, y, 0), Vector3(-half, y, 0), ry, 0.055, 8)
+		yards.spar(Vector3(0, y, 0), Vector3(half, y, 0), ry, 0.055, 8)
+		yards.ball(Vector3(-half, y, 0), 0.075, 6, 4)
+		yards.ball(Vector3(half, y, 0), 0.075, 6, 4)
+		yards.paint(IRON_PAINT, MeshKit.IRON, 0.03)
+		yards.torus(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, y, 0)), ry + 0.02, 0.035, 4, 10)
+		yards.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+		yards.rbox(_at(Vector3(0, y + 0.02, -0.12)), Vector3(0.36, 0.3, 0.42), 0.08, 1)
 		var lift_top := y0 + hh * float(fr[i + 1]) - 0.35 if i < fr.size() - 1 else y0 + hh * 0.97
 		for sx: float in [-1.0, 1.0]:
 			var arm := Vector3(sx * half * 0.96, y, 0)
-			spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
-			spars.ball(arm + Vector3(0, -0.12, -0.05), 0.1, 6, 4)
+			yards.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+			yards.ball(arm + Vector3(0, -0.12, -0.05), 0.1, 6, 4)
 			# the lift up to the mast, and the clewlines and buntlines led down abaft the canvas
 			lines.rope(arm, Vector3(sx * 0.2, lift_top, 0), 0.026)
 			for f: float in [0.38, 0.78]:
@@ -833,8 +944,8 @@ func _build_square(m: Dictionary, mi: int, zz: float, y0: float, hh: float) -> v
 					lines.rope(pts[k], pts[k + 1], 0.022, RopeKit.HEMP)
 				for k: int in [2, 4]:
 					lines.rope(pts[k], Vector3(pts[k].x, y, -0.06), 0.014, RopeKit.HEMP)
-	_mesh_child(pivot, spars.commit_lod(), _material("parts"), true).name = "Yard"
-	_mesh_child(pivot, lines.commit(), _material("rope"), false).name = "Lines"
+	_mesh_child(pivot, yards.commit_lod(), shared_material("parts"), true).name = "Yard"
+	_mesh_child(pivot, lines.commit(), shared_material("rope"), false).name = "Lines"
 	var masts := c.masts.size()
 	for i in ys.size():
 		var bottom_y := maxf(y0 + 2.1, ys[i] - hh * 0.38) if i == 0 else ys[i - 1] + 0.2
@@ -843,12 +954,12 @@ func _build_square(m: Dictionary, mi: int, zz: float, y0: float, hh: float) -> v
 		var emblem := i == 0 and (mi == masts - 1 or masts == 1 or (masts == 3 and mi == 1))
 		var sail := _add_sail(pivot, Vector2(-halves[i] * 0.95, 0), Vector2(halves[i] * 0.95, 0), Vector2(-bottom_half * 0.95, -h), Vector2(bottom_half * 0.95, -h), minf(halves[i] * 0.32, 1.4), emblem)
 		sail.position = Vector3(0, ys[i] - 0.12, 0.18)
-		sails.append({"node": sail, "tier": i, "fore_aft": false, "pivot": pivot})
+		sails.append({"node": sail, "tier": i, "fore_aft": false, "pivot": pivot, "spar": sp})
 
 
 ## A lateen: one long yard slung slantwise from the mast, a triangular sail
 ## under it, swinging to the wind like a gaff.
-func _build_lateen(m: Dictionary, zz: float, y0: float, hh: float) -> void:
+func _build_lateen(m: Dictionary, zz: float, y0: float, hh: float, sp: Spar) -> void:
 	var c := cls
 	var k: float = m.get("span", 1.0)
 	var pivot := Node3D.new()
@@ -856,23 +967,24 @@ func _build_lateen(m: Dictionary, zz: float, y0: float, hh: float) -> void:
 	pivot.position = Vector3(0, 0, zz)
 	add_child(pivot)
 	fore_aft_pivots.append(pivot)
+	sp.nodes.append(pivot)
 	var low_y := y0 + hh * 0.3
 	var fwd := Vector3(0, y0 + hh * 0.42, c.length * 0.12 * k)
 	var aft := Vector3(0, y0 + hh, -c.length * 0.2 * k)
-	var spars := MeshKit.new(29)
-	spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
-	spars.spar(fwd, aft, 0.1, 0.06)
-	_mesh_child(pivot, spars.commit(), _material("parts"), true).name = "Yard"
+	var yard := MeshKit.new(29)
+	yard.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+	yard.spar(fwd, aft, 0.1, 0.06)
+	_mesh_child(pivot, yard.commit(), shared_material("parts"), true).name = "Yard"
 	# plane coords: x aft from the mast, y up from the foot
 	var sail := _add_sail(pivot, Vector2(-fwd.z + 0.2, fwd.y - low_y - 0.1), Vector2(-aft.z - 0.3, aft.y - low_y - 0.2), Vector2(0.3, 0.05), Vector2(-aft.z * 0.55, 0.05), 0.9, false)
 	sail.position = Vector3(0, low_y, 0)
 	sail.rotation.y = PI * 0.5
-	sails.append({"node": sail, "tier": 0, "fore_aft": true, "pivot": pivot})
+	sails.append({"node": sail, "tier": 0, "fore_aft": true, "pivot": pivot, "spar": sp})
 
 
 ## Gaff and boom on their own pivot (they swing to the wind), the hoops along
 ## the luff, the gaff mainsail, and a small square topsail above for charm.
-func _build_gaff(m: Dictionary, zz: float, y0: float, hh: float, r0: float) -> void:
+func _build_gaff(m: Dictionary, zz: float, y0: float, hh: float, r0: float, sp: Spar) -> void:
 	var c := cls
 	var span: float = m.get("span", 1.0)
 	var pivot := Node3D.new()
@@ -880,22 +992,23 @@ func _build_gaff(m: Dictionary, zz: float, y0: float, hh: float, r0: float) -> v
 	pivot.position = Vector3(0, 0, zz)
 	add_child(pivot)
 	fore_aft_pivots.append(pivot)
+	sp.nodes.append(pivot)
 	var foot_y := y0 + 1.9
 	var throat_y := y0 + hh * 0.78
 	var boom_len := c.length * 0.5 * span
 	var gaff_len := c.length * 0.36 * span
 	var peak_y := throat_y + gaff_len * 0.55
 	var peak_a := gaff_len * 0.83
-	var spars := MeshKit.new(13)
-	spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
-	spars.spar(Vector3(0, foot_y, 0), Vector3(0, foot_y, -boom_len), 0.13, 0.09)
-	spars.spar(Vector3(0, throat_y, 0), Vector3(0, peak_y, -peak_a), 0.11, 0.07)
+	var wood := MeshKit.new(13)
+	wood.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+	wood.spar(Vector3(0, foot_y, 0), Vector3(0, foot_y, -boom_len), 0.13, 0.09)
+	wood.spar(Vector3(0, throat_y, 0), Vector3(0, peak_y, -peak_a), 0.11, 0.07)
 	# jaws hugging the mast, a knob on the boom end
 	var jaw := Basis(Vector3.UP, -PI * 0.2 + PI * 0.5) * Basis(Vector3.RIGHT, PI * 0.5)
-	spars.torus(Transform3D(jaw, Vector3(0, foot_y, 0)), 0.24, 0.06, 4, 10, PI * 1.4)
-	spars.torus(Transform3D(jaw, Vector3(0, throat_y, 0)), 0.24, 0.06, 4, 10, PI * 1.4)
-	spars.ball(Vector3(0, foot_y, -boom_len), 0.13, 6, 4)
-	_mesh_child(pivot, spars.commit(), _material("parts"), true)
+	wood.torus(Transform3D(jaw, Vector3(0, foot_y, 0)), 0.24, 0.06, 4, 10, PI * 1.4)
+	wood.torus(Transform3D(jaw, Vector3(0, throat_y, 0)), 0.24, 0.06, 4, 10, PI * 1.4)
+	wood.ball(Vector3(0, foot_y, -boom_len), 0.13, 6, 4)
+	_mesh_child(pivot, wood.commit(), shared_material("parts"), true).name = "Yard"
 	# peak and throat halyards to the masthead, topping lift to the boom end
 	var lines := RopeKit.new(17)
 	var mh := Vector3(0, y0 + hh * 0.93, 0)
@@ -903,30 +1016,38 @@ func _build_gaff(m: Dictionary, zz: float, y0: float, hh: float, r0: float) -> v
 		lines.rope(Vector3(0, throat_y, 0).lerp(Vector3(0, peak_y, -peak_a), f), mh, 0.026, RopeKit.HEMP, 0.06)
 	lines.rope(Vector3(0, throat_y + 0.2, 0), Vector3(0, y0 + hh * 0.86, 0), 0.026, RopeKit.HEMP, 0.06)
 	lines.rope(Vector3(0, foot_y, -boom_len * 0.98), Vector3(0, y0 + hh * 0.97, 0), 0.026, RopeKit.HEMP, 0.06)
-	_mesh_child(pivot, lines.commit(), _material("rope"), false)
+	_mesh_child(pivot, lines.commit(), shared_material("rope"), false).name = "Lines"
 	# mast hoops hold the luff of the mainsail to the mast
 	var r1 := r0 * (1.0 - 0.22 * ((foot_y - y0) / (hh * 0.8)))
 	_small.paint(MeshKit.shade(MAST_WOOD, 1.15))
 	var hy := foot_y + 0.7
 	while hy < throat_y - 0.3:
+		_on_spar(sp.group if hy > sp.pivot.y else 0)
 		_small.hoop(Vector3(0, hy, zz), r1 + 0.06, 0.045, 4, 12)
 		hy += 0.85 if detail else 1.4
+	_on_spar(0)
 	# the mainsail, in plane coords: x aft from the mast, y up from the foot
 	var main := _add_sail(pivot, Vector2(0.15, throat_y - foot_y), Vector2(peak_a, peak_y - foot_y), Vector2(0.15, 0.1), Vector2(boom_len * 0.96, 0.1), 1.2, true)
 	main.position = Vector3(0, foot_y, 0)
 	main.rotation.y = PI * 0.5
-	sails.append({"node": main, "tier": 0, "fore_aft": true, "pivot": pivot})
+	sails.append({"node": main, "tier": 0, "fore_aft": true, "pivot": pivot, "spar": sp})
 	# a small square topsail above
 	var ty := y0 + hh * 0.92
 	var half := c.beam * 0.42
+	_on_spar(sp.group)
 	_core.paint(DARK_WOOD)
 	_core.spar(Vector3(-half, ty, zz), Vector3(half, ty, zz), 0.07, 0.05)
+	_on_spar(0)
 	var drop := ty - throat_y - 0.4
 	var topsail := _add_sail(self, Vector2(-half * 0.92, 0), Vector2(half * 0.92, 0), Vector2(-half * 1.05, -drop), Vector2(half * 1.05, -drop), 0.6, false)
 	topsail.position = Vector3(0, ty - 0.1, zz + 0.18)
-	sails.append({"node": topsail, "tier": 1, "fore_aft": false, "pivot": null})
+	sp.nodes.append(topsail)
+	sails.append({"node": topsail, "tier": 1, "fore_aft": false, "pivot": null, "spar": sp})
 
 
+## The bowsprit, as a Spar that snaps just inside the stem (the figure on
+## the knee below it stays): the spar, its jib-boom, cap, dolphin striker
+## and the stays and footropes rigged to them, and the jib.
 func _build_bowsprit() -> void:
 	var s := shape
 	var c := cls
@@ -936,8 +1057,20 @@ func _build_bowsprit() -> void:
 	var tip := bow_top + Vector3(0, sin(ang), cos(ang)) * c.bowsprit
 	var bs_dir := (tip - bow_top).normalized()
 	var bs_heel := bow_top + Vector3(0, -0.1, -1.6)
+	var sp := Spar.new()
+	sp.group = c.masts.size() + 1
+	sp.bowsprit = true
+	var zc := s.z(1.0) - 0.35
+	sp.pivot = Vector3(0, s.top(bow_t) - 0.25, zc)
+	sp.long = Vector3(0, sin(ang), cos(ang))
+	sp.length = c.bowsprit * 1.3
+	sp.radius = lerpf(0.2, 0.11, clampf((zc - bs_heel.z) / (tip.z - bs_heel.z), 0.0, 1.0))
+	spars.append(sp)
+	var bit := 1 << (sp.group - 1)
+	var fore_bit := 1 << (c.masts.size() - 1)
 	_core.paint(MAST_WOOD)
-	_core.spar(bs_heel, tip, 0.2, 0.11)
+	_snapped_spar(_core, bs_heel, tip, 0.2, 0.11, 8, sp)
+	_on_spar(sp.group)
 	# the jib-boom run out beyond the bowsprit cap, with a gilded knob
 	var jb_end := tip + bs_dir * c.bowsprit * 0.4
 	var jb_tip := jb_end + Vector3(0, 0.12, 0)
@@ -952,15 +1085,20 @@ func _build_bowsprit() -> void:
 	var along := MeshKit.aim_z(heel_dir)
 	_small.paint(IRON_PAINT, MeshKit.IRON, 0.03)
 	for f: float in [0.45, 0.75]:
-		_small.torus(Transform3D(along, bs_heel.lerp(tip, f)), lerpf(0.2, 0.11, f) + 0.012, 0.035, 4, 12)
+		var at := bs_heel.lerp(tip, f)
+		_on_spar(sp.group if at.z > zc else 0)
+		_small.torus(Transform3D(along, at), lerpf(0.2, 0.11, f) + 0.012, 0.035, 4, 12)
 	var fore_top := _mast_tops[_mast_tops.size() - 1]
+	_ropes.owner = bit | fore_bit
 	_ropes.rope(jb_tip, fore_top, 0.03, RopeKit.TAR, 0.12)
 	_ropes.rope(fore_top, tip, 0.038, RopeKit.TAR, 0.1)
+	_ropes.owner = bit
 	# the bobstay, down to the knee's cutwater under the figure
 	_ropes.rope(tip, head.foot, 0.05)
 	# dolphin striker under the cap spreading the martingale, footropes under the jib-boom
 	var striker_top := tip + Vector3(0, -0.12, -0.05)
 	var striker_end := striker_top + Vector3(0, -1.0 - c.bowsprit * 0.08, 0.2)
+	_on_spar(sp.group)
 	_core.paint(DARK_WOOD)
 	_core.spar(striker_top, striker_end, 0.065, 0.045, 5)
 	_core.paint(IRON_PAINT, MeshKit.IRON, 0.03)
@@ -976,10 +1114,14 @@ func _build_bowsprit() -> void:
 			if kk > 0:
 				_ropes.rope(prev, p, 0.02, RopeKit.HEMP)
 			prev = p
+	_ropes.owner = 0
 	# the gammoning lashed round the heel
 	_small.paint(Color("#9a7a50"))
 	for f: float in [0.1, 0.15, 0.2]:
-		_small.torus(Transform3D(along, bs_heel.lerp(tip, f)), lerpf(0.2, 0.11, f) + 0.035, 0.03, 4, 10)
+		var at := bs_heel.lerp(tip, f)
+		_on_spar(sp.group if at.z > zc else 0)
+		_small.torus(Transform3D(along, at), lerpf(0.2, 0.11, f) + 0.035, 0.03, 4, 10)
+	_on_spar(0)
 	if not c.jib:
 		return
 	var fore: Dictionary = c.masts[c.masts.size() - 1]
@@ -988,6 +1130,7 @@ func _build_bowsprit() -> void:
 	pivot.position = Vector3(0, 0, tip.z)
 	add_child(pivot)
 	fore_aft_pivots.append(pivot)
+	sp.nodes.append(pivot)
 	var fz := s.z(fore.t)
 	var jib_head := Vector3(0, s.deck_y(fore.t) + float(fore.height) * 0.82, fz + 0.3)
 	var tack := tip + Vector3(0, 0.15, -0.4)
@@ -996,7 +1139,8 @@ func _build_bowsprit() -> void:
 	var sail := _add_sail(pivot, Vector2(tip.z - jib_head.z - 0.2, jib_head.y - tack.y), Vector2(tip.z - jib_head.z, jib_head.y - tack.y), Vector2(0.4, 0.15), Vector2(tip.z - clew.z, clew.y - tack.y), 0.8, false)
 	sail.position = Vector3(0, tack.y, 0)
 	sail.rotation.y = PI * 0.5
-	sails.append({"node": sail, "tier": 0, "fore_aft": true, "pivot": pivot})
+	# it goes with the bowsprit, and is cut away if the foremast its head is bent to falls
+	sails.append({"node": sail, "tier": 0, "fore_aft": true, "pivot": pivot, "spar": sp, "head": spars[c.masts.size() - 1]})
 
 
 ## One sail: a grid in its own plane (tl, tr along the head, bl, br along the
@@ -1041,7 +1185,7 @@ func _add_sail(parent: Node3D, tl: Vector2, tr: Vector2, bl: Vector2, br: Vector
 	# the belly moves it off its plane: room for that in the bounds
 	var box := mesh.get_aabb()
 	mesh.custom_aabb = box.grow(billow * 1.4 + 0.3)
-	var mi := _mesh_child(parent, mesh, _material("sail"), true)
+	var mi := _mesh_child(parent, mesh, shared_material("sail"), true)
 	mi.name = "Sail"
 	mi.set_instance_shader_parameter("sail_phase", _phase + sails.size() * 1.7)
 	return mi
@@ -1077,7 +1221,7 @@ func _add_flag(pivot: Node3D, w: float) -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	mesh.custom_aabb = mesh.get_aabb().grow(0.4)
-	_flags.append(_mesh_child(pivot, mesh, _material("flag"), true))
+	flags.append(_mesh_child(pivot, mesh, shared_material("flag"), true))
 
 
 # ------------------------------------------------------------------ bow
@@ -1278,7 +1422,8 @@ func _build_details() -> void:
 			b = Basis(Vector3.UP, PI * 0.5) * b
 		_small.paint(coil_col)
 		_small.torus(Transform3D(b, Vector3(x, y - 0.24, zz)), 0.15, 0.035, 4, 10)
-	for m: Dictionary in c.masts:
+	for mi in c.masts.size():
+		var m: Dictionary = c.masts[mi]
 		var t: float = float(m.t) + 0.55 / c.length
 		var dy := s.deck_y(t)
 		var ry := dy + 0.6
@@ -1323,9 +1468,12 @@ func _build_details() -> void:
 		# halyards and lifts led down from aloft and belayed round the pins
 		var mr := 0.12 + float(m.height) * 0.0085
 		var up_y := fy + float(m.height) * 0.6 - 0.36 if m.get("top", false) else fy + float(m.height) * 0.5
+		# (they go slack with the mast)
+		_ropes.owner = 1 << mi
 		for px: float in [-0.3, -0.1, 0.1, 0.3]:
 			var sx := signf(px)
 			_ropes.rope(Vector3(px, fy + 0.95, fz), Vector3(sx * (mr + 0.12 + absf(px) * 0.15), up_y, s.z(m.t) - 0.05), 0.017, RopeKit.HEMP)
+		_ropes.owner = 0
 		if detail and _fife_side(m.t) > 0.0 and m.rig == "square":
 			# the clewlines abaft the mast belay to a pair of bitts there
 			var cz := s.z(m.t) - 0.72
@@ -1597,19 +1745,25 @@ func _mesh_child(parent: Node3D, mesh: Mesh, mat: Material, shadow: bool) -> Mes
 
 
 func _finish() -> void:
-	_mesh_child(self, _hull_mesh, _material("hull"), true).name = "Hull"
-	_mesh_child(self, _stern_mesh, _material("stern"), true).name = "Transom"
-	_mesh_child(self, _deck_mesh, _material("deck"), false).name = "Deck"
-	_mesh_child(self, _core.commit_lod(), _material("parts"), true).name = "Parts"
+	_mesh_child(self, _hull_mesh, shared_material("hull"), true).name = "Hull"
+	_mesh_child(self, _stern_mesh, shared_material("stern"), true).name = "Transom"
+	_mesh_child(self, _deck_mesh, shared_material("deck"), false).name = "Deck"
+	_mesh_child(self, _core.commit_lod(), shared_material("parts"), true).name = "Parts"
 	if not _small.is_empty():
-		_mesh_child(self, _small.commit_lod(), _material("parts"), false).name = "Small"
+		_mesh_child(self, _small.commit_lod(), shared_material("parts"), false).name = "Small"
 	if not _fine.is_empty():
-		var fine := _mesh_child(self, _fine.commit_lod(), _material("parts"), false)
+		var fine := _mesh_child(self, _fine.commit_lod(), shared_material("parts"), false)
 		fine.name = "Fine"
 		fine.visibility_range_end = FINE_RANGE
 		fine.visibility_range_end_margin = 8.0
 	if not _ropes.is_empty():
-		_mesh_child(self, _ropes.commit(), _material("rope"), false).name = "Rigging"
+		_mesh_child(self, _ropes.commit(), shared_material("rope"), false).name = "Rigging"
+	# everything above each break, as the one mesh that goes over the side
+	for sp in spars:
+		var kit := MeshKit.new()
+		for k: MeshKit in [_core, _small, _fine]:
+			k.copy_spar(sp.group, kit)
+		sp.piece = kit.commit_lod()
 	_core = null
 	_small = null
 	_fine = null
@@ -1640,8 +1794,12 @@ func update_rig(sail_level: float, brace: float, lee_side: float, wind_rel: floa
 	for sd in sails:
 		var node: MeshInstance3D = sd.node
 		var tier: int = sd.tier
+		var sp: Spar = sd.spar
+		# canvas that came down with its spar is left as it fell
+		if sp.broken:
+			continue
 		node.scale.y = clampf(sail_level * 1.15 - tier * 0.12, 0.08, 1.0)
-		node.visible = sail_level > 0.02 or tier == 0
+		node.visible = (sail_level > 0.02 or tier == 0) and not (sd.has("head") and (sd.head as Spar).broken)
 		node.set_instance_shader_parameter("sail_depth", deep if sd.fore_aft else 1.0)
 		if absf(lift - _last_fill) > 0.002:
 			node.set_instance_shader_parameter("sail_fill", lift)
@@ -1654,5 +1812,5 @@ func update_rig(sail_level: float, brace: float, lee_side: float, wind_rel: floa
 	ensign_pivot.rotation.y = wind_rel
 	if absf(wind - _last_wind) > 0.01:
 		_last_wind = wind
-		for f in _flags:
+		for f in flags:
 			f.set_instance_shader_parameter("flag_wind", wind)

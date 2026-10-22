@@ -40,6 +40,8 @@ class _Ball:
 	var t := 0.0
 	var owner: Ship
 	var damage := 0.0
+	## The ship whose canvas it last tore through (once a ship, as it flies on).
+	var tore: Ship
 
 
 func _ready() -> void:
@@ -188,7 +190,7 @@ func _fly(b: _Ball, t0: float, t1: float) -> float:
 	for k in n:
 		var t := lerpf(t0, t1, float(k + 1) / n)
 		var p := at(b, t)
-		if _strike_ship(b, p):
+		if _strike_ship(b, p, t):
 			return t
 		var ground := world.ground_height(p.x, p.z)
 		if ground > 0.0 and p.y < ground:
@@ -206,9 +208,10 @@ func _fly(b: _Ball, t0: float, t1: float) -> float:
 	return -1.0
 
 
-## Tests the ball against every hull near it, in each hull's own frame: an
-## oriented box shaped by her lines. Returns true if it struck one.
-func _strike_ship(b: _Ball, p: Vector3) -> bool:
+## Tests the ball (at p, t seconds into its flight) against every hull near
+## it, in each hull's own frame: an oriented box shaped by her lines, and her
+## rig above it. Returns true if it struck one.
+func _strike_ship(b: _Ball, p: Vector3, t: float) -> bool:
 	for s: Ship in world.ships:
 		# a settled wreck sits too low and twisted to stop a ball; your gunners shoot past your own escorts
 		if s == b.owner or s.removed or (not s.alive and s.sink_t > 2.0):
@@ -222,12 +225,25 @@ func _strike_ship(b: _Ball, p: Vector3) -> bool:
 			continue
 		var local := s.transform.affine_inverse() * p
 		var shape := s.model.shape
-		var t := local.z / s.cls.length + 0.5
-		if t < 0.0 or t > 1.02:
+		var u := local.z / s.cls.length + 0.5
+		if u < 0.0 or u > 1.02:
 			continue
-		var tc := clampf(t, 0.0, 1.0)
-		# high shots fly on through the rigging
-		if local.y > shape.top(tc) + 0.6 or local.y < shape.bottom(tc) - 0.2:
+		var tc := clampf(u, 0.0, 1.0)
+		if local.y > shape.top(tc) + 0.6:
+			if not s.alive:
+				continue
+			# high shots fly on through the rigging: they tear canvas, or smash into a mast
+			var rig := s.dmg.rig_test(local)
+			if rig.x == 2:
+				var dealt := s.damage(b.damage * 0.4, b.owner, p, false)
+				s.dmg.on_rig_hit(2, rig.y, p, b.v0 + Vector3(0.0, -GRAVITY * t, 0.0))
+				world.hit.emit(s, b.owner, dealt, p)
+				return true
+			if rig.x == 1 and b.tore != s:
+				b.tore = s
+				s.dmg.on_rig_hit(1, rig.y, p, b.v0 + Vector3(0.0, -GRAVITY * t, 0.0))
+			continue
+		if local.y < shape.bottom(tc) - 0.2:
 			continue
 		if absf(local.x) > shape.half_width_at_y(tc, maxf(local.y, 0.0)) + 0.15:
 			continue
