@@ -398,7 +398,8 @@ void fragment() {
 	float path = depth / max(V.y, 0.05) * max(dot(-V, cam_fwd), 0.05);
 	vec3 absorb = vec3(0.42, 0.098, 0.066);
 	vec3 T = exp(-absorb * path);
-	vec3 scatter_deep = mix(vec3(0.004, 0.058, 0.16), vec3(0.007, 0.086, 0.19), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
+	// open water drifts between a deep teal-sapphire and a brighter peacock blue
+	vec3 scatter_deep = mix(vec3(0.003, 0.074, 0.15), vec3(0.006, 0.104, 0.18), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
 	vec3 scatter_shallow = vec3(0.035, 0.34, 0.37);
 	// a storm churns the sea into deep bottle-green slate; rain dulls it grey-teal
 	scatter_deep = mix(scatter_deep, vec3(0.006, 0.036, 0.042), storm * 0.8);
@@ -508,7 +509,7 @@ void fragment() {
 	// ---- compose. What a shadow can't touch is emitted; what it can is left
 	// for light(): the sunlit share of the body, the sunlit foam, the glitter
 	float keep = (1.0 - fa) * (1.0 - F);
-	EMISSION = (body_bed + body_sun * sun_in * 0.55) * keep + refl * F * (1.0 - fa) + foam_base * sky_zenith * 0.55 * fa;
+	EMISSION = (body_bed + body_sun * sun_in * 0.55) * keep + refl * F * (1.0 - fa) + foam_base * sky_zenith * 0.8 * fa;
 	v_body_lit = body_sun * sun_in * 0.45 * keep;
 	v_bed_lit = body_bed_sun * keep;
 	v_foam_lit = foam_base * 0.42 * fa;

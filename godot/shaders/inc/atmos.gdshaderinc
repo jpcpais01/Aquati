@@ -4,7 +4,7 @@
 // and a far island all agree. The CPU side is src/world/atmosphere.gd.
 //
 // Light levels follow three.js' physical lights, which the look was tuned
-// under: sun_color is the key light's irradiance (a clear noon is about 3.45),
+// under: sun_color is the key light's irradiance (a clear noon is about 3.8),
 // so a lit white surface reads sun_color / PI.
 
 global uniform vec3 sun_dir;

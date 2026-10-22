@@ -25,6 +25,9 @@ builds that follow.
   the edge of the known sea, the swell turns you back.
 - **Islands to discover.** Sail close to an island to put it on your
   chart.
+- **Richer light.** Deep blue tropical skies, a sea and lagoons that keep
+  their colour instead of going milky, warm sunlight against cool shade, and
+  clear air, so far islands keep their colour, just as on the web.
 - **Made for phones.** Plants switch to simpler shapes as they get farther
   away, just as on the web, and the sun's shadows only cover the ground you
   can see, so your phone draws no more than the view needs.

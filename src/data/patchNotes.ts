@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-22T02:00Z',
     entries: [
       {
+        title: 'Android: the richer light',
+        notes: [
+          'The Android build now has the same richer light as here: deep blue skies, a sea and lagoons that keep their colour instead of going milky, warm sunlight against cool blue shade, a little more contrast and colour on clear days, and clear air, so far islands keep their colour.',
+        ],
+      },
+      {
         title: 'Android: the islands are here',
         notes: [
           'The second Android build is out, with both archipelagos just as they are here, island for island and palm for palm: the home isles with the volcano, the jungle isles, sandstone bluffs and atolls, and Las Brumas across the high seas with its limestone towers, jade turf and pink coral sand. Get it from Download for Android on the home page, or the newest release on the game\'s GitHub page.',

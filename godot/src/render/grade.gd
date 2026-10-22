@@ -19,6 +19,8 @@ var _busy := false
 var _lo := Vector3.ZERO
 var _hi := Vector3.ZERO
 var _sat := 0.0
+var _contrast := 0.0
+var _vibrance := 0.0
 
 
 func _init(env: Environment) -> void:
@@ -41,14 +43,16 @@ func _ready() -> void:
 
 
 ## Repaints the table if the grade has moved far enough to see.
-func follow(lo: Vector3, hi: Vector3, sat: float) -> void:
+func follow(lo: Vector3, hi: Vector3, sat: float, contrast: float, vibrance: float) -> void:
 	if _busy or DisplayServer.get_name() == "headless":
 		return
-	if (lo - _lo).length() + (hi - _hi).length() + absf(sat - _sat) < 0.004:
+	if (lo - _lo).length() + (hi - _hi).length() + absf(sat - _sat) + absf(contrast - _contrast) + absf(vibrance - _vibrance) < 0.004:
 		return
 	_lo = lo
 	_hi = hi
 	_sat = sat
+	_contrast = contrast
+	_vibrance = vibrance
 	_bake()
 
 
@@ -57,6 +61,8 @@ func _bake() -> void:
 	_mat.set_shader_parameter("split_lo", _lo)
 	_mat.set_shader_parameter("split_hi", _hi)
 	_mat.set_shader_parameter("sat", _sat)
+	_mat.set_shader_parameter("contrast", _contrast)
+	_mat.set_shader_parameter("vibrance", _vibrance)
 	_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	await RenderingServer.frame_post_draw
 	var img := _vp.get_texture().get_image()
