@@ -184,6 +184,8 @@ export class Pipeline {
       uniform vec4 uEye; uniform vec3 uSunRay; uniform vec3 uShaftColor; uniform sampler2D uCausticTex;
       // grade by the hour: split-tone tints for the shade and the light, and saturation
       uniform vec3 uSplitLo; uniform vec3 uSplitHi; uniform float uSat;
+      // x contrast (display S-curve), y vibrance
+      uniform vec2 uGrade;
       varying vec2 vUv;
       #if SS
       ${GLSL_SS_APPLY}
@@ -193,9 +195,25 @@ export class Pipeline {
       #endif
 
       vec3 aces(vec3 x) {
-        // Narkowicz fit, slightly toe-lifted for a soft, bright palette
+        // Narkowicz fit
         const float a = 2.51, b = 0.03, c = 2.43, d = 0.59, e = 0.14;
         return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+      }
+      // The tone curve. Run on each channel alone, ACES squeezes a bright
+      // colour's channels together: a blue sky or a turquoise lagoon comes out
+      // pale and milky. So the midtones mostly take the curve on their
+      // brightness and keep their hue and colour; toward the highlights it
+      // hands back to the per-channel curve, so the sun, the foam and the
+      // glints still burn out to white the way film does.
+      vec3 tonemap(vec3 x) {
+        vec3 pc = aces(x);
+        float L = dot(x, vec3(0.2126, 0.7152, 0.0722));
+        float Lt = aces(vec3(L)).r;
+        vec3 hp = x * (Lt / max(L, 1e-5));
+        // a channel pushed past white spills into the others instead of clipping to a hue
+        float over = max(max(hp.r, max(hp.g, hp.b)) - 1.0, 0.0);
+        hp = min(hp + over * 0.6, vec3(1.0));
+        return mix(pc, hp, 0.62 * (1.0 - smoothstep(0.7, 3.5, L)));
       }
       vec3 toSRGB(vec3 c) {
         return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
@@ -385,13 +403,14 @@ export class Pipeline {
         col = mix(col, col * uSplitLo, (1.0 - smoothstep(0.0, 0.6, lum)) * 0.35);
         col = mix(col, col * uSplitHi, smoothstep(0.5, 2.0, lum) * 0.3);
 
-        col = aces(col);
-        // a gentle S-curve: deeper shade and cleaner highlights, so a hazy
-        // distance still has punch instead of going milky
-        col = mix(col, col * col * (3.0 - 2.0 * col), 0.14);
-        // saturation lift for that sun-drenched toy palette
+        col = tonemap(col);
+        // saturation lift for that sun-drenched toy palette, and vibrance on
+        // top: the duller a colour, the more it is lifted, so the sand and the
+        // sails stay clean while the sea, the sky and the palms come alive
         float l2 = dot(col, vec3(0.2126, 0.7152, 0.0722));
         col = mix(vec3(l2), col, uSat - uDesat);
+        float chroma = max(col.r, max(col.g, col.b)) - min(col.r, min(col.g, col.b));
+        col = max(mix(vec3(l2), col, 1.0 + uGrade.y * (1.0 - smoothstep(0.0, 0.6, chroma)) * (1.0 - uDesat)), 0.0);
 
         // photo mode filter: white balance, saturation, contrast, a toned
         // monochrome and lifted, faded blacks
@@ -408,6 +427,10 @@ export class Pipeline {
         col *= 1.0 - dot(vc, vc) * (uVignette + uDesat * 1.1 + uDepth * 0.9 + uPVig);
 
         col = toSRGB(clamp(col, 0.0, 1.0));
+        // contrast, as the eye sees it: an S-curve on the display values about
+        // their middle grey deepens the shade and lifts the light, so the
+        // picture has depth instead of sitting in a soft, even haze
+        col = mix(col, col * col * (3.0 - 2.0 * col), uGrade.x);
         col += (hash(vUv * 1000.0 + uTime) - 0.5) / 255.0; // dither
         if (uPGrade.w > 0.0) col += (hash(gl_FragCoord.xy * 0.913 + 17.0) + hash(gl_FragCoord.yx * 0.71 + 3.0) - 1.0) * uPGrade.w;
         gl_FragColor = vec4(col, 1.0);
@@ -449,6 +472,7 @@ export class Pipeline {
         uSplitLo: { value: new THREE.Vector3(0.94, 1.02, 1.06) },
         uSplitHi: { value: new THREE.Vector3(1.05, 1.0, 0.94) },
         uSat: { value: 1.12 },
+        uGrade: { value: new THREE.Vector2(0.22, 0.25) },
         uShaft: { value: null },
         uShaftAir: { value: new THREE.Vector4(0, 0, 0, 0.12) },
         uShaftSea: { value: new THREE.Vector3() },
@@ -724,10 +748,11 @@ export class Pipeline {
   /**
    * The hour's look, from the atmosphere: the sun shafts' lit haze colour (rgb,
    * 0 = none) and the glow lit haze adds on its own (w), the beams' colour
-   * in the shallows, the haze's density and how dark its shaded columns read, the grade and the vignette. Uniforms only.
+   * in the shallows, the haze's density and how dark its shaded columns read, the grade (and its contrast and vibrance) and the vignette. Uniforms only.
    */
-  setLook(air: THREE.Vector4, sea: THREE.Vector3, haze: THREE.Vector2, lo: THREE.Vector3, hi: THREE.Vector3, sat: number, vignette = 0.55) {
+  setLook(air: THREE.Vector4, sea: THREE.Vector3, haze: THREE.Vector2, lo: THREE.Vector3, hi: THREE.Vector3, sat: number, vignette = 0.55, grade?: THREE.Vector2) {
     const u = this.finalMat.uniforms;
+    if (grade) u.uGrade.value.copy(grade);
     u.uVignette.value = vignette;
     u.uShaftAir.value.copy(air);
     u.uShaftSea.value.copy(sea);

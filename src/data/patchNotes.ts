@@ -13,6 +13,21 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-22T00:00Z',
+    entries: [
+      {
+        title: 'Richer light, deeper skies, clearer air',
+        notes: [
+          'The game had a soft, milky look: pale skies, a white haze over the sea and flat light. The step that turns the game\'s light into screen colours squeezed bright colours together, so a blue sky came out almost white and the sea mirrored that white back.',
+          'Skies are now a deep tropical blue overhead, paling to a clear light blue at the horizon. Colours keep their richness from the shade into the light, so the sea, the lagoons, the palms and the sails all look richer, while the sun, the foam and the glints still burn bright white.',
+          'Sunlight is warmer and a little stronger, and the shade takes the cool blue of the sky, so islands, ships and clouds have real depth. Clear days get a little more contrast and colour; grey weather, mist and the night stay softer.',
+          'Clear air is clear: far islands keep their colour instead of fading into haze. Seen from above, the midday sun no longer lays a milky veil over the sea, and the long golden sunbeams still come at either end of the day.',
+          'Golden hour now has a blue sky over a warm horizon instead of a lavender wash, the low sun is a little brighter, morning mist glows a soft pearl, and the open sea is a touch more peacock blue.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-21T23:00Z',
     entries: [
       {

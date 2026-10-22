@@ -1102,8 +1102,8 @@ export class Ocean {
           float path = thickR;
           vec3 absorb = vec3(0.42, 0.098, 0.066);
           vec3 T = exp(-absorb * path);
-          // open water drifts between deep sapphire and a slightly brighter cobalt
-          vec3 scatterDeep = mix(vec3(0.004, 0.058, 0.16), vec3(0.007, 0.086, 0.19), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
+          // open water drifts between a deep teal-sapphire and a brighter peacock blue
+          vec3 scatterDeep = mix(vec3(0.003, 0.074, 0.15), vec3(0.006, 0.104, 0.18), smoothstep(0.3, 0.7, mac.r * 0.7 + mac2.g * 0.4));
           vec3 scatterShallow = vec3(0.035, 0.34, 0.37);
           // a storm churns the sea into a deep bottle-green slate
           scatterDeep = mix(scatterDeep, vec3(0.006, 0.036, 0.042), uStorm * 0.8);
@@ -1355,7 +1355,7 @@ export class Ocean {
           }
           foam += foamCut(fv, clamp(krSpiral, 0.0, 0.95), fp) * 0.9;
           foam = clamp(foam, 0.0, 1.0);
-          vec3 foamCol = vec3(0.96, 0.98, 1.0) * (uSunColor * (0.25 + 0.75 * ndl) * cloud * 0.42 + uSkyZenith * 0.55);
+          vec3 foamCol = vec3(0.96, 0.98, 1.0) * (uSunColor * (0.25 + 0.75 * ndl) * cloud * 0.42 + uSkyZenith * 0.8);
           col = mix(col, foamCol, foam * 0.9);
 
           // ---- bioluminescence: on dark nights churned water glows blue-green

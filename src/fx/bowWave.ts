@@ -146,7 +146,7 @@ export class BowWave {
           vec3 N = normalize(cross(dFdx(vW), dFdy(vW)));
           if (N.y < 0.0) N = -N;
           float ndl = max(dot(N, uSunDir), 0.0);
-          vec3 light = uSunColor * (0.25 + 0.75 * ndl) * 0.42 + uSkyZenith * 0.55;
+          vec3 light = uSunColor * (0.25 + 0.75 * ndl) * 0.42 + uSkyZenith * 0.8;
           vec3 foamCol = vec3(0.96, 0.98, 1.0) * light;
           vec3 faceCol = vec3(0.06, 0.34, 0.36) * light * 0.9 + uSunColor * pow(ndl, 24.0) * 0.12;
           float face = 0.42 * (1.0 - v * 0.6) * vEnv;

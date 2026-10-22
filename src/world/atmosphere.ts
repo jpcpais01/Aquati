@@ -102,23 +102,28 @@ const smooth = (e0: number, e1: number, x: number) => {
 };
 const lum = (c: THREE.Vector3) => c.x * 0.2126 + c.y * 0.7152 + c.z * 0.0722;
 
-// palette keyframes, keyed on the sun's height (dir.y)
+// palette keyframes, keyed on the sun's height (dir.y). The colours are the
+// air's own, before the tone curve: it squeezes bright channels together, so a
+// sky that should read as a clear tropical blue has to go in far bluer than it
+// comes out (a pale horizon went in nearly white and came out milk).
+// `L` is how bright the open sky is, which a closing grey deck keeps to.
 interface Key {
   s: number;
   zen: [number, number, number];
   hor: [number, number, number];
   fog: [number, number, number];
+  L: number;
 }
 const PALETTE: Key[] = [
-  { s: -0.4, zen: [0.006, 0.011, 0.03], hor: [0.017, 0.028, 0.056], fog: [0.015, 0.025, 0.048] },
-  { s: -0.16, zen: [0.008, 0.018, 0.05], hor: [0.04, 0.05, 0.1], fog: [0.034, 0.045, 0.085] },
-  { s: -0.05, zen: [0.06, 0.05, 0.15], hor: [0.34, 0.2, 0.2], fog: [0.2, 0.15, 0.17] },
-  { s: 0.03, zen: [0.2, 0.15, 0.32], hor: [0.95, 0.52, 0.3], fog: [0.72, 0.48, 0.38] },
-  { s: 0.16, zen: [0.15, 0.26, 0.56], hor: [0.78, 0.72, 0.66], fog: [0.64, 0.64, 0.68] },
-  { s: 0.42, zen: [0.11, 0.33, 0.78], hor: [0.63, 0.8, 0.94], fog: [0.55, 0.73, 0.86] },
+  { s: -0.4, zen: [0.004, 0.009, 0.032], hor: [0.013, 0.026, 0.062], fog: [0.011, 0.024, 0.054], L: 0.027 },
+  { s: -0.16, zen: [0.006, 0.016, 0.062], hor: [0.03, 0.048, 0.125], fog: [0.025, 0.043, 0.105], L: 0.05 },
+  { s: -0.05, zen: [0.05, 0.045, 0.17], hor: [0.4, 0.17, 0.17], fog: [0.23, 0.13, 0.17], L: 0.23 },
+  { s: 0.03, zen: [0.035, 0.1, 0.4], hor: [1.1, 0.5, 0.2], fog: [0.82, 0.47, 0.3], L: 0.59 },
+  { s: 0.16, zen: [0.045, 0.17, 0.62], hor: [0.78, 0.6, 0.44], fog: [0.58, 0.55, 0.56], L: 0.72 },
+  { s: 0.42, zen: [0.022, 0.13, 0.66], hor: [0.24, 0.5, 0.98], fog: [0.23, 0.46, 0.86], L: 0.77 },
 ];
 
-function samplePalette(s: number, zen: THREE.Vector3, hor: THREE.Vector3, fog: THREE.Vector3) {
+function samplePalette(s: number, zen: THREE.Vector3, hor: THREE.Vector3, fog: THREE.Vector3): number {
   const P = PALETTE;
   let i = 0;
   while (i < P.length - 2 && s > P[i + 1].s) i++;
@@ -128,10 +133,11 @@ function samplePalette(s: number, zen: THREE.Vector3, hor: THREE.Vector3, fog: T
   zen.set(a.zen[0] + (b.zen[0] - a.zen[0]) * t, a.zen[1] + (b.zen[1] - a.zen[1]) * t, a.zen[2] + (b.zen[2] - a.zen[2]) * t);
   hor.set(a.hor[0] + (b.hor[0] - a.hor[0]) * t, a.hor[1] + (b.hor[1] - a.hor[1]) * t, a.hor[2] + (b.hor[2] - a.hor[2]) * t);
   fog.set(a.fog[0] + (b.fog[0] - a.fog[0]) * t, a.fog[1] + (b.fog[1] - a.fog[1]) * t, a.fog[2] + (b.fog[2] - a.fog[2]) * t);
+  return a.L + (b.L - a.L) * t;
 }
 
 /** Clear-noon sun intensity. */
-const SUN_I = 3.45;
+const SUN_I = 3.8;
 
 const PEAK = (40 * Math.PI) / 180; // sun's highest elevation
 const YAW = 0.5; // swings noon toward the north-west, the way the islands were lit before
@@ -289,7 +295,9 @@ export class Atmosphere {
   /** The grade by the hour: split-tone tints for shade and light, and saturation. */
   readonly gradeLo = new THREE.Vector3(0.94, 1.02, 1.06);
   readonly gradeHi = new THREE.Vector3(1.05, 1.0, 0.94);
-  gradeSat = 1.12;
+  gradeSat = 1.05;
+  /** The grade's contrast (an S-curve on the display values) and vibrance. */
+  readonly grade = new THREE.Vector2(0.24, 0.3);
   /** How hard the frame's corners fall away: a storm closes in round the ship. */
   vignette = 0.55;
   /**
@@ -316,7 +324,7 @@ export class Atmosphere {
     const z = new THREE.Vector3();
     const h = new THREE.Vector3();
     samplePalette(0.85, z, h, this.tmp);
-    this.dayRef = lum(h) * 0.55 + lum(z) * 0.45 + SUN_I * 0.85 * 0.22 * 0.93;
+    this.dayRef = lum(h.multiplyScalar(0.55).addScaledVector(z, 0.45)) + SUN_I * 0.85 * 0.22 * 0.93;
 
     const q = new URLSearchParams(location.search);
     const hr = parseFloat(q.get('hour') ?? '');
@@ -589,8 +597,8 @@ export class Atmosphere {
       const g = smooth(0.0, 0.16, sy);
       const w = smooth(0.12, 0.45, sy);
       const r = 1.0;
-      const gg = 0.42 + g * 0.3 + w * 0.18;
-      const b = 0.16 + g * 0.29 + w * 0.31;
+      const gg = 0.42 + g * 0.3 + w * 0.17;
+      const b = 0.15 + g * 0.27 + w * 0.29;
       const I = SUN_I * sunVis * clouded * (1 + 0.14 * this.heat);
       this.keyColor.set(r * I, gg * I, b * I);
     } else {
@@ -606,12 +614,12 @@ export class Atmosphere {
     }
 
     // ---------------------------------------------------------- sky & fog
-    samplePalette(sy, this.zenith, this.horizon, this.fogColor);
+    const skyL = samplePalette(sy, this.zenith, this.horizon, this.fogColor);
     // the open sky between the clouds stays blue: the dome draws the clouds
     // themselves, so only a closing deck greys the whole sky over
     const c = smooth(0.45, 1.0, this.cover) * 0.94;
     if (c > 0.001) {
-      const L = lum(this.horizon);
+      const L = skyL;
       const dim = 1 - 0.6 * this.storm;
       // an overcast sky is a flat grey that keeps a little of the hour's tint;
       // a storm's is a colder, deeper slate blue
@@ -641,7 +649,7 @@ export class Atmosphere {
     // a scorching noon bleaches the horizon to a white-hot glare under a deep blue crown
     if (this.heat > 0.001) {
       const k = this.heat * sunVis;
-      const L = lum(this.horizon) * 1.22;
+      const L = skyL * 1.22;
       this.horizon.lerp(this.tmp.set(L * 1.02, L * 0.97, L * 0.86), k * 0.6);
       this.fogColor.lerp(this.tmp.set(L * 0.97, L * 0.94, L * 0.86), k * 0.55);
       this.zenith.multiply(this.tmp.set(1 - 0.12 * k, 1 - 0.02 * k, 1 + 0.06 * k));
@@ -649,18 +657,24 @@ export class Atmosphere {
     // ash: the sky goes rust and smoulder, and after dark the pall glows a dull red from below
     if (this.ash > 0.001) {
       const a = this.ash * 0.8;
-      const Lh = lum(this.horizon);
-      const Lz = lum(this.zenith);
+      const Lh = skyL;
+      const Lz = skyL * 0.41;
       const glow = this.night * 0.06;
       this.horizon.lerp(this.tmp.set(Lh * 1.5 + glow, Lh * 0.7 + glow * 0.28, Lh * 0.42 + glow * 0.1), a);
       this.fogColor.lerp(this.tmp.set(Lh * 1.3 + glow * 0.8, Lh * 0.68 + glow * 0.2, Lh * 0.48 + glow * 0.08), a);
       this.zenith.lerp(this.tmp.set(Lz * 1.05 + glow * 0.4, Lz * 0.6 + glow * 0.1, Lz * 0.52), a * 0.85);
     }
-    // mist glows with whatever light there is
-    if (this.fog > 0.01) this.fogColor.lerp(this.tmp.copy(this.horizon).multiplyScalar(1.02), this.fog * 0.5);
+    // mist glows with whatever light there is, a soft pearl of the hour's colour
+    if (this.fog > 0.01) {
+      const m = this.tmp.copy(this.horizon);
+      this.fogColor.lerp(m.lerp(_hi.setScalar(lum(m)), 0.45).multiplyScalar(1.05), this.fog * 0.5);
+    }
     // the far air thickens a little; the weather on the water itself is the veil below
     const fogAmt = Math.max(this.fog, this.ash * 0.3);
-    this.fogRange.set(380 * (1 - 0.55 * fogAmt), 1500 * (1 - 0.5 * fogAmt));
+    // (clear air is clear: the far islands keep their colour, the way they do in the tropics)
+    // (not by night: the haze is what keeps far harbour lamps from blooming into blots)
+    const clearAir = 1 + 0.38 * (1 - fogAmt) * (1 - this.rain) * (1 - smooth(0.5, 1, this.cover) * 0.6) * (1 - this.night);
+    this.fogRange.set(380 * clearAir * (1 - 0.55 * fogAmt), 1500 * clearAir * (1 - 0.5 * fogAmt));
     // Low weather on the sea. Sea mist lies in shallow banks with clear water
     // between them, drifting slowly; rain hangs in tall curtains that sweep by
     // on the wind; a storm's are darker, denser and quicker still.
@@ -680,12 +694,17 @@ export class Atmosphere {
 
     // ---------------------------------------------------------- exposure & ambient
     // a grey day is lifted a little; a storm is let fall darker and moodier
-    this.exposure = (1 + 1.3 * this.night) * (1 + 0.16 * this.cover) * (1 - 0.1 * this.storm * (1 - this.night)) * (1 + 0.05 * this.heat);
+    // and the low sun's hour, between the day's light and the night's lift, is opened up a little
+    this.exposure = (1 + 1.3 * this.night) * (1 + 0.3 * smooth(0.2, 0.0, sy) * (1 - this.night)) * (1 + 0.16 * this.cover) * (1 - 0.1 * this.storm * (1 - this.night)) * (1 + 0.05 * this.heat);
     const key = Math.max(this.keyDir.y, 0) * 0.22;
     const ref = this.dayRef;
-    const tintR = (this.horizon.x * 0.55 + this.zenith.x * 0.45 + this.keyColor.x * key) / ref;
-    const tintG = (this.horizon.y * 0.55 + this.zenith.y * 0.45 + this.keyColor.y * key) / ref;
-    const tintB = (this.horizon.z * 0.55 + this.zenith.z * 0.45 + this.keyColor.z * key) / ref;
+    // (the sky's own blue is far deeper than it reads: unlit things take it at
+    // a little under two thirds strength, or every puff of smoke turns blue)
+    const amb = this.tmp.copy(this.horizon).multiplyScalar(0.55).addScaledVector(this.zenith, 0.45);
+    amb.lerp(_lo.setScalar(lum(amb)), 0.4);
+    const tintR = (amb.x + this.keyColor.x * key) / ref;
+    const tintG = (amb.y + this.keyColor.y * key) / ref;
+    const tintB = (amb.z + this.keyColor.z * key) / ref;
 
     // ---------------------------------------------------------- uniforms
     const u = globalUniforms;
@@ -745,8 +764,10 @@ export class Atmosphere {
     // most, a closed grey deck none. Mist thickens the air they show in.
     const broken = 0.35 + 0.65 * smooth(0.05, 0.4, this.cover) * smooth(0.95, 0.62, this.cover);
     const open = (1 - this.storm * 0.85) * (1 - this.rain * 0.5);
-    const lowSun = 1 + 0.6 * smooth(0.45, 0.08, sy) * sunVis; // long golden shafts at either end of the day
-    const amt = broken * open * lowSun * (sy > -0.03 ? 0.6 : 0.5);
+    // long golden shafts at either end of the day; a high sun keeps the air
+    // clear (lit haze over the whole sea read as a milky veil from above)
+    const lowSun = 1 + 1.5 * smooth(0.45, 0.08, sy) * sunVis;
+    const amt = broken * open * lowSun * (sy > -0.03 ? 0.38 : 0.5);
     // the haze glows a little warmer than the light itself: it scatters the
     // sun's red end forward (cool and faint by moonlight)
     this.shaftAir.set(k.x * amt * 1.06, k.y * amt, k.z * amt * 0.9, 0.05);
@@ -755,15 +776,16 @@ export class Atmosphere {
     const sea = (1 - smooth(0.55, 0.95, this.cover)) * (1 - this.storm);
     this.shaftSea.set(k.x * 0.36, k.y * 0.84, k.z * 0.8).multiplyScalar(sea * (sy > -0.03 ? 1 : 0.6));
 
-    // the grade: crisp at noon, honeyed with violet shade at the golden hours,
+    // the grade: crisp at noon, honeyed with sea-blue shade at the golden hours,
     // cool and blue after dark, flat and grey under a storm
     const golden = smooth(-0.06, 0.04, sy) * smooth(0.36, 0.1, sy) * sunVis;
     const dusk = smooth(0.06, -0.12, sy) * (1 - this.night * 0.5);
     const grey = Math.max(this.storm * 0.85, smooth(0.45, 1, this.cover) * 0.55, this.rain * 0.5, this.fog * 0.3);
-    const lo = this.gradeLo.set(0.94, 1.02, 1.06);
-    const hi = this.gradeHi.set(1.05, 1.0, 0.94);
-    let sat = 1.12;
-    lo.lerp(_lo.set(0.93, 0.95, 1.1), golden);
+    // (a clear day: sky-blue shade under warm, sunny light)
+    const lo = this.gradeLo.set(0.9, 1.0, 1.1);
+    const hi = this.gradeHi.set(1.06, 1.0, 0.92);
+    let sat = 1.05;
+    lo.lerp(_lo.set(0.9, 0.97, 1.1), golden);
     hi.lerp(_hi.set(1.12, 1.0, 0.84), golden);
     sat += golden * 0.08;
     lo.lerp(_lo.set(0.9, 0.97, 1.12), Math.max(dusk, this.night));
@@ -788,6 +810,13 @@ export class Atmosphere {
     // a glassy calm: soft pastel light
     sat += this.calm * 0.04;
     this.gradeSat = sat;
+    // contrast and vibrance: a clear day has the most of both, the golden hours
+    // more still; a grey sky, a mist, a hot glare and the night soften them
+    const soft = this.fog * (1 - this.rain);
+    this.grade.set(
+      0.24 + 0.05 * golden - 0.1 * grey - 0.1 * soft - 0.07 * this.night - 0.06 * this.heat,
+      0.3 + 0.1 * golden - 0.16 * grey - 0.1 * soft - 0.12 * this.night - 0.1 * this.heat,
+    );
     this.vignette = 0.55 + this.storm * 0.4 + this.rain * 0.12 + this.fog * 0.1 + this.ash * 0.14;
   }
 }
