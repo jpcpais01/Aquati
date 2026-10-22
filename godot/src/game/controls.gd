@@ -3,10 +3,13 @@ extends Node
 ## Keyboard, mouse and touch, folded into one small helm state.
 ##
 ## Keys: A / D or the arrows put the helm over, W / S (or up / down) set more
-## or less canvas a notch at a time, C cycles the camera, the wheel zooms.
-## Touch: a drag anywhere on the left of the screen is the helm (point where
-## the bow should go: screen up is north, as the camera looks), the sail
-## lever on the right sets the canvas, two fingers pinch the zoom.
+## or less canvas a notch at a time, Q and E fire the port and starboard
+## broadsides and Space whichever suits, C cycles the camera, the wheel
+## zooms. A click on the sea fires the side you point into, at what you
+## point at. Touch: a drag anywhere on the left of the screen is the helm
+## (point where the bow should go: screen up is north, as the camera looks),
+## the sail lever bottom left sets the canvas, the guns sit bottom right, two
+## fingers pinch the zoom.
 
 signal touch_seen
 
@@ -22,6 +25,16 @@ var helm_at := Vector2.ZERO
 var sail_delta := 0
 var zoom := 0.0
 var view_next := false
+## Pulses: a broadside called (+1 port, -1 starboard), the one-button fire,
+## and a click on the sea (fire the side pointed into).
+var fire_side := 0
+var fire_auto := false
+var fire_aim := false
+## A skip (Space, Enter or a tap) while the farewell plays.
+var skip := false
+## The mouse over the sea (screen units), while there is one.
+var pointer := Vector2.ZERO
+var pointer_active := false
 var touch := false
 
 var _helm_id := -1
@@ -34,6 +47,10 @@ const _ACTIONS := {
 	"sail_more": [KEY_W, KEY_UP],
 	"sail_less": [KEY_S, KEY_DOWN],
 	"camera_view": [KEY_C, KEY_V],
+	"fire_port": [KEY_Q],
+	"fire_starboard": [KEY_E],
+	"fire_auto": [KEY_SPACE],
+	"confirm": [KEY_ENTER, KEY_KP_ENTER],
 }
 
 
@@ -56,11 +73,28 @@ func _unhandled_input(event: InputEvent) -> void:
 			sail_delta -= 1
 		elif event.is_action("camera_view"):
 			view_next = true
+		elif event.is_action("fire_port"):
+			fire_side = 1
+		elif event.is_action("fire_starboard"):
+			fire_side = -1
+		elif event.is_action("fire_auto"):
+			fire_auto = true
+			skip = true
+		elif event.is_action("confirm"):
+			skip = true
+	elif event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION:
+		pointer = event.position
+		pointer_active = true
 	elif event is InputEventMouseButton and event.device != InputEvent.DEVICE_ID_EMULATION:
 		if event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
 			zoom -= event.factor if event.factor > 0.0 else 1.0
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			zoom += event.factor if event.factor > 0.0 else 1.0
+		elif event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			pointer = event.position
+			pointer_active = true
+			fire_aim = true
+			skip = true
 	elif event is InputEventScreenTouch:
 		_on_touch(event)
 	elif event is InputEventScreenDrag:
@@ -69,12 +103,20 @@ func _unhandled_input(event: InputEvent) -> void:
 		zoom += (1.0 - event.factor) * 8.0
 
 
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_MOUSE_EXIT:
+		pointer_active = false
+
+
 func _on_touch(e: InputEventScreenTouch) -> void:
 	if not touch:
 		touch = true
 		touch_seen.emit()
+	# touch never leaves a stale pointer on the water
+	pointer_active = false
 	var w := get_viewport().get_visible_rect().size.x
 	if e.pressed:
+		skip = true
 		_touches[e.index] = e.position
 		if _helm_id < 0 and e.position.x < w * 0.55 and _touches.size() == 1:
 			_helm_id = e.index
@@ -124,3 +166,7 @@ func consume() -> void:
 	sail_delta = 0
 	zoom = 0.0
 	view_next = false
+	fire_side = 0
+	fire_auto = false
+	fire_aim = false
+	skip = false

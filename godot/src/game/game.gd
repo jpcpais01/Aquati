@@ -5,8 +5,10 @@ extends Node3D
 ## Command-line (after --): --smoke runs a few seconds and prints SMOKE OK;
 ## --shot PATH saves a frame and quits, with --hour H, --view N (0 close ..
 ## 3 leaned over) or --zoom Z (0..1) and --tilt T (0..1), --frames N to let
-## it settle first, --heading R and --at X,Z to start somewhere else, and
-## --discover to chart the islands nearby as play does.
+## it settle first, --heading R and --at X,Z to start somewhere else,
+## --ship CLASS and --livery ID to sail another hull with --sails N (0..3)
+## of canvas set (--anchor holds her there), --wind A for the breeze's
+## heading, and --discover to chart the islands nearby as play does.
 
 const WIND_ANGLE := 0.6
 ## Where a voyage starts: out of the home port on a reach, bow to the open
@@ -126,7 +128,7 @@ func _build_environment() -> void:
 
 
 func _build_sea() -> void:
-	world.wind = Wind.new(WIND_ANGLE)
+	world.wind = Wind.new(float(_args.get("wind", WIND_ANGLE)))
 	world.waves = Waves.new(WIND_ANGLE)
 	world.wake = WakeField.new()
 	world.wake.name = "Wake"
@@ -174,7 +176,7 @@ func _pick_region(x: float, z: float) -> void:
 
 
 func _build_player() -> void:
-	player = Ship.create(ShipClass.named("sloop"), Livery.named("player"), world)
+	player = Ship.create(ShipClass.named(str(_args.get("ship", "sloop"))), Livery.named(str(_args.get("livery", "player"))), world)
 	add_child(player)
 	# two-thirds of her canvas set and already making way
 	var h := SPAWN_HEADING
@@ -193,6 +195,10 @@ func _build_player() -> void:
 		player.sail_target = 0.0
 		player.sail_level = 0.0
 		player.speed = 0.0
+	if _args.has("sails"):
+		player.sail_target = clampf(float(_args.sails) / 3.0, 0.0, 1.0)
+		player.sail_level = player.sail_target
+	player.anchored = _args.has("anchor")
 
 
 func _build_camera() -> void:

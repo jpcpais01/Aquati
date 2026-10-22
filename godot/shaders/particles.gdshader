@@ -6,10 +6,12 @@
 // Instance packing (src/fx/particles.gd):
 //   MODEL_MATRIX[3].xyz  start position     MODEL_MATRIX[0].xyz  start velocity
 //   MODEL_MATRIX[1].xyz  gravity, drag, kind + fade-in (fraction)
-//   MODEL_MATRIX[2].xyz  the breeze it rides (x, z), end colour packed 8:8:8
+//   MODEL_MATRIX[2].xyz  the breeze smoke rides (x, z) or anything else's
+//                        spin (x), end colour packed 8:8:8
 //   COLOR                start colour (HDR) and opacity
 //   INSTANCE_CUSTOM      birth time, life, start size, end size
-// Kinds: 0 a soft droplet or glow, 1 smoke.
+// Kinds: 0 a soft droplet or glow, 1 smoke, 2 a hot spark, 3 a tumbling
+// splinter; 4 more and it is a glow, adding its light rather than covering.
 shader_type spatial;
 render_mode unshaded, blend_premul_alpha, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
@@ -24,6 +26,8 @@ varying vec2 v_uv;
 varying vec2 v_nuv;
 varying vec2 v_uvv;
 varying float v_kind;
+varying float v_glow;
+varying float v_turn;
 varying float v_age;
 varying float v_seed;
 varying vec3 v_world;
@@ -44,7 +48,9 @@ void vertex() {
 	vec3 v0 = MODEL_MATRIX[0].xyz;
 	float grav = MODEL_MATRIX[1].x;
 	float drag = MODEL_MATRIX[1].y;
-	float kind = floor(MODEL_MATRIX[1].z);
+	float code = floor(MODEL_MATRIX[1].z);
+	float glow = step(3.5, code);
+	float kind = code - glow * 4.0;
 	float fade_in = max(fract(MODEL_MATRIX[1].z), 1e-3);
 	vec2 breeze = MODEL_MATRIX[2].xy;
 	float birth = INSTANCE_CUSTOM.x;
@@ -70,7 +76,7 @@ void vertex() {
 		}
 		float seed = hash(float(INSTANCE_ID) * 0.618 + 0.17);
 		float rot = seed * TAU;
-		if (kind > 0.5) {
+		if (kind > 0.5 && kind < 1.5) {
 			// smoke rides the breeze once its own push dies away, with a lazy curl
 			float ride = t < 0.6667 ? 0.75 * t * t : t - 0.3333;
 			p.xz += breeze * ride;
@@ -79,11 +85,15 @@ void vertex() {
 			p.z += (sin(1.3 * (ph + 0.9 * t)) - sin(1.3 * ph)) * 0.214;
 			vel.xz += breeze * min(1.0, t * 1.5);
 			rot += (hash(seed * 7.1) - 0.5) * 0.6 * t;
+		} else {
+			rot += MODEL_MATRIX[2].x * t;
 		}
 		float size = mix(INSTANCE_CUSTOM.z, INSTANCE_CUSTOM.w, sqrt(u));
 		float fin = min(1.0, t / fade_in);
 		v_col = vec4(mix(COLOR.rgb, unpack_rgb(MODEL_MATRIX[2].z), u), COLOR.a * fin * (1.0 - u * u));
 		v_kind = kind;
+		v_glow = glow;
+		v_turn = rot;
 		v_age = u;
 		v_seed = seed;
 		v_world = p;
@@ -92,7 +102,7 @@ void vertex() {
 		float c = cos(rot);
 		float s = sin(rot);
 		vec2 qr;
-		if (kind > 0.5) {
+		if (kind > 0.5 && kind < 1.5) {
 			// smoke shears out along its motion on screen: a jet streams, a drift smears downwind
 			vec2 v2 = (VIEW_MATRIX * vec4(vel, 0.0)).xy;
 			float sp = length(v2);
@@ -123,6 +133,12 @@ void fragment() {
 	vec3 lit = light_tint;
 	if (v_kind < 0.5) {
 		a = pow(1.0 - r, 1.6);
+	} else if (v_kind > 1.5 && v_kind < 2.5) {
+		a = pow(1.0 - r, 3.0) * 1.6;
+	} else if (v_kind > 2.5) {
+		// a splinter: a sliver of timber that catches the sun as it tumbles
+		a = 1.0 - smoothstep(0.55, 0.8, length(v_uv * vec2(1.0, 2.3)));
+		lit *= 0.62 + 0.38 * abs(sin(v_turn * 1.7));
 	} else {
 		// smoke, not a ball: warped noise eroded by age into torn wisps. Young
 		// smoke is dense and billowy, old smoke thins into curling strands.
@@ -166,10 +182,16 @@ void fragment() {
 	if (a < 0.003) {
 		discard;
 	}
-	// lit by the sky: warm at sunset, dim blue at night, sunk into the haze far off
-	vec3 col = v_col.rgb * lit;
-	vec4 fog = air_fog(v_world, CAMERA_POSITION_WORLD);
-	col = mix(col, fog.rgb, fog.a);
-	ALBEDO = col * a;
-	ALPHA = a;
+	if (v_glow > 0.5) {
+		// light of its own: added over whatever is behind, no cover
+		ALBEDO = v_col.rgb * a;
+		ALPHA = 0.0;
+	} else {
+		// lit by the sky: warm at sunset, dim blue at night, sunk into the haze far off
+		vec3 col = v_col.rgb * lit;
+		vec4 fog = air_fog(v_world, CAMERA_POSITION_WORLD);
+		col = mix(col, fog.rgb, fog.a);
+		ALBEDO = col * a;
+		ALPHA = a;
+	}
 }

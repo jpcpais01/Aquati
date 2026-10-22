@@ -37,8 +37,10 @@ const SHADERS := {
 	"flag": preload("res://shaders/ship_flag.gdshader"),
 }
 
-## Shared materials by class and livery: a fleet of one kind compiles nothing new.
+## Shared materials by class and livery: a fleet of one kind compiles nothing
+## new. The shipyard builds on a worker thread, so the cache is locked.
 static var _materials := {}
+static var _materials_lock := Mutex.new()
 
 var cls: ShipClass
 var livery: Livery
@@ -112,8 +114,16 @@ func _material(kind: String) -> ShaderMaterial:
 		key = "%s|%s|%s" % [kind, cls.id, livery.id]
 	elif kind in ["sail", "flag"]:
 		key = "%s|%s" % [kind, livery.id]
-	if _materials.has(key):
-		return _materials[key]
+	_materials_lock.lock()
+	var m: ShaderMaterial = _materials.get(key)
+	if m == null:
+		m = _new_material(kind)
+		_materials[key] = m
+	_materials_lock.unlock()
+	return m
+
+
+func _new_material(kind: String) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = SHADERS[kind]
 	var l := livery
@@ -147,14 +157,25 @@ func _material(kind: String) -> ShaderMaterial:
 			m.set_shader_parameter("c_sail", l.sail)
 			m.set_shader_parameter("c_seam", l.sail_seam)
 			m.set_shader_parameter("c_emblem", l.emblem_color)
-			m.set_shader_parameter("emblem_kind", 1 if l.emblem == "sun" else 0)
+			m.set_shader_parameter("emblem_kind", _emblem_kind(l))
 		"flag":
 			m.set_shader_parameter("c_field", l.flag)
 			m.set_shader_parameter("c_emblem", l.flag2)
-			m.set_shader_parameter("emblem_kind", 1 if l.emblem == "sun" else 0)
+			m.set_shader_parameter("emblem_kind", _emblem_kind(l))
 			m.set_shader_parameter("aspect", FLAG_ASPECT)
-	_materials[key] = m
+			# the Brethren fly their colours ragged and shot through
+			m.set_shader_parameter("tattered", l.emblem == "skull")
 	return m
+
+
+## The heraldry shaders' emblem number for a livery.
+static func _emblem_kind(l: Livery) -> int:
+	match l.emblem:
+		"sun":
+			return 1
+		"skull":
+			return 2
+	return 0
 
 
 func _cannon_y(t: float) -> float:
@@ -577,23 +598,33 @@ func _build_rig() -> void:
 		var hh: float = m.height
 		var r0 := 0.12 + hh * 0.0085
 		var radial := 10 if detail else 7
-		# stepped spars: the lower mast and topmast overlap at the doublings under an iron-bound cap
-		var low_top := y0 + hh * 0.8 if rig == "gaff" else y0 + hh * 0.6 + 0.85
-		var r1 := r0 * 0.78
-		_core.paint(MAST_WOOD)
-		_core.spar(Vector3(0, y0, zz), Vector3(0, low_top + 0.1, zz), r0, r1, radial)
-		var tm_base := low_top - (1.6 if rig == "gaff" else 0.9)
-		_core.paint(MAST_WOOD)
-		_core.spar(Vector3(0, tm_base, zz), Vector3(0, y0 + hh, zz), r1 * 0.72, r1 * 0.5, radial)
-		_core.paint(DARK_WOOD)
-		_core.rbox(_at(Vector3(0, low_top, zz)), Vector3(r1 * 2.6, 0.26 + r1 * 0.4, r1 * 2.6 + r1 * 0.72 * 2.4), 0.07, 1)
-		_small.paint(IRON_PAINT, MeshKit.IRON, 0.03)
-		_small.hoop(Vector3(0, low_top + 0.16 + r1 * 0.2, zz), r1 * 0.72 + 0.03, 0.03, 4, 10)
+		var has_top: bool = m.get("top", false)
+		if rig == "lateen":
+			# one long pole, tapering hard toward the head
+			_core.paint(MAST_WOOD)
+			_core.spar(Vector3(0, y0, zz), Vector3(0, y0 + hh, zz), r0, r0 * 0.45, radial)
+		else:
+			# stepped spars: lower mast, topmast and topgallant overlap at the
+			# doublings under iron-bound caps, so the silhouette reads as a real rig
+			var low_top := y0 + hh * 0.8 if rig == "gaff" else y0 + hh * 0.6 + 0.85
+			var r1 := r0 * 0.78
+			_core.paint(MAST_WOOD)
+			_core.spar(Vector3(0, y0, zz), Vector3(0, low_top + 0.1, zz), r0, r1, radial)
+			var tm_base := low_top - (1.6 if rig == "gaff" else 0.9)
+			var tm_top := y0 + hh if rig == "gaff" or not has_top else y0 + hh * 0.87 + 0.55
+			_core.paint(MAST_WOOD)
+			_core.spar(Vector3(0, tm_base, zz), Vector3(0, tm_top, zz), r1 * 0.72, r1 * 0.5, radial)
+			_mast_cap(low_top, zz, r1, r1 * 0.72)
+			if tm_top < y0 + hh - 0.5:
+				var tg := r1 * 0.5
+				_core.paint(MAST_WOOD)
+				_core.spar(Vector3(0, y0 + hh * 0.87 - 0.3, zz), Vector3(0, y0 + hh, zz), tg * 0.82, tg * 0.55, radial)
+				_mast_cap(tm_top - 0.05, zz, tg, tg * 0.82)
 		# a rounded collar where it passes the deck, and iron bands up the lower mast
 		_core.paint(DARK_WOOD)
 		_core.hoop(Vector3(0, y0 + r0 * 0.3, zz), r0 * 1.15, r0 * 0.45, 6, 14)
-		var low_len := hh * 0.8 if rig == "gaff" else hh * 0.6 + 0.95
-		var low_taper := 0.22
+		var low_len := hh if rig == "lateen" else (hh * 0.8 if rig == "gaff" else hh * 0.6 + 0.95)
+		var low_taper := 0.55 if rig == "lateen" else 0.22
 		var band_fs := PackedFloat32Array([0.1, 0.2, 0.3, 0.4] if detail else [0.15, 0.35])
 		_small.paint(IRON_PAINT, MeshKit.IRON, 0.03)
 		for f in band_fs:
@@ -614,6 +645,8 @@ func _build_rig() -> void:
 		if hh > max_mast:
 			max_mast = hh
 			max_top = top
+		if has_top:
+			_build_top(mi, zz, y0, hh, r0)
 
 		# shrouds set up on deadeyes along a channel board, with ratlines to climb
 		var dts: Array[float] = []
@@ -661,8 +694,13 @@ func _build_rig() -> void:
 						_ropes.rope(feet[i].lerp(mast_head, f), feet[i + 1].lerp(mast_head, f), 0.014)
 			_ropes.rope(Vector3(0, y0 + hh * 0.93, zz), Vector3(side * beam * 0.16, y0 + hh * 0.6, zz), 0.028)
 
-		if rig == "gaff":
-			_build_gaff(m, zz, y0, hh, r0)
+		match rig:
+			"square":
+				_build_square(m, mi, zz, y0, hh)
+			"gaff":
+				_build_gaff(m, zz, y0, hh, r0)
+			"lateen":
+				_build_lateen(m, zz, y0, hh)
 
 	_build_bowsprit()
 
@@ -695,6 +733,141 @@ func _build_rig() -> void:
 	ensign_pivot.position = e_top
 	add_child(ensign_pivot)
 	_add_flag(ensign_pivot, 1.3 + c.length * 0.045)
+
+
+## The iron-bound cap at a mast's doublings: a block where the lower spar
+## (radius r_low) ends and the upper one (r_up) passes up through it.
+func _mast_cap(y: float, zz: float, r_low: float, r_up: float) -> void:
+	_core.paint(DARK_WOOD)
+	_core.rbox(_at(Vector3(0, y, zz)), Vector3(r_low * 2.6, 0.26 + r_low * 0.4, r_low * 2.6 + r_up * 2.4), 0.07, 1)
+	_small.paint(IRON_PAINT, MeshKit.IRON, 0.03)
+	_small.hoop(Vector3(0, y + 0.16 + r_low * 0.2, zz), r_up + 0.03, 0.03, 4, 10)
+
+
+## A round fighting top on the lower masthead, with a soft rim, a little
+## railing and the futtock shrouds under it, and the crosstrees higher up.
+func _build_top(mi: int, zz: float, y0: float, hh: float, r0: float) -> void:
+	var b := cls.beam
+	var ty := y0 + hh * 0.6
+	_core.paint(DARK_WOOD)
+	_core.spar(Vector3(0, ty - 0.1, zz), Vector3(0, ty + 0.1, zz), b * 0.12, b * 0.16, 16)
+	_core.paint(MAST_WOOD)
+	_core.hoop(Vector3(0, ty + 0.05, zz), b * 0.16, 0.09, 5, 20)
+	_core.paint(livery.trim, MeshKit.GILT, 0.02)
+	_core.hoop(Vector3(0, ty + 0.62, zz), b * 0.155, 0.04, 4, 20)
+	for side: float in [1.0, -1.0]:
+		perches.append({"pos": Vector3(side * b * 0.155, ty + 0.66, zz), "spar": mi})
+	for i in 8:
+		# gaps where the shrouds come up
+		if i == 2 or i == 6:
+			continue
+		var a := TAU * i / 8.0
+		var foot := Vector3(cos(a) * b * 0.155, ty + 0.04, zz + sin(a) * b * 0.155)
+		_small.paint(livery.trim, MeshKit.GILT, 0.02)
+		_small.spar(foot, foot + Vector3(0, 0.58, 0), 0.03, 0.03, 4, false)
+	if detail:
+		# futtock shrouds from the rim in to a band round the mast below it, and the halyard blocks
+		for side: float in [1.0, -1.0]:
+			for dz: float in [-0.2, 0.0, 0.2]:
+				_ropes.rope(Vector3(side * b * 0.145, ty - 0.02, zz + dz), Vector3(side * r0 * 0.85, ty - 1.05, zz + dz * 0.3), 0.02)
+			_fine.paint(DARK_WOOD)
+			_fine.sphere(Transform3D(Basis.from_scale(Vector3(0.7, 1.25, 0.8)), Vector3(side * (r0 + 0.12), ty - 0.32, zz - 0.05)), 0.09, 7, 5)
+		_fine.paint(IRON_PAINT, MeshKit.IRON, 0.03)
+		_fine.hoop(Vector3(0, ty - 1.05, zz), r0 * 0.86, 0.03, 4, 12)
+	var cy := y0 + hh * 0.87
+	for dz: float in [-0.22, 0.22]:
+		_core.paint(DARK_WOOD)
+		_core.spar(Vector3(-b * 0.11, cy, zz + dz), Vector3(b * 0.11, cy, zz + dz), 0.06, 0.06, 6)
+
+
+## Square sails on yards that brace round together on one pivot: each yard
+## tapered both ways from its slings, with yardarm blocks, lifts, footropes
+## and the clewlines led down to the deck, and a course, topsail and
+## topgallant (as many tiers as she carries) hanging from them.
+func _build_square(m: Dictionary, mi: int, zz: float, y0: float, hh: float) -> void:
+	var c := cls
+	var b := c.beam
+	var tiers: int = m.get("tiers", 1)
+	var fr: Array = [0.75] if tiers == 1 else ([0.5, 0.84] if tiers == 2 else [0.4, 0.66, 0.89])
+	var widths: Array = [1.4] if tiers == 1 else ([1.6, 1.2] if tiers == 2 else [1.75, 1.35, 0.95])
+	var pivot := Node3D.new()
+	pivot.name = "Yards"
+	pivot.position = Vector3(0, 0, zz)
+	add_child(pivot)
+	yard_pivots.append(pivot)
+	var spars := MeshKit.new(19 + mi)
+	var lines := RopeKit.new(23 + mi)
+	var ys := PackedFloat32Array()
+	var halves := PackedFloat32Array()
+	for i in fr.size():
+		var y := y0 + hh * float(fr[i])
+		var half := b * float(widths[i]) * 0.5
+		ys.append(y)
+		halves.append(half)
+		var ry := 0.1 + hh * 0.0022
+		spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+		spars.spar(Vector3(0, y, 0), Vector3(-half, y, 0), ry, 0.055, 8)
+		spars.spar(Vector3(0, y, 0), Vector3(half, y, 0), ry, 0.055, 8)
+		spars.ball(Vector3(-half, y, 0), 0.075, 6, 4)
+		spars.ball(Vector3(half, y, 0), 0.075, 6, 4)
+		spars.paint(IRON_PAINT, MeshKit.IRON, 0.03)
+		spars.torus(Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3(0, y, 0)), ry + 0.02, 0.035, 4, 10)
+		spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+		spars.rbox(_at(Vector3(0, y + 0.02, -0.12)), Vector3(0.36, 0.3, 0.42), 0.08, 1)
+		var lift_top := y0 + hh * float(fr[i + 1]) - 0.35 if i < fr.size() - 1 else y0 + hh * 0.97
+		for sx: float in [-1.0, 1.0]:
+			var arm := Vector3(sx * half * 0.96, y, 0)
+			spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+			spars.ball(arm + Vector3(0, -0.12, -0.05), 0.1, 6, 4)
+			# the lift up to the mast, and the clewlines and buntlines led down abaft the canvas
+			lines.rope(arm, Vector3(sx * 0.2, lift_top, 0), 0.026)
+			for f: float in [0.38, 0.78]:
+				lines.rope(Vector3(sx * half * f, y - 0.06, -0.14), Vector3(sx * (0.1 + f * 0.25), y0 + 0.86, -0.72), 0.016, RopeKit.HEMP)
+			if detail:
+				# the footrope sagging under the yard, held up by stirrups
+				var pts := PackedVector3Array()
+				for k in 7:
+					var u := k / 6.0
+					pts.append(Vector3(sx * lerpf(0.35, half * 0.98, u), y - 0.25 - sin(u * PI) * 0.5, -0.3))
+				for k in pts.size() - 1:
+					lines.rope(pts[k], pts[k + 1], 0.022, RopeKit.HEMP)
+				for k: int in [2, 4]:
+					lines.rope(pts[k], Vector3(pts[k].x, y, -0.06), 0.014, RopeKit.HEMP)
+	_mesh_child(pivot, spars.commit_lod(), _material("parts"), true).name = "Yard"
+	_mesh_child(pivot, lines.commit(), _material("rope"), false).name = "Lines"
+	var masts := c.masts.size()
+	for i in ys.size():
+		var bottom_y := maxf(y0 + 2.1, ys[i] - hh * 0.38) if i == 0 else ys[i - 1] + 0.2
+		var bottom_half := halves[i] * 1.04 if i == 0 else halves[i - 1] * 0.97
+		var h := ys[i] - bottom_y
+		var emblem := i == 0 and (mi == masts - 1 or masts == 1 or (masts == 3 and mi == 1))
+		var sail := _add_sail(pivot, Vector2(-halves[i] * 0.95, 0), Vector2(halves[i] * 0.95, 0), Vector2(-bottom_half * 0.95, -h), Vector2(bottom_half * 0.95, -h), minf(halves[i] * 0.32, 1.4), emblem)
+		sail.position = Vector3(0, ys[i] - 0.12, 0.18)
+		sails.append({"node": sail, "tier": i, "fore_aft": false, "pivot": pivot})
+
+
+## A lateen: one long yard slung slantwise from the mast, a triangular sail
+## under it, swinging to the wind like a gaff.
+func _build_lateen(m: Dictionary, zz: float, y0: float, hh: float) -> void:
+	var c := cls
+	var k: float = m.get("span", 1.0)
+	var pivot := Node3D.new()
+	pivot.name = "Lateen"
+	pivot.position = Vector3(0, 0, zz)
+	add_child(pivot)
+	fore_aft_pivots.append(pivot)
+	var low_y := y0 + hh * 0.3
+	var fwd := Vector3(0, y0 + hh * 0.42, c.length * 0.12 * k)
+	var aft := Vector3(0, y0 + hh, -c.length * 0.2 * k)
+	var spars := MeshKit.new(29)
+	spars.paint(DARK_WOOD, MeshKit.WOOD, 0.0)
+	spars.spar(fwd, aft, 0.1, 0.06)
+	_mesh_child(pivot, spars.commit(), _material("parts"), true).name = "Yard"
+	# plane coords: x aft from the mast, y up from the foot
+	var sail := _add_sail(pivot, Vector2(-fwd.z + 0.2, fwd.y - low_y - 0.1), Vector2(-aft.z - 0.3, aft.y - low_y - 0.2), Vector2(0.3, 0.05), Vector2(-aft.z * 0.55, 0.05), 0.9, false)
+	sail.position = Vector3(0, low_y, 0)
+	sail.rotation.y = PI * 0.5
+	sails.append({"node": sail, "tier": 0, "fore_aft": true, "pivot": pivot})
 
 
 ## Gaff and boom on their own pivot (they swing to the wind), the hoops along
@@ -1153,6 +1326,14 @@ func _build_details() -> void:
 		for px: float in [-0.3, -0.1, 0.1, 0.3]:
 			var sx := signf(px)
 			_ropes.rope(Vector3(px, fy + 0.95, fz), Vector3(sx * (mr + 0.12 + absf(px) * 0.15), up_y, s.z(m.t) - 0.05), 0.017, RopeKit.HEMP)
+		if detail and _fife_side(m.t) > 0.0 and m.rig == "square":
+			# the clewlines abaft the mast belay to a pair of bitts there
+			var cz := s.z(m.t) - 0.72
+			_fine.paint(barrel_col)
+			for sx: float in [-1.0, 1.0]:
+				_fine.rbox(_at(Vector3(sx * 0.4, fy + 0.45, cz)), Vector3(0.12, 0.9, 0.12), 0.03, 1)
+			_fine.paint(grate)
+			_fine.rbox(_at(Vector3(0, fy + 0.84, cz)), Vector3(0.95, 0.1, 0.14), 0.03, 1)
 
 	# the galley stovepipe forward of the foremast, smoking when the cook is busy
 	var fm: Dictionary = c.masts[c.masts.size() - 1]
@@ -1185,6 +1366,10 @@ func _build_details() -> void:
 		var a := kk / 4.0 * TAU + 0.4
 		_small.spar(Vector3(0, cap_y + 0.68, cap_z), Vector3(cos(a) * 0.8, cap_y + 0.68, cap_z + sin(a) * 0.8), 0.04, 0.035, 4)
 
+	# the ship's boat stowed on skids amidships
+	if c.id == "galleon":
+		_build_boat(Vector3(0, s.main_deck_y(0.62) + 0.62, s.z(0.62)), 4.4, 1.7)
+
 	# the stern lantern: glowing glass under an iron cap with a gilded finial
 	var lanterns := PackedFloat32Array([-0.6, 0.0, 0.6] if not c.stern_castle.is_empty() else [0.0])
 	for lx in lanterns:
@@ -1201,6 +1386,28 @@ func _build_details() -> void:
 		_core.spar(Vector3(x, ty + 0.53 * k, zz), Vector3(x, ty + 0.63 * k, zz), 0.12 * k, 0.17 * k, 8)
 		_core.paint(livery.trim, MeshKit.GILT, 0.02)
 		_core.ball(Vector3(x, ty + 1.3 * k, zz), 0.07 * k, 6, 4)
+
+
+## A ship's boat upside up on skids: a round-bilged shell in the boot-top
+## colour, a strake-coloured gunwale, bottom boards and thwarts.
+func _build_boat(at: Vector3, length: float, wid: float) -> void:
+	var floor_col := Color("#a9814f")
+	_core.paint(livery.boot)
+	_core.sphere(Transform3D(Basis.from_scale(Vector3(wid * 0.5, 0.55, length * 0.5)), at), 1.0, 16, 6, 0.0, TAU, PI * 0.5, PI * 0.5)
+	_core.paint(floor_col)
+	_core.disc(Transform3D(Basis(Vector3.RIGHT, -PI * 0.5) * Basis.from_scale(Vector3(wid * 0.44, length * 0.44, 1.0)), at + Vector3(0, -0.12, 0)), 1.0, 16)
+	var rim := PackedVector3Array()
+	for i in 16:
+		var a := TAU * i / 16.0
+		rim.append(at + Vector3(cos(a) * wid * 0.48, 0.02, sin(a) * length * 0.48))
+	_core.paint(livery.strake)
+	_core.tube(rim, 0.07, true, 5, 3)
+	for f: float in [-0.25, 0.08, 0.36]:
+		_core.paint(MeshKit.shade(floor_col, 0.85))
+		_core.rbox(_at(at + Vector3(0, -0.06, f * length)), Vector3(wid * sqrt(1.0 - (f * 2.0) * (f * 2.0)) * 0.9, 0.06, 0.26), 0.025)
+	for f: float in [-0.28, 0.28]:
+		_core.paint(DARK_WOOD)
+		_core.rbox(_at(at + Vector3(0, -0.62, f * length)), Vector3(wid * 1.5, 0.5, 0.22), 0.06)
 
 
 ## Which side of a mast its fife rail stands: abaft (-1) unless a hatch is in the way, then before it.

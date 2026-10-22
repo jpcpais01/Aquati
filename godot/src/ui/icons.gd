@@ -1,0 +1,75 @@
+class_name Icons
+## The HUD's little pictures, from the web game's SVG art: drawn once each by
+## the engine's SVG rasterizer at the screen's real pixel density (so they stay
+## crisp on a dense phone screen) and kept.
+##
+## Line icons are drawn in white with the web's 1.7 stroke on a 24 grid and
+## tinted where they are used; the tally badges (coin, skull, isle, clock)
+## carry their own colours.
+
+const LINE := {
+	"chev": '<path d="m9 5 7 7-7 7"/>',
+	"chevL": '<path d="m15 5-7 7 7 7"/>',
+	"cannon": '<path d="M3 9.6 15.6 7.2a1 1 0 0 1 1.1.8l.7 3.6a1 1 0 0 1-.8 1.2L4 15.2z" fill="#ffffff" fill-opacity=".9"/><path d="M17.6 7.6l2.6-.5.8 4-2.6.5"/><circle cx="8.5" cy="16.2" r="3.3" fill="#04121a" fill-opacity=".6"/><circle cx="8.5" cy="16.2" r=".8"/><path d="M13 19.5h7"/>',
+	"refresh": '<path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/>',
+	"anchor": '<circle cx="12" cy="5" r="2.2"/><path d="M12 7.2V21M8 10.5h8M4.5 13.5c0 4 3.4 7.5 7.5 7.5s7.5-3.5 7.5-7.5M2.8 15.3l1.7-1.8 1.9 1.6M21.2 15.3l-1.7-1.8-1.9 1.6"/>',
+}
+
+## The tally badges, as the web draws them in CSS gradients: each a 16 wide
+## disc on the 24 grid, leaving room round the coin for its glow (so a badge
+## is drawn half again as big as the disc it shows).
+const BADGE := {
+	"coin": '<defs><radialGradient id="c" cx="0.35" cy="0.35" r="0.92"><stop offset="0" stop-color="#fff1b8"/><stop offset="0.5" stop-color="#efc463"/><stop offset="1" stop-color="#b5801f"/></radialGradient><radialGradient id="g"><stop offset="0.66" stop-color="#efc463" stop-opacity="0.3"/><stop offset="1" stop-color="#efc463" stop-opacity="0"/></radialGradient></defs><circle cx="12" cy="12" r="12" fill="url(#g)"/><circle cx="12" cy="12" r="8" fill="url(#c)"/>',
+	"skull": '<defs><radialGradient id="h" cx="0.5" cy="0.4" r="0.78"><stop offset="0.4" stop-color="#f4ecdc"/><stop offset="1" stop-color="#b9ab92"/></radialGradient></defs><path d="M4 11.4C4 6.9 7.6 4 12 4s8 2.9 8 7.4v2.4C20 17.6 16.4 20 12 20s-8-2.4-8-6.2z" fill="url(#h)"/><circle cx="9.6" cy="11.2" r="1.5" fill="#1a2a30"/><circle cx="14.4" cy="11.2" r="1.5" fill="#1a2a30"/>',
+	"isle": '<circle cx="12" cy="12" r="8" fill="#2bb5ad"/><circle cx="12" cy="13.6" r="6.9" fill="#f3e6c4"/><circle cx="12" cy="13.6" r="4.4" fill="#6fb043"/><circle cx="12" cy="12" r="8" fill="none" stroke="#2bb5ad" stroke-width="1.2"/>',
+	"clock": '<circle cx="12" cy="12" r="7.2" fill="none" stroke="#5ee3d4" stroke-width="1.9"/><path d="M11.1 7.6v5.1h4.6" fill="none" stroke="#5ee3d4" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+}
+
+static var _cache := {}
+static var _density := 0.0
+
+
+## Screen pixels per HUD unit: the canvas stretch on this display.
+static func density() -> float:
+	if _density <= 0.0:
+		var win := DisplayServer.window_get_size()
+		var k := minf(win.x / 1280.0, win.y / 720.0) if win.x > 0 and win.y > 0 else 1.0
+		# a quarter step up, so a texture is never stretched past its pixels
+		_density = clampf(ceilf(k * 4.0) / 4.0, 1.0, 3.0)
+	return _density
+
+
+## The icon `id`, `size` HUD units across.
+static func texture(id: String, size: float) -> Texture2D:
+	if LINE.has(id):
+		return svg(id, '<g fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">%s</g>' % LINE[id], Vector2(size, size))
+	return svg(id, BADGE.get(id, ""), Vector2(size, size))
+
+
+## Any SVG art (`inner`, on a `view` grid) drawn `size` HUD units across,
+## kept under `key`.
+static func svg(key: String, inner: String, size: Vector2, view := Rect2(0, 0, 24, 24)) -> Texture2D:
+	var px := Vector2i(maxi(4, ceili(size.x * density())), maxi(4, ceili(size.y * density())))
+	var ck := "%s@%dx%d" % [key, px.x, px.y]
+	if _cache.has(ck):
+		return _cache[ck]
+	var doc := '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="%s %s %s %s" preserveAspectRatio="none">%s</svg>' % [px.x, px.y, view.position.x, view.position.y, view.size.x, view.size.y, inner]
+	var img := Image.new()
+	var tex: Texture2D = null
+	if img.load_svg_from_string(doc) == OK:
+		tex = ImageTexture.create_from_image(img)
+	_cache[ck] = tex
+	return tex
+
+
+## A TextureRect showing the icon `size` units square, tinted `tint`.
+static func rect(id: String, size: float, tint: Color = Color.WHITE) -> TextureRect:
+	var r := TextureRect.new()
+	r.texture = texture(id, size)
+	r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	r.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	r.custom_minimum_size = Vector2(size, size)
+	r.size = r.custom_minimum_size
+	r.self_modulate = tint
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return r
