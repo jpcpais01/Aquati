@@ -43,6 +43,8 @@
     <symbol id="i-storm" viewBox="0 0 36 36"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21a7 7 0 0 1 1-14 9 9 0 0 1 17 3 5.5 5.5 0 0 1-1 11Z" fill="currentColor" fill-opacity=".18"/><path d="M19 21l-4 7h5l-3 6"/></g></symbol>
     <symbol id="i-crew" viewBox="0 0 36 36"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13" cy="12" r="4.5" fill="currentColor" fill-opacity=".22"/><circle cx="25" cy="13" r="3.6"/><path d="M4 30c0-6 4-10 9-10s9 4 9 10Z" fill="currentColor" fill-opacity=".22"/><path d="M24 20c5 0 8 4 8 9h-7"/></g></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2" fill="currentColor" fill-opacity=".25"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></g></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z" fill="currentColor" fill-opacity=".25" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-turn" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12c0-2.2 4-4 9-4s9 1.8 9 4-4 4-9 4"/><path d="m14.5 13.5-2.5 2.5 2.5 2.5"/><path d="M6 15.2C4.2 14.5 3 13.3 3 12"/></g></symbol>
     <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
   </defs>
 </svg>
@@ -58,9 +60,13 @@
     <a href="#sky">Sky</a>
     <a href="#adventures">Adventures</a>
   </nav>
-  <a class="btn btn-gold btn-sm js-play" href="https://aquati.vercel.app">
-    <svg><use href="#i-play"/></svg>Play now
-  </a>
+  <div class="nav-tools">
+    <span class="clock" title="Ship's clock: the day passes as you scroll"><svg class="clock-sun"><use href="#i-sun"/></svg><svg class="clock-moon"><use href="#i-moon"/></svg><span class="clock-t">15:30</span></span>
+    <button class="sound" type="button" aria-pressed="false" aria-label="Play the game's music"><span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span></button>
+    <a class="btn btn-gold btn-sm js-play" href="https://aquati.vercel.app">
+      <svg><use href="#i-play"/></svg>Play now
+    </a>
+  </div>
 </header>
 
 <main id="top">
@@ -72,6 +78,7 @@
         <source media="(max-aspect-ratio: 4/5)" srcset="img/hero-tall-720.webp 720w, img/hero-tall-1080.webp 1080w" sizes="100vw">
         <img src="img/hero-2560.webp" srcset="img/hero-1080.webp 1080w, img/hero-1600.webp 1600w, img/hero-2560.webp 2560w" sizes="100vw" alt="A teal and gold galleon under full sail off a palm-fringed atoll, with a volcanic island and its harbour behind" fetchpriority="high">
       </picture>
+      <video class="hero-video" muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"></video>
     </div>
     <div class="hero-shade"></div>
 
@@ -92,6 +99,10 @@
           <span class="btn-txt"><b>Download for Android</b><small class="js-apk-note">Free APK</small></span>
         </a>
       </div>
+      <button class="trailer-link reveal js-trailer" type="button" style="--d:.3s">
+        <span class="tl-ring"><svg><use href="#i-play"/></svg></span>
+        <span>Watch the trailer</span><small>0:22</small>
+      </button>
       <p class="ios-tip" hidden><svg><use href="#i-share"/></svg>On iPhone or iPad? Play in Safari, then tap Share › Add to Home Screen.</p>
       <ul class="trust reveal" style="--d:.32s">
         <li>No sign‑up</li><li>Phone, tablet &amp; PC</li><li>Co‑op with friends</li>
@@ -108,6 +119,11 @@
       <path class="w3" d="M0 100 C 240 84 480 116 720 100 S 1200 84 1440 100 V120 H0Z"/>
     </svg>
   </section>
+
+  <div class="ticker" hidden>
+    <p class="ticker-tag"><span class="pill-dot"></span><span class="ticker-when">Fresh from the shipyard</span></p>
+    <div class="ticker-view"><div class="ticker-track"></div></div>
+  </div>
 
   <!-- ========== INTRO / NUMBERS ========== -->
   <section class="intro" id="intro">
@@ -144,7 +160,9 @@
             <img data-ship-img="sloop" src="img/ship-sloop-1600.webp" srcset="img/ship-sloop-900.webp 900w, img/ship-sloop-1600.webp 1600w" sizes="(min-width: 1000px) 62vw, 100vw" alt="The sloop Kestrel under a single gaff mainsail" loading="lazy">
             <img data-ship-img="brig" class="on" src="img/ship-brig-1600.webp" srcset="img/ship-brig-900.webp 900w, img/ship-brig-1600.webp 1600w" sizes="(min-width: 1000px) 62vw, 100vw" alt="The brigantine Corsair under two masts of square sails" loading="lazy">
             <img data-ship-img="galleon" src="img/ship-galleon-1600.webp" srcset="img/ship-galleon-900.webp 900w, img/ship-galleon-1600.webp 1600w" sizes="(min-width: 1000px) 62vw, 100vw" alt="The galleon Leviathan with three masts and towering castles" loading="lazy">
+            <canvas class="turn-canvas" width="960" height="600" aria-hidden="true"></canvas>
             <span class="stage-tag">Real in‑game render</span>
+            <span class="turn-hint"><svg><use href="#i-turn"/></svg>Drag to turn her about</span>
           </div>
           <div class="ship-card">
             <p class="ship-class" data-f="class">Brigantine</p>
@@ -179,6 +197,17 @@
         <p class="lede ink reveal">Start among the sunlit Fortunate Isles, then cross the open ocean to the misty karst towers of Las Brumas. No loading screens between them: it’s one sea, all the way.</p>
       </header>
 
+      <figure class="chart reveal" aria-label="Sea chart of both archipelagos">
+        <div class="chart-scroll">
+          <svg id="sea-chart" viewBox="0 0 1400 680" role="img" aria-labelledby="chart-title">
+            <title id="chart-title">A sea chart of Las Afortunadas and Las Brumas, drawn from the game's own island positions</title>
+          </svg>
+        </div>
+        <span class="chart-swipe" aria-hidden="true">Swipe to sail east <svg><use href="#i-arrow"/></svg></span>
+        <div class="chart-tip" role="status" aria-live="polite" hidden><b></b><span></span></div>
+        <figcaption class="chart-cap">Drawn from the game’s own map: every isle sits where you’ll find it. Hover one to learn its name.</figcaption>
+      </figure>
+
       <div class="isles">
         <article class="isle reveal">
           <div class="isle-img"><img src="img/isles-home-900.webp" srcset="img/isles-home-600.webp 600w, img/isles-home-900.webp 900w" sizes="(min-width: 900px) 34vw, 90vw" alt="A galleon sailing past palm islands and turquoise shallows" loading="lazy"></div>
@@ -189,17 +218,6 @@
             <ul class="tags"><li>Home harbour</li><li>4 markets</li><li>3 forts</li></ul>
           </div>
         </article>
-
-        <div class="route" aria-hidden="true">
-          <svg viewBox="0 0 120 420" preserveAspectRatio="none" class="route-v">
-            <path id="route-path-v" d="M60 0 C 10 90 110 150 60 210 S 10 330 60 420"/>
-          </svg>
-          <svg viewBox="0 0 420 120" preserveAspectRatio="none" class="route-h">
-            <path id="route-path-h" d="M0 60 C 90 10 150 110 210 60 S 330 10 420 60"/>
-          </svg>
-          <div class="route-label"><svg class="rose"><use href="#i-crest"/></svg><span>The high seas</span></div>
-          <div class="route-ship"><svg><use href="#i-ship"/></svg></div>
-        </div>
 
         <article class="isle reveal" style="--d:.12s">
           <div class="isle-img"><img src="img/isles-brumas-900.webp" srcset="img/isles-brumas-600.webp 600w, img/isles-brumas-900.webp 900w" sizes="(min-width: 900px) 34vw, 90vw" alt="A galleon in a misty bay beneath towering limestone cliffs" loading="lazy"></div>
@@ -357,6 +375,7 @@
       </picture>
     </div>
     <div class="finale-shade"></div>
+    <div class="stars" aria-hidden="true"></div>
     <div class="finale-inner">
       <svg class="finale-crest reveal"><use href="#i-crest"/></svg>
       <h2 class="h1 reveal">Your ship is waiting,<br><span class="gold">Captain.</span></h2>
@@ -390,12 +409,19 @@
   </div>
 </footer>
 
+<dialog class="trailer-dlg" id="trailer" aria-label="Trailer">
+  <button class="lb-close" aria-label="Close"><svg><use href="#i-close"/></svg></button>
+  <video controls playsinline preload="none" poster="media/trailer-poster.webp"><source src="media/trailer.mp4" type="video/mp4"></video>
+</dialog>
+
 <dialog class="lightbox" id="lightbox" aria-label="Image viewer">
   <button class="lb-close" aria-label="Close"><svg><use href="#i-close"/></svg></button>
   <img alt="">
   <p class="lb-cap"></p>
 </dialog>
 
+<audio id="sea-song" src="media/sea-song.mp3" preload="none" loop></audio>
+<script src="chart.js" defer></script>
 <script src="main.js" defer></script>
 </body>
 </html>

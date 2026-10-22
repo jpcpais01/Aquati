@@ -1,0 +1,113 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="Shores O' Fortune"
+config/description="Sail, explore and battle across a sun-drenched pirate archipelago."
+config/version="0.1.0"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "Mobile")
+boot_splash/bg_color=Color(0.043, 0.165, 0.227, 1)
+boot_splash/show_image=false
+config/icon="res://icon.png"
+
+[autoload]
+
+Settings="*res://src/core/settings.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+window/handheld/orientation=4
+window/vsync/vsync_mode=1
+
+[gui]
+
+theme/custom="res://ui/theme.tres"
+
+[input_devices]
+
+pointing/emulate_touch_from_mouse=false
+
+[rendering]
+
+renderer/rendering_method="mobile"
+renderer/rendering_method.mobile="mobile"
+rendering_device/driver.android="vulkan"
+rendering_device/fallback_to_opengl3=true
+textures/vram_compression/import_etc2_astc=true
+textures/default_filters/anisotropic_filtering_level=2
+anti_aliasing/quality/msaa_3d=1
+anti_aliasing/screen_space_roughness_limiter/enabled=true
+lights_and_shadows/directional_shadow/size=2048
+lights_and_shadows/directional_shadow/size.mobile=2048
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=1
+environment/defaults/default_clear_color=Color(0.07, 0.25, 0.36, 1)
+reflections/sky_reflections/roughness_layers=6
+
+[shader_globals]
+
+sun_dir={
+"type": "vec3",
+"value": Vector3(0.35, 0.8, 0.48)
+}
+sun_color={
+"type": "vec3",
+"value": Vector3(1.0, 0.95, 0.85)
+}
+sky_zenith={
+"type": "vec3",
+"value": Vector3(0.18, 0.42, 0.78)
+}
+sky_horizon={
+"type": "vec3",
+"value": Vector3(0.62, 0.78, 0.9)
+}
+fog_color={
+"type": "vec3",
+"value": Vector3(0.55, 0.73, 0.86)
+}
+fog_range={
+"type": "vec2",
+"value": Vector2(380.0, 1500.0)
+}
+haze={
+"type": "vec3",
+"value": Vector3(0.915, 0.73, 0.5)
+}
+light_tint={
+"type": "vec3",
+"value": Vector3(1.0, 1.0, 1.0)
+}
+wind={
+"type": "vec4",
+"value": Vector4(0.0, 1.0, 0.6, 0.0)
+}
+wind_drift={
+"type": "vec2",
+"value": Vector2(0.0, 0.0)
+}
+weather={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 0.0, 0.0)
+}
+night={
+"type": "float",
+"value": 0.0
+}
+wake_rect={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 300.0, 0.0033333)
+}
