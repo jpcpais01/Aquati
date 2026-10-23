@@ -19,6 +19,10 @@ var sfx := 1.0
 var shake := 1.0
 ## Phones and tablets: touch controls, a 60 fps cap, the lean graphics path.
 var mobile := false
+## The weather and the hour picked on the sky badge ("auto", or one of
+## Atmosphere.WEATHER or TIMES), kept for the next voyage.
+var weather := "auto"
+var time := "auto"
 
 var _cfg := ConfigFile.new()
 
@@ -31,6 +35,8 @@ func _ready() -> void:
 		music = _cfg.get_value("audio", "music", music)
 		sfx = _cfg.get_value("audio", "sfx", sfx)
 		shake = _cfg.get_value("game", "shake", shake)
+		weather = _cfg.get_value("sky", "weather", weather)
+		time = _cfg.get_value("sky", "time", time)
 	apply()
 
 
@@ -45,6 +51,8 @@ func save() -> void:
 	_cfg.set_value("audio", "music", music)
 	_cfg.set_value("audio", "sfx", sfx)
 	_cfg.set_value("game", "shake", shake)
+	_cfg.set_value("sky", "weather", weather)
+	_cfg.set_value("sky", "time", time)
 	_cfg.save(PATH)
 
 

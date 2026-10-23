@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-23T12:00Z',
     entries: [
       {
+        title: 'Android: weather',
+        notes: [
+          'The seventh Android build brings the weather. Clear skies, fair, cloudy, sea mist, rain, storms and mirror calm now follow one another as you sail, with a scorching noon out on the high seas, each with its own light, clouds and wind, and the wind backs and veers as the weather turns.',
+          'In a storm the sky closes into a dark slate deck, the swell builds, whitecaps break along the crests and the gale tears spray off them in sheets, while lightning forks down to the sea and lights up the whole world for an instant. Rain drives across the water in curtains with rings spreading where the drops land, and decks, rocks and sails go dark and glossy as they soak. Cloud shadows drift across the sea, the islands and the ships, and the sea mirrors the clouds.',
+          'Tap the weather badge at the top right to hold a weather, or the clock beside it to hold an hour, and tap on round to Auto to let the sky run free again. Your picks are kept for the next voyage.',
+        ],
+      },
+      {
         title: 'Android: steadier touch controls',
         notes: [
           'On Android a pinch to zoom no longer turns your ship. The helm now only takes a thumb that comes down low on the left of the screen, by the sail lever, and a second finger landing with it turns the pair into a pinch. Zooming all the way out still leans the view over toward the horizon for a long look across the sea, but now it stays leaned however far you keep pinching instead of straightening back up. Pinch in and it straightens up first, then closes in.',

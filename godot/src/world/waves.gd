@@ -11,6 +11,8 @@ extends RefCounted
 const COUNT := 8
 const G := 9.81
 const STEEP := 0.66
+## The storm caps' noise along a wave, per radian of its phase (ocean.gdshader).
+const CAP_SCALE := 0.0447
 
 ## wavelength (m), amplitude (m), heading offset from the wind (rad), start phase
 const DEFS := [
@@ -32,8 +34,15 @@ var omega := PackedFloat32Array()
 var q := PackedFloat32Array()
 var phase := PackedFloat32Array()
 var _base_amp := PackedFloat32Array()
+var _base_x := PackedFloat32Array()
+var _base_z := PackedFloat32Array()
+## The whole turns each train's phase has wrapped through: a storm's caps key
+## their breaking stretches off the unwrapped phase (one pattern per crest),
+## and a wrap would throw them all somewhere else at once.
+var _turns := PackedFloat64Array()
 
-## Shader-side copies: vec4(dir.x, dir.z, k, amp) and vec4(omega, q, phase, 0).
+## Shader-side copies: vec4(dir.x, dir.z, k, amp) and vec4(omega, q, phase,
+## the caps' offset for the wrapped turns).
 var packed_a := PackedVector4Array()
 var packed_b := PackedVector4Array()
 
@@ -48,6 +57,9 @@ func _init(wind_angle: float = 0.0, scale: float = 1.0) -> void:
 	q.resize(COUNT)
 	phase.resize(COUNT)
 	_base_amp.resize(COUNT)
+	_base_x.resize(COUNT)
+	_base_z.resize(COUNT)
+	_turns.resize(COUNT)
 	packed_a.resize(COUNT)
 	packed_b.resize(COUNT)
 	for i in COUNT:
@@ -56,6 +68,8 @@ func _init(wind_angle: float = 0.0, scale: float = 1.0) -> void:
 		var ang: float = wind_angle + float(d[2])
 		dir_x[i] = sin(ang)
 		dir_z[i] = cos(ang)
+		_base_x[i] = dir_x[i]
+		_base_z[i] = dir_z[i]
 		k[i] = kk
 		amp[i] = float(d[1]) * scale
 		_base_amp[i] = amp[i]
@@ -68,8 +82,30 @@ func _init(wind_angle: float = 0.0, scale: float = 1.0) -> void:
 ## Moves the swell on by dt seconds.
 func advance(dt: float) -> void:
 	for i in COUNT:
-		phase[i] = fmod(phase[i] - omega[i] * dt, TAU)
+		_wrap(i, phase[i] - omega[i] * dt)
 	_pack()
+
+
+## Swings the whole swell round by t radians from its first headings,
+## pivoting about (px, pz): each train's phase is nudged so the sea right
+## there keeps its shape, and the swell only turns slowly round the ship
+## instead of sliding past her.
+func turn(t: float, px: float, pz: float) -> void:
+	var c := cos(t)
+	var s := sin(t)
+	for i in COUNT:
+		var nx := _base_x[i] * c + _base_z[i] * s
+		var nz := _base_z[i] * c - _base_x[i] * s
+		_wrap(i, phase[i] + k[i] * ((dir_x[i] - nx) * px + (dir_z[i] - nz) * pz))
+		dir_x[i] = nx
+		dir_z[i] = nz
+	_pack()
+
+
+func _wrap(i: int, p: float) -> void:
+	var w := floorf(p / TAU)
+	phase[i] = p - w * TAU
+	_turns[i] += w
 
 
 ## Sea state: long swells grow the most in a storm, short chop the least, and
@@ -109,4 +145,4 @@ func height_at(x: float, z: float, damp: float = 1.0) -> float:
 func _pack() -> void:
 	for i in COUNT:
 		packed_a[i] = Vector4(dir_x[i], dir_z[i], k[i], amp[i])
-		packed_b[i] = Vector4(omega[i], q[i], phase[i], 0.0)
+		packed_b[i] = Vector4(omega[i], q[i], phase[i], fposmod(_turns[i] * TAU * CAP_SCALE, 1.0))

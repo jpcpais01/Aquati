@@ -4,10 +4,13 @@
 #ifndef WIND_INC
 #define WIND_INC
 
-/// x, y the direction the wind blows toward (x, z), z its strength (0 calm .. 1 a stiff breeze)
-global uniform vec4 wind;
-/// how far the air has carried a cloud or a ripple (m), for patterns that drift downwind
-global uniform vec2 wind_drift;
+// (the wind's own globals, wind and wind_drift, live with the air)
+#include "res://shaders/inc/atmos.gdshaderinc"
+
+/// the origin streaks laid out along the wind are measured from (dot(p -
+/// pivot, dir)): moved as the wind comes round, so they swing about the view
+/// instead of sweeping across it (game.gd, _turn_wind)
+global uniform vec2 wind_pivot;
 /// the gust puffs: centre x, z (m), radius (m), strength (Wind.packed)
 uniform vec4 gusts[8];
 

@@ -24,7 +24,15 @@
 // The light is the web game's own: the sky's reflection is drawn from the
 // same sky_color() the sky uses, and only the parts that a shadow should dim
 // (the sunlit share of the body, the sunlit foam and the glitter) go through
-// light(), so ship and island shadows fall on the water and nowhere else.
+// light(), so ship and island shadows fall on the water and nowhere else; the
+// clouds' shadows dim those same parts.
+//
+// The weather reaches in too: the clouds overhead are mirrored in the sea,
+// rain pocks it with rings and splashes, a storm darkens and steepens it,
+// breaks its long swells along their crests and streaks it with spume blown
+// down the wind, a mirror calm turns it to glass, a scorching noon runs it a
+// hotter blue, lightning lights it round a strike, and banks of mist and
+// curtains of rain drift over it.
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, world_vertex_coords, ambient_light_disabled;
 
@@ -88,6 +96,39 @@ const float FLOOR_PLANE_FROM = -15.5;
 
 float seen_floor(float h) {
 	return mix(h, -18.2 - 0.35 * region.z, 1.0 - smoothstep(FLOOR_PLANE_FROM - 0.2, FLOOR_PLANE_FROM + 0.2, h));
+}
+
+vec3 hash32(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.103, 0.0973));
+	p3 += dot(p3, p3.yxz + 33.33);
+	return fract((p3.xxy + p3.yzz) * p3.zyx);
+}
+
+// Raindrops on the water: rings spreading from where each lands (a slope to
+// tilt the normal by, xy) and the splash that leaps up the moment it hits
+// (z). Two staggered layers of cells, only some of them struck each beat,
+// more as it pours.
+vec3 rain_rings(vec2 p, float t, float amount) {
+	vec3 o = vec3(0.0);
+	for (int l = 0; l < 2; l++) {
+		float fl = float(l);
+		vec2 q = p * (1.15 + fl * 0.5) + fl * vec2(0.37, 0.71);
+		vec2 cell = floor(q);
+		vec3 h = hash32(cell + fl * 31.7);
+		float tt = t * (0.9 + h.z * 0.5) + h.x * 7.31 + h.y * 3.17;
+		vec3 h2 = hash32(cell + floor(tt) * 0.731);
+		if (h2.x > amount) {
+			continue;
+		}
+		float ph = fract(tt);
+		vec2 d = fract(q) - (0.3 + h2.yz * 0.4);
+		float r = length(d);
+		float x = (r - ph * 0.42) * 26.0;
+		float env = (1.0 - ph) * (1.0 - ph) * (1.0 - smoothstep(0.3, 0.5, r));
+		o.xy += d / max(r, 1e-3) * (-sin(x) * exp(-x * x * 0.18) * env);
+		o.z += smoothstep(0.14, 0.0, ph) * smoothstep(0.09, 0.0, r);
+	}
+	return o;
 }
 
 float warp1(float s) {
@@ -208,6 +249,8 @@ void fragment() {
 	float storm = weather.z;
 	float rain = weather.y;
 	float cover = weather.x;
+	// a mirror calm
+	float glass = sky_fx.z;
 	float detail = 1.0 - smoothstep(140.0, 520.0, v_dist);
 	float crest = v_crest + lost_crest();
 
@@ -237,17 +280,19 @@ void fragment() {
 		rip += r4 * 0.22 * detail;
 	}
 	rip *= (0.6 + 0.4 * detail) * (1.0 + storm * 0.9);
+	// a mirror calm: barely a breath of ripple left on the glass
+	rip *= 1.0 - 0.9 * glass;
 
 	// ---- wind slicks: long glassy streaks along the wind where the surface
 	// film calms the ripples; read mostly in the sun glitter
-	vec2 sl = vec2(dot(p, wd) * 0.0042, dot(p, wperp) * 0.034) + vec2(TIME * 0.0021, 0.0);
+	vec2 sl = vec2(dot(p - wind_pivot, wd) * 0.0042, dot(p - wind_pivot, wperp) * 0.034) + vec2(TIME * 0.0021, 0.0);
 	float slick_n = texture(noise_tex, sl).g * 0.75 + mac2.a * 0.35;
 	float slick = smoothstep(0.6, 0.78, slick_n) * 0.7;
 	float calm = 1.0 - slick;
 
 	// ---- cat's paws: gust puffs ruffle the surface into darker, matte,
 	// finely sparkling patches, frayed into fingers by two noise scales
-	float gust = gust_at(p);
+	float gust = gust_at(p) * (1.0 - glass);
 	vec2 gust_rip = vec2(0.0);
 	if (gust > 0.002) {
 		vec4 gn = texture(noise_tex, p * 0.017 - drift * 0.21);
@@ -262,6 +307,15 @@ void fragment() {
 
 	vec3 Ns = normalize(v_normal);
 	vec3 N = normalize(Ns + vec3(rip.x, 0.0, rip.y) * 0.36 * calm);
+
+	// ---- rain: rings and splashes up close, a matt stippled sheen further out
+	float rain_splash = 0.0;
+	if (rain > 0.01 && detail > 0.0) {
+		vec3 rr = rain_rings(p, TIME, rain);
+		float rf = detail * detail;
+		N = normalize(N + vec3(rr.x, 0.0, rr.y) * 0.5 * rf);
+		rain_splash = rr.z * rf * rain * (1.0 - 0.6 * night);
+	}
 
 	// ---- ship wakes: the field's height gives normals to every V-arm and
 	// ring, domain-warped by drifting noise so the arms wander and fray
@@ -332,6 +386,8 @@ void fragment() {
 	vec3 bed_sky = vec3(0.0);
 	vec3 bed_sun = vec3(0.0);
 	vec3 cam_fwd = -INV_VIEW_MATRIX[2].xyz;
+	// the sun through the clouds overhead: the very deck whose shadows drift by
+	float cloud = cloud_shadow(p);
 	if (has_seabed > 0.5) {
 		// the floor straight on down the view ray, nudged about by the
 		// ripples as the web game does it: its refraction shifts where it
@@ -388,7 +444,7 @@ void fragment() {
 		// sunlight thins and turns blue-green on its way down; the swell
 		// focuses it into a dancing web
 		float ndl = max(dot(bn, L), 0.0);
-		bed_sun = alb * sun_color * ndl * (0.318 + 0.9 * caustic) * exp(-bd * vec3(0.16, 0.05, 0.035));
+		bed_sun = alb * sun_color * ndl * (0.318 + 0.9 * caustic) * exp(-bd * vec3(0.16, 0.05, 0.035)) * cloud;
 		bed_sky = alb * (sky_zenith * 0.45 + sky_horizon * 0.55) * 0.72;
 	}
 
@@ -443,6 +499,11 @@ void fragment() {
 	body_bed_sun *= 1.0 - s_aer;
 	body_sun = mix(body_sun, vec3(0.3, 0.56, 0.52), s_aer);
 	body_sun *= 1.0 - gust * 0.18;
+	// a scorching noon: the shallows and the open sea both run a brighter, hotter blue
+	vec3 hot = 1.0 + vec3(0.02, 0.12, 0.1) * sky_fx.w;
+	body_bed *= hot;
+	body_bed_sun *= hot;
+	body_sun *= hot;
 	// under a grey sky the sea loses its blue and turns pewter
 	float pewter = cover * cover * 0.4;
 	body_bed = mix(body_bed, vec3(dot(body_bed, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), pewter);
@@ -456,10 +517,25 @@ void fragment() {
 	// far off, the sub-pixel facets of the chop tilt toward the viewer and
 	// mirror a little higher, bluer sky than the glassy maths alone would,
 	// so the sea darkens toward the horizon instead of turning milky
-	R = normalize(R + vec3(0.0, 0.07 * smoothstep(30.0, 500.0, v_dist), 0.0));
-	vec3 refl = sky_color(R) * (1.0 - gust * 0.22) * (1.0 - rain * 0.18);
+	R = normalize(R + vec3(0.0, 0.07 * smoothstep(30.0, 500.0, v_dist) * (1.0 - 0.8 * glass), 0.0));
+	vec3 refl = sky_color(R);
 	float F = 0.02 + 0.98 * pow(max(1.0 - NdV, 0.0), 5.0);
 	F = min(F * 1.1, 1.0);
+	if (F > 0.04) {
+		// the clouds overhead mirrored in the sea, the same ones whose shadows drift across it
+		float cd;
+		vec3 cc = cloud_sample_lite(cloud_uv(wpos, R, CLOUD_ALT, cd));
+		vec3 ccol = mix(cloud_color(cc, R), haze_color(R), 1.0 - exp(-cd * 0.00011));
+		refl = mix(refl, ccol, cc.x * smoothstep(0.0, 0.1, R.y));
+	}
+	refl *= (1.0 - gust * 0.22) * (1.0 - rain * 0.18);
+	// glassy water mirrors the sky and its clouds even looking straight down,
+	// and lets less of its own blue up from below
+	F = mix(F, max(F, 0.4), glass);
+	float clear = 1.0 - 0.3 * glass;
+	body_bed *= clear;
+	body_bed_sun *= clear;
+	body_sun *= clear;
 
 	// ---- foam: wake foam through the bubble web (a churned sheet that opens
 	// into holes and thins to threads, never soft puffs), and whitecaps
@@ -474,6 +550,51 @@ void fragment() {
 	float breaking = smoothstep(0.54 - storm * 0.16, 0.8 - storm * 0.1, texture(noise_tex, p * 0.0093 - drift * 0.017).g + gust * 0.35);
 	float crest_foam = smoothstep(0.5 - storm * 0.1, 0.95, crest + nz2.g * 0.35) * breaking * (0.6 + storm * 0.15);
 	float cap_break = smoothstep(0.25, 0.8, nz.g * 0.7 + nz2.a * 0.5);
+	// In a blow the long swells break along their crests: white water tumbles
+	// down each face as the crest runs on and is left lying on its back,
+	// thinning to lace. The breaking stretches ride with the waves (noise in
+	// each wave's own frame, keyed off its unwrapped phase), and every crest
+	// breaks in different places, so the caps march across the sea in broken
+	// lines.
+	float caps = 0.0;
+	float aerated = 0.0;
+	float spume = 0.0;
+	if (storm > 0.02) {
+		float cap_n = texture(noise_tex, p * 0.043 + vec2(0.37, 0.11)).g;
+		// the crest lines meander (a real sea is never ruled straight)
+		vec2 cw = (texture(noise_tex, p * 0.0037 + vec2(0.17, 0.53)).rg - 0.5) * 3.2
+				+ (texture(noise_tex, p * 0.011 + vec2(0.71, 0.29)).ba - 0.5) * 1.1;
+		for (int i = 0; i < 3; i++) {
+			vec4 a = wave_a[i];
+			float th = a.z * dot(a.xy, p) + wave_b[i].z + (i == 1 ? cw.y : cw.x);
+			// how far behind its crest (sin = 1) this point lies, in wavelengths
+			float cd = fract((1.5708 - th) * 0.159155);
+			vec2 cu = vec2(dot(p, vec2(-a.y, a.x)) * 0.0105, th * 0.0447 + wave_b[i].w + float(i) * 0.37);
+			float seg = texture(noise_tex, cu).g * 0.7 + texture(noise_tex, cu * 2.7 + 0.19).a * 0.3;
+			float brk = smoothstep(0.54 - storm * 0.08 - gust * 0.15, 0.74, seg + (cap_n - 0.5) * 0.35);
+			float wgt = a.w / max(wave_a[0].w, 1e-3);
+			// a bright tumbling lip right at the crest, the spilt foam fanning out behind it
+			caps += brk * wgt * (smoothstep(0.0, 0.006, cd) * (exp(-cd * 7.5) * 1.1 + exp(-cd * 45.0) * 0.6) + smoothstep(0.975, 1.0, cd) * 0.8);
+			aerated += brk * wgt * exp(-cd * 3.5);
+		}
+		caps = clamp(caps * storm, 0.0, 1.0);
+		aerated = clamp(aerated * storm, 0.0, 1.0);
+		// spume: foam blown off the caps in long streaks down the wind,
+		// meandering, gathered in bands and woven of the same bubble lace
+		vec2 sq = p - wind_pivot;
+		vec2 sp = vec2(dot(sq, wd) * 0.005, dot(sq, wperp) * 0.055) - vec2(TIME * 0.028, 0.0);
+		sp.y += (texture(noise_tex, p * 0.0031 - drift * 0.002).g - 0.5) * 0.9;
+		float sn = texture(noise_tex, sp).g * 0.75 + texture(noise_tex, sp * vec2(2.3, 1.7) + 0.5).a * 0.25;
+		float band = smoothstep(0.45, 0.75, texture(noise_tex, vec2(dot(sq, wperp), dot(sq, wd) * 0.3) * 0.0045 + vec2(0.61, 0.23)).r + aerated * 0.4);
+		// gone where the streaks would come thinner than a pixel or two (no shimmer at range)
+		float aa = 1.0 - smoothstep(0.2, 0.55, fwidth(sp.y));
+		spume = smoothstep(0.58, 0.82, sn) * band * aa * storm * 0.75;
+	}
+	// the sea under a breaking cap is beaten full of air: milky bottle green
+	float aer = aerated * 0.32;
+	body_bed *= 1.0 - aer;
+	body_bed_sun *= 1.0 - aer;
+	body_sun = mix(body_sun, vec3(0.13, 0.3, 0.27), aer);
 	// whitewater: a dense bore right behind each broken crest that leaves a
 	// sheet of foam behind it, opening into lace as the bubbles pop
 	float surf_cover = s_prev.y * (exp(-s_age * 1.4) + 0.4 * exp(-s_age * 0.42));
@@ -489,6 +610,9 @@ void fragment() {
 	float surf_foam = foam_cut(fv, clamp(surf_cover, 0.0, 1.0), fp);
 	float foam = surf_foam * (0.82 + 0.18 * clamp(surf_cover, 0.0, 1.0));
 	foam += wake_foam * (0.8 + 0.2 * bubbles) + crest_foam * mix(cap_break, bubbles, 0.3);
+	// whitecaps break up softly; the cellular lace alone reads as polka dots on a big cap
+	foam += foam_cut(fv, caps * 0.97, fp) * (0.75 + 0.25 * cap_break) + smoothstep(0.55, 1.0, caps) * 0.25;
+	foam += spume * (0.3 + 0.7 * bubbles) + rain_splash * 0.7;
 	// the swell trips over an open-sea reef: each crest stands up and spills
 	// white across the coral as it rolls over, then the foam thins to lace
 	// until the next one comes (sailors know a reef by its breakers)
@@ -510,9 +634,15 @@ void fragment() {
 	// for light(): the sunlit share of the body, the sunlit foam, the glitter
 	float keep = (1.0 - fa) * (1.0 - F);
 	EMISSION = (body_bed + body_sun * sun_in * 0.55) * keep + refl * F * (1.0 - fa) + foam_base * sky_zenith * 0.8 * fa;
-	v_body_lit = body_sun * sun_in * 0.45 * keep;
+	// a lightning strike lights the sea round it, and its glare skates off the swell
+	if (strike.w > 0.001) {
+		vec2 sk = p - strike.xy;
+		float sk2 = dot(sk, sk) / (strike.z * strike.z);
+		EMISSION += vec3(0.55, 0.62, 0.95) * strike.w * (exp(-sk2) * 0.35 + exp(-sk2 * 14.0) * 1.6) * (0.35 + F * 2.5);
+	}
+	v_body_lit = body_sun * sun_in * 0.45 * keep * cloud;
 	v_bed_lit = body_bed_sun * keep;
-	v_foam_lit = foam_base * 0.42 * fa;
+	v_foam_lit = foam_base * 0.42 * fa * cloud;
 	ALBEDO = vec3(1.0);
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
@@ -522,14 +652,20 @@ void fragment() {
 	float twinkle = 0.45 + 1.4 * smoothstep(0.45, 0.85, texture(noise_tex, p * 0.73 + vec2(TIME * 0.09, -TIME * 0.07)).a);
 	v_glint = twinkle * (1.0 + slick * 0.8);
 	// moonlight lays a softer, silvery path than the sun's dazzle
-	v_spec = (1.0 - fa) * (1.0 - rain * 0.55) * (1.0 - night * 0.5);
+	v_spec = (1.0 - fa) * (1.0 - rain * 0.55) * (1.0 - night * 0.5) * cloud;
 	v_gust = gust;
 	v_swell_n = normalize((VIEW_MATRIX * vec4(Ns, 0.0)).xyz);
 
 	// ---- the far sea lies under the haze a shade deeper and bluer than the
 	// sky just above it, so the horizon stays a crisp line
-	vec3 sea_haze = haze_color(-V) * mix(vec3(1.0), vec3(0.8, 0.88, 0.97), (1.0 - weather.w * 0.85) * (1.0 - cover * 0.45));
-	FOG = vec4(sea_haze, aerial_at(v_dist, 0.0) * 0.88);
+	vec3 hz = haze_color(-V);
+	vec3 sea_haze = hz * mix(vec3(1.0), vec3(0.8, 0.88, 0.97), (1.0 - weather.w * 0.85) * (1.0 - cover * 0.45));
+	// ...and banks of mist and curtains of rain drift over the water (the two
+	// hazes folded into one fog: the far sea's first, then the low weather's)
+	float ha = aerial_at(v_dist, 0.0) * 0.88;
+	float va = veil_at(wpos, CAMERA_POSITION_WORLD);
+	float fa_all = 1.0 - (1.0 - ha) * (1.0 - va);
+	FOG = vec4((sea_haze * ha * (1.0 - va) + hz * va) / max(fa_all, 1e-4), fa_all);
 }
 
 void light() {

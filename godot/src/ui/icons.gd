@@ -5,7 +5,7 @@ class_name Icons
 ##
 ## Line icons are drawn in white with the web's 1.7 stroke on a 24 grid and
 ## tinted where they are used; the tally badges (coin, skull, isle, clock)
-## carry their own colours.
+## and the sky badge's weathers carry their own colours.
 
 const LINE := {
 	"chev": '<path d="m9 5 7 7-7 7"/>',
@@ -28,6 +28,23 @@ const BADGE := {
 	"clock": '<circle cx="12" cy="12" r="7.2" fill="none" stroke="#5ee3d4" stroke-width="1.9"/><path d="M11.1 7.6v5.1h4.6" fill="none" stroke="#5ee3d4" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
 	# the hold: a little crate, a plank across it
 	"crate": '<defs><linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d2a160"/><stop offset="1" stop-color="#9a6a3c"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="4.4" fill="url(#w)"/><path d="M5.6 18.4 18.4 5.6" stroke="#6e4a28" stroke-width="2.3"/><rect x="5.1" y="5.1" width="13.8" height="13.8" rx="3.4" fill="none" stroke="#6e4a28" stroke-width="2.2"/>',
+}
+
+## The sky badge's weathers, by day and by night (the web's .sky icons), and
+## the gold lock on a weather that waits for its time and place.
+const SKY := {
+	"sun": '<g stroke="#ffd27a" stroke-width="1.8" stroke-linecap="round"><path d="M12 1.8v2.6M12 19.6v2.6M1.8 12h2.6M19.6 12h2.6M4.8 4.8l1.8 1.8M17.4 17.4l1.8 1.8M4.8 19.2l1.8-1.8M17.4 6.6l1.8-1.8"/></g><circle cx="12" cy="12" r="4.6" fill="#ffd27a"/>',
+	"moon": '<path d="M15.5 3.2a8.8 8.8 0 1 0 5.3 13.6A7.4 7.4 0 0 1 15.5 3.2z" fill="#dfe8ff"/><circle cx="5" cy="5" r="0.8" fill="#dfe8ff"/><circle cx="8.6" cy="2.6" r="0.55" fill="#dfe8ff"/>',
+	"partly-sun": '<g stroke="#ffd27a" stroke-width="1.6" stroke-linecap="round"><path d="M8 1.5v2M2 7.5h2M3.8 3.3l1.4 1.4M12.2 3.3l-1.4 1.4"/></g><circle cx="8" cy="8" r="3.6" fill="#ffd27a"/><path transform="translate(0 1)" d="M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z" fill="#e9f1f5"/>',
+	"partly-moon": '<path d="M10 1.8a6 6 0 1 0 3.6 9.3A5 5 0 0 1 10 1.8z" fill="#dfe8ff"/><path transform="translate(0 1)" d="M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z" fill="#c3cfdc"/>',
+	"cloud": '<path transform="translate(0 -1)" d="M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z" fill="#d8e6ee"/>',
+	"rain": '<path transform="translate(0 -4)" d="M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z" fill="#c2d0da"/><g stroke="#9fd0ff" stroke-width="1.6" stroke-linecap="round"><path d="M8 17.5l-1.2 3M12 17.5l-1.2 3M16 17.5l-1.2 3"/></g>',
+	"storm": '<path transform="translate(0 -4)" d="M7 18.5h10.5a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.7-1.2A4.6 4.6 0 0 0 7 18.5z" fill="#8d9aa8"/><path d="M12.8 14.5h-3l-1.6 5h2.4l-1.2 4.2 5-6.2h-2.6z" fill="#ffe07a"/>',
+	"mist": '<g stroke="#d8e6ee" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h12M7 12h13M3 16h11M8 20h9"/></g>',
+	"calm": '<path d="M6.4 12a5.6 5.6 0 0 1 11.2 0z" fill="#ffd27a"/><path d="M8.2 14.2a3.8 3.8 0 0 0 7.6 0z" fill="#ffd27a" opacity="0.45"/><g stroke="#d8eef7" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 13h19"/><path d="M5 18.5h5M14 18.5h5" opacity="0.6"/></g>',
+	"calm-moon": '<path d="M13.4 3.4a5 5 0 1 0 3.2 7.6A4 4 0 0 1 13.4 3.4z" fill="#dfe8ff"/><path d="M13.4 22.6a5 5 0 1 1 3.2-7.6A4 4 0 0 0 13.4 22.6z" fill="#dfe8ff" opacity="0.35"/><path d="M2.5 13h19" stroke="#b9c8e6" stroke-width="1.6" stroke-linecap="round"/>',
+	"hot": '<circle cx="12" cy="8.5" r="5.2" fill="#ffb347"/><circle cx="12" cy="8.5" r="3" fill="#ffe08a"/><g fill="none" stroke="#ffd27a" stroke-width="1.5" stroke-linecap="round"><path d="M3.5 17.2q2-1.6 4 0t4 0 4 0 4 0"/><path d="M5.5 21q2-1.6 4 0t4 0 4 0" opacity="0.6"/></g>',
+	"lock": '<g transform="scale(1.5)"><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="#ffd27a" stroke-width="1.8"/><rect x="3" y="7" width="10" height="8" rx="2" fill="#ffd27a"/></g>',
 }
 
 ## What special shot has done to a ship, on her bar (a 16 grid): ablaze, her
@@ -59,7 +76,7 @@ static func density() -> float:
 static func texture(id: String, size: float) -> Texture2D:
 	if LINE.has(id):
 		return svg(id, '<g fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">%s</g>' % LINE[id], Vector2(size, size))
-	return svg(id, BADGE.get(id, ""), Vector2(size, size))
+	return svg(id, BADGE.get(id, SKY.get(id, "")), Vector2(size, size))
 
 
 ## Any SVG art (`inner`, on a `view` grid) drawn `size` HUD units across,

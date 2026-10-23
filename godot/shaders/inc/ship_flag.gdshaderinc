@@ -3,6 +3,9 @@
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/heraldry.gdshaderinc"
+#define LIT_SPECULAR 0.3
+#define LIT_BACKLIGHT
+#include "res://shaders/inc/lit.gdshaderinc"
 
 uniform vec3 c_field : source_color = vec3(0.122, 0.639, 0.627);
 uniform vec3 c_emblem : source_color = vec3(0.949, 0.769, 0.353);
@@ -47,6 +50,7 @@ void vertex() {
 	float dz = cos(t * 7.0 - a * 9.0) * (-9.0) * 0.18 * a + sin(t * 7.0 - a * 9.0) * 0.18;
 	NORMAL = normalize(vec3(-dz * flag_wind * 0.35, 0.0, 1.0));
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	lit_cloud = cloud_shadow(v_world.xz);
 }
 
 void fragment() {
@@ -73,8 +77,8 @@ void fragment() {
 		discard;
 	}
 #endif
-	ALBEDO = col;
-	ROUGHNESS = 0.8;
+	ALBEDO = col * wet_dim();
+	ROUGHNESS = 0.8 * wet_gloss();
 	SPECULAR = 0.3;
 	BACKLIGHT = col * 0.3;
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);

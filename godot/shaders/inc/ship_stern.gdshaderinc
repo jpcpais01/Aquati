@@ -3,6 +3,7 @@
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
+#include "res://shaders/inc/lit.gdshaderinc"
 
 uniform vec3 c_hull : source_color = vec3(0.48, 0.29, 0.16);
 uniform vec3 c_bottom : source_color = vec3(0.7, 0.23, 0.17);
@@ -21,6 +22,7 @@ varying vec3 v_obj;
 
 void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	lit_cloud = cloud_shadow(v_world.xz);
 #ifdef DAMAGE
 	v_obj = VERTEX;
 #endif
@@ -74,9 +76,9 @@ void fragment() {
 	}
 	glow = glow * lit * (FRONT_FACING ? 1.0 : 0.0) + ember;
 #endif
-	ALBEDO = col;
+	ALBEDO = col * wet_dim();
 	METALLIC = metal;
-	ROUGHNESS = rough;
+	ROUGHNESS = rough * wet_gloss();
 	EMISSION = glow;
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

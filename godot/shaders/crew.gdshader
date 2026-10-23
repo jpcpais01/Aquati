@@ -17,6 +17,7 @@ render_mode cull_back;
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/crew_rig.gdshaderinc"
+#include "res://shaders/inc/lit.gdshaderinc"
 
 /// per sailor drawn this frame: 8 texels (six of pose, then palette row, hat, prop, kit flags)
 uniform highp sampler2D crew_pose : filter_nearest, repeat_disable;
@@ -287,6 +288,7 @@ void vertex() {
 	VERTEX = p;
 	NORMAL = n;
 	v_world = (MODEL_MATRIX * vec4(p, 1.0)).xyz;
+	lit_cloud = cloud_shadow(v_world.xz);
 
 	int row = int(P.st.x + 0.5);
 	int tint = int(rig.y + 0.5);
@@ -487,8 +489,8 @@ void fragment() {
 	// a sheen sliding over hair
 	if (part == PART_HAIR || part == PART_BEARD) em += col * 0.45 * exp(-sq((n.y - 0.45) / 0.18)) * light_tint;
 
-	ALBEDO = col;
-	ROUGHNESS = rough;
+	ALBEDO = col * wet_dim();
+	ROUGHNESS = rough * wet_gloss();
 	METALLIC = metal;
 	NORMAL = n;
 	EMISSION = em;

@@ -119,3 +119,27 @@ sea_clock={
 "type": "float",
 "value": 0.0
 }
+cloud_noise={
+"type": "sampler2D",
+"value": "res://art/noise.png"
+}
+clouds={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 0.69, 480.0)
+}
+sky_fx={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 0.0, 0.0)
+}
+veil={
+"type": "vec4",
+"value": Vector4(0.0, 20.0, 0.0, 0.0)
+}
+strike={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 1.0, 0.0)
+}
+wind_pivot={
+"type": "vec2",
+"value": Vector2(0.0, 0.0)
+}
