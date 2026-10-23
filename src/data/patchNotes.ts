@@ -22,6 +22,12 @@ export const PATCH_NOTES: PatchGroup[] = [
         ],
       },
       {
+        title: 'Android: the shot pie',
+        notes: [
+          'On Android, hold the shot button over Fire and a pie of shot opens round it. Slide your thumb onto round shot, shells, fire, chain or grape and let go to load it, or back to the middle to keep what you have. Each slice shows what is left of its kind, the one under your thumb lights up in its colour with its name and what it does above the pie, and the guns dim while you choose. A quick tap opens it too, for a tap on the shot you want.',
+        ],
+      },
+      {
         title: 'Android: the crew on deck',
         notes: [
           'The sixth Android build puts the crews aboard. Every ship, yours and every pirate\'s, sails with a helmsman at the wheel, a captain pacing the quarterdeck with his spyglass and hands at their chores: hauling on the lines when you trim sail or come about, swabbing, coiling rope, leaning on the rail, sitting on crates, chatting over a pipe or a mug of grog, and now and then a fiddler strikes up and the hands nearby dance a jig.',
