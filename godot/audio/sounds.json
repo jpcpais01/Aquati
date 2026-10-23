@@ -340,6 +340,13 @@
   }
  },
  "music": {
+  "harbour": {
+   "title": "Sunset Archipelago",
+   "harbour": true,
+   "loop": true,
+   "gain": 0.69,
+   "seconds": 183.88
+  },
   "high_seas": {
    "title": "The High Seas",
    "loop": true,

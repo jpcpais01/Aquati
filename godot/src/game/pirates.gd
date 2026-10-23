@@ -33,6 +33,12 @@ var voyage_time := 0.0
 var enabled := true
 
 var _name_idx := randi() % NAMES.size()
+## The harbour's sea still to dress (dress_harbour): a lone sail (1) and a
+## pair in company (2); and seconds to the next look at the slipway.
+var _dress := 0
+var _dress_t := 0.0
+## While the harbour's sea is dressed, the lens new sails keep out of sight of.
+var _unseen: Camera3D
 
 
 func setup(p_world: World, p_yard: Shipyard, p_stage: Node3D) -> void:
@@ -90,6 +96,8 @@ func find_open_water(cx: float, cz: float, r_min: float, r_max: float) -> Varian
 			continue
 		if world.ground_height(x, z) > -9.0:
 			continue
+		if _unseen != null and _in_sight(x, z):
+			continue
 		var clear := true
 		for s: Ship in world.ships:
 			if Vector2(s.pos.x - x, s.pos.z - z).length() < 80.0:
@@ -118,9 +126,9 @@ func _spawn(dt: float, player: Ship) -> void:
 	var room := want - alive
 	var ok := false
 	if room >= 2 and voyage_time > 60.0 and randf() < 0.25:
-		ok = _flotilla(player, mini(room, 3))
+		ok = _flotilla(player.pos, kills, mini(room, 3), 360.0, 520.0)
 	if not ok:
-		ok = _single(player)
+		ok = _single(player.pos, kills, 280.0, 480.0)
 	# nothing on the slipway yet: try again in a moment
 	spawn_timer = randf_range(12.0, 20.0) if ok else 1.0
 
@@ -138,24 +146,25 @@ func _pick_class(kills: int) -> String:
 	return id
 
 
-func _single(player: Ship) -> bool:
-	var at: Variant = find_open_water(player.pos.x, player.pos.z, 280.0, 480.0)
+## A lone pirate in open water r_min..r_max from `near`.
+func _single(near: Vector3, kills: int, r_min: float, r_max: float) -> bool:
+	var at: Variant = find_open_water(near.x, near.z, r_min, r_max)
 	if at == null:
 		return false
 	var p: Vector2 = at
-	return launch(_pick_class(player.kills), p.x, p.y, randf() * TAU, player.kills) != null
+	return launch(_pick_class(kills), p.x, p.y, randf() * TAU, kills) != null
 
 
-## A flagship with her wingmen in a loose vee astern.
-func _flotilla(player: Ship, size: int) -> bool:
-	var flag_id := "galleon" if player.kills >= 4 and randf() < 0.6 else "brig"
+## A flagship with her wingmen in a loose vee astern, r_min..r_max from `near`.
+func _flotilla(near: Vector3, kills: int, size: int, r_min: float, r_max: float) -> bool:
+	var flag_id := "galleon" if kills >= 4 and randf() < 0.6 else "brig"
 	if shipyard != null and (shipyard.count(flag_id) == 0 or shipyard.count("sloop") + shipyard.count("brig") < size):
 		return false
-	var at: Variant = find_open_water(player.pos.x, player.pos.z, 360.0, 520.0)
+	var at: Variant = find_open_water(near.x, near.z, r_min, r_max)
 	if at == null:
 		return false
 	var p: Vector2 = at
-	var flag := launch(flag_id, p.x, p.y, randf() * TAU, player.kills)
+	var flag := launch(flag_id, p.x, p.y, randf() * TAU, kills)
 	if flag == null:
 		return false
 	var pack := PirateAI.Pack.new()
@@ -179,11 +188,63 @@ func _flotilla(player: Ship, size: int) -> bool:
 		var id := "sloop" if randf() < 0.65 else "brig"
 		if shipyard != null and shipyard.count(id) == 0:
 			id = "brig" if id == "sloop" else "sloop"
-		var ai := launch(id, x, z, fs.heading, player.kills)
+		var ai := launch(id, x, z, fs.heading, kills)
 		if ai != null:
 			ai.pack = pack
 			ai.slot = slot
 	return true
+
+
+## The harbour comes up: a couple of pirates on the horizon for life, as the
+## web dresses its menu's sea (a lone sail and a pair in company further
+## out; none if any are about already), each put to sea once the yard has
+## a hull for her (step_harbour).
+func dress_harbour() -> void:
+	_dress = 0
+	for s: Ship in world.ships:
+		if s.team == Ship.Team.PIRATE:
+			return
+	_dress = 3
+	_dress_t = 0.0
+
+
+## The harbour's sea, dressed round `near` (her anchorage) as hulls come off
+## the slipway, each put to sea out of sight of `lens` (a sail popping up in
+## the picture would give the trick away): the camera circling her brings
+## them into view.
+func step_harbour(dt: float, near: Vector3, lens: Camera3D = null) -> void:
+	if _dress == 0 or not enabled:
+		return
+	_dress_t -= dt
+	if _dress_t > 0.0:
+		return
+	_dress_t = 1.0
+	_unseen = lens
+	if (_dress & 1) != 0 and _single(near, 0, 180.0, 300.0):
+		_dress &= ~1
+	if (_dress & 2) != 0 and _flotilla(near, 0, 2, 300.0, 420.0):
+		_dress &= ~2
+	_unseen = null
+
+
+## Whether a ship at (x, z) would show in the picture `_unseen` takes:
+## her hull or her trucks, bow or stern.
+func _in_sight(x: float, z: float) -> bool:
+	var right := _unseen.global_transform.basis.x
+	right = Vector3(right.x, 0.0, right.z).normalized() * 18.0
+	for k: float in [-1.0, 0.0, 1.0]:
+		for y: float in [0.0, 24.0]:
+			if _unseen.is_position_in_frustum(Vector3(x, y, z) + right * k):
+				return true
+	return false
+
+
+## Out of the harbour: the first sail of the voyage comes soon, and the
+## harbour's sea is dressed no more.
+func set_sail() -> void:
+	_dress = 0
+	spawn_timer = 4.0
+	voyage_time = 0.0
 
 
 ## Pirates left far astern on patrol are let go, so the seas stay busy round you.
@@ -246,3 +307,4 @@ func clear(keep: Ship) -> void:
 	sweep()
 	spawn_timer = 8.0
 	voyage_time = 0.0
+	_dress = 0

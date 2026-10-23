@@ -1,11 +1,22 @@
 extends Node3D
-## The voyage: the sea, the sky and the light, the islands, your ship and the
+## The game: the harbour where you choose your ship and weigh anchor, and the
+## voyage: the sea, the sky and the light, the islands, your ship and the
 ## pirates out there, the camera that follows her, the helm, the guns and the
-## HUD; and when she goes down, her farewell.
+## HUD; the voyage paused, Settings, and when she goes down, her farewell.
+## What lasts between voyages is kept by Progress; the back button (Android's,
+## or Esc) closes whatever is on top.
 ##
 ## Command-line (after --): --smoke runs a few seconds and prints SMOKE OK
 ## (--smoke-at N: after N frames; --again N sails again off the farewell
-## card at frame N);
+## card at frame N, --newship N chooses a new ship off it, back to the
+## harbour); starting in the harbour it first walks the menus (a
+## ship picked, Set Sail for Las Brumas, paused there, Settings opened and
+## closed, back to the harbour; Set Sail for the home waters, paused and
+## resumed with the back button) and says what it saw in SMOKE MENU.
+## The menus for a shot: --menu opens in the harbour (--orbit A sets how far
+## round her the camera has come), --seapick on the sea picker, --pause puts
+## the voyage on hold, --settings opens Settings (over the harbour, or with
+## --pause over the paused voyage).
 ## --shot PATH saves a frame and quits, with --hour H, --view N (0 close ..
 ## 3 leaned over) or --zoom Z (0..1) and --tilt T (0..1), --fov F to narrow
 ## the lens for a close-up (degrees), --frames N to let it settle first,
@@ -48,6 +59,8 @@ const SPAWN_HEADING := PI * 0.82
 ## Her farewell: the moment (s) the camera dives for the water where she
 ## went down, as on the web.
 const DIVE := 8.6
+## The steps of the smoke test's tour of the menus (_tour_menus).
+const TOUR_STEPS := 11
 
 var world := World.new()
 var atmosphere := Atmosphere.new()
@@ -128,6 +141,28 @@ var _strike_now := false
 ## Strikes so far (for the smoke test's report).
 var _strikes := 0
 
+## Where the game is: in the harbour choosing a ship, or out on a voyage.
+enum State { HARBOUR, VOYAGE }
+var state := State.VOYAGE
+## The voyage on hold (Anchored): nothing at sea moves.
+var paused := false
+var harbour: Harbour
+var sea_pick: SeaPick
+var pause_screen: PauseScreen
+var settings_sheet: SettingsSheet
+var veil: Veil
+var fps_meter: FpsMeter
+## A ship picked on the harbour's picker, waiting on the yard for her hull.
+var _picked_ship := ""
+## The frame the back button was last taken in: one press may come in twice.
+var _back_frame := -10
+## The smoke test's tour of the menus (_tour_menus): on, how far through,
+## the frame its last step was taken, and what it saw.
+var _tour := false
+var _tour_step := 0
+var _tour_at := 0
+var _tour_log := PackedStringArray()
+
 
 ## A voyage's log: how long, what the guns did, how far she sailed, and the
 ## deeds worth writing down.
@@ -193,6 +228,9 @@ func _ready() -> void:
 	hud.view_pressed.connect(func() -> void:
 		sound.click()
 		camera.next_view())
+	hud.pause_pressed.connect(func() -> void:
+		sound.click()
+		_pause())
 	hud.clicked.connect(sound.click)
 	hud.fire_pressed.connect(func(side: int) -> void:
 		if side == 0:
@@ -214,8 +252,12 @@ func _ready() -> void:
 	wreck = WreckScreen.new()
 	wreck.touch = _args.has("touch")
 	wreck.retry.connect(_sail_again)
+	wreck.harbour.connect(_wreck_to_harbour)
 	wreck.tallied.connect(sound.tally)
 	add_child(wreck)
+	_build_menus()
+	Settings.changed.connect(_on_settings)
+	_on_settings()
 	world.hit.connect(_on_hit)
 	world.sunk.connect(_on_sunk)
 	world.shook.connect(func(a: float) -> void: camera.shake(a))
@@ -237,9 +279,15 @@ func _ready() -> void:
 	if _args.has("voyage"):
 		_stage_voyage()
 	_stage_plunder()
+	_tour = _harbour_first() and _args.has("smoke")
+	if _harbour_first():
+		if _args.has("orbit"):
+			camera.orbit_angle = float(_args.orbit)
+		_enter_harbour()
 	# one settled frame before anything draws
 	_tick(0.0)
 	camera.snap_to(_watched().pos)
+	_stage_menus()
 	_warm_up()
 
 
@@ -427,8 +475,15 @@ func _pick_region(x: float, z: float) -> void:
 	world.region = region
 
 
-func _build_player() -> void:
-	player = Ship.create(ShipClass.named(str(_args.get("ship", "sloop"))), Livery.named(str(_args.get("livery", "player"))), world)
+## Your ship for a fresh voyage, of class `id` (else the one picked in the
+## harbour, or a set piece's): a hull in your colours off the yard's slipway
+## when one is ready, else built here.
+func _build_player(id := "") -> void:
+	if id == "":
+		id = str(_args.get("ship", "sloop" if _args.has("shot") else Progress.ship))
+	var livery := str(_args.get("livery", Shipyard.MINE))
+	var model := shipyard.take(id, livery) if shipyard != null and livery == Shipyard.MINE else null
+	player = Ship.create(ShipClass.named(id), Livery.named(livery), world, Ship.Team.PLAYER, model)
 	add_child(player)
 	# two-thirds of her canvas set and already making way
 	var h := SPAWN_HEADING
@@ -589,15 +644,31 @@ func _stage_plunder() -> void:
 
 
 func _process(delta: float) -> void:
-	_tick(minf(delta, 0.1))
+	# on hold nothing at sea moves; the screens over it carry on
+	if not paused:
+		_tick(minf(delta, 0.1))
 	_frames += 1
+	if _tour:
+		_tour_menus()
 	if _args.has("again") and _frames == int(_args.again) and _farewell != null and _farewell.shown:
 		wreck.retry.emit()
+	if _args.has("newship") and _frames == int(_args.newship) and _farewell != null and _farewell.shown:
+		wreck.harbour.emit()
 	if _args.has("pie") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
 		hud.open_pie(Ammo.ID.find(str(_args.pie)))
 	if _args.has("strike") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.strike if str(_args.strike).is_valid_int() else 2)):
 		_strike_now = true
 	if _args.has("smoke") and _frames == int(_args.get("smoke-at", 300)):
+		if _tour:
+			print("SMOKE MENU: " + ", ".join(_tour_log))
+			if _tour_step < TOUR_STEPS:
+				printerr("SMOKE FAILED: the tour of the menus stopped at step %d of %d" % [_tour_step, TOUR_STEPS])
+				return
+		# (choosing a new ship off the farewell card ends in the harbour)
+		var harboured := _args.has("newship") and state == State.HARBOUR and harbour.is_open()
+		if (state != State.VOYAGE and not harboured) or paused:
+			printerr("SMOKE FAILED: %s at frame %d" % ["still in the harbour" if state != State.VOYAGE else "the voyage still on hold", _frames])
+			return
 		var isles := 0
 		var plants := 0
 		for i in regions.size():
@@ -606,6 +677,8 @@ func _process(delta: float) -> void:
 		var lost := "" if _farewell == null else "; lost %.1f s ago%s" % [_farewell.t, ", the farewell card up" if _farewell.shown else ""]
 		if _args.has("again") and _farewell == null and _frames > int(_args.again):
 			lost = "; sailing again, the HUD %s" % ("up" if hud.get_node("Root").visible else "hidden")
+		if harboured:
+			lost = "; back in the harbour aboard a fresh %s, the HUD %s" % [player.cls.id, "up" if hud.get_node("Root").visible else "hidden"]
 		var down := 0
 		var holes := 0
 		for sh in world.ships:
@@ -618,8 +691,8 @@ func _process(delta: float) -> void:
 		var marks := 0
 		for sh in world.ships:
 			marks += (1 if sh.afire > 0.0 else 0) + (1 if sh.torn > 0.0 else 0) + (1 if sh.crew_hit > 0.0 else 0)
-		print("SMOKE OK: %d frames, %.0f m sailed, %d triangles in the sloop, %d islands, %d plants; %d ships afloat, %d guns fired, %d hits, %d breaches, %d spars down, %d pieces of wreckage and %d spars adrift, %d hulls on the slipway%s" % [
-				_frames, player.pos.length(), player.model.triangles(), isles, plants, world.ships.size(), voyage.shots, voyage.hits, holes, down, junk.x, junk.y, shipyard.stock(), lost])
+		print("SMOKE OK: %d frames, %.0f m sailed, %d triangles in the %s, %d islands, %d plants; %d ships afloat, %d guns fired, %d hits, %d breaches, %d spars down, %d pieces of wreckage and %d spars adrift, %d hulls on the slipway%s" % [
+				_frames, voyage.metres, player.model.triangles(), player.cls.id, isles, plants, world.ships.size(), voyage.shots, voyage.hits, holes, down, junk.x, junk.y, shipyard.stock(), lost])
 		print("SMOKE SHOT: balls fired round %d, shell %d, fire %d, chain %d, grape %d; %d marks of special shot on ships; magazine %s, %s loaded" % [f[0], f[1], f[2], f[3], f[4], marks, stock, Ammo.ID[player.ammo]])
 		var hands := crew.counts()
 		var cut := crew.view.stats()
@@ -639,16 +712,22 @@ func _tick(real_dt: float) -> void:
 	var dt := real_dt * time_scale
 	world.time += dt
 	controls.poll()
-	if player.alive:
+	# in the harbour she rides at anchor, and the helm and the guns are no one's
+	var sailing := state == State.VOYAGE
+	if player.alive and sailing:
 		voyage.time += dt
 		_helm()
 	else:
 		player.rudder = 0.0
-	if _farewell == null:
+	if not sailing:
+		pass
+	elif _farewell == null:
 		if controls.zoom != 0.0:
 			camera.zoom_by(controls.zoom, world.time)
 		if controls.view_next:
 			camera.next_view()
+		# the view you sail with is the next voyage's
+		Progress.keep_view(camera.zoom, camera.tilt)
 	elif controls.skip:
 		_skip()
 
@@ -657,7 +736,8 @@ func _tick(real_dt: float) -> void:
 	# comes round after the wind
 	_pick_region(camera.target.x, camera.target.z)
 	atmosphere.bloom = SeaGlow.at(player.pos.x, player.pos.z, _glow_centres)
-	_seas()
+	if sailing:
+		_seas()
 	atmosphere.update(dt)
 	var w := world.wind
 	w.strength = atmosphere.wind
@@ -669,23 +749,28 @@ func _tick(real_dt: float) -> void:
 	world.waves.advance(dt)
 
 	# the ships: the pirate captains decide, every hull sails, hulls that touch
-	# shove and stave each other in, and the shot in the air flies
-	pirates.step(dt, player)
+	# shove and stave each other in, and the shot in the air flies; in the
+	# harbour a sail or two on the horizon, and the ship picked comes in
+	pirates.step(dt, player if sailing else null)
+	if not sailing:
+		pirates.step_harbour(dt, player.pos, camera)
+		_swap_in(false)
 	for s in world.ships:
 		s.step(dt)
 	if dt > 0.0:
 		collisions.resolve(world)
 	world.shots.step(dt)
 	pirates.sweep()
-	if player.alive:
+	if player.alive and sailing:
 		voyage.metres += Vector2(player.vel.x, player.vel.z).length() * dt
 		# the crew patches her up between fights
 		if world.time - player.last_hit > 9.0:
 			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.01 * dt)
-	gunnery.pointer = _pointer_on_sea()
-	gunnery.update(dt, player, world, player.alive and _farewell == null, world.time)
-	_guns()
-	if _sink_at >= 0.0 and player.alive and voyage.time >= _sink_at:
+	gunnery.pointer = _pointer_on_sea() if sailing else null
+	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null, world.time)
+	if sailing:
+		_guns()
+	if _sink_at >= 0.0 and sailing and player.alive and voyage.time >= _sink_at:
 		player.damage(player.max_hp * 4.0, _foe)
 	if _foe_sink_at >= 0.0 and _foe != null and _foe.alive and world.time >= _foe_sink_at:
 		_foe.damage(_foe.max_hp * 4.0, player)
@@ -702,8 +787,14 @@ func _tick(real_dt: float) -> void:
 		camera.cine_look = focus.transform * (_vec3(str(_args.look)) if _args.has("look") else Vector3(0.0, 2.0, 0.0))
 		camera.cine_fov = camera.lens
 		camera.cine_w = 1.0
-	camera.update_rig(real_dt, focus.pos, focus.vel, world.time)
+	# the harbour's orbit circles her where she rides (and keeps with her as
+	# the camera swings down off it); its frame is the space the menu leaves
+	camera.orbit_xf.origin = Vector3(focus.pos.x, focus.position.y, focus.pos.z)
+	if harbour.is_open():
+		camera.orbit_frame = harbour.framing()
+	camera.update_rig(real_dt, focus.pos, focus.vel if sailing else Vector3.ZERO, world.time)
 	# every crew afloat, after the camera has moved: they're culled and cut by it
+	crew.close_up = not sailing
 	crew.update(dt, world, camera, camera.target, camera.ground_radius() * 1.5, atmosphere.key_dir)
 	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
@@ -718,7 +809,7 @@ func _tick(real_dt: float) -> void:
 	world.debris.update(dt, pushers, ocean, camera.global_position)
 	# salvage afloat: drawn in and hauled aboard as she sails through it (a
 	# full hold leaves what it can't take bobbing on the swell)
-	var hauling := player.alive and _farewell == null
+	var hauling := sailing and player.alive and _farewell == null
 	var reach := (player.cls.beam * 0.5 + 5.0) * 2.0
 	var got := world.loot.update(dt, player.pos if hauling else null, reach, _refuse, ocean, camera.global_position)
 	for it in got:
@@ -747,6 +838,8 @@ func _tick(real_dt: float) -> void:
 		sky_mat.set_shader_parameter("revision", _sky_revision)
 	sun.directional_shadow_max_distance = camera.shadow_reach()
 
+	if not sailing:
+		return
 	hud.show_state(player, w, camera.view_index(), atmosphere.vignette)
 	hud.show_sky(atmosphere.hour(), atmosphere.icon())
 	_hold_sky(dt)
@@ -813,9 +906,8 @@ func _seas() -> void:
 		sound.high_seas(true)
 	elif _high_seas and nd < HIGH_SEAS_R - 60.0:
 		_high_seas = false
-		hud.toast(near.title, near.motto, 4.0)
 		sound.high_seas(false)
-		sound.chime()
+		_arrive(near)
 	if not _high_seas:
 		atmosphere.climate = &"mist" if near.id == "brumas" else &"home"
 	# out in a sea-spark bloom on a dark night, the crew notice the sea lighting up
@@ -886,7 +978,7 @@ func _sound() -> void:
 	sound.set_gust(world.gust_at(focus.pos.x, focus.pos.z))
 	sound.set_sailing(clampf(player.speed / 14.0, 0.0, 1.0) if player.alive else 0.0)
 	sound.set_weather(a.rain, a.storm, a.wind)
-	sound.voyage_music(player.alive and _farewell == null and not _high_seas and a.storm < 0.45, a.night)
+	sound.voyage_music(state == State.VOYAGE and player.alive and _farewell == null and not _high_seas and a.storm < 0.45, a.night)
 
 
 ## A weather picked by hand lasts only as long as its time and place allow
@@ -1184,6 +1276,7 @@ func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
 
 
 func _on_bounty(ship: Ship, gold: int) -> void:
+	Progress.earn(gold)
 	hud.toast("+%d gold bounty" % gold, "%s sunk" % ship.ship_name, 3.6)
 	sound.coin()
 	voyage.note("kill", "Sank the %s" % ship.ship_name, "%s · +%d gold" % [ship.cls.name, gold])
@@ -1209,6 +1302,7 @@ func _begin_farewell(attacker: Ship) -> void:
 	if _args.has("farewell"):
 		f.t = float(_args.farewell)
 	_farewell = f
+	Progress.keep_view(camera.zoom, camera.tilt)
 	time_scale = 0.22
 	camera.shake(0.95)
 	sound.founder()
@@ -1343,10 +1437,46 @@ func _skip() -> void:
 	wreck.skipped()
 
 
-## A fresh voyage: a new ship out of the home port, the sea cleared.
+## Sail again, off the farewell card: back up to the surface under the
+## veil, and straight out on a fresh voyage in the same ship, from the
+## waters you set out in last (the web's leaveWreck).
 func _sail_again() -> void:
-	# back up into the air; the open sea's theme dies away as she sets out from home
+	if veil.busy or _farewell == null:
+		return
 	sound.click()
+	veil.cover("Back to the surface…", func() -> void:
+		_reset_world(player.cls.id)
+		_enter_harbour(false)
+		_start_voyage(Progress.start_sea))
+
+
+## Choose a new ship, off the farewell card: back up to the surface under
+## the veil, into the harbour.
+func _wreck_to_harbour() -> void:
+	if veil.busy or _farewell == null or not wreck.can_leave():
+		return
+	sound.click()
+	veil.cover("Back to the surface…", func() -> void:
+		_reset_world(player.cls.id)
+		_enter_harbour())
+
+
+## Return to harbour, off the pause screen (pressed twice): the voyage given
+## up, and back to the harbour under the veil.
+func _quit_voyage() -> void:
+	if veil.busy or not paused:
+		return
+	_note_tour("back to harbour")
+	veil.cover("Back to harbour…", func() -> void:
+		_unpause()
+		_reset_world(player.cls.id)
+		_enter_harbour())
+
+
+## A fresh sea for the next voyage: every ship, shot, wreck and piece of
+## salvage gone, the voyage's log and chart cleared, and a new ship of class
+## `id` in your colours.
+func _reset_world(id: String) -> void:
 	sound.submerge(false)
 	sound.high_seas(false)
 	wreck.end()
@@ -1366,12 +1496,489 @@ func _sail_again() -> void:
 	_foe = null
 	_sink_at = -1.0
 	_foe_sink_at = -1.0
-	_build_player()
+	_high_seas = false
+	paused = false
+	_build_player(id)
 	world.ships.append(player)
 	player.struck.connect(func(a: float) -> void: camera.shake(a))
 	camera.snap_to(player.pos)
 	hud.watch_hold(hold)
+
+
+## Whether the game opens in the harbour, as it does for play: not for a
+## set piece at sea (a shot of the voyage, a fight, a farewell, a voyage on
+## hold), unless a shot of the menus is asked for.
+func _harbour_first() -> bool:
+	if _args.has("menu") or _args.has("seapick") or (_args.has("settings") and not _args.has("pause")):
+		return true
+	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause"]:
+		if _args.has(k):
+			return false
+	return true
+
+
+## The harbour and the screens over the voyage: the sea picker, Anchored,
+## Settings, the veil between scenes and the frame counter.
+func _build_menus() -> void:
+	harbour = Harbour.new()
+	harbour.picked.connect(_preview)
+	harbour.sail.connect(_choose_sea)
+	harbour.settings.connect(_open_settings)
+	harbour.sound.connect(_toggle_sound)
+	harbour.clicked.connect(sound.click)
+	add_child(harbour)
+	sea_pick = SeaPick.new()
+	sea_pick.chosen.connect(_sail_from)
+	sea_pick.back.connect(func() -> void: harbour.open(player.cls.id))
+	sea_pick.clicked.connect(sound.click)
+	add_child(sea_pick)
+	pause_screen = PauseScreen.new()
+	pause_screen.resume.connect(_resume)
+	pause_screen.settings.connect(_open_settings)
+	pause_screen.harbour.connect(_quit_voyage)
+	pause_screen.clicked.connect(sound.click)
+	add_child(pause_screen)
+	settings_sheet = SettingsSheet.new()
+	settings_sheet.clicked.connect(sound.click)
+	add_child(settings_sheet)
+	veil = Veil.new()
+	add_child(veil)
+	fps_meter = FpsMeter.new()
+	add_child(fps_meter)
+
+
+## Settings changed: how hard the camera shakes, and the harbour's sound button.
+func _on_settings() -> void:
+	camera.shake_scale = Settings.shake
+	harbour.set_sound(Settings.sound)
+
+
+## The harbour's sound button: every sound on or off, kept.
+func _toggle_sound() -> void:
+	Settings.sound = not Settings.sound
+	Settings.save()
+	Settings.changed.emit()
+	sound.click()
+
+
+## Settings, over the harbour or the paused voyage.
+func _open_settings() -> void:
+	if settings_sheet.is_open() or veil.busy:
+		return
+	settings_sheet.open()
+	_note_tour("Settings")
+
+
+## The menus a shot opens on (--seapick, --pause, --settings).
+func _stage_menus() -> void:
+	if _args.has("seapick"):
+		_choose_sea()
+	if _args.has("pause"):
+		_pause()
+	if _args.has("settings"):
+		_open_settings()
+
+
+## Into the harbour: your ship at anchor off the home port with every sail
+## set, the camera circling her; `menu` brings up the harbour's menu, a sail
+## or two on the horizon and the harbour's theme (Sail again goes straight
+## out through it instead).
+func _enter_harbour(menu := true) -> void:
+	state = State.HARBOUR
+	paused = false
+	_picked_ship = ""
+	shipyard.harbour = true
+	shipyard.want = ""
+	_high_seas = false
+	sound.high_seas(false)
+	atmosphere.climate = &"home"
+	_moor(player)
+	hud.fade(false, 0.0)
+	controls.reset()
+	if not menu:
+		return
+	pirates.dress_harbour()
+	harbour.open(player.cls.id)
+	harbour.set_sound(Settings.sound)
+	camera.orbit_frame = harbour.framing()
+	camera.orbit_snap()
+	sound.harbour(true)
+	_note_tour("in the harbour")
+
+
+## Her at anchor off the home port, every sail set and drawing (the web's
+## setPreview), the orbit framed on her.
+func _moor(p: Ship) -> void:
+	p.place(SPAWN.x, SPAWN.y, SPAWN_HEADING)
+	p.anchored = true
+	p.sail_target = 1.0
+	p.sail_level = 1.0
+	_frame_orbit(p)
+
+
+## The orbit's subject: her bounds in her own frame, where she rides.
+func _frame_orbit(p: Ship) -> void:
+	camera.orbit_box = _own_box(p)
+	camera.orbit_xf = Transform3D(Basis(Vector3.UP, p.heading), Vector3(p.pos.x, p.position.y, p.pos.z))
+	camera.snap_to(p.pos)
+
+
+## Her bounds, hull and rig, bowsprit to taffrail and keel to the highest
+## truck, in her own frame (the waterline amidships, bow along +z); below
+## the waterline only the 1.5 m that might show.
+func _own_box(s: Ship) -> AABB:
+	var inv := s.global_transform.affine_inverse()
+	var box := AABB()
+	var first := true
+	for n in s.model.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or not mi.is_visible_in_tree():
+			continue
+		var b := (inv * mi.global_transform) * mi.get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	if first:
+		return camera.orbit_box
+	var lo := maxf(box.position.y, -1.5)
+	box.size.y -= lo - box.position.y
+	box.position.y = lo
+	return box
+
+
+## A ship picked on the harbour's picker: her card at once, and she comes in
+## to anchor as soon as the yard has her hull ready (_swap_in).
+func _preview(id: String) -> void:
+	if state != State.HARBOUR or veil.busy:
+		return
+	_picked_ship = "" if id == player.cls.id else id
+	shipyard.want = _picked_ship
+	harbour.set_ship(id)
+	Progress.pick_ship(id)
+	_note_tour("picked the %s" % id)
+	_swap_in(false)
+
+
+## The ship picked comes in to anchor in place of the one there: her hull
+## off the yard's slipway once it's ready (nothing yet till then), or with
+## `now` built on the spot.
+func _swap_in(now: bool) -> void:
+	if _picked_ship == "":
+		return
+	var id := _picked_ship
+	var model := shipyard.take(id, Shipyard.MINE)
+	if model == null and not now:
+		return
+	_picked_ship = ""
+	shipyard.want = ""
+	var old := player
+	var sails := old.sail_level
+	old.removed = true
+	world.ships.erase(old)
+	old.queue_free()
+	player = Ship.create(ShipClass.named(id), Livery.named(Shipyard.MINE), world, Ship.Team.PLAYER, model)
+	add_child(player)
+	world.ships.append(player)
+	player.struck.connect(func(a: float) -> void: camera.shake(a))
+	_moor(player)
+	player.sail_level = sails
+	_note_tour("the %s at anchor" % id)
+
+
+## Set Sail: "Where shall we sail?" over the harbour.
+func _choose_sea() -> void:
+	if state != State.HARBOUR or veil.busy or sea_pick.is_open():
+		return
+	sound.click()
+	harbour.close()
+	sea_pick.setup(_sea_cards())
+	sea_pick.open(Progress.start_sea, Progress.sea_picked)
+	_note_tour("Set Sail")
+
+
+## What the sea picker shows of each archipelago: its isles, where you'd
+## weigh anchor, and what lies there (the web's seaCards).
+func _sea_cards() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	for r in regions:
+		var markets := 0
+		for p: Dictionary in r.ports:
+			if not bool(p.get("home", false)):
+				markets += 1
+		var forts := r.forts.size()
+		var chips: Array[String] = ["%d market%s" % [markets, "" if markets == 1 else "s"], "%d fort%s" % [forts, "" if forts == 1 else "s"]]
+		if r.id == "home":
+			chips.push_front("Home harbour")
+		else:
+			chips.append("Charted" if Progress.charted(r.id) else "+600 gold landfall")
+		var gold := -1
+		for i in chips.size():
+			if chips[i].begins_with("+"):
+				gold = i
+		var b := Vector3(SPAWN.x, SPAWN.y, SPAWN_HEADING) if r.id == "home" else _berth_in(r)
+		out.append({"id": r.id, "name": r.title, "region": r, "isles": r.islands, "berth": Vector2(b.x, b.y), "chips": chips, "gold": gold})
+	return out
+
+
+## A sea chosen on the picker: at home she weighs anchor at once; away, the
+## veil comes over while she's taken across to its berth.
+func _sail_from(id: String) -> void:
+	if state != State.HARBOUR or veil.busy:
+		return
+	var r := _region(id)
+	if r == null or r.id == "home":
+		_start_voyage("home")
+		return
+	veil.cover("Setting a course for %s…" % r.title, func() -> void: _start_voyage(id))
+
+
+## Weighs anchor on a fresh voyage: out of the home port, or off `sea`'s
+## berth (moored there first), with two-thirds of her canvas set and the
+## camera swinging down behind her.
+func _start_voyage(sea: String) -> void:
+	_swap_in(true)
+	var away: Region = _region(sea) if sea != "home" else null
+	if away != null:
+		_moor_in(away)
+	harbour.close()
+	sea_pick.close()
+	state = State.VOYAGE
+	shipyard.harbour = false
+	shipyard.want = ""
+	sound.harbour(false)
+	var p := player
+	p.anchored = false
+	p.sail_target = 2.0 / 3.0
+	p.ammo = Ammo.ROUND
+	voyage = Voyage.new()
+	discovered.clear()
+	stock = Ammo.fresh_stock()
+	hold = Treasure.Hold.new(int(Treasure.HOLD_ROOM.get(p.cls.id, 10)))
+	_hold_nag = 0.0
+	_hauled = 0
+	hud.watch_hold(hold)
 	hud.reset()
+	controls.reset()
+	camera.orbit = false
+	# the view she last sailed with, else a comfortable middle distance
+	if Progress.view.x >= 0.0:
+		camera.set_view(Progress.view.x, Progress.view.y)
+	else:
+		var vp := get_viewport().get_visible_rect().size
+		camera.set_view(0.5 if vp.x < vp.y else 0.42, 0.0)
+	pirates.set_sail()
+	Progress.pick_sea(away.id if away != null else "home")
+	if away != null:
+		_arrive(away)
+	else:
+		hud.toast("Weigh anchor", "The %s sets sail" % p.ship_name, 3.0)
+	_note_tour("sailed from %s" % (away.id if away != null else "home"))
+
+
+## Her anchorage moved to `r`'s berth (in deep water, clear of other
+## ships), the orbit with her.
+func _moor_in(r: Region) -> void:
+	var b := _berth_in(r)
+	var at := _deep_for(player, b.x, b.y, b.z)
+	player.place(at.x, at.y, b.z)
+	_frame_orbit(player)
+
+
+## Where a voyage away from home weighs anchor: off the archipelago's first
+## market's quay, bows to the sea (x, z and her heading).
+func _berth_in(r: Region) -> Vector3:
+	for p: Dictionary in r.ports:
+		if bool(p.get("home", false)):
+			continue
+		var nx := float(p.nx)
+		var nz := float(p.nz)
+		return Vector3(float(p.x) + nx * 75.0, float(p.z) + nz * 75.0, atan2(nx, nz))
+	var at: Variant = pirates.find_open_water(r.centre.x, r.centre.z, 300.0, 600.0)
+	var w: Vector2 = at if at != null else Vector2(r.centre.x + 600.0, r.centre.z)
+	return Vector3(w.x, w.y, atan2(w.x - r.centre.x, w.y - r.centre.z))
+
+
+## A berth near (x, z) deep enough for her on heading `h` and clear of other
+## ships: the spot itself, else the nearest on a widening spiral round it,
+## else open water further out (the web's deepFor).
+func _deep_for(s: Ship, x: float, z: float, h: float) -> Vector2:
+	var fwd := Vector2(sin(h), cos(h))
+	var half := s.cls.length * 0.55
+	if _berth_ok(s, x, z, fwd, half):
+		return Vector2(x, z)
+	for r in range(12, 193, 12):
+		for k in 12:
+			var a := k / 12.0 * TAU + r * 0.07
+			var px := x + cos(a) * r
+			var pz := z + sin(a) * r
+			if _berth_ok(s, px, pz, fwd, half):
+				return Vector2(px, pz)
+	var w: Variant = pirates.find_open_water(x, z, 30.0, 220.0)
+	return w if w != null else Vector2(x, z)
+
+
+## Deep water under her keel bow, amidships and stern (lying along `fwd`,
+## `half` her length either way), and no other ship close aboard.
+func _berth_ok(s: Ship, x: float, z: float, fwd: Vector2, half: float) -> bool:
+	for k: float in [-1.0, 0.0, 1.0]:
+		if world.ground_height(x + fwd.x * half * k, z + fwd.y * half * k) > -s.cls.draft - 2.0:
+			return false
+	for o in world.ships:
+		if o != s and not o.removed and Vector2(o.pos.x - x, o.pos.z - z).length() < (o.cls.length + s.cls.length) * 0.6:
+			return false
+	return true
+
+
+func _region(id: String) -> Region:
+	for r in regions:
+		if r.id == id:
+			return r
+	return null
+
+
+## Landfall in an archipelago, in off the high seas or setting out in it:
+## its weather and its name; the first time ever, a reward for charting
+## new waters.
+func _arrive(r: Region) -> void:
+	atmosphere.climate = &"mist" if r.id == "brumas" else &"home"
+	if r.id != "home" and Progress.chart(r.id):
+		player.gold += 600
+		Progress.earn(600)
+		voyage.note("isle", "Reached %s" % r.title, "+600 gold")
+		hud.toast("%s · %s" % [r.title, r.motto], "New waters charted! +600 gold. Their isles, ports and forts are on your chart now", 6.5)
+		sound.treasure(2)
+	else:
+		hud.toast(r.title, r.motto, 4.0)
+		sound.chime()
+
+
+## Anchored: the voyage on hold under the pause screen (the HUD's pause
+## button, the back button, or the phone taking the game away).
+func _pause() -> void:
+	if state != State.VOYAGE or paused or _farewell != null or veil.busy:
+		return
+	paused = true
+	controls.reset()
+	hud.close_popups()
+	Progress.keep_view(camera.zoom, camera.tilt)
+	pause_screen.open({"ship": player.ship_name, "cls": player.cls.id, "time": voyage.time, "gold": player.gold, "kills": player.kills, "isles": discovered.size()})
+	# nothing moves under the glass: a phone needn't draw it so often
+	if Settings.mobile:
+		Engine.max_fps = 30
+	_note_tour("paused")
+
+
+## Resume voyage (not once the voyage is being given up under the veil).
+func _resume() -> void:
+	if paused and not veil.busy:
+		_unpause()
+		_note_tour("resumed")
+
+
+## Off hold: the screens over the voyage down, the sea moving again.
+func _unpause() -> void:
+	paused = false
+	pause_screen.close()
+	settings_sheet.close()
+	controls.reset()
+	Engine.max_fps = 60 if Settings.mobile else 0
+
+
+func _input(event: InputEvent) -> void:
+	var k := event as InputEventKey
+	if k != null and k.pressed and not k.echo and (k.keycode == KEY_ESCAPE or k.keycode == KEY_BACK):
+		get_viewport().set_input_as_handled()
+		_go_back(k.keycode == KEY_BACK)
+
+
+func _notification(what: int) -> void:
+	if not is_node_ready():
+		return
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		_go_back(true)
+	elif what == NOTIFICATION_APPLICATION_PAUSED:
+		# the phone took the game away: the voyage waits for her captain, and
+		# what's kept is written before the system can close the game
+		_pause()
+		Progress.save()
+
+
+## The back button (Android's, or Esc): whatever is on top closes; at sea
+## the voyage goes on hold; in the harbour Android's leaves the game.
+func _go_back(os_back: bool) -> void:
+	# one press may come in twice, as a key and as the system's request
+	var f := Engine.get_process_frames()
+	if f - _back_frame <= 1:
+		return
+	_back_frame = f
+	if veil.busy:
+		return
+	if settings_sheet.go_back() or sea_pick.go_back() or pause_screen.go_back():
+		return
+	if _farewell != null:
+		if _farewell.shown:
+			_wreck_to_harbour()
+		else:
+			_skip()
+	elif state == State.VOYAGE:
+		if not hud.close_popups():
+			sound.click()
+			_pause()
+	elif os_back:
+		get_tree().quit()
+
+
+## The smoke test's walk through the menus, a step once the last has
+## settled: another ship picked and at anchor, Set Sail for Las Brumas;
+## there the voyage paused, Settings opened and closed, and back to the
+## harbour; then Set Sail for the home waters, paused and resumed with the
+## back button. What it saw goes in SMOKE MENU.
+func _tour_menus() -> void:
+	if _tour_step >= TOUR_STEPS or _frames - _tour_at < 20 or veil.busy:
+		return
+	match _tour_step:
+		0:
+			harbour.picked.emit("brig" if player.cls.id != "brig" else "sloop")
+		1:
+			# her hull off the yard's slipway first (Set Sail builds it if it's slow)
+			if _picked_ship != "" and _frames - _tour_at < 600:
+				return
+			harbour.sail.emit()
+		2:
+			if not sea_pick.is_open():
+				return
+			sea_pick.pick("brumas")
+		3:
+			if state != State.VOYAGE:
+				return
+			hud.pause_pressed.emit()
+		4:
+			pause_screen.settings.emit()
+		5:
+			settings_sheet.go_back()
+		6:
+			pause_screen.harbour.emit()
+		7:
+			if state != State.HARBOUR:
+				return
+			harbour.sail.emit()
+		8:
+			if not sea_pick.is_open():
+				return
+			sea_pick.pick("home")
+		9:
+			if state != State.VOYAGE:
+				return
+			_go_back(false)
+		10:
+			_go_back(false)
+	_tour_step += 1
+	_tour_at = _frames
+
+
+## A step of the smoke test's tour of the menus, for SMOKE MENU (and the frame it came on).
+func _note_tour(what: String) -> void:
+	if _tour:
+		_tour_log.append("%s @%d" % [what, _frames])
 
 
 ## An island goes on the chart the first time she sails within hail of it.
@@ -1388,6 +1995,7 @@ func _chart(p: Vector3) -> void:
 			# the islanders pay for the chart
 			var reward := 40 + roundi(float(isl.r) * 0.4)
 			player.gold += reward
+			Progress.earn(reward)
 			voyage.note("isle", "Charted %s" % isl.name, "+%d gold" % reward)
 			hud.toast("Island discovered · +%d gold" % reward, isl.name, 3.6)
 			sound.chime()

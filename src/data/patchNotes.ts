@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T19:00Z',
+    entries: [
+      {
+        title: 'Android: the harbour',
+        notes: [
+          'The tenth Android build opens where every voyage begins: in the harbour. Your ship rides at anchor off the home port with every sail set while the camera slowly circles her, under the gilt title and the harbour\'s own theme. Her card shows her numbers and qualities, the picker brings the sloop, the brigantine or the galleon in to anchor at a tap, and a sail or two of pirates waits out on the horizon.',
+          'Set Sail asks where to weigh anchor: the home waters, or Las Brumas, the misty isles a long voyage away, each with a painted chart of its isles and the spot you\'ll sail from. The pause button holds the voyage behind frosted glass with the voyage so far, and Settings has the sound, the volumes, the music, the frame counter and the camera shake.',
+          'Your ship, your waters, the view you sail with, your purse, the seas you\'ve charted and your records are now kept between plays, saved so that a crash or a flat battery can never leave them half-written. After the farewell you can sail again or choose a new ship back in the harbour, and Android\'s back button closes whatever is on top, holds a voyage, and leaves the game from the harbour.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T16:00Z',
     entries: [
       {

@@ -13,6 +13,8 @@ extends CanvasLayer
 
 signal sail_set(level: int)
 signal view_pressed
+## The pause button: the voyage held, Anchored.
+signal pause_pressed
 ## A gun button: +1 port, -1 starboard, 0 the big Fire.
 signal fire_pressed(side: int)
 ## A kind of shot picked off the rack or the pie (Ammo).
@@ -76,6 +78,7 @@ var _say_line: Label
 var _say_left := 0.0
 var _say_e := 0.0
 var _view: _ViewButton
+var _pause: _PauseButton
 var _lever: SailLever
 var _helm: HelmRing
 var _toasts: VBoxContainer
@@ -218,6 +221,9 @@ func _ready() -> void:
 	_view = _ViewButton.new()
 	_view.pressed.connect(func() -> void: view_pressed.emit())
 	root.add_child(_view)
+	_pause = _PauseButton.new()
+	_pause.pressed.connect(func() -> void: pause_pressed.emit())
+	root.add_child(_pause)
 
 	# canvas and speed, and on a desktop the shot rack beside them
 	_pill = PanelContainer.new()
@@ -331,7 +337,8 @@ func _layout() -> void:
 	_nav.size = ns
 	var vb := _view.custom_minimum_size
 	_view.position = Vector2(vp.x - mx - vb.x, my)
-	_nav.position = Vector2(_view.position.x - 8.0 - ns.x, my + (vb.y - ns.y) * 0.5)
+	_pause.position = Vector2(_view.position.x - 8.0 - vb.x, my)
+	_nav.position = Vector2(_pause.position.x - 8.0 - ns.x, my + (vb.y - ns.y) * 0.5)
 	var ps := _pill.get_combined_minimum_size()
 	_pill.size = ps
 	_pill.position = Vector2((vp.x - ps.x) * 0.5, vp.y - my - ps.y)
@@ -609,6 +616,15 @@ func warm() -> void:
 	_floaters.warm()
 
 
+## The back button: the hold's peek or the shot pie, open, folds away
+## (true if one did).
+func close_popups() -> bool:
+	var was := _peek.visible or _pie.is_open()
+	_peek.set_open(false)
+	_pie.set_open(false)
+	return was
+
+
 ## A fresh voyage: a new hull's bar from full, the tally from nothing, the HUD back.
 func reset() -> void:
 	_hull_frac = -1.0
@@ -619,12 +635,17 @@ func reset() -> void:
 	fade(true, 0.4)
 
 
-## Fades the whole HUD out (her farewell) or back in.
+## Fades the whole HUD out (her farewell) or back in (at once: no `seconds`).
 func fade(on: bool, seconds := 0.6) -> void:
 	var root := get_node("Root") as Control
 	if _fading != null:
 		_fading.kill()
+		_fading = null
 	# hidden, its buttons let go and stop catching touches
+	if seconds <= 0.0:
+		root.modulate.a = 1.0 if on else 0.0
+		root.visible = on
+		return
 	if on:
 		root.visible = true
 	_fading = root.create_tween()
@@ -917,6 +938,28 @@ class _ViewButton:
 		for i in 4:
 			var p := Vector2(size.x * 0.5 - 9.0 + i * 6.0, size.y - 7.0)
 			draw_circle(p, 1.7, HudStyle.GOLD if i == view else HudStyle.INK_4, true, -1.0, true)
+
+
+## The pause button: two bars, the voyage held where it is.
+class _PauseButton:
+	extends Control
+	signal pressed
+
+	func _init() -> void:
+		custom_minimum_size = Vector2(44, 44)
+		size = custom_minimum_size
+		mouse_filter = Control.MOUSE_FILTER_STOP
+
+	func _gui_input(event: InputEvent) -> void:
+		if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION):
+			pressed.emit()
+			accept_event()
+
+	func _draw() -> void:
+		draw_style_box(HudStyle.panel(12), Rect2(Vector2.ZERO, size))
+		var c := size * 0.5
+		for dx: float in [-3.6, 3.6]:
+			draw_line(c + Vector2(dx, -6.5), c + Vector2(dx, 6.5), HudStyle.INK, 2.6, true)
 
 
 ## A tally on the HUD: a badge and a number, popping gold when it goes up;

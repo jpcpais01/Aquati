@@ -13,15 +13,25 @@ uniform vec4 c3 = vec4(0.878, 0.643, 0.263, 1.0);
 uniform vec2 stops = vec2(0.52, 1.0);
 uniform float top = 0.0;
 uniform float height = 40.0;
+/// A glint of light sweeping across the letters (the logo's): where its
+/// middle is along the line (units; far off it, none), its half-width, and
+/// how bright. It leans as the web's 105deg gradient does.
+uniform float glint = -1e5;
+uniform float glint_w = 40.0;
+uniform float glint_a = 0.85;
 
 varying float k;
+varying float g_x;
 
 void vertex() {
 	k = (VERTEX.y - top) / height;
+	g_x = VERTEX.x * 0.966 + (VERTEX.y - top) * 0.259;
 }
 
 void fragment() {
 	float t = clamp(k, 0.0, 1.0);
 	vec4 g = t < stops.x ? mix(c0, c1, t / stops.x) : (t < stops.y ? mix(c1, c2, (t - stops.x) / (stops.y - stops.x)) : mix(c2, c3, (t - stops.y) / max(1.0 - stops.y, 1e-4)));
+	float s = glint_a * clamp(1.0 - abs(g_x - glint) / glint_w, 0.0, 1.0);
+	g.rgb = mix(g.rgb, vec3(1.0), s);
 	COLOR = vec4(g.rgb, g.a * texture(TEXTURE, UV).a * COLOR.a);
 }

@@ -193,6 +193,16 @@ func helm_down() -> bool:
 	return _helm_id >= 0
 
 
+## Lets go of everything held and pending: a screen came up over the helm,
+## or the helm is someone else's to take now.
+func reset() -> void:
+	_touches.clear()
+	_helm_id = -1
+	steering = false
+	_pinch_d = -1.0
+	consume()
+
+
 func consume() -> void:
 	sail_delta = 0
 	zoom = 0.0

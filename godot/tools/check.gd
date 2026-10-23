@@ -10,8 +10,10 @@ extends SceneTree
 ## where they should, a bolt of lightning comes down where it can be seen,
 ## the baked world loads whole (both archipelagos, their ground maps and
 ## their planting), a broadside's damage numbers stack up clear of one
-## another, and every sound and song is baked and plays as the web's do (see
-## _check_sound). Prints CHECK OK.
+## another, every sound and song is baked and plays as the web's do (see
+## _check_sound), and what's kept between voyages comes back whole from its
+## save, takes nothing malformed from a damaged one and survives a crash
+## mid-write (_check_progress). Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
@@ -42,6 +44,7 @@ func _initialize() -> void:
 	_check_weather()
 	_check_night()
 	_check_world()
+	_check_progress()
 	# the helm's reach is a share of the window, and a strike is aimed by the
 	# lens: those checks wait for the tree to run
 	await process_frame
@@ -757,3 +760,79 @@ func _check_world() -> void:
 	if w.ground_height(spawn.x, spawn.y) > -2.0:
 		_fail("world: the spawn point is aground (%.1f m)" % w.ground_height(spawn.x, spawn.y))
 	print("world: %d archipelagos, %d plants in %d batches, loaded in %.0f ms" % [regions.size(), plants, batches, (Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## Progress, on a scratch file of its own: a save comes back whole; a save
+## damaged or edited by hand is taken field by field, nothing malformed let
+## in; a crash between writing the fresh copy and swapping it in loses
+## nothing; and a fresh game starts from the harbour's defaults.
+func _check_progress() -> void:
+	var script: GDScript = load("res://src/core/progress.gd")
+	var file := "user://check-progress.json"
+	var make := func() -> Node:
+		var n: Node = script.new()
+		n.path = file
+		return n
+	for f: String in [file, file + ".tmp"]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	var steps := 0
+	# a save and a load
+	var a: Node = make.call()
+	a.earn(1250)
+	a.earn(-250)
+	a.chart("brumas")
+	a.pick_ship("galleon")
+	a.pick_sea("brumas")
+	a.keep_view(0.731, 0.25)
+	a.records.voyages = 3
+	a.records.time = 912.5
+	a.save()
+	var b: Node = make.call()
+	b._load()
+	if b.ship == "galleon" and b.start_sea == "brumas" and b.sea_picked and b.purse == 1000 and b.charted("brumas") \
+			and not b.charted("home") and b.view.is_equal_approx(Vector2(0.731, 0.25)) and int(b.records.voyages) == 3 \
+			and is_equal_approx(float(b.records.time), 912.5) and not FileAccess.file_exists(file + ".tmp"):
+		steps += 1
+	else:
+		_fail("progress: a save didn't come back whole: %s, %s, %d gold, view %s, records %s" % [b.ship, b.start_sea, b.purse, b.view, b.records])
+	# a damaged save: only what makes sense is taken
+	var f := FileAccess.open(file, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"ship": "frigate", "start_sea": 7, "view": [9, -3], "purse": -40, "charts": {"brumas": 1700000000},
+			"records": {"voyages": -2, "time": "a while", "gold": 640, "kills": "many"}, "extra": [1, 2]}))
+	f.close()
+	var c: Node = make.call()
+	c._load()
+	if c.ship == "sloop" and c.start_sea == "home" and not c.sea_picked and c.view == Vector2(1.0, 0.0) and c.purse == 0 \
+			and c.charted("brumas") and int(c.records.voyages) == 0 and float(c.records.time) == 0.0 and int(c.records.gold) == 640 and int(c.records.kills) == 0:
+		steps += 1
+	else:
+		_fail("progress: a damaged save let something malformed in: %s, %s, view %s, %d gold, records %s" % [c.ship, c.start_sea, c.view, c.purse, c.records])
+	# a crash after the fresh copy was written, before it was swapped in
+	f = FileAccess.open(file, FileAccess.WRITE)
+	f.store_string("{\"ship\": \"brig\", \"pur")
+	f.close()
+	f = FileAccess.open(file + ".tmp", FileAccess.WRITE)
+	f.store_string(JSON.stringify({"ship": "brig", "purse": 77}))
+	f.close()
+	var d: Node = make.call()
+	d._load()
+	if d.ship == "brig" and d.purse == 77:
+		steps += 1
+	else:
+		_fail("progress: the fresh copy wasn't taken after a crash mid-swap (%s, %d gold)" % [d.ship, d.purse])
+	# nothing kept yet: the harbour's defaults
+	for g: String in [file, file + ".tmp"]:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
+	var e: Node = make.call()
+	e._load()
+	if e.ship == "sloop" and e.start_sea == "home" and not e.sea_picked and e.view.x < 0.0 and e.purse == 0 and e.charts.is_empty():
+		steps += 1
+	else:
+		_fail("progress: a fresh game doesn't start from the defaults")
+	for n: Node in [a, b, c, d, e]:
+		n.free()
+	for g: String in [file, file + ".tmp"]:
+		if FileAccess.file_exists(g):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
+	print("progress: %d of 4 steps as expected" % steps)

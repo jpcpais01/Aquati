@@ -7,11 +7,14 @@ extends CanvasLayer
 ## is laid out over it: her plaque with a porthole of her going under, your
 ## renown and rank on a turning crest, the tally against your records, the
 ## voyage as a line from harbour to the sea floor with every deed pinned on
-## it, the ship's log, and the way back up. Built for a phone held sideways:
-## the card fits one screen, scaled to it, with nothing to scroll. Records
-## are kept in user://records.json.
+## it, the ship's log, and the ways back up: Sail again, or Choose a new
+## ship back in the harbour. Built for a phone held sideways: the card fits
+## one screen, scaled to it, with nothing to scroll. Records are kept with
+## the rest of your progress (Progress).
 
 signal retry
+## Choose a new ship: back to the harbour.
+signal harbour
 ## A tally tile's number has landed (the sixth, her renown), a new record or not.
 signal tallied(i: int, best: bool)
 
@@ -26,7 +29,6 @@ const RANKS := [
 	[4800, "Terror of the Isles", "Whole flotillas turn tail."],
 	[7000, "Legend of the Archipelago", "They will sing of this voyage."],
 ]
-const RECORDS := "user://records.json"
 const KIND_ICON := {"kill": "skull", "chest": "coin", "isle": "isle", "trade": "coin", "bounty": "skull"}
 ## The card's columns in CSS pixels: renown, the least the tally needs, the log.
 const COL_A := 232.0
@@ -40,8 +42,6 @@ const EASE := Vector4(0.2, 0.9, 0.25, 1.0)
 const SPRING := Vector4(0.25, 1.4, 0.4, 1.0)
 const CSS_EASE := Vector4(0.25, 0.1, 0.25, 1.0)
 
-const BOX := preload("res://shaders/ui_box.gdshader")
-const GRAD := preload("res://shaders/text_grad.gdshader")
 const GOLD_GRAD := [Color("#ffeab0"), Color("#f6c766"), Color("#e0a443"), Color("#e0a443"), Vector2(0.52, 1.0)]
 const SEA_GRAD := [Color("#ffffff"), Color("#eafffb"), Color("#9fe9de"), Color("#5cc6bb"), Vector2(0.38, 0.78)]
 
@@ -63,13 +63,13 @@ var _cine: Control
 var _bar_top: ColorRect
 var _bar_bot: ColorRect
 var _bar_h := 80.0
-var _caps: Array[_Text] = []
+var _caps: Array[UiText] = []
 var _cap_at: Array[Vector2] = []
 var _gauge: Control
-var _gauge_n: _Text
-var _gauge_unit: _Text
+var _gauge_n: UiText
+var _gauge_unit: UiText
 var _gauge_at := Vector2.ZERO
-var _skip: _Text
+var _skip: UiText
 var _skipped := false
 
 var _dead: Control
@@ -80,6 +80,7 @@ var _built := false
 var _anims: Array[_Anim] = []
 var _ticks: Array[Control] = []
 var _sail: _Sail
+var _again: _Again
 var _armed := 1e9
 
 ## Seconds since the letterbox came in, since it began to leave, and since
@@ -91,13 +92,13 @@ var _gauge_t := -1.0
 var _rest_t := -1.0
 
 ## The count-up: the tiles' numbers and what they reach, the renown.
-var _tally: Array[_Text] = []
+var _tally: Array[UiText] = []
 var _tally_to: Array[float] = []
 var _tally_best: Array[bool] = []
-var _tiles: Array[_Box] = []
+var _tiles: Array[UiBox] = []
 var _tags: Array[Control] = []
 var _landed: Array[float] = []
-var _score: _Text
+var _score: UiText
 var _score_row: Control
 var _score_to := 0
 var _score_tag: Control
@@ -255,21 +256,21 @@ func _build_cine(r: Dictionary) -> void:
 		_cine.add_child(b)
 	# the caption, over the foot bar: who she was, and what sank her
 	var halo := Color(0.0, 0.0, 0.0, 0.42)
-	var kick := _Text.new([["ABANDON SHIP", _font("inter", 700, 0.22, 9.6 * px), roundi(9.6 * px), HudStyle.CORAL]])
+	var kick := UiText.new([["ABANDON SHIP", _font("inter", 700, 0.22, 9.6 * px), roundi(9.6 * px), HudStyle.CORAL]])
 	var name_px := clampf(_vp.x * 0.044, 26.0 * px, 50.0 * px)
 	var cls: ShipClass = ShipClass.named(str(r.cls))
-	var nm := _Text.new([
+	var nm := UiText.new([
 		[str(r.ship), _font("cinzel", 700, 0.02, name_px), roundi(name_px), HudStyle.INK],
 		["   " + cls.name.to_upper(), _font("inter", 700, 0.22, 11.0 * px), roundi(11.0 * px), HudStyle.INK_3],
 	], 0.0, 1.05)
 	var cause_px := clampf(_vp.x * 0.016, 14.0 * px, 17.0 * px)
-	var cause := _Text.new(_cause_runs(r, _font("inter", 500, 0.0, cause_px), _font("cinzel", 700, 0.03, cause_px), roundi(cause_px), HudStyle.INK_2, HudStyle.GOLD_HI, false), 0.0, 1.4)
+	var cause := UiText.new(_cause_runs(r, _font("inter", 500, 0.0, cause_px), _font("cinzel", 700, 0.03, cause_px), roundi(cause_px), HudStyle.INK_2, HudStyle.GOLD_HI, false), 0.0, 1.4)
 	var left := _vp.x * 0.05
 	var bottom := _vp.y - _bar_h - clampf(_vp.y * 0.03, 14.0 * px, 30.0 * px)
 	var y := bottom - cause.size.y
 	var ys := [y - 8.0 * px - nm.size.y - 6.0 * px - kick.size.y, y - 8.0 * px - nm.size.y, y]
 	var i := 0
-	for t: _Text in [kick, nm, cause]:
+	for t: UiText in [kick, nm, cause]:
 		t.halo = halo
 		t.position = Vector2(left, ys[i])
 		_cine.add_child(t)
@@ -283,13 +284,13 @@ func _build_cine(r: Dictionary) -> void:
 	var glyph := _Glyph.new(Vector2(8.0, 22.0) * px, px)
 	_gauge.add_child(glyph)
 	var n_px := clampf(_vp.x * 0.022, 18.0 * px, 24.0 * px)
-	_gauge_n = _Text.new([["0", _tnum(_font("cinzel", 700, 0.0, n_px)), roundi(n_px), HudStyle.INK]], 0.0, 1.0)
-	_gauge_unit = _Text.new([["FATHOMS", _font("inter", 700, 0.2, 10.5 * px), roundi(10.5 * px), HudStyle.INK_3]], 0.0, 1.0)
+	_gauge_n = UiText.new([["0", _tnum(_font("cinzel", 700, 0.0, n_px)), roundi(n_px), HudStyle.INK]], 0.0, 1.0)
+	_gauge_unit = UiText.new([["FATHOMS", _font("inter", 700, 0.2, 10.5 * px), roundi(10.5 * px), HudStyle.INK_3]], 0.0, 1.0)
 	_gauge.add_child(_gauge_n)
 	_gauge.add_child(_gauge_unit)
 	_gauge.modulate.a = 0.0
 	var skip_text := "TAP TO SKIP" if touch else "SKIP  ·  SPACE"
-	_skip = _Text.new([[skip_text, _font("inter", 600, 0.08, 12.0 * px), roundi(12.0 * px), HudStyle.INK_3]])
+	_skip = UiText.new([[skip_text, _font("inter", 600, 0.08, 12.0 * px), roundi(12.0 * px), HudStyle.INK_3]])
 	_skip.modulate.a = 0.0
 	_cine.add_child(_skip)
 	_place_gauge()
@@ -443,7 +444,7 @@ func _build_head(r: Dictionary, width: float) -> float:
 	var kp := 11.0 * u
 	var runs := [["SHIPWRECKED", _font("inter", 700, 0.22, kp), roundi(kp), HudStyle.CORAL], ["  •  ", _font("inter", 700, 0.0, kp), roundi(kp), Color(HudStyle.CORAL, 0.6)]]
 	runs.append_array(_cause_runs(r, _font("inter", 700, 0.16, kp), _font("cinzel", 700, 0.08, kp), roundi(kp), HudStyle.INK_3, HudStyle.INK_2, true))
-	var kick := _Text.new(runs, 0.0, 1.2)
+	var kick := UiText.new(runs, 0.0, 1.2)
 	kick.position = Vector2((width - kick.size.x) * 0.5, 0.0)
 	_card.add_child(kick)
 	_rise(kick, 0.0, 0.7)
@@ -467,7 +468,7 @@ func _build_head(r: Dictionary, width: float) -> float:
 		for ci in words[wi].length():
 			var ch := words[wi][ci]
 			var x := tf.get_string_size(title.substr(0, at + ci + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(tp)).x - tf.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, roundi(tp)).x
-			var l := _Text.new([[ch, tf, roundi(tp), Color.WHITE]], 0.0, 0.0)
+			var l := UiText.new([[ch, tf, roundi(tp), Color.WHITE]], 0.0, 0.0)
 			l.material = mat
 			l.position = Vector2(x0 + x, 0.0)
 			l.pivot_offset = l.size * 0.5
@@ -481,12 +482,12 @@ func _build_head(r: Dictionary, width: float) -> float:
 	plaque.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var text_w := minf(760.0 * u, width) - port_d - 14.0 * u
 	var name_px := 22.0 * u
-	var nm := _Text.new([[str(r.ship), _font("cinzel", 700, 0.03, name_px), roundi(name_px), Color.WHITE]], 0.0, 1.05)
+	var nm := UiText.new([[str(r.ship), _font("cinzel", 700, 0.03, name_px), roundi(name_px), Color.WHITE]], 0.0, 1.05)
 	nm.material = _grad(GOLD_GRAD, 0.0, nm.size.y)
-	var cl := _Text.new([[cls.name.to_upper(), _font("inter", 800, 0.24, 10.5 * u), roundi(10.5 * u), HudStyle.INK_3]])
-	var ep := _Text.new(_epitaph(r), text_w, 1.45)
+	var cl := UiText.new([[cls.name.to_upper(), _font("inter", 800, 0.24, 10.5 * u), roundi(10.5 * u), HudStyle.INK_3]])
+	var ep := UiText.new(_epitaph(r), text_w, 1.45)
 	var qp := 12.5 * u
-	var quip := _Text.new([["“%s”" % _quip(r), _italic(_font("inter", 500, 0.0, qp)), roundi(qp), HudStyle.INK_3]], text_w, 1.45)
+	var quip := UiText.new([["“%s”" % _quip(r), _italic(_font("inter", 500, 0.0, qp)), roundi(qp), HudStyle.INK_3]], text_w, 1.45)
 	var tw := maxf(nm.size.x + 12.0 * u + cl.size.x, maxf(ep.size.x, quip.size.x))
 	var th := nm.size.y + 3.0 * u + ep.size.y + 3.0 * u + quip.size.y
 	var ph := maxf(port_d, th)
@@ -510,7 +511,7 @@ func _build_head(r: Dictionary, width: float) -> float:
 
 ## Renown and rank: the medal filling toward the next rank, the score
 ## counting up, the rank, the ladder of all nine, and how far to the next.
-func _build_rank(_r: Dictionary, score: int, best: Dictionary) -> _Box:
+func _build_rank(_r: Dictionary, score: int, best: Dictionary) -> UiBox:
 	var u := _u
 	var w := COL_A * u
 	var panel := _panel(Vector2(w, 10.0), 26.0)
@@ -532,7 +533,7 @@ func _build_rank(_r: Dictionary, score: int, best: Dictionary) -> _Box:
 	_medal_land = -1.0
 	_score_best = bool(best.renown)
 	y += md + 12.0 * u
-	var kick := _Text.new([["YOUR RENOWN", _font("inter", 700, 0.22, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
+	var kick := UiText.new([["YOUR RENOWN", _font("inter", 700, 0.22, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
 	kick.position = Vector2((w - kick.size.x) * 0.5, y)
 	col.add_child(kick)
 	y += kick.size.y + 3.0 * u
@@ -541,7 +542,7 @@ func _build_rank(_r: Dictionary, score: int, best: Dictionary) -> _Box:
 	_score_row.position = Vector2(0.0, y)
 	col.add_child(_score_row)
 	var sp := 34.0 * u
-	_score = _Text.new([["0", _tnum(_font("inter", 800, -0.03, sp)), roundi(sp), Color.WHITE]], 0.0, 1.0)
+	_score = UiText.new([["0", _tnum(_font("inter", 800, -0.03, sp)), roundi(sp), Color.WHITE]], 0.0, 1.0)
 	_score.material = _grad(GOLD_GRAD, 0.0, _score.size.y)
 	_score_row.add_child(_score)
 	_score_to = score
@@ -551,11 +552,11 @@ func _build_rank(_r: Dictionary, score: int, best: Dictionary) -> _Box:
 	_score_row.size = Vector2(w, _score.size.y)
 	_place_score()
 	y += _score.size.y + 3.0 * u
-	var rn := _Text.new([[str(rank[1]), _font("inter", 800, -0.01, 17.0 * u), roundi(17.0 * u), HudStyle.INK]], 0.0, 1.15)
+	var rn := UiText.new([[str(rank[1]), _font("inter", 800, -0.01, 17.0 * u), roundi(17.0 * u), HudStyle.INK]], 0.0, 1.15)
 	rn.position = Vector2((w - rn.size.x) * 0.5, y)
 	col.add_child(rn)
 	y += rn.size.y + 2.0 * u
-	var rl := _Text.new([[str(rank[2]), _font("inter", 500, 0.0, 13.0 * u), roundi(13.0 * u), HudStyle.INK_3]], w - 36.0 * u, 1.45)
+	var rl := UiText.new([[str(rank[2]), _font("inter", 500, 0.0, 13.0 * u), roundi(13.0 * u), HudStyle.INK_3]], w - 36.0 * u, 1.45)
 	rl.align = HORIZONTAL_ALIGNMENT_CENTER
 	rl.size.x = w - 36.0 * u
 	rl.position = Vector2(18.0 * u, y)
@@ -572,8 +573,8 @@ func _build_rank(_r: Dictionary, score: int, best: Dictionary) -> _Box:
 		nr = [["The highest rank on these seas", _font("inter", 600, 0.0, np), roundi(np), HudStyle.INK_3]]
 	else:
 		nr = [[_num(int(nxt[0]) - score), _font("inter", 700, 0.0, np), roundi(np), HudStyle.GOLD], [" renown to " + str(nxt[1]), _font("inter", 600, 0.0, np), roundi(np), HudStyle.INK_3]]
-	var nt := _Text.new(nr, 0.0, 1.2)
-	var pill := _Box.new(nt.size + Vector2(24.0, 12.0) * u, 999.0, 2.0)
+	var nt := UiText.new(nr, 0.0, 1.2)
+	var pill := UiBox.new(nt.size + Vector2(24.0, 12.0) * u, 999.0, 2.0)
 	pill.p("c_top", Color(1, 1, 1, 0.05)).p("c_foot", Color(1, 1, 1, 0.05)).p("border", 0.0).p("c_shadow", Color(0, 0, 0, 0)).p("hi", 0.0)
 	nt.position = Vector2(12.0, 6.0) * u
 	pill.add_child(nt)
@@ -585,7 +586,7 @@ func _build_rank(_r: Dictionary, score: int, best: Dictionary) -> _Box:
 	return panel
 
 
-func _stretch_rank(panel: _Box, h: float) -> void:
+func _stretch_rank(panel: UiBox, h: float) -> void:
 	var col: Control = panel.get_node("Col")
 	col.position.y = (h - col.size.y) * 0.5
 	panel.resize(Vector2(panel.size.x, h))
@@ -625,10 +626,10 @@ func _build_stats(r: Dictionary, recs: Dictionary, best: Dictionary, first: bool
 	vy.position = Vector2(0.0, th + 10.0 * u)
 	col.add_child(vy)
 	var pad := Vector2(18.0, 14.0) * u
-	var kick := _Text.new([["THE VOYAGE", _font("inter", 700, 0.22, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
+	var kick := UiText.new([["THE VOYAGE", _font("inter", 700, 0.22, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
 	kick.position = pad
 	vy.add_child(kick)
-	var len_t := _Text.new([[_duration(float(r.time)), _font("inter", 600, 0.04, 10.0 * u), roundi(10.0 * u), HudStyle.INK_4]], 0.0, 1.2)
+	var len_t := UiText.new([[_duration(float(r.time)), _font("inter", 600, 0.04, 10.0 * u), roundi(10.0 * u), HudStyle.INK_4]], 0.0, 1.2)
 	len_t.position = Vector2(wb - pad.x - len_t.size.x, pad.y)
 	vy.add_child(len_t)
 	var track := _Track.new(r, wb - pad.x * 2.0 - 24.0 * u, 52.0 * u, u)
@@ -640,13 +641,13 @@ func _build_stats(r: Dictionary, recs: Dictionary, best: Dictionary, first: bool
 	var ef := _font("inter", 700, 0.14, ep)
 	var ends_y := track.position.y + track.size.y + 6.0 * u
 	var anchor := Icons.rect("anchor", 13.0 * u, HudStyle.AQUA)
-	var set_sail := _Text.new([["SET SAIL", ef, roundi(ep), HudStyle.INK_3]], 0.0, 1.2)
+	var set_sail := UiText.new([["SET SAIL", ef, roundi(ep), HudStyle.INK_3]], 0.0, 1.2)
 	anchor.position = Vector2(pad.x, ends_y + (set_sail.size.y - anchor.size.y) * 0.5)
 	set_sail.position = Vector2(pad.x + 18.0 * u, ends_y)
 	var n := (r.events as Array).size()
-	var mid := _Text.new([["%d %s in the log" % [n, "entry" if n == 1 else "entries"] if n > 0 else "A quiet voyage", _font("inter", 600, 0.08, 10.5 * u), roundi(10.5 * u), HudStyle.INK_4]], 0.0, 1.2)
+	var mid := UiText.new([["%d %s in the log" % [n, "entry" if n == 1 else "entries"] if n > 0 else "A quiet voyage", _font("inter", 600, 0.08, 10.5 * u), roundi(10.5 * u), HudStyle.INK_4]], 0.0, 1.2)
 	mid.position = Vector2((wb - mid.size.x) * 0.5, ends_y + (set_sail.size.y - mid.size.y) * 0.5)
-	var lost := _Text.new([["LOST · " + _clock(float(r.time)), ef, roundi(ep), HudStyle.CORAL]], 0.0, 1.2)
+	var lost := UiText.new([["LOST · " + _clock(float(r.time)), ef, roundi(ep), HudStyle.CORAL]], 0.0, 1.2)
 	lost.position = Vector2(wb - pad.x - lost.size.x, ends_y)
 	for e: Control in [anchor, set_sail, mid, lost]:
 		vy.add_child(e)
@@ -685,7 +686,7 @@ func _build_stats(r: Dictionary, recs: Dictionary, best: Dictionary, first: bool
 
 
 func _stretch_stats(col: Control, h: float) -> void:
-	var vy: _Box = col.get_node("Voyage")
+	var vy: UiBox = col.get_node("Voyage")
 	var vh := h - vy.position.y
 	vy.resize(Vector2(vy.size.x, vh))
 	var minor: Control = vy.get_node("Minor")
@@ -699,7 +700,7 @@ func _stretch_stats(col: Control, h: float) -> void:
 	col.size.y = h
 
 
-func _tile(i: int, s: Array, first: bool, w: float) -> _Box:
+func _tile(i: int, s: Array, first: bool, w: float) -> UiBox:
 	var u := _u
 	var tile := _panel(Vector2(w, 10.0), 22.0)
 	var y := 14.0 * u
@@ -708,14 +709,14 @@ func _tile(i: int, s: Array, first: bool, w: float) -> _Box:
 	tile.add_child(icon)
 	y += 18.0 * u + 5.0 * u
 	var np := 26.0 * u
-	var num := _Text.new([[_tally_fmt(i, 0.0), _tnum(_font("inter", 800, -0.03, np)), roundi(np), HudStyle.INK]], 0.0, 1.0)
+	var num := UiText.new([[_tally_fmt(i, 0.0), _tnum(_font("inter", 800, -0.03, np)), roundi(np), HudStyle.INK]], 0.0, 1.0)
 	num.align = HORIZONTAL_ALIGNMENT_CENTER
 	num.fit(w)
 	num.position = Vector2(0.0, y)
 	num.pivot_offset = Vector2(w * 0.5, num.size.y * 0.5)
 	tile.add_child(num)
 	y += num.size.y + 5.0 * u
-	var lab := _Text.new([[str(s[1]), _font("inter", 700, 0.16, 10.5 * u), roundi(10.5 * u), HudStyle.INK_3]], 0.0, 1.2)
+	var lab := UiText.new([[str(s[1]), _font("inter", 700, 0.16, 10.5 * u), roundi(10.5 * u), HudStyle.INK_3]], 0.0, 1.2)
 	lab.position = Vector2((w - lab.size.x) * 0.5, y)
 	tile.add_child(lab)
 	y += lab.size.y + 3.0 * u
@@ -725,7 +726,7 @@ func _tile(i: int, s: Array, first: bool, w: float) -> _Box:
 	var tag: bool = s[3]
 	var fmt := _clock(rec) if i == 0 else _num(roundi(rec))
 	var rt := "First voyage" if first else ("was " + fmt if tag else ("best " + fmt if rec > 0.0 else ("a first" if v > 0.0 else " ")))
-	var rec_t := _Text.new([[rt, _font("inter", 600, 0.0, 10.5 * u), roundi(10.5 * u), Color(HudStyle.GOLD, 0.7) if tag else HudStyle.INK_4]], 0.0, 1.2)
+	var rec_t := UiText.new([[rt, _font("inter", 600, 0.0, 10.5 * u), roundi(10.5 * u), Color(HudStyle.GOLD, 0.7) if tag else HudStyle.INK_4]], 0.0, 1.2)
 	if tag:
 		rec_t.strike = Color(HudStyle.GOLD, 0.45)
 	rec_t.position = Vector2((w - rec_t.size.x) * 0.5, y)
@@ -749,7 +750,7 @@ func _minor(row: Array, w: float) -> Control:
 	var u := _u
 	var m := Control.new()
 	m.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var disc := _Box.new(Vector2(32.0, 32.0) * u, 999.0, 1.0)
+	var disc := UiBox.new(Vector2(32.0, 32.0) * u, 999.0, 1.0)
 	disc.p("c_top", Color(HudStyle.AQUA, 0.1)).p("c_foot", Color(HudStyle.AQUA, 0.1)).p("border", 0.0).p("c_shadow", Color(0, 0, 0, 0)).p("hi", 0.0)
 	var icon := Icons.rect(str(row[0]), 18.0 * u, HudStyle.AQUA)
 	icon.position = Vector2(7.0, 7.0) * u
@@ -757,10 +758,10 @@ func _minor(row: Array, w: float) -> Control:
 	m.add_child(disc)
 	var tx := 42.0 * u
 	var cut := w - tx
-	var lab := _Text.new([[str(row[1]), _font("inter", 700, 0.16, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
+	var lab := UiText.new([[str(row[1]), _font("inter", 700, 0.16, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
 	lab.cut_to(cut)
-	var val := _Text.new([[str(row[2]), _tnum(_font("inter", 800, -0.02, 18.0 * u)), roundi(18.0 * u), HudStyle.INK]], 0.0, 1.2)
-	var sub := _Text.new([[str(row[3]), _font("inter", 500, 0.0, 11.5 * u), roundi(11.5 * u), HudStyle.INK_3]], 0.0, 1.3)
+	var val := UiText.new([[str(row[2]), _tnum(_font("inter", 800, -0.02, 18.0 * u)), roundi(18.0 * u), HudStyle.INK]], 0.0, 1.2)
+	var sub := UiText.new([[str(row[3]), _font("inter", 500, 0.0, 11.5 * u), roundi(11.5 * u), HudStyle.INK_3]], 0.0, 1.3)
 	sub.cut_to(cut)
 	var h := lab.size.y + val.size.y + sub.size.y
 	var top := maxf(0.0, (32.0 * u - h) * 0.5)
@@ -789,11 +790,21 @@ func _build_log(r: Dictionary) -> Control:
 	_sail.pressed.connect(_on_sail)
 	col.add_child(_sail)
 	_ticks.append(_sail)
+	_again = _Again.new(w, u, not touch)
+	_again.name = "Again"
+	_again.pressed.connect(_on_again)
+	col.add_child(_again)
+	_ticks.append(_again)
 	# the least it needs: the kicker, the end, and room for a few entries
 	var natural := 18.0 * u + 12.0 * u + 12.0 * u + _row_h() * 4.0 + 14.0 * u
 	panel.resize(Vector2(w, natural))
-	col.size = Vector2(w, natural + 10.0 * u + _sail.size.y)
+	col.size = Vector2(w, natural + _ways_h())
 	return col
+
+
+## The ways back up under the log: Sail again over Choose a new ship.
+func _ways_h() -> float:
+	return 10.0 * _u + _sail.size.y + 8.0 * _u + _again.size.y
 
 
 func _row_h() -> float:
@@ -802,22 +813,25 @@ func _row_h() -> float:
 
 func _stretch_log(col: Control, h: float, r: Dictionary) -> void:
 	var u := _u
-	var panel: _Box = col.get_node("Log")
+	var panel: UiBox = col.get_node("Log")
 	var sail: Control = col.get_node("Sail")
-	var ph := h - 10.0 * u - sail.size.y
+	var again: Control = col.get_node("Again")
+	var ph := h - _ways_h()
 	panel.resize(Vector2(panel.size.x, ph))
 	sail.position = Vector2(0.0, ph + 10.0 * u)
+	again.position = Vector2(0.0, sail.position.y + sail.size.y + 8.0 * u)
 	_rise(sail, 1.2, 0.7)
+	_rise(again, 1.28, 0.7)
 	var w := panel.size.x
 	var pad := Vector2(20.0, 18.0) * u
 	var events: Array = r.events
 	var room := maxi(1, int((ph - pad.y - 12.0 * u - 12.0 * u - 14.0 * u) / _row_h()))
 	var shown := events.slice(maxi(0, events.size() - (room - 1)))
-	var kick := _Text.new([["SHIP'S LOG", _font("inter", 700, 0.22, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
+	var kick := UiText.new([["SHIP'S LOG", _font("inter", 700, 0.22, 10.0 * u), roundi(10.0 * u), HudStyle.INK_3]], 0.0, 1.2)
 	kick.position = pad
 	panel.add_child(kick)
 	if events.size() > shown.size():
-		var more := _Text.new([["%d earlier %s" % [events.size() - shown.size(), "entry" if events.size() - shown.size() == 1 else "entries"], _font("inter", 600, 0.04, 10.0 * u), roundi(10.0 * u), HudStyle.INK_4]], 0.0, 1.2)
+		var more := UiText.new([["%d earlier %s" % [events.size() - shown.size(), "entry" if events.size() - shown.size() == 1 else "entries"], _font("inter", 600, 0.04, 10.0 * u), roundi(10.0 * u), HudStyle.INK_4]], 0.0, 1.2)
 		more.position = Vector2(w - pad.x - more.size.x, pad.y)
 		panel.add_child(more)
 	var y := pad.y + kick.size.y + 12.0 * u
@@ -838,7 +852,7 @@ func _stretch_log(col: Control, h: float, r: Dictionary) -> void:
 		panel.add_child(line)
 		var rh := 0.0
 		if str(row[0]) != "":
-			var tm := _Text.new([[str(row[0]), _tnum(_font("inter", 600, 0.0, 11.5 * u)), roundi(11.5 * u), HudStyle.INK_3]], 0.0, 1.3)
+			var tm := UiText.new([[str(row[0]), _tnum(_font("inter", 600, 0.0, 11.5 * u)), roundi(11.5 * u), HudStyle.INK_3]], 0.0, 1.3)
 			tm.position = Vector2(pad.x + 36.0 * u - tm.size.x, 1.0 * u)
 			line.add_child(tm)
 			var ic := Icons.rect(str(row[1]), 14.0 * u * 1.5)
@@ -846,12 +860,12 @@ func _stretch_log(col: Control, h: float, r: Dictionary) -> void:
 			line.add_child(ic)
 		var ty := 0.0
 		if not (row[2] as Array).is_empty():
-			var b := _Text.new(row[2], 0.0, 1.3)
+			var b := UiText.new(row[2], 0.0, 1.3)
 			b.cut_to(cut)
 			b.position = Vector2(tx, 0.0)
 			line.add_child(b)
 			ty = b.size.y + 1.0 * u
-		var sm := _Text.new(row[3], cut if str(row[0]) != "" else w - pad.x * 2.0, 1.3)
+		var sm := UiText.new(row[3], cut if str(row[0]) != "" else w - pad.x * 2.0, 1.3)
 		sm.position = Vector2(tx if str(row[0]) != "" else pad.x, ty)
 		line.add_child(sm)
 		rh = ty + sm.size.y
@@ -866,6 +880,17 @@ func _stretch_log(col: Control, h: float, r: Dictionary) -> void:
 func _on_sail() -> void:
 	if _t_card >= 0.0 and _t_card >= _armed:
 		retry.emit()
+
+
+func _on_again() -> void:
+	if can_leave():
+		harbour.emit()
+
+
+## Whether the card has settled enough to be left (a tap that skipped the
+## farewell mustn't also take a way back up).
+func can_leave() -> bool:
+	return _dead.visible and _t_card >= 0.0 and _t_card >= _armed
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -916,6 +941,8 @@ func _step_card(dt: float) -> void:
 		_pop(_score_tag, (t - _medal_land) / 0.6)
 	if _sail != null:
 		_sail.armed = t >= _armed
+	if _again != null:
+		_again.armed = t >= _armed
 
 
 ## A landed tile: its number bumps, and a record lights it gold with its pill.
@@ -1117,31 +1144,22 @@ func _tally_fmt(i: int, v: float) -> String:
 
 # ---------------------------------------------------------------- records
 
+## Your bests before this voyage.
 func _load_records() -> Dictionary:
-	var recs := {"voyages": 0, "renown": 0, "gold": 0, "kills": 0, "isles": 0, "time": 0.0}
-	if FileAccess.file_exists(RECORDS):
-		var data: Variant = JSON.parse_string(FileAccess.get_file_as_string(RECORDS))
-		if data is Dictionary:
-			for k: String in recs:
-				if (data as Dictionary).has(k):
-					recs[k] = data[k]
-	return recs
+	return Progress.records.duplicate()
 
 
+## This voyage counted, and any bests it beat kept.
 func _save_records() -> void:
 	var r := _report
-	var recs := _load_records()
-	var out := {
-		"voyages": int(recs.voyages) + 1,
-		"renown": maxi(int(recs.renown), _renown(r)),
-		"gold": maxi(int(recs.gold), int(r.gold)),
-		"kills": maxi(int(recs.kills), int(r.kills)),
-		"isles": maxi(int(recs.isles), int(r.isles)),
-		"time": maxf(float(recs.time), float(r.time)),
-	}
-	var f := FileAccess.open(RECORDS, FileAccess.WRITE)
-	if f != null:
-		f.store_string(JSON.stringify(out))
+	var recs := Progress.records
+	recs.voyages = int(recs.voyages) + 1
+	recs.renown = maxi(int(recs.renown), _renown(r))
+	recs.gold = maxi(int(recs.gold), int(r.gold))
+	recs.kills = maxi(int(recs.kills), int(r.kills))
+	recs.isles = maxi(int(recs.isles), int(r.isles))
+	recs.time = maxf(float(recs.time), float(r.time))
+	Progress.touch()
 
 
 # ---------------------------------------------------------------- pieces
@@ -1150,56 +1168,31 @@ func _font(family: String, weight: int, em: float, px: float) -> Font:
 	return HudStyle.font(family, weight, roundi(em * px))
 
 
-static var _variants := {}
-
-
-## The font with tabular figures, so counting numbers don't jitter.
 func _tnum(f: Font) -> Font:
-	var key := "t%d" % f.get_instance_id()
-	if not _variants.has(key):
-		var fv := FontVariation.new()
-		fv.base_font = f
-		fv.opentype_features = {TextServerManager.get_primary_interface().name_to_tag("tnum"): 1}
-		_variants[key] = fv
-	return _variants[key]
+	return HudStyle.tnum(f)
 
 
-## The font slanted, for the quip (the fonts carry no italic).
+## The quip's slant (the fonts carry no italic).
 func _italic(f: Font) -> Font:
-	var key := "i%d" % f.get_instance_id()
-	if not _variants.has(key):
-		var fv := FontVariation.new()
-		fv.base_font = f
-		fv.variation_transform = Transform2D(Vector2(1.0, 0.0), Vector2(0.2, 1.0), Vector2.ZERO)
-		_variants[key] = fv
-	return _variants[key]
+	return HudStyle.italic(f)
 
 
 func _grad(g: Array, top: float, height: float) -> ShaderMaterial:
-	var m := ShaderMaterial.new()
-	m.shader = GRAD
-	m.set_shader_parameter("c0", g[0])
-	m.set_shader_parameter("c1", g[1])
-	m.set_shader_parameter("c2", g[2])
-	m.set_shader_parameter("c3", g[3])
-	m.set_shader_parameter("stops", g[4])
-	m.set_shader_parameter("top", top)
-	m.set_shader_parameter("height", height)
-	return m
+	return HudStyle.text_grad(g, top, height)
 
 
 ## A glass panel: the web's .wk-panel (radius in CSS pixels).
-func _panel(sz: Vector2, radius: float) -> _Box:
-	var b := _Box.new(sz, radius * _u, 70.0 * _u)
+func _panel(sz: Vector2, radius: float) -> UiBox:
+	var b := UiBox.new(sz, radius * _u, 70.0 * _u)
 	b.p("c_shadow", Color(0.0, 0.031, 0.055, 0.38)).p("shadow", Vector2(18.0, 50.0) * _u)
 	return b
 
 
 ## A gold "New best" pill.
-func _pill(text: String) -> _Box:
+func _pill(text: String) -> UiBox:
 	var u := _u
-	var t := _Text.new([[text, _font("inter", 800, 0.14, 9.0 * u), roundi(9.0 * u), HudStyle.GOLD_INK]], 0.0, 1.0)
-	var b := _Box.new(t.size + Vector2(16.0, 9.0) * u, 999.0, 26.0 * u)
+	var t := UiText.new([[text, _font("inter", 800, 0.14, 9.0 * u), roundi(9.0 * u), HudStyle.GOLD_INK]], 0.0, 1.0)
+	var b := UiBox.new(t.size + Vector2(16.0, 9.0) * u, 999.0, 26.0 * u)
 	b.p("c_top", GOLD_GRAD[0]).p("c_mid", GOLD_GRAD[1]).p("mid", 0.52).p("c_foot", GOLD_GRAD[2]).p("border", 0.0).p("hi", 0.0)
 	b.p("c_shadow", Color(0.957, 0.706, 0.275, 0.4)).p("shadow", Vector2(6.0, 18.0) * u)
 	t.position = Vector2(8.0, 5.0) * u
@@ -1223,166 +1216,6 @@ class _Anim:
 ## Text in runs of their own font, size and colour on a shared baseline,
 ## wrapped to a width or cut short with an ellipsis; drawn in one item, so a
 ## gradient material paints it whole.
-class _Text:
-	extends Control
-	## [text, font, size, colour] each.
-	var runs: Array = []
-	var wrap := 0.0
-	var lead := 1.25
-	var align := HORIZONTAL_ALIGNMENT_LEFT
-	## A width to align within (0: the text's own).
-	var fixed := 0.0
-	var halo := Color(0.0, 0.0, 0.0, 0.0)
-	var strike := Color(0.0, 0.0, 0.0, 0.0)
-	var _items: Array = []
-	var _widths: Array[float] = []
-	var _asc := 0.0
-	var _lh := 0.0
-	var _cut := 0.0
-
-	func _init(p_runs: Array, p_wrap := 0.0, p_lead := 1.25) -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		runs = p_runs
-		wrap = p_wrap
-		lead = p_lead
-		_layout()
-
-	func set_runs(p_runs: Array) -> void:
-		runs = p_runs
-		_layout()
-		queue_redraw()
-
-	## Replaces a one-run text's words.
-	func set_text(text: String) -> void:
-		if runs.is_empty() or str(runs[0][0]) == text:
-			return
-		runs[0][0] = text
-		_layout()
-		queue_redraw()
-
-	## Cuts it to one line of at most w, ending in an ellipsis.
-	func cut_to(w: float) -> void:
-		_cut = w
-		_layout()
-
-	## Aligns it within a width of its own.
-	func fit(w: float) -> void:
-		fixed = w
-		_layout()
-
-	func baseline() -> float:
-		return _asc
-
-	func _layout() -> void:
-		_items.clear()
-		_widths.clear()
-		var asc := 0.0
-		var desc := 0.0
-		var big := 0.0
-		for r: Array in runs:
-			var f: Font = r[1]
-			asc = maxf(asc, f.get_ascent(r[2]))
-			desc = maxf(desc, f.get_descent(r[2]))
-			big = maxf(big, float(r[2]))
-		_lh = maxf(asc + desc, big * lead)
-		_asc = asc + (_lh - asc - desc) * 0.5
-		var line := 0
-		var x := 0.0
-		_widths.append(0.0)
-		for r: Array in runs:
-			var f: Font = r[1]
-			var sz: int = r[2]
-			var words := str(r[0]).split(" ")
-			for i in words.size():
-				var w := words[i] + (" " if i < words.size() - 1 else "")
-				if w == "":
-					continue
-				var adv := f.get_string_size(w, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
-				var ink := f.get_string_size(w.strip_edges(false, true), HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
-				if wrap > 0.0 and x > 0.0 and x + ink > wrap:
-					line += 1
-					x = 0.0
-					_widths.append(0.0)
-					if w.strip_edges() == "":
-						continue
-				_items.append([x, line, w, f, sz, r[3]])
-				_widths[line] = x + ink
-				x += adv
-		if _cut > 0.0 and _widths[0] > _cut:
-			_ellipsize()
-		var lines := line + 1
-		var mw := 0.0
-		for w in _widths:
-			mw = maxf(mw, w)
-		custom_minimum_size = Vector2(maxf(mw, fixed), lines * _lh)
-		size = custom_minimum_size
-
-	func _ellipsize() -> void:
-		# drop whole items that start past the cut, then letters off the last
-		while _items.size() > 1 and float(_items[-1][0]) > _cut:
-			_items.pop_back()
-		var it: Array = _items[-1]
-		var f: Font = it[3]
-		var sz: int = it[4]
-		var text: String = str(it[2]).strip_edges(false, true)
-		while text.length() > 1 and float(it[0]) + f.get_string_size(text + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > _cut:
-			text = text.left(text.length() - 1).strip_edges(false, true)
-		it[2] = text + "…"
-		_widths[0] = float(it[0]) + f.get_string_size(it[2], HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
-
-	func _draw() -> void:
-		var w := maxf(size.x, fixed)
-		for it: Array in _items:
-			var line: int = it[1]
-			var x0 := 0.0
-			if align == HORIZONTAL_ALIGNMENT_CENTER:
-				x0 = (w - _widths[line]) * 0.5
-			elif align == HORIZONTAL_ALIGNMENT_RIGHT:
-				x0 = w - _widths[line]
-			var at := Vector2(x0 + float(it[0]), line * _lh + _asc)
-			var f: Font = it[3]
-			var sz: int = it[4]
-			if halo.a > 0.0:
-				draw_string_outline(f, at + Vector2(0.0, sz * 0.06), it[2], HORIZONTAL_ALIGNMENT_LEFT, -1, sz, maxi(2, roundi(sz * 0.22)), halo)
-			draw_string(f, at, it[2], HORIZONTAL_ALIGNMENT_LEFT, -1, sz, it[5])
-		if strike.a > 0.0:
-			for line in _widths.size():
-				var x0 := (w - _widths[line]) * 0.5 if align == HORIZONTAL_ALIGNMENT_CENTER else 0.0
-				var y := line * _lh + _asc - float(runs[0][2]) * 0.3
-				draw_line(Vector2(x0, y), Vector2(x0 + _widths[line], y), strike, maxf(1.0, float(runs[0][2]) * 0.08))
-
-
-## A rounded box drawn by shaders/ui_box.gdshader in one quad, with room
-## round it for its shadow and glow.
-class _Box:
-	extends Control
-	var mat: ShaderMaterial
-	var margin := 0.0
-
-	func _init(sz: Vector2, radius: float, p_margin: float) -> void:
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		margin = p_margin
-		mat = ShaderMaterial.new()
-		mat.shader = BOX
-		material = mat
-		p("radius", radius)
-		resize(sz)
-
-	func resize(sz: Vector2) -> void:
-		size = sz
-		p("quad", sz + Vector2(margin, margin) * 2.0)
-		p("at", Vector2(margin, margin))
-		p("box", sz)
-		queue_redraw()
-
-	func p(param: String, value: Variant) -> _Box:
-		mat.set_shader_parameter(param, value)
-		return self
-
-	func _draw() -> void:
-		draw_rect(Rect2(-Vector2(margin, margin), size + Vector2(margin, margin) * 2.0), Color.WHITE)
-
-
 ## A word of the title, swaying on the swell (wkSway).
 class _Sway:
 	extends Control
@@ -1708,7 +1541,7 @@ class _Bubbles:
 ## The way back up: the big gold "Sail again", a glint running across it now
 ## and then; it presses on release, and only once the card has settled.
 class _Sail:
-	extends _Box
+	extends UiBox
 	signal pressed
 	var armed := false
 	var _down := false
@@ -1741,7 +1574,7 @@ class _Sail:
 		for n: Control in [icon, big, sub]:
 			add_child(n)
 		if kbd != null:
-			var kb := _Box.new(kbd.size + Vector2(12.0, 4.0) * u, 7.0 * u, 2.0)
+			var kb := UiBox.new(kbd.size + Vector2(12.0, 4.0) * u, 7.0 * u, 2.0)
 			kb.p("c_top", Color(0, 0, 0, 0.1)).p("c_foot", Color(0, 0, 0, 0.1)).p("c_border", Color(0, 0, 0, 0.14)).p("c_shadow", Color(0, 0, 0, 0)).p("hi", 0.0)
 			kbd.position = Vector2(6.0, 2.0) * u
 			kb.add_child(kbd)
@@ -1774,5 +1607,59 @@ class _Sail:
 				pressed.emit()
 
 
-static func _text_static(runs: Array) -> _Text:
-	return _Text.new(runs, 0.0, 1.15)
+## The other way back up, under Sail again: "Choose a new ship" in a pill of
+## dark glass, back to the harbour (Esc too); like it, it presses on release
+## and only once the card has settled.
+class _Again:
+	extends UiBox
+	signal pressed
+	var armed := false
+	var _down := false
+	var _press := 1.0
+
+	func _init(w: float, u: float, keys: bool) -> void:
+		super(Vector2(w, 42.0 * u), 999.0, 4.0)
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		pivot_offset = size * 0.5
+		var fill := Color(0.039, 0.118, 0.165, 0.72)
+		p("c_top", fill).p("c_foot", fill).p("c_border", HudStyle.STROKE).p("hi", 0.09).p("c_shadow", Color(0.0, 0.0, 0.0, 0.0))
+		var icon := Icons.rect("anchor", 17.0 * u, HudStyle.INK)
+		var t := WreckScreen._text_static([["Choose a new ship", HudStyle.font("inter", 700, 0), roundi(14.5 * u), HudStyle.INK]])
+		var kbd: Control = null
+		if keys:
+			kbd = WreckScreen._text_static([["Esc", HudStyle.font("inter", 600, 0), roundi(10.0 * u), HudStyle.INK_2]])
+		var row := icon.size.x + 9.0 * u + t.size.x + ((8.0 * u + kbd.size.x + 12.0 * u) if kbd != null else 0.0)
+		var x := (w - row) * 0.5
+		icon.position = Vector2(x, (size.y - icon.size.y) * 0.5)
+		t.position = Vector2(x + icon.size.x + 9.0 * u, (size.y - t.size.y) * 0.5)
+		add_child(icon)
+		add_child(t)
+		if kbd != null:
+			var kb := UiBox.new(kbd.size + Vector2(12.0, 4.0) * u, 7.0 * u, 2.0)
+			kb.p("c_top", Color(1, 1, 1, 0.08)).p("c_foot", Color(1, 1, 1, 0.08)).p("c_border", Color(1, 1, 1, 0.14)).p("c_shadow", Color(0, 0, 0, 0)).p("hi", 0.0)
+			kbd.position = Vector2(6.0, 2.0) * u
+			kb.add_child(kbd)
+			kb.position = Vector2(t.position.x + t.size.x + 8.0 * u, (size.y - kb.size.y) * 0.5)
+			add_child(kb)
+
+	func tick(_t: float, dt: float) -> void:
+		_press += ((0.97 if _down else 1.0) - _press) * MathX.damp(30.0, dt)
+		scale = Vector2(_press, _press)
+
+	func _gui_input(event: InputEvent) -> void:
+		var touch := event is InputEventScreenTouch
+		var click: bool = event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION
+		if not (touch or click):
+			return
+		accept_event()
+		if event.pressed:
+			_down = true
+		elif _down:
+			_down = false
+			if Rect2(Vector2.ZERO, size).has_point(event.position) and armed:
+				Input.vibrate_handheld(16)
+				pressed.emit()
+
+
+static func _text_static(runs: Array) -> UiText:
+	return UiText.new(runs, 0.0, 1.15)

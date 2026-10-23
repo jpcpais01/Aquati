@@ -18,6 +18,9 @@ const NEAR_DIST := 26.0
 var view: CrewView
 ## Phones: one deck hand fewer per ship.
 var lean := false
+## The harbour, where the camera circles her close: a sailor keeps his
+## figure till a metre is half as many pixels before he goes to a speck.
+var close_up := false
 ## Ship -> ShipCrew.
 var _crews := {}
 var _orphans: Array[Sailor] = []
@@ -103,7 +106,7 @@ func update(dt: float, world: World, camera: Camera3D, focus: Vector3, view_r: f
 	# the distant cut past 50 m (further through a long lens)...
 	_distant2 = pow(50.0 * tan(deg_to_rad(15.0)) / th, 2.0)
 	# ...and a speck once a metre is under SPECK_PX pixels
-	var speck := Flora.screen_lines() / (2.0 * th * SPECK_PX)
+	var speck := Flora.screen_lines() / (2.0 * th * SPECK_PX * (0.5 if close_up else 1.0))
 	_speck2 = speck * speck
 	_eye = camera.global_position
 	_planes = camera.get_frustum()

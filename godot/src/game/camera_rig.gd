@@ -2,8 +2,10 @@ class_name CameraRig
 extends Camera3D
 ## The near-top-down follow camera: a diorama view that steepens as you zoom
 ## out, a velocity look-ahead, a critically damped zoom spring, trauma shake,
-## and past the farthest zoom a cinematic lean toward the horizon. Ported
-## from the web game's src/game/cameraRig.ts.
+## and past the farthest zoom a cinematic lean toward the horizon. In the
+## harbour it circles the ship at anchor instead, low and slow, and swings
+## down into the follow view as she sets sail. Ported from the web game's
+## src/game/cameraRig.ts.
 
 ## Cinematic tilt at its fullest (radians above the horizon), and close in.
 const CINE_PITCH := 0.74
@@ -12,8 +14,9 @@ const CINE_PITCH_NEAR := 0.6
 const TILT_GATE := 0.2
 const NEAR_DIST := 70.0
 const FAR_DIST := 300.0
-## The lens (vertical degrees), the web's at sea.
+## The lens (vertical degrees), the web's at sea, and circling the harbour.
 const FOV := 34.0
+const ORBIT_FOV := 30.0
 
 ## What the camera looks at, on the water.
 var target := Vector3.ZERO
@@ -30,6 +33,21 @@ var cine_pos := Vector3.ZERO
 var cine_look := Vector3.ZERO
 var cine_fov := FOV
 var cine_w := 0.0
+## The harbour's orbit: on while the menu is up. It pulls in as close as fits
+## every corner of her bounds (bowsprit, masts and trucks too) into the part of
+## the screen the menu leaves free, and slides the frame across so she sits in
+## the middle of it. `orbit_box` is her bounds in her own frame (her
+## waterline amidships, bow along +z), `orbit_xf` where that frame stands
+## (put once she's at anchor, its height riding the swell), and
+## `orbit_frame` the free space: where its middle is, as a share of the
+## screen from the centre (x, y), and how much of it is free (z, w), as
+## Harbour.framing() gives it.
+var orbit := false
+var orbit_box := AABB(Vector3(-4.0, -1.5, -12.0), Vector3(8.0, 21.5, 24.0))
+var orbit_xf := Transform3D.IDENTITY
+var orbit_frame := Vector4(0.0, 0.0, 1.0, 1.0)
+## How far round her the orbit has come (radians; it creeps on at 0.06 a second).
+var orbit_angle := 0.6
 
 var _focus := Vector3.ZERO
 var _zoom_smooth := 0.45
@@ -38,6 +56,12 @@ var _tilt_smooth := 0.0
 var _pushed_at := -1e9
 var _trauma := 0.0
 var _pitch := 1.0
+## 0 circling the harbour .. 1 following, eased; and how far the orbit stands off.
+var _blend := 1.0
+var _b := 1.0
+var _orbit_dist := 0.0
+## The frame slid across (shares of the screen), easing after orbit_frame.
+var _shift := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -100,8 +124,13 @@ func tilt_blend() -> float:
 	return MathX.smoother(_tilt_smooth)
 
 
-## How far the camera hangs from what it follows (drives shadow reach, sound and fx radii).
+## How far the camera hangs from what it follows (drives shadow reach, sound
+## and fx radii): circling the harbour, how far it stands off her.
 func distance() -> float:
+	return lerpf(_orbit_dist, _follow_distance(), _b) if _b < 1.0 else _follow_distance()
+
+
+func _follow_distance() -> float:
 	var z := _zoom_smooth * _zoom_smooth * 0.6 + _zoom_smooth * 0.4
 	return lerpf(NEAR_DIST, FAR_DIST, z)
 
@@ -115,14 +144,15 @@ func ground_radius() -> float:
 ## ground in view runs, and no further than the web game's shadow square round
 ## the focus (the ground radius in 16 m steps), past which it draws none.
 func shadow_reach() -> float:
-	var dist := distance()
+	var dist := _follow_distance()
 	var h := sin(_pitch) * dist
-	var r := minf(260.0, ceilf(ground_radius() / 16.0) * 16.0)
+	var r := minf(260.0, ceilf(clampf(dist * 0.75, 70.0, 260.0) / 16.0) * 16.0)
 	var reach := Vector2(cos(_pitch) * dist + r, h).length()
 	var top := _pitch - deg_to_rad(FOV * 0.5)
 	if top > 0.05:
 		reach = minf(reach, h / sin(top) * 1.05)
-	return reach
+	# circling the harbour the shadows only need to reach a little past her
+	return lerpf(_orbit_dist + 60.0, reach, _b) if _b < 1.0 else reach
 
 
 func shake(a: float) -> void:
@@ -132,6 +162,16 @@ func shake(a: float) -> void:
 func snap_to(p: Vector3) -> void:
 	_focus = p
 	target = p
+
+
+## Straight into the orbit, as if it had been circling all along (the game's
+## first frame in the harbour).
+func orbit_snap() -> void:
+	orbit = true
+	_blend = 0.0
+	_b = 0.0
+	_orbit_dist = 0.0
+	_shift = Vector2(orbit_frame.x, orbit_frame.y)
 
 
 func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
@@ -153,9 +193,23 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	# camera due south of the focus, looking north and down
 	var pitch := lerpf(lerpf(0.91, 1.1, _zoom_smooth), lerpf(CINE_PITCH_NEAR, CINE_PITCH, _zoom_smooth), tilt_blend())
 	_pitch = pitch
-	var dist := distance()
+	var dist := _follow_distance()
 	var pos := _focus + Vector3(0.0, sin(pitch) * dist, cos(pitch) * dist)
 	var look := _focus
+	# the harbour's orbit, and the swing between it and the follow view
+	_blend += ((0.0 if orbit else 1.0) - _blend) * MathX.damp(3.0 if orbit else 1.4, dt)
+	if not orbit and _blend > 0.9995:
+		_blend = 1.0
+	_b = MathX.smooth(0.0, 1.0, _blend)
+	orbit_angle += dt * 0.06
+	var lens_now := lens
+	if _b < 1.0:
+		var aim := _orbit_pose(dt)
+		var op := aim + Vector3(sin(orbit_angle) * 1.6, 0.62, cos(orbit_angle) * 1.6).normalized() * _orbit_dist
+		op.y += sin(time * 0.2) * 1.2
+		pos = op.lerp(pos, _b)
+		look = aim.lerp(look, _b)
+		lens_now = lerpf(ORBIT_FOV, lens, _b)
 	if cine_w > 0.0:
 		# whatever the camera follows now, blended toward the shot and its subject
 		pos = pos.lerp(cine_pos, cine_w)
@@ -169,7 +223,47 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 		var k := s * (0.6 + _zoom_smooth) * (1.0 - cine_w * 0.5)
 		pos += Vector3((sin(time * 47.0) + sin(time * 31.0)) * k * 0.6, sin(time * 53.0) * k * 0.5, sin(time * 41.0 + 1.0) * k * 0.6)
 	global_transform = Transform3D(Basis.looking_at(look - pos, Vector3.UP), pos)
-	fov = lerpf(lens, cine_fov, cine_w)
+	fov = lerpf(lens_now, cine_fov, cine_w)
 	# the near plane rides up with the camera: a far view keeps its depth precision
 	near = clampf(pos.y * 0.08, 2.0, 30.0)
 	far = 2600.0
+	_slide_frame(dt)
+
+
+## Where the orbit looks this frame (her bounds' middle), its distance eased
+## toward the closest that fits every corner of them into the free space.
+func _orbit_pose(dt: float) -> Vector3:
+	var vp := get_viewport().get_visible_rect().size
+	var tv := tan(deg_to_rad(ORBIT_FOV * 0.5))
+	var tan_v := tv * maxf(0.15, orbit_frame.w) * 0.94
+	var tan_h := tv * vp.x / maxf(1.0, vp.y) * maxf(0.15, orbit_frame.z) * 0.94
+	var mid := orbit_box.get_center()
+	var b := orbit_xf.basis
+	var dir := Vector3(sin(orbit_angle) * 1.6, 0.62, cos(orbit_angle) * 1.6).normalized()
+	var right := (-dir).cross(Vector3.UP).normalized()
+	var up := right.cross(-dir)
+	var want := 10.0
+	for i in 8:
+		var q := b * (orbit_box.get_endpoint(i) - mid)
+		var z := q.dot(dir)
+		want = maxf(want, maxf(z + absf(q.dot(right)) / tan_h, z + absf(q.dot(up)) / tan_v))
+	_orbit_dist = want if _orbit_dist <= 0.0 else _orbit_dist + (want - _orbit_dist) * MathX.damp(2.5, dt)
+	return orbit_xf.origin + b * mid
+
+
+## Slides the frame so she sits in the space the menu leaves free (an
+## off-centre frustum, the web's setViewOffset); it eases out as the camera
+## swings down into the follow view.
+func _slide_frame(dt: float) -> void:
+	var want := Vector2(orbit_frame.x, orbit_frame.y) * (1.0 - _b)
+	_shift += (want - _shift) * MathX.damp(2.5, dt)
+	if absf(_shift.x) + absf(_shift.y) < 1e-4:
+		_shift = Vector2.ZERO
+		if projection != PROJECTION_PERSPECTIVE:
+			projection = PROJECTION_PERSPECTIVE
+		return
+	var vp := get_viewport().get_visible_rect().size
+	var h := 2.0 * near * tan(deg_to_rad(fov * 0.5))
+	projection = PROJECTION_FRUSTUM
+	size = h
+	frustum_offset = Vector2(-_shift.x * h * vp.x / maxf(1.0, vp.y), _shift.y * h)

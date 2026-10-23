@@ -915,6 +915,12 @@ func high_seas(on: bool) -> void:
 		music.high_seas(on)
 
 
+## The harbour's theme, while you choose your ship (it fades either way).
+func harbour(on: bool) -> void:
+	if _live:
+		music.harbour(on)
+
+
 ## What the mix is doing, for the smoke test.
 func stats() -> String:
 	return "%d takes of %d sounds loaded, %d played (%d dropped), %d voices out, %d peals of thunder, the sea %s; %s" % [
