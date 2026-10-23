@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const pw = createRequire(import.meta.url)('playwright');
 const root = dirname(fileURLToPath(import.meta.url));
 const three = join(root, '../../../node_modules');
+const outDir = process.env.ICON_OUT || join(root, '..');
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.png': 'image/png', '.json': 'application/json' };
 const b = await pw.chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
 for (const arg of process.argv.slice(2)) {
@@ -27,7 +28,7 @@ for (const arg of process.argv.slice(2)) {
   const err = await p.evaluate(() => window.__err);
   if (err) { console.log(name, 'ERR', err); continue; }
   const data = await p.evaluate(() => window.__png);
-  writeFileSync(join(root, '..', name + (flag ? '-' + flag : '') + '.png'), Buffer.from(data.split(',')[1], 'base64'));
+  writeFileSync(join(outDir, name + (flag ? '-' + flag.replace(/^v=/, '').replace(/[^a-z0-9-]/gi, '-') : '') + '.png'), Buffer.from(data.split(',')[1], 'base64'));
   console.log(name, 'ok', Date.now() - t, 'ms');
   await p.close();
 }
