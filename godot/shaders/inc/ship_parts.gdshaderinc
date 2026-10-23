@@ -42,6 +42,17 @@ void fragment() {
 	float g = sin(v_obj.y * 9.0 + sin(v_obj.x * 3.0 + v_obj.z * 2.0) * 3.0) * 0.5 + 0.5;
 	col *= 1.0 - wood * 0.06 * g;
 	vec3 glow = col * glass * glow_gain;
+	if (glass > 0.0) {
+		// a lamp holds its own brightness through the night (the night grade
+		// opens the exposure up more than twice): a hot heart where the eye
+		// looks straight into the glass, the rim falling away, and it breathes
+		// like a flame (the web game's render/lamps.ts)
+		float face = abs(dot(normalize(NORMAL), VIEW));
+		float heart = mix(0.5, 1.08, face * face);
+		float seed = dot(v_obj, vec3(0.83, 1.31, 0.57));
+		float breath = 0.94 + 0.06 * sin(TIME * 8.3 + seed * 9.0) * sin(TIME * 5.1 + seed * 4.0);
+		glow *= mix(1.0, 0.42 * heart * breath, smoothstep(0.05, 0.8, night));
+	}
 	col *= 1.0 - glass;
 	float metal = iron * 0.75 + gilt * 0.8;
 	float rough = wood * 0.66 + rope * 0.9 + iron * 0.32 + gilt * 0.3 + glass * 0.15;

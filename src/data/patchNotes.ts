@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T13:00Z',
+    entries: [
+      {
+        title: 'Android: night',
+        notes: [
+          'The eighth Android build brings the night. After sunset the sky fills with thousands of stars in every brightness and colour, twinkling hardest low over the sea, with the Milky Way arching overhead and now and then a shooting star. The whole starry sky wheels slowly as the night goes on, the bright stars glint in the water, and a real moon rises in its phase, with its seas and craters and earthshine on its dark side.',
+          'Ship lanterns and stern windows now glow warmly all night without blowing out into white blots, each lantern with a soft halo, their light pooled under the stern and broken into glints on the ripples. On dark nights wakes, bow waves and breaking surf glow a faint blue-green, and out on the high seas the sea-spark blooms light every wake and breaking crest electric blue. Two lie on the crossing to Las Brumas, and at night, inside one, the weather badge can hold the glowing seas.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T12:00Z',
     entries: [
       {

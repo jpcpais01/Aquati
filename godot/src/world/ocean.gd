@@ -10,6 +10,8 @@ extends MeshInstance3D
 const HALF := 64
 const CORE := 44
 const FAR := 5000.0
+## The most lanterns the sea mirrors at once (the shader's array).
+const MAX_LAMPS := 8
 
 var waves: Waves
 var wind: Wind
@@ -82,6 +84,26 @@ func set_region(r: Region) -> void:
 	material.set_shader_parameter("shore_tex", r.shore_tex)
 	material.set_shader_parameter("shore_rect", r.shore_rect())
 	material.set_shader_parameter("region", Vector4(r.centre.x, r.centre.z, r.biome, 0.0))
+
+
+## Where the sea-spark blooms lie: out past every archipelago's centre (SeaGlow).
+func set_glow_centres(centres: PackedVector2Array) -> void:
+	var a := centres[0]
+	var b := centres[1] if centres.size() > 1 else a
+	material.set_shader_parameter("glow_centres", Vector4(a.x, a.y, b.x, b.y))
+
+
+## The lanterns the sea mirrors after dark: xyz where (m), w how bright; the
+## first MAX_LAMPS of them.
+func set_lamps(lamps: Array[Vector4]) -> void:
+	var n := mini(lamps.size(), MAX_LAMPS)
+	material.set_shader_parameter("lamp_count", n)
+	if n > 0:
+		var a := lamps.slice(0, n)
+		a.resize(MAX_LAMPS)
+		for i in range(n, MAX_LAMPS):
+			a[i] = Vector4.ZERO
+		material.set_shader_parameter("lamps", a)
 
 
 ## Centres the sea on the camera's focus; `cam_dist` sizes its cells.

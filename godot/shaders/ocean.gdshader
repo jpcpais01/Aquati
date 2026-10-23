@@ -33,6 +33,11 @@
 // down the wind, a mirror calm turns it to glass, a scorching noon runs it a
 // hotter blue, lightning lights it round a strike, and banks of mist and
 // curtains of rain drift over it.
+//
+// And the night: the bright stars glint in it, wakes and breaking surf glow
+// blue-green with plankton (out in a sea-spark bloom every stirred patch
+// blazes electric blue), and each ship's lanterns lay a warm pool round
+// under them and a shimmering path of glints across the ripples.
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_back, world_vertex_coords, ambient_light_disabled;
 
@@ -71,6 +76,14 @@ uniform sampler2D shore_tex : filter_linear, repeat_disable;
 uniform vec4 shore_rect = vec4(-1024.0, -1024.0, 2048.0, 0.00048828125);
 /// xy the archipelago's centre (m), z its biome
 uniform vec4 region = vec4(0.0);
+/// every archipelago's centre (x, z, x, z): the sea-spark blooms lie out past them (SeaGlow)
+uniform vec4 glow_centres = vec4(0.0, 0.0, 6600.0, -2800.0);
+/// how brightly the sea-spark blooms glow tonight (Atmosphere.sea_glow)
+global uniform float sea_glow;
+/// the lanterns near the view, lit after dark: xyz where (m), w how bright
+/// (Game._lamps); lamp_count of them
+uniform vec4 lamps[8];
+uniform int lamp_count = 0;
 
 varying vec3 v_world;
 varying vec3 v_normal;
@@ -97,6 +110,18 @@ const float FLOOR_PLANE_FROM = -15.5;
 
 float seen_floor(float h) {
 	return mix(h, -18.2 - 0.35 * region.z, 1.0 - smoothstep(FLOOR_PLANE_FROM - 0.2, FLOOR_PLANE_FROM + 0.2, h));
+}
+
+// How thick the sea-spark bloom is at p (SeaGlow.at): 0 none .. 1 the heart of one.
+float sea_glow_at(vec2 p) {
+	float d = min(length(p - glow_centres.xy), length(p - glow_centres.zw));
+	float open = smoothstep(1420.0, 1780.0, d);
+	if (open <= 0.0) {
+		return 0.0;
+	}
+	vec2 q = p + vec2(4200.0, 1350.0);
+	float g = sin(q.x * 0.0021 + 1.7 * sin(q.y * 0.0013 + 0.4)) * sin(q.y * 0.0026 + 1.5 * sin(q.x * 0.0011 + 2.2));
+	return open * smoothstep(0.22, 0.52, g);
 }
 
 vec3 hash32(vec2 p) {
@@ -519,7 +544,7 @@ void fragment() {
 	// mirror a little higher, bluer sky than the glassy maths alone would,
 	// so the sea darkens toward the horizon instead of turning milky
 	R = normalize(R + vec3(0.0, 0.07 * smoothstep(30.0, 500.0, v_dist) * (1.0 - 0.8 * glass), 0.0));
-	vec3 refl = sky_color(R);
+	vec3 refl = sky_color(R) + star_field(R);
 	float F = 0.02 + 0.98 * pow(max(1.0 - NdV, 0.0), 5.0);
 	F = min(F * 1.1, 1.0);
 	if (F > 0.04) {
@@ -617,6 +642,7 @@ void fragment() {
 	// the swell trips over an open-sea reef: each crest stands up and spills
 	// white across the coral as it rolls over, then the foam thins to lace
 	// until the next one comes (sailors know a reef by its breakers)
+	float reef_foam = 0.0;
 	if (floor0.g > 0.02) {
 		float shoal = floor0.g * (1.0 - smoothstep(0.9, 3.6, s_depth));
 		float th0 = wave_a[0].z * dot(wave_a[0].xy, p) + wave_b[0].z;
@@ -625,7 +651,8 @@ void fragment() {
 		float burst = smoothstep(0.32, 0.9, swl) * (1.0 - smoothstep(1.4, 3.6, s_depth) * 0.5);
 		float trail = smoothstep(0.1, 0.85, sin(th0 + 0.9) + (nz2.a - 0.5) * 0.5) * 0.45;
 		float r_cover = shoal * (0.15 + 0.75 * burst + 0.3 * trail) * (0.75 + storm * 0.5 + surf.x * 0.3);
-		foam += foam_cut(fv, clamp(r_cover, 0.0, 0.95), fp) * 0.9;
+		reef_foam = foam_cut(fv, clamp(r_cover, 0.0, 0.95), fp);
+		foam += reef_foam * 0.9;
 	}
 	foam = clamp(foam, 0.0, 1.0);
 	float fa = foam * 0.9;
@@ -641,6 +668,59 @@ void fragment() {
 		float sk2 = dot(sk, sk) / (strike.z * strike.z);
 		EMISSION += vec3(0.55, 0.62, 0.95) * strike.w * (exp(-sk2) * 0.35 + exp(-sk2 * 14.0) * 1.6) * (0.35 + F * 2.5);
 	}
+	// the sharp glitter (of the key light, and of any lantern) twinkles in noise
+	float glints = (0.45 + 1.4 * smoothstep(0.45, 0.85, texture(noise_tex, p * 0.73 + vec2(TIME * 0.09, -TIME * 0.07)).a)) * (1.0 + slick * 0.8);
+
+	// ---- bioluminescence: on dark nights churned water glows blue-green
+	if (night > 0.05) {
+		float churn = wake_foam * 0.9 * bubbles + surf_foam * 0.5 + reef_foam * 0.4
+				+ (crest_foam * 0.18 * cap_break + spume * 0.08 + caps * 0.12) * (1.0 - 0.5 * storm);
+		float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(noise_tex, p * 0.37 + vec2(TIME * 0.05, -TIME * 0.04)).b);
+		vec3 glow = vec3(0.02, 0.42, 0.62) * churn * spark * night * 0.4;
+		// ...and out in a sea-spark bloom it blazes: wakes, bow waves, the
+		// collar round a hull, every breaking crest and splash burn electric
+		// blue, the stirred water round them glows, and the plankton wink on
+		// and off across the dark between
+		float bloom = sea_glow > 0.01 ? sea_glow_at(p) * sea_glow : 0.0;
+		if (bloom > 0.003) {
+			float stir = churn + wake_chop * 0.45 + clamp(abs(wake_h) * 1.4, 0.0, 0.8) + crest_foam * 0.5 + caps * 0.4;
+			vec3 blue = vec3(0.04, 0.5, 1.0);
+			glow += blue * stir * spark * bloom * 1.6;
+			// the swell's crests shimmer faintly as they fold over
+			glow += blue * smoothstep(0.25, 0.8, crest + nz2.g * 0.4 - 0.2) * 0.012 * bloom;
+			// twinkles: sparse points flaring up and fading, never two alike
+			if (detail > 0.0) {
+				vec4 tw = texture(noise_tex, p * 3.7 + vec2(0.31, 0.77));
+				float blink = max(sin(TIME * (1.3 + tw.g * 2.0) + tw.r * 40.0), 0.0);
+				glow += vec3(0.1, 0.65, 1.0) * smoothstep(0.9, 0.98, tw.a) * blink * blink * 0.5 * bloom * detail;
+			}
+			// the bloom's own faint milky glow, so its edges show far off on the dark
+			glow += vec3(0.0, 0.005, 0.011) * bloom * (0.6 + 0.4 * mac.g);
+		}
+		EMISSION += glow;
+	}
+	// ---- lamplight on the water: each lantern's light pooled round under
+	// it, and its reflection broken by the ripples into a shimmering path
+	// of glints running toward the eye
+	if (lamp_count > 0) {
+		float lamp = 0.0;
+		for (int i = 0; i < lamp_count; i++) {
+			vec4 lp = lamps[i];
+			vec3 tl = lp.xyz - wpos;
+			float d2 = dot(tl, tl);
+			if (d2 < 2500.0) {
+				vec3 lh = tl * inversesqrt(d2);
+				float nh = max(dot(N, normalize(lh + V)), 1e-4);
+				// a tight glint where a ripple turns the lamp to the eye, in a soft sheen
+				float glint = pow(nh, 900.0) * glints + pow(nh, 64.0) * 0.04;
+				// the light falling on the water: fast from right under it, a long soft tail
+				float r2 = dot(tl.xz, tl.xz) / max(tl.y * tl.y, 1.0);
+				float pool = (exp(-r2 * 2.5) * 0.7 + exp(-r2 * 0.6) * 0.3) / (1.0 + d2 * 0.04);
+				lamp += lp.w * (glint * (0.25 + F * 3.0) + pool * 0.02 * (1.0 - fa * 0.5));
+			}
+		}
+		EMISSION += vec3(1.0, 0.62, 0.27) * lamp;
+	}
 	v_body_lit = body_sun * sun_in * 0.45 * keep * cloud;
 	v_bed_lit = body_bed_sun * keep;
 	v_foam_lit = foam_base * 0.42 * fa * cloud;
@@ -649,9 +729,8 @@ void fragment() {
 	SPECULAR = 0.0;
 	NORMAL = normalize((VIEW_MATRIX * vec4(Ng, 0.0)).xyz);
 
-	// for light(): the sharp glitter, twinkling in noise, fading under foam
-	float twinkle = 0.45 + 1.4 * smoothstep(0.45, 0.85, texture(noise_tex, p * 0.73 + vec2(TIME * 0.09, -TIME * 0.07)).a);
-	v_glint = twinkle * (1.0 + slick * 0.8);
+	// for light(): the sharp glitter, twinkling, fading under foam
+	v_glint = glints;
 	// moonlight lays a softer, silvery path than the sun's dazzle
 	v_spec = (1.0 - fa) * (1.0 - rain * 0.55) * (1.0 - night * 0.5) * cloud;
 	v_gust = gust;

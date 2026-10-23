@@ -11,9 +11,10 @@ extends RefCounted
 ## targets, and every parameter eases toward its own at its own pace, so the
 ## clouds gather first, then the rain, and the sea takes longest of all to
 ## build and to settle. Now and then something rarer comes round: a mirror
-## calm (mostly at dawn), and out on the high seas a very hot noon. The wind
+## calm (mostly at dawn), and out on the high seas a very hot noon; and a
+## night in a sea-spark bloom can be held as the glowing seas. The wind
 ## wanders about its prevailing heading, swinging harder with each change of
-## weather.
+## weather. By night the stars wheel overhead and the moon keeps its phase.
 
 ## The weather changed (its kind, and a title and a line for the toast).
 signal changed(kind: StringName, title: String, line: String)
@@ -23,7 +24,9 @@ signal wind_shifted(title: String, line: String)
 ## The weathers: the sky each one sets (cloud cover, rain, storm, mist and
 ## the wind's strength), how long a spell of it lasts (s), what may follow it
 ## and how likely, and the toast it arrives with. Mirror calm and the very hot
-## noon are in no list: they are rolled as a stretch of the day begins.
+## noon are in no list: they are rolled as a stretch of the day begins. The
+## glowing seas only ever come picked by hand, at night in a sea-spark bloom
+## (SeaGlow): a still, clear night with the bloom at its brightest.
 const WEATHER := {
 	&"clear": {"name": "Clear", "cover": 0.2, "rain": 0.0, "storm": 0.0, "fog": 0.0, "wind": 0.72, "dur": Vector2(150.0, 280.0),
 		"next": [[&"fair", 0.55], [&"cloudy", 0.3], [&"mist", 0.15]], "arrive": ["Clear skies", "The clouds break apart"]},
@@ -41,9 +44,11 @@ const WEATHER := {
 		"next": [[&"clear", 0.45], [&"fair", 0.4], [&"mist", 0.15]], "arrive": ["Mirror calm", "The wind dies away and the sea turns to glass"]},
 	&"hot": {"name": "Very hot", "cover": 0.03, "rain": 0.0, "storm": 0.0, "fog": 0.12, "wind": 0.5, "dur": Vector2(150.0, 230.0),
 		"next": [[&"clear", 0.6], [&"fair", 0.4]], "arrive": ["Very hot", "The sun blazes down from a white-hot sky"]},
+	&"glow": {"name": "Glowing seas", "cover": 0.12, "rain": 0.0, "storm": 0.0, "fog": 0.04, "wind": 0.45, "dur": Vector2(150.0, 240.0),
+		"next": [[&"clear", 0.6], [&"fair", 0.4]], "arrive": ["Glowing seas", "The night sea lights up blue wherever it is stirred"]},
 }
 ## The weathers in the order the sky badge steps through them.
-const KINDS: Array[StringName] = [&"clear", &"fair", &"cloudy", &"mist", &"rain", &"storm", &"calm", &"hot"]
+const KINDS: Array[StringName] = [&"clear", &"fair", &"cloudy", &"mist", &"rain", &"storm", &"calm", &"hot", &"glow"]
 ## The hours the clock can be held at: a name and the hour.
 const TIMES := {
 	&"dawn": ["Dawn", 6.3],
@@ -66,6 +71,11 @@ const PEAK := 0.6981317
 const YAW := 0.5
 ## Light from the sky dome, against the sun's (the web's SKY_LIGHT).
 const SKY_LIGHT := 0.72
+## The sky turns about the axis of the sun's daily circle: the stars wheel
+## round its pole through the night, rising and setting just as the sun does.
+static var POLE := _celestial(0.0).cross(_celestial(PI * 0.5)).normalized()
+## Due east on the horizon, where the sun comes up.
+static var EAST := _celestial(0.0)
 ## Palette keyframes on the sun's height: [s, zenith, horizon, fog, L]. The
 ## colours are the air's own, before the tone curve: it squeezes bright
 ## channels together, so a sky that should read as a clear tropical blue goes
@@ -122,6 +132,17 @@ var flash := 0.0
 ## of its month on with every day of play), and how much of its disc is lit.
 var moon_phase := 0.0
 var moon_lit := 1.0
+## How much of the moon's disc shows in the sky (0 by day: it comes out as
+## the sun goes down, a pale ghost in the dusk, and hides behind a closing
+## sky), and toward the sun as the moon sees it (its lit limb).
+var moon_show := 0.0
+var moon_sun := Vector3.UP
+## World directions into the star sphere, turned with the sun.
+var star_rot := Basis.IDENTITY
+## How thick the sea-spark bloom is where the ship sails (SeaGlow.at, handed
+## in by the game), and how brightly the blooms glow tonight (0 by day).
+var bloom := 0.0
+var sea_glow := 0.0
 ## The cloud deck: how far it has drifted on the wind (in cloud-field uv),
 ## the field's threshold for the cover (above it there is cloud), and how
 ## tall the heaps stand over their flat base (m).
@@ -285,15 +306,21 @@ func hasten(s: float) -> void:
 
 
 ## What a weather picked by hand still waits for here and now ("" if it can be
-## had): the very hot noon keeps to its time and place. keep loosens the test a
-## little for one already set, so it doesn't flicker off at the edge.
+## had): the very hot noon and the glowing seas keep to their time and place.
+## keep loosens the test a little for one already set, so it doesn't flicker
+## off at the edge.
 func needs(m: StringName, keep := false) -> String:
+	var h := hour()
 	if m == &"hot":
-		var h := hour()
 		if climate != &"open":
 			return "Only out on the high seas, at noon (11:00 to 14:00), far from any island."
 		if h < 11.0 or h >= (14.5 if keep else 14.0):
 			return "Only at noon (11:00 to 14:00). Tap the clock to set it to Noon."
+	elif m == &"glow":
+		if bloom < (0.12 if keep else 0.3):
+			return "Only in the glowing stretches of the high seas, at night. Two lie on the crossing to Las Brumas."
+		if h < 20.5 and h >= 4.8:
+			return "Only at night (20:30 to 04:45). Tap the clock to set it to Night."
 	return ""
 
 
@@ -313,6 +340,8 @@ func icon() -> String:
 			return "calm-moon" if dark else "calm"
 		&"hot":
 			return "hot"
+		&"glow":
+			return "glow"
 		&"fair":
 			return "partly-moon" if dark else "partly-sun"
 	return "moon" if dark else "sun"
@@ -482,6 +511,17 @@ func update(dt: float) -> void:
 		var I := 0.62 * moon_vis * clouded * (0.72 + 0.28 * moon_lit)
 		key_color = Vector3(0.55, 0.68, 1.0) * I
 
+	# ---- the night sky: the stars keep pace with the sun, so the same stars
+	# rise at the same hour every night; the moon's lit limb faces the sun
+	# below the horizon (west of a waxing evening moon, east of a waning
+	# morning one)
+	star_rot = Basis(POLE, -phi)
+	var pa := absf(1.0 - 2.0 * moon_phase) * PI
+	var limb := EAST * (-1.0 if moon_phase < 0.5 else 1.0) - Vector3(0.0, 0.6, 0.0)
+	limb = (limb - moon_dir * limb.dot(moon_dir)).normalized()
+	moon_sun = -moon_dir * cos(pa) + limb * sin(pa)
+	moon_show = MathX.smooth(0.08, -0.08, sy) * MathX.smooth(-0.02, 0.08, moon_dir.y) * (0.25 + 0.75 * clouded)
+
 	# ---- sky and fog
 	var pal := _palette(sy)
 	zenith = pal[0]
@@ -547,6 +587,8 @@ func update(dt: float) -> void:
 		haze = Vector3(1.0, 0.55 + 0.25 * g, 0.25 + 0.3 * g) * (sun_vis * haze_k * (1.0 + 0.9 * heat))
 	else:
 		haze = Vector3(0.3, 0.38, 0.55) * (0.3 * moon_vis * haze_k * (0.35 + 0.65 * moon_lit))
+	# the sea-spark blooms glow on dark nights, brightest when the glowing seas are held
+	sea_glow = maxf(0.6, MathX.smooth(0.15, 0.6, night)) if kind == &"glow" else MathX.smooth(0.3, 0.85, night) * (1.0 - 0.7 * storm)
 	_update_look(sy, sun_vis)
 
 
@@ -605,6 +647,10 @@ func apply(sun: DirectionalLight3D, env: Environment) -> void:
 	rs.global_shader_parameter_set("clouds", Vector4(cloud_uv.x, cloud_uv.y, cloud_lo, heap_tall))
 	rs.global_shader_parameter_set("sky_fx", Vector4(wet, flash, calm, heat))
 	rs.global_shader_parameter_set("veil", veil)
+	rs.global_shader_parameter_set("star_rot", star_rot)
+	rs.global_shader_parameter_set("moon", Vector4(moon_dir.x, moon_dir.y, moon_dir.z, moon_show))
+	rs.global_shader_parameter_set("moon_light", Vector4(moon_sun.x, moon_sun.y, moon_sun.z, moon_lit))
+	rs.global_shader_parameter_set("sea_glow", sea_glow)
 	if sun:
 		# Godot hands a light's colour x energy x PI to the shaders, three.js
 		# the colour itself: an energy of I / PI keeps every lit surface as bright

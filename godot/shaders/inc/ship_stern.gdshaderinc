@@ -67,6 +67,9 @@ void fragment() {
 			metal = mix(metal, 0.0, in_pane);
 		}
 	}
+	// lit windows are lamps: held through the night (the night grade opens the
+	// exposure up more than twice, and would blow them into white blots)
+	glow *= mix(1.0, 0.6, smoothstep(0.05, 0.8, night));
 	float rough = 0.5;
 #ifdef DAMAGE
 	bool drop;
