@@ -3,9 +3,10 @@ extends SceneTree
 ## class that is built comes out sound (no NaNs, every solid face wound the
 ## way its normals point, within its triangle budget), the crew bake loads
 ## and agrees with the game on every id, each deck takes its crew, the touch
-## shot pie opens and picks as a finger works it, and the baked world loads
-## whole (both archipelagos, their ground maps and their planting). Prints
-## CHECK OK.
+## shot pie opens and picks as a finger works it, the zoom runs out to its
+## lean and back and a pinch is never taken for the helm, and the baked world
+## loads whole (both archipelagos, their ground maps and their planting).
+## Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
@@ -21,7 +22,11 @@ func _initialize() -> void:
 		_check_ship(id, SHIPS[id])
 	_check_crew()
 	_check_pie()
+	_check_zoom()
 	_check_world()
+	# the helm's reach is a share of the window: that check waits for the tree to run
+	await process_frame
+	_check_touch()
 	if _errors == 0:
 		print("CHECK OK")
 	else:
@@ -279,6 +284,90 @@ func _check_pie() -> void:
 		_fail("pie: only %d of 9 steps worked as a finger would expect" % steps)
 	pie.queue_free()
 	print("pie: %d of 9 steps as expected" % steps)
+
+
+## Out to the farthest zoom, a fresh push leans the camera over and it stays
+## leaned; in, it straightens up before it closes in.
+func _check_zoom() -> void:
+	var cam := CameraRig.new()
+	cam.set_view(0.9, 0.0)
+	var steps := 0
+	cam.zoom_by(5.0, 0.0)
+	steps += 1 if cam.zoom == 1.0 and cam.tilt == 0.0 else 0
+	# pushing on in the same breath holds at the stop
+	cam.zoom_by(5.0, 0.1)
+	steps += 1 if cam.tilt == 0.0 else 0
+	# a fresh push leans it over, all the way
+	cam.zoom_by(5.0, 0.5)
+	cam.zoom_by(20.0, 0.55)
+	steps += 1 if cam.tilt == 1.0 and cam.zoom == 1.0 else 0
+	# and there it stays, however far you push
+	cam.zoom_by(20.0, 1.5)
+	cam.zoom_by(20.0, 2.5)
+	steps += 1 if cam.tilt == 1.0 and cam.zoom == 1.0 else 0
+	# in: it straightens up first, then closes in
+	cam.zoom_by(-5.0, 3.0)
+	steps += 1 if cam.tilt > 0.0 and cam.tilt < 1.0 and cam.zoom == 1.0 else 0
+	cam.zoom_by(-20.0, 3.1)
+	cam.zoom_by(-5.0, 3.2)
+	steps += 1 if cam.tilt == 0.0 and cam.zoom < 1.0 else 0
+	if steps != 6:
+		_fail("zoom: only %d of 6 steps went as the wheel or a pinch would expect" % steps)
+	cam.free()
+	print("zoom: %d of 6 steps as expected" % steps)
+
+
+## The touch helm only takes a finger low on the left, and two fingers
+## landing together are a pinch even when the first came down on the helm.
+func _check_touch() -> void:
+	# (loaded here, not named: it reads the Settings autoload, which a script
+	# run on its own only has once it is running)
+	var c = load("res://src/game/controls.gd").new()
+	root.add_child(c)
+	var vp := root.get_visible_rect().size
+	var touch := func(i: int, at: Vector2, down: bool) -> void:
+		var e := InputEventScreenTouch.new()
+		e.index = i
+		e.position = at
+		e.pressed = down
+		c._on_touch(e)
+	var drag := func(i: int, at: Vector2) -> void:
+		var e := InputEventScreenDrag.new()
+		e.index = i
+		e.position = at
+		c._on_drag(e)
+	var thumb := vp * Vector2(0.2, 0.8)
+	var mid := vp * Vector2(0.62, 0.5)
+	var steps := 0
+	# the thumb by the sail lever steers
+	touch.call(0, thumb, true)
+	drag.call(0, thumb + Vector2(0.0, -40.0))
+	steps += 1 if c.helm_down() and c.steering else 0
+	# a second finger straight after: a pinch, and the helm lets go
+	touch.call(1, mid, true)
+	steps += 1 if not c.helm_down() and not c.steering else 0
+	drag.call(1, mid + Vector2(60.0, 0.0))
+	steps += 1 if c.zoom < 0.0 else 0
+	touch.call(0, thumb, false)
+	touch.call(1, mid, false)
+	c.consume()
+	# up the left side, or mid screen, a finger is no helm
+	touch.call(0, vp * Vector2(0.2, 0.2), true)
+	touch.call(0, vp * Vector2(0.2, 0.2), false)
+	touch.call(1, vp * Vector2(0.45, 0.8), true)
+	steps += 1 if not c.helm_down() else 0
+	touch.call(1, vp * Vector2(0.45, 0.8), false)
+	# a finger already on the helm a while keeps it when another lands
+	touch.call(0, thumb, true)
+	c._helm_ms -= 1000
+	touch.call(1, mid, true)
+	steps += 1 if c.helm_down() else 0
+	touch.call(0, thumb, false)
+	touch.call(1, mid, false)
+	if steps != 5:
+		_fail("touch: only %d of 5 steps went as fingers would expect" % steps)
+	c.queue_free()
+	print("touch: %d of 5 steps as expected" % steps)
 
 
 func _check_world() -> void:

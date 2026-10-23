@@ -8,7 +8,7 @@ extends Camera3D
 ## Cinematic tilt at its fullest (radians above the horizon), and close in.
 const CINE_PITCH := 0.74
 const CINE_PITCH_NEAR := 0.6
-## How long a zoom must rest against its stop before a fresh push tilts.
+## How long a zoom must rest against its stop before a fresh push leans it over.
 const TILT_GATE := 0.2
 const NEAR_DIST := 70.0
 const FAR_DIST := 300.0
@@ -36,8 +36,6 @@ var _zoom_smooth := 0.45
 var _zoom_vel := 0.0
 var _tilt_smooth := 0.0
 var _pushed_at := -1e9
-var _tilt_open := false
-var _tilt_dir := 1.0
 var _trauma := 0.0
 var _pitch := 1.0
 
@@ -48,29 +46,30 @@ func _ready() -> void:
 	far = 2600.0
 
 
-## Wheel or pinch (positive = out). Out at the stop, a push that has rested
-## TILT_GATE seconds tips the camera toward the horizon, or straightens it up.
+## Wheel or pinch (positive = out). Out at the farthest zoom, a fresh push
+## (one that has rested TILT_GATE seconds against the stop) leans the camera
+## over toward the horizon, and there it stays however far you push on. In,
+## it straightens up first, then closes in: one track out and back.
 func zoom_by(d: float, now: float) -> void:
 	var step := d * 0.06
 	if step < 0.0:
-		zoom = maxf(0.0, zoom + step)
+		if tilt > 0.0:
+			tilt = maxf(0.0, tilt + step * 1.6)
+		else:
+			zoom = maxf(0.0, zoom + step)
 		return
 	if zoom < 1.0:
 		zoom = minf(1.0, zoom + step)
 		if zoom >= 1.0:
 			_pushed_at = now
 		return
-	if not _tilt_open:
+	if tilt <= 0.0:
+		# still pushing in the same breath: hold at the stop
 		var rested := now - _pushed_at >= TILT_GATE
 		_pushed_at = now
 		if not rested:
 			return
-		_tilt_open = true
-		_tilt_dir = -1.0 if tilt >= 0.5 else 1.0
-	tilt = clampf(tilt + step * 1.6 * _tilt_dir, 0.0, 1.0)
-	if tilt <= 0.0 or tilt >= 1.0:
-		_tilt_open = false
-		_pushed_at = now
+	tilt = minf(1.0, tilt + step * 1.6)
 
 
 ## The zoom button's stops: close, mid, far, far leaned over.
@@ -90,7 +89,6 @@ func view_index() -> int:
 func set_view(z: float, t: float) -> void:
 	zoom = clampf(z, 0.0, 1.0)
 	tilt = clampf(t, 0.0, 1.0)
-	_tilt_open = false
 
 
 func next_view() -> void:
