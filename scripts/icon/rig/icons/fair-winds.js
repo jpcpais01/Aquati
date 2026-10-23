@@ -1,4 +1,4 @@
-// App icon · Fair Winds: a toy galleon heeling hard through a chunky glossy sea, sun blazing behind its sails
+// App icon · Fair Winds: a toy galleon heeling hard through a chunky glossy sea past a palm cay, sun blazing behind its sails
 import { THREE, R, mat, deform, makeEnv, key, castAll, radial, glint, cloud, linear, vcolor, rays } from '../rig.js';
 import { ship, rng, palm } from '../kit.js';
 
@@ -11,7 +11,7 @@ function seaH(x, z) {
   return w(0.8, 0.6, 1.6, 0.26, 0.2, 2.2) + w(-0.3, 1, 2.3, 0.12, 1.7, 2) + w(1, -0.2, 3.4, 0.05, 0.4, 1.5);
 }
 
-// Variations (render with fair-winds:v=<name>); no v = the shipped icon, untouched
+// Variations (render with fair-winds:v=<name>); the shipped icon is isle (Paradise Passage), classic = the first Fair Winds
 const VARIANTS = {
   plus: {},
   golden: { golden: true },
@@ -27,8 +27,8 @@ function starTex() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-export default async function ({ renderer, safe = false, v }) {
-  const V = v ? { up: true, ...VARIANTS[v] } : {};
+export default async function ({ renderer, safe = false, v = 'isle' }) {
+  const V = v === 'classic' ? {} : { up: true, ...VARIANTS[v] };
   const scene = new THREE.Scene();
   const isleAt = new THREE.Vector2(-3.6, -5.0);
   const isleD = (x, z) => Math.hypot(x - isleAt.x, z - isleAt.y);

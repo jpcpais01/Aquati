@@ -28,6 +28,8 @@ sea glows wherever it is stirred.
   on and off across the dark between. The crew tell you when you sail into
   one, and at night, in a bloom, the weather badge can hold the glowing
   seas at their brightest.
+- **A new launcher icon.** The galleon now sails past a little palm cay in
+  turquoise shallows, under fuller sails and streaming pennants.
 - **Made for phones.** No bloom pass: each lantern's halo is a single card
   turned to the eye, and the stars, the Milky Way and the moon are drawn by
   the sky itself, only after dark.
