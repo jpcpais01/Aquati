@@ -58,6 +58,8 @@ var founders := false
 ## Seconds left loading each broadside (port, starboard), and the full load.
 var reload := PackedFloat32Array([0.0, 0.0])
 var reload_full := PackedFloat32Array([1.0, 1.0])
+## When each gun (model.muzzles) last went off, by the sea's clock: her gun crews jump clear.
+var gun_fired_at := PackedFloat32Array()
 var gold := 0
 var kills := 0
 var last_hit := -100.0
@@ -136,6 +138,8 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 	s._galley_t = s._rng.randf()
 	s.model = p_model if p_model != null else ShipModel.create(p_cls, p_livery)
 	s.add_child(s.model)
+	s.gun_fired_at.resize(s.model.muzzles.size())
+	s.gun_fired_at.fill(-100.0)
 	s.dmg = ShipDamage.new(s)
 	s.bow_wave = BowWave.new()
 	s.bow_wave.setup(s.model.shape, p_cls)
@@ -184,6 +188,16 @@ func sail_aim_height() -> float:
 	return model.shape.top(0.5) + 0.6 + top * 0.42
 
 
+## How hard the yards and booms are swinging across (the hands tail on to the braces).
+func rig_activity() -> float:
+	return absf(_rig_brace_v) + absf(_rig_lee_v) * 0.5
+
+
+## The side heeled up out of the water: +1 port, -1 starboard.
+func high_side() -> int:
+	return 1 if _roll >= 0.0 else -1
+
+
 ## Index into reload for a side (+1 port, -1 starboard).
 static func side_index(side: int) -> int:
 	return 0 if side > 0 else 1
@@ -225,6 +239,7 @@ func fire(side: int, target: Ship = null, point: Variant = null) -> bool:
 ## and the smoke.
 func _shoot(p: Array) -> void:
 	var m: Dictionary = model.muzzles[int(p[1])]
+	gun_fired_at[int(p[1])] = world.time
 	var kind: int = p[4]
 	var at := transform * (m.pos as Vector3)
 	var dir := Basis(Vector3.UP, heading) * (m.dir as Vector3)

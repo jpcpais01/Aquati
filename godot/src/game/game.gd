@@ -28,6 +28,10 @@ extends Node3D
 ## else; --loot N[,TIER] floats N barrels or chests (of a tier, 0..4) round
 ## her, --hold fills the hold with a little of everything, --peek opens its
 ## peek and --fan the touch shot fan.
+## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
+## frame (+z her bow, +x her port side), looking at her deck amidships or at
+## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
+## deck empty.
 
 const WIND_ANGLE := 0.6
 ## Where a voyage starts: out of the home port on a reach, bow to the open
@@ -57,6 +61,7 @@ var hud: Hud
 var shipyard: Shipyard
 var pirates: Pirates
 var gunnery: Gunnery
+var crew: Crew
 var collisions := Collisions.new()
 var wreck: WreckScreen
 
@@ -387,6 +392,10 @@ func _build_fleet() -> void:
 	gunnery = Gunnery.new()
 	gunnery.name = "Gunnery"
 	add_child(gunnery)
+	crew = Crew.new()
+	crew.name = "Crew"
+	crew.visible = not _args.has("nocrew")
+	add_child(crew)
 
 
 ## A set piece: a pirate of class `id` off your port beam, spoiling for a fight.
@@ -504,6 +513,9 @@ func _process(delta: float) -> void:
 		print("SMOKE OK: %d frames, %.0f m sailed, %d triangles in the sloop, %d islands, %d plants; %d ships afloat, %d guns fired, %d hits, %d breaches, %d spars down, %d pieces of wreckage and %d spars adrift, %d hulls on the slipway%s" % [
 				_frames, player.pos.length(), player.model.triangles(), isles, plants, world.ships.size(), voyage.shots, voyage.hits, holes, down, junk.x, junk.y, shipyard.stock(), lost])
 		print("SMOKE SHOT: balls fired round %d, shell %d, fire %d, chain %d, grape %d; %d marks of special shot on ships; magazine %s, %s loaded" % [f[0], f[1], f[2], f[3], f[4], marks, stock, Ammo.ID[player.ammo]])
+		var hands := crew.counts()
+		var cut := crew.view.stats()
+		print("SMOKE CREW: %d sailors in %d crews; drawn %d near, %d far, %d distant, %d specks in %d draws" % [hands.x, hands.y, cut[0], cut[1], cut[2], cut[3], cut[4]])
 		print("SMOKE LOOT: %d barrels and %d/%d/%d/%d chests afloat, %d hauled; hold %d/%d (%d goods, worth %d)" % [afloat[0], afloat[1], afloat[2], afloat[3], afloat[4], _hauled, hold.used(), hold.capacity, hold.count(), hold.worth()])
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
 		_save_shot(str(_args.shot))
@@ -563,7 +575,15 @@ func _tick(real_dt: float) -> void:
 	if _farewell != null:
 		_farewell_step(real_dt)
 	var focus := _watched()
+	if _args.has("eye") and _farewell == null and focus.alive:
+		# a set piece's lens on her deck (it stays put once she's going down)
+		camera.cine_pos = focus.transform * _vec3(str(_args.eye))
+		camera.cine_look = focus.transform * (_vec3(str(_args.look)) if _args.has("look") else Vector3(0.0, 2.0, 0.0))
+		camera.cine_fov = camera.lens
+		camera.cine_w = 1.0
 	camera.update_rig(real_dt, focus.pos, focus.vel, world.time)
+	# every crew afloat, after the camera has moved: they're culled and cut by it
+	crew.update(dt, world, camera, camera.target, camera.ground_radius() * 1.5, atmosphere.key_dir)
 	ocean.follow(camera.target, camera.distance())
 	world.wake.step(camera.target.x, camera.target.z, dt)
 	# the wreckage afloat, on the very swell the ocean draws (and shouldered aside by hulls still moving)
@@ -982,6 +1002,7 @@ func _sail_again() -> void:
 	camera.cine_w = 0.0
 	pirates.clear(null)
 	world.ships.clear()
+	crew.clear()
 	world.shots.clear()
 	world.fx.clear()
 	world.debris.clear()
@@ -1017,6 +1038,12 @@ func _chart(p: Vector3) -> void:
 			hud.toast("Island discovered · +%d gold" % reward, isl.name, 3.6)
 
 
+## "x,y,z" from the command line.
+static func _vec3(s: String) -> Vector3:
+	var p := s.split(",")
+	return Vector3(float(p[0]), float(p[1]) if p.size() > 1 else 0.0, float(p[2]) if p.size() > 2 else 0.0)
+
+
 func _save_shot(path: String) -> void:
 	set_process(false)
 	await RenderingServer.frame_post_draw
@@ -1030,4 +1057,6 @@ func _save_shot(path: String) -> void:
 	print("DRAWN %d triangles in %d draws, shadows %d triangles in %d draws" % [
 		vp.get_render_info(seen, Viewport.RENDER_INFO_PRIMITIVES_IN_FRAME), vp.get_render_info(seen, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
 		vp.get_render_info(shade, Viewport.RENDER_INFO_PRIMITIVES_IN_FRAME), vp.get_render_info(shade, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)])
+	var cut := crew.view.stats()
+	print("CREW drawn %d near, %d far, %d distant, %d specks in %d draws" % [cut[0], cut[1], cut[2], cut[3], cut[4]])
 	get_tree().quit()
