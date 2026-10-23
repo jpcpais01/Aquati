@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>html,body{margin:0;background:#222}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"./three/build/three.module.js","three/addons/":"./three/examples/jsm/"}}</script>
+</head><body>
+<script type="module">
+import { run } from './rig.js';
+const q = new URLSearchParams(location.search);
+run(q.get('icon'), { safe: q.has('safe') }).then(() => { window.__done = true; }).catch(e => { window.__err = String(e.stack || e); console.error(e); });
+</script>
+</body></html>

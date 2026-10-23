@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-23T10:00Z',
     entries: [
       {
+        title: 'A new app icon: Fair Winds',
+        notes: [
+          'The game has a fresh icon on your home screen, in the browser tab and on the Android launcher: a toy galleon heeling through a bright blue swell with the sun blazing behind her, a golden sun painted on her foresail and spray flying off the bow. It was built by hand as its own little 3D scene rather than taken from a screenshot, and phones that crop icons into circles get a version pulled back so the masts and bowsprit stay in view.',
+        ],
+      },
+      {
         title: 'Android: the shot pie',
         notes: [
           'On Android, hold the shot button over Fire and a pie of shot opens round it. Slide your thumb onto round shot, shells, fire, chain or grape and let go to load it, or back to the middle to keep what you have. Each slice shows what is left of its kind, the one under your thumb lights up in its colour with its name and what it does above the pie, and the guns dim while you choose. A quick tap opens it too, for a tap on the shot you want.',
