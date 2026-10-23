@@ -293,6 +293,9 @@ func _shoot(p: Array) -> void:
 	world.fx.muzzle(at, dir, vel)
 	if kind != Ammo.ROUND:
 		world.fx.shot_muzzle(at, dir, vel, kind)
+	if world.sound != null:
+		var h := world.heard(at)
+		world.sound.cannon(h.x, h.y, h.z, clampf((cls.length - 15.0) / 14.0, 0.0, 1.0))
 	world.shook.emit(0.35 if mine else 0.12 * world.loudness(at))
 
 
@@ -327,6 +330,9 @@ func die(attacker: Ship) -> void:
 	if attacker != null:
 		attacker.kills += 1
 	world.fx.explosion(Vector3(pos.x, model.shape.main_deck_y(0.5), pos.z), 0.6 + cls.length / 40.0)
+	if world.sound != null:
+		var h := world.heard(pos)
+		world.sound.explosion(h.x, h.y, h.z)
 	world.shook.emit(1.2 if team == Team.PLAYER else 0.5 * world.loudness(pos))
 	dmg.on_death()
 	world.sunk.emit(self, attacker)
@@ -546,6 +552,9 @@ func _burn(dt: float) -> void:
 			_burn_acc = 0.0
 			_burn_t = 0.0
 			world.burned.emit(self, by, d)
+			if world.sound != null and randf() < 0.5:
+				var h := world.heard(pos)
+				world.sound.flames(h.x, h.y, h.z)
 	if afire <= 0.0:
 		afire = 0.0
 		afire_by = null
@@ -604,6 +613,10 @@ func _land(dt: float, fx: float, fz: float, L: float) -> void:
 			damage(speed * 1.8, null, Vector3(px, 0.2, pz), true, "aground")
 			world.fx.sand_hit(Vector3(px, 0.5, pz))
 			world.fx.splash(Vector3(px, world.water_height(px, pz), pz), 0.5 + minf(0.6, speed / 25.0))
+			if world.sound != null:
+				var ear := world.heard(pos)
+				world.sound.crunch(ear.x, ear.y, ear.z, minf(1.0, speed / 12.0))
+				world.sound.thud(ear.x, ear.y, ear.z)
 			struck.emit(0.5)
 		# the bow ploughing in stops her hardest
 		speed *= pow(0.86 if pf > 0.3 else 0.95, dt * 60.0)
@@ -633,6 +646,9 @@ func _grind_reef(k: float, p: Vector2, dt: float) -> void:
 	if strike or _rng.randf() < 0.5:
 		world.fx.splash(Vector3(p.x, wy, p.y), 0.35 + k * 0.4 + (0.3 if strike else 0.0))
 	world.wake.stamp(p.x, p.y, cls.beam * 0.7, 0.35 * k)
+	if world.sound != null:
+		var h := world.heard(pos)
+		world.sound.scrape(h.x, h.y, h.z, k, strike)
 	if strike:
 		struck.emit(0.45 * k + 0.15)
 

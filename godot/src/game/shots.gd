@@ -46,6 +46,9 @@ var _shot_mat: ShaderMaterial
 var _trail_mat: ShaderMaterial
 ## A grape volley's hits on each ship, gathered: ship -> [attacker, damage, where, seconds since the last].
 var _rakes := {}
+## When (world.time) each ship last sounded each special shot's blow (her id * 8 + which): a
+## volley is heard as one, not ball by ball.
+var _sounded := {}
 
 
 class _Ball:
@@ -62,6 +65,8 @@ class _Ball:
 	## The ship whose canvas it last tore through (once a ship, as it flies on).
 	var tore: Ship
 	var spark := 0.0
+	## Heard tearing past the listener already.
+	var heard := false
 
 
 func _ready() -> void:
@@ -219,8 +224,11 @@ func step(dt: float) -> void:
 			else:
 				_dirty = true
 			_live.remove_at(i)
-		elif b.kind == Ammo.SHELL or b.kind == Ammo.FIRE:
-			_spit(b, dt)
+		else:
+			if not b.heard:
+				_tear_past(b)
+			if b.kind == Ammo.SHELL or b.kind == Ammo.FIRE:
+				_spit(b, dt)
 	_flush_rakes(dt)
 	_shot_mat.set_shader_parameter("now", _now)
 	_trail_mat.set_shader_parameter("now", _now)
@@ -231,6 +239,22 @@ func step(dt: float) -> void:
 	if _pdirty:
 		_pdirty = false
 		_pellets.buffer = _pbuf
+
+
+## A ball tearing close past the listener from a gun well off (not your own):
+## heard sweeping across, a chain whirling by with a deep, throbbing moan
+## and grape with a thin whistle.
+func _tear_past(b: _Ball) -> void:
+	var p := at(b, b.t)
+	var l := world.listener
+	if Vector2(p.x - l.x, p.z - l.z).length_squared() >= 15.0 * 15.0:
+		return
+	b.heard = true
+	if world.sound == null or Vector2(b.owner.pos.x - l.x, b.owner.pos.z - l.z).length_squared() <= 35.0 * 35.0:
+		return
+	var h := world.heard(p)
+	var to := world.heard(p + vel_at(b, b.t) * 0.5)
+	world.sound.whoosh(h.x, h.y * 3.0, to.y * 3.0, 0.55 if b.kind == Ammo.CHAIN else (1.5 if b.kind == Ammo.GRAPE else 1.0))
 
 
 ## A lit fuse sputtering on a shell, embers shed off red-hot iron.
@@ -269,6 +293,9 @@ func _fly(b: _Ball, t0: float, t1: float) -> float:
 				_detonate(b, g, false, null, 0.0)
 			else:
 				world.fx.sand_hit(g)
+				if world.sound != null and (b.kind != Ammo.GRAPE or randf() < 0.25):
+					var h := world.heard(p)
+					world.sound.thud(h.x, h.y, h.z)
 			return t
 		var wy := world.water_height(p.x, p.z)
 		if p.y < wy:
@@ -284,14 +311,22 @@ func _into_sea(b: _Ball, s: Vector3) -> void:
 	if b.kind == Ammo.SHELL:
 		_detonate(b, s, true, null, 0.0)
 		return
+	var snd := world.sound
+	var h := world.heard(s)
 	if b.kind == Ammo.GRAPE:
 		world.fx.splash(s, 0.32)
 		world.wake.stamp(s.x, s.z, 0.9, 0.5)
+		if snd != null and randf() < 0.3:
+			snd.splash(h.x * 0.5, h.y, h.z)
 		return
 	if b.kind == Ammo.FIRE:
 		world.fx.steam(s)
+		if snd != null:
+			snd.sizzle(h.x, h.y, h.z)
 	else:
 		world.fx.splash(s, 1.0)
+	if snd != null:
+		snd.splash(h.x, h.y, h.z)
 	world.wake.stamp(s.x, s.z, 2.2, 1.4)
 	world.wake.stamp(s.x, s.z, 4.5, 0.8, true)
 	# a crater that rings outward
@@ -344,6 +379,9 @@ func _strike_ship(b: _Ball, p: Vector3, t: float) -> bool:
 			_:
 				var side := 1.0 if local.x >= 0.0 else -1.0
 				world.fx.wood_hit(p, s.port_dir() * side)
+				if world.sound != null:
+					var h := world.heard(p)
+					world.sound.hit(h.x, h.y, h.z)
 				var dealt := s.damage(b.damage, b.owner, p)
 				if b.kind == Ammo.SHELL:
 					_detonate(b, p, false, s, dealt)
@@ -396,6 +434,9 @@ func _above_deck(b: _Ball, s: Ship, p: Vector3, t: float, local: Vector3, top: f
 ## Red-hot iron struck her: she catches, and burns on.
 func _ignite(b: _Ball, s: Ship, p: Vector3) -> void:
 	world.fx.fire_hit(p)
+	if world.sound != null and _can_play(s, 1, 0.3):
+		var h := world.heard(p)
+		world.sound.ignite(h.x, h.y, h.z)
 	if s.ignite(b.owner):
 		world.status.emit(s, "ablaze", b.owner)
 
@@ -412,6 +453,9 @@ func _chain_hit(b: _Ball, s: Ship, p: Vector3, t: float, local: Vector3, top: fl
 		if randf() < 0.14 and local.y > top + 1.5:
 			s.dmg.on_rig_hit(2, mi, p, v)
 	world.fx.shreds(p, v, s.livery.sail.srgb_to_linear())
+	if world.sound != null and _can_play(s, 2, 0.2):
+		var h := world.heard(p)
+		world.sound.chain(h.x, h.y, h.z)
 	if s.shred(b.owner):
 		world.status.emit(s, "shredded", b.owner)
 	world.hit.emit(s, b.owner, dealt, p)
@@ -421,6 +465,9 @@ func _chain_hit(b: _Ball, s: Ship, p: Vector3, t: float, local: Vector3, top: fl
 func _grape_hit(b: _Ball, s: Ship, p: Vector3) -> void:
 	var dealt := s.damage(b.damage, b.owner, null, false)
 	world.fx.pellet_hit(p)
+	if world.sound != null and _can_play(s, 3, 0.25):
+		var h := world.heard(p)
+		world.sound.grape(h.x, h.y, h.z)
 	if s.rake(b.owner):
 		world.status.emit(s, "crew", b.owner)
 	var r: Array = _rakes.get(s, [])
@@ -461,8 +508,10 @@ func _detonate(b: _Ball, at: Vector3, water: bool, direct: Ship, dealt: float) -
 		world.wake.stamp(at.x, at.z, 3.5, 1.6)
 		world.wake.stamp(at.x, at.z, 7.0, 1.0, true)
 		world.wake.push(at.x, at.z, 3.2, -0.6)
-	var loud := world.loudness(at)
-	world.shook.emit(0.45 * loud * loud)
+	var h := world.heard(at)
+	if world.sound != null:
+		world.sound.shell(h.x, h.y, h.z)
+	world.shook.emit(0.45 * h.x * h.x)
 	var base := b.damage / float(Ammo.DAMAGE[Ammo.SHELL])
 	var R := Ammo.BLAST_RADIUS
 	for s: Ship in world.ships:
@@ -496,6 +545,7 @@ func _detonate(b: _Ball, at: Vector3, water: bool, direct: Ship, dealt: float) -
 func clear() -> void:
 	_live.clear()
 	_rakes.clear()
+	_sounded.clear()
 	for pair: Array in [[_buf, CAPACITY], [_pbuf, PELLETS]]:
 		var buf: PackedFloat32Array = pair[0]
 		for i in int(pair[1]):
@@ -503,6 +553,15 @@ func clear() -> void:
 			buf[i * STRIDE + 17] = 0.0
 	_dirty = true
 	_pdirty = true
+
+
+## Whether ship `s` may sound special shot `which`'s blow again, `gap` s after the last.
+func _can_play(s: Ship, which: int, gap: float) -> bool:
+	var key := s.get_instance_id() * 8 + which
+	if world.time - float(_sounded.get(key, -1e9)) < gap:
+		return false
+	_sounded[key] = world.time
+	return true
 
 
 ## How many balls are in the air, by kind.

@@ -609,6 +609,9 @@ func _splash_body(b: Body, ax: Vector3, wh: float) -> void:
 		# not quite flat: the canvas half swamped
 		q = Quaternion(flat, n.signed_angle_to(Vector3.UP if n.y >= 0.0 else Vector3.DOWN, flat) * 0.85) * q
 	b.settle_to = q
+	if world.sound != null:
+		var h := world.heard(o.position + ax * (b.length * 0.5))
+		world.sound.splash(h.x, h.y, h.z)
 	for k in 5:
 		var sp := o.position + ax * (b.length * k / 4.0)
 		sp.y = world.water_height(sp.x, sp.z)

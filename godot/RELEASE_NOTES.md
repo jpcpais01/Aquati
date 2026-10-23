@@ -1,43 +1,41 @@
-## Shores O' Fortune for Android: night
+## Shores O' Fortune for Android: sound and music
 
-The eighth build brings the night. After sunset the sky fills with stars,
-the moon rises in its phase, the ships light their lanterns and the dark
-sea glows wherever it is stirred.
+The ninth build gives the sea its voice. Every sound of the web game comes
+aboard, played the way the web game plays it, and the band strikes up.
 
-- **Stars.** Thousands of them, in every brightness and colour, twinkling
-  hardest low over the sea where they shine through the thickest air. The
-  Milky Way arches overhead with dark dust lanes down its heart, now and
-  then a shooting star scratches across the sky, and the whole starry
-  sphere wheels slowly as the night goes on. The bright ones glint in the
-  water.
-- **The moon.** A real moon in its phase, with its seas and rayed craters,
-  its lit side turned toward the sun below the horizon and earthshine
-  faintly lighting its dark side. It shows as the sun goes down, a pale
-  ghost in the dusk, and hides behind a closing sky.
-- **Lanterns.** Ship lanterns and stern windows hold their own glow through
-  the night instead of blowing out into white blots: a hot heart where you
-  look straight into the glass, breathing like a flame, a soft halo in the
-  air round each lantern, and their light pooled under the stern and broken
-  into glints on the ripples. A ship that goes down puts her lights out.
-- **Glowing water.** On dark nights wakes, bow waves and breaking surf glow a
-  faint blue-green.
-- **Glowing seas.** Out on the high seas lie blooms of sea-sparks, and two of
-  them lie across the crossing to Las Brumas. By day they are open water; on
-  a dark night every wake, bow wave, splash and breaking crest in them burns
-  electric blue, the stirred water round them glows, and the plankton wink
-  on and off across the dark between. The crew tell you when you sail into
-  one, and at night, in a bloom, the weather badge can hold the glowing
-  seas at their brightest.
-- **A new launcher icon.** The galleon now sails past a little palm cay in
-  turquoise shallows, under fuller sails and streaming pennants.
-- **Made for phones.** No bloom pass: each lantern's halo is a single card
-  turned to the eye, and the stars, the Milky Way and the moon are drawn by
-  the sky itself, only after dark.
+- **The sea around you.** The surf and the wind rise with her way and with
+  every gust that rolls over her, the rain hisses on the water and a
+  downpour roars. A close broadside pushes it all down for a moment, the way
+  your ears do.
+- **Thunder.** Each strike's thunder rolls in late, a second for every 343 m
+  it has to carry: a sharp crack overhead, a long dull rumble from far off.
+- **Every gun and blow.** Light guns and heavy ones, your own carriages
+  slamming back on their tackle, balls splintering timber, splashing short or
+  tearing past your ears, shells bursting, red-hot shot hissing into the sea,
+  chain and grape, flames crackling on a burning deck, hulls grinding
+  together and keels on coral, masts cracking and magazines going up. Each is
+  heard where it happens: late by its distance, dulled by the air it crossed,
+  the far ones echoing back off the isles.
+- **Her farewell.** The blow, the deep rumble of her going, her timbers
+  groaning as she plunges, the water closing over the lens and great gulps of
+  air breaking out of her as she sinks to the sand; then the tally ticking up
+  on the card.
+- **Music.** The band plays its songs for fair sailing among the islands, one
+  after another with the sea's own sound between them, leaning toward the
+  ones that suit the hour; it rests in a storm, and out on the open ocean the
+  high seas' own theme takes over. These are the web game's songs for now:
+  new ones are on the way.
+- **The little sounds.** Coins, chests opening with a run of notes that grows
+  with their rarity, an island charted, the knock of a gun deck ready to fire
+  again and a fresh kind of shot rammed home.
+- **Made for phones.** Every sound is rendered ahead of time and loaded off
+  the main thread, and a crowded moment lets the faintest go first, so the
+  mix never grows past what a phone handles easily.
 
 Still aboard from the earlier builds: the open sea with its swells, sun
 glitter and turning day, the weather (eight skies, storms with lightning,
-rain, mist and mirror calm), both archipelagos with their islands, plants,
-shallows and surf, the pirates and their broadsides, five kinds of shot and
-the shot pie, holes, broken masts, wrecks breaking in two and wreckage
-afloat, plunder and your hold, the crews on deck, and your farewell when the
-sea takes you.
+rain, mist and mirror calm), the night with its stars, moon, lanterns and
+glowing seas, both archipelagos with their islands, plants, shallows and
+surf, the pirates and their broadsides, five kinds of shot and the shot pie,
+holes, broken masts, wrecks breaking in two and wreckage afloat, plunder and
+your hold, the crews on deck, and your farewell when the sea takes you.

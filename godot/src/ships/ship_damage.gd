@@ -468,6 +468,7 @@ func on_rig_hit(kind: int, mast: int, at: Vector3, ball_vel: Vector3) -> void:
 		return
 	_mast_hp[mast] -= 0.36
 	fx.wood_hit(at, Vector3(ball_vel.x, 0.0, ball_vel.z).normalized())
+	_knock(at, 1.0)
 	if _mast_hp[mast] <= 0.0:
 		var lv := _frame().basis.inverse() * ball_vel
 		var fall := Vector3(lv.x, 0.0, lv.z * 0.3)
@@ -606,6 +607,15 @@ func _splinters(r: float, dir: float) -> MeshInstance3D:
 
 func _crack(hinge: Node3D) -> void:
 	ship.world.fx.wood_hit(hinge.global_position, Vector3(randf_range(-1.0, 1.0), 0.5, randf_range(-1.0, 1.0)).normalized())
+	_knock(hinge.global_position, 1.4)
+
+
+## Timber struck at `at`, heard `loud` times as loud as a ball hitting it.
+func _knock(at: Vector3, loud: float) -> void:
+	var w := ship.world
+	if w.sound != null:
+		var h := w.heard(at)
+		w.sound.hit(minf(1.0, h.x * loud), h.y, h.z)
 
 
 func _update_hinges(dt: float) -> void:
@@ -702,6 +712,7 @@ func _update_raise(dt: float) -> void:
 			fx.sparkle(frame * (sp.centre + up), 0.8)
 		if not r.landed and u > 0.62:
 			r.landed = true
+			_knock(foot, 0.8)
 			for j in 3:
 				fx.wood_hit(foot, Vector3(randf_range(-1.0, 1.0), 0.6, randf_range(-1.0, 1.0)).normalized())
 			for j in 7:

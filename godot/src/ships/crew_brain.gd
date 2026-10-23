@@ -244,6 +244,9 @@ static func step_loose(sl: Sailor, dt: float, world: World) -> void:
 			sl.vz *= 0.15
 			sl.wy = wh
 			world.fx.splash(Vector3(sl.wx, wh, sl.wz), 0.32)
+			if world.sound != null:
+				var h := world.heard(Vector3(sl.wx, wh, sl.wz))
+				world.sound.splash(h.x * 0.18, h.y, h.z)
 	elif sl.mode == Sailor.Mode.SWIM:
 		sl.swim_t += dt
 		# a laboured breaststroke away from the wreck

@@ -14,8 +14,13 @@ enum Quality { LOW, MEDIUM, HIGH }
 const PATH := "user://settings.cfg"
 
 var quality: Quality = Quality.MEDIUM
+## The sound on or off, the music's own switch, and the volume sliders (0..1; the web's defaults).
+var sound := true
+var music_on := true
+var master := 1.0
 var music := 0.8
 var sfx := 1.0
+var ambience := 1.0
 var shake := 1.0
 ## Phones and tablets: touch controls, a 60 fps cap, the lean graphics path.
 var mobile := false
@@ -32,8 +37,12 @@ func _ready() -> void:
 	quality = Quality.MEDIUM if mobile else Quality.HIGH
 	if _cfg.load(PATH) == OK:
 		quality = clampi(_cfg.get_value("graphics", "quality", quality), 0, 2) as Quality
+		sound = _cfg.get_value("audio", "sound", sound)
+		music_on = _cfg.get_value("audio", "music_on", music_on)
+		master = _cfg.get_value("audio", "master", master)
 		music = _cfg.get_value("audio", "music", music)
 		sfx = _cfg.get_value("audio", "sfx", sfx)
+		ambience = _cfg.get_value("audio", "ambience", ambience)
 		shake = _cfg.get_value("game", "shake", shake)
 		weather = _cfg.get_value("sky", "weather", weather)
 		time = _cfg.get_value("sky", "time", time)
@@ -48,8 +57,12 @@ func set_quality(q: Quality) -> void:
 
 func save() -> void:
 	_cfg.set_value("graphics", "quality", quality)
+	_cfg.set_value("audio", "sound", sound)
+	_cfg.set_value("audio", "music_on", music_on)
+	_cfg.set_value("audio", "master", master)
 	_cfg.set_value("audio", "music", music)
 	_cfg.set_value("audio", "sfx", sfx)
+	_cfg.set_value("audio", "ambience", ambience)
 	_cfg.set_value("game", "shake", shake)
 	_cfg.set_value("sky", "weather", weather)
 	_cfg.set_value("sky", "time", time)

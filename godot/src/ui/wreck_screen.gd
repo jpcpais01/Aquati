@@ -12,6 +12,8 @@ extends CanvasLayer
 ## are kept in user://records.json.
 
 signal retry
+## A tally tile's number has landed (the sixth, her renown), a new record or not.
+signal tallied(i: int, best: bool)
 
 const RANKS := [
 	[0, "Bilge Rat", "Swabbed more decks than foes."],
@@ -894,6 +896,7 @@ func _step_card(dt: float) -> void:
 		if k >= 1.0 and _landed[i] < 0.0:
 			_landed[i] = t
 			Input.vibrate_handheld(24 if _tally_best[i] else 8)
+			tallied.emit(i, _tally_best[i])
 		_step_landed(i, t)
 	var ks := clampf((t - t0 - 0.3) / 2.0, 0.0, 1.0)
 	_score.set_text(_num(roundi(_score_to * (1.0 - pow(1.0 - ks, 3.0)))))
@@ -901,6 +904,7 @@ func _step_card(dt: float) -> void:
 		_medal_land = t
 		_score_tag.visible = _score_best
 		Input.vibrate_handheld(30 if _score_best else 10)
+		tallied.emit(5, _score_best)
 	_place_score()
 	# the medal's ring fills to the rank's share, then it lands with a glow
 	_medal.fill = _medal_fill * _bz(EASE, (t - 1.0) / 2.3)
