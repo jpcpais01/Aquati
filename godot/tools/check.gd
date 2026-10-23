@@ -9,8 +9,9 @@ extends SceneTree
 ## the night sky wheels and the moon keeps its phase, the sea-spark blooms lie
 ## where they should, a bolt of lightning comes down where it can be seen,
 ## the baked world loads whole (both archipelagos, their ground maps and
-## their planting), and every sound and song is baked and plays as the web's
-## do (see _check_sound). Prints CHECK OK.
+## their planting), a broadside's damage numbers stack up clear of one
+## another, and every sound and song is baked and plays as the web's do (see
+## _check_sound). Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
@@ -46,6 +47,7 @@ func _initialize() -> void:
 	await process_frame
 	_check_touch()
 	_check_lightning()
+	_check_floaters()
 	await _check_sound()
 	if _errors == 0:
 		print("CHECK OK")
@@ -310,6 +312,35 @@ func _check_pie() -> void:
 	pie.queue_free()
 	print("pie: %d of 9 steps as expected" % steps)
 
+
+## A broadside's numbers landing on one spot stack up a line apart, each clear
+## of those still rising, and every burst is placed (the stacking used to go
+## round forever when a float rounded the wrong way, freezing the fight).
+func _check_floaters() -> void:
+	var f := Floaters.new()
+	root.add_child(f)
+	var placed := 0
+	var crowded := 0
+	for s in 8:
+		seed(s + 1)
+		for burst in 4:
+			for i in 6:
+				f.pop("-%d" % (7 + i), Vector2(640.0, 300.0 + burst * 0.37), Floaters.Kind.BAD)
+				var it: Floaters._Item = f._items[(f._next + Floaters.POOL - 1) % Floaters.POOL]
+				placed += 1
+				for o: Floaters._Item in f._items:
+					if o == it or o.t >= minf(o.life, 0.6):
+						continue
+					var clear := (it.label.size.x + o.label.size.x) * 0.5 + 4.0 * HudStyle.PX
+					if absf(o.at.x - it.at.x) < clear and absf(o.at.y - it.at.y) < it.label.size.y * 0.8 - 0.51:
+						crowded += 1
+			f._process(1.0 / 30.0)
+		# every number fades before the next broadside
+		f._process(3.0)
+	f.queue_free()
+	if crowded > 0:
+		_fail("floaters: %d of %d numbers landed on top of another" % [crowded, placed])
+	print("floaters: %d numbers in 32 bursts, stacked clear of one another" % placed)
 
 ## Out to the farthest zoom, a fresh push leans the camera over and it stays
 ## leaned; in, it straightens up before it closes in.

@@ -114,16 +114,20 @@ func pop(text: String, at: Vector2, kind: Kind = Kind.GOOD, lift := 0.0) -> void
 	l.pivot_offset = l.size * 0.5
 	l.visible = true
 	var p := at + Vector2(randf_range(-12.0, 12.0) * HudStyle.PX, -lift)
-	# a broadside lands in a burst: stack its numbers up rather than piling them on one another
+	# a broadside lands in a burst: stack its numbers up rather than piling them
+	# on one another. Each bump lifts it a whole line over the one it met, and
+	# the test spares half a pixel, so the rounding of a float can never leave
+	# it meeting that one again; it only rises, so each can bump it once.
 	var line := l.size.y * 0.8
-	var moved := true
-	while moved:
-		moved = false
+	for _pass in POOL:
+		var moved := false
 		for o in _items:
 			var clear := (l.size.x + o.label.size.x) * 0.5 + 4.0 * HudStyle.PX
-			if o != it and o.t < minf(o.life, 0.6) and absf(o.at.x - p.x) < clear and absf(o.at.y - p.y) < line:
+			if o != it and o.t < minf(o.life, 0.6) and absf(o.at.x - p.x) < clear and absf(o.at.y - p.y) < line - 0.5:
 				p.y = o.at.y - line
 				moved = true
+		if not moved:
+			break
 	it.t = 0.0
 	match kind:
 		Kind.LEGENDARY:

@@ -146,7 +146,12 @@ jobs:
         working-directory: godot
         run: |
           set -uo pipefail
-          godot --headless --script res://tools/check.gd 2>&1 | tee "$RUNNER_TEMP/check.log"
+          rc=0
+          timeout 600 godot --headless --script res://tools/check.gd 2>&1 | tee "$RUNNER_TEMP/check.log" || rc=$?
+          if [ "$rc" = 124 ]; then
+            echo "::error::The script check hung (a loop that never ends?)"
+            exit 1
+          fi
           if ! grep -q "CHECK OK" "$RUNNER_TEMP/check.log"; then
             echo "::error::Script check failed"
             exit 1
