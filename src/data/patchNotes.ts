@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T00:00Z',
+    entries: [
+      {
+        title: 'Android: the minimap and the sea chart',
+        notes: [
+          'The twelfth Android build hands you the charts. The minimap in the top right engraves the waters round you in ink and colour, with your ship at its heart, pirates within spyglass range, plunder afloat, the market towns and your waypoints, under a gilt bezel with north marked on it, and the corner column round it now looks just as it does in the browser game.',
+          'Tap the minimap (or press M) to unroll the whole sea chart over the world, which keeps sailing behind frosted glass: the open sea engraved by its depths with a leadsman\'s soundings, the rhumb lines of a great compass rose and the Sereno current, each archipelago engraved from its own seabed with its isles named once you\'ve charted them, and waters you\'ve never sailed under mist. Drag it, pinch it or double tap to zoom from the whole sea down to a single cove.',
+          'Tap open sea on the chart to drop a numbered waypoint, up to five in their own colours, and tap one to lift it. Each pin rises in the world as a pillar of light with ripples where it meets the sea, the chart draws a dotted course to it with the distance, sailing into one strikes it off in a flare, and your pins are kept between plays.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T22:00Z',
     entries: [
       {

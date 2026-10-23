@@ -12,7 +12,9 @@ extends Node3D
 ## harbour); starting in the harbour it first walks the menus (a
 ## ship picked, Set Sail for Las Brumas, paused there, Settings opened and
 ## closed, back to the harbour; Set Sail for the home waters, paused and
-## resumed with the back button) and says what it saw in SMOKE MENU.
+## resumed with the back button; the sea chart opened off the minimap, a pin
+## dropped on it and lifted, the chart closed with the back button; then a
+## market) and says what it saw in SMOKE MENU.
 ## The menus for a shot: --menu opens in the harbour (--orbit A sets how far
 ## round her the camera has come), --seapick on the sea picker, --pause puts
 ## the voyage on hold, --settings opens Settings (over the harbour, or with
@@ -51,6 +53,9 @@ extends Node3D
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
 ## deck empty.
+## The maps: --pins DX,DZ;DX,DZ.. drops waypoints that far east and south of
+## her; --chart opens the sea chart on her (--chart-at X,Z and --chart-zoom Z
+## to look elsewhere, --chart-tap DX,DZ to tap the chart that far off her).
 ## --phone [DP] plays as a phone DP (412) dp across would at MEDIUM: the
 ## lean path, its plants and crews sized for that screen (with --touch for
 ## its controls).
@@ -67,7 +72,7 @@ const SPAWN_HEADING := PI * 0.82
 ## went down, as on the web.
 const DIVE := 8.6
 ## The steps of the smoke test's tour of the menus (_tour_menus).
-const TOUR_STEPS := 18
+const TOUR_STEPS := 22
 ## Frames the tour waits off a quay for pirates to leave her be.
 const TOUR_CHASED := 240
 
@@ -97,6 +102,9 @@ var ports: TradePorts
 var pins: Waypoints
 ## What the minimap and the sea chart show.
 var maps := MapScene.new()
+## The sea chart, and its geography and engravings.
+var chart: SeaChart
+var chart_art: ChartArt
 var dock_port: TradePort
 var market: MarketPanel
 var collisions := Collisions.new()
@@ -179,6 +187,8 @@ var _tour := false
 var _tour_step := 0
 var _tour_at := 0
 var _tour_log := PackedStringArray()
+## The pins on the chart before the tour tapped it.
+var _tour_pins := 0
 ## Since she came alongside (the port shot settles in over it).
 var _dock_t := 0.0
 ## The pirate she was fighting last frame (it holds on a little further).
@@ -251,7 +261,11 @@ func _ready() -> void:
 	hud.sail_set.connect(func(n: int) -> void: player.sail_target = n / 3.0)
 	hud.view_pressed.connect(func() -> void:
 		sound.click()
-		camera.next_view())
+		camera.next_view()
+		hud.announce_view(camera.view_index()))
+	hud.map_pressed.connect(func() -> void:
+		sound.click()
+		_open_chart())
 	hud.pause_pressed.connect(func() -> void:
 		sound.click()
 		_pause())
@@ -270,6 +284,13 @@ func _ready() -> void:
 	maps.discovered = discovered
 	maps.pins = pins
 	hud.minimap.set_scene(maps)
+	chart_art = ChartArt.new(world.regions)
+	chart = SeaChart.new()
+	chart.art = chart_art
+	chart.scene = maps
+	chart.clicked.connect(sound.click)
+	chart.tapped.connect(_chart_tap)
+	add_child(chart)
 	hud.sky_pins(atmosphere.mode != &"auto", atmosphere.time_mode != &"auto")
 	atmosphere.changed.connect(func(_kind: StringName, title: String, line: String) -> void:
 		if _farewell == null:
@@ -341,6 +362,7 @@ func _warm_up() -> void:
 		w.add_child(n)
 	camera.add_child(w)
 	hud.warm()
+	chart_art.build(self)
 	get_tree().create_timer(1.0).timeout.connect(w.queue_free)
 
 
@@ -738,6 +760,16 @@ func _process(delta: float) -> void:
 		wreck.retry.emit()
 	if _args.has("newship") and _frames == int(_args.newship) and _farewell != null and _farewell.shown:
 		wreck.harbour.emit()
+	if _args.has("chart") and _frames == 3:
+		_open_chart()
+		var v := chart.view()
+		if _args.has("chart-at"):
+			var a := str(_args["chart-at"]).split(",")
+			v = Vector3(float(a[0]), float(a[1]), v.z)
+		chart.look(v.x, v.y, float(_args.get("chart-zoom", 0.0)))
+	if _args.has("chart-tap") and _frames == 8:
+		var d := str(_args["chart-tap"]).split(",")
+		_tour_tap(Vector2(player.pos.x + float(d[0]), player.pos.z + float(d[1])))
 	if _args.has("pie") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
 		hud.open_pie(Ammo.ID.find(str(_args.pie)))
 	if _args.has("strike") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.strike if str(_args.strike).is_valid_int() else 2)):
@@ -817,6 +849,12 @@ func _tick(real_dt: float) -> void:
 			camera.zoom_by(controls.zoom, world.time)
 		if controls.view_next:
 			camera.next_view()
+			hud.announce_view(camera.view_index())
+		if controls.chart:
+			if chart.is_open():
+				chart.close()
+			else:
+				_open_chart()
 		# the view you sail with is the next voyage's
 		Progress.keep_view(camera.zoom, camera.tilt)
 	elif controls.skip:
@@ -944,6 +982,9 @@ func _tick(real_dt: float) -> void:
 		sky_mat.set_shader_parameter("revision", _sky_revision)
 	sun.directional_shadow_max_distance = camera.shadow_reach()
 
+	# the chart is for sailing: it goes when she ties up, goes down or heads home
+	if chart.is_open() and (not sailing or _farewell != null or not player.alive):
+		chart.close()
 	if not sailing:
 		return
 	hud.show_state(player, w, camera.view_index(), atmosphere.vignette)
@@ -2221,6 +2262,33 @@ func _dock_here() -> void:
 		_dock(near)
 
 
+## The sea chart over the voyage (from the minimap or M): the helm let go,
+## the world sailing on under it.
+func _open_chart() -> void:
+	if state != State.VOYAGE or paused or _farewell != null or not player.alive or veil.busy or chart.is_open():
+		return
+	controls.reset()
+	hud.close_popups()
+	chart.open()
+	_note_tour("chart open")
+
+
+## A tap on the chart (the web's tapPin): the pin under the finger lifted,
+## else a new one dropped there, anywhere on the known sea.
+func _chart_tap(x: float, z: float, pick: float) -> void:
+	var hit := pins.near(x, z, pick)
+	if hit != null:
+		pins.lift(hit)
+		sound.click()
+		_note_tour("pin lifted")
+		return
+	if world.past_edge(x, z).z > 0.0:
+		return
+	pins.add(x, z, player.pos)
+	sound.knock()
+	_note_tour("pin dropped")
+
+
 ## Anchored: the voyage on hold under the pause screen (the HUD's pause
 ## button, the back button, or the phone taking the game away).
 func _pause() -> void:
@@ -2282,7 +2350,7 @@ func _go_back(os_back: bool) -> void:
 	_back_frame = f
 	if veil.busy:
 		return
-	if settings_sheet.go_back() or sea_pick.go_back() or pause_screen.go_back():
+	if settings_sheet.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back():
 		return
 	if _farewell != null:
 		if _farewell.shown:
@@ -2303,9 +2371,11 @@ func _go_back(os_back: bool) -> void:
 ## settled: another ship picked and at anchor, Set Sail for Las Brumas;
 ## there the voyage paused, Settings opened and closed, and back to the
 ## harbour; then Set Sail for the home waters, paused and resumed with the
-## back button; then off a market's quay, the prompt tapped, a lot sold and
-## then the rest, her hull mended and her racks filled, and cast off with
-## the back button. What it saw goes in SMOKE MENU.
+## back button; the sea chart opened off the minimap, a pin dropped on it
+## and lifted again by taps, and the chart closed with the back button; then
+## off a market's quay, the prompt tapped, a lot sold and then the rest, her
+## hull mended and her racks filled, and cast off with the back button.
+## What it saw goes in SMOKE MENU.
 func _tour_menus() -> void:
 	if _tour_step >= TOUR_STEPS or _frames - _tour_at < 20 or veil.busy:
 		return
@@ -2346,6 +2416,30 @@ func _tour_menus() -> void:
 		10:
 			_go_back(false)
 		11:
+			hud.map_pressed.emit()
+		12:
+			if not chart.is_open():
+				return
+			_tour_pins = pins.pins.size()
+			_tour_tap(Vector2(player.pos.x + 140.0, player.pos.z + 90.0))
+		13:
+			# (a beat between the taps, or two make a double tap and zoom)
+			if _frames - _tour_at < 40:
+				return
+			if pins.pins.size() != _tour_pins + 1:
+				printerr("SMOKE FAILED: a tap on the chart dropped no pin")
+			_tour_tap(Vector2(player.pos.x + 140.0, player.pos.z + 90.0))
+		14:
+			if _frames - _tour_at < 40:
+				return
+			if pins.pins.size() != _tour_pins:
+				printerr("SMOKE FAILED: a tap on a pin left it standing")
+			_go_back(false)
+			if chart.is_open():
+				printerr("SMOKE FAILED: the back button left the chart open")
+			else:
+				_note_tour("chart closed")
+		15:
 			# a trading port: off the first market's quay, a little in the
 			# hold, her hull knocked about, a rack of special shot spent and
 			# gold enough for the chandlery whichever ship the tour sails
@@ -2360,7 +2454,7 @@ func _tour_menus() -> void:
 			stock[Ammo.SPECIALS[0]] = 0
 			player.gold = maxi(player.gold, 500)
 			_note_tour("off %s" % port.title)
-		12:
+		16:
 			# the prompt tapped (pirates on her tail keep her off the quay: the
 			# tour gives the port up after a while rather than wait on them)
 			if not market.prompt_ok():
@@ -2369,20 +2463,30 @@ func _tour_menus() -> void:
 					_tour_step = TOUR_STEPS
 				return
 			market.dock.emit()
-		13:
+		17:
 			if state != State.DOCKED:
 				return
 			market.sell.emit("rum")
-		14:
+		18:
 			market.sell_all.emit()
-		15:
+		19:
 			market.repair.emit()
-		16:
+		20:
 			market.restock.emit()
-		17:
+		21:
 			_go_back(false)
 	_tour_step += 1
 	_tour_at = _frames
+
+
+## A tap on the open chart over the world spot `w` (x, z), as a finger makes it.
+func _tour_tap(w: Vector2) -> void:
+	var at := chart.to_canvas(w.x, w.y)
+	for down: bool in [true, false]:
+		var e := InputEventScreenTouch.new()
+		e.position = at
+		e.pressed = down
+		chart.poke(e)
 
 
 ## A step of the smoke test's tour of the menus, for SMOKE MENU (and the frame it came on).

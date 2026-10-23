@@ -116,12 +116,64 @@ static func middle(font: Font, size: int) -> float:
 
 ## Text centred on `at` (its middle, or with `base` its baseline), with a
 ## dark stroke `stroke` wide round it as the web's strokeText, then filled.
+## (An outline of size n reaches n / 4 past the glyph; a canvas stroke of
+## width w, centred on the glyph's edge, reaches w / 2.)
 static func words(ci: CanvasItem, at: Vector2, text: String, font: Font, size: int, fill: Color, stroke: float, edge: Color, base := false) -> void:
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
 	var p := Vector2(at.x - w * 0.5, at.y + (0.0 if base else middle(font, size)))
 	if stroke > 0.0 and edge.a > 0.0:
-		ci.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, maxi(1, roundi(stroke)), edge)
+		ci.draw_string_outline(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, maxi(1, roundi(stroke * 2.0)), edge)
 	ci.draw_string(font, p, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, fill)
+
+
+## The dashes of a canvas's setLineDash([on, off]) along a polyline, the
+## pattern shifted `offset` along it (its lineDashOffset): each dash straight
+## from its start to its end, lengthened `cap` past both (a round cap's
+## reach), and only those reaching into `clip`. Pairs for draw_multiline.
+static func dashes(pts: PackedVector2Array, on: float, off: float, offset: float, cap: float, clip: Rect2) -> PackedVector2Array:
+	var out := PackedVector2Array()
+	var period := on + off
+	if pts.size() < 2 or on <= 0.0 or off <= 0.0:
+		return out
+	var ph := fposmod(offset, period)
+	var start := pts[0]
+	for i in range(1, pts.size()):
+		var a := pts[i - 1]
+		var b := pts[i]
+		var length := a.distance_to(b)
+		if length <= 0.0:
+			continue
+		var dir := (b - a) / length
+		var t := 0.0
+		while true:
+			var bound := on if ph < on else period
+			var need := bound - ph
+			if t + need > length:
+				ph += length - t
+				break
+			t += need
+			var p := a + dir * t
+			if bound == on:
+				_dash(out, start, p, cap, clip)
+				ph = on
+			else:
+				ph = 0.0
+				start = p
+	# (the last dash cut short where the line ends, unless it hasn't begun)
+	if ph > 0.0 and ph < on:
+		_dash(out, start, pts[pts.size() - 1], cap, clip)
+	return out
+
+
+static func _dash(out: PackedVector2Array, a: Vector2, b: Vector2, cap: float, clip: Rect2) -> void:
+	var d := b - a
+	var l := d.length()
+	var e := d / l * cap if l > 1e-6 else Vector2(cap, 0.0)
+	var from := a - e
+	var to := b + e
+	if Rect2(from, Vector2.ZERO).expand(to).intersects(clip, true):
+		out.append(from)
+		out.append(to)
 
 
 ## The teardrop: a point at the spot, flaring out and round over the head.

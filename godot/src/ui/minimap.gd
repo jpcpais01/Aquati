@@ -266,8 +266,8 @@ class _Bezel:
 			var at: Vector2 = l[1] * k
 			var w := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 			var p := Vector2(at.x - w * 0.5, at.y)
-			draw_string_outline(f, p + shade, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, roundi(5.5 * k), Color(0.0, 0.0, 0.0, 0.3))
-			draw_string_outline(f, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, roundi(3.5 * k), Color(4.0 / 255.0, 18.0 / 255.0, 26.0 / 255.0, 0.8))
+			draw_string_outline(f, p + shade, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, roundi(11.0 * k), Color(0.0, 0.0, 0.0, 0.3))
+			draw_string_outline(f, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, roundi(7.0 * k), Color(4.0 / 255.0, 18.0 / 255.0, 26.0 / 255.0, 0.8))
 			draw_string(f, p, t, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE)
 
 	## The ring, the ticks and the north pip as the web's SVG; `shadow`: the
