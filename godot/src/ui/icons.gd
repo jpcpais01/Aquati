@@ -24,6 +24,8 @@ const LINE := {
 	"pause": '<path d="M9 5.5v13M15 5.5v13"/>',
 	"harbour": '<path d="M3 20h18M5 20V10l7-5 7 5v10M9.5 20v-5h5v5"/>',
 	"close": '<path d="M6 6l12 12M18 6 6 18"/>',
+	# the corner's zoom button
+	"zoom": '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5.5 5.5M8 10.5h5M10.5 8v5"/>',
 	# a ship's qualities, on the harbour's bars (with "hull")
 	"speed": '<path d="M3 8h9a3 3 0 1 0-3-3M3 12h14a3 3 0 1 1-3 3M3 16h6"/>',
 	"agility": '<circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.8 2.8M15.9 15.9l2.8 2.8M18.7 5.3l-2.8 2.8M8.1 15.9l-2.8 2.8"/>',

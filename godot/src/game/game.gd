@@ -93,6 +93,10 @@ var gunnery: Gunnery
 var crew: Crew
 ## The trading ports, and the one she's tied up at (null at sea).
 var ports: TradePorts
+## The waypoints on the sea chart, raised in the world as pillars of light.
+var pins: Waypoints
+## What the minimap and the sea chart show.
+var maps := MapScene.new()
 var dock_port: TradePort
 var market: MarketPanel
 var collisions := Collisions.new()
@@ -260,6 +264,12 @@ func _ready() -> void:
 	hud.ammo_picked.connect(func(kind: int) -> void: _pick_ammo(kind))
 	hud.sky_tapped.connect(_on_sky_tap)
 	add_child(hud)
+	maps.world = world
+	maps.player = player
+	maps.ports = ports.ports
+	maps.discovered = discovered
+	maps.pins = pins
+	hud.minimap.set_scene(maps)
 	hud.sky_pins(atmosphere.mode != &"auto", atmosphere.time_mode != &"auto")
 	atmosphere.changed.connect(func(_kind: StringName, title: String, line: String) -> void:
 		if _farewell == null:
@@ -448,6 +458,10 @@ func _build_sea() -> void:
 	world.loot.name = "Loot"
 	add_child(world.loot)
 	world.loot.setup(world)
+	pins = Waypoints.new()
+	pins.name = "Waypoints"
+	add_child(pins)
+	pins.setup(world)
 	# the weather round the view
 	rain = Rain.new()
 	rain.name = "Rain"
@@ -496,6 +510,7 @@ func _pick_region(x: float, z: float) -> void:
 	world.wake.set_seabed(region.height_tex, region.height_rect())
 	world.debris.set_region(region)
 	world.loot.set_region(region)
+	pins.set_region(region)
 	rain.set_region(region)
 	world.region = region
 
@@ -673,7 +688,8 @@ func _stage_voyage() -> void:
 
 ## Plunder for a set piece: salvage afloat off her bow (--loot), a hold with
 ## a little of everything (--hold), the hold's peek open (--peek); the shot
-## pie opens (--pie) a second before the frame is saved (see _process).
+## pie opens (--pie) a second before the frame is saved (see _process); and
+## waypoints on the chart (--pins).
 func _stage_plunder() -> void:
 	if _args.has("loot"):
 		var a: PackedStringArray = str(_args.loot).split(",")
@@ -688,6 +704,13 @@ func _stage_plunder() -> void:
 		hold.stow(PackedStringArray(["rum", "silver", "pearls", "sugar", "ruby", "spices", "crown"]))
 	if _args.has("peek"):
 		get_tree().create_timer(0.1).timeout.connect(func() -> void: hud.open_peek())
+	if _args.has("pins"):
+		# waypoints round her, metres east and south of her ("dx,dz;dx,dz")
+		pins.wipe()
+		for e in str(_args.pins).split(";"):
+			var a := e.split(",")
+			if a.size() == 2:
+				pins.add(player.pos.x + float(a[0]), player.pos.z + float(a[1]))
 
 
 ## A set piece at a market town: tied up at the K-th market's quay (--dock
@@ -893,6 +916,11 @@ func _tick(real_dt: float) -> void:
 	for it in got:
 		_haul(it)
 	_hold_nag = maxf(0.0, _hold_nag - dt)
+	# the waypoints' pillars of light (not over the harbour): sailing into one strikes it off
+	pins.visible = state != State.HARBOUR
+	var reached := pins.update(dt, player.pos if hauling else null, ocean, camera.global_position)
+	if reached != null:
+		_reached(reached)
 
 	# the weather round the view, its sound, then the light
 	_sky_fx(dt)
@@ -926,6 +954,9 @@ func _tick(real_dt: float) -> void:
 	hud.show_ammo(player.ammo, stock)
 	hud.show_hold(hold)
 	hud.show_bars(world.ships, player, camera)
+	maps.player = player
+	hud.minimap.tick(real_dt)
+	hud.show_pins(pins, player.pos, camera, world)
 	if player.alive and (not _args.has("shot") or _args.has("discover")):
 		_chart(player.pos)
 
@@ -2378,6 +2409,16 @@ func _chart(p: Vector3) -> void:
 			voyage.note("isle", "Charted %s" % isl.name, "+%d gold" % reward)
 			hud.toast("Island discovered · +%d gold" % reward, isl.name, 3.6)
 			sound.chime()
+
+
+## A waypoint sailed into: struck off with a flare of light, a chime and a note.
+func _reached(pin: Waypoints.Pin) -> void:
+	var left := pins.pins.size()
+	hud.toast("Waypoint reached", ("%d more on the chart" % left) if left > 0 else "The chart is clear", 3.0)
+	sound.chime()
+	var at := Vector3(pin.x, world.water_height(pin.x, pin.z), pin.z)
+	for i in 3:
+		world.fx.sparkle(at, 2.0, Waypoints.GLOW[pin.hue])
 
 
 ## "x,y,z" from the command line.

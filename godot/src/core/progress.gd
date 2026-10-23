@@ -1,7 +1,8 @@
 extends Node
 ## What the game keeps between voyages: the ship you sail, the waters you set
 ## out in, the view you sailed with, your purse, the archipelagos you've
-## charted and your records. Autoloaded as `Progress`.
+## charted, the waypoints on your sea chart and your records. Autoloaded as
+## `Progress`.
 ##
 ## It lives in user://progress.json, written whole to a fresh file and swapped
 ## in, so a crash or a dead battery mid-write can never leave it half-written.
@@ -19,6 +20,8 @@ const OLD_RECORDS := "user://records.json"
 const SETTLE := 2.0
 const SHIPS: Array[String] = ["sloop", "brig", "galleon"]
 const SEAS: Array[String] = ["home", "brumas"]
+## Waypoints kept at most (Waypoints.MAX).
+const PINS := 5
 
 ## The ship you sail (a ShipClass id).
 var ship := "sloop"
@@ -32,6 +35,8 @@ var view := Vector2(-1.0, 0.0)
 var purse := 0
 ## Archipelago id → when you first sailed into it (unix seconds).
 var charts := {}
+## The waypoints on your sea chart, oldest first: [x, z, colour] each (Waypoints).
+var pins := []
 ## Your bests over every voyage, and how many you've sailed.
 var records := {"voyages": 0, "renown": 0, "gold": 0, "kills": 0, "isles": 0, "time": 0.0}
 
@@ -89,6 +94,13 @@ func keep_view(zoom: float, tilt: float) -> void:
 		touch()
 
 
+## The sea chart's waypoints, as Waypoints keeps them.
+func keep_pins(list: Array) -> void:
+	if list != pins:
+		pins = list.duplicate(true)
+		touch()
+
+
 ## Something changed: written a moment from now, with whatever follows it.
 func touch() -> void:
 	if _wait < 0.0:
@@ -121,6 +133,7 @@ func save() -> void:
 		"view": [view.x, view.y],
 		"purse": purse,
 		"charts": charts,
+		"pins": pins,
 		"records": records,
 	}
 	var tmp := path + ".tmp"
@@ -175,8 +188,22 @@ func _adopt(d: Dictionary) -> void:
 	if c is Dictionary:
 		for k: String in c:
 			charts[k] = int(c[k])
+	var w: Variant = d.get("pins")
+	if w is Array:
+		pins = []
+		for e: Variant in w:
+			if e is Array and (e as Array).size() == 3 and _numbers(e) and pins.size() < PINS:
+				pins.append([roundi(float(e[0])), roundi(float(e[1])), clampi(int(e[2]), 0, PINS - 1)])
 	var r: Variant = d.get("records")
 	if r is Dictionary:
 		for k: String in records:
 			if (r as Dictionary).has(k):
 				records[k] = maxf(0.0, float(r[k])) if k == "time" else maxi(0, int(r[k]))
+
+
+## Whether every entry is a finite number (a hand-edited save can hold anything).
+static func _numbers(a: Array) -> bool:
+	for v: Variant in a:
+		if not (v is float or v is int) or not is_finite(float(v)):
+			return false
+	return true
