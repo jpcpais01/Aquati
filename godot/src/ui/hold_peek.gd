@@ -182,7 +182,7 @@ func _draw_hold() -> void:
 	var has := not list.is_empty()
 	_scroll.visible = has
 	_empty.visible = not has
-	# the list scrolls once it would run past four tenths of the screen
+	# the list scrolls once it would run past half the screen
 	var row_h := 28.0 * px + 2.0 * px
 	var vp := get_viewport_rect().size.y if is_inside_tree() else 720.0
 	_scroll.custom_minimum_size = Vector2(W - 24.0 * px, minf(list.size() * row_h, vp * LIST_MAX))
