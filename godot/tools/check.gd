@@ -454,7 +454,9 @@ func _check_lightning() -> void:
 			high = maxf(high, p.y)
 		for i in idx:
 			ok = ok and i >= 0 and i < pos.size()
-	steps += 1 if ok and absf(low) < 1.0 and high > 300.0 else 0
+	# (a ribbon turned to the eye tilts with the jagged channel: half its
+	# width can dip a few metres either side of the sea at the foot)
+	steps += 1 if ok and low > -8.0 and low < 2.0 and high > 300.0 else 0
 	var f := [0.0, 0.0]
 	for i in 6:
 		l.update(1.0 / 30.0, 0.0, Vector3.ZERO, cam)
