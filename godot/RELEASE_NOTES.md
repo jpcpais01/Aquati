@@ -1,6 +1,13 @@
 ## Shores O' Fortune for Android: the crew on deck
 
-**New in this update: the shot pie.** Hold the shot button over Fire and a
+**New in this update: steadier touch controls.** A pinch to zoom no longer
+turns the ship: the helm only takes a thumb that comes down low on the left,
+by the sail lever, and a second finger landing with it makes the pair a
+pinch. Zoomed all the way out, a fresh pinch still leans the view over
+toward the horizon, and now it stays leaned however far you pinch on; pinch
+back in and it straightens up first, then closes in.
+
+**Also new: the shot pie.** Hold the shot button over Fire and a
 pie of eight slices opens round it, the five kinds of shot across its top
 with what's left of each. Slide your thumb onto one and let go to load it,
 or back to the middle to keep what you have. The slice under your thumb

@@ -6,12 +6,20 @@ extends Node
 ## or less canvas a notch at a time, Q and E fire the port and starboard
 ## broadsides and Space whichever suits, 1 to 5 load a kind of shot and R
 ## the next kind aboard, C cycles the camera, the wheel zooms. A click on the sea fires the side you point into, at what you
-## point at. Touch: a drag anywhere on the left of the screen is the helm
-## (point where the bow should go: screen up is north, as the camera looks),
-## the sail lever bottom left sets the canvas, the guns sit bottom right, two
-## fingers pinch the zoom.
+## point at. Touch: a drag that starts low on the left, where the thumb
+## rests by the sail lever, is the helm (point where the bow should go: screen
+## up is north, as the camera looks), the sail lever bottom left sets the
+## canvas, the guns sit bottom right, two fingers anywhere pinch the zoom.
 
 signal touch_seen
+
+## The touch helm takes a finger that comes down left of this share of the
+## screen's width and below this share of its height: the corner the left
+## thumb rests in. Anywhere else a finger is free to pinch.
+const HELM_ZONE := Vector2(0.36, 0.38)
+## A second finger this soon after the helm's (s) turns the pair into a
+## pinch: two fingers never land at quite the same instant.
+const PINCH_GRACE := 0.3
 
 ## -1 starboard .. +1 port (keys).
 var rudder := 0.0
@@ -41,6 +49,8 @@ var pointer_active := false
 var touch := false
 
 var _helm_id := -1
+## When the helm finger went down (ms).
+var _helm_ms := 0
 var _touches := {}
 var _pinch_d := -1.0
 
@@ -129,16 +139,22 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 		touch_seen.emit()
 	# touch never leaves a stale pointer on the water
 	pointer_active = false
-	var w := get_viewport().get_visible_rect().size.x
+	var vp := get_viewport().get_visible_rect().size
 	if e.pressed:
 		skip = true
 		_touches[e.index] = e.position
-		if _helm_id < 0 and e.position.x < w * 0.55 and _touches.size() == 1:
+		if _touches.size() == 1 and _helm_id < 0 and e.position.x < vp.x * HELM_ZONE.x and e.position.y > vp.y * HELM_ZONE.y:
 			_helm_id = e.index
+			_helm_ms = Time.get_ticks_msec()
 			helm_origin = e.position
 			helm_at = e.position
-		elif _touches.size() == 2 and _helm_id < 0:
-			_pinch_d = _pinch_distance()
+		elif _touches.size() == 2:
+			# the other finger of a pinch, even if the first came down on the helm
+			if _helm_id >= 0 and Time.get_ticks_msec() - _helm_ms < PINCH_GRACE * 1000.0:
+				_helm_id = -1
+				steering = false
+			if _helm_id < 0:
+				_pinch_d = _pinch_distance()
 	else:
 		_touches.erase(e.index)
 		if e.index == _helm_id:

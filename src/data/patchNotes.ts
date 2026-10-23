@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T12:00Z',
+    entries: [
+      {
+        title: 'Android: steadier touch controls',
+        notes: [
+          'On Android a pinch to zoom no longer turns your ship. The helm now only takes a thumb that comes down low on the left of the screen, by the sail lever, and a second finger landing with it turns the pair into a pinch. Zooming all the way out still leans the view over toward the horizon for a long look across the sea, but now it stays leaned however far you keep pinching instead of straightening back up. Pinch in and it straightens up first, then closes in.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T10:00Z',
     entries: [
       {

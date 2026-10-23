@@ -38,10 +38,11 @@ Keys: A / D or the arrows steer, W / S set and take in sail, Q and E fire
 the port and starboard broadsides and Space whichever side bears (or click the
 sea on the side to fire), C changes the camera, the mouse wheel zooms, and
 Enter sails again from the farewell card; 1 to 5 load a kind of shot and R
-cycles them. On a phone: drag on the left of the screen to steer, use the
-lever bottom left for the sails and the guns bottom right, hold the shot
-button over Fire and slide onto a kind of shot to load it (or tap it, then
-tap one), pinch to zoom.
+cycles them. On a phone: drag from low on the left (by the sail lever) to
+steer, use the lever bottom left for the sails and the guns bottom right,
+hold the shot button over Fire and slide onto a kind of shot to load it (or
+tap it, then tap one), pinch to zoom (all the way out, a fresh pinch leans
+the view over toward the horizon).
 
 Handy flags (after `--`): `--hour 18.5` sets the time of day, `--view 0..3`
 (or `--zoom 0..1 --tilt 0..1`) picks a camera, `--at X,Z` and `--heading R`
