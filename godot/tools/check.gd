@@ -19,10 +19,15 @@ extends SceneTree
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
 ## The archipelagos the bake writes.
 const REGIONS := ["home", "brumas"]
+## A town's triangles close up and as its shell, at most.
+const TOWN_TRIS := 26000
+const TOWN_SHELL_TRIS := 3000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
-const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "blast", "bubbles",
-		"cannon0", "cannon1", "cannon2", "chain", "chime", "click", "coin", "crunch", "earth", "flames", "founder",
-		"grape", "groan", "guns_ready", "ignite", "noise", "recoil", "scrape0", "scrape1", "shell", "steam",
+const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "bell", "blast", "bosun_pipe", "bubbles",
+		"cannon0", "cannon1", "cannon2", "chain", "cheer4", "cheer6", "chime", "click", "clunk", "coin", "creak0", "creak1", "creak2",
+		"crunch", "earth", "flames", "founder", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "ignite", "lap",
+		"mallet", "murmur", "noise", "pour0", "pour1", "purse", "recoil", "scrape0", "scrape1", "shell",
+		"squeeze_arrival", "squeeze_flourish", "steam",
 		"tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4", "water", "whoosh", "wood"]
@@ -618,9 +623,10 @@ func _check_sound() -> void:
 			var path := "res://audio/sfx/%s_%d.%s" % [key, i, e.ext]
 			if not ResourceLoader.exists(path):
 				_fail("sound: no " + path)
-	var noise: AudioStreamWAV = load("res://audio/sfx/noise_0.wav")
-	if noise == null or noise.loop_mode != AudioStreamWAV.LOOP_FORWARD:
-		_fail("sound: the sea's noise doesn't loop")
+	for loop: String in ["noise", "lap", "murmur"]:
+		var w: AudioStreamWAV = load("res://audio/sfx/%s_0.wav" % loop)
+		if w == null or w.loop_mode != AudioStreamWAV.LOOP_FORWARD:
+			_fail("sound: %s doesn't loop" % loop)
 	var music: Dictionary = m.get("music", {})
 	var songs := 0
 	for n: String in music:
@@ -760,6 +766,82 @@ func _check_world() -> void:
 	if w.ground_height(spawn.x, spawn.y) > -2.0:
 		_fail("world: the spawn point is aground (%.1f m)" % w.ground_height(spawn.x, spawn.y))
 	print("world: %d archipelagos, %d plants in %d batches, loaded in %.0f ms" % [regions.size(), plants, batches, (Time.get_ticks_usec() - t0) / 1000.0])
+	_check_ports(w)
+
+
+## The trading ports: the web's own numbers (Mulberry32) and every market's
+## prices to the coin at any hour; and each of the six towns built, inside
+## its budget, with a galleon's berth and her way out to sea afloat.
+func _check_ports(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var steps := 0
+	# (loaded, not named: the towns plant the isles' palms, as flora.gd above)
+	var town: GDScript = load("res://src/port/trade_port.gd")
+	var figure: GDScript = load("res://src/port/figure.gd")
+	var specs: Array = town.SPECS
+	# the first draws of the web's generator (src/core/rng.ts)
+	var draws := true
+	for e: Array in [[1000, 0.795194907], [1097, 0.885539711], [31, 0.672256116], [77, 0.425601356], [1, 0.627073941]]:
+		var got := Mulberry32.new(e[0]).next()
+		if absf(got - float(e[1])) > 1e-8:
+			draws = false
+			_fail("ports: Mulberry32(%d) draws %.9f, not the web's %.9f" % [e[0], got, e[1]])
+	steps += 1 if draws else 0
+	# eight goods in each town at four hours, as the web's Market prices them
+	var ids := ["rum", "silver", "emeralds", "portrait", "crown", "cider", "krakenBeak", "tea"]
+	var hours := [0.0, 37.5, 600.0, 4321.25]
+	var web := [[34, 72, 244, 282, 1894, 23, 3060, 112], [27, 73, 370, 315, 3314, 19, 3575, 56],
+			[25, 62, 249, 408, 2904, 15, 4729, 71], [41, 70, 225, 228, 2084, 33, 3557, 91],
+			[43, 70, 313, 318, 2614, 30, 3309, 87], [27, 59, 369, 397, 2628, 19, 5476, 72]]
+	var priced := true
+	for i in specs.size():
+		var spec: Dictionary = specs[i]
+		var m := Treasure.Market.new(spec.taste, "", i * 17 + 3)
+		for j in ids.size():
+			var t: float = hours[(i + j) % hours.size()]
+			if m.price(ids[j], t) != int(web[i][j]):
+				priced = false
+				_fail("ports: %s pays %d for %s at %.2f s, the web %d" % [spec.name, m.price(ids[j], t), ids[j], t, web[i][j]])
+	steps += 1 if priced else 0
+	# the towns, as the game builds them
+	var arts: RefCounted = town.Arts.new()
+	var sites: Array[Dictionary] = []
+	for r in w.regions:
+		for p: Dictionary in r.ports:
+			if not p.home:
+				sites.append(p)
+	if sites.size() != specs.size():
+		_fail("ports: %d market sites in the world bake, not %d" % [sites.size(), specs.size()])
+	var galleon := ShipClass.named("galleon")
+	var near := 0
+	var far := 0
+	var built := true
+	for i in mini(sites.size(), specs.size()):
+		var rnd := Mulberry32.new(1000 + i * 97)
+		var styles: Array[Dictionary] = []
+		for role: String in town.ROLES:
+			styles.append(figure.style_for(role, rnd, specs[i]))
+		var port: Node3D = town.new()
+		port.setup(sites[i], i, arts, w, styles)
+		var tris: Vector2i = port.tris
+		near = maxi(near, tris.x)
+		far = maxi(far, tris.y)
+		var b: Vector3 = port.berth(galleon.beam)
+		var c: Vector3 = port.cast_off(galleon.beam)
+		var bottom := minf(-w.ground_height(b.x, b.y), -w.ground_height(c.x, c.y))
+		if tris.x <= 0 or tris.x > TOWN_TRIS or tris.y <= 0 or tris.y > TOWN_SHELL_TRIS:
+			built = false
+			_fail("ports: %s built %d triangles close up and %d as a shell (budgets %d, %d)" % [port.title, tris.x, tris.y, TOWN_TRIS, TOWN_SHELL_TRIS])
+		if bottom < galleon.draft + 1.0:
+			built = false
+			_fail("ports: a galleon at %s's quay has %.1f m under her keel" % [port.title, bottom - galleon.draft])
+		if not port.in_reach(Vector3(c.x, 0.0, c.y)):
+			built = false
+			_fail("ports: casting off from %s leaves her out of its reach" % port.title)
+		port.free()
+	steps += 1 if built else 0
+	print("ports: %d of 3 steps as expected; %d towns, at most %d triangles close up and %d as a shell, built in %.0f ms" % [
+			steps, sites.size(), near, far, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## Progress, on a scratch file of its own: a save comes back whole; a save

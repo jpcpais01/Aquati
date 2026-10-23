@@ -1130,12 +1130,7 @@ static func _duration(t: float) -> String:
 
 ## A whole number with its thousands marked, as the web's toLocaleString.
 static func _num(n: int) -> String:
-	var s := str(absi(n))
-	var out := ""
-	while s.length() > 3:
-		out = "," + s.right(3) + out
-		s = s.left(s.length() - 3)
-	return ("-" if n < 0 else "") + s + out
+	return MenuKit.num(n)
 
 
 func _tally_fmt(i: int, v: float) -> String:

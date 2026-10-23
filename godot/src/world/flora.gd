@@ -109,9 +109,11 @@ static func kit() -> Kit:
 static func screen_lines() -> float:
 	if not Settings.mobile or Settings.quality == Settings.Quality.HIGH:
 		return 720.0
-	var size := DisplayServer.screen_get_size()
-	var dpi := maxf(float(DisplayServer.screen_get_dpi()), 96.0)
-	var lines := clampf(minf(size.x, size.y) * 160.0 / dpi, 320.0, 720.0)
+	var lines := Settings.phone_lines
+	if lines <= 0.0:
+		var size := DisplayServer.screen_get_size()
+		var dpi := maxf(float(DisplayServer.screen_get_dpi()), 96.0)
+		lines = clampf(minf(size.x, size.y) * 160.0 / dpi, 320.0, 720.0)
 	return lines * (0.8 if Settings.quality == Settings.Quality.LOW else 1.0)
 
 

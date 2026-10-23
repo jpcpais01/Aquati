@@ -5,7 +5,8 @@ extends CanvasLayer
 ## and isles charted under it (top left), the wind and the sky badge (the
 ## weather's picture and the clock: a tap on either picks the weather or the
 ## hour) with the camera button (top right), the canvas set and the speed in knots with the
-## shot rack beside them (bottom centre), the bars over enemy ships and the
+## shot rack beside them (bottom centre; on touch the knots alone, riding on
+## the sail lever), the bars over enemy ships and the
 ## words rising off a fight or a haul, and on touch screens the helm ring,
 ## the sail lever (bottom left) and the guns with the shot button over them
 ## (bottom right). Built in code; each frame only changes text when the value
@@ -23,6 +24,8 @@ signal ammo_picked(kind: int)
 signal sky_tapped(clock: bool)
 ## A button with nothing more to say than its click (the hold's chip).
 signal clicked
+## The touch controls came up (a finger was seen) or went.
+signal touch_set(on: bool)
 
 var controls: Controls
 
@@ -63,6 +66,7 @@ var _tag_left := 0.0
 var _tag_hover := false
 var _tag_e := 0.0
 var _speed: Label
+var _kn: Label
 var _nav: PanelContainer
 var _wind: _WindArrow
 var _clock: Label
@@ -243,11 +247,11 @@ func _ready() -> void:
 	_speed = HudStyle.label("0", "inter", 800, 25, HudStyle.INK, -1)
 	_speed.custom_minimum_size = Vector2(32, 0)
 	_speed.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	var kn := HudStyle.label("KNOTS", "inter", 700, 9, HudStyle.INK_3, 2)
-	kn.size_flags_vertical = Control.SIZE_SHRINK_END
-	kn.custom_minimum_size = Vector2(0, 22)
+	_kn = HudStyle.label("KNOTS", "inter", 700, 9, HudStyle.INK_3, 2)
+	_kn.size_flags_vertical = Control.SIZE_SHRINK_END
+	_kn.custom_minimum_size = Vector2(0, 22)
 	sp.add_child(_speed)
-	sp.add_child(kn)
+	sp.add_child(_kn)
 	helm.add_child(sp)
 	console.add_child(helm)
 	# a hairline between the knots and the rack, a little clear of the knots
@@ -342,6 +346,10 @@ func _layout() -> void:
 	var ps := _pill.get_combined_minimum_size()
 	_pill.size = ps
 	_pill.position = Vector2((vp.x - ps.x) * 0.5, vp.y - my - ps.y)
+	if _touch_ui:
+		# the knots ride on top of the sail lever, so the foot of the screen
+		# between the thumbs is free (for the prompt to come alongside)
+		_pill.position = Vector2(mx, vp.y - my - SailLever.TH - 8.0 * HudStyle.PX - ps.y)
 	_lever.position = Vector2(mx, vp.y - my - SailLever.TH)
 	_pad.position = Vector2(vp.x - mx - _pad.size.x, vp.y - my - _pad.size.y)
 	# the shot button rides over Fire, a little clear of it
@@ -433,11 +441,30 @@ func show_touch(on: bool) -> void:
 	_pips.visible = not on
 	_rack.visible = not on
 	_rack_sep.visible = not on
-	_pill_box.content_margin_right = 18.0 if on else 5.0 * HudStyle.K
+	# and on touch it's a slim chip over the sail lever: the number big, the unit a small "kn"
+	var k := HudStyle.K
+	_pill_box.content_margin_left = 9.0 * k if on else 18.0
+	_pill_box.content_margin_right = 10.0 * k if on else 5.0 * k
+	_pill_box.content_margin_top = 3.0 * k if on else 6.0
+	_pill_box.content_margin_bottom = 3.0 * k if on else 6.0
+	_pill_box.bg_color = Color(0.024, 0.078, 0.118, 0.5) if on else HudStyle.PANEL
+	_pill_box.shadow_size = 0 if on else 10
+	_speed.add_theme_font_size_override("font_size", roundi(maxf(17.0 * HudStyle.PX, 22.0 * k)) if on else 25)
+	var kn_px := roundi(maxf(8.5 * HudStyle.PX, 9.5 * k))
+	_kn.text = "kn" if on else "KNOTS"
+	_kn.add_theme_font_override("font", HudStyle.font("inter", 700, roundi(kn_px * 0.04) if on else 2))
+	_kn.add_theme_font_size_override("font_size", kn_px if on else 9)
+	_kn.custom_minimum_size = Vector2(0.0, 23.0 if on else 22.0)
+	(_kn.get_parent() as HBoxContainer).add_theme_constant_override("separation", roundi(2.0 * HudStyle.PX) if on else 5)
 	if on:
 		_tag_left = 0.0
 		_tag_hover = false
 	_layout()
+	touch_set.emit(on)
+
+
+func touch_ui() -> bool:
+	return _touch_ui
 
 
 ## Her hull and the tally: a blow shakes the panel and flushes its edge coral.

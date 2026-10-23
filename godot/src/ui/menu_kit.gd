@@ -50,6 +50,16 @@ static func ship_art(id: String, h: float, lit: bool) -> TextureRect:
 	return r
 
 
+## A whole number with its thousands marked, as the web's toLocaleString.
+static func num(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.right(3) + out
+		s = s.left(s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
+
+
 ## A box filled flat with glass under a hairline (the web's --glass-2 and --stroke).
 static func glass(b: UiBox, fill: Color = HudStyle.GLASS_2) -> UiBox:
 	return b.p("c_top", fill).p("c_foot", fill).p("c_border", HudStyle.STROKE).p("hi", 0.09)

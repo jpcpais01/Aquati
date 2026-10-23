@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T22:00Z',
+    entries: [
+      {
+        title: 'Android: the trading ports',
+        notes: [
+          'The eleventh Android build puts the six market towns on the map, four in the home waters and two in Las Brumas, each on its timber quay with its own colours, painted signs, flag, lighthouse, harbour bell and trade house. Merchants, porters, fishers, a band and the harbourmaster bring each quay to life, and after dark its lamps shine on the water.',
+          'Sail up to a quay and tap "Dock at …" at the foot of the screen to come alongside (unless pirates are on your tail). The market lists everything in your hold at today\'s drifting prices, and each town pays best for its own favourite goods. Sell lot by lot or the whole hold at once, and watch the coins fly into your purse while the porters carry the goods ashore.',
+          'The chandlery patches your hull and refills your special shot, and the quay sounds like a port: the bell, a squeezebox hornpipe as you tie up, gold counted out on the counter, the shipwrights\' mallets, gulls, creaking lines and the crowd, and the bosun\'s pipe as you cast off.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T19:00Z',
     entries: [
       {

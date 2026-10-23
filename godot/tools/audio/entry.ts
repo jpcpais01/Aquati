@@ -2,7 +2,7 @@
 // the browser's OfflineAudioContext, so both games sound the same: the sample
 // bank (src/core/sfx.ts), the thunder (src/core/thunder.ts), the one-shots the
 // web plays from live oscillators (src/core/audio.ts), the noise its sea, wind
-// and rain beds are filtered from, the voyage band's five songs
+// and rain beds are filtered from, the quay's own loops, the voyage band's songs
 // (src/core/voyageMusic.ts) and the high seas' theme, as a seamless loop.
 // Run through tools/audio/bake_audio.mjs, which writes the files.
 //
@@ -12,14 +12,21 @@
 import {
   cannonBlast,
   chainRip,
+  coinPour,
+  creak,
+  crowdMurmur,
   earthImpact,
   fireCrackle,
   goldClink,
   grapeHail,
   gunRecoil,
+  harbourLap,
   hullCrunch,
   igniteWhoomp,
+  ironClunk,
   magazineBlast,
+  mallet,
+  purseDrop,
   shellBurst,
   shotWhoosh,
   steamHiss,
@@ -27,7 +34,7 @@ import {
   woodImpact,
 } from '../../../src/core/sfx';
 import { renderThunder } from '../../../src/core/thunder';
-import { Audio } from '../../../src/core/audio';
+import { ARRIVAL, Audio, FLOURISH } from '../../../src/core/audio';
 import { ChunkSource, ChunkStream } from '../../../src/core/prerender';
 import { kitJobs } from '../../../src/core/musicKit';
 import { Playing, VoyageMusic } from '../../../src/core/voyageMusic';
@@ -212,6 +219,17 @@ bank('grape', 2, (v) => grapeHail(SR, 1301 + v));
 bank('chain', 2, (v) => chainRip(SR, 1401 + v));
 bank('flames', 1, () => fireCrackle(SR, 1501));
 bank('coin', 6, (v) => goldClink(SR, 1601 + v));
+// the port: gold poured out (a handful, a fortune), a purse thumped down, the
+// lines (two hawsers, then the pilings' timber), the yard's mallet and its shot
+// set down in the racks; the water among the pilings and the quay's hubbub, as loops
+bank('pour0', 1, () => coinPour(SR, 1701, 0.6));
+bank('pour1', 1, () => coinPour(SR, 1702, 1.5));
+bank('purse', 2, (v) => purseDrop(SR, 1801 + v));
+for (let c = 0; c < 3; c++) bank(`creak${c}`, 1, () => creak(SR, 1901 + c, c < 2));
+bank('mallet', 2, (v) => mallet(SR, 2001 + v));
+bank('clunk', 2, (v) => ironClunk(SR, 2101 + v));
+jobs.push({ name: 'lap_0', sr: SR, exact: true, render: () => [harbourLap(SR, 2201)] });
+jobs.push({ name: 'murmur_0', sr: SR, exact: true, render: () => [crowdMurmur(SR, 2301)] });
 
 // ------------------------------------------------------------------ thunder: near peals open with the crack, far ones only roll
 // (a far one is nothing but a low rumble, so a low rate holds all of it)
@@ -242,6 +260,20 @@ for (let i = 0; i < 6; i++) {
 }
 // coral under the keel: the grinding rasp and groan of timber, light and hard
 [0.4, 1.0].forEach((k, i) => shot(`scrape${i}`, 1, 0.95, (a) => a.scrape(1, 0, 0, k, false)));
+// the port: one stroke of its bell (the game rings it), the squeezebox on the
+// quay (the hornpipe for coming alongside, the flourish for a fortune), the
+// bosun's pipe for casting off, the quay's cheer (four voices or six), its gulls
+shot('bell', 1, 2.6, (a) => a.bell(1, 1));
+shot('squeeze_arrival', 1, 2.4, (a) => a.squeezebox(ARRIVAL, 0.14, 0.13));
+shot('squeeze_flourish', 1, 1.1, (a) => a.squeezebox(FLOURISH, 0.13, 0.25));
+shot('bosun_pipe', 1, 1.5, (a) => a.bosunPipe());
+for (const n of [4, 6]) shot(`cheer${n}`, 2, 1.4, (a) => a.shout(1, 0, 0, true, n));
+// (a gull pans itself: here it plays straight out, as every voice does)
+for (let n = 1; n <= 3; n++)
+  shot(`gull${n}`, 2, 1.3, (a) => {
+    a.ctx.createStereoPanner = undefined;
+    a.gull(1, 0, n);
+  });
 
 // ------------------------------------------------------------------ the sea's own sound: the noise its beds are cut from
 jobs.push({ name: 'noise_0', sr: SR, exact: true, render: () => [pink(7.3, SR)] });

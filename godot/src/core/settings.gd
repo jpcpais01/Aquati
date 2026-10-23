@@ -26,6 +26,9 @@ var shake := 1.0
 var fps := true
 ## Phones and tablets: touch controls, a 60 fps cap, the lean graphics path.
 var mobile := false
+## A run told to play as a phone (--phone): the short side of the screen it
+## pretends to have, in dp; 0 reads the real screen.
+var phone_lines := 0.0
 ## The weather and the hour picked on the sky badge ("auto", or one of
 ## Atmosphere.WEATHER or TIMES), kept for the next voyage.
 var weather := "auto"
@@ -49,6 +52,16 @@ func _ready() -> void:
 		fps = _cfg.get_value("interface", "fps", fps)
 		weather = _cfg.get_value("sky", "weather", weather)
 		time = _cfg.get_value("sky", "time", time)
+	apply()
+
+
+## Play as a phone `lines` dp across its short side would, at its default
+## MEDIUM: the lean graphics path, and the plants and crews sized on its
+## screen (a desktop run's --phone, to see what a phone draws).
+func pretend_phone(lines: float) -> void:
+	mobile = true
+	quality = Quality.MEDIUM
+	phone_lines = clampf(lines, 320.0, 720.0)
 	apply()
 
 

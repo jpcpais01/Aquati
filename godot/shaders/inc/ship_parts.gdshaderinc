@@ -10,6 +10,9 @@ varying float lit_spec;
 
 /// lamplight paint is HDR: its colour times this
 uniform float glow_gain = 5.0;
+/// gold leaf that shines a little of its own (a trading port's domes and
+/// bells, the web's gold emissive); none on a ship
+uniform vec3 gilt_glow = vec3(0.0);
 
 varying vec3 v_world;
 varying vec3 v_obj;
@@ -69,6 +72,6 @@ void fragment() {
 	ROUGHNESS = rough * wet_gloss();
 	lit_spec = 0.5 * (1.0 - glass);
 	SPECULAR = lit_spec;
-	EMISSION = glow;
+	EMISSION = glow + gilt * gilt_glow;
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

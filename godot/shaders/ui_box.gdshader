@@ -9,11 +9,13 @@ uniform vec2 quad = vec2(200.0, 100.0);
 uniform vec2 at = vec2(0.0, 0.0);
 uniform vec2 box = vec2(200.0, 100.0);
 uniform float radius = 20.0;
-/// The fill, top to foot through `mid` (mid < 0: two stops).
+/// The fill, top to foot through `mid` (mid < 0: two stops); with `horiz`,
+/// left to right instead.
 uniform vec4 c_top = vec4(0.063, 0.165, 0.22, 0.64);
 uniform vec4 c_mid = vec4(0.0);
 uniform vec4 c_foot = vec4(0.02, 0.075, 0.11, 0.78);
 uniform float mid = -1.0;
+uniform float horiz = 0.0;
 /// A radial fill instead (z > 0): c_top at the centre (x, y) fading to c_foot
 /// at radial_stop of the ellipse's radii (z, w), all as shares of the box.
 uniform vec4 radial = vec4(0.0);
@@ -29,6 +31,9 @@ uniform vec2 shadow = vec2(18.0, 50.0);
 /// A glow round the box (box-shadow 0 0 blur), its blur.
 uniform vec4 c_glow = vec4(0.0);
 uniform float glow = 0.0;
+/// A glow inside the edge (box-shadow inset 0 0 blur), its blur.
+uniform vec4 c_inset = vec4(0.0);
+uniform float inset = 0.0;
 /// The inset hairline of light along the top, and a shade along the foot (its height).
 uniform float hi = 0.09;
 uniform float hi_px = 1.0;
@@ -76,13 +81,16 @@ void fragment() {
 	if (ring > 0.0) {
 		col = over(col, c_ring.rgb, c_ring.a * outside * clamp(0.5 - (d - ring) / aa, 0.0, 1.0));
 	}
-	float v = clamp((p.y + hb.y) / box.y, 0.0, 1.0);
+	float v = horiz > 0.5 ? clamp((p.x + hb.x) / box.x, 0.0, 1.0) : clamp((p.y + hb.y) / box.y, 0.0, 1.0);
 	vec4 f = mid < 0.0 ? mix(c_top, c_foot, v) : (v < mid ? mix(c_top, c_mid, v / mid) : mix(c_mid, c_foot, (v - mid) / (1.0 - mid)));
 	if (radial.z > 0.0) {
 		vec2 q = ((p + hb) / box - radial.xy) / radial.zw;
 		f = mix(c_top, c_foot, clamp(length(q) / radial_stop, 0.0, 1.0));
 	}
 	col = over(col, f.rgb, f.a * body);
+	if (inset > 0.0) {
+		col = over(col, c_inset.rgb, c_inset.a * soft(-d, inset) * body);
+	}
 	// inset 0 1px 0: the box less itself moved down a pixel; the foot's shade the same way up
 	col = over(col, vec3(1.0), hi * body * clamp(0.5 + sd_box(p - vec2(0.0, hi_px), hb, r) / aa, 0.0, 1.0));
 	if (lo_px > 0.0) {
