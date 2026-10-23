@@ -18,10 +18,12 @@ config/features=PackedStringArray("4.7", "Mobile")
 boot_splash/bg_color=Color(0.043, 0.165, 0.227, 1)
 boot_splash/show_image=false
 config/icon="res://icon.png"
+config/quit_on_go_back=false
 
 [autoload]
 
 Settings="*res://src/core/settings.gd"
+Progress="*res://src/core/progress.gd"
 
 [display]
 

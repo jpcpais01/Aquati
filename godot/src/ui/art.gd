@@ -4,8 +4,10 @@ class_name Art
 
 
 ## A ship of class `c` side on, bow to the right, as [svg, viewBox]: her
-## canvas in `sail`, hull in `hull`, masts and yards stroked in `spar`.
-static func ship(c: ShipClass, hull: Color, sail: Color, spar: Color) -> Array:
+## canvas in `sail`, hull in `hull`, masts and yards stroked in `spar`; and
+## in `more`, if given, her wale ("trim", "trim_w" wide), gun ports ("port")
+## and the pennant at her tallest masthead ("flag").
+static func ship(c: ShipClass, hull: Color, sail: Color, spar: Color, more := {}) -> Array:
 	var L := c.length
 	var draft := c.draft * 0.75
 	var sc := c.stern_castle
@@ -89,6 +91,30 @@ static func ship(c: ShipClass, hull: Color, sail: Color, spar: Color) -> Array:
 	svg += '<path d="%s" fill="none" stroke="%s" stroke-opacity="%.3f" stroke-width="0.45" stroke-linecap="round"/>' % [masts, _hex(spar), spar.a]
 	svg += '<path d="%s" fill="none" stroke="%s" stroke-opacity="%.3f" stroke-width="0.3" stroke-linecap="round"/>' % [yards, _hex(spar), spar.a]
 	svg += '<path d="%s" fill="%s" fill-opacity="%.3f"/>' % [" ".join(d), _hex(hull), hull.a]
+	var fb := c.freeboard + c.bulwark * 0.6
+	if more.has("trim"):
+		# a bright wale along her side
+		var trim: Color = more.trim
+		var wale := ""
+		for i in 11:
+			var t := 0.03 + i * 0.09
+			wale += ("L" if i > 0 else "M") + _p(t * L, _deck(c, t) - fb * 0.42)
+		svg += '<path d="%s" fill="none" stroke="%s" stroke-opacity="%.3f" stroke-width="%.2f"/>' % [wale, _hex(trim), trim.a, float(more.get("trim_w", 0.3))]
+	if more.has("port"):
+		var port: Color = more.port
+		for i in c.cannons_per_side:
+			var t := lerpf(c.cannon_span.x, c.cannon_span.y, float(i) / maxi(1, c.cannons_per_side - 1))
+			svg += '<rect x="%.2f" y="%.2f" width="0.64" height="0.55" rx="0.12" fill="%s" fill-opacity="%.3f"/>' % [t * L - 0.32, -(_deck(c, t) - fb * 0.62), _hex(port), port.a]
+	if more.has("flag"):
+		# a pennant streaming aft from the tallest masthead
+		var flag: Color = more.flag
+		var main: Dictionary = c.masts[0]
+		for m: Dictionary in c.masts:
+			if float(m.height) > float(main.height):
+				main = m
+		var px := float(main.t) * L
+		var py := _deck(c, main.t) + float(main.height)
+		svg += '<path d="M%sQ%s %sL%sZ" fill="%s" fill-opacity="%.3f"/>' % [_p(px, py), _p(px - 1.6, py - 0.2), _p(px - 3.4, py - 0.55), _p(px, py - 1.3), _hex(flag), flag.a]
 	return [svg, view]
 
 

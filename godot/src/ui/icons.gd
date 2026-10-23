@@ -16,6 +16,19 @@ const LINE := {
 	"target": '<circle cx="12" cy="12" r="7.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 1.8v3M12 19.2v3M1.8 12h3M19.2 12h3"/>',
 	"wind": '<path d="M3 8.5h11a3 3 0 1 0-3-3M3 12.5h16a3 3 0 1 1-3 3M3 16.5h7"/>',
 	"hull": '<path d="M2.5 10h19l-2.5 6.5a3 3 0 0 1-2.8 1.9H7.8A3 3 0 0 1 5 16.4z"/><path d="M4 13.2h16M12 4v6M12 4.5l5 4"/>',
+	# the menus: settings, the sound, play and pause, the harbour, close
+	"sliders": '<path d="M4 7h9M18 7h2M4 17h3M12 17h8"/><circle cx="15.5" cy="7" r="2.4"/><circle cx="9.5" cy="17" r="2.4"/>',
+	"sound": '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.5a8 8 0 0 1 0 11"/>',
+	"sound_off": '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+	"play": '<path d="M8 5.5v13l10.5-6.5z"/>',
+	"pause": '<path d="M9 5.5v13M15 5.5v13"/>',
+	"harbour": '<path d="M3 20h18M5 20V10l7-5 7 5v10M9.5 20v-5h5v5"/>',
+	"close": '<path d="M6 6l12 12M18 6 6 18"/>',
+	# a ship's qualities, on the harbour's bars (with "hull")
+	"speed": '<path d="M3 8h9a3 3 0 1 0-3-3M3 12h14a3 3 0 1 1-3 3M3 16h6"/>',
+	"agility": '<circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.8 2.8M15.9 15.9l2.8 2.8M18.7 5.3l-2.8 2.8M8.1 15.9l-2.8 2.8"/>',
+	"armour": '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8 7.5 9.5 4.3-1.5 7.5-4.9 7.5-9.5V6z"/><path d="M12 7v10"/>',
+	"firepower": '<circle cx="9" cy="14" r="5.5"/><path d="M13 10l3.5-3.5M17 4.5l.8-1.5M19.5 7l1.5-.8M18.5 5.5l2-2"/>',
 }
 
 ## The tally badges, as the web draws them in CSS gradients: each a 16 wide

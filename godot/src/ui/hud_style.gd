@@ -24,8 +24,20 @@ const OFF := Color(1, 1, 1, 0.16)
 const K := 1.37
 const KT := 1.55
 const PX := 1.85
+## The menus' type (the web's --t, 0.87 there: it shrinks half as fast as
+## --u, so text stays readable as the spacing tightens). Menu sizes take K,
+## the web's --u being its --k on that phone.
+const T := 1.61
+## The menus' glass and its brighter edge (the web's --glass-2, --stroke-2).
+const GLASS_2 := Color(0.055, 0.133, 0.188, 0.68)
+const STROKE_2 := Color(1, 1, 1, 0.2)
+## The web's --gold-grad: top, middle (at 52%) and foot.
+const GOLD_TOP := Color("#ffeab0")
+const GOLD_MID := Color("#f6c766")
+const GOLD_FOOT := Color("#e0a443")
 
 static var _fonts := {}
+static var _variants := {}
 
 
 ## A panel: rounded glass with a hairline edge and a soft drop shadow.
@@ -61,6 +73,52 @@ static func font(family: String, weight: int, spacing: int = 0) -> Font:
 		f = fv
 	_fonts[key] = f
 	return f
+
+
+## The font with tabular figures, so counting numbers don't jitter.
+static func tnum(f: Font) -> Font:
+	var key := "t%d" % f.get_instance_id()
+	if not _variants.has(key):
+		var fv := FontVariation.new()
+		fv.base_font = f
+		fv.opentype_features = {TextServerManager.get_primary_interface().name_to_tag("tnum"): 1}
+		_variants[key] = fv
+	return _variants[key]
+
+
+## The font slanted (the fonts carry no italic).
+static func italic(f: Font) -> Font:
+	var key := "i%d" % f.get_instance_id()
+	if not _variants.has(key):
+		var fv := FontVariation.new()
+		fv.base_font = f
+		fv.variation_transform = Transform2D(Vector2(1.0, 0.0), Vector2(0.2, 1.0), Vector2.ZERO)
+		_variants[key] = fv
+	return _variants[key]
+
+
+## Text painted with a gradient down its line (shaders/text_grad.gdshader):
+## [c0, c1, c2, c3, stops] over `height` units from `top`.
+static func text_grad(g: Array, top: float, height: float) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = preload("res://shaders/text_grad.gdshader")
+	m.set_shader_parameter("c0", g[0])
+	m.set_shader_parameter("c1", g[1])
+	m.set_shader_parameter("c2", g[2])
+	m.set_shader_parameter("c3", g[3])
+	m.set_shader_parameter("stops", g[4])
+	m.set_shader_parameter("top", top)
+	m.set_shader_parameter("height", height)
+	return m
+
+
+## A box as the web's gold button (.btn.primary): its gradient, its warm
+## glow underneath and the inset light along the top and shade along the foot.
+static func gold(b: UiBox, k: float) -> UiBox:
+	b.p("c_top", GOLD_TOP).p("c_mid", GOLD_MID).p("mid", 0.52).p("c_foot", GOLD_FOOT).p("border", 0.0)
+	b.p("c_shadow", Color(0.957, 0.706, 0.275, 0.32)).p("shadow", Vector2(10.0, 30.0) * k)
+	b.p("hi", 0.7).p("c_lo", Color(0.588, 0.353, 0.059, 0.28)).p("lo_px", 2.0 * PX)
+	return b
 
 
 ## The web's --spring (overshooting a touch, then settling) and --ease

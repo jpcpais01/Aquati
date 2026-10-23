@@ -14,8 +14,15 @@ uniform vec4 c_top = vec4(0.063, 0.165, 0.22, 0.64);
 uniform vec4 c_mid = vec4(0.0);
 uniform vec4 c_foot = vec4(0.02, 0.075, 0.11, 0.78);
 uniform float mid = -1.0;
+/// A radial fill instead (z > 0): c_top at the centre (x, y) fading to c_foot
+/// at radial_stop of the ellipse's radii (z, w), all as shares of the box.
+uniform vec4 radial = vec4(0.0);
+uniform float radial_stop = 1.0;
 uniform vec4 c_border = vec4(1.0, 1.0, 1.0, 0.11);
 uniform float border = 1.0;
+/// A hard ring round the outside (box-shadow 0 0 0 ring), its width.
+uniform vec4 c_ring = vec4(0.0);
+uniform float ring = 0.0;
 /// The drop shadow: colour, then (y offset, blur).
 uniform vec4 c_shadow = vec4(0.0, 0.031, 0.055, 0.38);
 uniform vec2 shadow = vec2(18.0, 50.0);
@@ -27,8 +34,13 @@ uniform float hi = 0.09;
 uniform float hi_px = 1.0;
 uniform vec4 c_lo = vec4(0.0);
 uniform float lo_px = 0.0;
-/// 0..1 through the glint's sweep, < 0 none.
+/// 0..1 through the glint's sweep, < 0 none: a band `sheen_w` of the box
+/// wide, from `sheen_span.x` to `sheen_span.y` band widths across, at most
+/// `sheen_a` bright (the farewell's; Set Sail's is narrower and brighter).
 uniform float sheen = -1.0;
+uniform float sheen_w = 0.46;
+uniform vec2 sheen_span = vec2(-1.2, 3.3);
+uniform float sheen_a = 0.55;
 
 vec4 over(vec4 dst, vec3 rgb, float a) {
 	float oa = a + dst.a * (1.0 - a);
@@ -61,8 +73,15 @@ void fragment() {
 	if (glow > 0.0 && c_glow.a > 0.0) {
 		col = over(col, c_glow.rgb, c_glow.a * soft(d, glow) * outside);
 	}
+	if (ring > 0.0) {
+		col = over(col, c_ring.rgb, c_ring.a * outside * clamp(0.5 - (d - ring) / aa, 0.0, 1.0));
+	}
 	float v = clamp((p.y + hb.y) / box.y, 0.0, 1.0);
 	vec4 f = mid < 0.0 ? mix(c_top, c_foot, v) : (v < mid ? mix(c_top, c_mid, v / mid) : mix(c_mid, c_foot, (v - mid) / (1.0 - mid)));
+	if (radial.z > 0.0) {
+		vec2 q = ((p + hb) / box - radial.xy) / radial.zw;
+		f = mix(c_top, c_foot, clamp(length(q) / radial_stop, 0.0, 1.0));
+	}
 	col = over(col, f.rgb, f.a * body);
 	// inset 0 1px 0: the box less itself moved down a pixel; the foot's shade the same way up
 	col = over(col, vec3(1.0), hi * body * clamp(0.5 + sd_box(p - vec2(0.0, hi_px), hb, r) / aa, 0.0, 1.0));
@@ -70,12 +89,12 @@ void fragment() {
 		col = over(col, c_lo.rgb, c_lo.a * body * clamp(0.5 + sd_box(p + vec2(0.0, lo_px), hb, r) / aa, 0.0, 1.0));
 	}
 	if (sheen >= 0.0) {
-		// a skewed band 46% of the box wide, sweeping from well off its left to past its right
-		float bw = box.x * 0.46;
-		float x = p.x + hb.x + p.y * 0.325 - (-1.2 * bw + sheen * 4.5 * bw);
+		// a skewed band sweeping from well off its left to past its right
+		float bw = box.x * sheen_w;
+		float x = p.x + hb.x + p.y * 0.325 - mix(sheen_span.x, sheen_span.y, sheen) * bw;
 		float k = clamp(x / bw, 0.0, 1.0);
 		float g = 1.0 - abs(k * 2.0 - 1.0);
-		col = over(col, vec3(1.0), 0.55 * g * step(0.0, x) * step(x, bw) * body);
+		col = over(col, vec3(1.0), sheen_a * g * step(0.0, x) * step(x, bw) * body);
 	}
 	if (border > 0.0) {
 		col = over(col, c_border.rgb, c_border.a * body * clamp(0.5 + (d + border) / aa, 0.0, 1.0));

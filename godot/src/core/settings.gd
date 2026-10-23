@@ -22,6 +22,8 @@ var music := 0.8
 var sfx := 1.0
 var ambience := 1.0
 var shake := 1.0
+## The frame counter at the top of the screen (the web's default: on).
+var fps := true
 ## Phones and tablets: touch controls, a 60 fps cap, the lean graphics path.
 var mobile := false
 ## The weather and the hour picked on the sky badge ("auto", or one of
@@ -44,6 +46,7 @@ func _ready() -> void:
 		sfx = _cfg.get_value("audio", "sfx", sfx)
 		ambience = _cfg.get_value("audio", "ambience", ambience)
 		shake = _cfg.get_value("game", "shake", shake)
+		fps = _cfg.get_value("interface", "fps", fps)
 		weather = _cfg.get_value("sky", "weather", weather)
 		time = _cfg.get_value("sky", "time", time)
 	apply()
@@ -64,6 +67,7 @@ func save() -> void:
 	_cfg.set_value("audio", "sfx", sfx)
 	_cfg.set_value("audio", "ambience", ambience)
 	_cfg.set_value("game", "shake", shake)
+	_cfg.set_value("interface", "fps", fps)
 	_cfg.set_value("sky", "weather", weather)
 	_cfg.set_value("sky", "time", time)
 	_cfg.save(PATH)

@@ -4,8 +4,9 @@ extends Node
 ## among the islands (src/core/voyageMusic.ts), one after another with the
 ## sea's own sound between them, every one before any repeats and leaning
 ## toward those that suit the hour; and out on the open ocean the high seas'
-## own theme, looping. The band rests for grander music (the high seas, a
-## storm, her farewell). The tracks are the web's, rendered into
+## own theme, looping; and in the harbour, its own theme. The band rests for
+## grander music (the harbour, the high seas, a storm, her farewell). The
+## tracks are the web's, rendered into
 ## res://audio/music (tools/audio/bake_audio.mjs): every song in the
 ## manifest is in the rotation, so a new one drops straight in with its
 ## entry in sounds.json (its title, how well it suits the day and the night,
@@ -22,6 +23,10 @@ const GAP := Vector2(22.0, 50.0)
 const FADE := 3.5
 const FADE_IN := 6.0
 const SEA_TC := 1.6
+## The harbour's theme fades in as the harbour comes up and away like a ship
+## leaving the quay (s).
+const PORT_IN := 1.6
+const PORT_OUT := 2.4
 
 ## The rotation: {name, title, day, night, end, gain} for each song.
 var songs: Array[Dictionary] = []
@@ -31,6 +36,7 @@ var paused := false:
 		paused = v
 		if _sea != null:
 			_sea.stream_paused = v
+			_port.stream_paused = v
 
 var _theme := {}
 var _now := 0.0
@@ -55,6 +61,11 @@ var _sea_on := false
 var _sea_g := 0.0
 var _sea_off := 0.0
 var _sea_loading := false
+var _harbour := {}
+var _port: AudioStreamPlayer
+var _port_on := false
+var _port_g := 0.0
+var _port_loading := false
 
 
 func _ready() -> void:
@@ -67,16 +78,23 @@ func _ready() -> void:
 	_sea = AudioStreamPlayer.new()
 	_sea.bus = &"Music"
 	add_child(_sea)
+	_port = AudioStreamPlayer.new()
+	_port.bus = &"Music"
+	add_child(_port)
 
 
-## The tracks in the manifest (sounds.json's "music"): the songs, and the
-## high seas' theme (the one marked to loop).
+## The tracks in the manifest (sounds.json's "music"): the songs, the
+## harbour's theme (marked "harbour") and the high seas' (the other one
+## marked to loop).
 func setup(meta: Dictionary) -> void:
 	songs.clear()
 	var names := meta.keys()
 	names.sort()
 	for n: String in names:
 		var e: Dictionary = meta[n]
+		if e.get("harbour", false):
+			_harbour = e.merged({"name": n})
+			continue
 		if e.get("loop", false):
 			_theme = e.merged({"name": n})
 			continue
@@ -165,6 +183,7 @@ func _process(dt: float) -> void:
 					_queued = -1
 					_next_at = _now + 30.0
 	_step_sea(dt)
+	_step_port(dt)
 
 
 func _play(k: int, stream: AudioStream) -> void:
@@ -234,8 +253,49 @@ func _step_sea(dt: float) -> void:
 	_sea.volume_db = linear_to_db(maxf(SEA_VOL * float(_theme.gain) * _sea_g, 1e-6))
 
 
+## The harbour's theme on or off: from the top each time you come back to
+## port (unless it hadn't quite died away yet).
+func harbour(on: bool) -> void:
+	if on == _port_on or _harbour.is_empty():
+		return
+	_port_on = on
+	if on and _port.stream == null and not _port_loading:
+		_port_loading = ResourceLoader.load_threaded_request(DIR + str(_harbour.name) + ".ogg") == OK
+
+
+func _step_port(dt: float) -> void:
+	if _port_loading:
+		var path := DIR + str(_harbour.name) + ".ogg"
+		var st := ResourceLoader.load_threaded_get_status(path)
+		if st != ResourceLoader.THREAD_LOAD_IN_PROGRESS:
+			_port_loading = false
+			if st == ResourceLoader.THREAD_LOAD_LOADED:
+				_port.stream = ResourceLoader.load_threaded_get(path)
+	if _port_on:
+		if _port.stream == null:
+			return
+		if not _port.playing:
+			_port_g = 0.0
+			_port.play()
+			_port.stream_paused = paused
+		_port_g = minf(1.0, _port_g + dt / PORT_IN)
+	elif _port.playing:
+		_port_g -= dt / PORT_OUT
+		if _port_g <= 0.0:
+			_port.stop()
+			_port_g = 0.0
+			return
+	else:
+		return
+	_port.volume_db = linear_to_db(maxf(float(_harbour.gain) * _port_g, 1e-6))
+
+
 ## What is playing, for the smoke test.
 func state() -> String:
+	if _port.playing and _port_on:
+		return "the harbour's theme playing"
+	if _port_on:
+		return "the harbour's theme loading"
 	if _sea.playing and _sea_on:
 		return "the high seas' theme playing"
 	if _cur >= 0:

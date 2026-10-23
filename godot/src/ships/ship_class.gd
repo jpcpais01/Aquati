@@ -42,6 +42,9 @@ var damage := 21.0
 var muzzle_speed := 58.0
 ## Buoyancy response (higher = calmer).
 var mass := 1.0
+## How she compares, 0..1 each (the harbour's bars): speed, agility, armour,
+## hull and firepower.
+var stats := {}
 
 const DEFS := {
 	"sloop": {
@@ -53,6 +56,7 @@ const DEFS := {
 		"bowsprit": 5.5, "jib": true, "cannons_per_side": 3, "cannon_span": Vector2(0.3, 0.72), "chasers": 0,
 		"hp": 260.0, "armor": 0.08, "max_speed": 15.5, "accel": 0.55, "turn_rate": 0.95, "reload": 2.4,
 		"damage": 21.0, "muzzle_speed": 58.0, "mass": 1.0,
+		"stats": {"speed": 1.0, "agility": 1.0, "armour": 0.25, "hull": 0.33, "firepower": 0.3},
 	},
 	"brig": {
 		"name": "Brigantine", "title": "Corsair",
@@ -67,6 +71,7 @@ const DEFS := {
 		"bowsprit": 6.5, "jib": true, "cannons_per_side": 5, "cannon_span": Vector2(0.27, 0.78), "chasers": 1,
 		"hp": 430.0, "armor": 0.24, "max_speed": 12.2, "accel": 0.38, "turn_rate": 0.62, "reload": 3.2,
 		"damage": 24.0, "muzzle_speed": 60.0, "mass": 1.6,
+		"stats": {"speed": 0.72, "agility": 0.62, "armour": 0.55, "hull": 0.6, "firepower": 0.6},
 	},
 	"galleon": {
 		"name": "Galleon", "title": "Leviathan",
@@ -82,6 +87,7 @@ const DEFS := {
 		"bowsprit": 8.0, "jib": true, "cannons_per_side": 8, "cannon_span": Vector2(0.2, 0.82), "chasers": 2,
 		"hp": 760.0, "armor": 0.4, "max_speed": 8.8, "accel": 0.24, "turn_rate": 0.38, "reload": 4.2,
 		"damage": 26.0, "muzzle_speed": 62.0, "mass": 2.6,
+		"stats": {"speed": 0.42, "agility": 0.3, "armour": 0.95, "hull": 1.0, "firepower": 1.0},
 	},
 }
 
