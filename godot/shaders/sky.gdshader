@@ -2,7 +2,9 @@
 // cirrus on fair days, the bellies of the cumulus overhead (whose shadows are
 // the very ones drifting across the sea and the islands), a hot
 // limb-darkened sun hidden by any cloud, and a horizon that melts into the
-// far, hazed sea. The sea mirrors the very same sky_color(), so the two
+// far, hazed sea; by night the stars, the Milky Way, the odd shooting star
+// and the moon in its phase (night_sky.gdshaderinc), shining through the
+// gaps in the clouds. The sea mirrors the very same sky_color(), so the two
 // always agree.
 //
 // The radiance pass (ambient and reflections for ships and islands) is the
@@ -12,6 +14,7 @@
 shader_type sky;
 
 #include "res://shaders/inc/atmos.gdshaderinc"
+#include "res://shaders/inc/night_sky.gdshaderinc"
 
 /// Bumped by the game to have the radiance map redrawn as the hour turns
 /// (the sky reads the hour from shader globals, which don't mark it dirty).
@@ -69,6 +72,14 @@ void sky() {
 		col = sky_air(vec3(d.x, max(h, 0.0), d.z), 0.0);
 	} else {
 		col = sky_color(vec3(d.x, max(h, 0.0), d.z));
+		// above the clouds: the stars, the galaxy and the moon, each star a
+		// pixel across however far the lens zooms (pix: one pixel, in radians)
+		float pix = length(fwidth(d)) * 0.75;
+		vec3 stars = night_sky(d, pix, col);
+		vec4 mn = moon_disc(d, pix);
+		stars = stars * (1.0 - mn.a) + mn.rgb;
+		// the faint airglow banding the horizon on the darkest nights
+		stars += vec3(0.006, 0.011, 0.007) * night * exp(-max(h, 0.0) * 14.0) * (1.0 - weather.x);
 		float cover = 0.0;
 		if (h > 0.0) {
 			vec3 eye = POSITION;
@@ -80,17 +91,20 @@ void sky() {
 			float ci = texture(cloud_noise, cs + clouds.xy * 0.4).g;
 			float patchy = smoothstep(0.5, 0.75, texture(cloud_noise, uv_c * 0.35 + 0.5).r);
 			float cirrus = smoothstep(0.55, 0.85, ci) * patchy * (1.0 - smoothstep(0.3, 0.7, weather.x)) * smoothstep(0.04, 0.35, h);
+			col += stars * (1.0 - cirrus * 0.6);
 			float sd6 = pow(max(dot(d, sun_dir), 0.0), 6.0);
 			col = mix(col, light_tint * 0.95 + sun_color * 0.1 * (0.6 + sd6), cirrus * 0.3 * (1.0 - night * 0.6));
 			vec4 cu = deck(eye, d, hz);
 			col = mix(col, cu.rgb, cu.a);
 			cover = cu.a;
 		}
-		// the key light itself by day: a hot disc with a darkened limb, hidden behind any cloud
+		// the key light itself by day: a hot disc with a darkened limb, hidden
+		// behind any cloud (once the key is the moon, the moon above stands in for it)
 		float sd = max(dot(d, sun_dir), 0.0);
 		float disc = smoothstep(0.99955, 0.99975, sd);
 		float limb = 0.55 + 0.45 * smoothstep(0.99955, 0.99992, sd);
-		col += sun_color * disc * limb * 7.0 * (1.0 - cover) * (1.0 - weather.w * 0.7) * (1.0 - night);
+		float sun_key = step(dot(sun_dir, moon.xyz), 0.9999);
+		col += sun_color * disc * limb * 7.0 * (1.0 - cover) * (1.0 - weather.w * 0.7) * (1.0 - night) * sun_key;
 	}
 	// low mist swallows the lower sky; the horizon melts into the far, hazed water
 	col = mix(col, hz, weather.w * 0.75 * (1.0 - smoothstep(0.0, 0.5, h)));

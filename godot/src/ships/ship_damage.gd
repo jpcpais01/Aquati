@@ -886,6 +886,9 @@ func on_death() -> void:
 	# lights out: lanterns dark, the great cabin's windows black
 	(_skin["stern"] as ShaderMaterial).set_shader_parameter("lit", 0.0)
 	(_skin["parts"] as ShaderMaterial).set_shader_parameter("glow_gain", 0.0)
+	var halos := s.model.get_node_or_null("Halos") as Node3D
+	if halos != null:
+		halos.visible = false
 	# cargo and timber spill out
 	var debris := s.world.debris
 	if debris == null:

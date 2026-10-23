@@ -14,14 +14,14 @@ way and keep the APK as a workflow artifact.
 | Folder | What lives there |
 | --- | --- |
 | `src/core` | Settings (quality tiers), small maths helpers |
-| `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky, the hour and the weather (`Atmosphere`: eight kinds of weather that follow one another, the wind backing and veering with them); the archipelagos (`Region`), their ground (`Ground`) and their planting (`Flora`) |
+| `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky, the hour and the weather (`Atmosphere`: eight kinds of weather that follow one another, the wind backing and veering with them, the stars wheeling through the night and the moon in its phase), the sea-spark blooms on the high seas (`SeaGlow`); the archipelagos (`Region`), their ground (`Ground`) and their planting (`Flora`) |
 | `src/render` | The colour grade (a GPU-baked 3D LUT) |
 | `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, battle damage, dismasting, re-rigging and sinking (`ShipDamage`), the pirate captains (`PirateAI`), the crews on deck (`ShipCrew` for a ship's sailors and their deck, `Crew` and `CrewView` to run and draw every crew afloat) |
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave, the wreckage afloat (`Debris`), the rain, the lightning and the spindrift a gale tears off the crests (all three drawn from one static buffer each, animated on the GPU) |
 | `src/game` | The voyage scene, the camera rig, the controls; the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time |
 | `src/ui` | The HUD, the touch helm, the sail lever, the fire pad, the shot pie, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`) |
-| `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
-| `art` | The tiling textures every shader samples, the baked figurehead sculptures and the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) |
+| `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, the night sky, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
+| `art` | The tiling textures every shader samples, the moon's face (baked from the web game's own), the baked figurehead sculptures and the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
 | `tools` | The CI checks and the asset generators (`tools/crew` bakes the sailor from the web game's own code) |
 
@@ -46,7 +46,7 @@ the view over toward the horizon).
 
 Handy flags (after `--`): `--hour 18.5` sets the time of day (or `--time
 dusk` by name), `--wx storm` holds a weather (clear, fair, cloudy, mist, rain,
-storm, calm, hot), `--strike` brings a bolt of lightning down just before a
+storm, calm, hot, glow), `--strike` brings a bolt of lightning down just before a
 shot, `--view 0..3`
 (or `--zoom 0..1 --tilt 0..1`) picks a camera, `--at X,Z` and `--heading R`
 start somewhere else, `--shot out.png` saves a frame and quits (after

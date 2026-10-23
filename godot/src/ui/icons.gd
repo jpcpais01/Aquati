@@ -43,6 +43,7 @@ const SKY := {
 	"mist": '<g stroke="#d8e6ee" stroke-width="1.8" stroke-linecap="round"><path d="M4 8h12M7 12h13M3 16h11M8 20h9"/></g>',
 	"calm": '<path d="M6.4 12a5.6 5.6 0 0 1 11.2 0z" fill="#ffd27a"/><path d="M8.2 14.2a3.8 3.8 0 0 0 7.6 0z" fill="#ffd27a" opacity="0.45"/><g stroke="#d8eef7" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 13h19"/><path d="M5 18.5h5M14 18.5h5" opacity="0.6"/></g>',
 	"calm-moon": '<path d="M13.4 3.4a5 5 0 1 0 3.2 7.6A4 4 0 0 1 13.4 3.4z" fill="#dfe8ff"/><path d="M13.4 22.6a5 5 0 1 1 3.2-7.6A4 4 0 0 0 13.4 22.6z" fill="#dfe8ff" opacity="0.35"/><path d="M2.5 13h19" stroke="#b9c8e6" stroke-width="1.6" stroke-linecap="round"/>',
+	"glow": '<path d="M14.5 2.6a5 5 0 1 0 3.2 7.6A4 4 0 0 1 14.5 2.6z" fill="#dfe8ff"/><g fill="none" stroke="#46c8ff" stroke-width="1.7" stroke-linecap="round"><path d="M2.5 16q2.4-2 4.8 0t4.8 0 4.8 0 4.6 0"/><path d="M4.5 20.5q2.4-2 4.8 0t4.8 0 4.8 0" opacity="0.6"/></g><circle cx="6" cy="13" r="0.9" fill="#46c8ff"/><circle cx="17" cy="12.6" r="0.7" fill="#46c8ff"/>',
 	"hot": '<circle cx="12" cy="8.5" r="5.2" fill="#ffb347"/><circle cx="12" cy="8.5" r="3" fill="#ffe08a"/><g fill="none" stroke="#ffd27a" stroke-width="1.5" stroke-linecap="round"><path d="M3.5 17.2q2-1.6 4 0t4 0 4 0 4 0"/><path d="M5.5 21q2-1.6 4 0t4 0 4 0" opacity="0.6"/></g>',
 	"lock": '<g transform="scale(1.5)"><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="#ffd27a" stroke-width="1.8"/><rect x="3" y="7" width="10" height="8" rx="2" fill="#ffd27a"/></g>',
 }

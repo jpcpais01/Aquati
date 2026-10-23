@@ -107,6 +107,22 @@ night={
 "type": "float",
 "value": 0.0
 }
+star_rot={
+"type": "mat3",
+"value": Basis(1, 0, 0, 0, 1, 0, 0, 0, 1)
+}
+moon={
+"type": "vec4",
+"value": Vector4(0, 1, 0, 0)
+}
+moon_light={
+"type": "vec4",
+"value": Vector4(0, 1, 0, 1)
+}
+sea_glow={
+"type": "float",
+"value": 0.0
+}
 surf={
 "type": "vec4",
 "value": Vector4(0.35, 0.32, 0.0, 0.0)

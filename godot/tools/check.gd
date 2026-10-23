@@ -5,10 +5,11 @@ extends SceneTree
 ## and agrees with the game on every id, each deck takes its crew, the touch
 ## shot pie opens and picks as a finger works it, the zoom runs out to its
 ## lean and back and a pinch is never taken for the helm, every weather
-## settles in whole and the sky turns from one to the next without a jump, a
-## bolt of lightning comes down where it can be seen, and the baked world
-## loads whole (both archipelagos, their ground maps and their planting).
-## Prints CHECK OK.
+## settles in whole and the sky turns from one to the next without a jump,
+## the night sky wheels and the moon keeps its phase, the sea-spark blooms lie
+## where they should, a bolt of lightning comes down where it can be seen,
+## and the baked world loads whole (both archipelagos, their ground maps and
+## their planting). Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
@@ -26,6 +27,7 @@ func _initialize() -> void:
 	_check_pie()
 	_check_zoom()
 	_check_weather()
+	_check_night()
 	_check_world()
 	# the helm's reach is a share of the window, and a strike is aimed by the
 	# lens: those checks wait for the tree to run
@@ -95,6 +97,11 @@ func _check_ship(id: String, budget: int) -> void:
 		print("  %s/%s: %d triangles, %d inside out%s" % [id, mi.name, tris, flipped, _lods(arrays)])
 		if share > 0.01:
 			_fail("%s/%s: %.1f%% of faces point against their normals" % [id, mi.name, share * 100.0])
+	# every lantern and cabin window wears its halo after dark
+	var halos := model.get_node_or_null("Halos") as MeshInstance3D
+	var lights := model.lamps.size() + model.windows.size()
+	if model.lamps.is_empty() or model.windows.size() % 4 != 0 or halos == null or halos.mesh.surface_get_array_len(0) != lights * 4:
+		_fail("%s: %d lanterns and %d cabin windows, and their halos don't match" % [id, model.lamps.size(), model.windows.size()])
 	print("%s: %d triangles, built in %.0f ms" % [id, total, ms])
 	if total > budget:
 		_fail("%s: %d triangles is over its budget of %d" % [id, total, budget])
@@ -424,6 +431,71 @@ func _check_weather() -> void:
 	if steps != 4:
 		_fail("weather: only %d of 4 steps as expected (%d kinds seen in an hour, largest step %.3f)" % [steps, seen.size(), jump])
 	print("weather: %d of 4 steps as expected; an hour of it turned through %d kinds, %d announced" % [steps, seen.size(), turns[0]])
+
+
+## The night: the stars wheel about the pole as the hours turn, the moon
+## shows only after dark and is lit just as far as its phase says, the
+## sea-spark blooms lie out on the crossing to Las Brumas (two of them) and
+## nowhere near an archipelago, and the glowing seas keep to the dark and to
+## the blooms.
+func _check_night() -> void:
+	var a := Atmosphere.new()
+	var steps := 0
+	a.set_mode(&"clear", true)
+	a.set_hour(12.0)
+	a.update(0.0)
+	var day := [a.moon_show, a.sea_glow]
+	a.set_hour(23.0)
+	a.update(0.0)
+	var r1 := a.star_rot
+	var lit_ok := true
+	for ph: float in [0.0, 0.2, 0.5, 0.8]:
+		a.moon_phase = ph
+		a.update(0.0)
+		lit_ok = lit_ok and absf((1.0 + a.moon_sun.dot(-a.moon_dir)) * 0.5 - a.moon_lit) < 0.01 and absf(a.moon_sun.length() - 1.0) < 1e-3
+	var night := [a.moon_show, a.sea_glow]
+	steps += 1 if day[0] == 0.0 and day[1] == 0.0 and night[0] > 0.5 and night[1] > 0.5 and lit_ok else 0
+	a.set_hour(1.0)
+	a.update(0.0)
+	var r2 := a.star_rot
+	var pole := Atmosphere.POLE
+	var east := Atmosphere.EAST
+	steps += 1 if absf(r1.determinant() - 1.0) < 1e-4 and (r1 * pole - pole).length() < 1e-4 and (r2 * east - r1 * east).length() > 0.3 else 0
+	# two blooms along the crossing, none round either archipelago
+	var centres := PackedVector2Array([Vector2.ZERO, Vector2(6600.0, -2800.0)])
+	var runs := 0
+	var inside := false
+	var peak := 0.0
+	for i in 401:
+		var t := i / 400.0
+		var g := SeaGlow.at(6600.0 * t, -2800.0 * t, centres)
+		peak = maxf(peak, g)
+		if g > 0.3 and not inside:
+			runs += 1
+		inside = g > 0.3
+	var near := 0.0
+	for i in 64:
+		var ang := TAU * i / 64.0
+		for c in centres:
+			near = maxf(near, SeaGlow.at(c.x + cos(ang) * 1300.0, c.y + sin(ang) * 1300.0, centres))
+	steps += 1 if runs == 2 and peak > 0.95 and near == 0.0 else 0
+	# the glowing seas: only by night, only in a bloom (a held one keeps a little longer)
+	a.bloom = 0.8
+	var dark_in := a.needs(&"glow") == ""
+	a.bloom = 0.2
+	var edge := a.needs(&"glow") != "" and a.needs(&"glow", true) == ""
+	a.bloom = 0.0
+	var out := a.needs(&"glow") != ""
+	a.bloom = 0.8
+	a.set_hour(15.0)
+	var noon := a.needs(&"glow") != ""
+	a.set_hour(23.0)
+	a.set_mode(&"glow", true)
+	a.update(0.0)
+	steps += 1 if dark_in and edge and out and noon and a.kind == &"glow" and a.sea_glow >= 0.6 else 0
+	if steps != 4:
+		_fail("night: only %d of 4 steps as expected (moon %.2f / %.2f, blooms %d peaking %.2f, %.2f near the isles)" % [steps, day[0], night[0], runs, peak, near])
+	print("night: %d of 4 steps as expected; %d blooms on the crossing" % [steps, runs])
 
 
 ## A bolt of lightning comes down out ahead of the lens, from the cloud base

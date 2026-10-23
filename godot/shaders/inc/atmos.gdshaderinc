@@ -44,6 +44,9 @@ global uniform vec4 sky_fx;
 global uniform vec4 veil;
 /// a lightning strike lighting the sea round it: xy where (x, z), z its reach (m), w its light
 global uniform vec4 strike;
+/// world directions into the star sphere, which wheels about the pole of the
+/// sun's daily circle, so the same stars rise at the same hour every night
+global uniform mat3 star_rot;
 
 /// the cloud deck's flat base (m), and its field's uv per metre of ground
 const float CLOUD_ALT = 700.0;
@@ -82,6 +85,31 @@ vec3 sky_air(vec3 d, float flash) {
 
 vec3 sky_color(vec3 d) {
 	return sky_air(d, sky_fx.y);
+}
+
+vec3 hash33(vec3 p) {
+	p = fract(p * vec3(0.1031, 0.103, 0.0973));
+	p += dot(p, p.yxz + 33.33);
+	return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+// The bright stars alone, as the sea mirrors them (the dome draws the whole
+// night sky, night_sky.gdshaderinc): the same wheeling sphere, each a fixed
+// small point.
+vec3 star_field(vec3 d) {
+	if (night < 0.01 || d.y <= 0.0) {
+		return vec3(0.0);
+	}
+	vec3 ds = star_rot * d;
+	vec3 c = floor(ds * 70.0);
+	vec3 h = hash33(c);
+	if (h.x > 0.32) {
+		return vec3(0.0);
+	}
+	vec3 sd = normalize(c + 0.2 + 0.6 * hash33(c * 1.71 + 41.7));
+	float a = length(ds - sd) * 520.0;
+	float b = pow(h.y, 12.0) * 1.2 * exp(-a * a);
+	return vec3(0.85, 0.9, 1.0) * b * night * night * (1.0 - weather.x) * smoothstep(0.0, 0.25, d.y);
 }
 
 // The colour of the air in front of something far off along d: the horizon

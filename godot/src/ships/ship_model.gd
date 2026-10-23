@@ -15,7 +15,8 @@ extends Node3D
 ##   in another, and close-range detail (lanyards, wooldings, buckets, the cat)
 ##   in a third that only draws near the camera;
 ## - the rigging as one ribbon mesh;
-## - each sail, and the two flags, as their own small meshes on pivots.
+## - each sail, and the two flags, as their own small meshes on pivots;
+## - the lanterns' halos after dark, a card turned to the eye per lamp.
 ##
 ## Every mast, and the bowsprit, is a Spar that a ball can snap: where it
 ## breaks is settled as she's built, everything above the break is marked as
@@ -42,7 +43,15 @@ const SHADERS := {
 	"rope": preload("res://shaders/ship_rope.gdshader"),
 	"sail": preload("res://shaders/ship_sail.gdshader"),
 	"flag": preload("res://shaders/ship_flag.gdshader"),
+	"halo": preload("res://shaders/lamp_halo.gdshader"),
 }
+## A halo card's corners (shaders/lamp_halo.gdshader).
+const CARD: Array[Vector2] = [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
+## How far past its lamp a halo card can reach (m): a lamp a long way off wears a wide one.
+const HALO_MARGIN := 12.0
+## A cabin window's halo: its size (a lantern's is 1) and how bright, against a lantern's.
+const WINDOW_HALO := 1.1
+const WINDOW_GLOW := 0.5
 
 ## Shared materials by class and livery: a fleet of one kind compiles nothing
 ## new. The shipyard builds on a worker thread, so the cache is locked.
@@ -66,6 +75,12 @@ var deck_props := PackedVector3Array()
 var chimney := Vector3.ZERO
 ## The middle of the figurehead, for cameras.
 var figure_at := Vector3.ZERO
+## The lanterns' glass (model frame) and their size: x, y, z, size. They
+## wear halos after dark (the "Halos" mesh) and light the water round her.
+var lamps := PackedVector4Array()
+## The great cabin's windows across the transom (model frame), which wear
+## halos after dark too.
+var windows := PackedVector3Array()
 
 ## {node, tier, fore_aft, pivot, spar (the Spar it hangs from)}.
 var sails: Array[Dictionary] = []
@@ -191,7 +206,7 @@ func _new_material(kind: String) -> ShaderMaterial:
 			m.set_shader_parameter("c_boot", l.boot)
 			m.set_shader_parameter("c_strake", l.strake)
 			m.set_shader_parameter("c_trim", l.trim)
-			m.set_shader_parameter("rows", 1 if cls.stern_castle.is_empty() else (3 if cls.id == "galleon" else 2))
+			m.set_shader_parameter("rows", _window_rows())
 		"sail":
 			m.set_shader_parameter("c_sail", l.sail)
 			m.set_shader_parameter("c_seam", l.sail_seam)
@@ -205,6 +220,11 @@ func _new_material(kind: String) -> ShaderMaterial:
 			# the Brethren fly their colours ragged and shot through
 			m.set_shader_parameter("tattered", l.emblem == "skull")
 	return m
+
+
+## Rows of windows in the great cabin: one, two under a stern castle, three in a galleon.
+func _window_rows() -> int:
+	return 1 if cls.stern_castle.is_empty() else (3 if cls.id == "galleon" else 2)
 
 
 ## The heraldry shaders' emblem number for a livery.
@@ -275,6 +295,16 @@ func _build_hull() -> void:
 			var d := a + nc + 1
 			tidx.append_array([a, d, a + 1, a + 1, d, d + 1])
 	_stern_mesh = _uv_mesh(tp, tuv, tidx)
+	# the great cabin's windows, where the stern shader paints them
+	# (ship_stern.gdshaderinc: four to a row, from the taffrail down)
+	for r in _window_rows():
+		var h := 0.88 - 0.15 * r
+		var y := lerpf(b0, top0, h)
+		var hw := s.half_width_at_y(t0, y)
+		for i in 4:
+			var x := (0.2 + i / 3.0 * 0.6 - 0.5) * 2.2 * w0
+			var u := clampf(x / maxf(hw, 0.01), -1.0, 1.0)
+			windows.append(Vector3(x, y, z0 - bulge * (1.0 - u * u) * pow(maxf(sin(PI * h), 0.0), 0.6)))
 
 	# inner bulwark walls, facing in
 	_core.paint(MeshKit.shade(livery.strake, 0.8), MeshKit.WOOD, 0.0)
@@ -1529,6 +1559,7 @@ func _build_details() -> void:
 		_core.spar(Vector3(x, ty, zz), Vector3(x, ty + 0.6 * k, zz), 0.05, 0.04, 5)
 		_small.paint(Color(1.0, 0.64, 0.28).linear_to_srgb(), MeshKit.GLOW, 0.0)
 		_small.sphere(Transform3D(Basis.from_scale(Vector3(1, 1.35, 1)), Vector3(x, ty + 0.82 * k, zz)), 0.2 * k, 8, 6)
+		lamps.append(Vector4(x, ty + 0.82 * k, zz, k))
 		_core.paint(IRON_PAINT, MeshKit.IRON, 0.03)
 		_core.cone(_at(Vector3(x, ty + 1.15 * k, zz)), 0.24 * k, 0.24 * k, 8)
 		_core.spar(Vector3(x, ty + 0.53 * k, zz), Vector3(x, ty + 0.63 * k, zz), 0.12 * k, 0.17 * k, 8)
@@ -1758,6 +1789,10 @@ func _finish() -> void:
 		fine.visibility_range_end_margin = 8.0
 	if not _ropes.is_empty():
 		_mesh_child(self, _ropes.commit(), shared_material("rope"), false).name = "Rigging"
+	if not lamps.is_empty():
+		var halos := _mesh_child(self, _halo_mesh(), shared_material("halo"), false)
+		halos.name = "Halos"
+		halos.extra_cull_margin = HALO_MARGIN
 	# everything above each break, as the one mesh that goes over the side
 	for sp in spars:
 		var kit := MeshKit.new()
@@ -1768,6 +1803,46 @@ func _finish() -> void:
 	_small = null
 	_fine = null
 	_ropes = null
+
+
+## The halos of the lanterns and the cabin windows: four vertices at each
+## light, the card's corner in UV, the light's size and the seed of its
+## flicker (the glass's own, at its heart: render/lamps.ts) in UV2, and in
+## COLOR how bright it is (r) and whether it is a window shining out aft (g).
+func _halo_mesh() -> ArrayMesh:
+	var pos := PackedVector3Array()
+	var uv := PackedVector2Array()
+	var uv2 := PackedVector2Array()
+	var col := PackedColorArray()
+	var idx := PackedInt32Array()
+	var lights: Array[Vector4] = []
+	var kinds := PackedColorArray()
+	for l in lamps:
+		lights.append(l)
+		kinds.append(Color(1.0, 0.0, 0.0))
+	for w in windows:
+		lights.append(Vector4(w.x, w.y, w.z, WINDOW_HALO))
+		kinds.append(Color(WINDOW_GLOW, 1.0, 0.0))
+	for i in lights.size():
+		var l := lights[i]
+		var o := pos.size()
+		var at := Vector3(l.x, l.y, l.z)
+		for corner in CARD:
+			pos.append(at)
+			uv.append(corner)
+			uv2.append(Vector2(l.w, at.dot(Vector3(0.83, 1.31, 0.57))))
+			col.append(kinds[i])
+		idx.append_array([o, o + 1, o + 2, o, o + 2, o + 3])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = pos
+	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2
+	arrays[Mesh.ARRAY_COLOR] = col
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 ## Total triangles drawn at full detail (for the budget).

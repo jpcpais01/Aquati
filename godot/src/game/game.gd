@@ -110,6 +110,12 @@ var _wind_pivot := Vector2.ZERO
 ## The last strike: where (x, z), how far its light reaches (m) and how bright.
 var _strike := Vector4(0.0, 0.0, 1.0, 0.0)
 var _high_seas := false
+## Every archipelago's centre (x, z): the sea-spark blooms lie out past them (SeaGlow).
+var _glow_centres := PackedVector2Array()
+## Sailing through a sea-spark bloom on a dark night (the crew have said so).
+var _in_bloom := false
+## The lanterns the sea mirrors this frame (Ocean.set_lamps).
+var _lamp_list: Array[Vector4] = []
 ## A weather the sky badge showed but couldn't set, and when (ms): a tap soon after moves on past it.
 var _refused := &""
 var _refused_at := 0
@@ -279,6 +285,7 @@ func _setup_sky() -> void:
 func _build_environment() -> void:
 	sky_mat = ShaderMaterial.new()
 	sky_mat.shader = preload("res://shaders/sky.gdshader")
+	sky_mat.set_shader_parameter("moon_tex", preload("res://art/moon.png"))
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	# the radiance map lights and reflects everything: redrawn over a few frames as the hour turns
@@ -367,6 +374,7 @@ func _build_islands() -> void:
 	world.regions = regions
 	for r in regions:
 		isles_total += r.islands.size()
+		_glow_centres.append(Vector2(r.centre.x, r.centre.z))
 		var g := Ground.new()
 		g.build(r, Settings.quality == Settings.Quality.LOW)
 		add_child(g)
@@ -376,6 +384,7 @@ func _build_islands() -> void:
 		f.visible = not _args.has("noflora")
 		add_child(f)
 		floras.append(f)
+	ocean.set_glow_centres(_glow_centres)
 
 
 ## Points the sea at the archipelago nearest (x, z), as you cross the high seas.
@@ -626,6 +635,7 @@ func _tick(real_dt: float) -> void:
 	# and the clouds' drift all follow it) and the sea state, and the swell
 	# comes round after the wind
 	_pick_region(camera.target.x, camera.target.z)
+	atmosphere.bloom = SeaGlow.at(player.pos.x, player.pos.z, _glow_centres)
 	_seas()
 	atmosphere.update(dt)
 	var w := world.wind
@@ -677,6 +687,7 @@ func _tick(real_dt: float) -> void:
 	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
 	ocean.follow(camera.target, camera.distance())
+	_lamps()
 	# the wreckage afloat, on the very swell the ocean draws (and shouldered aside by hulls still moving)
 	RenderingServer.global_shader_parameter_set("sea_clock", fmod(world.time, Debris.CLOCK_WRAP))
 	var pushers: Array[Ship] = []
@@ -782,6 +793,36 @@ func _seas() -> void:
 		hud.toast(near.title, near.motto, 4.0)
 	if not _high_seas:
 		atmosphere.climate = &"mist" if near.id == "brumas" else &"home"
+	# out in a sea-spark bloom on a dark night, the crew notice the sea lighting up
+	var glow := atmosphere.sea_glow
+	var bloom := atmosphere.bloom
+	if glow > 0.5 and bloom > 0.4 and not _in_bloom:
+		hud.toast("The sea is glowing", "A bloom of sea-sparks: every wake and breaking wave lights up blue", 4.5)
+	_in_bloom = glow > 0.35 and bloom > (0.2 if _in_bloom else 0.4)
+
+
+## The lanterns lit round the view after dark, the nearest ships' first, for
+## the sea to mirror: their light pooled on the water under them and broken
+## into glints on the ripples.
+func _lamps() -> void:
+	_lamp_list.clear()
+	var on := MathX.smooth(0.05, 0.8, atmosphere.night)
+	if on > 0.0:
+		var t := camera.target
+		var reach := camera.ground_radius() + 50.0
+		var near: Array[Ship] = []
+		for s in world.ships:
+			if s.alive and s.model.visible and Vector2(s.pos.x - t.x, s.pos.z - t.z).length() < reach:
+				near.append(s)
+		near.sort_custom(func(a: Ship, b: Ship) -> bool:
+			return Vector2(a.pos.x - t.x, a.pos.z - t.z).length_squared() < Vector2(b.pos.x - t.x, b.pos.z - t.z).length_squared())
+		for s in near:
+			var xf := s.model.global_transform
+			for l in s.model.lamps:
+				if _lamp_list.size() < Ocean.MAX_LAMPS:
+					var at := xf * Vector3(l.x, l.y, l.z)
+					_lamp_list.append(Vector4(at.x, at.y, at.z, on * l.w))
+	ocean.set_lamps(_lamp_list)
 
 
 ## Rain, lightning and spindrift round the view; a strike's flash lights the

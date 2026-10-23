@@ -15,6 +15,7 @@ import { REGIONS } from '../../../src/world/regions';
 import { Vegetation } from '../../../src/world/vegetation';
 import { buildShore } from '../../../src/world/shore';
 import { createCausticTexture, createFoamTexture, createNoiseTexture, createWaterNormalTexture } from '../../../src/render/textures';
+import { createMoonTexture } from '../../../src/render/nightSky';
 import { findPortSite, findTradeSites, portClearings } from '../../../src/port/site';
 import { BRUMAS_NAMES, Hazards, NAMES as MAELSTROM_NAMES } from '../../../src/game/hazards';
 import { campClearings, findCampSites } from '../../../src/shore/ground';
@@ -642,15 +643,17 @@ for (const [ri, t] of [home, mist].entries()) {
   });
 }
 
-// the noise, ripple, caustic and foam maps, byte for byte as the web game
-// generates them at start: the coral heads, the seagrass, the caustics and
-// the lace in the foam lie exactly where they do there
+// the noise, ripple, caustic and foam maps and the moon's face, byte for
+// byte as the web game generates them at start: the coral heads, the
+// seagrass, the caustics, the lace in the foam and the moon's seas and
+// craters lie exactly where they do there
 const ART = join(OUT, '..', 'art');
 for (const [name, tex] of [
   ['noise', createNoiseTexture()],
   ['water_normal', createWaterNormalTexture()],
   ['caustics', createCausticTexture()],
   ['foam', createFoamTexture()],
+  ['moon', createMoonTexture()],
 ] as const) {
   const img = tex.image as { data: Uint8Array; width: number; height: number };
   writeFileSync(join(ART, `${name}.png`), png(img.width, img.height, img.data));
