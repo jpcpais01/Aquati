@@ -1,17 +1,21 @@
 class_name Hud
 extends CanvasLayer
 ## The voyage HUD, in the web game's glass and gold: who she is and how her
-## hull holds up, with the gold, ships sunk and isles charted under it (top
-## left), the wind and the hour with the camera button (top right), the
-## canvas set and the speed in knots (bottom centre), the bars over enemy
-## ships and the numbers rising off a fight, and on touch screens the helm
-## ring, the sail lever (bottom left) and the guns (bottom right). Built in
-## code; each frame only changes text when the value it shows has changed.
+## hull holds up, with the gold, the hold (a tap peeks inside), ships sunk
+## and isles charted under it (top left), the wind and the hour with the
+## camera button (top right), the canvas set and the speed in knots with the
+## shot rack beside them (bottom centre), the bars over enemy ships and the
+## words rising off a fight or a haul, and on touch screens the helm ring,
+## the sail lever (bottom left) and the guns with the shot button over them
+## (bottom right). Built in code; each frame only changes text when the value
+## it shows has changed.
 
 signal sail_set(level: int)
 signal view_pressed
 ## A gun button: +1 port, -1 starboard, 0 the big Fire.
 signal fire_pressed(side: int)
+## A kind of shot picked off the rack or the fan (Ammo).
+signal ammo_picked(kind: int)
 
 var controls: Controls
 
@@ -28,15 +32,29 @@ var _hull_low := false
 var _hull_frac := -1.0
 var _chips: HBoxContainer
 var _gold: _Chip
+var _hold: _Chip
 var _kills: _Chip
 var _isles: _Chip
+var _peek: HoldPeek
 var _status: Control
 var _bars: EnemyBars
 var _floaters: Floaters
 var _pad: FirePad
 var _touch_ui := false
 var _pill: PanelContainer
+var _pill_box: StyleBoxFlat
 var _pips: _SailPips
+var _rack: ShotRack
+var _rack_sep: Control
+var _fan: ShotFan
+## The loaded shot's name and what it does, over the rack for a moment.
+var _tag: PanelContainer
+var _tag_name: Label
+var _tag_line: Label
+var _tag_kind := -1
+var _tag_left := 0.0
+var _tag_hover := false
+var _tag_e := 0.0
 var _speed: Label
 var _nav: PanelContainer
 var _wind: _WindArrow
@@ -115,11 +133,17 @@ func _ready() -> void:
 	_chips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_chips.add_theme_constant_override("separation", roundi(4.0 * k))
 	_gold = _Chip.new("coin", "0")
+	_hold = _Chip.new("crate", "0/10", true)
 	_kills = _Chip.new("skull", "0")
 	_isles = _Chip.new("isle", "0")
-	for c: _Chip in [_gold, _kills, _isles]:
+	for c: _Chip in [_gold, _hold, _kills, _isles]:
 		_chips.add_child(c)
 	_status.add_child(_chips)
+	# a tap on the hold peeks inside
+	_peek = HoldPeek.new()
+	_peek.opener = _hold
+	_hold.pressed.connect(func() -> void: _peek.toggle())
+	root.add_child(_peek)
 
 	# the wind, the hour, the camera
 	_nav = PanelContainer.new()
@@ -137,10 +161,14 @@ func _ready() -> void:
 	_view.pressed.connect(func() -> void: view_pressed.emit())
 	root.add_child(_view)
 
-	# canvas and speed
+	# canvas and speed, and on a desktop the shot rack beside them
 	_pill = PanelContainer.new()
 	_pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_pill.add_theme_stylebox_override("panel", HudStyle.panel(999, Vector2(18, 6)))
+	_pill_box = HudStyle.panel(999, Vector2(18, 6))
+	_pill.add_theme_stylebox_override("panel", _pill_box)
+	var console := HBoxContainer.new()
+	console.add_theme_constant_override("separation", roundi(4.0 * k))
+	console.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var helm := HBoxContainer.new()
 	helm.add_theme_constant_override("separation", 12)
 	helm.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -157,8 +185,37 @@ func _ready() -> void:
 	sp.add_child(_speed)
 	sp.add_child(kn)
 	helm.add_child(sp)
-	_pill.add_child(helm)
+	console.add_child(helm)
+	# a hairline between the knots and the rack, a little clear of the knots
+	_rack_sep = Control.new()
+	_rack_sep.custom_minimum_size = Vector2(10.0 * k + 1.0, 34.0 * k)
+	_rack_sep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_rack_sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rack_sep.draw.connect(func() -> void: _rack_sep.draw_rect(Rect2(_rack_sep.size.x - 1.0, 0.0, 1.0, _rack_sep.size.y), Color(1, 1, 1, 0.08)))
+	console.add_child(_rack_sep)
+	_rack = ShotRack.new()
+	_rack.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
+	_rack.hovered.connect(_rack_hover)
+	console.add_child(_rack)
+	_pill.add_child(console)
 	root.add_child(_pill)
+	_tag = PanelContainer.new()
+	_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var tag_box := HudStyle.panel(12.0 * k, Vector2(11.0 * k, 6.0 * k))
+	tag_box.bg_color = Color(0.039, 0.11, 0.157, 0.88)
+	_tag.add_theme_stylebox_override("panel", tag_box)
+	var tag_col := VBoxContainer.new()
+	tag_col.add_theme_constant_override("separation", 1)
+	tag_col.alignment = BoxContainer.ALIGNMENT_END
+	_tag_name = HudStyle.label("", "inter", 800, roundi(12.0 * k), HudStyle.INK, roundi(12.0 * k * 0.04))
+	_tag_line = HudStyle.label("", "inter", 500, roundi(10.5 * k), HudStyle.INK_2)
+	for l: Label in [_tag_name, _tag_line]:
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		tag_col.add_child(l)
+	_tag.add_child(tag_col)
+	_tag.modulate.a = 0.0
+	_tag.visible = false
+	root.add_child(_tag)
 
 	# notes across the top: an island discovered
 	_toasts = VBoxContainer.new()
@@ -192,6 +249,9 @@ func _ready() -> void:
 	_pad = FirePad.new()
 	_pad.fire.connect(func(side: int) -> void: fire_pressed.emit(side))
 	root.add_child(_pad)
+	_fan = ShotFan.new()
+	_fan.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
+	root.add_child(_fan)
 	show_touch(controls != null and controls.touch)
 	if controls:
 		controls.touch_seen.connect(func() -> void: show_touch(true))
@@ -219,6 +279,10 @@ func _layout() -> void:
 	_pill.position = Vector2((vp.x - ps.x) * 0.5, vp.y - my - ps.y)
 	_lever.position = Vector2(mx, vp.y - my - SailLever.TH)
 	_pad.position = Vector2(vp.x - mx - _pad.size.x, vp.y - my - _pad.size.y)
+	# the shot button rides over Fire, a little clear of it
+	_fan.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotFan.BTN * 0.5)
+	_peek.place(Vector2(mx, my + _chips.position.y + _chips.size.y + 8.0 * HudStyle.K))
+	_place_tag()
 	_toasts.offset_top = my
 
 
@@ -244,8 +308,17 @@ func show_touch(on: bool) -> void:
 	_touch_ui = on
 	_lever.visible = on
 	_pad.visible = on
-	# the lever shows the canvas, so the pill keeps just the knots
+	_fan.visible = on
+	if not on:
+		_fan.set_open(false)
+	# the lever shows the canvas and the fan the shot, so the pill keeps just the knots
 	_pips.visible = not on
+	_rack.visible = not on
+	_rack_sep.visible = not on
+	_pill_box.content_margin_right = 18.0 if on else 5.0 * HudStyle.K
+	if on:
+		_tag_left = 0.0
+		_tag_hover = false
 	_layout()
 
 
@@ -268,12 +341,16 @@ func show_hull(ship: Ship, isles: int, isles_total: int) -> void:
 	_isles.set_value("%d/%d" % [isles, isles_total], isles)
 
 
-## The guns: each side's reload and readiness, and what the big Fire would loose.
+## The guns: each side's reload and readiness, and what the big Fire would
+## loose (on the touch pad) or the reload halves round the shot loaded (on
+## the rack).
 func show_guns(ship: Ship, gun: Gunnery) -> void:
+	var hot := func(b: Gunnery.Broadside) -> bool: return b.ready and b.target != null
+	if _rack.visible:
+		_rack.show_guns(ship.readiness(1), ship.can_fire(1), ship.readiness(-1), ship.can_fire(-1), hot.call(gun.port), hot.call(gun.starboard))
 	if not _pad.visible:
 		return
 	var auto := gun.auto_side(ship) if ship.alive else 0
-	var hot := func(b: Gunnery.Broadside) -> bool: return b.ready and b.target != null
 	var hot_a: bool = auto != 0 and hot.call(gun.side_of(auto))
 	_pad.show_state(ship.readiness(1), ship.can_fire(1), ship.readiness(-1), ship.can_fire(-1), auto, hot.call(gun.port), hot.call(gun.starboard), hot_a)
 
@@ -281,10 +358,107 @@ func show_guns(ship: Ship, gun: Gunnery) -> void:
 ## A side's guns are run out again mid-fight; or it was pressed too soon.
 func guns_ready(side: int) -> void:
 	_pad.ping(side)
+	_rack.ping(side)
 
 
 func guns_deny(side: int) -> void:
 	_pad.deny(side)
+	_rack.flash(side)
+
+
+## The shot loaded and what's left of each kind (round shot -1, endless).
+func show_ammo(sel: int, stock: PackedInt32Array) -> void:
+	_rack.show_state(sel, stock)
+	_fan.show_state(sel, stock)
+
+
+## A kind of shot just loaded: the ball drops in, and (on a desktop) its name
+## and what it does show over the rack for a moment.
+func ammo_loaded(kind: int) -> void:
+	_rack.loaded(kind)
+	_fan.loaded()
+	ammo_tag(kind)
+
+
+## The loaded shot's name and what it does, over the rack for a moment.
+func ammo_tag(kind: int) -> void:
+	if _touch_ui:
+		return
+	_show_tag(kind)
+	_tag_left = 2.4
+
+
+## None of that shot left: its slot and its chip shake.
+func ammo_deny(kind: int) -> void:
+	_rack.deny(kind)
+	_fan.deny(kind)
+
+
+## Shot found in salvage: its slot (and the shot button) bump with a "+n".
+func ammo_gain(kind: int, n: int) -> void:
+	_rack.gain(kind, n)
+	_fan.gain(kind, n)
+
+
+func _rack_hover(kind: int) -> void:
+	_tag_hover = kind >= 0
+	if kind >= 0:
+		_show_tag(kind)
+
+
+func _show_tag(kind: int) -> void:
+	if kind != _tag_kind:
+		_tag_kind = kind
+		_tag_name.text = Ammo.NAME[kind]
+		_tag_name.add_theme_color_override("font_color", Ammo.COLOR[kind])
+		var line: String = Ammo.BLURB[kind].split(". ")[0]
+		_tag_line.text = line.trim_suffix(".")
+		_tag.size = _tag.get_combined_minimum_size()
+		_place_tag()
+	_tag.visible = true
+
+
+func _place_tag() -> void:
+	# over the console's right end
+	var k := HudStyle.K
+	_tag.size = _tag.get_combined_minimum_size()
+	_tag.position = Vector2(_pill.position.x + _pill.size.x - 8.0 * k - _tag.size.x, _pill.position.y - 10.0 * k - _tag.size.y)
+
+
+func _process(dt: float) -> void:
+	# the shot's tag: in on a short rise, out after a moment (or once the mouse leaves its slot)
+	if _tag_left > 0.0:
+		_tag_left -= dt
+	var want := 1.0 if (_tag_left > 0.0 or _tag_hover) and not _touch_ui else 0.0
+	if want != _tag_e or _tag.visible:
+		_tag_e = move_toward(_tag_e, want, dt / 0.2)
+		_tag.modulate.a = _tag_e
+		var k := HudStyle.K
+		_tag.position.y = _pill.position.y - 10.0 * k - _tag.size.y + (1.0 - HudStyle.eased(_tag_e)) * 6.0 * k
+		if _tag_e <= 0.0:
+			_tag.visible = false
+
+
+## The hold: the room used of the room aboard on its chip (coral when it's
+## full), and what the peek shows.
+func show_hold(hold: Treasure.Hold) -> void:
+	var used := hold.used()
+	_hold.set_value("%d/%d" % [used, hold.capacity], used)
+	_hold.set_full(used >= hold.capacity)
+
+
+## The hold the peek looks into (a fresh voyage brings a fresh hold).
+func watch_hold(hold: Treasure.Hold) -> void:
+	_peek.watch(hold)
+
+
+## Opens the hold's peek, or the touch shot fan (a set piece's view of them).
+func open_peek() -> void:
+	_peek.set_open(true)
+
+
+func open_fan() -> void:
+	_fan.set_open(true)
 
 
 ## The bars over the enemy ships in view.
@@ -292,22 +466,29 @@ func show_bars(ships: Array[Ship], player: Ship, cam: Camera3D) -> void:
 	_bars.show_ships(ships, player, cam)
 
 
-## A number rising off a point in the world.
-func floater(text: String, world_at: Vector3, cam: Camera3D, kind: Floaters.Kind = Floaters.Kind.GOOD) -> void:
+## Words rising off a point in the world, `lift` web px above it.
+func floater(text: String, world_at: Vector3, cam: Camera3D, kind: Floaters.Kind = Floaters.Kind.GOOD, lift := 0.0) -> void:
 	if cam.is_position_behind(world_at):
 		return
 	var at := cam.unproject_position(world_at)
 	var vp := get_viewport().get_visible_rect().size
 	if at.x < 0.0 or at.y < 0.0 or at.x > vp.x or at.y > vp.y:
 		return
-	_floaters.pop(text, at, kind)
+	_floaters.pop(text, at, kind, lift * HudStyle.PX)
+
+
+## The floaters' looks and the HUD's art drawn once before they're needed.
+func warm() -> void:
+	_floaters.warm()
 
 
 ## A fresh voyage: a new hull's bar from full, the tally from nothing, the HUD back.
 func reset() -> void:
 	_hull_frac = -1.0
-	for c: _Chip in [_gold, _kills, _isles]:
+	for c: _Chip in [_gold, _hold, _kills, _isles]:
 		c.reset()
+	_peek.set_open(false)
+	_fan.set_open(false)
 	fade(true, 0.4)
 
 
@@ -352,6 +533,52 @@ func toast(kicker: String, title: String, life := 3.4) -> void:
 		l.add_theme_constant_override("shadow_offset_y", 1)
 		col.add_child(l)
 	panel.add_child(col)
+	_card(panel, life)
+
+
+## A fine piece of plunder hauled aboard: a toast with its portrait, its
+## kicker in the colour of its rarity (2 rare .. 4 legendary), the card's
+## edge violet for an epic find and gold and glowing for a legendary one.
+func loot_toast(good: String, rarity: int, kicker: String, title: String, life := 3.0) -> void:
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var box := _toast_box.duplicate() as StyleBoxFlat
+	box.content_margin_left = 10.0 * HudStyle.K
+	box.content_margin_right = 18.0
+	if rarity == 3:
+		box.border_color = Color(0.769, 0.545, 1.0, 0.6)
+	elif rarity >= 4:
+		box.border_color = Color(1.0, 0.71, 0.18, 0.8)
+		box.shadow_color = Color(1.0, 0.71, 0.18, 0.3)
+		box.shadow_size = 18
+		box.shadow_offset = Vector2.ZERO
+	panel.add_theme_stylebox_override("panel", box)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var icon := TextureRect.new()
+	icon.texture = Icons.plunder(good, 48.0)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.custom_minimum_size = Vector2(48.0, 48.0)
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(icon)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	var ink: Color = [HudStyle.GOLD, HudStyle.GOLD, Color("#6cc8ff"), Color("#c48bff"), Color("#ffbe3d")][clampi(rarity, 0, 4)]
+	for l: Label in [HudStyle.label(kicker.to_upper(), "inter", 700, 9, ink, 2), HudStyle.label(title, "cinzel", 700, 15, HudStyle.INK, 1)]:
+		l.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.6))
+		l.add_theme_constant_override("shadow_offset_x", 0)
+		l.add_theme_constant_override("shadow_offset_y", 1)
+		col.add_child(l)
+	row.add_child(col)
+	panel.add_child(row)
+	_card(panel, life)
+
+
+## Sets a toast's card in the stack across the top: in on a spring from just
+## above, out drifting up as it fades; three at most.
+func _card(panel: PanelContainer, life: float) -> void:
 	# the stack lays out the slot; the card moves freely inside it
 	var slot := Control.new()
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -366,7 +593,6 @@ func toast(kicker: String, title: String, life := 3.4) -> void:
 	slot.custom_minimum_size = size
 	panel.size = size
 	panel.pivot_offset = size * 0.5
-	# in on a spring from just above, out drifting up as it fades
 	panel.modulate.a = 0.0
 	panel.position.y = -14.0
 	panel.scale = Vector2(0.94, 0.94)
@@ -469,17 +695,22 @@ class _ViewButton:
 			draw_circle(p, 1.7, HudStyle.GOLD if i == view else HudStyle.INK_4, true, -1.0, true)
 
 
-## A tally on the HUD: a badge and a number, popping gold when it goes up.
+## A tally on the HUD: a badge and a number, popping gold when it goes up;
+## `clickable`, it opens something (the hold's peek).
 class _Chip:
 	extends PanelContainer
+	signal pressed
 	var _label: Label
 	var _box: StyleBoxFlat
 	var _value := -1
 	var _text := ""
+	var _full := false
 
-	func _init(badge: String, text: String) -> void:
+	func _init(badge: String, text: String, clickable := false) -> void:
 		var k := HudStyle.K
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		mouse_filter = Control.MOUSE_FILTER_STOP if clickable else Control.MOUSE_FILTER_IGNORE
+		if clickable:
+			mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		_box = StyleBoxFlat.new()
 		_box.bg_color = Color(0.031, 0.086, 0.125, 0.7)
 		_box.border_color = Color(1, 1, 1, 0.08)
@@ -508,6 +739,17 @@ class _Chip:
 	func reset() -> void:
 		_value = -1
 		_text = ""
+
+	func _gui_input(event: InputEvent) -> void:
+		if ShotFan.pressed(event):
+			pressed.emit()
+			accept_event()
+
+	## Full up: its number turns coral.
+	func set_full(full: bool) -> void:
+		if full != _full:
+			_full = full
+			_label.add_theme_color_override("font_color", HudStyle.CORAL if full else HudStyle.INK)
 
 	func set_value(text: String, value: int) -> void:
 		if text == _text:

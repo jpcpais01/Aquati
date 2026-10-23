@@ -22,11 +22,15 @@ const SMOKE := 1
 const SPARK := 2
 const CHUNK := 3
 
+## The breeze smoke rides when it is launched with none of its own.
+var wind: Wind
+
 var _buf := PackedFloat32Array()
 var _next := 0
 var _now := 0.0
 var _dirty := false
 var _mat: ShaderMaterial
+var _breeze := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -54,8 +58,8 @@ func _ready() -> void:
 ## Launches one particle. `color` is its HDR start colour and opacity,
 ## `color_end` the colour it fades toward; gravity pulls down (negative
 ## floats it up), drag bleeds its speed. Smoke also drifts with `breeze`
-## (m/s) once its own push dies; anything else turns at `spin` (rad/s).
-## `glow` adds its light instead of covering what is behind it.
+## (m/s; the wind's, if none) once its own push dies; anything else turns at
+## `spin` (rad/s). `glow` adds its light instead of covering what is behind it.
 func emit(pos: Vector3, vel: Vector3, life: float, size: float, size_end: float, color: Color, color_end: Color, grav: float = 0.0, drag: float = 0.0, kind: int = SOFT, fade_in: float = 0.08, breeze: Vector2 = Vector2.ZERO, spin: float = 0.0, glow: bool = false) -> void:
 	var o := _next * STRIDE
 	_next = (_next + 1) % CAPACITY
@@ -63,11 +67,12 @@ func emit(pos: Vector3, vel: Vector3, life: float, size: float, size_end: float,
 	# columns back as velocity, (gravity, drag, kind), (breeze or spin, end colour)
 	_buf[o] = vel.x
 	_buf[o + 1] = grav
-	_buf[o + 2] = breeze.x if kind == SMOKE else spin
+	var bz := breeze if breeze != Vector2.ZERO else _breeze
+	_buf[o + 2] = bz.x if kind == SMOKE else spin
 	_buf[o + 3] = pos.x
 	_buf[o + 4] = vel.y
 	_buf[o + 5] = drag
-	_buf[o + 6] = breeze.y
+	_buf[o + 6] = bz.y
 	_buf[o + 7] = pos.y
 	_buf[o + 8] = vel.z
 	_buf[o + 9] = float(kind + (4 if glow else 0)) + clampf(fade_in, 0.001, 0.999)
@@ -191,10 +196,185 @@ func flame(pos: Vector3, intensity: float = 1.0) -> void:
 				randf_range(2.5, 4.5), 1.3 * intensity, randf_range(5.0, 8.0) * intensity, Color(0.22, 0.2, 0.19, 0.55), Color(0.45, 0.44, 0.43), -0.3, 0.35, SMOKE, 0.2)
 
 
-## A twinkle of gold (a breach boarded over, a coin found).
-func sparkle(pos: Vector3, scale: float = 1.0) -> void:
+## A twinkle of gold (a breach boarded over, a coin found), or of a
+## rarity's colour (`tint`, linear) over plunder afloat.
+func sparkle(pos: Vector3, scale: float = 1.0, tint: Variant = null) -> void:
+	var c := Color(6.0, 4.6, 1.6) if tint == null else (tint as Color) * 2.2
+	c.a = 1.0
 	emit(pos + Vector3(randf_range(-0.8, 0.8), randf_range(0.2, 1.4), randf_range(-0.8, 0.8)) * scale, Vector3(0.0, 0.8 * scale, 0.0),
-			randf_range(0.5, 0.9), randf_range(0.3, 0.6) * scale, 0.05, Color(6.0, 4.6, 1.6, 1.0), Color(6.0, 4.6, 1.6), 0.0, 0.0, SPARK, 0.1, Vector2.ZERO, 0.0, true)
+			randf_range(0.5, 0.9), randf_range(0.3, 0.6) * scale, 0.05, c, c, 0.0, 0.0, SPARK, 0.1, Vector2.ZERO, 0.0, true)
+
+
+## Plunder hauled aboard: a flash, a fountain of gold coins and a ring of
+## rarity-coloured sparks racing out across the water; the finest chests
+## send a pillar of motes spiralling up to the sky. `tint` is linear.
+func treasure(pos: Vector3, tint: Color, tier: int) -> void:
+	var big := 0.6 + tier * 0.35
+	_flash(pos + Vector3(0.0, 0.8, 0.0), 2.0 * big, tint * 2.4, tint * 0.4, 0.35 + tier * 0.08, 3.0)
+	var coin := Color(5.5, 3.8, 1.1, 1.0)
+	for i in 8 + tier * 8:
+		var a := randf() * TAU
+		var r := randf_range(1.0, 3.5) * big
+		var s := randf_range(0.16, 0.26)
+		emit(pos + Vector3(0.0, 0.6, 0.0), Vector3(cos(a) * r, randf_range(6.0, 11.0) * sqrt(big), sin(a) * r),
+				randf_range(0.8, 1.3), s, s, coin, Color(3.0, 1.6, 0.3), 16.0, 0.4, CHUNK, 0.001, Vector2.ZERO, randf_range(-14.0, 14.0), true)
+	var ring := 10 + tier * 8
+	var hot := tint * 3.0
+	hot.a = 1.0
+	for i in ring:
+		var a := float(i) / ring * TAU + randf_range(-0.1, 0.1)
+		var sp := randf_range(5.0, 8.0) * big
+		emit(pos + Vector3(0.0, 0.4, 0.0), Vector3(cos(a) * sp, randf_range(0.5, 2.0), sin(a) * sp),
+				randf_range(0.5, 0.8), randf_range(0.25, 0.45), 0.05, hot, tint * 0.8, 0.0, 2.4, SPARK, 0.001, Vector2.ZERO, 0.0, true)
+	if tier >= 3:
+		var mote := tint * 2.6
+		mote.a = 1.0
+		for i in tier * 10:
+			var a := i * 0.7
+			var r := randf_range(0.4, 1.4)
+			emit(pos + Vector3(cos(a) * r, randf_range(0.0, 2.0), sin(a) * r), Vector3(-sin(a) * 1.5, randf_range(5.0, 12.0), cos(a) * 1.5),
+					randf_range(0.9, 1.6), randf_range(0.25, 0.5), 0.05, mote, Color(1.5, 1.2, 0.5), 0.0, 0.6, SPARK, 0.02, Vector2.ZERO, 0.0, true)
+
+
+# ------------------------------------------------------------- shot types
+
+## What a special load adds to the gun's own blast: a shell's fuse catching
+## in a spit of sparks, a gout of flame and embers off red-hot shot, iron
+## grinding on iron as the chain whips out, a bag of grape bursting in a cone.
+func shot_muzzle(pos: Vector3, dir: Vector3, carry: Vector3, kind: int) -> void:
+	match kind:
+		Ammo.SHELL:
+			_sparks(pos, dir, carry, 7, Color(9.0, 6.0, 2.0), Color(3.0, 1.0, 0.15), SPARK)
+		Ammo.FIRE:
+			for i in 12:
+				var sp := randf_range(8.0, 20.0)
+				emit(pos, Vector3(dir.x * sp + randf_range(-1.5, 1.5) + carry.x, randf_range(0.0, 1.5), dir.z * sp + randf_range(-1.5, 1.5) + carry.z),
+						randf_range(0.25, 0.5), randf_range(0.5, 0.9), randf_range(1.6, 2.4), Color(10.0, 4.4, 1.0, 1.0), Color(2.6, 0.4, 0.04), -2.0, 3.0, SOFT, 0.001, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+			_embers(pos, dir, carry, 18, 1.1)
+		Ammo.CHAIN:
+			_sparks(pos, dir, carry, 5, Color(6.0, 6.0, 6.5), Color(1.6, 1.6, 2.0), SPARK)
+		Ammo.GRAPE:
+			for i in 14:
+				var sp := randf_range(14.0, 30.0)
+				emit(pos, Vector3(dir.x * sp + randf_range(-5.0, 5.0) + carry.x, randf_range(-1.0, 3.0), dir.z * sp + randf_range(-5.0, 5.0) + carry.z),
+						randf_range(0.12, 0.26), randf_range(0.16, 0.26), 0.04, Color(7.0, 5.0, 2.4, 1.0), Color(2.0, 0.8, 0.2), 0.0, 5.0, SPARK, 0.001, Vector2.ZERO, 0.0, true)
+			for i in 5:
+				var sp := randf_range(6.0, 14.0)
+				emit(pos + Vector3(dir.x, 0.0, dir.z), Vector3(dir.x * sp + randf_range(-3.0, 3.0) + carry.x, randf_range(0.0, 1.2), dir.z * sp + randf_range(-3.0, 3.0) + carry.z),
+						randf_range(1.6, 2.6), randf_range(0.8, 1.2), randf_range(4.0, 6.0), Color(0.88, 0.87, 0.85, 0.5), Color(0.88, 0.87, 0.85), -0.2, 2.4, SMOKE, 0.03)
+
+
+## An explosive shell bursting: a fireball, shrapnel, timbers flung up, a
+## black-brown pall that rolls up and hangs, and the sea thrown up in a white
+## column round it if it burst in the water.
+func shell_burst(pos: Vector3, water: bool, scale: float = 1.0) -> void:
+	_flash(pos + Vector3(0.0, 0.5, 0.0), 6.0 * scale, Color(14.0, 9.0, 4.0), Color(4.0, 1.4, 0.3), 0.16, 11.0 / 6.0)
+	var at := pos + Vector3(0.0, 0.6, 0.0)
+	for i in 16:
+		var a := randf() * TAU
+		var sp := randf_range(2.0, 9.0) * scale
+		emit(at, Vector3(cos(a) * sp, randf_range(2.0, 10.0) * scale, sin(a) * sp),
+				randf_range(0.35, 0.75), randf_range(1.2, 2.2) * scale, randf_range(2.5, 3.6) * scale, Color(10.0, 4.2, 1.1, 1.0), Color(2.2, 0.35, 0.04), -1.0, 3.0, SOFT, 0.001, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+	at = pos + Vector3(0.0, 0.5, 0.0)
+	for i in 26:
+		var a := randf() * TAU
+		var sp := randf_range(14.0, 34.0)
+		emit(at, Vector3(cos(a) * sp, randf_range(1.0, 12.0), sin(a) * sp),
+				randf_range(0.25, 0.6), randf_range(0.18, 0.3), 0.04, Color(9.0, 7.0, 3.6, 1.0), Color(3.0, 1.0, 0.2), 10.0, 2.2, SPARK, 0.001, Vector2.ZERO, 0.0, true)
+	for i in 12:
+		var a := randf() * TAU
+		var sp := randf_range(4.0, 12.0)
+		var br := randf_range(0.25, 0.5)
+		var c := Color(br, br * 0.9, br * 0.8, 1.0)
+		var s := randf_range(0.15, 0.35)
+		emit(at, Vector3(cos(a) * sp, randf_range(5.0, 14.0), sin(a) * sp),
+				randf_range(1.0, 1.8), s, s, c, c, 18.0, 0.3, CHUNK, 0.001, Vector2.ZERO, randf_range(-14.0, 14.0))
+	for i in 9:
+		emit(pos + Vector3(randf_range(-1.0, 1.0), randf_range(0.5, 2.0), randf_range(-1.0, 1.0)), Vector3(randf_range(-1.6, 1.6), randf_range(1.5, 4.0), randf_range(-1.6, 1.6)),
+				randf_range(2.6, 4.5), 2.2 * scale, randf_range(7.0, 10.0) * scale, Color(0.2, 0.18, 0.17, 0.62), Color(0.48, 0.46, 0.45), -0.35, 0.9, SMOKE, 0.06)
+	if water:
+		splash(pos, 1.5)
+		var white := Color(1.3, 1.36, 1.4, 0.5)
+		for i in 16:
+			var a := float(i) / 16.0 * TAU
+			emit(pos + Vector3(0.0, 0.2, 0.0), Vector3(cos(a) * 9.0, randf_range(1.0, 3.0), sin(a) * 9.0),
+					randf_range(0.8, 1.2), 1.4, 3.4, white, white, 2.0, 2.4, SMOKE, 0.01)
+
+
+## Fire shot striking home: a burst of flame that catches and climbs, and a
+## shower of embers.
+func fire_hit(pos: Vector3) -> void:
+	_flash(pos, 4.0, Color(10.0, 4.5, 1.2), Color(3.0, 0.6, 0.06), 0.2, 1.5)
+	for i in 14:
+		emit(pos + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.4), randf_range(-0.6, 0.6)), Vector3(randf_range(-1.5, 1.5), randf_range(2.5, 6.0), randf_range(-1.5, 1.5)),
+				randf_range(0.4, 0.8), randf_range(0.8, 1.5), 0.3, Color(9.0, 3.8, 0.9, 1.0), Color(3.0, 0.5, 0.06), 0.0, 1.0, SOFT, 0.02, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+	for i in 16:
+		emit(pos, Vector3(randf_range(-7.0, 7.0), randf_range(2.0, 9.0), randf_range(-7.0, 7.0)),
+				randf_range(0.8, 1.6), randf_range(0.14, 0.26), 0.04, Color(8.0, 3.4, 0.7, 1.0), Color(2.4, 0.4, 0.04), 9.0, 0.7, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+
+
+## Hot iron into the sea: a hissing gout of steam.
+func steam(pos: Vector3) -> void:
+	splash(pos, 0.6)
+	var c := Color(1.32, 1.34, 1.36, 0.42)
+	for i in 9:
+		emit(pos + Vector3(randf_range(-0.5, 0.5), 0.3, randf_range(-0.5, 0.5)), Vector3(randf_range(-0.8, 0.8), randf_range(2.0, 5.0), randf_range(-0.8, 0.8)),
+				randf_range(1.4, 2.4), 0.8, randf_range(3.5, 5.0), c, c, -0.8, 1.4, SMOKE, 0.04, Vector2.ZERO, randf_range(-0.6, 0.6))
+
+
+## A grape ball striking a deck: a spark and a puff of splinters, not a breach.
+func pellet_hit(pos: Vector3) -> void:
+	_flash(pos, 0.9, Color(7.0, 4.2, 1.6), Color(2.0, 0.6, 0.1), 0.08, 1.4 / 0.9)
+	for i in 4:
+		var br := randf_range(0.55, 0.9)
+		var c := Color(0.55 * br, 0.36 * br, 0.2 * br, 1.0)
+		var s := randf_range(0.08, 0.2)
+		emit(pos, Vector3(randf_range(-4.0, 4.0), randf_range(2.0, 7.0), randf_range(-4.0, 4.0)),
+				randf_range(0.6, 1.1), s, s, c, c, 18.0, 0.4, CHUNK, 0.001, Vector2.ZERO, randf_range(-14.0, 14.0))
+
+
+## Chain shot through the rigging: canvas torn to ribbons (`sail`, linear),
+## cordage and splinters whirling away, a sigh of dust and a few sparks off
+## the iron.
+func shreds(pos: Vector3, vel: Vector3, sail: Color) -> void:
+	var cloth := Color(sail.r, sail.g, sail.b, 1.0)
+	for i in 18:
+		var s := randf_range(0.18, 0.45)
+		emit(pos + Vector3(randf_range(-1.2, 1.2), randf_range(-1.0, 1.0), randf_range(-1.2, 1.2)), Vector3(vel.x * 0.06 + randf_range(-3.0, 3.0), randf_range(-0.5, 3.0), vel.z * 0.06 + randf_range(-3.0, 3.0)),
+				randf_range(1.6, 3.0), s, s, cloth, cloth, 2.2, 2.4, CHUNK, 0.001, Vector2.ZERO, randf_range(-9.0, 9.0))
+	var cord := Color(0.3, 0.22, 0.14, 1.0)
+	for i in 6:
+		var s := randf_range(0.1, 0.18)
+		emit(pos, Vector3(vel.x * 0.05 + randf_range(-4.0, 4.0), randf_range(0.0, 4.0), vel.z * 0.05 + randf_range(-4.0, 4.0)),
+				randf_range(1.0, 1.8), s, s, cord, cord, 9.0, 1.0, CHUNK, 0.001, Vector2.ZERO, randf_range(-12.0, 12.0))
+	emit(pos, Vector3(vel.x * 0.04, 0.0, vel.z * 0.04), 1.4, 1.0, 3.4, Color(sail.r, sail.g, sail.b, 0.3), cloth, 0.0, 2.0, SMOKE)
+	for i in 4:
+		emit(pos, Vector3(randf_range(-8.0, 8.0), randf_range(-2.0, 6.0), randf_range(-8.0, 8.0)),
+				randf_range(0.15, 0.3), randf_range(0.16, 0.24), 0.04, Color(6.0, 6.0, 6.5, 1.0), Color(1.5, 1.5, 2.0), 0.0, 4.0, SPARK, 0.001, Vector2.ZERO, 0.0, true)
+
+
+## A burst of light that swells and dies: `grow` times its size by the end.
+func _flash(pos: Vector3, size: float, c0: Color, c1: Color, life: float = 0.12, grow: float = 1.6) -> void:
+	c0.a = 1.0
+	emit(pos, Vector3.ZERO, life, size, size * grow, c0, c1, 0.0, 0.0, SOFT, 0.001, Vector2.ZERO, 0.0, true)
+
+
+## Sparks spat out along the bore.
+func _sparks(pos: Vector3, dir: Vector3, carry: Vector3, n: int, c0: Color, c1: Color, kind: int = SOFT) -> void:
+	c0.a = 1.0
+	var spark := kind == SPARK
+	for i in n:
+		var sp := randf_range(10.0, 22.0)
+		emit(pos, Vector3(dir.x * sp + randf_range(-2.0, 2.0) + carry.x, dir.y * sp + randf_range(-1.0, 2.0), dir.z * sp + randf_range(-2.0, 2.0) + carry.z),
+				randf_range(0.1, 0.22), randf_range(0.2, 0.32) if spark else randf_range(0.8, 1.6), 0.05 if spark else 0.3, c0, c1, 0.0, 6.0, kind, 0.001, Vector2.ZERO, 0.0, true)
+
+
+## Glowing embers that arc out and fall to the sea.
+func _embers(pos: Vector3, dir: Vector3, carry: Vector3, n: int, reach: float) -> void:
+	for i in n:
+		var sp := randf_range(5.0, 15.0) * reach
+		emit(pos, Vector3(dir.x * sp + randf_range(-3.0, 3.0) + carry.x, randf_range(2.0, 9.0), dir.z * sp + randf_range(-3.0, 3.0) + carry.z),
+				randf_range(1.0, 2.2), randf_range(0.14, 0.28), 0.05, Color(7.0, 3.2, 0.7, 1.0), Color(2.4, 0.4, 0.04), 8.0, 0.7, SPARK, 0.01, Vector2.ZERO, 0.0, true)
 
 
 ## An HDR colour (0..16 a channel) as one exactly representable float, 8 bits
@@ -214,6 +394,8 @@ func clear() -> void:
 
 
 func _process(delta: float) -> void:
+	if wind != null:
+		_breeze = Vector2(wind.dir_x, wind.dir_z) * (1.2 + wind.strength * 4.5)
 	_now += delta
 	if _now > REBASE:
 		_now -= REBASE

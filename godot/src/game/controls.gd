@@ -4,8 +4,8 @@ extends Node
 ##
 ## Keys: A / D or the arrows put the helm over, W / S (or up / down) set more
 ## or less canvas a notch at a time, Q and E fire the port and starboard
-## broadsides and Space whichever suits, C cycles the camera, the wheel
-## zooms. A click on the sea fires the side you point into, at what you
+## broadsides and Space whichever suits, 1 to 5 load a kind of shot and R
+## the next kind aboard, C cycles the camera, the wheel zooms. A click on the sea fires the side you point into, at what you
 ## point at. Touch: a drag anywhere on the left of the screen is the helm
 ## (point where the bow should go: screen up is north, as the camera looks),
 ## the sail lever bottom left sets the canvas, the guns sit bottom right, two
@@ -30,6 +30,9 @@ var view_next := false
 var fire_side := 0
 var fire_auto := false
 var fire_aim := false
+## Pulses: a kind of shot picked by its key (Ammo, -1 none), and the next kind aboard.
+var ammo_pick := -1
+var ammo_cycle := false
 ## A skip (Space, Enter or a tap) while the farewell plays.
 var skip := false
 ## The mouse over the sea (screen units), while there is one.
@@ -50,6 +53,12 @@ const _ACTIONS := {
 	"fire_port": [KEY_Q],
 	"fire_starboard": [KEY_E],
 	"fire_auto": [KEY_SPACE],
+	"ammo_next": [KEY_R],
+	"ammo_1": [KEY_1, KEY_KP_1],
+	"ammo_2": [KEY_2, KEY_KP_2],
+	"ammo_3": [KEY_3, KEY_KP_3],
+	"ammo_4": [KEY_4, KEY_KP_4],
+	"ammo_5": [KEY_5, KEY_KP_5],
 	"confirm": [KEY_ENTER, KEY_KP_ENTER],
 }
 
@@ -82,6 +91,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			skip = true
 		elif event.is_action("confirm"):
 			skip = true
+		elif event.is_action("ammo_next"):
+			ammo_cycle = true
+		else:
+			for i in Ammo.COUNT:
+				if event.is_action("ammo_%d" % (i + 1)):
+					ammo_pick = i
 	elif event is InputEventMouseMotion and event.device != InputEvent.DEVICE_ID_EMULATION:
 		pointer = event.position
 		pointer_active = true
@@ -169,4 +184,6 @@ func consume() -> void:
 	fire_side = 0
 	fire_auto = false
 	fire_aim = false
+	ammo_pick = -1
+	ammo_cycle = false
 	skip = false

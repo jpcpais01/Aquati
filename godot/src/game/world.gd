@@ -15,6 +15,10 @@ signal hit(ship: Ship, attacker: Ship, dealt: float, at: Vector3)
 signal sunk(ship: Ship, attacker: Ship)
 ## Something the camera should feel (a broadside, a hit, a magazine going up), 0..1.
 signal shook(amount: float)
+## A bite of the flames burning her (fire shot): `dealt` is the damage done.
+signal burned(ship: Ship, attacker: Ship, dealt: float)
+## A special shot left its mark: "ablaze", "shredded" or "crew".
+signal status(ship: Ship, what: String, attacker: Ship)
 
 var waves: Waves
 var wind: Wind
@@ -22,6 +26,7 @@ var wake: WakeField
 var fx: Particles
 var shots: Shots
 var debris: Debris
+var loot: Loot
 ## Every ship afloat (and every wreck still going down): yours first.
 var ships: Array[Ship] = []
 ## Where the voyage is heard from (the camera's focus), and how far off it hangs.

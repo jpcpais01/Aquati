@@ -63,6 +63,50 @@ static func font(family: String, weight: int, spacing: int = 0) -> Font:
 	return f
 
 
+## The web's --spring (overshooting a touch, then settling) and --ease
+## timing curves, at x in 0..1.
+static func spring(x: float) -> float:
+	return MathX.bezier(0.25, 1.4, 0.4, 1.0, x)
+
+
+static func eased(x: float) -> float:
+	return MathX.bezier(0.2, 0.9, 0.25, 1.0, x)
+
+
+## The web's "no" shake (a button pressed in vain): -1..1 of its reach, t
+## 0..1 through it.
+static func shake(t: float) -> float:
+	const KEYS := [0.0, -1.0, 1.0, -1.0, 1.0, 0.0]
+	var x := clampf(t, 0.0, 1.0) * 5.0
+	var i := mini(int(x), 4)
+	return lerpf(KEYS[i], KEYS[i + 1], x - i)
+
+
+## A ball of shot rammed home (the web's ball-load), t 0..1 through it: its
+## drop (of its height, down), its scale and its opacity.
+static func load_drop(t: float) -> Vector3:
+	if t < 0.6:
+		var u := spring(t / 0.6)
+		return Vector3(lerpf(-0.4, 0.06, u), lerpf(0.6, 1.06, u), clampf(u, 0.0, 1.0))
+	var v := spring((t - 0.6) / 0.4)
+	return Vector3(lerpf(0.06, 0.0, v), lerpf(1.06, 1.0, v), 1.0)
+
+
+## Shot found in salvage (the web's gain-rise and gain-bump), t 0..1 through
+## its 1.3 s: the "+n" rising off a button (its rise in K units, its opacity)
+## and the button's bump (its scale; the bump is done 0.5 s in).
+static func gain_rise(t: float) -> Vector3:
+	var y := lerpf(6.0, -22.0, eased(t))
+	var a := eased(t / 0.15) if t < 0.15 else 1.0 - eased((t - 0.15) / 0.85)
+	var b := t * 1.3 / 0.5
+	var s := 1.0
+	if b < 0.4:
+		s = lerpf(1.0, 1.22, spring(b / 0.4))
+	elif b < 1.0:
+		s = lerpf(1.22, 1.0, spring((b - 0.4) / 0.6))
+	return Vector3(y, clampf(a, 0.0, 1.0), s)
+
+
 static func label(text: String, family: String, weight: int, size: int, color: Color, spacing: int = 0) -> Label:
 	var l := Label.new()
 	l.text = text

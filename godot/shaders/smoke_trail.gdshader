@@ -5,6 +5,8 @@
 // is a point on the ball's arc at some moment. Each has drifted off on the
 // breeze and risen for as long as it has hung there, widens and frays as it
 // ages, and fades out at the tail. Nothing is updated per frame but the clock.
+// Each shot lays its own: a shell's thin grey thread glowing off its fuse,
+// red-hot iron's dark sooty one, chain's broad one off its whirling halves.
 //
 // Mesh: VERTEX.x -1..1 across, VERTEX.y 0 (the oldest smoke) .. 1 (the ball).
 shader_type spatial;
@@ -18,19 +20,26 @@ global uniform vec4 wind;
 uniform float now = 0.0;
 uniform float gravity = 14.0;
 uniform sampler2D noise_tex : repeat_enable, filter_linear_mipmap;
-/// How long the smoke hangs (s), its width when laid and when old (m), its opacity.
-uniform float life = 1.9;
-uniform vec2 width = vec2(0.3, 2.1);
-uniform float opacity = 0.42;
-uniform vec3 tint = vec3(0.95, 0.94, 0.93);
+
+// By kind (round, shell, fire, chain; grape lays none): the smoke's colour,
+// its opacity, its width when laid and when old (m), how long it hangs (s),
+// and the glow it carries close behind the ball.
+const vec3 TINT[4] = { vec3(0.95, 0.94, 0.93), vec3(0.55, 0.52, 0.5), vec3(0.3, 0.27, 0.25), vec3(0.95, 0.94, 0.93) };
+const float OPACITY[4] = { 0.42, 0.4, 0.52, 0.42 };
+const vec2 WIDTH[4] = { vec2(0.3, 2.1), vec2(0.22, 1.6), vec2(0.4, 2.5), vec2(0.45, 2.4) };
+const float LIFE[4] = { 1.9, 1.5, 2.1, 1.9 };
+const vec3 GLOW[4] = { vec3(0.0), vec3(2.0, 1.0, 0.3), vec3(3.4, 1.3, 0.3), vec3(0.0) };
 
 varying float v_across;
 varying float v_age;
 varying float v_dist;
 varying float v_seed;
+varying float v_kind;
 varying vec3 v_world;
 
 void vertex() {
+	int kind = clamp(int(INSTANCE_CUSTOM.w + 0.5), 0, 3);
+	float life = LIFE[kind];
 	float t_now = now - INSTANCE_CUSTOM.x;
 	float t_head = min(t_now, INSTANCE_CUSTOM.y - INSTANCE_CUSTOM.x);
 	float t_tail = max(0.0, t_now - life);
@@ -54,18 +63,20 @@ void vertex() {
 		float sl = length(side);
 		side = sl > 1e-5 ? side / sl : vec3(1.0, 0.0, 0.0);
 		float age = clamp(hung / life, 0.0, 0.999);
-		float w = mix(width.x, width.y, sqrt(age));
+		float w = mix(WIDTH[kind].x, WIDTH[kind].y, sqrt(age));
 		p += side * VERTEX.x * w * 0.5;
 		v_across = VERTEX.x;
 		v_age = age;
 		v_dist = length(v0) * tv;
 		v_seed = INSTANCE_CUSTOM.z;
+		v_kind = float(kind);
 		v_world = p;
 		POSITION = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(p, 1.0));
 	}
 }
 
 void fragment() {
+	int kind = clamp(int(v_kind + 0.5), 0, 3);
 	float v = v_across;
 	float age = v_age;
 	float across = 1.0 - v * v;
@@ -78,14 +89,18 @@ void fragment() {
 	float dens = across * (0.55 + n * 0.9) - 0.18 - age * 0.55;
 	float a = smoothstep(0.0, 0.4, dens);
 	// eases in behind the ball, fades out at the tail
-	a *= (1.0 - age) * (1.0 - age) * smoothstep(0.0, 0.035, age) * opacity;
-	if (a < 0.003) {
+	a *= (1.0 - age) * (1.0 - age) * smoothstep(0.0, 0.035, age) * OPACITY[kind];
+	// the glow close behind the ball (a sputtering fuse, red-hot iron)
+	vec3 g = GLOW[kind];
+	float gk = pow(1.0 - age, 6.0) * across * across * smoothstep(0.0, 0.02, age);
+	if (a < 0.003 && gk * (g.r + g.g + g.b) < 0.01) {
 		discard;
 	}
 	float open = 1.0 - weather.x * 0.65;
 	vec3 lit = light_tint * 0.72 + sun_color * 0.12 * open;
 	vec4 fog = air_fog(v_world, CAMERA_POSITION_WORLD);
-	vec3 col = mix(tint * lit, fog.rgb, fog.a * 0.85);
-	ALBEDO = col * a;
+	float f = fog.a * 0.85;
+	vec3 col = mix(TINT[kind] * lit, fog.rgb, f);
+	ALBEDO = col * a + g * gk * (1.0 - f);
 	ALPHA = a;
 }

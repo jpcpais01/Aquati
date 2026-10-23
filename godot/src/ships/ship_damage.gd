@@ -417,6 +417,22 @@ func _weakest_mast() -> int:
 	return best
 
 
+## The mast still standing nearest a point `local_z` along her keel (her
+## own frame), or -1 with none left.
+func nearest_mast(local_z: float) -> int:
+	var best := -1
+	var bd := INF
+	for i in ship.cls.masts.size():
+		var sp := ship.model.spars[i]
+		if sp.broken:
+			continue
+		var d := absf(sp.pivot.z - local_z)
+		if d < bd:
+			bd = d
+			best = i
+	return best
+
+
 ## Is a ball above her hull (her own frame) passing through a mast (x = 2)
 ## or the canvas round one (x = 1)? y: which mast.
 func rig_test(local: Vector3) -> Vector2i:
