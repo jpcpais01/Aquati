@@ -1,5 +1,10 @@
 ## Shores O' Fortune for Android: weather
 
+**New in this update: a smooth wake.** The wake behind your ship no longer
+stutters. Several times a second the whole wake, its foam and its shine
+used to hop back and forth by half a metre; now the bow waves, the trail
+of foam and their reflections glide smoothly astern.
+
 The seventh build brings the weather. The sky no longer stays fair: it
 turns as you sail, just as it does on the web, and every kind of weather
 changes the light, the wind and the sea.

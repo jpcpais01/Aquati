@@ -674,8 +674,9 @@ func _tick(real_dt: float) -> void:
 	camera.update_rig(real_dt, focus.pos, focus.vel, world.time)
 	# every crew afloat, after the camera has moved: they're culled and cut by it
 	crew.update(dt, world, camera, camera.target, camera.ground_radius() * 1.5, atmosphere.key_dir)
-	ocean.follow(camera.target, camera.distance())
+	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
+	ocean.follow(camera.target, camera.distance())
 	# the wreckage afloat, on the very swell the ocean draws (and shouldered aside by hulls still moving)
 	RenderingServer.global_shader_parameter_set("sea_clock", fmod(world.time, Debris.CLOCK_WRAP))
 	var pushers: Array[Ship] = []

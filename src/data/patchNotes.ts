@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-23T12:00Z',
     entries: [
       {
+        title: 'Android: a smooth wake',
+        notes: [
+          'On Android the wake behind your ship no longer stutters. Several times a second the whole wake, its foam and its shine used to hop back and forth by half a metre as the water behind you was updated; now the bow waves, the trail of foam and their reflections glide smoothly astern.',
+        ],
+      },
+      {
         title: 'Android: weather',
         notes: [
           'The seventh Android build brings the weather. Clear skies, fair, cloudy, sea mist, rain, storms and mirror calm now follow one another as you sail, with a scorching noon out on the high seas, each with its own light, clouds and wind, and the wind backs and veers as the weather turns.',
