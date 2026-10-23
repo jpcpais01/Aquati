@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-23T10:00Z',
     entries: [
       {
+        title: 'A new app icon: Fair Winds',
+        notes: [
+          'The game has a fresh icon on your home screen, in the browser tab and on the Android launcher: a toy galleon heeling through a bright blue swell with the sun blazing behind her, a golden sun painted on her foresail and spray flying off the bow. It was built by hand as its own little 3D scene rather than taken from a screenshot, and phones that crop icons into circles get a version pulled back so the masts and bowsprit stay in view.',
+        ],
+      },
+      {
         title: 'Android: the crew on deck',
         notes: [
           'The sixth Android build puts the crews aboard. Every ship, yours and every pirate\'s, sails with a helmsman at the wheel, a captain pacing the quarterdeck with his spyglass and hands at their chores: hauling on the lines when you trim sail or come about, swabbing, coiling rope, leaning on the rail, sitting on crates, chatting over a pipe or a mug of grog, and now and then a fiddler strikes up and the hands nearby dance a jig.',

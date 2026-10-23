@@ -39,3 +39,7 @@ glitter and turning day, both archipelagos with their islands, plants,
 shallows and surf, the pirates and their broadsides, five kinds of shot,
 holes, broken masts, wrecks breaking in two and wreckage afloat, plunder
 and your hold, and your farewell when the sea takes you.
+
+New in this release: the launcher icon is now Fair Winds, a toy galleon
+heeling through a bright blue swell, framed so launchers that crop icons
+into circles keep her masts and bowsprit in view.
