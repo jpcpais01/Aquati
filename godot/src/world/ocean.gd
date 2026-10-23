@@ -98,5 +98,7 @@ func follow(focus: Vector3, cam_dist: float) -> void:
 	material.set_shader_parameter("wave_a", waves.packed_a)
 	material.set_shader_parameter("wave_b", waves.packed_b)
 	material.set_shader_parameter("gusts", wind.packed)
-	# the wake canvases take turns: read whichever was stepped last
+	# the wake canvases take turns: read the one stepped last, through the
+	# very patch of sea it was stepped over
 	material.set_shader_parameter("wake_tex", wake.texture())
+	material.set_shader_parameter("wake_rect", wake.rect())

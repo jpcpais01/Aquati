@@ -4,7 +4,10 @@ extends Node
 ## the focus: foam in R, wake height in G, its vertical velocity in B (see
 ## shaders/wake_sim.gdshader). Two SubViewports take turns: each frame one
 ## steps the simulation from the other and adds this frame's stamps on top.
-## The ocean reads the latest for displacement, normals and foam.
+## The ocean reads the latest for displacement, normals and foam, together
+## with the patch of sea that canvas covers (texture() and rect() always
+## belong to the same step: read one canvas through another's rect and the
+## whole wake hops a texel each time the canvas scrolls).
 
 const RES := 512
 const SIZE := 300.0
@@ -16,11 +19,15 @@ const MAX_STAMP_RADIUS := 60.0
 ## Hard bounds per kind (foam blob, foam ring, height, velocity), so a stray
 ## number from gameplay can never flood the canvas.
 const MAX_STAMP := [3.0, 3.0, 2.5, 4.0]
+## The rect of a canvas nothing may read yet: far out of every view.
+const NOWHERE := Vector4(1e7, 1e7, SIZE, 1.0 / SIZE)
 
 var center := Vector2.ZERO
 var _vps: Array[SubViewport] = []
 var _sims: Array[ShaderMaterial] = []
 var _mms: Array[MultiMesh] = []
+## The patch of sea (centre x, z, size, 1 / size) each canvas was last stepped over.
+var _rects: Array[Vector4] = [NOWHERE, NOWHERE]
 var _cur := 0
 var _last := Vector2.ZERO
 var _sim_time := 0.0
@@ -81,13 +88,18 @@ func _ready() -> void:
 	# each canvas steps from the other
 	_sims[0].set_shader_parameter("prev", _vps[1].get_texture())
 	_sims[1].set_shader_parameter("prev", _vps[0].get_texture())
-	# nothing reads the field until both canvases have been wiped
-	RenderingServer.global_shader_parameter_set("wake_rect", Vector4(1e7, 1e7, SIZE, 1.0 / SIZE))
 
 
-## The latest state, for the ocean.
+## The latest state, for the ocean: the canvas stepped this frame (a
+## SubViewport is drawn before the view that samples it, in the same frame).
 func texture() -> Texture2D:
 	return _vps[_cur].get_texture()
+
+
+## The patch of sea texture() covers: centre x, z, size, 1 / size (far out
+## of every view until both canvases have been wiped clean).
+func rect() -> Vector4:
+	return _rects[_cur]
 
 
 ## Lets waves feel the sea floor: slower in shallows, stopped by land.
@@ -164,7 +176,5 @@ func step(focus_x: float, focus_z: float, dt: float) -> void:
 	_n = 0
 	_vps[dst].render_target_update_mode = SubViewport.UPDATE_ONCE
 	_cur = dst
-	if _wipe > 0:
-		_wipe -= 1
-		return
-	RenderingServer.global_shader_parameter_set("wake_rect", Vector4(cx, cz, SIZE, 1.0 / SIZE))
+	_rects[dst] = NOWHERE if _wipe > 0 else Vector4(cx, cz, SIZE, 1.0 / SIZE)
+	_wipe = maxi(_wipe - 1, 0)

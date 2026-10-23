@@ -41,7 +41,6 @@ render_mode blend_mix, depth_draw_opaque, cull_back, world_vertex_coords, ambien
 #include "res://shaders/inc/ground.gdshaderinc"
 #include "res://shaders/inc/wind.gdshaderinc"
 
-global uniform vec4 wake_rect;
 /// x breaker height (m), y swash run-up (m), z storm, w the surf clock (s)
 global uniform vec4 surf;
 
@@ -51,6 +50,8 @@ uniform vec4 wave_b[8];
 uniform vec4 grid_warp = vec4(66.0, 0.18, 1.5, 0.0);
 
 uniform sampler2D wake_tex : filter_linear, repeat_disable;
+/// the patch of sea wake_tex covers: centre x, z, size, 1 / size (WakeField.rect)
+uniform vec4 wake_rect = vec4(1e7, 1e7, 300.0, 0.0033333);
 uniform sampler2D normal_tex : repeat_enable, filter_linear_mipmap_anisotropic;
 uniform sampler2D noise_tex : repeat_enable, filter_linear_mipmap;
 uniform sampler2D foam_tex : repeat_enable, filter_linear_mipmap;
