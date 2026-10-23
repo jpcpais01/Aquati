@@ -16,14 +16,14 @@ way and keep the APK as a workflow artifact.
 | `src/core` | Settings (quality tiers), small maths helpers |
 | `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky and the hour; the archipelagos (`Region`), their ground (`Ground`) and their planting (`Flora`) |
 | `src/render` | The colour grade (a GPU-baked 3D LUT) |
-| `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, battle damage, dismasting, re-rigging and sinking (`ShipDamage`), the pirate captains (`PirateAI`) |
+| `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, battle damage, dismasting, re-rigging and sinking (`ShipDamage`), the pirate captains (`PirateAI`), the crews on deck (`ShipCrew` for a ship's sailors and their deck, `Crew` and `CrewView` to run and draw every crew afloat) |
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave, the wreckage afloat (`Debris`) |
 | `src/game` | The voyage scene, the camera rig, the controls; the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time |
 | `src/ui` | The HUD, the touch helm, the sail lever and the fire pad, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`) |
 | `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
-| `art` | The tiling textures every shader samples and the baked figurehead sculptures |
+| `art` | The tiling textures every shader samples, the baked figurehead sculptures and the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
-| `tools` | The CI checks and the asset generators |
+| `tools` | The CI checks and the asset generators (`tools/crew` bakes the sailor from the web game's own code) |
 
 ## Running it
 
@@ -52,6 +52,8 @@ For fights: `--battle brig` puts a pirate off your beam (`--foe-dist M`,
 0,2` to bring masts down, `--foe-anchor` to hold her still, `--foe-sink S` to
 sink her, `--wreck split` or `capsize` for how she goes, `--watch` to follow
 her with the camera, `--fov F` for a close-up lens),
+`--eye X,Y,Z` and `--look X,Y,Z` to stand the lens on the followed ship's
+deck, `--nocrew` to leave every deck empty,
 `--autofire` fires each side as it bears, `--touch` shows the touch
 controls, `--sink S` sends your ship down after S seconds, `--voyage` gives
 her a long voyage first (a full farewell card), and `--nopirates` keeps the

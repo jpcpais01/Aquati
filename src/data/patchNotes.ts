@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T10:00Z',
+    entries: [
+      {
+        title: 'Android: the crew on deck',
+        notes: [
+          'The sixth Android build puts the crews aboard. Every ship, yours and every pirate\'s, sails with a helmsman at the wheel, a captain pacing the quarterdeck with his spyglass and hands at their chores: hauling on the lines when you trim sail or come about, swabbing, coiling rope, leaning on the rail, sitting on crates, chatting over a pipe or a mug of grog, and now and then a fiddler strikes up and the hands nearby dance a jig.',
+          'Every sailor is rolled with his own face and kit, from striped shirts, spotted bandanas and straw hats to beards, eye patches, earrings, boots and the odd peg leg. Pirates dress in black and blood red, and every captain wears a coat and a plumed tricorn, most with a parrot on his shoulder.',
+          'In a fight the gunners run to the guns on the side that bears, powder monkeys shuttle cartridges up from the hatch and the captain bellows each broadside from the rail. The whole crew ducks when a ball strikes home and roars when a foe goes down. When a ship sinks her captain salutes and goes down with her, while the rest leap over the high side and swim for it.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T09:00Z',
     entries: [
       {
