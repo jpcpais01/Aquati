@@ -2,9 +2,10 @@ extends SceneTree
 ## CI gate, run headless after the import: every script compiles, each ship
 ## class that is built comes out sound (no NaNs, every solid face wound the
 ## way its normals point, within its triangle budget), the crew bake loads
-## and agrees with the game on every id, each deck takes its crew, and the
-## baked world loads whole (both archipelagos, their ground maps and their
-## planting). Prints CHECK OK.
+## and agrees with the game on every id, each deck takes its crew, the touch
+## shot pie opens and picks as a finger works it, and the baked world loads
+## whole (both archipelagos, their ground maps and their planting). Prints
+## CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
@@ -19,6 +20,7 @@ func _initialize() -> void:
 	for id: String in SHIPS:
 		_check_ship(id, SHIPS[id])
 	_check_crew()
+	_check_pie()
 	_check_world()
 	if _errors == 0:
 		print("CHECK OK")
@@ -222,6 +224,61 @@ static func _snake(s: String) -> String:
 			out += "_"
 		out += ch.to_upper()
 	return out
+
+
+## The touch shot pie worked by a finger: a tap opens it for a tap, a hold
+## or a push opens it under the finger, letting go on a slice loads that
+## shot, back in the middle thinks better of it, a kind with none left keeps
+## it open, and the empty racks take no touch.
+func _check_pie() -> void:
+	var pie := ShotPie.new()
+	root.add_child(pie)
+	pie.position = root.get_visible_rect().size - Vector2(220.0, 206.0)
+	var stock := Ammo.fresh_stock()
+	stock[Ammo.CHAIN] = 0
+	pie.show_state(Ammo.ROUND, stock)
+	var got: Array[int] = []
+	pie.picked.connect(func(k: int) -> void: got.append(k))
+	var on := func(kind: int) -> Vector2:
+		var a: float = ShotPie.SLOT[kind] * TAU / ShotPie.SLICES
+		return Vector2(sin(a), -cos(a)) * (ShotPie.HUB + ShotPie.OUTER) * 0.5
+	var steps := 0
+	# a tap opens it for a tap, and a tap on fire shot loads it
+	pie._on_touch(1, 0, Vector2.ZERO)
+	pie._on_touch(3, 0, Vector2.ZERO)
+	steps += 1 if pie.is_open() else 0
+	pie._on_slice_tapped(on.call(Ammo.FIRE))
+	steps += 1 if got == [Ammo.FIRE] and not pie.is_open() else 0
+	# a hold opens it under the finger; sliding onto grape shot and letting go loads it
+	got.clear()
+	pie._on_touch(1, 0, Vector2.ZERO)
+	pie._process(ShotPie.HOLD + 0.01)
+	steps += 1 if pie.is_open() else 0
+	pie._on_touch(2, 0, on.call(Ammo.GRAPE))
+	pie._on_touch(3, 0, on.call(Ammo.GRAPE))
+	steps += 1 if got == [Ammo.GRAPE] and not pie.is_open() else 0
+	# a push opens it at once; out onto shell, back to the middle and let go: nothing
+	got.clear()
+	pie._on_touch(1, 0, Vector2.ZERO)
+	pie._on_touch(2, 0, on.call(Ammo.SHELL))
+	steps += 1 if pie.is_open() else 0
+	pie._on_touch(2, 0, Vector2(2.0, 2.0))
+	pie._on_touch(3, 0, Vector2(2.0, 2.0))
+	steps += 1 if got.is_empty() and not pie.is_open() else 0
+	# a still hold leaves it open for a tap; none of a kind left keeps it open
+	pie._on_touch(1, 0, Vector2.ZERO)
+	pie._process(ShotPie.HOLD + 0.01)
+	pie._on_touch(3, 0, Vector2.ZERO)
+	steps += 1 if pie.is_open() else 0
+	pie._on_slice_tapped(on.call(Ammo.CHAIN))
+	steps += 1 if got == [Ammo.CHAIN] and pie.is_open() else 0
+	# the empty racks below let a touch through to the guns
+	var rack := Vector2(0.0, 1.0) * (ShotPie.HUB + ShotPie.OUTER) * 0.5
+	steps += 1 if not ShotPie.takes(rack) and ShotPie.takes(on.call(Ammo.ROUND)) else 0
+	if steps != 9:
+		_fail("pie: only %d of 9 steps worked as a finger would expect" % steps)
+	pie.queue_free()
+	print("pie: %d of 9 steps as expected" % steps)
 
 
 func _check_world() -> void:

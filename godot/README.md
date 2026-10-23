@@ -19,7 +19,7 @@ way and keep the APK as a workflow artifact.
 | `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, battle damage, dismasting, re-rigging and sinking (`ShipDamage`), the pirate captains (`PirateAI`), the crews on deck (`ShipCrew` for a ship's sailors and their deck, `Crew` and `CrewView` to run and draw every crew afloat) |
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave, the wreckage afloat (`Debris`) |
 | `src/game` | The voyage scene, the camera rig, the controls; the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time |
-| `src/ui` | The HUD, the touch helm, the sail lever and the fire pad, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`) |
+| `src/ui` | The HUD, the touch helm, the sail lever, the fire pad, the shot pie, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`) |
 | `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
 | `art` | The tiling textures every shader samples, the baked figurehead sculptures and the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
@@ -37,9 +37,11 @@ godot --path godot
 Keys: A / D or the arrows steer, W / S set and take in sail, Q and E fire
 the port and starboard broadsides and Space whichever side bears (or click the
 sea on the side to fire), C changes the camera, the mouse wheel zooms, and
-Enter sails again from the farewell card. On a phone: drag on the left of the
-screen to steer, use the lever bottom left for the sails and the guns bottom
-right, pinch to zoom.
+Enter sails again from the farewell card; 1 to 5 load a kind of shot and R
+cycles them. On a phone: drag on the left of the screen to steer, use the
+lever bottom left for the sails and the guns bottom right, hold the shot
+button over Fire and slide onto a kind of shot to load it (or tap it, then
+tap one), pinch to zoom.
 
 Handy flags (after `--`): `--hour 18.5` sets the time of day, `--view 0..3`
 (or `--zoom 0..1 --tilt 0..1`) picks a camera, `--at X,Z` and `--heading R`

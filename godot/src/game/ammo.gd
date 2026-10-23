@@ -21,6 +21,8 @@ const BLURB := [
 	"Two half-balls on a chain that scythe through the rigging. Shreds sails and slows the target to a crawl. Shorter reach.",
 	"A bag of musket balls that sprays the deck. Brutal up close, cuts down gun crews so they reload slowly. Short reach, quick to load.",
 ]
+## What it's good for, in a few words (the touch shot pie's title).
+const GIST := ["Long reach, and it never runs out", "Bursts on impact", "Sets her ablaze", "Shreds her sails", "Cuts down her gun crews"]
 ## Its colour on the HUD.
 const COLOR := [Color("#d9e2e6"), Color("#ffb347"), Color("#ff6a3d"), Color("#9fd8ff"), Color("#c9b3ff")]
 ## Hull damage per ball, reload time and muzzle velocity (each times the

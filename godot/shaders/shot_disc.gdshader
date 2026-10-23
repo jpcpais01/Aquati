@@ -1,11 +1,11 @@
 // A round of shot on the HUD, drawn whole in one quad round it as the web
-// game's CSS paints it (src/ui/shot_disc.gd): the touch shot button and the
-// chips that fan out round it, glass tinted with the shot's colour; and the
-// balls of the desktop shot rack, the loaded one ringed by its two reload
-// halves (port the left half, starboard the right, each sweeping up from the
-// foot as her guns load, white when they're run out, gold with a foe in
-// that side's arc). Shadows, glows and rings are soft steps of the distance
-// to the disc, painted back to front as CSS stacks them.
+// game's CSS paints it (src/ui/shot_disc.gd): the touch shot button, glass
+// tinted with the shot's colour; and the balls of the desktop shot rack,
+// the loaded one ringed by its two reload halves (port the left half,
+// starboard the right, each sweeping up from the foot as her guns load,
+// white when they're run out, gold with a foe in that side's arc).
+// Shadows, glows and rings are soft steps of the distance to the disc,
+// painted back to front as CSS stacks them.
 shader_type canvas_item;
 
 /// The quad drawn round the disc, and the disc's radius (HUD units).

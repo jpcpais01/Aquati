@@ -27,7 +27,7 @@ extends Node3D
 ## chain, grape) and --foe-ammo ID has the set piece's foe fire nothing
 ## else; --loot N[,TIER] floats N barrels or chests (of a tier, 0..4) round
 ## her, --hold fills the hold with a little of everything, --peek opens its
-## peek and --fan the touch shot fan.
+## peek and --pie the touch shot pie (--pie ID: held, a finger on that kind).
 ## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
@@ -465,7 +465,7 @@ func _stage_voyage() -> void:
 
 ## Plunder for a set piece: salvage afloat off her bow (--loot), a hold with
 ## a little of everything (--hold), the hold's peek open (--peek); the shot
-## fan opens (--fan) a second before the frame is saved (see _process).
+## pie opens (--pie) a second before the frame is saved (see _process).
 func _stage_plunder() -> void:
 	if _args.has("loot"):
 		var a: PackedStringArray = str(_args.loot).split(",")
@@ -487,8 +487,8 @@ func _process(delta: float) -> void:
 	_frames += 1
 	if _args.has("again") and _frames == int(_args.again) and _farewell != null and _farewell.shown:
 		wreck.retry.emit()
-	if _args.has("fan") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
-		hud.open_fan()
+	if _args.has("pie") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
+		hud.open_pie(Ammo.ID.find(str(_args.pie)))
 	if _args.has("smoke") and _frames == int(_args.get("smoke-at", 300)):
 		var isles := 0
 		var plants := 0

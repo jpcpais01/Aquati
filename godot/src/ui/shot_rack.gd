@@ -172,7 +172,7 @@ class _Slot:
 		_n = Badge.new(Color(0.016, 0.063, 0.094, 0.86), HudStyle.INK_2, 9.0 * K, 4.0 * K, 16.0 * K, Color(1, 1, 1, 0.1), 99, 1.5)
 		add_child(_n)
 		_n.pin(Vector2(sz.x * 0.5, sz.y + 1.0 * K), Vector2(0.5, 1.0))
-		_gain = ShotFan.rise_label()
+		_gain = ShotPie.rise_label()
 		_gain.add_theme_color_override("font_color", Ammo.COLOR[k])
 		add_child(_gain)
 		mouse_entered.connect(func() -> void:
