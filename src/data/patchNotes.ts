@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T09:00Z',
+    entries: [
+      {
+        title: 'Android: shot and plunder',
+        notes: [
+          'The fifth Android build brings the five kinds of shot you know from here. Round shot never runs out, explosive shells sputter on their fuses and burst on impact, red-hot fire shot sets ships ablaze, chain shot cartwheels through the air and shreds sails, and grape shot sprays the deck and cuts down gun crews. Tap the round button beside Fire to fan out every kind with what\'s left of it, and pick one. Pirates load special shot now and then too. Get it from Download for Android on the home page, or the newest release on the game\'s GitHub page.',
+          'A ship that is burning, has her canvas in rags or has lost her gun crews shows it with a little mark on her health bar, and words rise off her as it happens.',
+          'Sunken ships leave barrels and treasure chests bobbing on the swell, each rarity with its own chest and a beacon on the water in its colour, the finer ones with a shaft of light you can spot from afar. Sail through them to patch your hull, top up your special shot and stow their goods in your hold. Tap the crate on the HUD to look inside, with every good\'s picture and roughly what it would all fetch at market. It is all tuned for phones: shot and floating plunder are moved by the graphics chip, and a whole rarity of chests costs a single draw.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-22T06:00Z',
     entries: [
       {
