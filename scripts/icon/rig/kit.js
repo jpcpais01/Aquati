@@ -115,7 +115,7 @@ export function chest({ open = 1.95, glow = true } = {}) {
 }
 
 // soft toy galleon/sloop, lofted from U-shaped stations with a painted band texture
-export function ship({ L = 1.4, Wd = 0.42, Hh = 0.3, hullC = '#7a3e1c', stripe = '#1fb2b6', trim = '#ffc33d', bottomC = '#a3321f', sailC = '#fbecd0', flag = '#1fb2b6', masts = [[0.3, 1.1, 3], [-0.02, 1.3, 3], [-0.36, 0.95, 2]], billow = 0.13, castle = 0.2, ports = 5, jib = true, rig = true, sailW = 1.0, emblem = null, emblemAt = [1, 0], sink = 0 } = {}) {
+export function ship({ L = 1.4, Wd = 0.42, Hh = 0.3, hullC = '#7a3e1c', stripe = '#1fb2b6', trim = '#ffc33d', bottomC = '#a3321f', sailC = '#fbecd0', flag = '#1fb2b6', masts = [[0.3, 1.1, 3], [-0.02, 1.3, 3], [-0.36, 0.95, 2]], billow = 0.13, castle = 0.2, ports = 5, jib = true, rig = true, sailW = 1.0, emblem = null, emblemAt = [1, 0], sink = 0, seams = 0.09, sailShade = 0, sailGlow = 0.06, pennants = null } = {}) {
   const g = new THREE.Group();
   const halfW = x => Wd / 2 * Math.pow(Math.max(0, 1 - Math.pow(Math.max(0, x), 2.3)), 0.62) * (1 - 0.16 * Math.pow(Math.max(0, -x), 3));
   const top = x => Hh * 0.5 + 0.09 * Math.pow(Math.max(0, x), 2.4) + castle * THREE.MathUtils.smoothstep(-x, 0.35, 0.62);
@@ -191,14 +191,22 @@ export function ship({ L = 1.4, Wd = 0.42, Hh = 0.3, hullC = '#7a3e1c', stripe =
   // canvas: panel seams + a soft darker foot, so the cloth reads as cloth
   const paintSail = (ex, n) => {
     ex.fillStyle = sailC; ex.fillRect(0, 0, n, n);
-    ex.globalAlpha = 0.09; ex.fillStyle = '#6a4a20';
+    ex.globalAlpha = seams; ex.fillStyle = '#6a4a20';
     for (let i = 1; i < 6; i++) ex.fillRect(i * n / 6 - 2, 0, 4, n);
     const gr = ex.createLinearGradient(0, 0, 0, n); gr.addColorStop(0, 'rgba(120,80,30,0)'); gr.addColorStop(1, 'rgba(120,80,30,.6)');
-    ex.globalAlpha = 0.35; ex.fillStyle = gr; ex.fillRect(0, 0, n, n); ex.globalAlpha = 1;
+    ex.globalAlpha = 0.35; ex.fillStyle = gr; ex.fillRect(0, 0, n, n);
+    // soft darker edges and a bolt rope, so each sail reads as a rounded, stitched panel
+    if (sailShade > 0) {
+      const eg = ex.createRadialGradient(n / 2, n * 0.45, n * 0.25, n / 2, n * 0.5, n * 0.75);
+      eg.addColorStop(0, 'rgba(90,60,20,0)'); eg.addColorStop(1, 'rgba(90,60,20,.5)');
+      ex.globalAlpha = sailShade; ex.fillStyle = eg; ex.fillRect(0, 0, n, n);
+      ex.globalAlpha = 0.5 * sailShade; ex.strokeStyle = '#8a6a3a'; ex.lineWidth = n / 64; ex.strokeRect(n / 128, n / 128, n - n / 64, n - n / 64);
+    }
+    ex.globalAlpha = 1;
   };
   const sc0 = document.createElement('canvas'); sc0.width = sc0.height = 256; paintSail(sc0.getContext('2d'), 256);
   const sTex = new THREE.CanvasTexture(sc0); sTex.colorSpace = THREE.SRGBColorSpace;
-  const sailM = mat('#ffffff', { map: sTex, roughness: 0.75, clearcoat: 0, side: THREE.DoubleSide, emissive: '#ffe2b0', emissiveIntensity: 0.06 });
+  const sailM = mat('#ffffff', { map: sTex, roughness: 0.75, clearcoat: 0, side: THREE.DoubleSide, emissive: '#ffe2b0', emissiveIntensity: sailGlow });
   const ropeM = mat('#3a2412', { roughness: 0.8 });
   const rope = (a, b, r = 0.0045) => g.add(new THREE.Mesh(varTube([a.toArray ? a.toArray() : a, b.toArray ? b.toArray() : b], () => r, 2, 5), ropeM));
   const mastTops = [];
@@ -241,7 +249,7 @@ export function ship({ L = 1.4, Wd = 0.42, Hh = 0.3, hullC = '#7a3e1c', stripe =
     for (let i = 0; i <= N; i++) for (let j = 0; j <= N - i; j++) {
       const a = i / N, b = j / N, c = 1 - a - b;
       const q = A.clone().multiplyScalar(c).addScaledVector(B, a).addScaledVector(C, b);
-      q.z += billow * 2.2 * a * b * c * 4;
+      q.z += Math.min(billow, 0.18) * 2.2 * a * b * c * 4;
       p.push(q.x, q.y, q.z);
     }
     let k = 0; const row = []; for (let i = 0; i <= N; i++) { row.push(k); k += N - i + 1; }
@@ -266,6 +274,15 @@ export function ship({ L = 1.4, Wd = 0.42, Hh = 0.3, hullC = '#7a3e1c', stripe =
   fg.translate(0.12, 0, 0);
   const fl = new THREE.Mesh(fg, mat(flag, { roughness: 0.6, side: THREE.DoubleSide, sheen: 0.6 }));
   fl.position.copy(mastTops[ti]); fl.position.y -= 0.03; fl.rotation.y = Math.PI; g.add(fl);
+  // long streaming pennants from every masthead
+  if (pennants) mastTops.forEach((t, i) => {
+    if (i === ti) return;
+    const len = 0.34, pg = new THREE.PlaneGeometry(len, 0.05, 24, 2);
+    deform(pg, v => { const u = (v.x + len / 2) / len; v.z = Math.sin(u * 7 + i) * 0.03 * u; v.y = v.y * (1 - u * 0.92) - u * 0.04; });
+    pg.translate(len / 2, 0, 0);
+    const pm = new THREE.Mesh(pg, mat(pennants[i % pennants.length], { roughness: 0.6, side: THREE.DoubleSide, sheen: 0.5 }));
+    pm.position.copy(t); pm.position.y += 0.01; pm.rotation.y = Math.PI + 0.15; g.add(pm);
+  });
   const lantern = new THREE.Mesh(new THREE.SphereGeometry(0.028, 14, 10), glassM); lantern.position.set(-L / 2 + 0.03, top(-1) + 0.07, 0); g.add(lantern);
   g.userData.top = top; g.userData.halfW = halfW;
   return g;

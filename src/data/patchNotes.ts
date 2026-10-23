@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-23T13:00Z',
     entries: [
       {
+        title: 'The app icon sails past a palm cay',
+        notes: [
+          'The Fair Winds icon got a refit. The galleon now sails past a little palm cay in its own turquoise shallows, under fuller sails with streaming red and teal pennants at the mastheads, with lacy foam along the wave crests, sunlight glittering on the sea and a curling spray thrown off the bow. It shows on your home screen, in the browser tab and on the Android launcher.',
+        ],
+      },
+      {
         title: 'Android: night',
         notes: [
           'The eighth Android build brings the night. After sunset the sky fills with thousands of stars in every brightness and colour, twinkling hardest low over the sea, with the Milky Way arching overhead and now and then a shooting star. The whole starry sky wheels slowly as the night goes on, the bright stars glint in the water, and a real moon rises in its phase, with its seas and craters and earthshine on its dark side.',
