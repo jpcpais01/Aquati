@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-23T21:00Z',
+    hour: '2026-10-23T22:00Z',
     entries: [
       {
         title: 'Android: the trading ports',
