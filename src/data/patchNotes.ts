@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T16:00Z',
+    entries: [
+      {
+        title: 'Android: no more freezes mid-fight',
+        notes: [
+          'Fixed a freeze in the Android game: when several damage numbers landed on the same spot at once, as a whole broadside striking home does, the game could stop dead. The numbers now always stack up neatly clear of one another, and a new automatic check guards against it coming back.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T15:00Z',
     entries: [
       {

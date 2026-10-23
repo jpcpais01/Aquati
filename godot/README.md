@@ -106,7 +106,7 @@ settings screen to change them comes later).
 ```sh
 cd godot
 godot --headless --import                       # compiles every script
-godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world and the sound
+godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world and the sound, stacks a broadside's damage numbers
 godot --headless --script res://tools/bake.gd   # builds every figurehead
 godot --headless --quit-after 600 -- --smoke    # sails for a few seconds
 ```

@@ -1,5 +1,9 @@
 ## Shores O' Fortune for Android: sound and music
 
+**Fixed in this build:** the game could freeze in a fight when several damage
+numbers landed on the same spot at once. Numbers now always stack up clear of
+one another.
+
 The ninth build gives the sea its voice. Every sound of the web game comes
 aboard, played the way the web game plays it, and the band strikes up.
 
