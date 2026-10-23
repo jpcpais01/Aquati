@@ -54,8 +54,13 @@ func rope(a: Vector3, b: Vector3, r: float = 0.03, col: Color = TAR, sag: float 
 		indices.append_array([v, v + 2, v + 1, v + 1, v + 2, v + 3])
 
 
-func commit() -> ArrayMesh:
-	var mesh := ArrayMesh.new()
+## The ribbons as a new mesh, or laid into `mesh` in place of what it held
+## (lines rebuilt every frame, without a new mesh each time).
+func commit(mesh: ArrayMesh = null) -> ArrayMesh:
+	if mesh == null:
+		mesh = ArrayMesh.new()
+	else:
+		mesh.clear_surfaces()
 	if indices.is_empty():
 		return mesh
 	var arrays := []

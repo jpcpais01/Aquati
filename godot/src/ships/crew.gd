@@ -21,6 +21,9 @@ var lean := false
 ## The harbour, where the camera circles her close: a sailor keeps his
 ## figure till a metre is half as many pixels before he goes to a speck.
 var close_up := false
+## Others the crews' sailor draws (a trading port's townsfolk): each is
+## called once a frame, after the crews, with emit_figure to queue its folk.
+var crowds: Array[Callable] = []
 ## Ship -> ShipCrew.
 var _crews := {}
 var _orphans: Array[Sailor] = []
@@ -43,12 +46,23 @@ func _init() -> void:
 
 
 func _take_row(look: CrewLook) -> int:
+	return take_row(look.slots)
+
+
+## A palette row of these colours for someone who isn't of a crew (a
+## townsperson): -1 when every row is taken.
+func take_row(slots: PackedColorArray) -> int:
 	if _free.is_empty():
 		return -1
 	var row := _free[_free.size() - 1]
 	_free.resize(_free.size() - 1)
-	view.set_row(row, look.slots)
+	view.set_row(row, slots)
 	return row
+
+
+func free_row(row: int) -> void:
+	if row >= 0:
+		_free.append(row)
 
 
 func _release(sl: Sailor) -> void:
@@ -145,6 +159,8 @@ func update(dt: float, world: World, camera: Camera3D, focus: Vector3, view_r: f
 			_orphans.remove_at(i)
 			continue
 		_emit(sl, CrewBrain.loose_xf(sl), false)
+	for c in crowds:
+		c.call(emit_figure)
 	view.end()
 
 
@@ -152,15 +168,27 @@ func _emit(sl: Sailor, xf: Transform3D, inside: bool) -> void:
 	var o := xf.origin
 	if not inside and not _in_view(o):
 		return
+	view.push(xf, sl.pose, _level(o), sl.look.hat, sl.prop, sl.kit)
+
+
+## Queues one of a crowd: their placement (world), pose row (palette row
+## and style in it), hat, held prop and kit, cut as a sailor there would be.
+func emit_figure(xf: Transform3D, pose: PackedFloat32Array, hat: int, prop: int, kit: Array[PackedInt32Array]) -> void:
+	var o := xf.origin
+	if _in_view(o):
+		view.push(xf, pose, _level(o), hat, prop, kit)
+
+
+## The cut of the sculpt for someone standing at o.
+func _level(o: Vector3) -> int:
 	var d2 := _eye.distance_squared_to(o)
-	var level := CrewModel.FAR
 	if d2 < _near2:
-		level = CrewModel.NEAR
-	elif d2 > _speck2:
-		level = CrewModel.SPECK
-	elif d2 > _distant2:
-		level = CrewModel.DISTANT
-	view.push(xf, sl.pose, level, sl.look.hat, sl.prop, sl.kit)
+		return CrewModel.NEAR
+	if d2 > _speck2:
+		return CrewModel.SPECK
+	if d2 > _distant2:
+		return CrewModel.DISTANT
+	return CrewModel.FAR
 
 
 ## 0 outside the frustum, 1 across its edge, 2 wholly inside.

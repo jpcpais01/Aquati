@@ -37,14 +37,14 @@ const clamp1 = (v: number) => Math.max(-1, Math.min(1, v));
 const pick = <T>(a: T[]): T | undefined => a[(Math.random() * a.length) | 0];
 
 /** A jaunty hornpipe phrase in D for coming alongside: [midi, beat, beats], tune over oom-pah. */
-const ARRIVAL: [number, number, number][] = [
+export const ARRIVAL: [number, number, number][] = [
   [69, 0, 1], [74, 1, 1], [74, 2, 1], [78, 3, 1], [76, 4, 1], [74, 5, 1],
   [76, 6, 1], [72, 7, 1], [69, 8, 1], [71, 9, 1], [73, 10, 1], [74, 11, 3],
   [50, 0, 1.5], [54, 1.5, 1], [57, 1.5, 1], [45, 3, 1.5], [54, 4.5, 1], [57, 4.5, 1],
   [48, 6, 1.5], [52, 7.5, 1], [55, 7.5, 1], [45, 9, 1.5], [55, 10.5, 1], [57, 10.5, 1], [50, 11, 3], [54, 11, 3], [57, 11, 3],
 ];
 /** A quick squeezebox run up to a ringing chord, for a fortune changing hands. */
-const FLOURISH: [number, number, number][] = [
+export const FLOURISH: [number, number, number][] = [
   [74, 0, 1], [78, 1, 1], [81, 2, 1], [86, 3, 3], [50, 3, 3], [57, 3, 3], [62, 3, 3],
 ];
 

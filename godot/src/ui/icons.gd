@@ -29,6 +29,10 @@ const LINE := {
 	"agility": '<circle cx="12" cy="12" r="5.5"/><circle cx="12" cy="12" r="1.6"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4M5.3 5.3l2.8 2.8M15.9 15.9l2.8 2.8M18.7 5.3l-2.8 2.8M8.1 15.9l-2.8 2.8"/>',
 	"armour": '<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8 7.5 9.5 4.3-1.5 7.5-4.9 7.5-9.5V6z"/><path d="M12 7v10"/>',
 	"firepower": '<circle cx="9" cy="14" r="5.5"/><path d="M13 10l3.5-3.5M17 4.5l.8-1.5M19.5 7l1.5-.8M18.5 5.5l2-2"/>',
+	# the trading port: Cast off, and the chandlery's repairs and fresh shot
+	"flag": '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
+	"hammer": '<path d="M14.5 4.5 19.5 9.5 17 12l-5-5zM12 7 4 15a2 2 0 0 0 0 2.8l.2.2a2 2 0 0 0 2.8 0L15 10"/>',
+	"shot": '<circle cx="9" cy="14" r="5"/><circle cx="16.5" cy="9" r="3.5"/><path d="M7.4 12.2a2 2 0 0 1 2-1.1"/>',
 }
 
 ## The tally badges, as the web draws them in CSS gradients: each a 16 wide

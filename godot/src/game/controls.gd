@@ -5,7 +5,7 @@ extends Node
 ## Keys: A / D or the arrows put the helm over, W / S (or up / down) set more
 ## or less canvas a notch at a time, Q and E fire the port and starboard
 ## broadsides and Space whichever suits, 1 to 5 load a kind of shot and R
-## the next kind aboard, C cycles the camera, the wheel zooms. A click on the sea fires the side you point into, at what you
+## the next kind aboard, F comes alongside a quay, C cycles the camera, the wheel zooms. A click on the sea fires the side you point into, at what you
 ## point at. Touch: a drag that starts low on the left, where the thumb
 ## rests by the sail lever, is the helm (point where the bow should go: screen
 ## up is north, as the camera looks), the sail lever bottom left sets the
@@ -43,6 +43,8 @@ var ammo_pick := -1
 var ammo_cycle := false
 ## A skip (Space, Enter or a tap) while the farewell plays.
 var skip := false
+## A pulse: come alongside the quay she's off (F).
+var interact := false
 ## The mouse over the sea (screen units), while there is one.
 var pointer := Vector2.ZERO
 var pointer_active := false
@@ -70,6 +72,7 @@ const _ACTIONS := {
 	"ammo_4": [KEY_4, KEY_KP_4],
 	"ammo_5": [KEY_5, KEY_KP_5],
 	"confirm": [KEY_ENTER, KEY_KP_ENTER],
+	"interact": [KEY_F],
 }
 
 
@@ -103,6 +106,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			skip = true
 		elif event.is_action("ammo_next"):
 			ammo_cycle = true
+		elif event.is_action("interact"):
+			interact = true
 		else:
 			for i in Ammo.COUNT:
 				if event.is_action("ammo_%d" % (i + 1)):
@@ -213,3 +218,4 @@ func consume() -> void:
 	ammo_pick = -1
 	ammo_cycle = false
 	skip = false
+	interact = false

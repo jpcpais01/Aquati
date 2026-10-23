@@ -38,6 +38,10 @@ extends Node3D
 ## ship down S seconds in (her farewell; --farewell T starts it T seconds
 ## through), --touch shows the touch controls, --nopirates keeps the sea
 ## clear, --voyage puts a long voyage behind her (to see a full farewell).
+## A port: --dock K ties her up at the K-th market (0 .. 5) with its market
+## open (with --hold, goods to sell; --sell ID, or all, sells it just
+## before the frame); --off K puts her off its quay, the prompt to come
+## alongside up.
 ## Shot and plunder: --ammo ID loads a kind of shot (round, shell, fire,
 ## chain, grape) and --foe-ammo ID has the set piece's foe fire nothing
 ## else; --loot N[,TIER] floats N barrels or chests (of a tier, 0..4) round
@@ -47,6 +51,9 @@ extends Node3D
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
 ## deck empty.
+## --phone [DP] plays as a phone DP (412) dp across would at MEDIUM: the
+## lean path, its plants and crews sized for that screen (with --touch for
+## its controls).
 
 ## Past this far from every archipelago's centre (m) she is out on the high
 ## seas, where the weather keeps fair (with a little give either way, so
@@ -60,7 +67,9 @@ const SPAWN_HEADING := PI * 0.82
 ## went down, as on the web.
 const DIVE := 8.6
 ## The steps of the smoke test's tour of the menus (_tour_menus).
-const TOUR_STEPS := 11
+const TOUR_STEPS := 18
+## Frames the tour waits off a quay for pirates to leave her be.
+const TOUR_CHASED := 240
 
 var world := World.new()
 var atmosphere := Atmosphere.new()
@@ -82,6 +91,10 @@ var shipyard: Shipyard
 var pirates: Pirates
 var gunnery: Gunnery
 var crew: Crew
+## The trading ports, and the one she's tied up at (null at sea).
+var ports: TradePorts
+var dock_port: TradePort
+var market: MarketPanel
 var collisions := Collisions.new()
 var wreck: WreckScreen
 var rain: Rain
@@ -142,7 +155,7 @@ var _strike_now := false
 var _strikes := 0
 
 ## Where the game is: in the harbour choosing a ship, or out on a voyage.
-enum State { HARBOUR, VOYAGE }
+enum State { HARBOUR, VOYAGE, DOCKED }
 var state := State.VOYAGE
 ## The voyage on hold (Anchored): nothing at sea moves.
 var paused := false
@@ -162,6 +175,10 @@ var _tour := false
 var _tour_step := 0
 var _tour_at := 0
 var _tour_log := PackedStringArray()
+## Since she came alongside (the port shot settles in over it).
+var _dock_t := 0.0
+## The pirate she was fighting last frame (it holds on a little further).
+var _last_foe: Ship
 
 
 ## A voyage's log: how long, what the guns did, how far she sailed, and the
@@ -207,6 +224,8 @@ class Farewell:
 
 func _ready() -> void:
 	_args = _parse_args()
+	if _args.has("phone"):
+		Settings.pretend_phone(412.0 if _args.phone is bool else float(_args.phone))
 	sound = Sound.new()
 	sound.name = "Sound"
 	add_child(sound)
@@ -220,6 +239,7 @@ func _ready() -> void:
 	_build_player()
 	_build_camera()
 	_build_fleet()
+	_build_ports()
 	controls = Controls.new()
 	add_child(controls)
 	hud = Hud.new()
@@ -279,6 +299,8 @@ func _ready() -> void:
 	if _args.has("voyage"):
 		_stage_voyage()
 	_stage_plunder()
+	if _args.has("dock") or _args.has("off"):
+		_stage_dock()
 	_tour = _harbour_first() and _args.has("smoke")
 	if _harbour_first():
 		if _args.has("orbit"):
@@ -291,9 +313,10 @@ func _ready() -> void:
 	_warm_up()
 
 
-## A first wound, the first plank in the water: none of it may stutter the
-## game. One of everything battle damage draws hangs in front of the camera
-## for a moment, far too small to see, so its shaders are built up front.
+## A first wound, the first plank in the water, the first town in view: none
+## of it may stutter the game. One of everything they draw hangs in front of
+## the camera for a moment, far too small to see, so its shaders are built
+## up front.
 func _warm_up() -> void:
 	var w := Node3D.new()
 	w.name = "WarmUp"
@@ -303,6 +326,8 @@ func _warm_up() -> void:
 	for n in world.debris.warm_meshes():
 		w.add_child(n)
 	for n in world.loot.warm_meshes():
+		w.add_child(n)
+	for n in ports.warm_meshes():
 		w.add_child(n)
 	camera.add_child(w)
 	hud.warm()
@@ -559,6 +584,28 @@ func _build_fleet() -> void:
 	add_child(crew)
 
 
+## The trading ports' towns along their quays, their folk drawn with the crews.
+func _build_ports() -> void:
+	ports = TradePorts.new()
+	ports.name = "TradePorts"
+	add_child(ports)
+	ports.setup(world, crew)
+	# the harbourmaster rings her in, loud on her own quay
+	ports.bell_rung.connect(func(port: TradePort, _at: Vector3) -> void: sound.bell(2, 0.22 if port == dock_port else 0.08))
+	ports.delivered.connect(_delivered)
+
+
+## A lot set down in the warehouse of the quay she's tied to: it glints in
+## its rarity's colour (what's carried aboard doesn't).
+func _delivered(port: TradePort, id: String, on: bool, at: Vector3) -> void:
+	if port != dock_port or on:
+		return
+	var r := Treasure.rarity_of(id)
+	var tint: Color = Color(1.4, 1.1, 0.6) if r == 0 else (Loot.GLOW[r] as Color) * 0.6
+	for i in 5:
+		world.fx.sparkle(at, 0.8, tint)
+
+
 ## A set piece: a pirate of class `id` off your port beam, spoiling for a fight.
 func _stage_battle(id: String) -> void:
 	var p := player
@@ -643,6 +690,20 @@ func _stage_plunder() -> void:
 		get_tree().create_timer(0.1).timeout.connect(func() -> void: hud.open_peek())
 
 
+## A set piece at a market town: tied up at the K-th market's quay (--dock
+## K, 0 .. 5: the home waters' four, then Las Brumas' two) with the market
+## open, or off it with the prompt to come alongside up (--off K).
+func _stage_dock() -> void:
+	var key := "dock" if _args.has("dock") else "off"
+	var arg := str(_args[key])
+	var port: TradePort = ports.ports[clampi(int(arg) if arg.is_valid_int() else 0, 0, ports.ports.size() - 1)]
+	var c := port.cast_off(player.cls.beam)
+	player.place(c.x, c.y, c.z)
+	camera.snap_to(player.pos)
+	if key == "dock":
+		_dock(port, true)
+
+
 func _process(delta: float) -> void:
 	# on hold nothing at sea moves; the screens over it carry on
 	if not paused:
@@ -658,6 +719,9 @@ func _process(delta: float) -> void:
 		hud.open_pie(Ammo.ID.find(str(_args.pie)))
 	if _args.has("strike") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.strike if str(_args.strike).is_valid_int() else 2)):
 		_strike_now = true
+	if _args.has("sell") and _frames == maxi(1, int(_args.get("frames", 90)) - 24):
+		# (the coins are in the air as the frame is saved)
+		_sell("" if str(_args.sell) == "all" else str(_args.sell))
 	if _args.has("smoke") and _frames == int(_args.get("smoke-at", 300)):
 		if _tour:
 			print("SMOKE MENU: " + ", ".join(_tour_log))
@@ -703,6 +767,10 @@ func _process(delta: float) -> void:
 				a.kind, a.mode, a.cover, a.rain, a.storm, a.sea, a.wind, Atmosphere.compass(a.wind_angle), _strikes,
 				"falling" if rain.visible else "none", "flying" if spindrift.visible else "none"])
 		print("SMOKE SOUND: " + sound.stats())
+		var drawn := ports.drawn()
+		var built := ports.triangles()
+		print("SMOKE PORT: %d towns (%d triangles close up and %d as shells built); %d whole in view, drawing %d triangles; %s" % [
+				ports.ports.size(), built.x, built.y, drawn.y, drawn.x, "tied up at " + dock_port.title if dock_port != null else "at sea"])
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
 		_save_shot(str(_args.shot))
 
@@ -752,7 +820,7 @@ func _tick(real_dt: float) -> void:
 	# shove and stave each other in, and the shot in the air flies; in the
 	# harbour a sail or two on the horizon, and the ship picked comes in
 	pirates.step(dt, player if sailing else null)
-	if not sailing:
+	if state == State.HARBOUR:
 		pirates.step_harbour(dt, player.pos, camera)
 		_swap_in(false)
 	for s in world.ships:
@@ -761,6 +829,12 @@ func _tick(real_dt: float) -> void:
 		collisions.resolve(world)
 	world.shots.step(dt)
 	pirates.sweep()
+	# the towns: hulls kept off their quays, and their folk about their business
+	ports.update(dt, player, camera.global_position, world.ships)
+	if state == State.DOCKED:
+		dock_port.pin(player)
+		market.tick(real_dt, world.time)
+		_frame_dock(real_dt)
 	if player.alive and sailing:
 		voyage.metres += Vector2(player.vel.x, player.vel.z).length() * dt
 		# the crew patches her up between fights
@@ -774,6 +848,10 @@ func _tick(real_dt: float) -> void:
 		player.damage(player.max_hp * 4.0, _foe)
 	if _foe_sink_at >= 0.0 and _foe != null and _foe.alive and world.time >= _foe_sink_at:
 		_foe.damage(_foe.max_hp * 4.0, player)
+	if sailing:
+		_dock_prompt()
+	else:
+		market.set_dock({})
 	controls.consume()
 
 	world.listener = camera.target
@@ -927,18 +1005,18 @@ func _lamps() -> void:
 	if on > 0.0:
 		var t := camera.target
 		var reach := camera.ground_radius() + 50.0
-		var near: Array[Ship] = []
 		for s in world.ships:
 			if s.alive and s.model.visible and Vector2(s.pos.x - t.x, s.pos.z - t.z).length() < reach:
-				near.append(s)
-		near.sort_custom(func(a: Ship, b: Ship) -> bool:
-			return Vector2(a.pos.x - t.x, a.pos.z - t.z).length_squared() < Vector2(b.pos.x - t.x, b.pos.z - t.z).length_squared())
-		for s in near:
-			var xf := s.model.global_transform
-			for l in s.model.lamps:
-				if _lamp_list.size() < Ocean.MAX_LAMPS:
+				var xf := s.model.global_transform
+				for l in s.model.lamps:
 					var at := xf * Vector3(l.x, l.y, l.z)
 					_lamp_list.append(Vector4(at.x, at.y, at.z, on * l.w))
+		# the towns' lanterns and lighthouse lamps
+		for l in ports.lamps(t, reach):
+			_lamp_list.append(Vector4(l.x, l.y, l.z, on * l.w))
+		if _lamp_list.size() > Ocean.MAX_LAMPS:
+			_lamp_list.sort_custom(func(a: Vector4, b: Vector4) -> bool:
+				return Vector2(a.x - t.x, a.z - t.z).length_squared() < Vector2(b.x - t.x, b.z - t.z).length_squared())
 	ocean.set_lamps(_lamp_list)
 
 
@@ -1479,6 +1557,7 @@ func _quit_voyage() -> void:
 func _reset_world(id: String) -> void:
 	sound.submerge(false)
 	sound.high_seas(false)
+	_let_go()
 	wreck.end()
 	_farewell = null
 	time_scale = 1.0
@@ -1511,14 +1590,15 @@ func _reset_world(id: String) -> void:
 func _harbour_first() -> bool:
 	if _args.has("menu") or _args.has("seapick") or (_args.has("settings") and not _args.has("pause")):
 		return true
-	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause"]:
+	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause", "dock", "off"]:
 		if _args.has(k):
 			return false
 	return true
 
 
-## The harbour and the screens over the voyage: the sea picker, Anchored,
-## Settings, the veil between scenes and the frame counter.
+## The harbour and the screens over the voyage: a trading port's market
+## (and the prompt to come alongside), the sea picker, Anchored, Settings,
+## the veil between scenes and the frame counter.
 func _build_menus() -> void:
 	harbour = Harbour.new()
 	harbour.picked.connect(_preview)
@@ -1527,6 +1607,18 @@ func _build_menus() -> void:
 	harbour.sound.connect(_toggle_sound)
 	harbour.clicked.connect(sound.click)
 	add_child(harbour)
+	market = MarketPanel.new()
+	market.sell.connect(_sell)
+	market.sell_all.connect(_sell.bind(""))
+	market.repair.connect(_repair)
+	market.restock.connect(_restock)
+	market.leave.connect(_cast_off)
+	market.dock.connect(_dock_here)
+	# (the market's buttons knock on the merchant's counter)
+	market.clicked.connect(sound.knock)
+	add_child(market)
+	market.set_touch(hud.touch_ui())
+	hud.touch_set.connect(market.set_touch)
 	sea_pick = SeaPick.new()
 	sea_pick.chosen.connect(_sail_from)
 	sea_pick.back.connect(func() -> void: harbour.open(player.cls.id))
@@ -1851,6 +1943,253 @@ func _arrive(r: Region) -> void:
 		sound.chime()
 
 
+# ------------------------------------------------------------------ trading ports
+
+## Off a quay's seaward face: the prompt to come alongside (a tap on it, or
+## F), unless pirates are on her tail (the web's updateDockPrompt).
+func _dock_prompt() -> void:
+	var p := player
+	var port: TradePort = null
+	if p.alive and _farewell == null:
+		var near := ports.nearest(p.pos)
+		if near != null and near.in_reach(p.pos):
+			port = near
+	if port == null:
+		market.set_dock({})
+		return
+	var chased := _fighting() != null
+	var n := hold.count()
+	var why := "Repairs and fresh shot"
+	if chased:
+		why = "Shake off your pursuers to dock"
+	elif n > 0:
+		why = "Sell %d %s · repairs · shot" % [n, "good" if n == 1 else "goods"]
+	market.set_dock({"name": port.title, "ok": not chased, "why": why})
+	if not chased and controls.interact:
+		_dock(port)
+
+
+## The pirate she's fighting, if one is near (the web's battleFoe): one
+## hunting her, or one she has traded shot with in the last 12 s.
+func _fighting() -> Ship:
+	var p := player
+	var best: Ship = null
+	var bd := INF
+	if p.alive:
+		var t := world.time
+		for ai: PirateAI in pirates.ais.values():
+			var s := ai.ship
+			if not s.alive or s.removed:
+				continue
+			var d := Vector2(s.pos.x - p.pos.x, s.pos.z - p.pos.z).length()
+			var engaged := ai.mode == PirateAI.Mode.ENGAGE and (ai.target == p or d < 160.0)
+			var traded := (s.last_attacker == p and t - s.last_hit < 12.0) or (p.last_attacker == s and t - p.last_hit < 12.0)
+			if (engaged or traded) and d < (320.0 if s == _last_foe else 270.0) and d < bd:
+				bd = d
+				best = s
+	_last_foe = best
+	return best
+
+
+## Comes alongside: she ties up, the porters wake and the market opens (the
+## web's dock), under the veil (`now`: at once, for a set piece).
+func _dock(port: TradePort, now := false) -> void:
+	if state != State.VOYAGE or not player.alive or _farewell != null or veil.busy:
+		return
+	controls.reset()
+	hud.close_popups()
+	market.set_dock({})
+	var tie := func() -> void:
+		if state != State.VOYAGE or not player.alive:
+			return
+		state = State.DOCKED
+		dock_port = port
+		hud.fade(false, 0.0)
+		var p := player
+		p.anchored = true
+		p.sail_target = 0.0
+		p.rudder = 0.0
+		port.set_ship(p)
+		var b := port.berth(p.cls.beam)
+		p.place(b.x, b.y, b.z)
+		market.open(port.title, port.market, hold, p.gold, world.time)
+		_services()
+		_dock_t = 0.0
+		camera.port = true
+		_frame_dock(0.0)
+		camera.snap_shot()
+		voyage.note("trade", "Docked at %s" % port.title, str(port.spec.house))
+		sound.port_arrive()
+		_note_tour("docked at %s" % port.title)
+	if now:
+		tie.call()
+	else:
+		veil.cover("Coming alongside at %s…" % port.title, tie)
+
+
+## The port's shot of her alongside, settling in and swaying a little over
+## the quay, framed in the space the market's panel leaves (the web's frameDock).
+func _frame_dock(dt: float) -> void:
+	_dock_t += dt
+	var fit := _fit_panel(market.panel_rect())
+	var settle := 1.0 + 0.8 * exp(-_dock_t * 0.7)
+	var sway := sin(_dock_t * 0.13) * 0.08
+	var shot := dock_port.shot(player, sway, fit * settle)
+	camera.shot_pos = shot[0]
+	camera.shot_look = shot[1]
+
+
+## Frames the camera's shot in the part of the screen a side panel (or a
+## bottom sheet) leaves free; returns how far to stand back for it (the
+## shots are framed for a wide free space: a narrow or short one backs off).
+func _fit_panel(r: Rect2) -> float:
+	var vp := get_viewport().get_visible_rect().size
+	var fw := vp.x
+	var fh := vp.y
+	if r.size.x <= 0.0:
+		camera.port_frame = Vector4(0.0, 0.0, 1.0, 1.0)
+	elif r.position.x > vp.x * 0.35:
+		camera.port_frame = Vector4(r.position.x * 0.5 / vp.x - 0.5, 0.0, r.position.x / vp.x, 1.0)
+		fw = r.position.x
+	else:
+		camera.port_frame = Vector4(0.0, r.position.y * 0.5 / vp.y - 0.5, 1.0, r.position.y / vp.y)
+		fh = maxf(r.position.y, vp.y * 0.2)
+	return clampf(pow(maxf(1.17 / (fw / vp.y), vp.y / fh), 0.85), 1.0, 2.6)
+
+
+## What the chandlery can do for her now: mend the hull (half a gold a
+## point) and fill the racks of special shot (9 gold a broadside).
+func _service_costs() -> Dictionary:
+	var hp := maxi(0, ceili(player.max_hp - player.hp))
+	var shot_n := 0
+	for k: int in Ammo.SPECIALS:
+		shot_n += maxi(0, int(Ammo.MAX[k]) - stock[k])
+	return {"repair": ceili(hp * 0.5), "repair_hp": hp, "shot": shot_n * 9, "shot_n": shot_n}
+
+
+func _services() -> void:
+	var c := _service_costs()
+	market.set_services(c.repair, c.repair_hp, c.shot, c.shot_n)
+	market.set_gold(player.gold)
+
+
+## Sells a lot (or, "", the whole hold) at today's prices: the porters carry
+## it ashore, finest first, and the quay cheers a good sale.
+func _sell(id: String) -> void:
+	var port := dock_port
+	if state != State.DOCKED or port == null:
+		return
+	var t := world.time
+	var goods := PackedStringArray()
+	var total := 0
+	var best := 0
+	var lots: Array = hold.list() if id == "" else [[id, hold.has(id)]]
+	for lot: Array in lots:
+		var n: int = lot[1]
+		if n <= 0:
+			continue
+		total += port.market.price(lot[0], t) * n
+		best = maxi(best, Treasure.rarity_of(lot[0]))
+		hold.take(lot[0], n, false)
+		for i in n:
+			goods.append(lot[0])
+	if total <= 0:
+		return
+	hold.changed.emit()
+	player.gold += total
+	Progress.earn(total)
+	if id != "":
+		market.sold(id, total)
+	else:
+		market.sold_all(total)
+	_services()
+	port.unload(goods)
+	port.cheer(2.0 if total >= 1500 or best >= 4 else (1.0 if total >= 250 or best >= 2 else 0.5))
+	sound.sale(total, best)
+	var what := ("Sold %d × %s" % [goods.size(), Treasure.name_of(id)] if goods.size() > 1 else "Sold %s" % Treasure.name_of(id)) if id != "" else "Sold the hold (%d goods)" % goods.size()
+	voyage.note("trade", what, "%s · +%d gold" % [port.title, total])
+	_note_tour("sold %d for %d gold" % [goods.size(), total])
+
+
+## The chandlery mends her hull: bolts of calico and a cheese come aboard.
+func _repair() -> void:
+	var port := dock_port
+	var c := _service_costs()
+	if state != State.DOCKED or port == null or c.repair <= 0 or c.repair > player.gold:
+		return
+	player.gold -= c.repair
+	player.hp = player.max_hp
+	port.unload(PackedStringArray(["calico", "calico", "cheese"].slice(0, 1 + mini(2, int(c.repair_hp) / 80))), true)
+	sound.purchase(&"repair")
+	_services()
+	_note_tour("repaired for %d gold" % c.repair)
+
+
+## Fresh special shot fills her racks: two casks come aboard.
+func _restock() -> void:
+	var port := dock_port
+	var c := _service_costs()
+	if state != State.DOCKED or port == null or c.shot <= 0 or c.shot > player.gold:
+		return
+	player.gold -= c.shot
+	for k: int in Ammo.SPECIALS:
+		stock[k] = int(Ammo.MAX[k])
+	port.unload(PackedStringArray(["rum", "rum"]), true)
+	sound.purchase(&"shot")
+	_services()
+	_note_tour("restocked for %d gold" % c.shot)
+
+
+## Casts off: back out to sea, clear of the quay, sails set (the web's castOff).
+func _cast_off() -> void:
+	if state != State.DOCKED or veil.busy:
+		return
+	sound.port_depart()
+	veil.cover("Casting off…", _undock)
+
+
+## Lets go of the quay: she's put out past its end under way, the camera
+## back behind her and the HUD up.
+func _undock() -> void:
+	var port := dock_port
+	var p := player
+	if port == null:
+		return
+	_let_go()
+	state = State.VOYAGE
+	var c := port.cast_off(p.cls.beam)
+	p.place(c.x, c.y, c.z)
+	p.anchored = false
+	p.speed = 3.0
+	p.sail_target = 2.0 / 3.0
+	camera.snap_to(p.pos)
+	controls.reset()
+	hud.fade(true, 0.0)
+	_note_tour("cast off")
+
+
+## Whatever quay she's tied to let go of: the market shut, the port's shot
+## gone and the quay's sounds dying away.
+func _let_go() -> void:
+	market.close()
+	market.set_dock({})
+	if dock_port != null:
+		dock_port.set_ship(null)
+		dock_port = null
+	camera.port = false
+	sound.quay(false)
+
+
+## The prompt tapped: alongside the quay she's off, if she still may.
+func _dock_here() -> void:
+	var p := player
+	if state != State.VOYAGE or not p.alive:
+		return
+	var near := ports.nearest(p.pos)
+	if near != null and near.in_reach(p.pos) and _fighting() == null:
+		_dock(near)
+
+
 ## Anchored: the voyage on hold under the pause screen (the HUD's pause
 ## button, the back button, or the phone taking the game away).
 func _pause() -> void:
@@ -1923,6 +2262,8 @@ func _go_back(os_back: bool) -> void:
 		if not hud.close_popups():
 			sound.click()
 			_pause()
+	elif state == State.DOCKED:
+		_cast_off()
 	elif os_back:
 		get_tree().quit()
 
@@ -1931,7 +2272,9 @@ func _go_back(os_back: bool) -> void:
 ## settled: another ship picked and at anchor, Set Sail for Las Brumas;
 ## there the voyage paused, Settings opened and closed, and back to the
 ## harbour; then Set Sail for the home waters, paused and resumed with the
-## back button. What it saw goes in SMOKE MENU.
+## back button; then off a market's quay, the prompt tapped, a lot sold and
+## then the rest, her hull mended and her racks filled, and cast off with
+## the back button. What it saw goes in SMOKE MENU.
 func _tour_menus() -> void:
 	if _tour_step >= TOUR_STEPS or _frames - _tour_at < 20 or veil.busy:
 		return
@@ -1970,6 +2313,42 @@ func _tour_menus() -> void:
 				return
 			_go_back(false)
 		10:
+			_go_back(false)
+		11:
+			# a trading port: off the first market's quay, a little in the
+			# hold, her hull knocked about, a rack of special shot spent and
+			# gold enough for the chandlery whichever ship the tour sails
+			var port: TradePort = ports.ports[0]
+			var c := port.cast_off(player.cls.beam)
+			player.place(c.x, c.y, c.z)
+			player.speed = 0.0
+			player.sail_target = 0.0
+			camera.snap_to(player.pos)
+			hold.stow(PackedStringArray(["rum", "rum", "silver", "pearls"]))
+			player.hp = player.max_hp * 0.6
+			stock[Ammo.SPECIALS[0]] = 0
+			player.gold = maxi(player.gold, 500)
+			_note_tour("off %s" % port.title)
+		12:
+			# the prompt tapped (pirates on her tail keep her off the quay: the
+			# tour gives the port up after a while rather than wait on them)
+			if not market.prompt_ok():
+				if _fighting() != null and _frames - _tour_at > TOUR_CHASED:
+					_note_tour("chased off the quay")
+					_tour_step = TOUR_STEPS
+				return
+			market.dock.emit()
+		13:
+			if state != State.DOCKED:
+				return
+			market.sell.emit("rum")
+		14:
+			market.sell_all.emit()
+		15:
+			market.repair.emit()
+		16:
+			market.restock.emit()
+		17:
 			_go_back(false)
 	_tour_step += 1
 	_tour_at = _frames

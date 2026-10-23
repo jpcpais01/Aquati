@@ -1,5 +1,7 @@
 // The body of ship_deck.gdshader and ship_deck_dmg.gdshader (with DAMAGE
-// defined: see ship_damage.gdshaderinc).
+// defined: see ship_damage.gdshaderinc), and of town_deck.gdshader (with
+// TOWN_POOLS defined: a trading port's quay, its lanterns' light pooled on
+// the boards after dark).
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
@@ -48,6 +50,25 @@ void fragment() {
 	EMISSION = hull_damage(v_obj, FRONT_FACING, true, col, rough, metal, drop);
 	if (drop) {
 		discard;
+	}
+#endif
+#ifdef TOWN_POOLS
+	{
+		// each lantern's light falls off fast from under it, with a long soft
+		// tail, and runs off the boards at the quay's edge (the web game's
+		// lampPools); it breathes with the flame
+		float on = smoothstep(0.12, 0.7, night);
+		vec3 pool = vec3(0.0);
+		if (on > 0.0) {
+			for (int i = 0; i < 4; i++) {
+				vec2 d = (UV - TOWN_POOLS[i]) / 4.2;
+				float r2 = dot(d, d);
+				float a = max(exp(-r2 * 4.0) * 0.75 + exp(-r2 * 1.4) * 0.25 - 0.25 * exp(-1.4), 0.0);
+				float seed = TOWN_POOLS[i].x * 0.37 + TOWN_POOLS[i].y * 0.11;
+				pool += vec3(a * (0.93 + 0.07 * sin(TIME * 8.3 + seed * 9.0) * sin(TIME * 5.1 + seed * 4.0)));
+			}
+		}
+		EMISSION += vec3(0.3, 0.17, 0.065) * pool * smoothstep(0.0, 0.3, 0.25 - UV.y) * on;
 	}
 #endif
 	ALBEDO = col * wet_dim();

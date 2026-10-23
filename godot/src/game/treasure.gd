@@ -8,6 +8,11 @@ extends RefCounted
 
 const RARITY_NAME := ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
 const RARITY_COLOR := [Color("#e3d9c2"), Color("#7fe08e"), Color("#6cc8ff"), Color("#c48bff"), Color("#ffb52e")]
+## What the market files a good under; each port pays more for some than others.
+const CATEGORY_NAME := {
+	"spirits": "Spirits", "provisions": "Provisions", "cloth": "Cloth", "coin": "Coin",
+	"gems": "Gems", "jewellery": "Jewellery", "art": "Art", "relics": "Relics",
+}
 
 ## Each good: id, name, rarity (0 common .. 4 legendary), what the market
 ## files it under, its fair price (gold), the room it takes in the hold, how
@@ -116,6 +121,15 @@ static func price_of(id: String) -> int:
 
 static func size_of(id: String) -> int:
 	return good(id)[5]
+
+
+static func cat_of(id: String) -> String:
+	return good(id)[3]
+
+
+## How a porter carries it ashore: crate, barrel, sack, casket, painting or idol.
+static func carry_of(id: String) -> String:
+	return good(id)[6]
 
 
 ## One good of rarity r, the cheaper ones a little more often.
@@ -244,3 +258,36 @@ class Hold:
 
 	static func _density(id: String) -> float:
 		return float(Treasure.price_of(id)) / Treasure.size_of(id)
+
+
+## A trading port's market: its tastes, and prices that drift a little with the days.
+class Market:
+	extends RefCounted
+
+	## What the port pays, per category, against the fair price.
+	var mult: Dictionary
+	## A line for the market's header.
+	var tagline: String
+	## Everything fetches this much more on a feast night, when the whole town is out spending.
+	var bonus := 1.0
+	var _phase := {}
+
+	func _init(p_mult: Dictionary, p_tagline: String, seed_value: int) -> void:
+		mult = p_mult
+		tagline = p_tagline
+		var s := seed_value * 9301 + 49297
+		for g: Array in Treasure.GOODS:
+			s = (s * 9301 + 49297) % 233280
+			_phase[g[0]] = float(s) / 233280.0 * TAU
+
+	## Price per item right now (game time in seconds).
+	func price(id: String, t: float) -> int:
+		var g := Treasure.good(id)
+		var p: float = _phase[id]
+		# a slow drift over a few minutes plus a gentle day-to-day wobble
+		var drift := 1.0 + 0.09 * sin(t / 140.0 + p) + 0.04 * sin(t / 37.0 + p * 2.3)
+		return maxi(1, roundi(float(g[4]) * float(mult.get(g[3], 1.0)) * drift * bonus))
+
+	## Price against the fair price, -1..1 (0 = fair).
+	func trend(id: String, t: float) -> float:
+		return float(price(id, t)) / Treasure.price_of(id) - 1.0

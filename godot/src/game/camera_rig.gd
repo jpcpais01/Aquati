@@ -4,8 +4,9 @@ extends Camera3D
 ## out, a velocity look-ahead, a critically damped zoom spring, trauma shake,
 ## and past the farthest zoom a cinematic lean toward the horizon. In the
 ## harbour it circles the ship at anchor instead, low and slow, and swings
-## down into the follow view as she sets sail. Ported from the web game's
-## src/game/cameraRig.ts.
+## down into the follow view as she sets sail; tied up at a trading port it
+## holds the town's shot of her alongside the quay. Ported from the web
+## game's src/game/cameraRig.ts.
 
 ## Cinematic tilt at its fullest (radians above the horizon), and close in.
 const CINE_PITCH := 0.74
@@ -48,6 +49,16 @@ var orbit_xf := Transform3D.IDENTITY
 var orbit_frame := Vector4(0.0, 0.0, 1.0, 1.0)
 ## How far round her the orbit has come (radians; it creeps on at 0.06 a second).
 var orbit_angle := 0.6
+## Tied up at a trading port: the camera glides after a shot of her and the
+## quay (where it stands, what it looks at, its lens, and how briskly it
+## chases them), framed in the space the market's panel leaves free
+## (`port_frame`, as orbit_frame).
+var port := false
+var shot_pos := Vector3.ZERO
+var shot_look := Vector3.ZERO
+var shot_fov := 38.0
+var shot_pace := 1.0
+var port_frame := Vector4(0.0, 0.0, 1.0, 1.0)
 
 var _focus := Vector3.ZERO
 var _zoom_smooth := 0.45
@@ -62,6 +73,9 @@ var _b := 1.0
 var _orbit_dist := 0.0
 ## The frame slid across (shares of the screen), easing after orbit_frame.
 var _shift := Vector2.ZERO
+## The port shot as it glides: where the camera is and what it looks at.
+var _cur_pos := Vector3.ZERO
+var _cur_look := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -127,6 +141,8 @@ func tilt_blend() -> float:
 ## How far the camera hangs from what it follows (drives shadow reach, sound
 ## and fx radii): circling the harbour, how far it stands off her.
 func distance() -> float:
+	if port:
+		return _cur_pos.distance_to(_cur_look)
 	return lerpf(_orbit_dist, _follow_distance(), _b) if _b < 1.0 else _follow_distance()
 
 
@@ -137,6 +153,8 @@ func _follow_distance() -> float:
 
 ## Visible half-extent of the sea round the focus.
 func ground_radius() -> float:
+	if port:
+		return 62.0
 	return clampf(distance() * 0.75, 70.0, 260.0)
 
 
@@ -144,6 +162,9 @@ func ground_radius() -> float:
 ## ground in view runs, and no further than the web game's shadow square round
 ## the focus (the ground radius in 16 m steps), past which it draws none.
 func shadow_reach() -> float:
+	if port:
+		# her, the quay and the town behind it
+		return distance() + 70.0
 	var dist := _follow_distance()
 	var h := sin(_pitch) * dist
 	var r := minf(260.0, ceilf(clampf(dist * 0.75, 70.0, 260.0) / 16.0) * 16.0)
@@ -174,7 +195,17 @@ func orbit_snap() -> void:
 	_shift = Vector2(orbit_frame.x, orbit_frame.y)
 
 
+## Straight onto the port shot (behind the veil, coming alongside).
+func snap_shot() -> void:
+	_cur_pos = shot_pos
+	_cur_look = shot_look
+	_shift = Vector2(port_frame.x, port_frame.y)
+
+
 func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
+	if port:
+		_port_shot(dt, time)
+		return
 	# a critically damped spring, not a plain lag: the spring carries its speed
 	# from notch to notch and glides instead of zooming in surges
 	var zw := 8.0
@@ -230,6 +261,23 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	_slide_frame(dt)
 
 
+func _port_shot(dt: float, time: float) -> void:
+	_cur_pos = _cur_pos.lerp(shot_pos, MathX.damp(2.4 * shot_pace, dt))
+	_cur_look = _cur_look.lerp(shot_look, MathX.damp(3.0 * shot_pace, dt))
+	var pos := _cur_pos
+	_trauma = maxf(0.0, _trauma - dt * 1.6)
+	var s := _trauma * _trauma
+	if s > 0.0:
+		pos += Vector3((sin(time * 47.0) + sin(time * 31.0)) * s * 0.12, sin(time * 53.0) * s * 0.1, sin(time * 41.0 + 1.0) * s * 0.12)
+	global_transform = Transform3D(Basis.looking_at(_cur_look - pos, Vector3.UP), pos)
+	target = Vector3(_cur_look.x, 0.0, _cur_look.z)
+	_focus = target
+	fov = shot_fov
+	near = 2.0
+	far = 2600.0
+	_slide_frame(dt)
+
+
 ## Where the orbit looks this frame (her bounds' middle), its distance eased
 ## toward the closest that fits every corner of them into the free space.
 func _orbit_pose(dt: float) -> Vector3:
@@ -255,8 +303,8 @@ func _orbit_pose(dt: float) -> Vector3:
 ## off-centre frustum, the web's setViewOffset); it eases out as the camera
 ## swings down into the follow view.
 func _slide_frame(dt: float) -> void:
-	var want := Vector2(orbit_frame.x, orbit_frame.y) * (1.0 - _b)
-	_shift += (want - _shift) * MathX.damp(2.5, dt)
+	var want := Vector2(port_frame.x, port_frame.y) if port else Vector2(orbit_frame.x, orbit_frame.y) * (1.0 - _b)
+	_shift += (want - _shift) * MathX.damp(6.0 if port else 2.5, dt)
 	if absf(_shift.x) + absf(_shift.y) < 1e-4:
 		_shift = Vector2.ZERO
 		if projection != PROJECTION_PERSPECTIVE:

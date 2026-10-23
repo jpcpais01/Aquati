@@ -1,39 +1,41 @@
-## Shores O' Fortune for Android: the harbour
+## Shores O' Fortune for Android: the trading ports
 
-The tenth build opens where every voyage begins: in the harbour.
+The eleventh build puts the market towns on the map, so the plunder in your
+hold can be sold.
 
-- **The harbour.** Your ship rides at anchor off the home port with every
-  sail set while the camera slowly circles her, the title in gilt across the
-  top and the harbour's own theme playing. Her card shows her class and
-  name, her numbers and her qualities, and the picker along the bottom
-  brings the sloop, the brigantine or the galleon in to anchor at a tap. A
-  sail or two of pirates is out on the horizon.
-- **Where shall we sail?** Set Sail asks where to weigh anchor: the home
-  waters of Las Afortunadas, or Las Brumas, the misty isles a long voyage
-  away, each with a painted chart of its isles and the spot you'll sail from.
-  The first landfall in Las Brumas pays 600 gold.
-- **Anchored.** The pause button, top right, holds the voyage behind frosted
-  glass with the voyage so far: time at sea, gold, ships sunk and isles
-  charted. Resume, open Settings, or return to the harbour (it asks for a
-  second press, so a stray tap never costs you a voyage).
-- **Settings.** Sound on or off, the master, music, effects and ambience
-  volumes, the music's own switch, the frame counter and how hard the camera
-  shakes. Every change is heard at once and kept.
-- **Your progress is kept.** The ship you sail, the waters you set out in,
-  the view you sail with, your purse, the archipelagos you've charted and your
-  records stay with you between plays, written so that a crash or a flat
-  battery can never leave them half-saved.
-- **After the farewell.** Sail again in the same ship, or choose a new ship
-  back in the harbour.
-- **The back button.** Android's back button closes whatever is on top and
-  holds a voyage; in the harbour it leaves the game. Switch away from the game
-  and the voyage waits for you.
+- **Six market towns.** Four in the home waters and two in Las Brumas, each
+  on a timber quay over its pilings with its own colours, painted signs, its
+  flag in the wind, a lighthouse, a harbour office with its bell and a trade
+  house of its own: a spice bazaar, a counting house, a curio gallery, a
+  distillery, a tea and silk bazaar and a jade carvers' gallery. After dark
+  the lamps along the quays come on and the sea mirrors them.
+- **The townsfolk.** Merchants at their stalls, porters, strollers, a kid,
+  fishers on the end of the quay, a band and the harbourmaster, who waves
+  you in and rings the bell once you're tied up.
+- **Coming alongside.** Sail up to a quay's seaward face and "Dock at …"
+  appears at the foot of the screen: tap it (or press F). If pirates are on
+  your tail you have to shake them off first. The camera comes round to watch
+  her lie alongside the quay.
+- **The market.** Every good in your hold is listed with today's price, and
+  prices drift up and down while you watch. Each town pays more for some
+  goods than others: the distillery town is thirsty for spirits, the
+  galleries chase art and relics. Sell lot by lot or everything at once, and
+  watch the coins fly into your purse while the porters carry the goods
+  ashore. A big sale gets a cheer from the whole quay.
+- **The chandlery.** Pay to patch your hull and refill the racks of special
+  shot; the porters bring the supplies aboard. Cast off (or press the back
+  button) to put out to sea again.
+- **The sound of the quay.** The bell, a squeezebox hornpipe as you come
+  alongside, gold counted out on the counter, purses thumped down, mallets in
+  the yard, gulls, creaking lines, water slapping among the pilings and the
+  hubbub of the crowd. The bosun pipes you away when you cast off.
 
-Still aboard from the earlier builds: the open sea with its swells, sun
-glitter and turning day, the weather (eight skies, storms with lightning,
-rain, mist and mirror calm), the night with its stars, moon, lanterns and
-glowing seas, both archipelagos with their islands, plants, shallows and
-surf, the pirates and their broadsides, five kinds of shot and the shot pie,
-holes, broken masts, wrecks breaking in two and wreckage afloat, plunder and
-your hold, the crews on deck, every sound of the sea and the band's songs,
-and your farewell when the sea takes you.
+Still aboard from the earlier builds: the harbour where you choose your ship,
+"Where shall we sail?", the pause screen and Settings, your progress kept
+between plays, the open sea with its swells, sun glitter and turning day, the
+weather (eight skies, storms with lightning, rain, mist and mirror calm), the
+night with its stars, moon, lanterns and glowing seas, both archipelagos with
+their islands, plants, shallows and surf, the pirates and their broadsides,
+five kinds of shot and the shot pie, holes, broken masts, wrecks breaking in
+two and wreckage afloat, plunder and your hold, the crews on deck, every sound
+of the sea and the band's songs, and your farewell when the sea takes you.

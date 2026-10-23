@@ -3,7 +3,8 @@ extends Node
 ## The voyage's sound, played as the web game plays it (src/core/audio.ts):
 ## the sea, the wind and the rain round the listener, thunder rolling in
 ## late from the strike, every gun, blow and splash out on the water, her
-## sinking, the interface's few notes, and the music (Music). The sounds are
+## sinking, a trading port's quay, the interface's few notes, and the music
+## (Music). The sounds are
 ## the web's own, rendered offline into res://audio by
 ## tools/audio/bake_audio.mjs; sounds.json there holds the level each was
 ## rendered at.
@@ -63,6 +64,11 @@ const BED_START := [0.0, 1.3, 0.7, 2.1]
 const AIR_SIZES := [0.6, 1.0, 1.5]
 ## The muffle's cutoff (Hz) above which it is left out of the mix.
 const OPEN := 20000.0
+## The quay's loops while she's tied up (the water among the pilings, the
+## hubbub) and their levels; how often something happens on it (s).
+const QUAY := ["lap", "murmur"]
+const QUAY_LEVEL := [0.9, 0.3]
+const QUAY_TICK := 0.9
 
 ## The music: the voyage band and the high seas' theme.
 var music: Music
@@ -132,6 +138,14 @@ var _deep_lp: AudioEffectFilter
 var _deep_g := 0.0
 var _deep_on := false
 var _deep_off := -1.0
+## The quay: its loops' players and the level each take was rendered at, how
+## far in (0 .. 1) it has faded, and since when it has been fading out (< 0: not).
+var _quay: Array[AudioStreamPlayer] = []
+var _quay_gain := PackedFloat32Array([1.0, 1.0])
+var _quay_g := 0.0
+var _quay_on := false
+var _quay_off := -1.0
+var _quay_tick := 0.0
 
 var _bus := {}
 
@@ -151,6 +165,8 @@ class _Cue:
 	## Out on the water (counted against MAX_VOICES); the interface, straight out.
 	var counted := false
 	var ui := false
+	## A bus of its own (a gull's, on the ambience), rather than the air's.
+	var bus := &""
 
 
 func _ready() -> void:
@@ -194,6 +210,11 @@ func _ready() -> void:
 	_deep = AudioStreamPlayer.new()
 	_deep.bus = &"Deep"
 	add_child(_deep)
+	for i in QUAY.size():
+		var p := AudioStreamPlayer.new()
+		p.bus = &"Bed"
+		add_child(p)
+		_quay.append(p)
 	music = Music.new()
 	music.name = "Music"
 	add_child(music)
@@ -430,6 +451,8 @@ func _process(dt: float) -> void:
 		_sweep()
 	_step_beds(dt)
 	_step_under(dt)
+	if _quay_on or _quay_off >= 0.0:
+		_step_quay(dt)
 
 
 ## A cue's moment has come: a panned voice out on the water (and its echo),
@@ -447,7 +470,7 @@ func _start(c: _Cue) -> void:
 	var i: int = _dry_free.pop_back()
 	var p := _dry[i]
 	p.stream = c.stream
-	p.bus = AIR_BUS[c.air]
+	p.bus = AIR_BUS[c.air] if c.bus.is_empty() else c.bus
 	p.pitch_scale = c.pitch
 	_place(p, c.pan, c.stereo, c.vol)
 	_counted[i] = 1 if c.counted else 0
@@ -646,8 +669,9 @@ func _voice(vol: float) -> bool:
 
 ## One of the web's live one-shots from its take: `level` times the level it
 ## was rendered at, panned, at `at` on the clock (now, if 0), its echo sent at
-## `wet` of its own level; the interface's straight out.
-func _one(key: String, level: float, pan := 0.0, at := 0.0, pitch := 1.0, wet := 0.0, ui := false) -> void:
+## `wet` of its own level; the interface's straight out, and one with a `bus`
+## of its own through that.
+func _one(key: String, level: float, pan := 0.0, at := 0.0, pitch := 1.0, wet := 0.0, ui := false, bus := &"") -> void:
 	var k := _take(key)
 	if k < 0:
 		return
@@ -660,6 +684,7 @@ func _one(key: String, level: float, pan := 0.0, at := 0.0, pitch := 1.0, wet :=
 	c.pan = pan
 	c.wet = wet * level * g
 	c.ui = ui
+	c.bus = bus
 	_cues.append(c)
 
 
@@ -812,9 +837,185 @@ func thud(vol: float, pan: float, dist := 0.0) -> void:
 	_emit("earth", vol * 0.45, pan, dist, 0.85 + randf() * 0.3, 0.3)
 
 
-## A piece of gold.
+## A gold doubloon flipped onto the counter: a heavy, warm chink and its bounces.
 func coin(delay := 0.0, vol := 0.5) -> void:
 	_emit("coin", vol, (randf() - 0.5) * 0.3, 0.0, 0.93 + randf() * 0.14, 0.18, delay)
+
+
+## Gold counted out onto the table, one piece after another; returns when
+## the last lands (s from now).
+func _count_out(n: int, delay := 0.0, vol := 0.42) -> float:
+	var t := delay
+	for i in n:
+		coin(t, vol * (0.8 + randf() * 0.3))
+		t += 0.1 + randf() * 0.07
+	return t
+
+
+## A tap on the merchant's oak counter: the market's buttons.
+func knock() -> void:
+	if _emit("mallet", 0.13, 0.0, 0.0, 1.5 + randf() * 0.25, 0.05) < 0.0:
+		click()
+
+
+## A sale. A few pieces are counted out by hand; a fair sum lands as a purse
+## thumped on the counter and poured out; a fortune (or a rare lot, `best`
+## its rarity) gets a second purse, a squeezebox flourish and the whole quay
+## roaring.
+func sale(value: int, best := 0) -> void:
+	if value < 120:
+		var end := _count_out(3 + mini(3, floori(value / 30.0)))
+		_emit("pour0", 0.28, 0.0, 0.0, 1.1, 0.15, end - 0.05)
+		return
+	var big := value >= 600
+	_emit("purse", 0.62, -0.1, 0.0, 0.95 + randf() * 0.1, 0.2)
+	_emit("pour1" if big else "pour0", 0.55 if big else 0.45, 0.05, 0.0, 0.96 + randf() * 0.08, 0.22, 0.16)
+	if big:
+		_emit("purse", 0.5, 0.15, 0.0, 0.88, 0.2, 0.55)
+	coin(1.6 if big else 0.85, 0.4)
+	if value >= 1500 or best >= 3:
+		_squeezebox("squeeze_flourish", 0.25)
+		cheer(0.9, 0.2, 25.0, 6)
+
+
+## Paying the chandler (`kind` &"repair" or &"shot"): gold counted out, then
+## the yard gets to work, mallets on her planking or shot set down in the racks.
+func purchase(kind: StringName) -> void:
+	var repair := kind == &"repair"
+	var end := _count_out(4 if repair else 3)
+	for i in 3:
+		var d := end + 0.15 + i * (0.32 if repair else 0.26) + randf() * 0.05
+		if repair:
+			_emit("mallet", 0.32 - i * 0.05, 0.35, 14.0, 0.9 + randf() * 0.15, 0.35, d)
+		else:
+			_emit("clunk", 0.4 - i * 0.06, -0.3, 10.0, 0.92 + randf() * 0.12, 0.3, d)
+
+
+## The harbour bell on the quay: a bronze strike with inharmonic partials, rung `n` times.
+func bell(n := 2, vol := 0.22) -> void:
+	if not _voice(vol):
+		return
+	for k in n:
+		_one("bell", vol, 0.0, _now + k * 0.62)
+
+
+## The squeezebox on the quay (the take of its tune: the hornpipe for coming
+## alongside, the flourish for a fortune), `delay` s from now, and its echo.
+func _squeezebox(key: String, vol: float, delay := 0.0) -> void:
+	if _voice(vol):
+		_one(key, 1.0, 0.0, _now + delay, 1.0, 1.0)
+
+
+## Voices raised together: the quay's cheer, `n` of them (4 or 6), `dist` m off.
+func cheer(vol: float, pan: float, dist := 0.0, n := 6) -> void:
+	var v := minf(0.4, vol * 0.3) * exp(-dist / 200.0)
+	if _voice(v):
+		# (each was rendered as the web raises one at full voice)
+		_one("cheer%d" % (6 if n > 4 else 4), v / 0.3, pan, 0.0, 1.0, 1.0)
+
+
+## The bosun's call: a shrill pipe swooping up, trilling and falling away: "all hands, cast off!".
+func bosun_pipe() -> void:
+	if _voice(0.09):
+		_one("bosun_pipe", 1.0, 0.0, 0.0, 1.0, 1.0)
+
+
+## A herring gull calling: a nasal, raspy "kyow" that leaps up then falls
+## away; two or three in a row (`notes`) make the laughing call. It sounds
+## with the sea, on the ambience.
+func gull(vol: float, pan: float, notes := 1, delay := 0.0) -> void:
+	if not _live or _muted or vol < 0.01:
+		return
+	_one("gull%d" % clampi(notes, 1, 3), minf(1.0, vol), pan, _now + delay, 1.0, 0.0, false, &"Amb")
+
+
+## Coming alongside: the hull nudges the fenders, the lines creak taut and
+## somebody on the quay strikes up a tune; the quay comes to life round her.
+func port_arrive() -> void:
+	_emit("mallet", 0.5, 0.2, 6.0, 0.42, 0.35)
+	_emit("earth", 0.2, 0.2, 6.0, 0.7, 0.3, 0.03)
+	_emit("creak0", 0.3, -0.4, 8.0, 0.95, 0.3, 0.35)
+	_emit("creak1", 0.24, 0.45, 10.0, 1.05, 0.3, 0.9)
+	_squeezebox("squeeze_arrival", 0.13, 0.9)
+	quay(true)
+
+
+## Casting off: the bosun pipes, the lines come in, the timbers ease and the quay cheers her away.
+func port_depart() -> void:
+	bosun_pipe()
+	_emit("creak2", 0.3, 0.3, 8.0, 0.9, 0.35, 0.5)
+	_emit("creak0", 0.22, -0.3, 8.0, 1.1, 0.3, 1.1)
+	cheer(0.6, 0.0, 15.0, 4)
+
+
+## The quay's own soundscape while she's tied up: water slapping among the
+## pilings, the hubbub, lines creaking, gulls, the yard at work; off, it dies away.
+func quay(on: bool) -> void:
+	if not _live or on == _quay_on:
+		return
+	_quay_on = on
+	if on:
+		# (back before it had died away, it swells again from where it got to)
+		_quay_off = -1.0
+		_quay_tick = 0.0
+	else:
+		_quay_off = 0.0
+
+
+func _step_quay(dt: float) -> void:
+	if _quay_on:
+		_quay_g = minf(1.0, _quay_g + dt / 2.5)
+		_quay_tick += dt
+		if _quay_tick >= QUAY_TICK:
+			_quay_tick -= QUAY_TICK
+			if not _muted:
+				_quay_life()
+	else:
+		_quay_g *= exp(-dt / 0.5)
+		_quay_off += dt
+		if _quay_off > 3.0:
+			_quay_off = -1.0
+			_quay_g = 0.0
+			for p in _quay:
+				p.stop()
+			return
+	for i in QUAY.size():
+		var p := _quay[i]
+		if not p.playing:
+			if not _quay_on:
+				continue
+			# each loop joins once it has loaded, somewhere along it
+			var k := _take(QUAY[i])
+			if k < 0:
+				continue
+			p.stream = _takes[QUAY[i]][k]
+			_quay_gain[i] = _gains[QUAY[i]][k]
+			p.volume_db = _db(0.0)
+			p.play(randf() * p.stream.get_length())
+		p.volume_db = _db(float(QUAY_LEVEL[i]) * _quay_g * _quay_gain[i])
+
+
+## A moment on the quay: a line creaking, a gull, a shipwright across the
+## yard hard at a plank, a cask of shot set down, a coin.
+func _quay_life() -> void:
+	var r := randf()
+	if r < 0.14:
+		_emit("creak%d" % (randi() % 3), 0.1 + randf() * 0.1, _side(), 15.0 + randf() * 30.0, 0.85 + randf() * 0.3, 0.4)
+	elif r < 0.2:
+		gull(0.35 + randf() * 0.3, _side(), 1 + randi() % 3)
+	elif r < 0.24:
+		var pan := _side()
+		for i in 3 + randi() % 4:
+			_emit("mallet", 0.07, pan, 70.0, 0.95 + randf() * 0.1, 0.6, i * 0.38)
+	elif r < 0.26:
+		_emit("clunk", 0.08, _side(), 40.0, 0.8, 0.5)
+	elif r < 0.28:
+		coin(0.0, 0.08)
+
+
+## Off to one side of the quay or the other, at random.
+static func _side() -> float:
+	return (-1.0 if randf() < 0.5 else 1.0) * (0.3 + randf() * 0.6)
 
 
 ## Something gained: an isle charted, home waters reached.
@@ -923,5 +1124,6 @@ func harbour(on: bool) -> void:
 
 ## What the mix is doing, for the smoke test.
 func stats() -> String:
-	return "%d takes of %d sounds loaded, %d played (%d dropped), %d voices out, %d peals of thunder, the sea %s; %s" % [
-			loaded_takes(), _takes.size(), played, dropped, _voices, peals, "rolling" if _noise != null and _beds[SURF].playing else "silent", music.state()]
+	return "%d takes of %d sounds loaded, %d played (%d dropped), %d voices out, %d peals of thunder, the sea %s%s; %s" % [
+			loaded_takes(), _takes.size(), played, dropped, _voices, peals, "rolling" if _noise != null and _beds[SURF].playing else "silent",
+			", the quay astir" if _quay_on and _quay[0].playing else "", music.state()]
