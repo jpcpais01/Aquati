@@ -1,9 +1,9 @@
 class_name ShotDisc
 extends Control
 ## A round of shot's disc on the HUD, one quad the shader paints
-## (shaders/shot_disc.gdshader): the touch shot button, a chip of the fan
-## round it, or a ball of the desktop rack with its reload halves. Its
-## uniforms are only written when what they show changes.
+## (shaders/shot_disc.gdshader): the touch shot button, or a ball of the
+## desktop rack with its reload halves. Its uniforms are only written when
+## what they show changes.
 
 enum Style { GLASS, RACK }
 

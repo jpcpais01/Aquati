@@ -14,7 +14,7 @@ signal sail_set(level: int)
 signal view_pressed
 ## A gun button: +1 port, -1 starboard, 0 the big Fire.
 signal fire_pressed(side: int)
-## A kind of shot picked off the rack or the fan (Ammo).
+## A kind of shot picked off the rack or the pie (Ammo).
 signal ammo_picked(kind: int)
 
 var controls: Controls
@@ -46,7 +46,7 @@ var _pill_box: StyleBoxFlat
 var _pips: _SailPips
 var _rack: ShotRack
 var _rack_sep: Control
-var _fan: ShotFan
+var _pie: ShotPie
 ## The loaded shot's name and what it does, over the rack for a moment.
 var _tag: PanelContainer
 var _tag_name: Label
@@ -249,9 +249,9 @@ func _ready() -> void:
 	_pad = FirePad.new()
 	_pad.fire.connect(func(side: int) -> void: fire_pressed.emit(side))
 	root.add_child(_pad)
-	_fan = ShotFan.new()
-	_fan.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
-	root.add_child(_fan)
+	_pie = ShotPie.new()
+	_pie.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
+	root.add_child(_pie)
 	show_touch(controls != null and controls.touch)
 	if controls:
 		controls.touch_seen.connect(func() -> void: show_touch(true))
@@ -280,7 +280,7 @@ func _layout() -> void:
 	_lever.position = Vector2(mx, vp.y - my - SailLever.TH)
 	_pad.position = Vector2(vp.x - mx - _pad.size.x, vp.y - my - _pad.size.y)
 	# the shot button rides over Fire, a little clear of it
-	_fan.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotFan.BTN * 0.5)
+	_pie.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotPie.BTN * 0.5)
 	_peek.place(Vector2(mx, my + _chips.position.y + _chips.size.y + 8.0 * HudStyle.K))
 	_place_tag()
 	_toasts.offset_top = my
@@ -308,10 +308,10 @@ func show_touch(on: bool) -> void:
 	_touch_ui = on
 	_lever.visible = on
 	_pad.visible = on
-	_fan.visible = on
+	_pie.visible = on
 	if not on:
-		_fan.set_open(false)
-	# the lever shows the canvas and the fan the shot, so the pill keeps just the knots
+		_pie.set_open(false)
+	# the lever shows the canvas and the pie the shot, so the pill keeps just the knots
 	_pips.visible = not on
 	_rack.visible = not on
 	_rack_sep.visible = not on
@@ -369,14 +369,14 @@ func guns_deny(side: int) -> void:
 ## The shot loaded and what's left of each kind (round shot -1, endless).
 func show_ammo(sel: int, stock: PackedInt32Array) -> void:
 	_rack.show_state(sel, stock)
-	_fan.show_state(sel, stock)
+	_pie.show_state(sel, stock)
 
 
 ## A kind of shot just loaded: the ball drops in, and (on a desktop) its name
 ## and what it does show over the rack for a moment.
 func ammo_loaded(kind: int) -> void:
 	_rack.loaded(kind)
-	_fan.loaded()
+	_pie.loaded()
 	ammo_tag(kind)
 
 
@@ -391,13 +391,13 @@ func ammo_tag(kind: int) -> void:
 ## None of that shot left: its slot and its chip shake.
 func ammo_deny(kind: int) -> void:
 	_rack.deny(kind)
-	_fan.deny(kind)
+	_pie.deny(kind)
 
 
 ## Shot found in salvage: its slot (and the shot button) bump with a "+n".
 func ammo_gain(kind: int, n: int) -> void:
 	_rack.gain(kind, n)
-	_fan.gain(kind, n)
+	_pie.gain(kind, n)
 
 
 func _rack_hover(kind: int) -> void:
@@ -437,6 +437,10 @@ func _process(dt: float) -> void:
 		_tag.position.y = _pill.position.y - 10.0 * k - _tag.size.y + (1.0 - HudStyle.eased(_tag_e)) * 6.0 * k
 		if _tag_e <= 0.0:
 			_tag.visible = false
+	# the guns dim under the open shot pie
+	var guns := 1.0 - 0.6 * _pie.openness()
+	if _pad.modulate.a != guns:
+		_pad.modulate.a = guns
 
 
 ## The hold: the room used of the room aboard on its chip (coral when it's
@@ -452,13 +456,17 @@ func watch_hold(hold: Treasure.Hold) -> void:
 	_peek.watch(hold)
 
 
-## Opens the hold's peek, or the touch shot fan (a set piece's view of them).
+## Opens the hold's peek, or the touch shot pie (a set piece's view of them:
+## the pie open for a tap, or held with a finger on a kind of shot).
 func open_peek() -> void:
 	_peek.set_open(true)
 
 
-func open_fan() -> void:
-	_fan.set_open(true)
+func open_pie(held := -1) -> void:
+	if held >= 0:
+		_pie.show_held(held)
+	else:
+		_pie.set_open(true)
 
 
 ## The bars over the enemy ships in view.
@@ -488,7 +496,7 @@ func reset() -> void:
 	for c: _Chip in [_gold, _hold, _kills, _isles]:
 		c.reset()
 	_peek.set_open(false)
-	_fan.set_open(false)
+	_pie.set_open(false)
 	fade(true, 0.4)
 
 
@@ -741,7 +749,7 @@ class _Chip:
 		_text = ""
 
 	func _gui_input(event: InputEvent) -> void:
-		if ShotFan.pressed(event):
+		if ShotPie.pressed(event):
 			pressed.emit()
 			accept_event()
 

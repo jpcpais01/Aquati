@@ -1,5 +1,13 @@
 ## Shores O' Fortune for Android: the crew on deck
 
+**New in this update: the shot pie.** Hold the shot button over Fire and a
+pie of eight slices opens round it, the five kinds of shot across its top
+with what's left of each. Slide your thumb onto one and let go to load it,
+or back to the middle to keep what you have. The slice under your thumb
+lights up in its shot's colour, with its name and what it does above the
+pie, and the guns dim while you choose. A quick tap opens the pie too, for
+a tap on the shot you want.
+
 The sixth build puts people aboard. Every ship on the sea, yours and every
 pirate's, now sails with a crew at work on her deck, each sailor with his
 own face and kit, and they fight, cheer, panic and swim just as they do on
