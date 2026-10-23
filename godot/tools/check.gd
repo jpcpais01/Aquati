@@ -4,7 +4,9 @@ extends SceneTree
 ## way its normals point, within its triangle budget), the crew bake loads
 ## and agrees with the game on every id, each deck takes its crew, the touch
 ## shot pie opens and picks as a finger works it, the zoom runs out to its
-## lean and back and a pinch is never taken for the helm, and the baked world
+## lean and back and a pinch is never taken for the helm, every weather
+## settles in whole and the sky turns from one to the next without a jump, a
+## bolt of lightning comes down where it can be seen, and the baked world
 ## loads whole (both archipelagos, their ground maps and their planting).
 ## Prints CHECK OK.
 
@@ -23,10 +25,13 @@ func _initialize() -> void:
 	_check_crew()
 	_check_pie()
 	_check_zoom()
+	_check_weather()
 	_check_world()
-	# the helm's reach is a share of the window: that check waits for the tree to run
+	# the helm's reach is a share of the window, and a strike is aimed by the
+	# lens: those checks wait for the tree to run
 	await process_frame
 	_check_touch()
+	_check_lightning()
 	if _errors == 0:
 		print("CHECK OK")
 	else:
@@ -368,6 +373,103 @@ func _check_touch() -> void:
 		_fail("touch: only %d of 5 steps went as fingers would expect" % steps)
 	c.queue_free()
 	print("touch: %d of 5 steps as expected" % steps)
+
+
+## Every weather settles in whole and as it should look (a storm darker than
+## a clear day, rain soaking the decks), the very hot noon keeps to its time
+## and place, and left to itself the sky turns from one weather to the next
+## with nothing jumping on the way.
+func _check_weather() -> void:
+	var a := Atmosphere.new()
+	a.set_hour(10.0)
+	var steps := 0
+	var sane := 0
+	var lum := {}
+	var wet := {}
+	for k: StringName in Atmosphere.KINDS:
+		a.set_mode(k, true)
+		a.update(0.0)
+		var ok := a.kind == k and a.cover >= 0.0 and a.cover <= 1.0 and a.veil.x >= 0.0 and a.fog_range.x < a.fog_range.y
+		for x: float in [a.cover, a.rain, a.storm, a.fog, a.wind, a.sea, a.wet, a.exposure, a.veil.x, a.veil.y, a.veil.w,
+				a.light_tint.x, a.key_color.y, a.fog_color.z, a.zenith.x, a.horizon.y, a.haze.z]:
+			ok = ok and is_finite(x)
+		sane += 1 if ok else 0
+		lum[k] = a.light_tint.dot(Vector3(0.2126, 0.7152, 0.0722))
+		wet[k] = a.wet
+	steps += 1 if sane == Atmosphere.KINDS.size() else 0
+	steps += 1 if lum[&"storm"] < lum[&"clear"] * 0.75 and wet[&"rain"] > 0.5 and wet[&"clear"] == 0.0 else 0
+	# the scorching noon: only out on the high seas, and only at noon
+	var home := a.needs(&"hot") != ""
+	a.climate = &"open"
+	a.set_hour(12.5)
+	var noon := a.needs(&"hot") == ""
+	a.set_hour(16.0)
+	steps += 1 if home and noon and a.needs(&"hot") != "" else 0
+	# an hour of nature's own weather, half a second at a time
+	var b := Atmosphere.new()
+	b.set_mode(&"auto")
+	var seen := {b.kind: true}
+	var turns := [0]
+	b.changed.connect(func(_k: StringName, _t: String, _l: String) -> void: turns[0] += 1)
+	var jump := 0.0
+	for i in 7200:
+		var was := [b.cover, b.rain, b.storm, b.fog, b.wind, b.sea, b.wet]
+		b.update(0.5)
+		seen[b.kind] = true
+		var now := [b.cover, b.rain, b.storm, b.fog, b.wind, b.sea, b.wet]
+		for j in now.size():
+			jump = maxf(jump, absf(now[j] - was[j]))
+	# (a snap from one weather to the next moves something a fifth of its range at once)
+	steps += 1 if seen.size() >= 3 and turns[0] >= 1 and jump < 0.1 else 0
+	if steps != 4:
+		_fail("weather: only %d of 4 steps as expected (%d kinds seen in an hour, largest step %.3f)" % [steps, seen.size(), jump])
+	print("weather: %d of 4 steps as expected; an hour of it turned through %d kinds, %d announced" % [steps, seen.size(), turns[0]])
+
+
+## A bolt of lightning comes down out ahead of the lens, from the cloud base
+## to the sea, as one sound ribbon; its flash leaps up and dies away.
+func _check_lightning() -> void:
+	var cam := Camera3D.new()
+	root.add_child(cam)
+	cam.look_at_from_position(Vector3(0.0, 150.0, 80.0), Vector3.ZERO)
+	var l := Lightning.new()
+	root.add_child(l)
+	var steps := 0
+	var st := l.strike(Vector3.ZERO, cam, true)
+	# ahead of the lens (the top of the screen is -z here) and out of the way of the ship
+	var d := Vector2(st.x, st.z)
+	steps += 1 if st.bolt and d.y < 0.0 and d.length() > 150.0 else 0
+	var m: ArrayMesh = l.mesh
+	var ok := m.get_surface_count() == 1
+	var low := INF
+	var high := -INF
+	if ok:
+		var arrays := m.surface_get_arrays(0)
+		var pos: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+		ok = pos.size() > 0 and idx.size() % 3 == 0
+		for p in pos:
+			ok = ok and is_finite(p.x) and is_finite(p.y) and is_finite(p.z)
+			low = minf(low, p.y)
+			high = maxf(high, p.y)
+		for i in idx:
+			ok = ok and i >= 0 and i < pos.size()
+	# (a ribbon turned to the eye tilts with the jagged channel: half its
+	# width can dip a few metres either side of the sea at the foot)
+	steps += 1 if ok and low > -8.0 and low < 2.0 and high > 300.0 else 0
+	var f := [0.0, 0.0]
+	for i in 6:
+		l.update(1.0 / 30.0, 0.0, Vector3.ZERO, cam)
+		f[0] = maxf(f[0], l.flash)
+	for i in 60:
+		l.update(1.0 / 30.0, 0.0, Vector3.ZERO, cam)
+	f[1] = l.flash
+	steps += 1 if f[0] > 0.3 and f[1] < 0.01 and not l.visible else 0
+	if steps != 3:
+		_fail("lightning: only %d of 3 steps as expected (strike at %.0f, %.0f; flash %.2f then %.3f)" % [steps, st.x, st.z, f[0], f[1]])
+	l.queue_free()
+	cam.queue_free()
+	print("lightning: %d of 3 steps as expected" % steps)
 
 
 func _check_world() -> void:

@@ -19,6 +19,7 @@
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/common.gdshaderinc"
 #include "res://shaders/inc/wind.gdshaderinc"
+#include "res://shaders/inc/lit.gdshaderinc"
 
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
 /// Ground cover: the distance (m, per metre of the plant's scale) at which it
@@ -69,6 +70,7 @@ void vertex() {
 	}
 #endif
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	lit_cloud = cloud_shadow(v_world.xz);
 }
 
 void fragment() {
@@ -144,8 +146,8 @@ void fragment() {
 		}
 	}
 #endif
-	ALBEDO = col;
-	ROUGHNESS = FLORA_ROUGH;
+	ALBEDO = col * wet_dim();
+	ROUGHNESS = FLORA_ROUGH * wet_gloss();
 #if defined(FLORA_BARK) || defined(FLORA_LEAVES)
 	vec3 n = bump(NORMAL, VERTEX, bump_h);
 	NORMAL = n;
@@ -157,7 +159,7 @@ void fragment() {
 	// yellow-green, so canopies read as soft lit volumes, never black blobs
 	vec3 l = normalize((VIEW_MATRIX * vec4(sun_dir, 0.0)).xyz);
 	float back = clamp(0.25 - dot(n, l), 0.0, 1.0);
-	EMISSION = col * sun_color * back * vec3(0.05, 0.058, 0.026);
+	EMISSION = col * sun_color * back * vec3(0.05, 0.058, 0.026) * lit_cloud;
 #endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

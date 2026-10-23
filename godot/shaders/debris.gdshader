@@ -16,6 +16,8 @@ render_mode cull_back, world_vertex_coords;
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
 #include "res://shaders/inc/sea_height.gdshaderinc"
+#define LIT_SPECULAR 0.4
+#include "res://shaders/inc/lit.gdshaderinc"
 
 global uniform float sea_clock;
 /// how far the wind has carried what floats since the debris began (m, x z)
@@ -57,11 +59,12 @@ void vertex() {
 		NORMAL = normalize(vec3(n.x - slope.x * n.y, n.y, n.z - slope.y * n.y));
 	}
 	v_world = VERTEX;
+	lit_cloud = cloud_shadow(v_world.xz);
 }
 
 void fragment() {
-	ALBEDO = srgb_to_linear(COLOR.rgb);
-	ROUGHNESS = 0.78;
+	ALBEDO = srgb_to_linear(COLOR.rgb) * wet_dim();
+	ROUGHNESS = 0.78 * wet_gloss();
 	SPECULAR = 0.4;
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

@@ -3,6 +3,8 @@
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
+#define LIT_SPECULAR 0.3
+#include "res://shaders/inc/lit.gdshaderinc"
 
 varying vec3 v_world;
 varying vec3 v_side;
@@ -25,6 +27,7 @@ void vertex() {
 	v_cover = clamp(r / half_w * 1.15, 0.0, 1.0);
 	VERTEX += side * UV.x * half_w;
 	v_world = VERTEX;
+	lit_cloud = cloud_shadow(v_world.xz);
 	v_side = side;
 	v_facing = normalize(to_eye - t * dot(to_eye, t));
 	v_s = UV.x;
@@ -40,8 +43,8 @@ void fragment() {
 	float s = clamp(v_s, -1.0, 1.0);
 	vec3 n = v_facing * sqrt(max(1.0 - s * s, 0.0)) + v_side * s;
 	NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
-	ALBEDO = srgb_to_linear(COLOR.rgb);
-	ROUGHNESS = 0.88;
+	ALBEDO = srgb_to_linear(COLOR.rgb) * wet_dim();
+	ROUGHNESS = 0.88 * wet_gloss();
 	SPECULAR = 0.3;
 	ALPHA = v_cover;
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);

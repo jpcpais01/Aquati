@@ -18,6 +18,9 @@ render_mode cull_back, skip_vertex_transform;
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
 #include "res://shaders/inc/sea_height.gdshaderinc"
+varying float lit_spec;
+#define LIT_SPECULAR lit_spec
+#include "res://shaders/inc/lit.gdshaderinc"
 
 global uniform float sea_clock;
 /// how far the wind has carried what floats since the loot began (m, x z)
@@ -60,6 +63,7 @@ void vertex() {
 	vec3 w = vec3(xz.x, y, xz.y) + rot * (VERTEX * sc);
 	v_world = w;
 	v_obj = VERTEX;
+	lit_cloud = cloud_shadow(w.xz);
 	VERTEX = (VIEW_MATRIX * vec4(w, 1.0)).xyz;
 	NORMAL = normalize(mat3(VIEW_MATRIX) * (rot * NORMAL));
 }
@@ -75,10 +79,11 @@ void fragment() {
 	// a whisper of grain along the staves and the planks
 	float g = sin(v_obj.x * 7.0 + sin(v_obj.y * 4.0 + v_obj.z * 3.0) * 2.0) * 0.5 + 0.5;
 	col *= 1.0 - wood * 0.08 * g;
-	ALBEDO = col * (1.0 - glass);
+	ALBEDO = col * (1.0 - glass) * wet_dim();
 	METALLIC = iron * 0.7 + gilt * 0.85;
-	ROUGHNESS = wood * 0.55 + iron * 0.34 + gilt * 0.26 + glass * 0.2;
-	SPECULAR = 0.5 * (1.0 - glass);
+	ROUGHNESS = (wood * 0.55 + iron * 0.34 + gilt * 0.26 + glass * 0.2) * wet_gloss();
+	lit_spec = 0.5 * (1.0 - glass);
+	SPECULAR = lit_spec;
 	EMISSION = col * glass * glow_gain;
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

@@ -4,6 +4,9 @@
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
 #include "res://shaders/inc/heraldry.gdshaderinc"
+#define LIT_SPECULAR 0.35
+#define LIT_BACKLIGHT
+#include "res://shaders/inc/lit.gdshaderinc"
 
 uniform vec3 c_sail : source_color = vec3(0.957, 0.918, 0.831);
 uniform vec3 c_seam : source_color = vec3(0.851, 0.788, 0.659);
@@ -34,6 +37,7 @@ void vertex() {
 	float dzdv = sin(UV.x * PI) * cos(UV.y * 2.89 + 0.12);
 	NORMAL = normalize(vec3(-dzdu * k, -dzdv * k * 0.6, 1.0));
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	lit_cloud = cloud_shadow(v_world.xz);
 	v_emblem = UV2.y;
 }
 
@@ -89,8 +93,8 @@ void fragment() {
 		discard;
 	}
 #endif
-	ALBEDO = col;
-	ROUGHNESS = 0.92;
+	ALBEDO = col * wet_dim();
+	ROUGHNESS = 0.92 * wet_gloss();
 	SPECULAR = 0.35;
 	// sunlight glows through the canvas from behind
 	BACKLIGHT = col * 0.32;

@@ -11,8 +11,12 @@ extends Node3D
 ## the lens for a close-up (degrees), --frames N to let it settle first,
 ## --heading R and --at X,Z to start somewhere else, --ship CLASS and
 ## --livery ID to sail another hull with --sails N (0..3) of canvas set
-## (--anchor holds her there), --wind A for the breeze's heading, and
+## (--anchor holds her there), --wind A to hold the breeze on a heading, and
 ## --discover to chart the islands nearby as play does.
+## The sky: --wx KIND holds the weather (clear, fair, cloudy, mist, rain,
+## storm, calm, hot) and --time NAME the hour (dawn, noon, golden, dusk,
+## night); a set piece's frame skips the sky picked last time on the badge.
+## --strike [N] brings a bolt of lightning down N frames (2) before the shot.
 ## A fight: --battle CLASS puts a pirate of that class off your port beam,
 ## spoiling for it (--foe-dist M or --foe-at X,Z,HEADING to place her,
 ## --foe-hp F for the share of her hull left, --foe-wounds N for N breaches
@@ -33,7 +37,10 @@ extends Node3D
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
 ## deck empty.
 
-const WIND_ANGLE := 0.6
+## Past this far from every archipelago's centre (m) she is out on the high
+## seas, where the weather keeps fair (with a little give either way, so
+## sailing along the edge doesn't flicker it).
+const HIGH_SEAS_R := 1380.0
 ## Where a voyage starts: out of the home port on a reach, bow to the open
 ## water between the atoll and Morro Huracão (the web's spawn and heading).
 const SPAWN := Vector2(40.0, 210.0)
@@ -64,6 +71,9 @@ var gunnery: Gunnery
 var crew: Crew
 var collisions := Collisions.new()
 var wreck: WreckScreen
+var rain: Rain
+var lightning: Lightning
+var spindrift: Spindrift
 
 ## The islands charted this voyage ("region/island"), of how many.
 var discovered := {}
@@ -92,6 +102,23 @@ var _foe_sink_at := -1.0
 ## Seconds until the hold may say again that it's full; salvage hauled this voyage.
 var _hold_nag := 0.0
 var _hauled := 0
+## The swell's heading, coming round after the wind's, and the one its trains were laid out on.
+var _swell := 0.0
+var _swell_base := 0.0
+## Where streaks laid out along the wind are measured from (wind_pivot).
+var _wind_pivot := Vector2.ZERO
+## The last strike: where (x, z), how far its light reaches (m) and how bright.
+var _strike := Vector4(0.0, 0.0, 1.0, 0.0)
+var _high_seas := false
+## A weather the sky badge showed but couldn't set, and when (ms): a tap soon after moves on past it.
+var _refused := &""
+var _refused_at := 0
+## Seconds to the next look at whether a weather picked by hand still holds here.
+var _wx_check := 1.0
+## A set piece's bolt of lightning, struck on the next frame (--strike).
+var _strike_now := false
+## Strikes so far (for the smoke test's report).
+var _strikes := 0
 
 
 ## A voyage's log: how long, what the guns did, how far she sailed, and the
@@ -131,6 +158,7 @@ class Farewell:
 
 func _ready() -> void:
 	_args = _parse_args()
+	_setup_sky()
 	_build_environment()
 	_build_sea()
 	_build_islands()
@@ -149,7 +177,16 @@ func _ready() -> void:
 		else:
 			controls.fire_side = side)
 	hud.ammo_picked.connect(func(kind: int) -> void: _pick_ammo(kind))
+	hud.sky_tapped.connect(_on_sky_tap)
 	add_child(hud)
+	hud.sky_pins(atmosphere.mode != &"auto", atmosphere.time_mode != &"auto")
+	atmosphere.changed.connect(func(_kind: StringName, title: String, line: String) -> void:
+		if _farewell == null:
+			hud.toast(title, line, 3.4))
+	atmosphere.wind_shifted.connect(func(title: String, line: String) -> void:
+		hud.wind_shift()
+		if _farewell == null:
+			hud.toast(title, line, 3.0))
 	hud.watch_hold(hold)
 	wreck = WreckScreen.new()
 	wreck.touch = _args.has("touch")
@@ -164,8 +201,6 @@ func _ready() -> void:
 	pirates.bounty.connect(_on_bounty)
 	if _args.has("touch"):
 		hud.show_touch(true)
-	if _args.has("hour"):
-		atmosphere.set_hour(float(_args.hour))
 	if _args.has("shot"):
 		atmosphere.running = false
 		hud.visible = not _args.has("nohud")
@@ -215,6 +250,32 @@ func _parse_args() -> Dictionary:
 	return out
 
 
+## The sky to sail under: a set piece's (--wx, --time or --hour, --wind),
+## else the weather and hour picked last time on the sky badge, else
+## nature's own.
+func _setup_sky() -> void:
+	var a := atmosphere
+	if _args.has("wind"):
+		a.wind_angle = float(_args.wind)
+		a.wind_to = a.wind_angle
+		a.wind_locked = true
+	var saved := not _args.has("shot")
+	var wx := StringName(str(_args.get("wx", "")))
+	# (a saved very hot noon waits for the high seas: a voyage sets out from port)
+	if not Atmosphere.WEATHER.has(wx) and saved and a.needs(StringName(Settings.weather)) == "":
+		wx = StringName(Settings.weather)
+	if Atmosphere.WEATHER.has(wx):
+		a.set_mode(wx, true)
+	var tm := StringName(str(_args.get("time", "")))
+	if not Atmosphere.TIMES.has(tm) and saved and not _args.has("hour"):
+		tm = StringName(Settings.time)
+	if Atmosphere.TIMES.has(tm):
+		a.set_time_mode(tm, true)
+	if _args.has("hour"):
+		a.set_hour(float(_args.hour))
+	a.update(0.0)
+
+
 func _build_environment() -> void:
 	sky_mat = ShaderMaterial.new()
 	sky_mat.shader = preload("res://shaders/sky.gdshader")
@@ -262,8 +323,11 @@ func _build_environment() -> void:
 
 
 func _build_sea() -> void:
-	world.wind = Wind.new(float(_args.get("wind", WIND_ANGLE)))
-	world.waves = Waves.new(WIND_ANGLE)
+	# the swell is laid out on the wind the voyage starts with, and comes round after it
+	world.wind = Wind.new(atmosphere.wind_angle)
+	world.waves = Waves.new(atmosphere.wind_angle)
+	_swell = atmosphere.wind_angle
+	_swell_base = _swell
 	world.wake = WakeField.new()
 	world.wake.name = "Wake"
 	add_child(world.wake)
@@ -284,6 +348,18 @@ func _build_sea() -> void:
 	world.loot.name = "Loot"
 	add_child(world.loot)
 	world.loot.setup(world)
+	# the weather round the view
+	rain = Rain.new()
+	rain.name = "Rain"
+	add_child(rain)
+	rain.setup(world)
+	lightning = Lightning.new()
+	lightning.name = "Lightning"
+	add_child(lightning)
+	spindrift = Spindrift.new()
+	spindrift.name = "Spindrift"
+	add_child(spindrift)
+	spindrift.setup(world)
 
 
 func _build_islands() -> void:
@@ -318,6 +394,7 @@ func _pick_region(x: float, z: float) -> void:
 	world.wake.set_seabed(region.height_tex, region.height_rect())
 	world.debris.set_region(region)
 	world.loot.set_region(region)
+	rain.set_region(region)
 	world.region = region
 
 
@@ -489,6 +566,8 @@ func _process(delta: float) -> void:
 		wreck.retry.emit()
 	if _args.has("pie") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
 		hud.open_pie(Ammo.ID.find(str(_args.pie)))
+	if _args.has("strike") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.strike if str(_args.strike).is_valid_int() else 2)):
+		_strike_now = true
 	if _args.has("smoke") and _frames == int(_args.get("smoke-at", 300)):
 		var isles := 0
 		var plants := 0
@@ -517,6 +596,10 @@ func _process(delta: float) -> void:
 		var cut := crew.view.stats()
 		print("SMOKE CREW: %d sailors in %d crews; drawn %d near, %d far, %d distant, %d specks in %d draws" % [hands.x, hands.y, cut[0], cut[1], cut[2], cut[3], cut[4]])
 		print("SMOKE LOOT: %d barrels and %d/%d/%d/%d chests afloat, %d hauled; hold %d/%d (%d goods, worth %d)" % [afloat[0], afloat[1], afloat[2], afloat[3], afloat[4], _hauled, hold.used(), hold.capacity, hold.count(), hold.worth()])
+		var a := atmosphere
+		print("SMOKE SKY: %s (%s), cover %.2f, rain %.2f, storm %.2f, sea %.2f, wind %.2f from the %s; %d strikes; rain %s, spindrift %s" % [
+				a.kind, a.mode, a.cover, a.rain, a.storm, a.sea, a.wind, Atmosphere.compass(a.wind_angle), _strikes,
+				"falling" if rain.visible else "none", "flying" if spindrift.visible else "none"])
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
 		_save_shot(str(_args.shot))
 
@@ -539,12 +622,19 @@ func _tick(real_dt: float) -> void:
 	elif controls.skip:
 		_skip()
 
-	# the air and the water
+	# the air and the water: the weather sets the breeze (ships, plants, gusts
+	# and the clouds' drift all follow it) and the sea state, and the swell
+	# comes round after the wind
 	_pick_region(camera.target.x, camera.target.z)
+	_seas()
 	atmosphere.update(dt)
 	var w := world.wind
 	w.strength = atmosphere.wind
+	w.intensity = 0.55 + atmosphere.wind * 0.6
+	_turn_wind()
 	w.update(dt, camera.target.x, camera.target.z, camera.ground_radius())
+	world.waves.set_sea_state(atmosphere.sea, atmosphere.calm)
+	_turn_swell(dt)
 	world.waves.advance(dt)
 
 	# the ships: the pirate captains decide, every hull sails, hulls that touch
@@ -602,13 +692,15 @@ func _tick(real_dt: float) -> void:
 		_haul(it)
 	_hold_nag = maxf(0.0, _hold_nag - dt)
 
-	# the light
+	# the weather round the view, then the light
+	_sky_fx(dt)
 	atmosphere.apply(sun, env)
 	RenderingServer.global_shader_parameter_set("wind", Vector4(w.dir_x, w.dir_z, w.strength, 0.0))
 	RenderingServer.global_shader_parameter_set("wind_drift", w.drift)
-	# the surf: breaker height and run-up from the breeze (the web's setSurf);
-	# its clock wraps on a whole number of breakers
-	RenderingServer.global_shader_parameter_set("surf", Vector4(0.3 + w.strength * 0.06, 0.26 + w.strength * 0.05, 0.0, fmod(world.time, 7000.0)))
+	# the surf: bigger, longer-running breakers as the sea builds (the web's
+	# setSurf); its clock wraps on a whole number of breakers
+	var sea := clampf(atmosphere.sea, 0.0, 1.4)
+	RenderingServer.global_shader_parameter_set("surf", Vector4(0.3 + sea * 0.55 + w.strength * 0.06, 0.26 + sea * 0.42 + w.strength * 0.05, atmosphere.storm, fmod(world.time, 7000.0)))
 	for g in grounds:
 		g.material.set_shader_parameter("gusts", w.packed)
 	Flora.set_gusts(w.packed)
@@ -621,7 +713,9 @@ func _tick(real_dt: float) -> void:
 		sky_mat.set_shader_parameter("revision", _sky_revision)
 	sun.directional_shadow_max_distance = camera.shadow_reach()
 
-	hud.show_state(player, w, atmosphere.hour(), camera.view_index(), atmosphere.vignette)
+	hud.show_state(player, w, camera.view_index(), atmosphere.vignette)
+	hud.show_sky(atmosphere.hour(), atmosphere.icon())
+	_hold_sky(dt)
 	hud.show_hull(player, discovered.size(), isles_total)
 	hud.show_guns(player, gunnery)
 	hud.show_ammo(player.ammo, stock)
@@ -629,6 +723,142 @@ func _tick(real_dt: float) -> void:
 	hud.show_bars(world.ships, player, camera)
 	if player.alive and (not _args.has("shot") or _args.has("discover")):
 		_chart(player.pos)
+
+
+## The wind comes round as the weather veers and backs it: sails, flags,
+## smoke, plants and gusts all swing with it, and the streaks laid out along
+## it (the sea's slicks and spume) swing about the view rather than the
+## world's origin.
+func _turn_wind() -> void:
+	var w := world.wind
+	var wa := atmosphere.wind_angle
+	if wa == w.angle:
+		return
+	var c := camera.global_position
+	var q := Vector2(c.x, c.z) - _wind_pivot
+	var along := q.x * w.dir_x + q.y * w.dir_z
+	var across := -q.x * w.dir_z + q.y * w.dir_x
+	var nx := sin(wa)
+	var nz := cos(wa)
+	_wind_pivot = Vector2(c.x - (along * nx - across * nz), c.z - (along * nz + across * nx))
+	w.set_angle(wa)
+	RenderingServer.global_shader_parameter_set("wind_pivot", _wind_pivot)
+
+
+## The swell comes round after the wind, slowly, turning about the view so
+## the sea in sight keeps its shape instead of sliding past.
+func _turn_swell(dt: float) -> void:
+	var s := _swell + (atmosphere.wind_angle - _swell) * (1.0 - exp(-dt / 45.0))
+	if absf(s - _swell) > 1e-6:
+		_swell = s
+		var c := camera.global_position
+		world.waves.turn(s - _swell_base, c.x, c.z)
+
+
+## Out on the high seas, or in among an archipelago's isles: the weather
+## keeps each one's climate (the high seas fair and settled, Las Brumas
+## misty and wet), and sailing out or in is announced.
+func _seas() -> void:
+	if not player.alive or _farewell != null:
+		return
+	var p := player.pos
+	var near: Region = null
+	var nd := INF
+	for r in regions:
+		var d := Vector2(r.centre.x - p.x, r.centre.z - p.z).length()
+		if d < nd:
+			nd = d
+			near = r
+	if not _high_seas and nd > HIGH_SEAS_R + 60.0:
+		_high_seas = true
+		atmosphere.climate = &"open"
+		# the storm blows itself out behind you
+		if atmosphere.kind == &"storm" or atmosphere.kind == &"rain":
+			atmosphere.hasten(25.0)
+		hud.toast("The high seas · Mar Sereno", "Open ocean, a fair trade wind and a long, easy swell", 5.0)
+	elif _high_seas and nd < HIGH_SEAS_R - 60.0:
+		_high_seas = false
+		hud.toast(near.title, near.motto, 4.0)
+	if not _high_seas:
+		atmosphere.climate = &"mist" if near.id == "brumas" else &"home"
+
+
+## Rain, lightning and spindrift round the view; a strike's flash lights the
+## sky, the sea round it and everything lit.
+func _sky_fx(dt: float) -> void:
+	var a := atmosphere
+	var t := camera.target
+	var cam_d := camera.distance()
+	rain.update(a.rain, t, cam_d, ocean, camera.global_position)
+	var st := lightning.update(dt, a.storm, t, camera)
+	if st == null and _strike_now:
+		st = lightning.strike(t, camera, true)
+	_strike_now = false
+	if st != null:
+		_strikes += 1
+		if st.bolt:
+			# the strike point boils with light and steam
+			world.fx.lightning(Vector3(st.x, world.water_height(st.x, st.z) + 1.0, st.z))
+		# a sheet flash, far off, only faintly
+		_strike = Vector4(st.x, st.z, 140.0 if st.bolt else 420.0, 1.0 if st.bolt else 0.22)
+	a.flash = lightning.flash
+	RenderingServer.global_shader_parameter_set("strike", Vector4(_strike.x, _strike.y, _strike.z, a.flash * _strike.w))
+	# in a blow the wind tears the tops off the crests
+	spindrift.update(MathX.smooth(0.25, 0.9, a.storm) + maxf(0.0, a.wind - 1.0) * 0.5, t, cam_d)
+
+
+## A weather picked by hand lasts only as long as its time and place allow
+## (a very hot noon only out on the high seas, at noon); a set piece's holds.
+func _hold_sky(dt: float) -> void:
+	_wx_check -= dt
+	if _wx_check > 0.0:
+		return
+	_wx_check = 1.0
+	var m := atmosphere.mode
+	if m == &"auto" or _args.has("wx") or not player.alive or _farewell != null:
+		return
+	var need := atmosphere.needs(m, true)
+	if need != "":
+		atmosphere.set_mode(&"auto")
+		_save_sky()
+		hud.sky_say("%s has passed" % Atmosphere.WEATHER[m].name, need)
+
+
+## The sky badge: its picture steps the weather on (auto, then each kind),
+## its clock the hour (auto, dawn, noon, golden hour, dusk, night). A weather
+## that can't be had here and now is shown with what it waits for but not
+## set, and a tap soon after moves on past it.
+func _on_sky_tap(clock: bool) -> void:
+	var a := atmosphere
+	if clock:
+		var times: Array[StringName] = [&"auto", &"dawn", &"noon", &"golden", &"dusk", &"night"]
+		var t := times[(times.find(a.time_mode) + 1) % times.size()]
+		a.set_time_mode(t)
+		hud.sky_say("Time · Auto" if t == &"auto" else str(Atmosphere.TIMES[t][0]))
+		_save_sky()
+		return
+	var modes: Array[StringName] = [&"auto"]
+	modes.append_array(Atmosphere.KINDS)
+	var from := _refused if _refused != &"" and Time.get_ticks_msec() - _refused_at < 8000 else a.mode
+	_refused = &""
+	var m := modes[(modes.find(from) + 1) % modes.size()]
+	var need := "" if m == &"auto" else a.needs(m)
+	if need != "":
+		_refused = m
+		_refused_at = Time.get_ticks_msec()
+		hud.sky_say(str(Atmosphere.WEATHER[m].name), need)
+		return
+	a.set_mode(m)
+	hud.sky_say("Weather · Auto" if m == &"auto" else str(Atmosphere.WEATHER[m].name))
+	_save_sky()
+
+
+## Keeps the sky picked on the badge for the next voyage, and pins the badge.
+func _save_sky() -> void:
+	Settings.weather = str(atmosphere.mode)
+	Settings.time = str(atmosphere.time_mode)
+	Settings.save()
+	hud.sky_pins(atmosphere.mode != &"auto", atmosphere.time_mode != &"auto")
 
 
 ## The ship the camera follows: yours, or a set piece's foe (--watch).

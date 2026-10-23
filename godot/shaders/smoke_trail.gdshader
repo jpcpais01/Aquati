@@ -14,9 +14,6 @@ render_mode unshaded, blend_premul_alpha, depth_draw_never, cull_disabled, shado
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 
-/// x, y the direction the wind blows toward (x, z), z its strength
-global uniform vec4 wind;
-
 uniform float now = 0.0;
 uniform float gravity = 14.0;
 uniform sampler2D noise_tex : repeat_enable, filter_linear_mipmap;

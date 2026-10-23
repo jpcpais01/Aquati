@@ -322,6 +322,16 @@ func steam(pos: Vector3) -> void:
 				randf_range(1.4, 2.4), 0.8, randf_range(3.5, 5.0), c, c, -0.8, 1.4, SMOKE, 0.04, Vector2.ZERO, randf_range(-0.6, 0.6))
 
 
+## A bolt of lightning striking the sea: a burst of light where it meets
+## the water, and the sea boiling up into steam.
+func lightning(pos: Vector3) -> void:
+	_flash(pos + Vector3(0.0, 2.0, 0.0), 40.0, Color(6.0, 7.0, 10.0), Color(0.5, 0.6, 1.0), 0.5, 70.0 / 40.0)
+	var c := Color(0.9, 0.92, 0.95, 0.35)
+	for i in 6:
+		emit(pos + Vector3(randf_range(-4.0, 4.0), 0.0, randf_range(-4.0, 4.0)), Vector3(randf_range(-1.5, 1.5), randf_range(2.0, 5.0), randf_range(-1.5, 1.5)),
+				randf_range(3.0, 5.0), 6.0, 22.0, c, c, 0.0, 0.6, SMOKE, 0.2)
+
+
 ## A grape ball striking a deck: a spark and a puff of splinters, not a breach.
 func pellet_hit(pos: Vector3) -> void:
 	_flash(pos, 0.9, Color(7.0, 4.2, 1.6), Color(2.0, 0.6, 0.1), 0.08, 1.4 / 0.9)

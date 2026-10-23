@@ -3,6 +3,7 @@
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
+#include "res://shaders/inc/lit.gdshaderinc"
 
 uniform vec3 c_plank : source_color = vec3(0.79, 0.63, 0.42);
 uniform vec3 c_tar : source_color = vec3(0.16, 0.11, 0.07);
@@ -15,6 +16,7 @@ varying vec3 v_obj;
 
 void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	lit_cloud = cloud_shadow(v_world.xz);
 #ifdef DAMAGE
 	v_obj = VERTEX;
 #endif
@@ -48,8 +50,8 @@ void fragment() {
 		discard;
 	}
 #endif
-	ALBEDO = col;
-	ROUGHNESS = rough;
+	ALBEDO = col * wet_dim();
+	ROUGHNESS = rough * wet_gloss();
 	NORMAL = bump(NORMAL, VERTEX, -(seam + butt * 0.6) * 0.006);
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

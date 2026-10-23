@@ -2,8 +2,9 @@ class_name Hud
 extends CanvasLayer
 ## The voyage HUD, in the web game's glass and gold: who she is and how her
 ## hull holds up, with the gold, the hold (a tap peeks inside), ships sunk
-## and isles charted under it (top left), the wind and the hour with the
-## camera button (top right), the canvas set and the speed in knots with the
+## and isles charted under it (top left), the wind and the sky badge (the
+## weather's picture and the clock: a tap on either picks the weather or the
+## hour) with the camera button (top right), the canvas set and the speed in knots with the
 ## shot rack beside them (bottom centre), the bars over enemy ships and the
 ## words rising off a fight or a haul, and on touch screens the helm ring,
 ## the sail lever (bottom left) and the guns with the shot button over them
@@ -16,6 +17,8 @@ signal view_pressed
 signal fire_pressed(side: int)
 ## A kind of shot picked off the rack or the pie (Ammo).
 signal ammo_picked(kind: int)
+## The sky badge tapped: its clock (true) or the weather's picture.
+signal sky_tapped(clock: bool)
 
 var controls: Controls
 
@@ -59,6 +62,17 @@ var _speed: Label
 var _nav: PanelContainer
 var _wind: _WindArrow
 var _clock: Label
+var _clock_key: _SkyKey
+var _sky_icon: _SkyKey
+## What a tap on the sky badge chose, said for a moment beside it: a chip, or
+## for a weather that waits for its time and place a card saying what for.
+var _say: PanelContainer
+var _say_box: StyleBoxFlat
+var _say_lock: TextureRect
+var _say_title: Label
+var _say_line: Label
+var _say_left := 0.0
+var _say_e := 0.0
 var _view: _ViewButton
 var _lever: SailLever
 var _helm: HelmRing
@@ -145,18 +159,58 @@ func _ready() -> void:
 	_hold.pressed.connect(func() -> void: _peek.toggle())
 	root.add_child(_peek)
 
-	# the wind, the hour, the camera
+	# the wind and the sky badge (a hairline between), then the camera
 	_nav = PanelContainer.new()
 	_nav.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_nav.add_theme_stylebox_override("panel", HudStyle.panel(999, Vector2(12, 5)))
 	var nav_row := HBoxContainer.new()
 	nav_row.add_theme_constant_override("separation", 8)
 	_wind = _WindArrow.new()
-	_clock = HudStyle.label("09:00", "inter", 700, 14, HudStyle.INK_2)
 	nav_row.add_child(_wind)
-	nav_row.add_child(_clock)
+	var hair := ColorRect.new()
+	hair.color = Color(1.0, 1.0, 1.0, 0.14)
+	hair.custom_minimum_size = Vector2(1.0, 12.0)
+	hair.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	nav_row.add_child(hair)
+	var sky := HBoxContainer.new()
+	sky.add_theme_constant_override("separation", 6)
+	_sky_icon = _SkyKey.new()
+	_sky_icon.pressed.connect(func() -> void: sky_tapped.emit(false))
+	_clock = HudStyle.label("09:00", "inter", 700, 14, HudStyle.INK_2)
+	_clock_key = _SkyKey.new(_clock)
+	_clock_key.pressed.connect(func() -> void: sky_tapped.emit(true))
+	sky.add_child(_sky_icon)
+	sky.add_child(_clock_key)
+	nav_row.add_child(sky)
 	_nav.add_child(nav_row)
 	root.add_child(_nav)
+	_say_box = HudStyle.panel(999, Vector2(13, 0))
+	_say_box.bg_color = Color(0.031, 0.086, 0.125, 0.82)
+	_say_box.border_color = Color(1.0, 1.0, 1.0, 0.1)
+	_say_box.shadow_color = Color(0.0, 0.03, 0.055, 0.25)
+	_say_box.shadow_size = 12
+	_say_box.shadow_offset = Vector2(0, 6)
+	_say = PanelContainer.new()
+	_say.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_say.add_theme_stylebox_override("panel", _say_box)
+	_say.visible = false
+	var say_col := VBoxContainer.new()
+	say_col.add_theme_constant_override("separation", 2)
+	say_col.alignment = BoxContainer.ALIGNMENT_CENTER
+	var say_row := HBoxContainer.new()
+	say_row.add_theme_constant_override("separation", 5)
+	_say_lock = Icons.rect("lock", 12.0)
+	_say_lock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	say_row.add_child(_say_lock)
+	_say_title = HudStyle.label("", "inter", 600, 14, HudStyle.INK)
+	say_row.add_child(_say_title)
+	say_col.add_child(say_row)
+	_say_line = HudStyle.label("", "inter", 500, 13, Color(1.0, 1.0, 1.0, 0.78))
+	_say_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	say_col.add_child(_say_line)
+	_say.add_child(say_col)
+	root.add_child(_say)
 	_view = _ViewButton.new()
 	_view.pressed.connect(func() -> void: view_pressed.emit())
 	root.add_child(_view)
@@ -283,24 +337,77 @@ func _layout() -> void:
 	_pie.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotPie.BTN * 0.5)
 	_peek.place(Vector2(mx, my + _chips.position.y + _chips.size.y + 8.0 * HudStyle.K))
 	_place_tag()
+	_place_say()
 	_toasts.offset_top = my
 
 
 ## The HUD's view of the voyage; text only changes when the number it shows does.
-func show_state(ship: Ship, wind: Wind, hour: float, view: int, vignette: float) -> void:
+func show_state(ship: Ship, wind: Wind, view: int, vignette: float) -> void:
 	_text("speed", _speed, str(roundi(absf(ship.speed) * 1.94)))
 	var lvl := roundi(ship.sail_target * 3.0)
 	_pips.set_level(lvl)
 	_lever.show_state(lvl, ship.sail_level)
 	_wind.set_wind(wind.dir_x, wind.dir_z)
-	var h := int(hour) % 24
-	var m := int(fmod(hour, 1.0) * 60.0) / 10 * 10
-	_text("clock", _clock, "%02d:%02d" % [h, m])
 	_view.set_view(view)
 	_helm.heading = ship.heading
 	_text("class", _ship_class, ship.cls.name.to_upper())
 	_text("name", _ship_name, ship.ship_name)
 	_vig_mat.set_shader_parameter("strength", vignette)
+
+
+## The sky badge: the clock (to five minutes, pale blue by night) and the
+## weather's picture (Atmosphere.icon).
+func show_sky(hour: float, icon: String) -> void:
+	var m := int(fmod(hour, 24.0) * 60.0) / 5 * 5
+	if _text("clock", _clock, "%02d:%02d" % [m / 60, m % 60]):
+		var night := hour < 5.5 or hour > 19.5
+		_clock.add_theme_color_override("font_color", Color("#d3dcff") if night else HudStyle.INK_2)
+	if _shown.get("sky", "") != icon:
+		_shown["sky"] = icon
+		_sky_icon.set_icon(Icons.texture(icon, 20.0))
+
+
+## Gold pips on the weather's picture and on the clock while the weather or
+## the hour is held rather than left to run.
+func sky_pins(weather: bool, hour: bool) -> void:
+	_sky_icon.set_pin(weather)
+	_clock_key.set_pin(hour)
+
+
+## Says what a tap on the sky badge chose, in a chip beside it. With `need`,
+## it's a weather that can't be had here and now: a little card names it,
+## locked, and says what it waits for, up long enough to read.
+func sky_say(text: String, need := "") -> void:
+	var card := need != ""
+	_say_title.text = text
+	_say_lock.visible = card
+	_say_line.visible = card
+	_say_line.text = need
+	_say_line.custom_minimum_size = Vector2(212.0, 0.0) if card else Vector2.ZERO
+	_say_box.set_corner_radius_all(14 if card else 999)
+	_say_box.content_margin_top = 9.0 if card else 0.0
+	_say_box.content_margin_bottom = 9.0 if card else 0.0
+	_say_box.content_margin_left = 14.0 if card else 13.0
+	_say_box.content_margin_right = 14.0 if card else 13.0
+	_say_title.add_theme_font_override("font", HudStyle.font("inter", 700 if card else 600))
+	_say.custom_minimum_size = Vector2(0.0, 0.0 if card else _nav.size.y)
+	_say.reset_size()
+	_say_left = 4.2 if card else 1.8
+	_say.visible = true
+	_place_say()
+
+
+func _place_say() -> void:
+	if _say == null:
+		return
+	_say.size = _say.get_combined_minimum_size()
+	var slide := (1.0 - HudStyle.eased(_say_e)) * 8.0
+	_say.position = Vector2(_nav.position.x - 8.0 - _say.size.x + slide, _nav.position.y + (_nav.size.y - _say.size.y) * 0.5)
+
+
+## A soft ring ripples off the wind's arrow as the wind comes round.
+func wind_shift() -> void:
+	_wind.shift()
 
 
 ## The touch controls on (a touch was seen) or off.
@@ -441,6 +548,14 @@ func _process(dt: float) -> void:
 	var guns := 1.0 - 0.6 * _pie.openness()
 	if _pad.modulate.a != guns:
 		_pad.modulate.a = guns
+	# the sky badge's say: in on a short slide, out once it has been read
+	if _say.visible:
+		_say_left -= dt
+		_say_e = move_toward(_say_e, 1.0 if _say_left > 0.0 else 0.0, dt / (0.25 if _say_left > 0.0 else 0.3))
+		_say.modulate.a = _say_e
+		_place_say()
+		if _say_e <= 0.0 and _say_left <= 0.0:
+			_say.visible = false
 
 
 ## The hold: the room used of the room aboard on its chip (coral when it's
@@ -613,10 +728,12 @@ func _card(panel: PanelContainer, life: float) -> void:
 	tw.chain().tween_callback(slot.queue_free)
 
 
-func _text(key: String, l: Label, text: String) -> void:
-	if _shown.get(key, "") != text:
-		_shown[key] = text
-		l.text = text
+func _text(key: String, l: Label, text: String) -> bool:
+	if _shown.get(key, "") == text:
+		return false
+	_shown[key] = text
+	l.text = text
+	return true
 
 
 ## Three little sails that fill gold as you set more canvas.
@@ -648,14 +765,18 @@ class _SailPips:
 			x += d.x + 4.0
 
 
-## The wind's arrow, pointing the way it blows on screen (north is up).
+## The wind's arrow, pointing the way it blows on screen (north is up); as
+## the wind comes round, three soft rings ripple off it.
 class _WindArrow:
 	extends Control
+	const RING := 1.6
 	var _angle := 999.0
+	var _ring := -1.0
 
 	func _init() -> void:
 		custom_minimum_size = Vector2(20, 20)
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		set_process(false)
 
 	func set_wind(dx: float, dz: float) -> void:
 		var a := atan2(dx, -dz)
@@ -663,13 +784,104 @@ class _WindArrow:
 			_angle = a
 			queue_redraw()
 
+	func shift() -> void:
+		_ring = 0.0
+		set_process(true)
+
+	func _process(dt: float) -> void:
+		_ring += dt
+		if _ring >= RING * 3.0:
+			_ring = -1.0
+			set_process(false)
+		queue_redraw()
+
 	func _draw() -> void:
 		var c := size * 0.5
+		if _ring >= 0.0:
+			var t := HudStyle.eased(fmod(_ring, RING) / RING)
+			draw_arc(c, (size.x * 0.5 + 4.0) * lerpf(0.6, 1.7, t), 0.0, TAU, 40, Color(HudStyle.AQUA, 0.9 * (1.0 - t)), 1.5, true)
 		var s := size.x / 24.0
 		draw_set_transform(c, _angle, Vector2(s, s))
 		draw_colored_polygon(PackedVector2Array([Vector2(0, -10), Vector2(6, 8), Vector2(0, 4), Vector2(-6, 8)]), HudStyle.AQUA_HI)
 		draw_colored_polygon(PackedVector2Array([Vector2(0, -10), Vector2(0, 4), Vector2(-6, 8)]), HudStyle.AQUA)
 		draw_set_transform(Vector2.ZERO)
+
+
+## One of the sky badge's two soft keys, the weather's picture or the clock:
+## it lights up under the mouse and dips when pressed (a halo round it, so the
+## pill never changes size), and a gold pip marks a weather or an hour held.
+class _SkyKey:
+	extends MarginContainer
+	signal pressed
+	var _tex: Texture2D
+	var _hover := false
+	var _down := 0.0
+	var _pin := 0.0
+	var _pin_to := 0.0
+
+	func _init(label: Label = null) -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		for side in ["left", "right", "top", "bottom"]:
+			add_theme_constant_override("margin_" + side, 0)
+		if label != null:
+			add_child(label)
+		else:
+			custom_minimum_size = Vector2(20, 20)
+		mouse_entered.connect(func() -> void:
+			_hover = true
+			queue_redraw())
+		mouse_exited.connect(func() -> void:
+			_hover = false
+			queue_redraw())
+		set_process(false)
+
+	func set_icon(tex: Texture2D) -> void:
+		_tex = tex
+		queue_redraw()
+
+	func set_pin(on: bool) -> void:
+		_pin_to = 1.0 if on else 0.0
+		set_process(true)
+
+	# a fingertip's worth more to hit than the glyph itself (only half the gap
+	# between the two keys sideways, so each keeps its own side)
+	func _has_point(p: Vector2) -> bool:
+		return Rect2(Vector2(-3.0, -10.0), size + Vector2(6.0, 20.0)).has_point(p)
+
+	func _gui_input(event: InputEvent) -> void:
+		if ShotPie.pressed(event):
+			_down = 1.0
+			set_process(true)
+			pressed.emit()
+			accept_event()
+
+	func _process(dt: float) -> void:
+		_down = move_toward(_down, 0.0, dt / 0.22)
+		_pin = move_toward(_pin, _pin_to, dt / 0.28)
+		pivot_offset = size * 0.5
+		scale = Vector2.ONE * (1.0 - 0.1 * sin(_down * PI * 0.5))
+		if _down <= 0.0 and _pin == _pin_to:
+			set_process(false)
+		queue_redraw()
+
+	func _draw() -> void:
+		var glow := maxf(0.12 if _hover and not Settings.mobile else 0.0, 0.2 * _down)
+		if glow > 0.0:
+			var halo := StyleBoxFlat.new()
+			halo.bg_color = Color(1.0, 1.0, 1.0, glow)
+			halo.set_corner_radius_all(99)
+			halo.corner_detail = 8
+			halo.anti_aliasing = true
+			draw_style_box(halo, Rect2(Vector2(-4.0, -4.0), size + Vector2(8.0, 8.0)))
+		if _tex != null:
+			draw_texture_rect(_tex, Rect2(Vector2.ZERO, size), false)
+		if _pin > 0.0:
+			var e := HudStyle.eased(_pin)
+			var at := Vector2(size.x + 0.5, 0.5)
+			draw_circle(at, 4.0 * lerpf(0.4, 1.0, e), Color(0.031, 0.086, 0.125, 0.9 * _pin), true, -1.0, true)
+			draw_circle(at, 2.5 * lerpf(0.4, 1.0, e), Color(HudStyle.GOLD, _pin), true, -1.0, true)
 
 
 ## The camera button: a lens and four pips for close, mid, far and leaned over.

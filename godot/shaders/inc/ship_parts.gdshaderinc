@@ -4,6 +4,9 @@
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
+varying float lit_spec;
+#define LIT_SPECULAR lit_spec
+#include "res://shaders/inc/lit.gdshaderinc"
 
 /// lamplight paint is HDR: its colour times this
 uniform float glow_gain = 5.0;
@@ -23,6 +26,7 @@ void vertex() {
 #endif
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_obj = VERTEX;
+	lit_cloud = cloud_shadow(v_world.xz);
 }
 
 void fragment() {
@@ -49,10 +53,11 @@ void fragment() {
 		discard;
 	}
 #endif
-	ALBEDO = col;
+	ALBEDO = col * wet_dim();
 	METALLIC = metal;
-	ROUGHNESS = rough;
-	SPECULAR = 0.5 * (1.0 - glass);
+	ROUGHNESS = rough * wet_gloss();
+	lit_spec = 0.5 * (1.0 - glass);
+	SPECULAR = lit_spec;
 	EMISSION = glow;
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

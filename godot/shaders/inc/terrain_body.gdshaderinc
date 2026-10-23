@@ -28,6 +28,7 @@ render_mode cull_back, depth_draw_opaque, diffuse_lambert, specular_schlick_ggx;
 #include "res://shaders/inc/sea_common.gdshaderinc"
 #include "res://shaders/inc/ground.gdshaderinc"
 #include "res://shaders/inc/wind.gdshaderinc"
+#include "res://shaders/inc/lit.gdshaderinc"
 
 /// x breaker height (m), y swash run-up (m), z storm, w the surf clock (s)
 global uniform vec4 surf;
@@ -109,6 +110,8 @@ void fragment() {
 	vec3 lp = v_local;
 	vec2 xz = lp.xz + region.xy;
 	float h = lp.y;
+	// per pixel: a far chunk's triangles are wider than a cloud's soft edge
+	lit_cloud = cloud_shadow(xz);
 	float biome = region.z;
 	vec2 guv = (lp.xz + 1025.0) / 2050.0;
 	vec4 gm = texture(ground_tex, guv);
@@ -394,8 +397,8 @@ void fragment() {
 	rough = mix(rough, 0.8, lace);
 	bump_h += lace * 0.012;
 
-	ALBEDO = albedo;
-	ROUGHNESS = rough;
+	ALBEDO = albedo * wet_dim();
+	ROUGHNESS = rough * wet_gloss();
 	EMISSION = lava;
 	// baked occlusion: the sky's light all of it, the sun's a little
 	AO = ao;
