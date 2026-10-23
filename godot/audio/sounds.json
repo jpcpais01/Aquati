@@ -1,0 +1,390 @@
+{
+ "sfx": {
+  "air0": {
+   "ext": "wav",
+   "gain": [
+    0.15118
+   ]
+  },
+  "air1": {
+   "ext": "wav",
+   "gain": [
+    0.26028
+   ]
+  },
+  "air2": {
+   "ext": "wav",
+   "gain": [
+    0.3603
+   ]
+  },
+  "ammo0": {
+   "ext": "wav",
+   "gain": [
+    0.2417
+   ]
+  },
+  "ammo1": {
+   "ext": "wav",
+   "gain": [
+    0.23185
+   ]
+  },
+  "ammo2": {
+   "ext": "wav",
+   "gain": [
+    0.21983
+   ]
+  },
+  "ammo3": {
+   "ext": "wav",
+   "gain": [
+    0.22799
+   ]
+  },
+  "ammo4": {
+   "ext": "wav",
+   "gain": [
+    0.24381
+   ]
+  },
+  "blast": {
+   "ext": "wav",
+   "gain": [
+    1.08989,
+    1.08989
+   ]
+  },
+  "bubbles": {
+   "ext": "wav",
+   "gain": [
+    0.08922
+   ]
+  },
+  "cannon0": {
+   "ext": "wav",
+   "gain": [
+    1.06742,
+    1.06742
+   ]
+  },
+  "cannon1": {
+   "ext": "wav",
+   "gain": [
+    1.06742,
+    1.06742
+   ]
+  },
+  "cannon2": {
+   "ext": "wav",
+   "gain": [
+    1.06742,
+    1.06742
+   ]
+  },
+  "chain": {
+   "ext": "wav",
+   "gain": [
+    0.95506,
+    0.95506
+   ]
+  },
+  "chime": {
+   "ext": "wav",
+   "gain": [
+    0.26738
+   ]
+  },
+  "click": {
+   "ext": "wav",
+   "gain": [
+    0.0528
+   ]
+  },
+  "coin": {
+   "ext": "wav",
+   "gain": [
+    0.95506,
+    0.95506,
+    0.95506,
+    0.95506,
+    0.95506,
+    0.95506
+   ]
+  },
+  "crunch": {
+   "ext": "wav",
+   "gain": [
+    1.03371,
+    1.03371
+   ]
+  },
+  "earth": {
+   "ext": "wav",
+   "gain": [
+    1.01124
+   ]
+  },
+  "flames": {
+   "ext": "wav",
+   "gain": [
+    0.89888
+   ]
+  },
+  "founder": {
+   "ext": "ogg",
+   "gain": [
+    1.35827
+   ]
+  },
+  "grape": {
+   "ext": "wav",
+   "gain": [
+    0.98876,
+    0.98876
+   ]
+  },
+  "groan": {
+   "ext": "ogg",
+   "gain": [
+    0.05173,
+    0.05139,
+    0.05101
+   ]
+  },
+  "guns_ready": {
+   "ext": "wav",
+   "gain": [
+    0.20074
+   ]
+  },
+  "ignite": {
+   "ext": "wav",
+   "gain": [
+    1.01124
+   ]
+  },
+  "noise": {
+   "ext": "wav",
+   "gain": [
+    3.21139
+   ]
+  },
+  "recoil": {
+   "ext": "wav",
+   "gain": [
+    1.01124,
+    1.01124,
+    1.01124
+   ]
+  },
+  "scrape0": {
+   "ext": "wav",
+   "gain": [
+    0.08357
+   ]
+  },
+  "scrape1": {
+   "ext": "wav",
+   "gain": [
+    0.20183
+   ]
+  },
+  "shell": {
+   "ext": "wav",
+   "gain": [
+    1.06742,
+    1.06742
+   ]
+  },
+  "steam": {
+   "ext": "wav",
+   "gain": [
+    0.89888
+   ]
+  },
+  "tally0": {
+   "ext": "wav",
+   "gain": [
+    0.04426
+   ]
+  },
+  "tally1": {
+   "ext": "wav",
+   "gain": [
+    0.04427
+   ]
+  },
+  "tally2": {
+   "ext": "wav",
+   "gain": [
+    0.04492
+   ]
+  },
+  "tally3": {
+   "ext": "wav",
+   "gain": [
+    0.04435
+   ]
+  },
+  "tally4": {
+   "ext": "wav",
+   "gain": [
+    0.04469
+   ]
+  },
+  "tally5": {
+   "ext": "wav",
+   "gain": [
+    0.04447
+   ]
+  },
+  "tally_best0": {
+   "ext": "wav",
+   "gain": [
+    0.07056
+   ]
+  },
+  "tally_best1": {
+   "ext": "wav",
+   "gain": [
+    0.06987
+   ]
+  },
+  "tally_best2": {
+   "ext": "wav",
+   "gain": [
+    0.07012
+   ]
+  },
+  "tally_best3": {
+   "ext": "wav",
+   "gain": [
+    0.07017
+   ]
+  },
+  "tally_best4": {
+   "ext": "wav",
+   "gain": [
+    0.06937
+   ]
+  },
+  "tally_best5": {
+   "ext": "wav",
+   "gain": [
+    0.0689
+   ]
+  },
+  "thunder_far": {
+   "ext": "ogg",
+   "gain": [
+    1.01124,
+    1.01124
+   ],
+   "stereo": true
+  },
+  "thunder_near": {
+   "ext": "ogg",
+   "gain": [
+    1.01124,
+    1.01124
+   ],
+   "stereo": true
+  },
+  "treasure1": {
+   "ext": "wav",
+   "gain": [
+    0.13656
+   ]
+  },
+  "treasure2": {
+   "ext": "wav",
+   "gain": [
+    0.19859
+   ]
+  },
+  "treasure3": {
+   "ext": "wav",
+   "gain": [
+    0.25629
+   ]
+  },
+  "treasure4": {
+   "ext": "wav",
+   "gain": [
+    0.32208
+   ]
+  },
+  "water": {
+   "ext": "wav",
+   "gain": [
+    1.03371,
+    1.03371,
+    1.03371
+   ]
+  },
+  "whoosh": {
+   "ext": "wav",
+   "gain": [
+    1.01124,
+    1.01124
+   ]
+  },
+  "wood": {
+   "ext": "wav",
+   "gain": [
+    1.03371,
+    1.03371,
+    1.03371
+   ]
+  }
+ },
+ "music": {
+  "high_seas": {
+   "title": "The High Seas",
+   "loop": true,
+   "gain": 0.83964,
+   "seconds": 240
+  },
+  "song0": {
+   "title": "Fair Winds",
+   "day": 1,
+   "night": 0.7,
+   "end": 97.993,
+   "gain": 0.9084,
+   "seconds": 98.764
+  },
+  "song1": {
+   "title": "Coral Lagoon",
+   "day": 1,
+   "night": 0.25,
+   "end": 123.11,
+   "gain": 0.99949,
+   "seconds": 122.772
+  },
+  "song2": {
+   "title": "Lantern Waltz",
+   "day": 0.55,
+   "night": 1,
+   "end": 139.336,
+   "gain": 0.72073,
+   "seconds": 140.248
+  },
+  "song3": {
+   "title": "The Corsair's Jig",
+   "day": 0.9,
+   "night": 0.5,
+   "end": 92.487,
+   "gain": 1.00349,
+   "seconds": 92.082
+  },
+  "song4": {
+   "title": "Siesta Isles",
+   "day": 0.6,
+   "night": 1,
+   "end": 140.72,
+   "gain": 0.70832,
+   "seconds": 141.635
+  }
+ }
+}

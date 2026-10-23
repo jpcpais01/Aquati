@@ -27,6 +27,8 @@ var fx: Particles
 var shots: Shots
 var debris: Debris
 var loot: Loot
+## The voyage's sound: everything out on the water is heard through it.
+var sound: Sound
 ## Every ship afloat (and every wreck still going down): yours first.
 var ships: Array[Ship] = []
 ## Where the voyage is heard from (the camera's focus), and how far off it hangs.
@@ -107,3 +109,13 @@ func loudness(p: Vector3) -> float:
 	var d := Vector2(p.x - listener.x, p.z - listener.z).length()
 	var r := listener_zoom * 0.9
 	return minf(1.0, r / (r + d * 1.4))
+
+
+## How something at `p` is heard (the web's soundAt): how loud (0..1), where
+## across the view (-1 left .. 1 right, more past the edges: the camera looks
+## north, so right is +x) and how far off (m).
+func heard(p: Vector3) -> Vector3:
+	var dx := p.x - listener.x
+	var d := Vector2(dx, p.z - listener.z).length()
+	var r := listener_zoom * 0.9
+	return Vector3(minf(1.0, r / (r + d * 1.4)), dx / (r * 0.8), d)

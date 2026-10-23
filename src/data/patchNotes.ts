@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-23T15:00Z',
+    entries: [
+      {
+        title: 'Android: sound and music',
+        notes: [
+          'The ninth Android build gives the sea its voice. Every sound from the web game is now aboard: the surf and the wind rising with your speed and with every gust, rain hissing on the water and the roar of a downpour, and thunder rolling in late after each lightning strike, a second for every 343 m it has to carry.',
+          'Every broadside, splintering hit, splash, shell burst, hiss of red-hot shot, crack of a mast and exploding magazine is heard where it happens: late by its distance, dulled by the air it crossed, the far ones echoing back off the isles, and a ball tearing past whooshes from one ear to the other. A close broadside pushes the sea down for a moment the way your ears do, and your ship\'s farewell has its deep rumble, groaning timbers and great gulps of air breaking out of her as she sinks.',
+          'The band plays its songs for fair sailing among the islands, one after another with the sea\'s own sound between them, leaning toward the ones that suit the hour. It rests in a storm, and out on the open ocean the high seas\' own theme takes over.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-23T13:00Z',
     entries: [
       {

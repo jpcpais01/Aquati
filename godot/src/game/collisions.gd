@@ -140,10 +140,13 @@ func _pair(a: Ship, b: Ship, world: World) -> void:
 	var key := mini(a.get_instance_id(), b.get_instance_id()) ^ (maxi(a.get_instance_id(), b.get_instance_id()) << 1)
 	var since := world.time - float(_last.get(key, -100.0))
 	if closing < RAM_MIN:
-		# a slow grind along each other's sides: foam squeezed up the seam
+		# a slow grind along each other's sides: foam squeezed up the seam, a creak now and then
 		if since > 0.45 and absf(vt) > 1.2:
 			_last[key] = world.time
 			world.wake.stamp(p.x, p.y, 2.5, 0.6)
+			if world.sound != null:
+				var h := world.heard(Vector3(p.x, 0.0, p.y))
+				world.sound.crunch(h.x * 0.5, h.y, h.z, 0.05)
 		return
 	if since < COOLDOWN:
 		return
@@ -186,8 +189,14 @@ func _impact(a: Ship, b: Ship, p: Vector2, n: Vector2, closing: float, world: Wo
 	world.wake.stamp(p.x, p.y, 3.0 + force * 5.0, 1.0, true)
 	world.wake.stamp(p.x, p.y, 2.0 + force * 2.0, 1.2)
 	world.wake.push(p.x, p.y, 2.5 + force * 3.0, 0.35 + force * 0.6)
+	var h := world.heard(Vector3(p.x, 0.0, p.y))
+	if world.sound != null:
+		world.sound.crunch(h.x, h.y, h.z, force)
+		world.sound.hit(h.x * (0.4 + force * 0.6), h.y, h.z)
+		if force > 0.3:
+			world.sound.splash(h.x * 0.6, h.y, h.z)
 	var mine := a.team == Ship.Team.PLAYER or b.team == Ship.Team.PLAYER
-	world.shook.emit(0.3 + force * 0.9 if mine else 0.25 * world.loudness(at) * force)
+	world.shook.emit(0.3 + force * 0.9 if mine else 0.25 * h.x * force)
 
 
 static func _impulse(s: Ship, dv: Vector2, dw: float) -> void:

@@ -19,6 +19,8 @@ signal fire_pressed(side: int)
 signal ammo_picked(kind: int)
 ## The sky badge tapped: its clock (true) or the weather's picture.
 signal sky_tapped(clock: bool)
+## A button with nothing more to say than its click (the hold's chip).
+signal clicked
 
 var controls: Controls
 
@@ -156,7 +158,9 @@ func _ready() -> void:
 	# a tap on the hold peeks inside
 	_peek = HoldPeek.new()
 	_peek.opener = _hold
-	_hold.pressed.connect(func() -> void: _peek.toggle())
+	_hold.pressed.connect(func() -> void:
+		clicked.emit()
+		_peek.toggle())
 	root.add_child(_peek)
 
 	# the wind and the sky badge (a hairline between), then the camera

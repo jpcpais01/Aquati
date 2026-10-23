@@ -8,13 +8,25 @@ extends SceneTree
 ## settles in whole and the sky turns from one to the next without a jump,
 ## the night sky wheels and the moon keeps its phase, the sea-spark blooms lie
 ## where they should, a bolt of lightning comes down where it can be seen,
-## and the baked world loads whole (both archipelagos, their ground maps and
-## their planting). Prints CHECK OK.
+## the baked world loads whole (both archipelagos, their ground maps and
+## their planting), and every sound and song is baked and plays as the web's
+## do (see _check_sound). Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
 ## The archipelagos the bake writes.
 const REGIONS := ["home", "brumas"]
+## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
+const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "blast", "bubbles",
+		"cannon0", "cannon1", "cannon2", "chain", "chime", "click", "coin", "crunch", "earth", "flames", "founder",
+		"grape", "groan", "guns_ready", "ignite", "noise", "recoil", "scrape0", "scrape1", "shell", "steam",
+		"tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
+		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
+		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4", "water", "whoosh", "wood"]
+## The mix's buses past Master (Sound.build_buses).
+const BUSES := [&"UI", &"Mix", &"SFX", &"Air6k", &"Air2k5", &"Air1k", &"Air450", &"Echo",
+		&"EchoAir6k", &"EchoAir2k5", &"EchoAir1k", &"EchoAir450", &"Amb", &"Bed", &"Surf", &"Wind",
+		&"Rain", &"Roar", &"Music", &"Deep"]
 
 var _errors := 0
 
@@ -34,6 +46,7 @@ func _initialize() -> void:
 	await process_frame
 	_check_touch()
 	_check_lightning()
+	await _check_sound()
 	if _errors == 0:
 		print("CHECK OK")
 	else:
@@ -542,6 +555,133 @@ func _check_lightning() -> void:
 	l.queue_free()
 	cam.queue_free()
 	print("lightning: %d of 3 steps as expected" % steps)
+
+
+## The sound: every sound the game plays is baked, each of its takes on disk,
+## the sea's noise and the open sea's theme loop, and each song has its
+## numbers. Then, live: every take loads; each bus of the mix sends to one
+## before it; a sound takes the air bus its distance leaves it and arrives
+## late by the distance it carried (thunder all the way, however far); the
+## web's pan law comes through; a close blow ducks the sea and lets it back;
+## a crowded mix lets the faint go first and never grows past its cap, and
+## sound off plays nothing; the band plays every song before any repeats; and
+## something out on the water is heard where it is.
+func _check_sound() -> void:
+	var t0 := Time.get_ticks_usec()
+	var m: Variant = JSON.parse_string(FileAccess.get_file_as_string(Sound.MANIFEST))
+	if not m is Dictionary:
+		_fail("sound: no %s (run tools/audio/bake_audio.mjs)" % Sound.MANIFEST)
+		return
+	var sfx: Dictionary = m.get("sfx", {})
+	var takes := 0
+	for key: String in SOUNDS:
+		if not sfx.has(key):
+			_fail("sound: %s isn't baked" % key)
+			continue
+		var e: Dictionary = sfx[key]
+		for i in (e.gain as Array).size():
+			takes += 1
+			var path := "res://audio/sfx/%s_%d.%s" % [key, i, e.ext]
+			if not ResourceLoader.exists(path):
+				_fail("sound: no " + path)
+	var noise: AudioStreamWAV = load("res://audio/sfx/noise_0.wav")
+	if noise == null or noise.loop_mode != AudioStreamWAV.LOOP_FORWARD:
+		_fail("sound: the sea's noise doesn't loop")
+	var music: Dictionary = m.get("music", {})
+	var songs := 0
+	for n: String in music:
+		var e: Dictionary = music[n]
+		var path := Music.DIR + n + ".ogg"
+		if not ResourceLoader.exists(path):
+			_fail("sound: no " + path)
+		elif e.get("loop", false):
+			var theme: AudioStreamOggVorbis = load(path)
+			if not theme.loop:
+				_fail("sound: %s doesn't loop" % path)
+		else:
+			songs += 1
+			var end := float(e.get("end", 0.0))
+			var lean := Vector2(float(e.get("day", -1.0)), float(e.get("night", -1.0)))
+			if str(e.get("title", "")).is_empty() or float(e.get("gain", 0.0)) <= 0.0 or end <= 0.0 or end > float(e.get("seconds", 0.0)) + 1.0 \
+					or lean.x < 0.0 or lean.x > 1.0 or lean.y < 0.0 or lean.y > 1.0:
+				_fail("sound: %s's numbers are off (%s)" % [n, e])
+
+	var snd := Sound.new()
+	root.add_child(snd)
+	var wait := Time.get_ticks_msec()
+	while not snd.loaded() and Time.get_ticks_msec() - wait < 20000:
+		await process_frame
+	# driven by hand from here
+	snd.set_process(false)
+	var steps := 0
+	steps += 1 if snd.loaded() and snd.loaded_takes() == takes else 0
+	var sends := true
+	for n: StringName in BUSES:
+		var i := AudioServer.get_bus_index(n)
+		sends = sends and i > 0 and AudioServer.get_bus_index(AudioServer.get_bus_send(i)) < i
+	steps += 1 if sends else 0
+	var air := [Sound.air_bus(17000.0), Sound.air_bus(7000.0), Sound.air_bus(2500.0), Sound.air_bus(1000.0), Sound.air_bus(260.0)]
+	steps += 1 if air == [0, 1, 2, 3, 4] else 0
+	# a splash a second's sail of sound away: late by that, and dulled to the 1 kHz air
+	var played := snd.played
+	snd.splash(1.0, 0.0, Sound.SPEED_OF_SOUND)
+	var cue: Sound._Cue = snd._cues.back()
+	var on_time := is_equal_approx(cue.at - snd._now, 1.0) and cue.air == 3 and cue.wet > 0.0
+	snd._process(0.5)
+	on_time = on_time and snd.played == played
+	snd._process(0.55)
+	on_time = on_time and snd.played == played + 1
+	steps += 1 if on_time else 0
+	# thunder is never hurried: two seconds' worth of distance is two seconds late
+	snd.thunder(1.0, 0.0, Sound.SPEED_OF_SOUND * 2.0)
+	cue = snd._cues.back()
+	steps += 1 if is_equal_approx(cue.at - snd._now, 2.0) and cue.stereo and cue.air == 4 and snd.peals == 1 else 0
+	# the pan law: equal power, and a stereo take's far side folded into the near
+	var lr: Array[Vector2] = [Sound.pan_gains(0.0, false), Sound.pan_gains(-1.0, false), Sound.pan_gains(1.0, false),
+			Sound.pan_gains(0.0, true), Sound.pan_gains(-1.0, true), Sound.pan_gains(3.0, true)]
+	var law: Array[Vector2] = [Vector2(sqrt(0.5), sqrt(0.5)), Vector2(1.0, 0.0), Vector2(0.0, 1.0), Vector2.ONE, Vector2(sqrt(2.0), 0.0), Vector2(0.0, sqrt(2.0))]
+	var panned := true
+	for i in lr.size():
+		panned = panned and (lr[i] - law[i]).length() < 1e-4
+	steps += 1 if panned else 0
+	# the duck: held till the blow lands, down for a moment, then most of the way back in a second
+	snd.duck(snd._now + 3.0, 0.5)
+	var at := snd._now + 3.0
+	var duck := Vector3(snd.duck_gain(at - 0.1), snd.duck_gain(at + 0.06), snd.duck_gain(at + 1.12))
+	steps += 1 if is_equal_approx(duck.x, 1.0) and is_equal_approx(duck.y, 0.5) and absf(duck.z - (1.0 - 0.5 * exp(-1.25))) < 1e-3 else 0
+	# a crowded mix: past CROWDED the faint are let go, and never more than MAX_VOICES at once
+	var dropped := snd.dropped
+	while snd._voices <= Sound.CROWDED:
+		snd.splash(1.0, 0.0)
+	snd.splash(0.6, 0.0)
+	var faint := snd.dropped == dropped + 1
+	for i in Sound.MAX_VOICES:
+		snd.splash(1.0, 0.0)
+	steps += 1 if faint and snd._voices == Sound.MAX_VOICES else 0
+	# sound off: nothing new plays, and the mix is silent
+	snd.set_muted(true)
+	var quiet := snd._cues.size()
+	snd.coin()
+	snd.thunder(1.0, 0.0, 100.0)
+	steps += 1 if snd._cues.size() == quiet and AudioServer.is_bus_mute(AudioServer.get_bus_index(&"Mix")) else 0
+	snd.set_muted(false)
+	# the band: every song before any repeats, and never the same one twice running
+	var band := snd.music
+	var seen := {}
+	for i in band.songs.size():
+		seen[band.pick()] = true
+	var last := band._last
+	steps += 1 if band.songs.size() == songs and seen.size() == songs and band.pick() != last else 0
+	# heard where it is: 90 m to the right of the listener, at the camera's zoom of 100 m
+	var w := World.new()
+	w.listener = Vector3(10.0, 0.0, 5.0)
+	w.listener_zoom = 100.0
+	var h := w.heard(Vector3(100.0, 3.0, 5.0))
+	steps += 1 if (h - Vector3(90.0 / 216.0, 1.25, 90.0)).length() < 1e-4 else 0
+	snd.queue_free()
+	if steps != 11:
+		_fail("sound: only %d of 11 steps as expected (%s)" % [steps, snd.stats()])
+	print("sound: %d of 11 steps as expected; %d sounds in %d takes, %d songs, loaded in %.0f ms" % [steps, SOUNDS.size(), takes, songs, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 func _check_world() -> void:

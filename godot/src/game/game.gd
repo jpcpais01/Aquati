@@ -74,6 +74,8 @@ var wreck: WreckScreen
 var rain: Rain
 var lightning: Lightning
 var spindrift: Spindrift
+## The voyage's sound and its music.
+var sound: Sound
 
 ## The islands charted this voyage ("region/island"), of how many.
 var discovered := {}
@@ -160,10 +162,22 @@ class Farewell:
 	var fathoms := -1
 	## The camera has dived for the water where she went down.
 	var dived := false
+	## Her timbers have groaned in the final plunge.
+	var plunged := false
+	## When (her farewell's clock) she came to rest on the sand, -1 still sinking.
+	var rest := -1.0
+	## Till the next gulp of trapped air breaks out of her.
+	var burst := 0.0
 
 
 func _ready() -> void:
 	_args = _parse_args()
+	sound = Sound.new()
+	sound.name = "Sound"
+	add_child(sound)
+	sound.apply_settings(Settings)
+	Settings.changed.connect(func() -> void: sound.apply_settings(Settings))
+	world.sound = sound
 	_setup_sky()
 	_build_environment()
 	_build_sea()
@@ -176,7 +190,10 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.controls = controls
 	hud.sail_set.connect(func(n: int) -> void: player.sail_target = n / 3.0)
-	hud.view_pressed.connect(func() -> void: camera.next_view())
+	hud.view_pressed.connect(func() -> void:
+		sound.click()
+		camera.next_view())
+	hud.clicked.connect(sound.click)
 	hud.fire_pressed.connect(func(side: int) -> void:
 		if side == 0:
 			controls.fire_auto = true
@@ -197,13 +214,16 @@ func _ready() -> void:
 	wreck = WreckScreen.new()
 	wreck.touch = _args.has("touch")
 	wreck.retry.connect(_sail_again)
+	wreck.tallied.connect(sound.tally)
 	add_child(wreck)
 	world.hit.connect(_on_hit)
 	world.sunk.connect(_on_sunk)
 	world.shook.connect(func(a: float) -> void: camera.shake(a))
 	world.burned.connect(_on_burned)
 	world.status.connect(_on_status)
-	gunnery.loaded.connect(func(side: int) -> void: hud.guns_ready(side))
+	gunnery.loaded.connect(func(side: int) -> void:
+		sound.guns_ready(sin(player.heading + side * PI * 0.5) * 0.6)
+		hud.guns_ready(side))
 	pirates.bounty.connect(_on_bounty)
 	if _args.has("touch"):
 		hud.show_touch(true)
@@ -609,6 +629,7 @@ func _process(delta: float) -> void:
 		print("SMOKE SKY: %s (%s), cover %.2f, rain %.2f, storm %.2f, sea %.2f, wind %.2f from the %s; %d strikes; rain %s, spindrift %s" % [
 				a.kind, a.mode, a.cover, a.rain, a.storm, a.sea, a.wind, Atmosphere.compass(a.wind_angle), _strikes,
 				"falling" if rain.visible else "none", "flying" if spindrift.visible else "none"])
+		print("SMOKE SOUND: " + sound.stats())
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
 		_save_shot(str(_args.shot))
 
@@ -704,8 +725,9 @@ func _tick(real_dt: float) -> void:
 		_haul(it)
 	_hold_nag = maxf(0.0, _hold_nag - dt)
 
-	# the weather round the view, then the light
+	# the weather round the view, its sound, then the light
 	_sky_fx(dt)
+	_sound()
 	atmosphere.apply(sun, env)
 	RenderingServer.global_shader_parameter_set("wind", Vector4(w.dir_x, w.dir_z, w.strength, 0.0))
 	RenderingServer.global_shader_parameter_set("wind_drift", w.drift)
@@ -788,9 +810,12 @@ func _seas() -> void:
 		if atmosphere.kind == &"storm" or atmosphere.kind == &"rain":
 			atmosphere.hasten(25.0)
 		hud.toast("The high seas · Mar Sereno", "Open ocean, a fair trade wind and a long, easy swell", 5.0)
+		sound.high_seas(true)
 	elif _high_seas and nd < HIGH_SEAS_R - 60.0:
 		_high_seas = false
 		hud.toast(near.title, near.motto, 4.0)
+		sound.high_seas(false)
+		sound.chime()
 	if not _high_seas:
 		atmosphere.climate = &"mist" if near.id == "brumas" else &"home"
 	# out in a sea-spark bloom on a dark night, the crew notice the sea lighting up
@@ -838,6 +863,9 @@ func _sky_fx(dt: float) -> void:
 	_strike_now = false
 	if st != null:
 		_strikes += 1
+		# its thunder comes in late, at the speed of sound
+		var h := world.heard(Vector3(st.x, 0.0, st.z))
+		sound.thunder(minf(1.0, (0.95 if st.bolt else 0.55) * st.power * maxf(h.x, 0.35)), h.y * 0.6, h.z)
 		if st.bolt:
 			# the strike point boils with light and steam
 			world.fx.lightning(Vector3(st.x, world.water_height(st.x, st.z) + 1.0, st.z))
@@ -847,6 +875,18 @@ func _sky_fx(dt: float) -> void:
 	RenderingServer.global_shader_parameter_set("strike", Vector4(_strike.x, _strike.y, _strike.z, a.flash * _strike.w))
 	# in a blow the wind tears the tops off the crests
 	spindrift.update(MathX.smooth(0.25, 0.9, a.storm) + maxf(0.0, a.wind - 1.0) * 0.5, t, cam_d)
+
+
+## The sea's sound round the listener: the wind and the surf with her way,
+## the gusts and the weather; and the band for fair sailing among the
+## islands (the open sea has its own theme, and a storm or her farewell rests it).
+func _sound() -> void:
+	var a := atmosphere
+	var focus := _watched()
+	sound.set_gust(world.gust_at(focus.pos.x, focus.pos.z))
+	sound.set_sailing(clampf(player.speed / 14.0, 0.0, 1.0) if player.alive else 0.0)
+	sound.set_weather(a.rain, a.storm, a.wind)
+	sound.voyage_music(player.alive and _farewell == null and not _high_seas and a.storm < 0.45, a.night)
 
 
 ## A weather picked by hand lasts only as long as its time and place allow
@@ -975,6 +1015,8 @@ func _pick_ammo(kind: int, quiet := false) -> void:
 	player.ammo = kind
 	if not quiet:
 		hud.ammo_loaded(kind)
+		if fresh:
+			sound.ammo_swap(kind)
 	elif fresh:
 		hud.show_ammo(kind, stock)
 
@@ -1042,6 +1084,7 @@ func _haul(it: Loot.Item) -> void:
 	var good := Treasure.name_of(best)
 	if it.tier == 0:
 		hud.floater(good + more, at, camera, Floaters.Kind.LOOT)
+		sound.coin()
 		return
 	var rarity: String = Treasure.RARITY_NAME[it.tier]
 	if it.tier >= 2:
@@ -1049,6 +1092,7 @@ func _haul(it: Loot.Item) -> void:
 	var kinds := [Floaters.Kind.LOOT, Floaters.Kind.LOOT, Floaters.Kind.RARE, Floaters.Kind.EPIC, Floaters.Kind.LEGENDARY]
 	hud.floater("%s chest: %s%s" % [rarity, good, more], at, camera, kinds[it.tier])
 	world.fx.treasure(Vector3(xz.x, world.water_height(xz.x, xz.y), xz.y), Loot.GLOW[it.tier], it.tier)
+	sound.treasure(it.tier)
 	var r := Treasure.rarity_of(best)
 	if r >= 2:
 		hud.loot_toast(best, r, "%s plunder" % Treasure.RARITY_NAME[r], good, 3.8 if r == 4 else 3.0)
@@ -1141,6 +1185,7 @@ func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
 
 func _on_bounty(ship: Ship, gold: int) -> void:
 	hud.toast("+%d gold bounty" % gold, "%s sunk" % ship.ship_name, 3.6)
+	sound.coin()
 	voyage.note("kill", "Sank the %s" % ship.ship_name, "%s · +%d gold" % [ship.cls.name, gold])
 
 
@@ -1166,6 +1211,7 @@ func _begin_farewell(attacker: Ship) -> void:
 	_farewell = f
 	time_scale = 0.22
 	camera.shake(0.95)
+	sound.founder()
 	wreck.begin(f.report)
 
 
@@ -1228,6 +1274,11 @@ func _farewell_step(real_dt: float) -> void:
 	var water := MathX.smooth(DIVE + 0.4, DIVE + 2.1, t)
 	_desat = 0.55 * MathX.smooth(0.0, 0.6, t) * (1.0 - water)
 	wreck.water(water)
+	# the final plunge: her timbers groan and she goes by the stern
+	if not f.plunged and p.sink_t > p.wreck_life:
+		f.plunged = true
+		sound.groan()
+		camera.shake(0.3)
 	# her last breath of air bursts up as she slips under, and tears loose what
 	# was lashed down: timber floats up past her, the heavy stuff goes down with her
 	if not f.dived and t > DIVE:
@@ -1239,9 +1290,20 @@ func _farewell_step(real_dt: float) -> void:
 			world.fx.splash(Vector3(c.x + cos(a) * r, y, c.z + sin(a) * r), randf_range(1.1, 1.7))
 		world.wake.stamp(c.x, c.z, L * 0.5, 1.0, true)
 		world.wake.push(c.x, c.z, L * 0.4, -1.0)
+		# the water closes over the lens: the world above goes dull and distant
+		sound.submerge(true)
 		if f.deep:
 			var timber: Array[Color] = [Color(0.42, 0.29, 0.18).linear_to_srgb(), Color(0.55, 0.4, 0.26).linear_to_srgb(), Color(0.33, 0.24, 0.16).linear_to_srgb()]
 			world.debris.drown(Vector3(c.x, minf(p.position.y + p.cls.freeboard, y - 1.5), c.z), 7, timber)
+	# she settles onto the sand with a muffled thud through her hull
+	var rested := p.dmg.rest_t >= 0.0
+	if rested and f.rest < 0.0:
+		f.rest = t
+		if f.deep:
+			sound.thud(0.9, 0.0, 0.0)
+			camera.shake(0.25)
+	if f.deep and t > DIVE - 1.0:
+		_wreck_air(p, real_dt * time_scale, t - f.rest if rested else -1.0)
 	# in deep water a gauge in the letterbox counts her down to the sand
 	if f.deep and t > DIVE - 0.5:
 		var fm := roundi(maxf(0.0, (world.water_height(c.x, c.z) - p.position.y) / 1.8288))
@@ -1251,6 +1313,22 @@ func _farewell_step(real_dt: float) -> void:
 	if not f.shown and (t > DIVE + 2.0 or (f.skip and t > DIVE)):
 		f.shown = true
 		wreck.show_card(f.report)
+
+
+## Trapped air breaking out of her in great gulps as she goes down, choking
+## off slowly once she lies on the sand (`since_rest` s, -1 still sinking).
+func _wreck_air(p: Ship, dt: float, since_rest: float) -> void:
+	var f := _farewell
+	var life := 1.0 if since_rest < 0.0 else exp(-since_rest * 0.16)
+	f.burst -= dt
+	if f.burst > 0.0 or life <= 0.06:
+		return
+	f.burst = randf_range(0.45, 1.45) if since_rest < 0.0 else randf_range(1.6, 4.4) / life
+	var L := p.cls.length
+	var at := p.global_transform * Vector3(randf_range(-0.3, 0.3) * p.cls.beam, p.cls.freeboard * randf_range(0.3, 0.9), randf_range(-0.4, 0.4) * L)
+	if at.y < world.water_height(at.x, at.z) - 1.5:
+		var h := world.heard(at)
+		sound.air_pocket(randf_range(0.8, 1.6) * (0.45 + life * 0.55), maxf(h.x, 0.5), h.y)
 
 
 ## A tap: straight to the plunge; once there, straight to the farewell card.
@@ -1267,6 +1345,10 @@ func _skip() -> void:
 
 ## A fresh voyage: a new ship out of the home port, the sea cleared.
 func _sail_again() -> void:
+	# back up into the air; the open sea's theme dies away as she sets out from home
+	sound.click()
+	sound.submerge(false)
+	sound.high_seas(false)
 	wreck.end()
 	_farewell = null
 	time_scale = 1.0
@@ -1308,6 +1390,7 @@ func _chart(p: Vector3) -> void:
 			player.gold += reward
 			voyage.note("isle", "Charted %s" % isl.name, "+%d gold" % reward)
 			hud.toast("Island discovered · +%d gold" % reward, isl.name, 3.6)
+			sound.chime()
 
 
 ## "x,y,z" from the command line.
