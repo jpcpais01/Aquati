@@ -32,6 +32,8 @@ var _desired := 0.0
 var _side_bias := 1.0
 var _aim_delay := 0.0
 var _rng := RandomNumberGenerator.new()
+## A set piece's choice of shot for her every broadside (Ammo, -1 her own).
+var force_ammo := -1
 
 
 func _init(p_ship: Ship, difficulty: float) -> void:
@@ -193,6 +195,29 @@ func update(dt: float, world: World, player: Ship) -> void:
 		if _aim_delay <= 0.0:
 			for side: int in [1, -1]:
 				if absf(rel - side * PI * 0.5) < arc and s.can_fire(side):
+					s.ammo = _pick_ammo(dist, target)
 					s.fire(side, target)
 					_aim_delay = 0.6 + _rng.randf() * 1.2 / aggression
 					break
+
+
+## Now and then a pirate crew rams home something nastier: if it will reach,
+## and isn't wasted on a ship already suffering it.
+func _pick_ammo(dist: float, target: Ship) -> int:
+	if force_ammo >= 0:
+		return force_ammo
+	var r := _rng.randf()
+	for pick: Array in Ammo.PIRATE.get(ship.cls.id, []):
+		var kind: int = pick[0]
+		if r < float(pick[1]):
+			if dist > ship.gun_range(kind) * 0.9:
+				return Ammo.ROUND
+			if kind == Ammo.CHAIN and target.torn > 4.0:
+				return Ammo.ROUND
+			if kind == Ammo.FIRE and target.afire > 4.0:
+				return Ammo.ROUND
+			if kind == Ammo.GRAPE and target.crew_hit > 4.0:
+				return Ammo.ROUND
+			return kind
+		r -= float(pick[1])
+	return Ammo.ROUND

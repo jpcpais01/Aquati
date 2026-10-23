@@ -23,6 +23,11 @@ extends Node3D
 ## ship down S seconds in (her farewell; --farewell T starts it T seconds
 ## through), --touch shows the touch controls, --nopirates keeps the sea
 ## clear, --voyage puts a long voyage behind her (to see a full farewell).
+## Shot and plunder: --ammo ID loads a kind of shot (round, shell, fire,
+## chain, grape) and --foe-ammo ID has the set piece's foe fire nothing
+## else; --loot N[,TIER] floats N barrels or chests (of a tier, 0..4) round
+## her, --hold fills the hold with a little of everything, --peek opens its
+## peek and --fan the touch shot fan.
 
 const WIND_ANGLE := 0.6
 ## Where a voyage starts: out of the home port on a reach, bow to the open
@@ -62,6 +67,10 @@ var isles_total := 0
 var voyage := Voyage.new()
 ## The sea's clock against the wall's: slowed for the blow that sinks her.
 var time_scale := 1.0
+## The magazine: broadsides of each kind of shot aboard (round shot -1, endless).
+var stock := Ammo.fresh_stock()
+## The ship's hold.
+var hold: Treasure.Hold
 
 var _args := {}
 var _frames := 0
@@ -75,6 +84,9 @@ var _desat := 0.0
 var _foe: Ship
 var _sink_at := -1.0
 var _foe_sink_at := -1.0
+## Seconds until the hold may say again that it's full; salvage hauled this voyage.
+var _hold_nag := 0.0
+var _hauled := 0
 
 
 ## A voyage's log: how long, what the guns did, how far she sailed, and the
@@ -131,7 +143,9 @@ func _ready() -> void:
 			controls.fire_auto = true
 		else:
 			controls.fire_side = side)
+	hud.ammo_picked.connect(func(kind: int) -> void: _pick_ammo(kind))
 	add_child(hud)
+	hud.watch_hold(hold)
 	wreck = WreckScreen.new()
 	wreck.touch = _args.has("touch")
 	wreck.retry.connect(_sail_again)
@@ -139,6 +153,8 @@ func _ready() -> void:
 	world.hit.connect(_on_hit)
 	world.sunk.connect(_on_sunk)
 	world.shook.connect(func(a: float) -> void: camera.shake(a))
+	world.burned.connect(_on_burned)
+	world.status.connect(_on_status)
 	gunnery.loaded.connect(func(side: int) -> void: hud.guns_ready(side))
 	pirates.bounty.connect(_on_bounty)
 	if _args.has("touch"):
@@ -154,6 +170,7 @@ func _ready() -> void:
 		_sink_at = float(_args.sink)
 	if _args.has("voyage"):
 		_stage_voyage()
+	_stage_plunder()
 	# one settled frame before anything draws
 	_tick(0.0)
 	camera.snap_to(_watched().pos)
@@ -171,7 +188,10 @@ func _warm_up() -> void:
 		w.add_child(n)
 	for n in world.debris.warm_meshes():
 		w.add_child(n)
+	for n in world.loot.warm_meshes():
+		w.add_child(n)
 	camera.add_child(w)
+	hud.warm()
 	get_tree().create_timer(1.0).timeout.connect(w.queue_free)
 
 
@@ -244,6 +264,7 @@ func _build_sea() -> void:
 	add_child(world.wake)
 	world.fx = Particles.new()
 	world.fx.name = "Particles"
+	world.fx.wind = world.wind
 	add_child(world.fx)
 	ocean = Ocean.new()
 	ocean.name = "Ocean"
@@ -254,6 +275,10 @@ func _build_sea() -> void:
 	world.debris.name = "Debris"
 	add_child(world.debris)
 	world.debris.setup(world)
+	world.loot = Loot.new()
+	world.loot.name = "Loot"
+	add_child(world.loot)
+	world.loot.setup(world)
 
 
 func _build_islands() -> void:
@@ -287,6 +312,7 @@ func _pick_region(x: float, z: float) -> void:
 	ocean.set_region(region)
 	world.wake.set_seabed(region.height_tex, region.height_rect())
 	world.debris.set_region(region)
+	world.loot.set_region(region)
 	world.region = region
 
 
@@ -314,6 +340,15 @@ func _build_player() -> void:
 		player.sail_target = clampf(float(_args.sails) / 3.0, 0.0, 1.0)
 		player.sail_level = player.sail_target
 	player.anchored = _args.has("anchor")
+	# a fresh magazine and an empty hold
+	stock = Ammo.fresh_stock()
+	hold = Treasure.Hold.new(int(Treasure.HOLD_ROOM.get(player.cls.id, 10)))
+	_hold_nag = 0.0
+	_hauled = 0
+	if _args.has("ammo"):
+		var k := Ammo.ID.find(str(_args.ammo))
+		if k >= 0:
+			player.ammo = k
 
 
 func _build_camera() -> void:
@@ -384,6 +419,8 @@ func _stage_battle(id: String) -> void:
 		var side := 1.0 if randf() < 0.5 else -1.0
 		_foe.dmg.on_hit(_foe.transform * Vector3(side * shape.half_width_at_y(t, y), y, shape.z(t)), randf_range(15.0, 30.0))
 	_foe.anchored = _args.has("foe-anchor")
+	if _args.has("foe-ammo"):
+		ai.force_ammo = maxi(0, Ammo.ID.find(str(_args["foe-ammo"])))
 	if _args.has("foe-dismast"):
 		for m in str(_args["foe-dismast"]).split(","):
 			_foe.dmg.dismast(int(m), randf_range(0.0, 0.3))
@@ -417,11 +454,32 @@ func _stage_voyage() -> void:
 		discovered["home/%d" % i] = true
 
 
+## Plunder for a set piece: salvage afloat off her bow (--loot), a hold with
+## a little of everything (--hold), the hold's peek open (--peek); the shot
+## fan opens (--fan) a second before the frame is saved (see _process).
+func _stage_plunder() -> void:
+	if _args.has("loot"):
+		var a: PackedStringArray = str(_args.loot).split(",")
+		var n := int(a[0]) if a[0].is_valid_int() else 8
+		for i in n:
+			var tier: int = int(a[1]) if a.size() > 1 else [0, 0, 1, 2, 3, 4][i % 6]
+			# a spiral round her, clear of her reach
+			var ang := player.heading + i * 2.4
+			var r := 18.0 + i * 2.2
+			world.loot.place(player.pos.x + sin(ang) * r, player.pos.z + cos(ang) * r, tier)
+	if _args.has("hold"):
+		hold.stow(PackedStringArray(["rum", "silver", "pearls", "sugar", "ruby", "spices", "crown"]))
+	if _args.has("peek"):
+		get_tree().create_timer(0.1).timeout.connect(func() -> void: hud.open_peek())
+
+
 func _process(delta: float) -> void:
 	_tick(minf(delta, 0.1))
 	_frames += 1
 	if _args.has("again") and _frames == int(_args.again) and _farewell != null and _farewell.shown:
 		wreck.retry.emit()
+	if _args.has("fan") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
+		hud.open_fan()
 	if _args.has("smoke") and _frames == int(_args.get("smoke-at", 300)):
 		var isles := 0
 		var plants := 0
@@ -438,8 +496,15 @@ func _process(delta: float) -> void:
 			for sp in sh.model.spars:
 				down += 1 if sp.broken else 0
 		var junk := world.debris.counts()
+		var f := world.shots.fired
+		var afloat := world.loot.counts()
+		var marks := 0
+		for sh in world.ships:
+			marks += (1 if sh.afire > 0.0 else 0) + (1 if sh.torn > 0.0 else 0) + (1 if sh.crew_hit > 0.0 else 0)
 		print("SMOKE OK: %d frames, %.0f m sailed, %d triangles in the sloop, %d islands, %d plants; %d ships afloat, %d guns fired, %d hits, %d breaches, %d spars down, %d pieces of wreckage and %d spars adrift, %d hulls on the slipway%s" % [
 				_frames, player.pos.length(), player.model.triangles(), isles, plants, world.ships.size(), voyage.shots, voyage.hits, holes, down, junk.x, junk.y, shipyard.stock(), lost])
+		print("SMOKE SHOT: balls fired round %d, shell %d, fire %d, chain %d, grape %d; %d marks of special shot on ships; magazine %s, %s loaded" % [f[0], f[1], f[2], f[3], f[4], marks, stock, Ammo.ID[player.ammo]])
+		print("SMOKE LOOT: %d barrels and %d/%d/%d/%d chests afloat, %d hauled; hold %d/%d (%d goods, worth %d)" % [afloat[0], afloat[1], afloat[2], afloat[3], afloat[4], _hauled, hold.used(), hold.capacity, hold.count(), hold.worth()])
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
 		_save_shot(str(_args.shot))
 
@@ -508,6 +573,14 @@ func _tick(real_dt: float) -> void:
 		if s.alive or s.sink_t < 20.0:
 			pushers.append(s)
 	world.debris.update(dt, pushers, ocean, camera.global_position)
+	# salvage afloat: drawn in and hauled aboard as she sails through it (a
+	# full hold leaves what it can't take bobbing on the swell)
+	var hauling := player.alive and _farewell == null
+	var reach := (player.cls.beam * 0.5 + 5.0) * 2.0
+	var got := world.loot.update(dt, player.pos if hauling else null, reach, _refuse, ocean, camera.global_position)
+	for it in got:
+		_haul(it)
+	_hold_nag = maxf(0.0, _hold_nag - dt)
 
 	# the light
 	atmosphere.apply(sun, env)
@@ -531,6 +604,8 @@ func _tick(real_dt: float) -> void:
 	hud.show_state(player, w, atmosphere.hour(), camera.view_index(), atmosphere.vignette)
 	hud.show_hull(player, discovered.size(), isles_total)
 	hud.show_guns(player, gunnery)
+	hud.show_ammo(player.ammo, stock)
+	hud.show_hold(hold)
 	hud.show_bars(world.ships, player, camera)
 	if player.alive and (not _args.has("shot") or _args.has("discover")):
 		_chart(player.pos)
@@ -557,6 +632,10 @@ func _helm() -> void:
 func _guns() -> void:
 	if not player.alive or _farewell != null:
 		return
+	if controls.ammo_pick >= 0:
+		_pick_ammo(controls.ammo_pick)
+	if controls.ammo_cycle:
+		_cycle_ammo()
 	if controls.fire_side != 0:
 		_fire(controls.fire_side)
 	if controls.fire_auto:
@@ -574,12 +653,124 @@ func _guns() -> void:
 
 
 func _fire(side: int) -> void:
+	# a special the magazine has run out of: round shot, rather than guns left cold
+	if stock[player.ammo] == 0:
+		_pick_ammo(Ammo.ROUND, true)
+	var shot := player.ammo
 	if not gunnery.fire(player, side):
 		hud.guns_deny(side)
 		return
 	for m: Dictionary in player.model.muzzles:
 		if int(m.side) == side:
 			voyage.shots += 1
+	if shot != Ammo.ROUND:
+		stock[shot] = maxi(0, stock[shot] - 1)
+		if stock[shot] == 0:
+			hud.toast("Last of the %s" % Ammo.NAME[shot].to_lower(), "Round shot loaded", 2.6)
+			_pick_ammo(Ammo.ROUND, true)
+
+
+## Loads a kind of shot for the next broadsides; the specials need some aboard.
+func _pick_ammo(kind: int, quiet := false) -> void:
+	if not player.alive or _farewell != null:
+		return
+	if stock[kind] == 0:
+		hud.ammo_deny(kind)
+		if not quiet:
+			hud.toast("No %s left" % Ammo.NAME[kind].to_lower(), "Salvage, chests and new isles restock the magazine", 2.8)
+		return
+	var fresh := player.ammo != kind
+	player.ammo = kind
+	if not quiet:
+		hud.ammo_loaded(kind)
+	elif fresh:
+		hud.show_ammo(kind, stock)
+
+
+## R: the next kind of shot that's aboard.
+func _cycle_ammo() -> void:
+	for k in range(1, Ammo.COUNT + 1):
+		var kind := (player.ammo + k) % Ammo.COUNT
+		if stock[kind] != 0:
+			_pick_ammo(kind)
+			return
+
+
+## Shot found in salvage: into the racks (each kind up to what they hold),
+## a "+n" off its slot and a line of it rising off the find.
+func _stock_ammo(add: Dictionary, at: Vector3) -> void:
+	var line := ""
+	for kind: int in Ammo.SPECIALS:
+		var n: int = add.get(kind, 0)
+		if n <= 0:
+			continue
+		var before := stock[kind]
+		stock[kind] = mini(int(Ammo.MAX[kind]), before + n)
+		var got := stock[kind] - before
+		if got <= 0:
+			continue
+		hud.ammo_gain(kind, got)
+		line += ("" if line.is_empty() else " · ") + "+%d %s" % [got, Ammo.SHORT[kind]]
+	if not line.is_empty():
+		hud.floater(line, at, camera, Floaters.Kind.AMMO, 22.0)
+
+
+## Whether the hold has no room for what an item holds (it drifts on, and the
+## hold says it's full).
+func _refuse(it: Loot.Item) -> bool:
+	if hold.would_keep(it.goods):
+		return false
+	_nag_hold()
+	return true
+
+
+## Salvage hauled aboard: it patches the hull, its shot goes into the racks
+## and its goods into the hold, finest first; what it was rises off it, a
+## chest in its rarity's light, and a fine find gets its own toast.
+func _haul(it: Loot.Item) -> void:
+	var p := player
+	_hauled += 1
+	p.hp = minf(p.max_hp, p.hp + it.heal * p.max_hp)
+	var xz := world.loot.where(it)
+	var at := Vector3(xz.x, 2.0, xz.y)
+	_stock_ammo(Ammo.loot(it.tier), at)
+	var res := hold.stow(it.goods)
+	var tossed: PackedStringArray = res.tossed
+	if not tossed.is_empty():
+		_nag_hold(tossed.size())
+	var kept := Array(res.kept as PackedStringArray)
+	if kept.is_empty():
+		return
+	kept.sort_custom(func(a: String, b: String) -> bool:
+		var ra := Treasure.rarity_of(a)
+		var rb := Treasure.rarity_of(b)
+		return ra > rb or (ra == rb and Treasure.price_of(a) > Treasure.price_of(b)))
+	var best: String = kept[0]
+	var more := " +%d" % (kept.size() - 1) if kept.size() > 1 else ""
+	var good := Treasure.name_of(best)
+	if it.tier == 0:
+		hud.floater(good + more, at, camera, Floaters.Kind.LOOT)
+		return
+	var rarity: String = Treasure.RARITY_NAME[it.tier]
+	if it.tier >= 2:
+		voyage.note("chest", "%s chest" % rarity, ", ".join(kept.map(func(id: String) -> String: return Treasure.name_of(id))))
+	var kinds := [Floaters.Kind.LOOT, Floaters.Kind.LOOT, Floaters.Kind.RARE, Floaters.Kind.EPIC, Floaters.Kind.LEGENDARY]
+	hud.floater("%s chest: %s%s" % [rarity, good, more], at, camera, kinds[it.tier])
+	world.fx.treasure(Vector3(xz.x, world.water_height(xz.x, xz.y), xz.y), Loot.GLOW[it.tier], it.tier)
+	var r := Treasure.rarity_of(best)
+	if r >= 2:
+		hud.loot_toast(best, r, "%s plunder" % Treasure.RARITY_NAME[r], good, 3.8 if r == 4 else 3.0)
+	if it.tier >= 3:
+		camera.shake(0.22 if it.tier == 4 else 0.1)
+
+
+## Says, now and then, that the hold is full and where to empty it.
+func _nag_hold(tossed := 0) -> void:
+	if _hold_nag > 0.0:
+		return
+	_hold_nag = 9.0
+	var kicker := "Hold full · %d cheap %s over the side" % [tossed, "good" if tossed == 1 else "goods"] if tossed > 0 else "Hold full"
+	hud.toast(kicker, "Sell at a trading port to make room", 3.4)
 
 
 ## The loaded side with a foe in its arc, else the side facing the nearest foe.
@@ -619,6 +810,41 @@ func _on_hit(ship: Ship, attacker: Ship, dealt: float, at: Vector3) -> void:
 func _on_sunk(ship: Ship, attacker: Ship) -> void:
 	if ship == player:
 		_begin_farewell(attacker)
+		return
+	# what she carried comes up out of the wreck: the bigger the hull, the more
+	# and the finer, and a galleon always gives up a fine chest
+	var luck: float = {"sloop": 0.0, "brig": 0.3, "galleon": 0.6}.get(ship.cls.id, 0.0)
+	world.loot.drop(ship.pos.x, ship.pos.z, 3 + int(ship.cls.length / 8.0), luck, ship.cls.id == "galleon")
+
+
+## A bite of the flames burning a ship (fire shot): the damage ticks up off
+## her deck in amber, yours or hers.
+func _on_burned(ship: Ship, attacker: Ship, dealt: float) -> void:
+	if dealt <= 0.0:
+		return
+	var p := player
+	if attacker == p and ship != p and p.alive:
+		voyage.dealt += dealt
+	if attacker == p or ship == p:
+		var at := Vector3(ship.pos.x, ship.position.y + ship.cls.freeboard + 2.0, ship.pos.z)
+		hud.floater(("-%d" if ship == p else "%d") % roundi(dealt), at, camera, Floaters.Kind.BURN)
+
+
+## A special shot left its mark: said over the ship, once for each fresh effect.
+func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
+	var p := player
+	if attacker != p and ship != p:
+		return
+	var mine := ship == p
+	var top := float(ship.cls.masts[0].height) if not ship.cls.masts.is_empty() else 10.0
+	var at := Vector3(ship.pos.x, ship.position.y + top * 0.45 + 3.0, ship.pos.z)
+	match what:
+		"ablaze":
+			hud.floater("We're ablaze!" if mine else "Ablaze!", at, camera, Floaters.Kind.ABLAZE, 18.0)
+		"shredded":
+			hud.floater("Sails shredded!" if mine else "Sails shredded", at, camera, Floaters.Kind.SHREDDED, 18.0)
+		"crew":
+			hud.floater("Gun crews cut down!" if mine else "Crews cut down", at, camera, Floaters.Kind.CREW, 18.0)
 
 
 func _on_bounty(ship: Ship, gold: int) -> void:
@@ -759,6 +985,7 @@ func _sail_again() -> void:
 	world.shots.clear()
 	world.fx.clear()
 	world.debris.clear()
+	world.loot.clear()
 	discovered.clear()
 	voyage = Voyage.new()
 	_foe = null
@@ -768,6 +995,7 @@ func _sail_again() -> void:
 	world.ships.append(player)
 	player.struck.connect(func(a: float) -> void: camera.shake(a))
 	camera.snap_to(player.pos)
+	hud.watch_hold(hold)
 	hud.reset()
 
 

@@ -26,7 +26,20 @@ const BADGE := {
 	"skull": '<defs><radialGradient id="h" cx="0.5" cy="0.4" r="0.78"><stop offset="0.4" stop-color="#f4ecdc"/><stop offset="1" stop-color="#b9ab92"/></radialGradient></defs><path d="M4 11.4C4 6.9 7.6 4 12 4s8 2.9 8 7.4v2.4C20 17.6 16.4 20 12 20s-8-2.4-8-6.2z" fill="url(#h)"/><circle cx="9.6" cy="11.2" r="1.5" fill="#1a2a30"/><circle cx="14.4" cy="11.2" r="1.5" fill="#1a2a30"/>',
 	"isle": '<circle cx="12" cy="12" r="8" fill="#2bb5ad"/><circle cx="12" cy="13.6" r="6.9" fill="#f3e6c4"/><circle cx="12" cy="13.6" r="4.4" fill="#6fb043"/><circle cx="12" cy="12" r="8" fill="none" stroke="#2bb5ad" stroke-width="1.2"/>',
 	"clock": '<circle cx="12" cy="12" r="7.2" fill="none" stroke="#5ee3d4" stroke-width="1.9"/><path d="M11.1 7.6v5.1h4.6" fill="none" stroke="#5ee3d4" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+	# the hold: a little crate, a plank across it
+	"crate": '<defs><linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d2a160"/><stop offset="1" stop-color="#9a6a3c"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="4.4" fill="url(#w)"/><path d="M5.6 18.4 18.4 5.6" stroke="#6e4a28" stroke-width="2.3"/><rect x="5.1" y="5.1" width="13.8" height="13.8" rx="3.4" fill="none" stroke="#6e4a28" stroke-width="2.2"/>',
 }
+
+## What special shot has done to a ship, on her bar (a 16 grid): ablaze, her
+## canvas shredded, her gun crews cut down.
+const MARK := {
+	"flame": '<path d="M8 1c.6 2.6 3.8 4 3.8 8.2A3.8 3.8 0 0 1 4.2 9.4C4.2 7.6 5.3 6.4 6 5.6c.2 1.4.8 2 1.5 2.3C7 5.4 7.4 3 8 1z" fill="#ff8a3d"/><path d="M8 8.2c.4 1 1.6 1.6 1.6 3a1.6 1.6 0 0 1-3.2.1c0-.9.7-1.4 1-1.9.2.4.5.6.6.6z" fill="#ffe08a"/>',
+	"torn": '<path d="M3 2h10l-1 5.2-2.2-1 .4 2.6L8 7.6 7 10.4 5.4 8.6 4 11.8 3 14z" fill="#d6efff"/><path d="M2.5 1.5h11" stroke="#9fb8c8" stroke-width="1.4" stroke-linecap="round"/>',
+	"crew": '<circle cx="8" cy="4.6" r="2.6" fill="#e4d8ff"/><path d="M3.2 14c.4-3.4 2.2-5 4.8-5s4.4 1.6 4.8 5z" fill="#e4d8ff"/><path d="M2 2.5l12 11" stroke="#ff7563" stroke-width="1.8" stroke-linecap="round"/>',
+}
+
+## The web's plunder and shot art (tools/bake_art.mjs), on a 40 grid.
+static var _plunder := {}
 
 static var _cache := {}
 static var _density := 0.0
@@ -65,6 +78,25 @@ static func svg(key: String, inner: String, size: Vector2, view := Rect2(0, 0, 2
 		tex = ImageTexture.create_from_image(img)
 	_cache[ck] = tex
 	return tex
+
+
+## A good of the plunder (Treasure), or with `shot` a kind of shot (Ammo.ID),
+## `size` HUD units across.
+static func plunder(id: String, size: float, shot := false) -> Texture2D:
+	if _plunder.is_empty():
+		var f := FileAccess.open("res://art/plunder.json", FileAccess.READ)
+		var got: Variant = JSON.parse_string(f.get_as_text()) if f != null else null
+		_plunder = got if got is Dictionary else {"loot": {}, "shot": {}}
+	var inner: String = (_plunder.get("shot", {}) if shot else _plunder.get("loot", {})).get(id, "")
+	return svg(("shot:" if shot else "loot:") + id, inner, Vector2(size, size), Rect2(0, 0, 40, 40))
+
+
+## A mark on an enemy ship's bar (MARK), `size` HUD units across, with a
+## dark copy of itself a hair below and round it, so it reads on any sky.
+static func mark(id: String, size: float) -> Texture2D:
+	var inner: String = MARK.get(id, "")
+	var dark := RegEx.create_from_string('(fill|stroke)="#[0-9a-fA-F]+"').sub(inner, '$1="#000"', true)
+	return svg("mark:" + id, '<g transform="translate(0 0.7)" opacity="0.5" stroke="#000" stroke-width="1.3" stroke-linejoin="round">%s</g>%s' % [dark, inner], Vector2(size, size), Rect2(0, 0, 16, 16))
 
 
 ## A TextureRect showing the icon `size` units square, tinted `tint`.

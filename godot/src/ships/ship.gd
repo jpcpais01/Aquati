@@ -66,6 +66,15 @@ var last_attacker: Ship
 var last_cause := "shot"
 ## 0 .. 1: flames along her deck when badly hurt, and as the wreck goes down.
 var burning := 0.0
+## The shot her guns load for the next broadside (Ammo.ROUND ..).
+var ammo := Ammo.ROUND
+## Seconds left burning (fire shot), and who lit her.
+var afire := 0.0
+var afire_by: Ship
+## Seconds her canvas stays shredded (chain shot).
+var torn := 0.0
+## Seconds her gun crews stay thinned (grape shot).
+var crew_hit := 0.0
 
 ## Where she floats (y unused) and how she moves over the ground.
 var pos := Vector3.ZERO
@@ -103,7 +112,9 @@ var _rng := RandomNumberGenerator.new()
 var _ground_cooldown := 0.0
 var _scrape_t := 0.0
 var _fire_t := 0.0
-# broadside guns waiting their turn in the ripple: [time, muzzle index, target, point]
+var _burn_acc := 0.0
+var _burn_t := 0.0
+# broadside guns waiting their turn in the ripple: [time, muzzle index, target, point, shot]
 var _pending: Array = []
 
 
@@ -141,9 +152,36 @@ func port_dir() -> Vector3:
 	return Vector3(cos(heading), 0.0, -sin(heading))
 
 
-## The reach of her guns (m) at the usual elevations.
-func gun_range() -> float:
-	return cls.muzzle_speed * cls.muzzle_speed / GRAVITY * 0.62
+## Her guns' muzzle velocity with a kind of shot (the one loaded by
+## default): lighter and lumpier shot flies slower and falls shorter.
+func muzzle_speed(kind: int = -1) -> float:
+	return cls.muzzle_speed * float(Ammo.SPEED[ammo if kind < 0 else kind])
+
+
+## The reach of her guns (m) at the usual elevations, with the shot loaded.
+func gun_range(kind: int = -1) -> float:
+	var v := muzzle_speed(kind)
+	return v * v / GRAVITY * 0.62
+
+
+## The elevation (rad) that drops a ball at speed v onto a mark d metres off
+## and h metres above the muzzle (the flatter of the two arcs).
+static func elevation_for(v: float, d: float, h: float) -> float:
+	if d < 0.01:
+		return 0.0
+	var a := GRAVITY * d * d / (2.0 * v * v)
+	var disc := d * d - 4.0 * a * (a + h)
+	if disc < 0.0:
+		return PI * 0.25
+	return atan((d - sqrt(disc)) / (2.0 * a))
+
+
+## Where chain shot is laid: the middle of her canvas.
+func sail_aim_height() -> float:
+	var top := 0.0
+	for m: Dictionary in cls.masts:
+		top = maxf(top, float(m.height))
+	return model.shape.top(0.5) + 0.6 + top * 0.42
 
 
 ## Index into reload for a side (+1 port, -1 starboard).
@@ -174,27 +212,32 @@ func fire(side: int, target: Ship = null, point: Variant = null) -> bool:
 	# from the middle outward, for a rolling thunder
 	ms.sort_custom(func(a: int, b: int) -> bool: return absf((model.muzzles[a].pos as Vector3).z) < absf((model.muzzles[b].pos as Vector3).z))
 	for k in ms.size():
-		_pending.append([world.time + k * 0.085 + randf() * 0.05, ms[k], target, point])
+		_pending.append([world.time + k * 0.085 + randf() * 0.05, ms[k], target, point, ammo])
 	var si := side_index(side)
-	reload[si] = cls.reload
-	reload_full[si] = cls.reload
+	reload[si] = cls.reload * float(Ammo.RELOAD[ammo])
+	reload_full[si] = reload[si]
 	_roll_kick += side * 0.05 * (cls.cannons_per_side / 5.0) / cls.mass
 	return true
 
 
-## One gun of the ripple going off: the ball laid on its mark, the flash
+## One gun of the ripple going off: the shot laid on its mark (a bag of
+## grape bursting out in a cone, chain laid high into her canvas), the flash
 ## and the smoke.
 func _shoot(p: Array) -> void:
 	var m: Dictionary = model.muzzles[int(p[1])]
+	var kind: int = p[4]
 	var at := transform * (m.pos as Vector3)
 	var dir := Basis(Vector3.UP, heading) * (m.dir as Vector3)
-	var v := cls.muzzle_speed * randf_range(0.97, 1.03)
+	var v := muzzle_speed(kind) * randf_range(0.97, 1.03)
 	var mine := team == Team.PLAYER
 	var dist := 60.0
 	var target: Ship = p[2]
 	var aim: Variant = p[3]
+	var aim_h := NAN
 	if target != null and target.alive:
 		aim = target.pos
+		if kind == Ammo.CHAIN:
+			aim_h = target.position.y + target.sail_aim_height() - at.y
 	if aim != null:
 		# Lead the mark. Your own crews also allow for the ship's way, which the
 		# ball keeps (in a running duel that drift alone would carry whole
@@ -207,21 +250,34 @@ func _shoot(p: Array) -> void:
 		var lead := Vector2.ZERO
 		for it in 2:
 			lead = Vector2(a.x + rvx * tof - at.x, a.z + rvz * tof - at.z)
-			var e := 0.5 * asin(clampf(GRAVITY * lead.length() / (v * v), 0.0, 1.0))
+			var e := elevation_for(v, lead.length(), aim_h) if not is_nan(aim_h) else 0.5 * asin(clampf(GRAVITY * lead.length() / (v * v), 0.0, 1.0))
 			tof = lead.length() / (v * cos(e))
 		dist = lead.length()
 		var base := atan2(dir.x, dir.z)
 		var arc := PLAYER_ARC if mine else PIRATE_ARC
 		var fa := base + clampf(MathX.angle_delta(base, atan2(lead.x, lead.y)), -arc, arc)
 		dir = Vector3(sin(fa), 0.0, cos(fa))
-	var elev := clampf(0.5 * asin(clampf(GRAVITY * dist / (v * v), 0.0, 1.0)), 0.015, 0.47)
+	var elev: float
+	if not is_nan(aim_h):
+		elev = clampf(elevation_for(v, dist, aim_h), -0.05, 0.7)
+	else:
+		elev = clampf(0.5 * asin(clampf(GRAVITY * dist / (v * v), 0.0, 1.0)), 0.015, 0.47)
 	# pirate gun crews are a little less disciplined than yours
 	var sloppy := 1.0 if mine else 2.4
 	var yaw := atan2(dir.x, dir.z) + (randf() - 0.5) * 0.035 * sloppy
 	var pitch := elev + (randf() - 0.5) * 0.02 * sloppy
-	var bv := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch)) * v + vel
-	world.shots.fire(at, bv, self, cls.damage)
+	var spread: float = Ammo.SPREAD[kind]
+	var dealt := cls.damage * float(Ammo.DAMAGE[kind])
+	for b in int(Ammo.BALLS[kind]):
+		# the first ball flies true, the rest of the bag scatters
+		var fy := yaw + ((randf() - 0.5) * 2.0 * spread if b > 0 else 0.0)
+		var fp := pitch + ((randf() - 0.5) * spread if b > 0 else 0.0)
+		var vk := randf_range(0.94, 1.04) if b > 0 else 1.0
+		var bv := Vector3(sin(fy) * cos(fp), sin(fp), cos(fy) * cos(fp)) * v * vk + vel
+		world.shots.fire(at, bv, self, dealt, kind)
 	world.fx.muzzle(at, dir, vel)
+	if kind != Ammo.ROUND:
+		world.fx.shot_muzzle(at, dir, vel, kind)
 	world.shook.emit(0.35 if mine else 0.12 * world.loudness(at))
 
 
@@ -261,6 +317,44 @@ func die(attacker: Ship) -> void:
 	world.sunk.emit(self, attacker)
 
 
+## Fire shot struck home: she burns the longer for every ball. True if she
+## has only just caught.
+func ignite(by: Ship) -> bool:
+	if not alive:
+		return false
+	var fresh := afire <= 0.0
+	afire = minf(Ammo.BURN_MAX, maxf(0.0, afire) + Ammo.BURN_PER_HIT)
+	if by != null:
+		afire_by = by
+		last_attacker = by
+	last_hit = world.time
+	return fresh
+
+
+## Chain shot tore through her canvas. True if her sails were whole a moment ago.
+func shred(by: Ship) -> bool:
+	if not alive:
+		return false
+	var fresh := torn <= 0.0
+	torn = Ammo.TORN_TIME
+	if by != null:
+		last_attacker = by
+	last_hit = world.time
+	return fresh
+
+
+## Grape shot swept her deck. True if her gun crews were at full strength.
+func rake(by: Ship) -> bool:
+	if not alive:
+		return false
+	var fresh := crew_hit <= 0.0
+	crew_hit = Ammo.CREW_TIME
+	if by != null:
+		last_attacker = by
+	last_hit = world.time
+	return fresh
+
+
 func place(x: float, z: float, h: float) -> void:
 	pos = Vector3(x, 0.0, z)
 	heading = h
@@ -292,8 +386,14 @@ func step(dt: float) -> void:
 				_pending.remove_at(i)
 				if alive:
 					_shoot(p)
-	reload[0] = maxf(0.0, reload[0] - dt)
-	reload[1] = maxf(0.0, reload[1] - dt)
+	# grape thinned her gun crews: the survivors load slower
+	var rl := dt * (Ammo.CREW_RELOAD if crew_hit > 0.0 else 1.0)
+	reload[0] = maxf(0.0, reload[0] - rl)
+	reload[1] = maxf(0.0, reload[1] - rl)
+	crew_hit = maxf(0.0, crew_hit - dt)
+	torn = maxf(0.0, torn - dt)
+	if afire > 0.0:
+		_burn(dt)
 
 	var fwd := forward()
 	var fx := fwd.x
@@ -310,8 +410,10 @@ func step(dt: float) -> void:
 		# a battered hull drags: she loses way as she floods
 		var hp_f := 0.72 + 0.28 * (hp / max_hp)
 		var wf := wind_factor(rel_deg) * (0.75 + 0.25 * w.strength) * (1.0 + gust * 0.08)
-		# and every mast shot away takes a share of her canvas with it
-		var target := c.max_speed * sail_level * wf * hp_f * dmg.speed_factor()
+		# every mast shot away takes a share of her canvas with it, and shredded
+		# canvas (chain shot) draws far less wind until it's mended
+		var torn_k := 1.0 - Ammo.TORN_SLOW * minf(1.0, torn / 3.0)
+		var target := c.max_speed * sail_level * wf * hp_f * dmg.speed_factor() * torn_k
 		var rate := c.accel if target > speed else c.accel * 1.4
 		speed += (target - speed) * MathX.damp(rate, dt)
 		var steer := clampf(0.28 + 0.9 * (speed / c.max_speed), 0.28, 1.1)
@@ -417,11 +519,31 @@ func step(dt: float) -> void:
 	_flames(dt, swell)
 
 
-## Fires when she is badly hurt, or going down, doused as she goes under.
+## Fire shot burning her: the flames eat her hull in bites, told as they land.
+func _burn(dt: float) -> void:
+	afire -= dt
+	if alive:
+		_burn_acc += max_hp * Ammo.BURN_RATE * dt
+		_burn_t += dt
+		if _burn_t >= 0.8 or afire <= 0.0:
+			var by := afire_by
+			var d := damage(_burn_acc, by, null, false)
+			_burn_acc = 0.0
+			_burn_t = 0.0
+			world.burned.emit(self, by, d)
+	if afire <= 0.0:
+		afire = 0.0
+		afire_by = null
+
+
+## Fires when she is badly hurt, or set alight by fire shot (the flames run
+## along her whole deck), or going down, doused as she goes under.
 func _flames(dt: float, swell: float) -> void:
 	var f := hp / max_hp
 	if alive:
 		burning = (0.4 - f) / 0.4 if f < 0.4 else 0.0
+		if afire > 0.0:
+			burning = maxf(burning, 0.55 + 0.45 * minf(1.0, afire / 8.0))
 	else:
 		burning = (1.0 - sink_t / 26.0) * swell * swell * swell if sink_t < 22.0 else 0.0
 	if burning <= 0.0:

@@ -72,7 +72,7 @@ func side_of(s: int) -> Broadside:
 ## since the balls keep her way) and _impact (where on the sea they fall:
 ## where the foe will be when they arrive).
 func _predict(p: Ship, foe: Ship) -> void:
-	var v := p.cls.muzzle_speed
+	var v := p.muzzle_speed()
 	var g := Ship.GRAVITY
 	var rvx := foe.vel.x - p.vel.x
 	var rvz := foe.vel.z - p.vel.z

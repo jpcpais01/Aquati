@@ -1,8 +1,9 @@
 class_name EnemyBars
 extends Control
 ## A slim red bar over every enemy ship in view, riding just above her
-## tallest truck so it never sits on her hull, draining as she's hurt (the
-## web game's #bars). Bars are pooled: one per ship on screen.
+## tallest truck so it never sits on her hull, draining as she's hurt, with
+## the marks of what special shot has done to her beside it (the web game's
+## #bars). Bars are pooled: one per ship on screen.
 
 const W := 64.0 * HudStyle.PX
 const H := 6.0 * HudStyle.PX
@@ -46,6 +47,7 @@ func show_ships(ships: Array[Ship], player: Ship, cam: Camera3D) -> void:
 			bar.set_frac(s.hp / s.max_hp, true)
 			_bars[s] = bar
 		bar.set_frac(s.hp / s.max_hp)
+		bar.show_marks(s.afire > 0.0, s.torn > 0.0, s.crew_hit > 0.0)
 		bar.position = Vector2(at.x - W * 0.5, at.y - LIFT)
 	# (untyped: a ship that has just left the sea may already be freed)
 	for s in _bars.keys():
