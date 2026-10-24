@@ -94,6 +94,12 @@
     1.06742
    ]
   },
+  "card_flip": {
+   "ext": "wav",
+   "gain": [
+    0.03031
+   ]
+  },
   "chain": {
    "ext": "wav",
    "gain": [
@@ -435,6 +441,36 @@
    "ext": "wav",
    "gain": [
     0.32208
+   ]
+  },
+  "vault_burst": {
+   "ext": "wav",
+   "gain": [
+    0.13563
+   ]
+  },
+  "vault_rumble0": {
+   "ext": "wav",
+   "gain": [
+    0.22399
+   ]
+  },
+  "vault_rumble1": {
+   "ext": "wav",
+   "gain": [
+    0.27486
+   ]
+  },
+  "vault_rumble2": {
+   "ext": "wav",
+   "gain": [
+    0.40297
+   ]
+  },
+  "vault_rumble3": {
+   "ext": "wav",
+   "gain": [
+    0.46714
    ]
   },
   "water": {

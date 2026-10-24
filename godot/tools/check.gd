@@ -36,13 +36,14 @@ const TOWN_SHELL_TRIS := 3000
 const HOME_TRIS := 34000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "bell", "blast", "bosun_pipe", "bubbles",
-		"cannon0", "cannon1", "cannon2", "chain", "cheer4", "cheer6", "chime", "click", "clunk", "coin", "creak0", "creak1", "creak2",
+		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "founder", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "ignite", "lap",
 		"mallet", "murmur", "noise", "pour0", "pour1", "purse", "recoil", "scrape0", "scrape1", "shell",
 		"squeeze_arrival", "squeeze_flourish", "steam",
 		"tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
-		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4", "water", "whoosh", "wood"]
+		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
+		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "water", "whoosh", "wood"]
 ## The mix's buses past Master (Sound.build_buses).
 const BUSES := [&"UI", &"Mix", &"SFX", &"Air6k", &"Air2k5", &"Air1k", &"Air450", &"Echo",
 		&"EchoAir6k", &"EchoAir2k5", &"EchoAir1k", &"EchoAir450", &"Amb", &"Bed", &"Surf", &"Wind",

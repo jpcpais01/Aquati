@@ -182,6 +182,7 @@ func open(p_look: Dictionary, p_designs: Array, p_cls := "", p_locker: Dictionar
 	tab = "flag"
 	part = "topsides"
 	visible = true
+	_root.visible = true
 	_t = 0.0
 	_scroll = 0.0
 	_fling = 0.0
@@ -211,6 +212,20 @@ func close() -> void:
 
 func is_open() -> bool:
 	return visible
+
+
+## Out of the way while the Treasure Vault is up over it (`on`); back with
+## whatever the vault turned up (its banner and the locked cards redrawn).
+func set_away(on: bool) -> void:
+	if not visible or _root.visible != on:
+		return
+	_root.visible = not on
+	if not on:
+		_render(false)
+
+
+func is_away() -> bool:
+	return visible and not _root.visible
 
 
 ## The back button: the picker closes, the keyboard goes, or the Shipwright is done.

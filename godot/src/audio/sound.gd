@@ -1044,6 +1044,28 @@ func ammo_swap(kind: int) -> void:
 		_one("ammo%d" % clampi(kind, 0, 4), 1.0)
 
 
+## The Treasure Vault's chest trembling as its light climbs to a rarity (0 .. 3).
+func vault_rumble(level: int) -> void:
+	var l := clampi(level, 0, 3)
+	if _voice(0.22 + l * 0.05):
+		_one("vault_rumble%d" % l, 1.0)
+
+
+## Its lid bursting open on the best find (0 .. 3): a rushing sweep, and the treasure's run.
+func vault_burst(tier: int) -> void:
+	if _voice(0.3):
+		_one("vault_burst", 1.0)
+	treasure(mini(4, tier + 1))
+
+
+## A card turning over, ringing out for the rarer finds.
+func card_flip(tier: int) -> void:
+	if _voice(0.16):
+		_one("card_flip", 1.0)
+	if tier >= 1:
+		treasure(tier + 1)
+
+
 ## The interface's tap.
 func click() -> void:
 	if _voice(0.12):

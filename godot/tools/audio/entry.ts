@@ -245,6 +245,17 @@ shot('click', 1, 0.15, (a) => a.click());
 shot('chime', 1, 1.6, (a) => a.chime());
 for (let t = 1; t <= 4; t++) shot(`treasure${t}`, 1, 3.0, (a) => a.treasure(t));
 shot('guns_ready', 1, 0.7, (a) => a.gunsReady(0));
+// the Treasure Vault: the chest's rumble as its light climbs each rarity, its
+// lid bursting open (the game adds the treasure run), a card turning over
+for (let l = 0; l < 4; l++) shot(`vault_rumble${l}`, 1, 1.1, (a) => a.vaultRumble(l));
+shot('vault_burst', 1, 1.1, (a) => {
+  a.treasure = () => {};
+  a.vaultBurst(3);
+});
+shot('card_flip', 1, 0.3, (a) => {
+  a.treasure = () => {};
+  a.cardFlip(0);
+});
 for (let k = 0; k < 5; k++) shot(`ammo${k}`, 1, 0.22, (a) => a.ammoSwap(k));
 shot('founder', 1, 12.5, (a) => a.founder(), { sr: 16000, ogg: true });
 shot('groan', 3, 3.8, (a) => a.groan(), { sr: 16000, ogg: true });
