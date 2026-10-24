@@ -907,23 +907,15 @@ export class UI {
   }
 
   private zoomView = -1;
-  private zoomTagT = 0;
 
-  /** The zoom button's pips (0 close .. 3 cinematic); `announce` pops the view's name beside it. */
-  setZoomView(i: number, name: string, announce = false) {
-    if (i === this.zoomView && !announce) return;
+  /** The zoom button's pips (0 close .. 3 cinematic). */
+  setZoomView(i: number, name: string) {
+    if (i === this.zoomView) return;
     this.zoomView = i;
     const b = $('btn-zoom');
     b.setAttribute('aria-label', `Camera view: ${name}`);
     b.dataset.view = String(i);
     b.querySelectorAll('.zoom-pips i').forEach((p, k) => p.classList.toggle('on', k <= i));
-    if (!announce) return;
-    b.dataset.name = name;
-    b.classList.remove('tag');
-    void b.offsetWidth;
-    b.classList.add('tag');
-    clearTimeout(this.zoomTagT);
-    this.zoomTagT = window.setTimeout(() => b.classList.remove('tag'), 1300);
   }
 
   /** Captain's view chrome: the toggle, walk hints, reticle and the touch spyglass. */

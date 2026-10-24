@@ -13,6 +13,17 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T12:00Z',
+    entries: [
+      {
+        title: 'Clean, steady sails',
+        notes: [
+          'Sails on Android no longer flicker with pale blocky patches as they belly and flutter: the canvas now takes the sun as it does on the web, crisp and even, flags too. And the camera button on both the web and Android just steps through its views now, without the little Close, Mid, Far or Cinematic label popping up beside it.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T11:00Z',
     entries: [
       {
