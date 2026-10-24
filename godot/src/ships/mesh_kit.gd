@@ -357,6 +357,34 @@ func rbox(xf: Transform3D, size: Vector3, radius: float = -1.0, segs: int = 2) -
 		grid(base, vs.size(), us.size())
 
 
+## A capsule standing on Y (three.js CapsuleGeometry): radius r, `length`
+## between its caps' centres.
+func capsule(xf: Transform3D, r: float, length: float, cap_segs: int = 3, radial: int = 8) -> void:
+	var prof := PackedVector2Array()
+	for i in cap_segs + 1:
+		var a := -PI * 0.5 + PI * 0.5 * i / cap_segs
+		prof.append(Vector2(maxf(r * cos(a), 0.0), -length * 0.5 + r * sin(a)))
+	for i in cap_segs + 1:
+		var a := PI * 0.5 * i / cap_segs
+		prof.append(Vector2(maxf(r * cos(a), 0.0), length * 0.5 + r * sin(a)))
+	lathe(xf, prof, radial)
+
+
+## An octahedron of radius r (three.js OctahedronGeometry), its faces flat.
+func octahedron(xf: Transform3D, r: float) -> void:
+	var nb := xf.basis.inverse().transposed()
+	var v: Array[Vector3] = [Vector3.RIGHT, Vector3.LEFT, Vector3.UP, Vector3.DOWN, Vector3.BACK, Vector3.FORWARD]
+	for f: Vector3i in [Vector3i(0, 2, 4), Vector3i(0, 4, 3), Vector3i(0, 3, 5), Vector3i(0, 5, 2), Vector3i(1, 2, 5), Vector3i(1, 5, 3), Vector3i(1, 3, 4), Vector3i(1, 4, 2)]:
+		var a := v[f.x] * r
+		var b := v[f.y] * r
+		var c := v[f.z] * r
+		var n := (nb * (b - a).cross(c - a)).normalized()
+		var i := add_vertex(xf * a, n)
+		add_vertex(xf * b, n)
+		add_vertex(xf * c, n)
+		tri(i, i + 1, i + 2)
+
+
 ## A sharp-edged box.
 func box(xf: Transform3D, size: Vector3) -> void:
 	var h := size * 0.5

@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T07:00Z',
+    entries: [
+      {
+        title: 'Android: ship parts',
+        notes: [
+          'The sixteenth Android build opens the Refit tab in the Shipwright: twenty parts in four slots, hull plating, sails, guns and the figurehead, in five rarities from honest common shipwright\'s work to mythic pieces frankly not of this world. Every one is built onto her where you can see it, from iron straps and gilded dragonscale to sails embroidered with a golden phoenix or veined with storm light, dragon-mouthed cannons and a seraph with a turning halo, and every one changes how she sails and fights.',
+          'The tab shows her figures as bars, her class\'s own in sea green and what her parts add in gold, and a track for each slot from the standard fit to the mythic part. Tap a step to read its card, and if the part is yours she\'s refitted with it while the camera comes round to that part of her. The sloop, the brig and the galleon each keep their own refit, and the harbour card shows the pips her parts add in gold.',
+          'Parts turn up in treasure chests and salvage (a lucky figurehead improves the odds), aboard the odd pirate who sails with a prize fitting, and at the new Shipwright\'s counter in every market, whose three parts change from day to day and are paid for from your purse. A part you already have is sold as a spare for gold, and a legendary or mythic find gets a toast all of its own.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T05:00Z',
     entries: [
       {

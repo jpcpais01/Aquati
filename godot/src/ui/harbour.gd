@@ -24,6 +24,9 @@ const STATS := [["speed", "SPEED"], ["agility", "AGILITY"], ["armour", "ARMOUR"]
 
 var ship := "sloop"
 var sound_on := true
+## Each class's refit ((id) -> its loadout, see Parts): her card shows her
+## figures with it, the pips it adds in gold.
+var loadout := Callable()
 
 var _vp := Vector2(1280.0, 720.0)
 var _root: Control
@@ -274,7 +277,8 @@ func _build_tools() -> Control:
 	return box
 
 
-## Her card: "The Corsair", her name, four numbers and five bars.
+## Her card: "The Corsair" (and how many parts she has fitted), her name,
+## four numbers and five bars, all with her refit.
 func _fill_card() -> void:
 	var u := MenuKit.U
 	var t := MenuKit.T
@@ -285,9 +289,17 @@ func _fill_card() -> void:
 	_card = Control.new()
 	_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_card_slot.add_child(_card)
-	var c := ShipClass.named(ship)
+	var base := ShipClass.named(ship)
+	var fit: Dictionary = loadout.call(ship) if loadout.is_valid() else {}
+	var c := Parts.refit(base, fit)
+	var bars := Parts.refit_bars(base, fit)
+	var n_parts := Parts.loadout_parts(fit).size()
 	var w := 250.0 * u
 	var kick := MenuKit.words("THE " + c.title.to_upper(), "inter", 700, 10.5 * t, HudStyle.GOLD, 0.24)
+	if n_parts > 0:
+		var r: Array = kick.runs[0]
+		r[0] = str(r[0]) + " · "
+		kick.set_runs([r, ["%d PART%s FITTED" % [n_parts, "S" if n_parts > 1 else ""], r[1], r[2], HudStyle.GOLD_HI]])
 	_card.add_child(kick)
 	var name_px := 25.0 * t
 	var nm := MenuKit.words(c.name, "cinzel", 700, name_px, HudStyle.INK, 0.05, 1.0)
@@ -334,7 +346,9 @@ func _fill_card() -> void:
 		var icon := Icons.rect(str(s[0]), ic, HudStyle.AQUA)
 		icon.position = Vector2(0.0, y + (row_h - ic) * 0.5)
 		labels[i].position = Vector2(ic + cg, y + (row_h - labels[i].size.y) * 0.5)
-		var pips := _Pips.new(clampi(roundi(float(c.stats.get(s[0], 0.5)) * 10.0), 1, 10), pw)
+		# the pips her refit adds glow gold
+		var was := maxi(1, roundi(float(base.stats.get(s[0], 0.5)) * 10.0))
+		var pips := _Pips.new(clampi(roundi(float(bars.get(s[0], 0.5)) * 10.0), 1, 10), pw, was)
 		pips.position = Vector2(ic + cg + col + cg, y + (row_h - pips.size.y) * 0.5)
 		pips.t = _swap
 		for n: Control in [icon, labels[i], pips]:
@@ -450,8 +464,8 @@ class _Rule:
 
 
 ## A quality as ten pips in a dark track, the lit ones teal warming toward
-## gold along the bar (the web mixes them in Oklab); when the card changes
-## they grow in one after another.
+## gold along the bar (the web mixes them in Oklab), the ones her refit
+## adds in gold; when the card changes they grow in one after another.
 class _Pips:
 	extends Control
 	const N := 10
@@ -464,7 +478,7 @@ class _Pips:
 	var _on: Array[StyleBoxFlat] = []
 	var _off: Array[StyleBoxFlat] = []
 
-	func _init(n: int, w: float) -> void:
+	func _init(n: int, w: float, was := N) -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		lit = n
 		_pad = 2.0 * MenuKit.PX * 0.74
@@ -479,8 +493,14 @@ class _Pips:
 		var r := int(ceilf(h * 0.5))
 		for k in N:
 			var on := StyleBoxFlat.new()
-			on.bg_color = Harbour.oklab_mix(Color("#3fd3c6"), Color("#ffd77a"), k * 0.11)
-			on.shadow_color = Color(0.369, 0.89, 0.831, 0.25)
+			if k >= was:
+				on.bg_color = HudStyle.GOLD_MID
+				on.border_color = HudStyle.GOLD_TOP
+				on.border_width_top = 1
+				on.shadow_color = Color(1.0, 0.784, 0.353, 0.55)
+			else:
+				on.bg_color = Harbour.oklab_mix(Color("#3fd3c6"), Color("#ffd77a"), k * 0.11)
+				on.shadow_color = Color(0.369, 0.89, 0.831, 0.25)
 			on.shadow_size = int(6.0 * MenuKit.U)
 			on.anti_aliasing = true
 			var off := StyleBoxFlat.new()

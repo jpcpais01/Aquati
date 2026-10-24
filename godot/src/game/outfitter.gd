@@ -6,7 +6,8 @@ extends Node
 ## between plays (Progress). Her paintwork is baked into her timbers, so a
 ## change there repaints her skin at once and has the yard lay down a fresh
 ## hull in her new colours, swapped in under her (Ship.refit) as soon as it's
-## built: no tap ever waits on a whole ship being lofted.
+## built: no tap ever waits on a whole ship being lofted. A part bolted on or
+## taken off (Progress.parts_changed) has her refitted the same way.
 
 ## Her flag was drawn afresh (the Shipwright's stage shows it too); `painted`:
 ## with the brush's latest work in it, so the brush's layer can come down.
@@ -39,6 +40,19 @@ var _brush := 0
 func _init() -> void:
 	name = "Outfitter"
 	add_child(baker)
+
+
+func _ready() -> void:
+	Progress.parts_changed.connect(_parts_changed)
+
+
+## Her parts changed: a fresh hull with them, when it's her own class's refit.
+func _parts_changed() -> void:
+	if ship == null or not is_instance_valid(ship) or ship.removed:
+		return
+	if ship.model.fit_key != Parts.key(Progress.loadout(ship.cls.id)):
+		refitting = true
+		shipyard.want = ship.cls.id
 
 
 ## First thing: her look as kept, the pirates' colours too, their flags and

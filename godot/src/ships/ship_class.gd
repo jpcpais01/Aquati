@@ -110,6 +110,16 @@ static func named(class_id: String) -> ShipClass:
 	return c
 
 
+## A copy of her (a refit changes her figures, see Parts.refit): the same
+## hull and rig, the lists shared.
+func copy() -> ShipClass:
+	var c := ShipClass.new()
+	for p: Dictionary in get_property_list():
+		if int(p.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE:
+			c.set(p.name, get(p.name))
+	return c
+
+
 ## Gun positions along the hull, 0 stern .. 1 bow.
 func cannon_ts() -> PackedFloat32Array:
 	var out := PackedFloat32Array()

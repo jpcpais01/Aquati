@@ -1,8 +1,9 @@
 extends Node
 ## What the game keeps between voyages: the ship you sail, the waters you set
 ## out in, the view you sailed with, your purse, the archipelagos you've
-## charted, the waypoints on your sea chart and your records, and her look
-## and your saved designs from the Shipwright. Autoloaded as `Progress`.
+## charted, the waypoints on your sea chart and your records, your locker of
+## ship parts and each ship's refit, and her look and your saved designs from
+## the Shipwright. Autoloaded as `Progress`.
 ##
 ## It lives in user://progress.json, written whole to a fresh file and swapped
 ## in, so a crash or a dead battery mid-write can never leave it half-written.
@@ -13,6 +14,8 @@ extends Node
 
 ## Gold came in or went out of the purse.
 signal purse_changed(gold: int)
+## A part came into the locker, or one was fitted or taken off.
+signal parts_changed
 
 const PATH := "user://progress.json"
 const LOOKS := "user://looks.json"
@@ -42,6 +45,9 @@ var charts := {}
 var pins := []
 ## Your bests over every voyage, and how many you've sailed.
 var records := {"voyages": 0, "renown": 0, "gold": 0, "kills": 0, "isles": 0, "time": 0.0}
+## Your ship parts and what each class has bolted on (Parts.fresh): {owned:
+## {id: count}, fit: {class: loadout}, unseen: [found, not yet looked at]}.
+var parts := Parts.fresh()
 ## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
 var look := ShipLook.fresh()
 var designs := []
@@ -65,6 +71,100 @@ func earn(gold: int) -> void:
 		return
 	purse = maxi(0, purse + gold)
 	purse_changed.emit(purse)
+	touch()
+
+
+## Gold out of the purse: false (and nothing spent) if it doesn't stretch that far.
+func spend(gold: int) -> bool:
+	if gold <= 0 or purse < gold:
+		return false
+	purse -= gold
+	purse_changed.emit(purse)
+	touch()
+	return true
+
+
+## Whether a part is in the locker.
+func owns(id: String) -> bool:
+	return parts.owned.has(id)
+
+
+## How many different parts the locker holds.
+func parts_collected() -> int:
+	return parts.owned.size()
+
+
+## What a class has bolted on, slot by slot (a copy).
+func loadout(cls_id: String) -> Dictionary:
+	return (parts.fit.get(cls_id, {}) as Dictionary).duplicate()
+
+
+## The part fitted in a slot of a class ("" the standard fit).
+func equipped(cls_id: String, slot: String) -> String:
+	return str((parts.fit.get(cls_id, {}) as Dictionary).get(slot, ""))
+
+
+## A part into the locker: {part, fresh, refund}, where a spare's refund is
+## gold for the caller to pay into the purse (empty if no such part).
+func grant_part(id: String) -> Dictionary:
+	var p := Parts.part(id)
+	if p.is_empty():
+		return {}
+	var first: bool = not parts.owned.has(id)
+	parts.owned[id] = int(parts.owned.get(id, 0)) + 1
+	if first and not parts.unseen.has(id):
+		parts.unseen.append(id)
+	_parts_touched()
+	return {"part": p, "fresh": first, "refund": 0 if first else int(Parts.RARITIES[p.tier].refund)}
+
+
+## Bolts a part onto a class ("" puts the standard fit back); false if it
+## isn't hers to fit.
+func equip(cls_id: String, slot: String, id: String) -> bool:
+	if not Parts.CLASS_IDS.has(cls_id) or not Parts.SLOTS.has(slot):
+		return false
+	var fit: Dictionary = parts.fit.get(cls_id, {})
+	if id == "":
+		if not fit.has(slot):
+			return true
+		fit.erase(slot)
+	else:
+		var p := Parts.part(id)
+		if p.is_empty() or p.slot != slot or not owns(id):
+			return false
+		if str(fit.get(slot, "")) == id:
+			return true
+		fit[slot] = id
+	parts.fit[cls_id] = fit
+	_parts_touched()
+	return true
+
+
+## The parts found and not yet looked at, looked at now (all of them, or `ids`).
+func mark_seen(ids: Array = []) -> void:
+	var before: int = parts.unseen.size()
+	if ids.is_empty():
+		parts.unseen = []
+	else:
+		parts.unseen = parts.unseen.filter(func(id: String) -> bool: return not ids.has(id))
+	if parts.unseen.size() != before:
+		_parts_touched()
+
+
+## Every part into the locker (a debug flag's); true if anything was new.
+func grant_all_parts() -> bool:
+	var changed := false
+	for p in Parts.all():
+		if not parts.owned.has(p.id):
+			parts.owned[p.id] = 1
+			changed = true
+	if changed:
+		_parts_touched()
+	return changed
+
+
+func _parts_touched() -> void:
+	parts_changed.emit()
 	touch()
 
 
@@ -159,6 +259,7 @@ func save() -> void:
 		"charts": charts,
 		"pins": pins,
 		"records": records,
+		"parts": parts,
 	}
 	_write(path, JSON.stringify(data, "\t"))
 	if _looks_dirty:
@@ -232,6 +333,7 @@ func _adopt(d: Dictionary) -> void:
 		for e: Variant in w:
 			if e is Array and (e as Array).size() == 3 and _numbers(e) and pins.size() < PINS:
 				pins.append([roundi(float(e[0])), roundi(float(e[1])), clampi(int(e[2]), 0, PINS - 1)])
+	parts = Parts.sanitize(d.get("parts"))
 	var r: Variant = d.get("records")
 	if r is Dictionary:
 		for k: String in records:

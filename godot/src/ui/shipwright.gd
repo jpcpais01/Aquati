@@ -3,16 +3,20 @@ extends CanvasLayer
 ## The Shipwright (the web's customizer), laid out as the web lays it out on
 ## a phone held sideways: up top on the left the way back and "Shipwright"
 ## over where she lies, and down the right a panel of glass: the tabs (Flag,
-## Sails, Hull, Presets), the open tab's choices scrolling under a finger, and
-## at its foot "Surprise me" and Done. Every pick is hers at once: the game
-## dresses her in it (changed) and keeps it. The Flag tab flies her flag on a
-## stage and takes a brush to it (FlagStage); "any colour" opens a picker
-## over the choices (ColourPop). A drag on the world beside the panel swings
-## the camera round her, a pinch or the wheel brings it in or backs it off.
+## Sails, Hull, Refit, Presets), the open tab's choices scrolling under a
+## finger, and at its foot "Surprise me" and Done. Every pick is hers at once:
+## the game dresses her in it (changed) and keeps it. The Flag tab flies her
+## flag on a stage and takes a brush to it (FlagStage); "any colour" opens a
+## picker over the choices (ColourPop). The Refit tab fits her parts (Parts):
+## her figures as bars, and for each slot a track from the standard fit to
+## the mythic part, a card under it about the one tapped. A drag on the world
+## beside the panel swings the camera round her, a pinch or the wheel brings
+## it in or backs it off.
 
 ## Her look changed (a copy): the game dresses her in it and keeps it.
 signal changed(look: Dictionary)
-## What the camera should show her by: "flag", "sails", "hull" or "overview".
+## What the camera should show her by: "flag", "sails", "hull", "guns",
+## "bow" or "overview".
 signal focus(what: String)
 ## A drag across the world (a share of the screen's width), and a pinch or the
 ## wheel (a factor on how far the camera stands off).
@@ -22,11 +26,21 @@ signal zoom(f: float)
 signal brush(layer: Texture2D)
 ## Her saved designs changed (a copy).
 signal designs_changed(list: Array)
+## A part fitted on her in a slot (Parts.SLOTS), or the standard fit (""):
+## the game fits it, and builds it into her.
+signal fit(slot: String, id: String)
+## The Refit tab was looked at: the parts found since are new no longer.
+signal seen
 signal done
 signal clicked
 
-const TABS := [["flag", "Flag", "sw_flag"], ["sails", "Sails", "sw_sails"], ["hull", "Hull", "sw_hull"], ["presets", "Presets", "sw_star"]]
-const FOCUS := {"flag": "flag", "sails": "sails", "hull": "hull", "presets": "overview"}
+const TABS := [["flag", "Flag", "sw_flag"], ["sails", "Sails", "sw_sails"], ["hull", "Hull", "sw_hull"], ["refit", "Refit", "sw_refit"], ["presets", "Presets", "sw_star"]]
+const FOCUS := {"flag": "flag", "sails": "sails", "hull": "hull", "refit": "overview", "presets": "overview"}
+## The shot each of the Refit tab's slots brings the camera round to.
+const SLOT_FOCUS := {"hull": "hull", "sails": "sails", "guns": "guns", "figure": "bow"}
+## The standard fit's colour where a part has its rarity's (the web's
+## rgba(234, 242, 245, .55) on its step, .5 on its card).
+const STANDARD := Color(0.918, 0.949, 0.961, 0.55)
 const DARK_INK := Color("#0a1c26")
 const WHITE_PILL := Color("#f4f8f9")
 const LINE := HudStyle.STROKE
@@ -42,6 +56,12 @@ var part := "topsides"
 var place := "Home Harbour"
 ## Draws the tiles' and cards' pictures (the Outfitter's: her flag's drawings are shared).
 var baker: LookBaker
+## The parts locker (a copy of the game's: {owned, fit, unseen}, see Parts),
+## the class of ship being refitted, and where a part not yet found is for
+## sale today ((id) -> a trading port's name, or "").
+var locker := Parts.fresh()
+var cls_id := "sloop"
+var where_sold := Callable()
 
 var _px := MenuKit.PX
 var _vp := Vector2(1280.0, 720.0)
@@ -92,6 +112,17 @@ var _part_btns: Array = []
 var _slider: _Slider
 var _name: LineEdit
 var _save: _SaveCard
+## The Refit tab as laid out: where pieces are being added, its blocks (each
+## moved down as one when a card above it grows), the stat bars, each slot's
+## track ({nodes, card, block}) and the step last tapped on each ("" the
+## standard fit).
+var _into: Control
+var _blocks: Array[Control] = []
+var _bars: _RBars
+var _tracks := {}
+var _picked := {}
+## What the camera was last asked to show.
+var _focus := ""
 ## A change to hand over at the frame's end (a drag sends one a frame).
 var _due := false
 ## When the pictures are next redrawn (after a colour dragged on the picker).
@@ -125,19 +156,26 @@ func _ready() -> void:
 			_build())
 
 
-## Up, on the Flag tab, with her look and her saved designs.
-func open(p_look: Dictionary, p_designs: Array) -> void:
+## Up, on the Flag tab, with her look, her saved designs and, for the
+## Refit tab, her class and the parts locker.
+func open(p_look: Dictionary, p_designs: Array, p_cls := "", p_locker: Dictionary = {}) -> void:
 	look = p_look.duplicate(true)
 	designs = p_designs.duplicate(true)
+	if p_cls != "":
+		cls_id = p_cls
+	if not p_locker.is_empty():
+		locker = p_locker.duplicate(true)
+	_picked.clear()
 	tab = "flag"
 	part = "topsides"
 	visible = true
 	_t = 0.0
 	_scroll = 0.0
 	_fling = 0.0
+	_focus = ""
 	_build()
 	set_process(true)
-	focus.emit(FOCUS[tab])
+	_look_at(FOCUS[tab])
 
 
 ## Down (the brush put away, the last change handed over).
@@ -180,6 +218,12 @@ func go_back() -> bool:
 func set_flag(tex: Texture2D, painted := false) -> void:
 	_flag_tex = tex
 	_stage.set_flag(tex, painted)
+
+
+## The parts locker changed (a copy is kept): the Refit tab's dot follows
+## what's new. The tab itself stays as laid out (its own taps are in it).
+func set_parts(p_locker: Dictionary) -> void:
+	locker = p_locker.duplicate(true)
 
 
 ## The panel's box on the screen, so the camera frames her beside it.
@@ -305,18 +349,33 @@ func _build_tabs(w: float) -> UiBox:
 	tray.p("c_top", Color(0.0, 0.0, 0.0, 0.24)).p("c_foot", Color(0.0, 0.0, 0.0, 0.24)).p("c_border", Color(1.0, 1.0, 1.0, 0.06)).p("hi", 0.0)
 	tray.position = Vector2(6.0, 6.0) * px
 	var tw := (bw - pad * 2.0 - gap * (TABS.size() - 1)) / TABS.size()
+	# the names go when they don't all fit beside their icons (as on the web on a phone)
+	var labels: Array[UiText] = []
+	var named := true
+	for t: Array in TABS:
+		var l := MenuKit.words(str(t[1]).to_upper(), "inter", 700, 10.5 * px, Color.WHITE, 0.12)
+		labels.append(l)
+		named = named and 17.0 * px + 6.0 * px + l.size.x + 12.0 * px <= tw
 	for i in TABS.size():
 		var id := str(TABS[i][0])
 		var b := UiButton.new(Vector2(tw, th), 13.0 * px, 24.0 * px)
 		b.squeeze = 0.96
 		b.p("border", 0.0).p("hi", 0.0)
 		var ic := Icons.rect(str(TABS[i][2]), 17.0 * px)
-		var label := MenuKit.words(str(TABS[i][1]).to_upper(), "inter", 700, 10.5 * px, Color.WHITE, 0.12)
-		var cw := ic.size.x + 6.0 * px + label.size.x
+		var label := labels[i]
+		label.visible = named
+		var cw := ic.size.x + (6.0 * px + label.size.x if named else 0.0)
 		ic.position = Vector2((tw - cw) * 0.5, (th - ic.size.y) * 0.5)
 		label.position = Vector2(ic.position.x + ic.size.x + 6.0 * px, (th - label.size.y) * 0.5)
 		b.add_child(ic)
 		b.add_child(label)
+		# something new behind it: a gold dot over its corner (the web's .sw-new)
+		var dot := UiBox.new(Vector2(8.0, 8.0) * px, 4.0 * px, 14.0 * px)
+		dot.p("c_top", HudStyle.GOLD).p("c_foot", HudStyle.GOLD).p("border", 0.0).p("hi", 0.0).p("c_shadow", Color(0.0, 0.0, 0.0, 0.0))
+		dot.p("c_ring", Color8(6, 20, 30, 230)).p("ring", 2.0 * px).p("c_glow", Color8(244, 199, 101, 204)).p("glow", 10.0 * px)
+		dot.position = Vector2(tw * 0.5 + 10.0 * px, 5.0 * px)
+		dot.pivot_offset = dot.size * 0.5
+		b.add_child(dot)
 		b.position = Vector2(pad + i * (tw + gap), pad)
 		b.pressed.connect(func() -> void:
 			if tab != id:
@@ -325,7 +384,7 @@ func _build_tabs(w: float) -> UiBox:
 		tray.add_child(b)
 		_buttons.append(b)
 		var k := 1.0 if id == tab else 0.0
-		_tabs.append([id, b, ic, label, k])
+		_tabs.append([id, b, ic, label, k, dot, 1.0 if _has_new(id) else 0.0])
 	_tick_tabs(1.0)
 	return tray
 
@@ -386,6 +445,10 @@ func _render(top := false) -> void:
 	_slider = null
 	_name = null
 	_save = null
+	_into = _content
+	_blocks.clear()
+	_bars = null
+	_tracks.clear()
 	var px := _px
 	var w := _panel_at.size.x
 	_x0 = 12.0 * px
@@ -398,6 +461,8 @@ func _render(top := false) -> void:
 			_render_sails()
 		"hull":
 			_render_hull()
+		"refit":
+			_render_refit()
 		_:
 			_render_presets()
 	_y += 12.0 * px
@@ -420,7 +485,7 @@ func _set_tab(id: String) -> void:
 		_pop.close()
 	tab = id
 	_render(true)
-	focus.emit(FOCUS[tab])
+	_look_at(FOCUS[tab])
 
 
 # ------------------------------------------------------------------ tabs
@@ -521,7 +586,7 @@ func _render_hull() -> void:
 			clicked.emit()
 			part = id
 			_render()
-			focus.emit("hull"))
+			_look_at("hull"))
 		_content.add_child(b)
 		_cbuttons.append(b)
 		_part_btns.append([id, b])
@@ -620,6 +685,166 @@ func _render_presets() -> void:
 	_lay_cards(cards, cw, gap)
 
 
+## Her refit (the web's renderRefit): her figures as bars, the class's own
+## and what her parts add, then for each slot a track from the standard fit
+## through its five parts, common to mythic, and under it a card about the
+## step last tapped (or the part she carries). Looking is what makes the
+## parts found since new no longer (seen).
+func _render_refit() -> void:
+	var cls := ShipClass.named(cls_id)
+	var owned: Dictionary = locker.get("owned", {})
+	var unseen: Array = locker.get("unseen", [])
+	_block(func() -> void:
+		_section("The %s's refit" % cls.name, "%d/%d parts found" % [owned.size(), Parts.all().size()])
+		_bars = _RBars.new(_iw, cls.stats, Parts.refit_bars(cls, _fit()))
+		_bars.position = Vector2(_x0, _y)
+		_into.add_child(_bars)
+		_y += _bars.size.y)
+	for slot: String in Parts.SLOTS:
+		_block(func() -> void: _render_slot(slot, owned, unseen))
+	if not unseen.is_empty():
+		seen.emit()
+
+
+## A slot's track: the standard fit and its five parts in six steps along
+## a line running through the rarities' colours, and the card under them.
+func _render_slot(slot: String, owned: Dictionary, unseen: Array) -> void:
+	var px := _px
+	var parts := Parts.of_slot(slot)
+	var own := 0
+	for pt: Dictionary in parts:
+		if owned.has(pt.id):
+			own += 1
+	_section(str(Parts.SLOT_NAMES[slot]), "%d/%d" % [own, parts.size()])
+	var gap := 6.0 * px
+	var cw := (_iw - gap * 5.0) / 6.0
+	# a narrow panel takes the web's small-screen steps
+	var compact := cw < 54.0 * px
+	var art := minf((44.0 if compact else 54.0) * px, cw)
+	var top := _y + 2.0 * px
+	var line := _TrackLine.new(Vector2(_iw * 0.88, 2.0 * px))
+	line.position = Vector2(_x0 + _iw * 0.06, top + art * 0.5 - 1.0 * px)
+	_into.add_child(line)
+	var on := str(_fit().get(slot, ""))
+	var nodes: Array[_Node] = []
+	var row_h := 0.0
+	for i in 6:
+		var pt: Dictionary = {} if i == 0 else parts[i - 1]
+		var n := _Node.new(cw, art, compact, pt, slot, pt.is_empty() or owned.has(pt.id), not pt.is_empty() and unseen.has(pt.id))
+		n.position = Vector2(_x0 + i * (cw + gap), top)
+		n.set_on(n.id == on)
+		n.pressed.connect(_tap_node.bind(slot, n))
+		_into.add_child(n)
+		_cbuttons.append(n)
+		nodes.append(n)
+		row_h = maxf(row_h, n.size.y)
+	var card := _PartInfo.new(_iw)
+	card.position = Vector2(_x0, top + row_h + 4.0 * px + 8.0 * px)
+	_into.add_child(card)
+	_tracks[slot] = {"nodes": nodes, "card": card, "block": _into}
+	_fill_card(slot, str(_picked.get(slot, on)))
+	_y = card.position.y + card.size.y
+
+
+## Her fit (this class's loadout in the locker).
+func _fit() -> Dictionary:
+	return (locker.get("fit", {}) as Dictionary).get(cls_id, {})
+
+
+## A slot's card shows a part (or with "" the standard fit): whether she
+## carries it, or where it may be had.
+func _fill_card(slot: String, id: String) -> void:
+	var card: _PartInfo = _tracks[slot].card
+	var pt := Parts.part(id) if id != "" else {}
+	if pt.is_empty():
+		card.show_standard(slot)
+		return
+	var em := ""
+	var gold := false
+	if (locker.get("owned", {}) as Dictionary).has(id):
+		if str(_fit().get(slot, "")) == id:
+			em = "Fitted"
+			gold = true
+	else:
+		var where := str(where_sold.call(id)) if where_sold.is_valid() else ""
+		em = "For sale today at %s" % where if where != "" else "Not found yet · chests, wrecks and port shipwrights"
+	card.show_part(pt, slot, em, gold)
+
+
+## A step tapped: its card comes up, the camera comes round to that part of
+## her, and if it's hers it's fitted (the bars follow, the step pulses, and
+## the game builds it into her).
+func _tap_node(slot: String, n: _Node) -> void:
+	clicked.emit()
+	_picked[slot] = n.id
+	n.clear_new()
+	_look_at(str(SLOT_FOCUS[slot]), true)
+	if n.owned and n.id != str(_fit().get(slot, "")):
+		var fits: Dictionary = locker.get("fit", {})
+		var f: Dictionary = fits.get(cls_id, {})
+		if n.id == "":
+			f.erase(slot)
+		else:
+			f[slot] = n.id
+		fits[cls_id] = f
+		locker.fit = fits
+		for o: _Node in _tracks[slot].nodes:
+			o.set_on(o == n)
+		fit.emit(slot, n.id)
+		_bars.show_bars(Parts.refit_bars(ShipClass.named(cls_id), _fit()))
+		if n.id != "":
+			n.pulse()
+	_fill_card(slot, n.id)
+	if n.id != "":
+		(_tracks[slot].card as _PartInfo).fade_in()
+	var t: Dictionary = _tracks[slot]
+	var card: _PartInfo = t.card
+	(t.block as Control).size.y = card.position.y + card.size.y
+	_restack()
+
+
+## Lays out what `build` adds as a block of its own, moved as one when a
+## card above it changes its height (_restack).
+func _block(build: Callable) -> void:
+	var b := Control.new()
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.position = Vector2(0.0, _y)
+	_content.add_child(b)
+	var y0 := _y
+	_into = b
+	_y = 0.0
+	build.call()
+	b.size = Vector2(_panel_at.size.x, _y)
+	_into = _content
+	_y = y0 + b.size.y
+	_blocks.append(b)
+
+
+## The blocks laid one under another again (a card changed its height).
+func _restack() -> void:
+	if _blocks.is_empty():
+		return
+	var y := _blocks[0].position.y
+	for b in _blocks:
+		b.position.y = y
+		y += b.size.y
+	_y = y + 12.0 * _px
+	_content.size.y = _y
+	_scroll_max = maxf(0.0, _y - _body.size.y)
+	_scroll_to(_scroll)
+
+
+## A CSS color-mix in srgb: `w` of `a` with the rest of `b`, their alphas
+## weighing their colours in.
+static func css_mix(a: Color, w: float, b: Color) -> Color:
+	var al := a.a * w + b.a * (1.0 - w)
+	if al <= 0.0:
+		return Color(0.0, 0.0, 0.0, 0.0)
+	var wa := a.a * w / al
+	var wb := b.a * (1.0 - w) / al
+	return Color(a.r * wa + b.r * wb, a.g * wa + b.g * wb, a.b * wa + b.b * wb, al)
+
+
 ## The name field's box, as the web's (white edged and ringed while typing).
 func _field_box(focused: bool) -> StyleBoxFlat:
 	var px := _px
@@ -665,12 +890,17 @@ func _lay_cards(cards: Array[UiButton], cw: float, gap: float) -> void:
 # ------------------------------------------------------------------ pieces
 
 
-## A section's heading (the web's h3).
-func _section(title: String) -> void:
+## A section's heading (the web's h3), a count on its right if given.
+func _section(title: String, count := "") -> void:
 	var px := _px
 	var h := MenuKit.words(title.to_upper(), "inter", 700, 11.0 * px, HudStyle.AQUA, 0.22, 1.21)
 	h.position = Vector2(_x0, _y + 10.0 * px)
-	_content.add_child(h)
+	_into.add_child(h)
+	if count != "":
+		var c := MenuKit.words(count.to_upper(), "inter", 700, 11.0 * px, HudStyle.INK_3, 0.04, 1.21)
+		c.position = Vector2(_x0 + _iw - c.size.x, h.position.y)
+		_into.add_child(c)
+		h.cut_to(_iw - c.size.x - 8.0 * px)
 	_y = h.position.y + h.size.y + 8.0 * px
 
 
@@ -979,6 +1209,22 @@ func save_design() -> bool:
 	return true
 
 
+## The Refit tab open on a slot's track, scrolled to bring it into view
+## (the web's scrollIntoView), and its step `id` tapped (the one she
+## carries if none is given).
+func pick_part(slot: String, id := "?") -> void:
+	pick_tab("refit")
+	if not visible or not _tracks.has(slot):
+		return
+	var t: Dictionary = _tracks[slot]
+	var want := str(_fit().get(slot, "")) if id == "?" else id
+	for n: _Node in t.nodes:
+		if n.id == want:
+			_tap_node(slot, n)
+	var first: _Node = t.nodes[0]
+	_scroll_to((t.block as Control).position.y + first.position.y + first.size.y * 0.5 - _body.size.y * 0.5)
+
+
 # ------------------------------------------------------------------ the frame
 
 
@@ -1006,9 +1252,16 @@ func _step(dt: float) -> void:
 		_die.rotation = TAU * (1.0 - pow(1.0 - _die_t, 3.0))
 	if _slider != null:
 		_slider.tick(dt)
+	if _bars != null:
+		_bars.tick(dt)
+	for t: Dictionary in _tracks.values():
+		for n: _Node in t.nodes:
+			n.tick(dt)
+		(t.card as _PartInfo).tick(dt)
 
 
-## The tabs ease toward the open one: its white pill and dark ink.
+## The tabs ease toward the open one: its white pill and dark ink. A tab
+## with something new behind it wears a gold dot, popping in on a spring.
 func _tick_tabs(dt: float) -> void:
 	for it: Array in _tabs:
 		var want := 1.0 if it[0] == tab else 0.0
@@ -1020,6 +1273,28 @@ func _tick_tabs(dt: float) -> void:
 		var ink := HudStyle.INK_2.lerp(DARK_INK, k)
 		(it[2] as TextureRect).self_modulate = ink
 		(it[3] as UiText).modulate = ink
+		var nk := move_toward(float(it[6]), 1.0 if _has_new(str(it[0])) else 0.0, dt / 0.3)
+		it[6] = nk
+		var dot: UiBox = it[5]
+		dot.visible = nk > 0.0
+		dot.modulate.a = minf(1.0, nk / 0.67)
+		var ds := lerpf(0.4, 1.0, HudStyle.spring(nk))
+		dot.scale = Vector2(ds, ds)
+
+
+## Whether a tab has something new behind it (the Refit tab: parts found
+## and not yet looked at).
+func _has_new(id: String) -> bool:
+	return id == "refit" and not (locker.get("unseen", []) as Array).is_empty()
+
+
+## The camera brought round to `what` (unless it's on it already and `keep`:
+## a step on the Refit tab's track leaves the swing alone then).
+func _look_at(what: String, keep := false) -> void:
+	if keep and what == _focus:
+		return
+	_focus = what
+	focus.emit(what)
 
 
 # ------------------------------------------------------------------ input
@@ -1600,3 +1875,342 @@ class _DashEdge:
 			var cy := r if k < 2 else size.y - r
 			var a0 := PI + k * PI * 0.5
 			draw_arc(Vector2(cx, cy), r - h, a0 + 0.35, a0 + PI * 0.5 - 0.35, 6, c, w, true)
+
+
+## Her figures as bars (the web's .sw-rbars): the class's own in pale sea
+## green, what her refit adds in gold (or takes away, in red), each easing
+## over to a change.
+class _RBars:
+	extends UiBox
+	const KEYS := [["speed", "Speed"], ["agility", "Agility"], ["armour", "Armour"], ["hull", "Hull"], ["firepower", "Firepower"]]
+	var _base := {}
+	var _tw := 0.0
+	## Each: {label, fill, gain, from, to, now (the fill's end and the gain's
+	## width, as shares of the track), t (through the ease)}.
+	var _rows: Array[Dictionary] = []
+
+	func _init(w: float, base: Dictionary, now: Dictionary) -> void:
+		var px := MenuKit.PX
+		var lh := 10.0 * px * 1.21
+		super(Vector2(w, 20.0 * px + lh * KEYS.size() + 6.0 * px * (KEYS.size() - 1)), 14.0 * px, 2.0)
+		MenuKit.flat(self)
+		var fill := Color(0.0, 0.0, 0.0, 0.22)
+		p("c_top", fill).p("c_foot", fill).p("c_border", Color(1.0, 1.0, 1.0, 0.05)).p("hi", 0.0)
+		_base = base
+		var x := 12.0 * px + 74.0 * px + 10.0 * px
+		_tw = w - x - 12.0 * px
+		for i in KEYS.size():
+			var y := 10.0 * px + i * (lh + 6.0 * px)
+			var label := MenuKit.words(str(KEYS[i][1]).to_upper(), "inter", 700, 10.0 * px, Color.WHITE, 0.12, 1.21)
+			MenuKit.line_at(label, 12.0 * px, y, lh)
+			add_child(label)
+			# the track clips what runs along it, the gold's glow too (overflow: hidden)
+			var track := UiBox.new(Vector2(_tw, 6.0 * px), 3.0 * px, 2.0)
+			MenuKit.flat(track)
+			var tf := Color(1.0, 1.0, 1.0, 0.08)
+			track.p("c_top", tf).p("c_foot", tf).p("border", 0.0).p("hi", 0.0)
+			track.position = Vector2(x, y + (lh - 6.0 * px) * 0.5)
+			track.clip_contents = true
+			add_child(track)
+			var b := UiBox.new(Vector2(6.0, 6.0) * px, 3.0 * px, 2.0)
+			MenuKit.flat(b)
+			b.p("c_top", Color("#8fd8d0")).p("c_foot", Color("#e9f6f4")).p("horiz", 1.0).p("border", 0.0).p("hi", 0.0)
+			track.add_child(b)
+			var em := UiBox.new(Vector2(6.0, 6.0) * px, 3.0 * px, 12.0 * px)
+			MenuKit.flat(em)
+			em.p("border", 0.0).p("hi", 0.0)
+			track.add_child(em)
+			_rows.append({"label": label, "fill": b, "gain": em, "from": Vector2.ZERO, "to": Vector2.ZERO, "now": Vector2.ZERO, "t": 1.0})
+		show_bars(now, false)
+
+	## The bars for her figures now, eased there (or at once).
+	func show_bars(now: Dictionary, ease := true) -> void:
+		var px := MenuKit.PX
+		for i in KEYS.size():
+			var k := str(KEYS[i][0])
+			var b0 := minf(1.0, float(_base[k]))
+			var b1 := minf(1.25, float(now[k]))
+			var r := _rows[i]
+			var mood := 1 if b1 > b0 + 0.004 else (-1 if b1 < b0 - 0.004 else 0)
+			r.from = r.now if ease else Vector2(minf(b0, b1), absf(b1 - b0)) / 1.25
+			r.to = Vector2(minf(b0, b1), absf(b1 - b0)) / 1.25
+			r.t = 0.0 if ease else 1.0
+			(r.label as UiText).modulate = HudStyle.GOLD_HI if mood > 0 else HudStyle.INK_3
+			var em: UiBox = r.gain
+			if mood < 0:
+				em.p("c_top", Color("#ff7563")).p("c_foot", Color("#e5604f")).p("mid", -1.0).p("horiz", 1.0).p("glow", 0.0)
+			else:
+				em.p("c_top", HudStyle.GOLD_TOP).p("c_mid", HudStyle.GOLD_MID).p("mid", 0.52).p("c_foot", HudStyle.GOLD_FOOT).p("horiz", 0.0)
+				em.p("c_glow", Color8(255, 200, 90, 178)).p("glow", 10.0 * px)
+			_lay(r, r.from)
+
+	func tick(dt: float) -> void:
+		for r in _rows:
+			if float(r.t) < 1.0:
+				r.t = minf(1.0, float(r.t) + dt / 0.45)
+				_lay(r, (r.from as Vector2).lerp(r.to, HudStyle.eased(float(r.t))))
+
+	func _lay(r: Dictionary, v: Vector2) -> void:
+		r.now = v
+		var h := 6.0 * MenuKit.PX
+		var b: UiBox = r.fill
+		b.visible = v.x * _tw > 0.5
+		b.resize(Vector2(maxf(v.x * _tw, 1.0), h))
+		var em: UiBox = r.gain
+		em.visible = v.y * _tw > 0.5
+		em.position.x = v.x * _tw
+		em.resize(Vector2(maxf(v.y * _tw, 1.0), h))
+
+
+## A step on a slot's track (the web's .sw-node): a part's portrait in a
+## dark tile ringed in its rarity's colour, over the rarity's name (or the
+## standard fit's); greyed under a padlock until it's found, "New" until it
+## has been looked at; legendary parts shimmer, mythic ones are ringed in
+## turning light, and the one she carries is ringed white and glows.
+class _Node:
+	extends UiButton
+	const DIM := preload("res://shaders/ui_dim.gdshader")
+	const RING := preload("res://shaders/part_ring.gdshader")
+	## The part ("" the standard fit), whether it's hers, its rarity (-1 none).
+	var id := ""
+	var owned := true
+	var tier := -1
+	var _rc := STANDARD
+	var _art: Control
+	var _tile: UiBox
+	var _badge: UiBox
+	var _pulse := 1.0
+	var _shine := -1.0
+
+	func _init(w: float, s: float, compact: bool, pt: Dictionary, slot: String, p_owned: bool, fresh: bool) -> void:
+		var px := MenuKit.PX
+		var fs := (7.5 if compact else 8.5) * px
+		var em := 0.04 if compact else 0.1
+		var called := "Standard" if pt.is_empty() else str(Parts.RARITIES[int(pt.tier)].name)
+		var label := MenuKit.words(called.to_upper(), "inter", 800, fs, Color.WHITE, em, 1.21)
+		# a name too long for its step (and the gap beside it) is set smaller
+		if label.size.x > w + 5.0 * px:
+			fs *= (w + 5.0 * px) / label.size.x
+			label.queue_free()
+			label = MenuKit.words(called.to_upper(), "inter", 800, fs, Color.WHITE, em, 1.21)
+		super(Vector2(w, s + 4.0 * px + label.size.y), 15.0 * px, 4.0)
+		squeeze = 0.95
+		owned = p_owned
+		if not pt.is_empty():
+			id = str(pt.id)
+			tier = int(pt.tier)
+			_rc = Parts.RARITIES[tier].css
+		var r := (12.0 if compact else 15.0) * px
+		var pad := (5.0 if compact else 6.0) * px
+		_art = Control.new()
+		_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_art.size = Vector2(s, s)
+		_art.position = Vector2((w - s) * 0.5, 0.0)
+		_art.pivot_offset = _art.size * 0.5
+		add_child(_art)
+		_tile = UiBox.new(Vector2(s, s), r, 48.0 * px)
+		_tile.p("hi", 0.0).p("border", 1.5 * px).p("c_border", Color(_rc, _rc.a * 0.55))
+		var mythic := tier == 4 and owned
+		if pt.is_empty():
+			_tile.p("c_top", Color("#1a3442")).p("c_border", Color(1.0, 1.0, 1.0, 0.18))
+		elif mythic:
+			_tile.p("c_top", Color("#2a1e4a"))
+		else:
+			_tile.p("c_top", Shipwright.css_mix(_rc, 0.3 if tier == 3 and owned else 0.26, Color("#0d2230")))
+		# circle at 50% 35% to 75% of the farthest corner
+		_tile.p("c_foot", Color("#07061a") if mythic else Color("#06121b")).p("radial", Vector4(0.5, 0.35, 1.0, 1.0)).p("radial_stop", 0.615)
+		_art.add_child(_tile)
+		if mythic:
+			# the ring of turning light, from just outside the tile to just inside its edge
+			var ring := ColorRect.new()
+			ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var m := 4.0 * px
+			ring.position = Vector2(-m, -m)
+			ring.size = Vector2(s + m * 2.0, s + m * 2.0)
+			var mat := ShaderMaterial.new()
+			mat.shader = RING
+			mat.set_shader_parameter("quad", ring.size)
+			mat.set_shader_parameter("outer", Vector3(s * 0.5 + 2.0 * px, s * 0.5 + 2.0 * px, r + 2.0 * px))
+			mat.set_shader_parameter("inner", Vector3(s * 0.5 - 1.0 * px, s * 0.5 - 1.0 * px, r - 1.0 * px))
+			mat.set_shader_parameter("soft", 0.5 * px)
+			ring.material = mat
+			_art.add_child(ring)
+		elif tier == 3 and owned:
+			_shine = 0.0
+			_tile.p("sheen_w", 0.9).p("sheen_span", Vector2(-2.17, 4.5)).p("sheen_a", 0.32)
+		var pic := TextureRect.new()
+		pic.texture = Icons.part(id if id != "" else "standard:" + slot, s - pad * 2.0)
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pic.position = Vector2(pad, pad)
+		pic.size = Vector2(s - pad * 2.0, s - pad * 2.0)
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_art.add_child(pic)
+		if not owned:
+			var dim := ShaderMaterial.new()
+			dim.shader = DIM
+			pic.material = dim
+			var l := 16.0 * px
+			for k in 2:
+				var lock := Icons.rect("lock", l, Color(0.0, 0.0, 0.0, 0.55) if k == 0 else Color(1.0, 1.0, 1.0, 0.75))
+				lock.position = Vector2((s - l) * 0.5, (s - l) * 0.5 + (1.0 * px if k == 0 else 0.0))
+				_art.add_child(lock)
+		label.modulate = HudStyle.INK_4 if not owned else Shipwright.css_mix(_rc, 0.8, Color.WHITE)
+		label.position = Vector2((w - label.size.x) * 0.5, s + 4.0 * px)
+		add_child(label)
+		if fresh:
+			var t := MenuKit.words("NEW", "inter", 800, 8.0 * px, HudStyle.GOLD_INK, 0.08, 1.21)
+			_badge = UiBox.new(t.size + Vector2(10.0, 2.0) * px, 99.0, 2.0)
+			MenuKit.flat(_badge)
+			_badge.p("c_top", HudStyle.GOLD_TOP).p("c_mid", HudStyle.GOLD_MID).p("mid", 0.52).p("c_foot", HudStyle.GOLD_FOOT).p("border", 0.0).p("hi", 0.0)
+			t.position = Vector2(5.0, 1.0) * px
+			_badge.add_child(t)
+			_badge.position = Vector2(w + 2.0 * px - _badge.size.x, -6.0 * px)
+			add_child(_badge)
+		set_on(false)
+
+	## Ringed white and glowing in its colour: the one she carries.
+	func set_on(v: bool) -> void:
+		var px := MenuKit.PX
+		if v:
+			_tile.p("c_ring", Color(1.0, 1.0, 1.0, 0.95)).p("ring", 2.0 * px)
+			_tile.p("c_glow", Color(_rc, _rc.a * 0.55)).p("glow", 24.0 * px)
+			_tile.p("c_shadow", Color(0.627, 0.941, 1.0, 0.28)).p("shadow", Vector2(10.0, 36.0) * px)
+		else:
+			_tile.p("ring", 0.0).p("glow", 0.0)
+			_tile.p("c_shadow", Color(0.0, 0.0, 0.0, 0.35)).p("shadow", Vector2(6.0, 16.0) * px)
+
+	## Fitted: it swells and settles on a spring.
+	func pulse() -> void:
+		_pulse = 0.0
+
+	func clear_new() -> void:
+		if _badge != null:
+			_badge.visible = false
+
+	func tick(dt: float) -> void:
+		if _pulse < 1.0:
+			_pulse = minf(1.0, _pulse + dt / 0.38)
+			# the web's 1 -> 1.14 -> 1 run through cubic-bezier(.3, 1.6, .5, 1),
+			# its overshoot carrying it a touch under before it settles
+			var e := MathX.bezier(0.3, 1.6, 0.5, 1.0, _pulse)
+			var k := 1.0 + 0.14 * (1.0 - absf(e * 2.0 - 1.0)) if e <= 1.0 else 1.0 - 0.28 * (e - 1.0)
+			_art.scale = Vector2(k, k)
+		if _shine >= 0.0:
+			_shine = fmod(_shine + dt, 3.2)
+			_tile.p("sheen", _shine / 3.2)
+
+	# (no box of its own: its tile is the art's)
+	func _draw() -> void:
+		pass
+
+
+## The line a slot's track hangs on, running through the rarities' colours.
+class _TrackLine:
+	extends Control
+	const STOPS := [[0.0, Color(1.0, 1.0, 1.0, 0.18)], [0.4, Color("#6cc8ff")], [0.6, Color("#c48bff")], [0.8, Color("#ffbe3d")], [1.0, Color("#ff5f9e")]]
+
+	func _init(sz: Vector2) -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		size = sz
+		modulate.a = 0.35
+
+	func _draw() -> void:
+		for i in STOPS.size() - 1:
+			var x0: float = STOPS[i][0] * size.x
+			var x1: float = STOPS[i + 1][0] * size.x
+			var c0: Color = STOPS[i][1]
+			var c1: Color = STOPS[i + 1][1]
+			draw_polygon(PackedVector2Array([Vector2(x0, 0.0), Vector2(x1, 0.0), Vector2(x1, size.y), Vector2(x0, size.y)]), PackedColorArray([c0, c1, c1, c0]))
+
+
+## The card under a slot's track (the web's .sw-pinfo): the part's rarity
+## and slot, its name, what it is, what it does for her, and whether she
+## carries it or where it may be had; or what the standard fit is.
+class _PartInfo:
+	extends UiBox
+	var _body: Control
+	var _fade := 1.0
+
+	func _init(w: float) -> void:
+		super(Vector2(w, 40.0), 14.0 * MenuKit.PX, 2.0)
+		MenuKit.flat(self)
+		p("hi", 0.0).p("border", 1.0)
+		_body = Control.new()
+		_body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_body)
+
+	func show_standard(slot: String) -> void:
+		_fill(Color(STANDARD, 0.5), "Standard fit", "Shipwright's %s" % str(Parts.SLOT_NAMES[slot]).to_lower(),
+				"What she was built with. Find upgrades in chests and wrecks at sea, or buy them from the shipwright at a trading port.", [], "", false)
+
+	## A part; `em` the line at its foot ("Fitted" in gold, or where to find it).
+	func show_part(pt: Dictionary, slot: String, em: String, gold: bool) -> void:
+		var r: Dictionary = Parts.RARITIES[int(pt.tier)]
+		_fill(r.css, "%s · %s" % [r.name, Parts.SLOT_NAMES[slot]], str(pt.name), str(pt.blurb), Parts.stat_lines(pt.stats), em, gold)
+
+	## Comes up from a touch low and faint (a part just tapped).
+	func fade_in() -> void:
+		_fade = 0.0
+		tick(0.0)
+
+	func tick(dt: float) -> void:
+		if _fade >= 1.0:
+			return
+		_fade = minf(1.0, _fade + dt / 0.22)
+		var k := 1.0 - (1.0 - _fade) * (1.0 - _fade)
+		_body.modulate.a = lerpf(0.4, 1.0, k)
+		_body.position.y = (1.0 - k) * 4.0 * MenuKit.PX
+
+	func _fill(rc: Color, kicker: String, title: String, blurb: String, lines: Array, em: String, gold: bool) -> void:
+		var px := MenuKit.PX
+		for c in _body.get_children():
+			_body.remove_child(c)
+			c.queue_free()
+		var w := size.x
+		var iw := w - 24.0 * px
+		var x := 12.0 * px
+		p("c_top", Shipwright.css_mix(rc, 0.1, Color8(10, 30, 42, 204))).p("c_foot", Color8(4, 14, 22, 217)).p("c_border", Color(rc, rc.a * 0.25))
+		var small := UiText.new([[kicker.to_upper(), HudStyle.font("inter", 800, roundi(0.14 * 9.5 * px)), roundi(9.5 * px), rc]], iw, 1.21)
+		small.position = Vector2(x, 10.0 * px)
+		_body.add_child(small)
+		var b := UiText.new([[title, HudStyle.font("cinzel", 700), roundi(15.0 * px), HudStyle.INK]], iw, 1.2, true)
+		b.position = Vector2(x, small.position.y + small.size.y + 2.0 * px)
+		_body.add_child(b)
+		var para := UiText.new([[blurb, HudStyle.font("inter", 500), roundi(12.0 * px), HudStyle.INK_2]], iw, 1.45, true)
+		para.position = Vector2(x, b.position.y + b.size.y + 4.0 * px)
+		_body.add_child(para)
+		var y := para.position.y + para.size.y
+		if not lines.is_empty():
+			y += 8.0 * px
+			var cx := 0.0
+			var ch := 0.0
+			for l: Array in lines:
+				var chip := _chip(str(l[0]), bool(l[1]))
+				if cx > 0.0 and cx + chip.size.x > iw:
+					cx = 0.0
+					y += ch + 5.0 * px
+				chip.position = Vector2(x + cx, y)
+				_body.add_child(chip)
+				cx += chip.size.x + 5.0 * px
+				ch = chip.size.y
+			y += ch
+		if em != "":
+			y += 9.0 * px
+			var e := UiText.new([[em.to_upper(), HudStyle.font("inter", 800, roundi(0.1 * 10.0 * px)), roundi(10.0 * px), HudStyle.GOLD_HI if gold else HudStyle.INK_3]], iw, 1.21)
+			e.position = Vector2(x, y)
+			_body.add_child(e)
+			y += e.size.y
+		resize(Vector2(w, y + 11.0 * px))
+
+	## What a part does for her, in a pill: green for the better, red for the worse.
+	func _chip(text: String, bad: bool) -> UiBox:
+		var px := MenuKit.PX
+		var t := MenuKit.words(text, "inter", 700, 10.5 * px, Color("#ffd3cc") if bad else Color("#dff8d8"), 0.0, 1.21)
+		var c := UiBox.new(t.size + Vector2(16.0, 6.0) * px, 99.0, 2.0)
+		MenuKit.flat(c)
+		var fill := Color8(255, 117, 99, 33) if bad else Color8(120, 220, 140, 33)
+		c.p("c_top", fill).p("c_foot", fill).p("hi", 0.0).p("c_border", Color8(255, 117, 99, 71) if bad else Color8(120, 220, 140, 64))
+		t.position = Vector2(8.0, 3.0) * px
+		c.add_child(t)
+		return c

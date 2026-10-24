@@ -6,10 +6,11 @@ extends CanvasLayer
 ## finest first, each lot at what it fetches here today with a Sell of its
 ## own (the prices drift while you watch, and flash as they change), and
 ## Sell everything under them; the chandlery mends the hull and fills the
-## racks of special shot; Cast off puts to sea. A sale's gold flies into the
-## purse in coins, and the purse counts it up. The card's body scrolls under
-## a finger, each section's name pinned to its top while the goods pass
-## under it.
+## racks of special shot; the shipwright has three parts in today, paid for
+## from your purse; Cast off puts to sea. A sale's gold flies into the purse
+## in coins, and the purse counts it up. The card's body scrolls under a
+## finger, each section's name pinned to its top while the goods pass under
+## it.
 ##
 ## At sea, off a quay's seaward face, the prompt to come alongside sits at
 ## the foot of the screen (a tap on it, or F, docks), saying what's to be had
@@ -19,6 +20,8 @@ signal sell(id: String)
 signal sell_all
 signal repair
 signal restock
+## A part bought from the shipwright.
+signal buy_part(id: String)
 signal leave
 ## The prompt tapped while she may come alongside.
 signal dock
@@ -46,6 +49,11 @@ const ROW_OUT := 0.35
 const TICK := 0.6
 const BUMP := 0.5
 const PROMPT_IN := 0.3
+## Seconds a part just bought swells and rings for (the web's mk-bought).
+const BOUGHT := 0.9
+## What a part does, for the better and the worse.
+const GOOD := Color("#c9f2c4")
+const BAD := Color("#ffbcb2")
 
 ## The touch layout: no key hints, and the prompt at the very foot of the screen.
 var touch := false
@@ -71,6 +79,13 @@ var _all_coin: TextureRect
 var _all_v: UiText
 var _fix: _Svc
 var _shot: _Svc
+## The shipwright's counter: its parts and the note under them, and the
+## purse on its band.
+var _wright: Control
+var _prows: Array[_PRow] = []
+var _wnote: UiText
+var _wp_coin: TextureRect
+var _wp_n: UiText
 var _fade: TextureRect
 var _leave: UiButton
 var _rows := {}
@@ -87,6 +102,8 @@ var _band_h := 0.0
 var _list_y := 0.0
 var _yard_y := 0.0
 var _svc_h := 0.0
+## How tall the shipwright's counter is, its parts and the note.
+var _wright_h := 0.0
 ## Where what's below the list is going (it follows the list as it closes up).
 var _below_to := 0.0
 
@@ -100,6 +117,9 @@ var _time := 0.0
 var _price_t := 0.0
 ## The chandlery: repair's price and the hull it mends, the shot's price and the broadsides it buys.
 var _svc := PackedInt32Array([0, 0, 0, 0])
+## The shipwright's parts today ([{part, owned}]) and the purse they're paid from.
+var _offers: Array = []
+var _ppurse := 0
 ## Seconds since the card came up; the purse's bump (s into it, < 0 waiting
 ## for the coins to land); the list laid out afresh this long from now (< 0 not).
 var _t := 0.0
@@ -207,10 +227,21 @@ func close() -> void:
 		_card.queue_free()
 		_card = null
 	_rows.clear()
+	_prows.clear()
+	_offers = []
 
 
 func is_open() -> bool:
 	return _open
+
+
+## Scrolls the shipwright's counter up to the top of the card.
+func show_wright() -> void:
+	if _card == null or _prows.is_empty():
+		return
+	_step(0.0)
+	_fling = 0.0
+	_scroll_to(_below.position.y + _wright.position.y - _band_h - 2.0 * PX)
 
 
 ## Whether the prompt to come alongside is up, and she may.
@@ -237,6 +268,26 @@ func set_services(repair_cost: int, repair_hp: int, shot_cost: int, shot_n: int)
 func set_gold(g: int) -> void:
 	_gold = g
 	_apply_services()
+
+
+## The shipwright's counter: today's parts ([{part, owned}]) and what's in
+## the purse they're paid from; `bought`, one just bought, swells and rings.
+## The same parts again stay put, each brought up to date.
+func set_parts(offers: Array, purse: int, bought := "") -> void:
+	var same := offers.size() == _prows.size()
+	for i in mini(offers.size(), _prows.size()):
+		same = same and str(offers[i].part.id) == _prows[i].id
+	_offers = offers
+	_ppurse = purse
+	if _card == null:
+		return
+	if same:
+		_fill_wright()
+	else:
+		_build_wright(true)
+	for r in _prows:
+		if r.id == bought:
+			r.t_just = 0.0
 
 
 ## A lot sold for `value`: its row flies coins into the purse and folds away.
@@ -396,7 +447,14 @@ func _build() -> void:
 		clicked.emit()
 		restock.emit())
 	_below.add_child(_shot)
-	_apply_services()
+
+	# the shipwright's counter under the chandlery: today's parts, and a note
+	_wright = Control.new()
+	_wright.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_below.add_child(_wright)
+	_wnote = UiText.new([["Paid from your purse. New parts are fitted at the Shipwright before your next voyage.", HudStyle.font("inter", 500), roundi(10.5 * PX), HudStyle.INK_3]], _iw - 4.0 * PX, 1.4)
+	_wright.add_child(_wnote)
+	_prows.clear()
 
 	# the sections' names, over everything they pin above
 	var hold_band := _band("YOUR HOLD")
@@ -407,6 +465,15 @@ func _build() -> void:
 	var yard_band := _band("CHANDLERY")
 	_content.add_child(yard_band)
 	_bands.append(yard_band)
+	var wright_band := _band("SHIPWRIGHT")
+	_wp_coin = Icons.rect("coin", 11.0 * PX * 1.5)
+	wright_band.add_child(_wp_coin)
+	_wp_n = _words("0", 700, 10.0, HudStyle.GOLD_HI, 0.22, true)
+	wright_band.add_child(_wp_n)
+	_content.add_child(wright_band)
+	_bands.append(wright_band)
+	_build_wright(false)
+	_apply_services()
 
 	# the body's foot fades while there's more below
 	_fade = TextureRect.new()
@@ -507,6 +574,66 @@ func _apply_services() -> void:
 	_svc_h = maxf(h1, h2)
 	_fix.resize(Vector2(_fix.size.x, _svc_h))
 	_shot.resize(Vector2(_shot.size.x, _svc_h))
+	_lay_wright()
+
+
+## The shipwright's parts laid on the counter afresh (coming in one after
+## another when `enter`).
+func _build_wright(enter: bool) -> void:
+	if _wright == null:
+		return
+	for r in _prows:
+		_wright.remove_child(r)
+		r.queue_free()
+	_prows.clear()
+	for i in _offers.size():
+		var r := _PRow.new(_offers[i].part, _iw)
+		r.buy_btn.pressed.connect(_on_buy.bind(r))
+		r.t_in = -minf(i, 5) * 0.04 if enter else ROW_IN
+		_wright.add_child(r)
+		_prows.append(r)
+	_fill_wright()
+	for r in _prows:
+		_step_prow(r, 0.0)
+
+
+## Each part's Buy as things stand (Owned, or dimmed while the purse won't
+## stretch to it), and the purse on the band.
+func _fill_wright() -> void:
+	for i in mini(_offers.size(), _prows.size()):
+		var o: Dictionary = _offers[i]
+		var owned := bool(o.owned)
+		_prows[i].set_state(owned, not owned and _ppurse >= int(Parts.RARITIES[o.part.tier].price))
+	_lay_wright()
+	if _wp_n == null:
+		return
+	_wp_n.set_text(MenuKit.num(_ppurse))
+	var b := _bands[2]
+	_wp_n.position = Vector2(b.size.x - _gx - 6.0 * PX - _wp_n.size.x, 8.0 * PX)
+	var d := 11.0 * PX
+	_wp_coin.position = Vector2(_wp_n.position.x - 5.0 * PX - d * 0.5, _wp_n.position.y + _wp_n.size.y * 0.5) - _wp_coin.size * 0.5
+
+
+## The counter under the chandlery: its parts one under another, the note
+## under them; nothing while the shipwright has nothing in.
+func _lay_wright() -> void:
+	if _wright == null:
+		return
+	_wright.position = Vector2(0.0, _yard_y + _svc_h + 6.0 * PX + _band_h + 2.0 * PX)
+	var y := 0.0
+	for r in _prows:
+		r.y_at = y
+		y += r.size.y + 6.0 * PX
+	_wnote.position = Vector2(2.0 * PX, y + 6.0 * PX)
+	_wright_h = _wnote.position.y + _wnote.size.y
+	_wright.visible = not _prows.is_empty()
+
+
+func _on_buy(r: _PRow) -> void:
+	if not r.buy_btn.enabled:
+		return
+	clicked.emit()
+	buy_part.emit(r.id)
 
 
 ## The purse: its coin, what's in it, right against the card's edge.
@@ -663,13 +790,18 @@ func _step(dt: float) -> void:
 	_below.position.y += (_below_to - _below.position.y) * settle
 	if absf(_below_to - _below.position.y) < 0.2:
 		_below.position.y = _below_to
+	for r in _prows:
+		_step_prow(r, dt)
 	# what's to scroll, the section names pinned, and the fade at the foot
-	var content_h := _below.position.y + _yard_y + _svc_h + 6.0 * PX
+	var wares := not _prows.is_empty()
+	var content_h := _below.position.y + (_wright.position.y + _wright_h if wares else _yard_y + _svc_h) + 6.0 * PX
 	_scroll_max = maxf(0.0, content_h - _body.size.y)
 	_scroll = clampf(_scroll, 0.0, _scroll_max)
 	_content.position.y = -_scroll
 	_bands[0].position.y = _scroll
 	_bands[1].position.y = maxf(_below.position.y + 48.0 * PX, _scroll)
+	_bands[2].visible = wares
+	_bands[2].position.y = maxf(_below.position.y + _wright.position.y - _band_h - 2.0 * PX, _scroll)
 	_fade.visible = _scroll < _scroll_max - 2.0
 	_step_coins(dt)
 	if _bumping:
@@ -731,6 +863,40 @@ func _step_row(r: _Row, dt: float, settle: float) -> void:
 			w = 1.0 - MathX.bezier(0.25, 0.1, 0.25, 1.0, (k - 0.3) / 0.7)
 		# gold to white and back (the price's gold times this is white)
 		r.flash(w)
+
+
+## A part on the counter: coming in, and swelling and ringing once bought.
+func _step_prow(r: _PRow, dt: float) -> void:
+	var a := 1.0
+	var s := 1.0
+	var dy := 0.0
+	if r.t_in < ROW_IN:
+		r.t_in = minf(r.t_in + dt, ROW_IN)
+		var e := HudStyle.spring(clampf(r.t_in / ROW_IN, 0.0, 1.0))
+		a = clampf(e, 0.0, 1.0)
+		dy = (1.0 - e) * 8.0 * PX
+		s = lerpf(0.97, 1.0, e)
+	if r.t_just >= 0.0:
+		r.t_just += dt
+		var k := r.t_just / BOUGHT
+		var ring := 0.0
+		var ra := 0.0
+		if k >= 1.0:
+			r.t_just = -1.0
+		elif k < 0.3:
+			var u := HudStyle.spring(k / 0.3)
+			s *= lerpf(1.0, 1.03, u)
+			ring = lerpf(0.0, 6.0, u)
+			ra = lerpf(0.7, 0.35, u)
+		else:
+			var u := HudStyle.spring((k - 0.3) / 0.7)
+			s *= lerpf(1.03, 1.0, u)
+			ring = lerpf(6.0, 14.0, u)
+			ra = lerpf(0.35, 0.0, u)
+		r.p("ring", maxf(0.0, ring) * PX).p("c_ring", Color(r.rc, clampf(ra, 0.0, 1.0)))
+	r.position = Vector2(0.0, r.y_at + dy)
+	r.scale = Vector2(s, s)
+	r.modulate.a = a
 
 
 ## The rows top to bottom.
@@ -1185,6 +1351,159 @@ class _Svc:
 		if not can:
 			cancel()
 		return ey + _cost.size.y + y0
+
+
+## A part on the shipwright's counter: its portrait on a wash of its
+## rarity's colour, its name, its rarity and slot, up to three lines of what
+## it does, and its Buy at the price (Owned once it's yours, dimmed while the
+## purse won't stretch to it). A legendary glows inside its edge; a mythic is
+## washed and edged in its kind's colours.
+class _PRow:
+	extends UiBox
+
+	var id := ""
+	var rc := Color.WHITE
+	var buy_btn: UiButton
+	## Where it sits on the counter; coming in (s; < 0 waiting its turn) and
+	## the swell of one just bought (s; < 0 none).
+	var y_at := 0.0
+	var t_in := 0.0
+	var t_just := -1.0
+	var _price := 0
+	var _ico: UiBox
+	var _name: UiText
+	var _line: UiText
+	## The stat lines, each with the dot before it (none before the first).
+	var _chips: Array[UiText] = []
+	var _dots: Array[UiText] = []
+
+	func _init(part: Dictionary, w: float) -> void:
+		var px := MarketPanel.PX
+		super(Vector2(w, 58.0 * px), 16.0 * px, 16.0 * px)
+		id = part.id
+		var tier: int = part.tier
+		var rarity: Dictionary = Parts.RARITIES[tier]
+		rc = rarity.css
+		_price = rarity.price
+		MenuKit.flat(self)
+		p("horiz", 1.0).p("hi", 0.0)
+		if tier >= 4:
+			p("c_top", Color8(127, 232, 255, 31)).p("c_mid", Color8(198, 155, 255, 26)).p("mid", 0.4).p("c_foot", Color8(255, 95, 158, 13))
+			p("c_border", Color8(198, 155, 255, 140)).p("c_inset", Color8(198, 155, 255, 51)).p("inset", 26.0 * px)
+		else:
+			p("c_top", Color(rc, 0.14)).p("c_mid", Color(1.0, 1.0, 1.0, 0.03)).p("mid", 0.6).p("c_foot", Color(1.0, 1.0, 1.0, 0.03))
+			p("c_border", Color(rc, 0.22))
+			if tier == 3:
+				p("c_inset", Color8(255, 190, 61, 41)).p("inset", 22.0 * px)
+		var ico := 44.0 * px
+		_ico = UiBox.new(Vector2(ico, ico), 12.0 * px, 2.0)
+		MenuKit.flat(_ico)
+		_ico.p("border", 0.0).p("hi", 0.0).p("radial", Vector4(0.5, 0.4, 0.781, 0.781)).p("radial_stop", 0.75)
+		_ico.p("c_top", Color(rc, 0.3)).p("c_foot", Color(0.0, 0.0, 0.0, 0.18))
+		add_child(_ico)
+		var art := TextureRect.new()
+		art.texture = Icons.part(id, 40.0 * px)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_SCALE
+		art.size = Vector2(40.0, 40.0) * px
+		art.position = Vector2(2.0, 2.0) * px
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_ico.add_child(art)
+		_name = MarketPanel._words(str(part.name), 700, 14.0, HudStyle.INK)
+		add_child(_name)
+		var f6 := HudStyle.font("inter", 600)
+		var sz := roundi(11.0 * px)
+		_line = UiText.new([[str(rarity.name), f6, sz, rc], [" · " + str(Parts.SLOT_NAMES[part.slot]), f6, sz, HudStyle.INK_3]], 0.0, 1.0)
+		add_child(_line)
+		var lines := Parts.stat_lines(part.stats)
+		for i in mini(3, lines.size()):
+			var l: Array = lines[i]
+			if i > 0:
+				var dot := MarketPanel._words("·", 700, 9.5, HudStyle.INK_4)
+				add_child(dot)
+				_dots.append(dot)
+			var chip := MarketPanel._words(str(l[0]), 700, 9.5, MarketPanel.BAD if l[1] else MarketPanel.GOOD)
+			add_child(chip)
+			_chips.append(chip)
+		buy_btn = UiButton.new(Vector2(40.0, 30.0), 12.0 * px, 16.0 * px)
+		buy_btn.squeeze = 0.95
+		add_child(buy_btn)
+
+	## Its Buy: the price in gold, lit while `can`; Owned once `owned`. Lays
+	## the row out round it.
+	func set_state(owned: bool, can: bool) -> void:
+		var px := MarketPanel.PX
+		for c in buy_btn.get_children():
+			buy_btn.remove_child(c)
+			c.queue_free()
+		var t := MarketPanel._words("Owned" if owned else MenuKit.num(_price), 800, 12.0, HudStyle.GOLD_INK if can else HudStyle.INK_3, 0.0, true)
+		var d := 11.0 * px
+		var x := 12.0 * px
+		var bh := 16.0 * px + t.size.y
+		if not owned:
+			var coin := Icons.rect("coin", d * 1.5)
+			coin.position = Vector2(x + d * 0.5, bh * 0.5) - coin.size * 0.5
+			buy_btn.add_child(coin)
+			x += d + 5.0 * px
+		MenuKit.line_at(t, x, 0.0, bh)
+		buy_btn.add_child(t)
+		buy_btn.resize(Vector2(x + t.size.x + 12.0 * px, bh))
+		buy_btn.p("border", 0.0).p("hi", 0.0)
+		if can:
+			buy_btn.p("c_top", HudStyle.GOLD_TOP).p("c_mid", HudStyle.GOLD_MID).p("mid", 0.52).p("c_foot", HudStyle.GOLD_FOOT)
+			buy_btn.p("c_shadow", Color(0.941, 0.706, 0.275, 0.3)).p("shadow", Vector2(4.0, 14.0) * px)
+		else:
+			var fill := Color(1.0, 1.0, 1.0, 0.08)
+			buy_btn.p("c_top", fill).p("c_mid", fill).p("c_foot", fill).p("c_shadow", Color(0.0, 0.0, 0.0, 0.0))
+			buy_btn.cancel()
+		buy_btn.enabled = can
+		_lay()
+
+	## Its portrait, what it is and does, and its Buy, for its width: as
+	## tall as what it says needs (the stat lines wrap as they must).
+	func _lay() -> void:
+		var px := MarketPanel.PX
+		var w := size.x
+		var pad := 6.0 * px + 1.0
+		var gap := 10.0 * px
+		var wx := pad + 44.0 * px + gap
+		var right := w - pad - buy_btn.size.x - gap
+		var avail := maxf(20.0, right - wx)
+		_name.cut_to(avail)
+		_line.cut_to(avail)
+		# the stat lines flow along under them, 4 apart, a dot before each but the first
+		var at: Array[Vector2] = []
+		var cx := 0.0
+		var cy := 0.0
+		var lh := 0.0
+		for i in _chips.size():
+			var c := _chips[i]
+			lh = c.size.y
+			var cw := c.size.x + ((_dots[i - 1].size.x + 4.0 * px) if i > 0 else 0.0)
+			if cx > 0.0 and cx + 4.0 * px + cw > avail:
+				cx = 0.0
+				cy += lh + 4.0 * px
+			elif cx > 0.0:
+				cx += 4.0 * px
+			at.append(Vector2(cx, cy))
+			cx += cw
+		var sh := (4.0 * px + cy + lh) if not _chips.is_empty() else 0.0
+		var th := _name.size.y + _line.size.y + sh
+		var h := maxf(44.0 * px, th) + pad * 2.0
+		resize(Vector2(w, h))
+		pivot_offset = size * 0.5
+		_ico.position = Vector2(pad, (h - 44.0 * px) * 0.5)
+		var ty := (h - th) * 0.5
+		_name.position = Vector2(wx, ty)
+		_line.position = Vector2(wx, ty + _name.size.y)
+		var sy := ty + _name.size.y + _line.size.y + 4.0 * px
+		for i in _chips.size():
+			var x := wx + at[i].x
+			if i > 0:
+				_dots[i - 1].position = Vector2(x, sy + at[i].y)
+				x += _dots[i - 1].size.x + 4.0 * px
+			_chips[i].position = Vector2(x, sy + at[i].y)
+		buy_btn.position = Vector2(w - pad - buy_btn.size.x, (h - buy_btn.size.y) * 0.5)
 
 
 ## Which way a price is going: "n each · " for a lot of several, a little

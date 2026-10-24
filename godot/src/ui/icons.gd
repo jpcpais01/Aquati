@@ -92,6 +92,7 @@ const WRIGHT := {
 	"sw_flag": '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
 	"sw_sails": '<path d="M12 3v17"/><path d="M12 4c4 3 6 8 6 13h-6"/><path d="M11 6c-3 3-5 7-5 11h5"/><path d="M4 20h16"/>',
 	"sw_hull": '<path d="M3 13h18l-2.5 6h-13z"/><path d="M7 13V9h7v4"/><path d="M10 9V5"/>',
+	"sw_refit": '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.6-.6-.6-2.6z"/>',
 	"sw_star": '<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/>',
 	"sw_back": '<path d="M15 5l-7 7 7 7"/>',
 	"die": '<rect x="4" y="4" width="16" height="16" rx="3.2"/><g fill="#ffffff" stroke="none"><circle cx="8.6" cy="8.6" r="1.55"/><circle cx="15.4" cy="8.6" r="1.55"/><circle cx="12" cy="12" r="1.55"/><circle cx="8.6" cy="15.4" r="1.55"/><circle cx="15.4" cy="15.4" r="1.55"/></g>',
@@ -100,9 +101,10 @@ const WRIGHT := {
 	"eraser": '<path d="M9 5.5h11v13H9l-6-6.5z"/><path d="M12 9.5l5 5M17 9.5l-5 5"/>',
 	"undo": '<path d="M9 13.5 4.5 9 9 4.5"/><path d="M4.5 9h10a5 5 0 0 1 0 10H11"/>',
 	"plus": '<path d="M12 5.5v13M5.5 12h13"/>',
+	"lock": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 }
 
-## The web's plunder and shot art (tools/bake_art.mjs), on a 40 grid.
+## The web's plunder, shot and ship part art (tools/bake_art.mjs), on a 40 grid.
 static var _plunder := {}
 
 static var _cache := {}
@@ -152,12 +154,22 @@ static func svg(key: String, inner: String, size: Vector2, view := Rect2(0, 0, 2
 ## A good of the plunder (Treasure), or with `shot` a kind of shot (Ammo.ID),
 ## `size` HUD units across.
 static func plunder(id: String, size: float, shot := false) -> Texture2D:
+	var inner: String = _art("shot" if shot else "loot").get(id, "")
+	return svg(("shot:" if shot else "loot:") + id, inner, Vector2(size, size), Rect2(0, 0, 40, 40))
+
+
+## A ship part's portrait (Parts), or a slot's standard fit ("standard:" +
+## its slot), `size` HUD units across.
+static func part(id: String, size: float) -> Texture2D:
+	return svg("part:" + id, _art("parts").get(id, ""), Vector2(size, size), Rect2(0, 0, 40, 40))
+
+
+static func _art(kind: String) -> Dictionary:
 	if _plunder.is_empty():
 		var f := FileAccess.open("res://art/plunder.json", FileAccess.READ)
 		var got: Variant = JSON.parse_string(f.get_as_text()) if f != null else null
-		_plunder = got if got is Dictionary else {"loot": {}, "shot": {}}
-	var inner: String = (_plunder.get("shot", {}) if shot else _plunder.get("loot", {})).get(id, "")
-	return svg(("shot:" if shot else "loot:") + id, inner, Vector2(size, size), Rect2(0, 0, 40, 40))
+		_plunder = got if got is Dictionary else {}
+	return _plunder.get(kind, {})
 
 
 ## A mark on an enemy ship's bar (MARK), `size` HUD units across, with a

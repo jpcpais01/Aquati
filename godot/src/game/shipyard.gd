@@ -5,7 +5,9 @@ extends Node
 ## the frame it appears in the quarter-second a whole ship takes to loft, rig
 ## and paint. Beside the pirates' it keeps one of each class in your colours,
 ## so the harbour's picker swaps her for another at a tap (those come first
-## while the harbour is up). The rendering server queues what a worker asks
+## while the harbour is up), with that class's refit bolted on (Progress), and
+## now and then a pirate's comes off it with a prize fitting of her own
+## (Parts.pirate_fit). The rendering server queues what a worker asks
 ## of it, so a finished model's meshes and materials are ready for the main
 ## thread to sail.
 
@@ -46,10 +48,11 @@ func _process(delta: float) -> void:
 			_stock.append(_built)
 			_built = null
 		return
-	# your hulls painted before the Shipwright last changed your colours go
+	# your hulls painted before the Shipwright last changed your colours, or
+	# fitted out before it last changed her parts, go
 	for i in range(_stock.size() - 1, -1, -1):
 		var m := _stock[i]
-		if m.livery.id == MINE and m.rev != m.livery.rev:
+		if m.livery.id == MINE and not _fits(m, MINE):
 			_stock.remove_at(i)
 			m.free()
 	_idle -= delta
@@ -57,7 +60,10 @@ func _process(delta: float) -> void:
 		return
 	var next := _next()
 	if not next.is_empty():
-		_task = WorkerThreadPool.add_task(_build.bind(ShipClass.named(next[0]), Livery.named(next[1])), false, "Shipyard: %s" % next[0])
+		var id: String = next[0]
+		# (the refit settled here: the worker reads nothing that can change under it)
+		var fit := Progress.loadout(id) if next[1] == MINE else Parts.pirate_fit(id)
+		_task = WorkerThreadPool.add_task(_build.bind(ShipClass.named(id), Livery.named(next[1]), fit), false, "Shipyard: %s" % id)
 
 
 ## What to lay down next: [class, livery], or nothing when the slipway is full.
@@ -77,8 +83,8 @@ func _next() -> Array:
 	return mine
 
 
-func _build(cls: ShipClass, livery: Livery) -> void:
-	_built = ShipModel.create(cls, livery)
+func _build(cls: ShipClass, livery: Livery, fit: Dictionary) -> void:
+	_built = ShipModel.create(cls, livery, true, fit)
 
 
 ## Ready hulls of a class on the slipway: the pirates', or in a livery (MINE).
@@ -107,11 +113,14 @@ func take(id: String, livery := "") -> ShipModel:
 
 
 ## A hull fits a livery wanted (a pirate's for none) unless it was painted
-## before her colours last changed (the Shipwright).
+## before her colours last changed, or fitted out before her parts last did
+## (the Shipwright).
 func _fits(m: ShipModel, livery: String) -> bool:
 	if livery.is_empty():
 		return m.livery.id != MINE
-	return m.livery.id == livery and m.rev == m.livery.rev
+	if m.livery.id != livery or m.rev != m.livery.rev:
+		return false
+	return livery != MINE or m.fit_key == Parts.key(Progress.loadout(m.cls.id))
 
 
 ## Holds new keels for a few seconds.

@@ -2,9 +2,11 @@
 // clips a CSS gradient to the glyphs (background-clip: text): the gold of a
 // ship's name and the renown, and "Lost to the Depths" lit from above.
 // The gradient runs over `height` units from `top` in the item's own space,
-// so it rides with each letter as it moves. src/ui/wreck_screen.gd.
+// so it rides with each letter as it moves; `across`, it runs along the line
+// instead (a mythic find's kicker). src/ui/wreck_screen.gd.
 shader_type canvas_item;
 
+uniform bool across = false;
 uniform vec4 c0 = vec4(1.0, 0.918, 0.69, 1.0);
 uniform vec4 c1 = vec4(0.965, 0.78, 0.4, 1.0);
 uniform vec4 c2 = vec4(0.878, 0.643, 0.263, 1.0);
@@ -24,7 +26,7 @@ varying float k;
 varying float g_x;
 
 void vertex() {
-	k = (VERTEX.y - top) / height;
+	k = ((across ? VERTEX.x : VERTEX.y) - top) / height;
 	g_x = VERTEX.x * 0.966 + (VERTEX.y - top) * 0.259;
 }
 

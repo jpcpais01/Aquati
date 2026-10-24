@@ -120,23 +120,26 @@ var _burn_t := 0.0
 var _pending: Array = []
 
 
-## `p_model` may be one the shipyard built ahead of time.
-static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: Team = Team.PLAYER, p_model: ShipModel = null) -> Ship:
+## `p_model` may be one the shipyard built ahead of time; one built here
+## carries `p_fit`, her refit (Parts). She sails and fights with her class's
+## figures refitted with what her model carries.
+static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: Team = Team.PLAYER, p_model: ShipModel = null, p_fit: Dictionary = {}) -> Ship:
 	var s := Ship.new()
 	_count += 1
 	s._id = _count
 	s.name = "Ship%d" % _count
-	s.cls = p_cls
+	s.model = p_model if p_model != null else ShipModel.create(p_cls, p_livery, true, p_fit)
+	var c := Parts.refit(p_cls, s.model.fit)
+	s.cls = c
 	s.livery = p_livery
 	s.world = p_world
 	s.team = p_team
-	s.ship_name = p_cls.title
-	s.max_hp = p_cls.hp
-	s.hp = p_cls.hp
-	s.reload_full = PackedFloat32Array([p_cls.reload, p_cls.reload])
+	s.ship_name = c.title
+	s.max_hp = c.hp
+	s.hp = c.hp
+	s.reload_full = PackedFloat32Array([c.reload, c.reload])
 	s._rng.seed = 977 * _count
 	s._galley_t = s._rng.randf()
-	s.model = p_model if p_model != null else ShipModel.create(p_cls, p_livery)
 	s.add_child(s.model)
 	s.gun_fired_at.resize(s.model.muzzles.size())
 	s.gun_fired_at.fill(-100.0)
@@ -148,9 +151,14 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 
 
 ## A fresh hull of her class in place of the one she wears (her paintwork
-## changed in the Shipwright): she rides on as she was, her crew aboard.
+## or her parts changed in the Shipwright): she rides on as she was, her crew
+## aboard, with the figures of the refit it carries (as hale as she was).
 ## Only for a ship that hasn't been in a fight (her wounds live on the old one).
 func refit(p_model: ShipModel) -> void:
+	var hale := hp / max_hp if max_hp > 0.0 else 1.0
+	cls = Parts.refit(cls, p_model.fit)
+	max_hp = cls.hp
+	hp = max_hp * hale
 	var old := model
 	var at := old.get_index()
 	p_model.transform = old.transform
@@ -546,6 +554,7 @@ func step(dt: float) -> void:
 	# the canvas spills and luffs while it crosses over, then fills on the new side; gusts puff it out
 	var fill := clampf(wind_factor(rel_deg) * w.strength * (1.1 + gust * 0.45), 0.25, 1.25) * (0.3 + 0.7 * minf(1.0, absf(_rig_lee)))
 	model.update_rig(sail_level, -_rig_brace, _rig_lee, flag_ang, fill, clampf(w.strength * (1.0 + gust * 0.5), 0.2, 1.4))
+	model.tick(world.time)
 
 	if dt <= 0.0:
 		return
