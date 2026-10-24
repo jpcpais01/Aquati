@@ -15,10 +15,11 @@ extends SceneTree
 ## the sea chart's geography lands where the web's does and its view maps the
 ## sea to the canvas and back (_check_maps), the helmsman's courses keep to
 ## water deep enough for her keel, round the isles, across the high seas, off
-## a goal on land and inside the edge of the known sea (_check_helm), and
-## what's kept between voyages
-## comes back whole from its save, takes nothing malformed from a damaged one
-## and survives a crash mid-write (_check_progress). Prints CHECK OK.
+## a goal on land and inside the edge of the known sea (_check_helm), her
+## look and the Shipwright's designs are made whole from anything, drawn
+## and kept (_check_looks), and what's kept between voyages comes back whole
+## from its save, takes nothing malformed from a damaged one and survives a
+## crash mid-write (_check_progress). Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
@@ -54,6 +55,7 @@ func _initialize() -> void:
 	_check_weather()
 	_check_night()
 	_check_world()
+	_check_looks()
 	_check_progress()
 	# the helm's reach is a share of the window, and a strike is aimed by the
 	# lens: those checks wait for the tree to run
@@ -1075,6 +1077,127 @@ func _check_maps(w: World) -> void:
 	else:
 		_fail("maps: dashes broke as %s" % [spans.call(MapMarks.dashes(line, 10.0, 10.0, 5.0, 0.0, big))])
 	print("maps: %d of 10 steps as expected" % steps)
+
+
+## Her look and the Shipwright: a garbled look is made whole (what makes
+## sense kept, the rest the default's), every famous ship's colours and a
+## surprise come through unchanged and a seeded surprise is the same twice,
+## designs are told apart and named as the web names them, every flag,
+## pattern, emblem, backing and sail tile is drawn, her flag and mark are
+## baked, the brush's layer is kept as a PNG that gives its colours back
+## straight, and her look and designs come back whole from their save.
+func _check_looks() -> void:
+	var steps := 0
+	var g := ShipLook.sanitize({"name": "<b>Sea Biscuit</b> of the Seven Seas and Beyond", "sail": "plain",
+			"flag": {"shape": "triangle", "bg": "#12345", "pattern": "cross", "pattern_color": "#ABCDEF", "emblem": 7, "emblem_scale": 9.0, "paint": "javascript:1"},
+			"hull": {"topsides": " #ABCDEF ", "planks": 12}})
+	var d := ShipLook.fresh()
+	if g.flag.shape == "square" and g.flag.bg == d.flag.bg and g.flag.pattern == "cross" and g.flag.pattern_color == "#abcdef" \
+			and g.flag.emblem == d.flag.emblem and is_equal_approx(float(g.flag.emblem_scale), 1.4) and g.flag.paint == "" \
+			and g.hull.topsides == "#abcdef" and g.hull.planks == d.hull.planks and g.sail == d.sail \
+			and not str(g.name).contains("<") and str(g.name).length() <= ShipLook.NAME_MAX:
+		steps += 1
+	else:
+		_fail("looks: a garbled look wasn't made whole: %s" % g)
+	var bad := []
+	for i in ShipLook.PRESETS.size():
+		var pl := ShipLook.preset(i)
+		if ShipLook.sanitize(pl) != pl:
+			bad.append(ShipLook.PRESETS[i][0])
+	var rng := RandomNumberGenerator.new()
+	for k in 24:
+		rng.seed = k
+		var r := ShipLook.random_look("Gull", rng)
+		rng.seed = k
+		if ShipLook.random_look("Gull", rng) != r or ShipLook.sanitize(r) != r:
+			bad.append("surprise %d" % k)
+	if bad.is_empty():
+		steps += 1
+	else:
+		_fail("looks: not whole as they stand, or not the same twice: %s" % ", ".join(bad))
+	var a := ShipLook.preset(2)
+	a.name = "Sea Biscuit"
+	var b := ShipLook.preset(2)
+	var taken := [{"name": "Sea Biscuit"}, {"name": "Sea Biscuit II"}]
+	if ShipLook.same_style(a, b) and not ShipLook.same_design(a, b) and not ShipLook.same_style(a, ShipLook.preset(3)) \
+			and ShipLook.design_name(a, taken) == "Sea Biscuit III" and ShipLook.design_name(b, taken) == "Design":
+		steps += 1
+	else:
+		_fail("looks: designs told apart or named wrong (%s, %s)" % [ShipLook.design_name(a, taken), ShipLook.design_name(b, taken)])
+	# every choice the Shipwright offers drawn as its tile is
+	var undrawn := []
+	var px := Vector2i(64, 40)
+	for t: Array in [[Heraldry.SHAPES, "shape"], [Heraldry.PATTERNS, "pattern"], [Heraldry.EMBLEMS, "emblem"], [Heraldry.BACKINGS, "backing"]]:
+		for id: String in Heraldry.ids(t[0]):
+			var f: Dictionary = d.flag.duplicate()
+			f[t[1]] = id
+			var img := Heraldry.render(Heraldry.flag_svg(f, 64.0, 40.0, px, false, 4.0))
+			if img == null or img.get_size() != px:
+				undrawn.append(id)
+			if t[1] == "emblem" and Heraldry.render(Heraldry.tile_svg(id, "rays", "#f2c45a", "#1b3f7a", 48)) == null:
+				undrawn.append("tile " + id)
+	for id: String in ShipLook.ids(ShipLook.SAIL_PATTERNS):
+		if Heraldry.render(Shipwright.sail_svg(id, "#f4ead4", "#1f8a8a", Vector2i(54, 58))) == null:
+			undrawn.append("sail " + id)
+	var l := Livery.new()
+	l.id = "check"
+	ShipLook.dress(l, ShipLook.preset(7))
+	var list: Array[Livery] = [l]
+	Livery.bake(list)
+	if l.flag_tex == null or l.mark_tex == null or l.flag_tex.get_width() != Livery.FLAG_PX_SMALL:
+		undrawn.append("her flag and mark")
+	if undrawn.is_empty():
+		steps += 1
+	else:
+		_fail("looks: not drawn: %s" % ", ".join(undrawn))
+	# the brush's layer (premultiplied, as drawn) kept straight
+	var layer := Image.create(Heraldry.PAINT.x, Heraldry.PAINT.y, false, Image.FORMAT_RGBA8)
+	var url := FlagStage.encode(layer)
+	layer.set_pixel(3, 3, Color(1.0, 1.0, 1.0, 0.02))
+	var faint := FlagStage.encode(layer)
+	layer.set_pixel(10, 10, Color(0.95 * 0.5, 0.77 * 0.5, 0.35 * 0.5, 0.5))
+	layer.set_pixel(20, 20, Color("#1fa3a0"))
+	var kept := FlagStage.encode(layer)
+	var back := Image.new()
+	var ok := url == "" and faint == "" and kept.begins_with("data:image/png;base64,") \
+			and back.load_png_from_buffer(Marshalls.base64_to_raw(kept.get_slice(",", 1))) == OK and back.get_size() == Heraldry.PAINT
+	if ok:
+		var c := back.get_pixel(10, 10)
+		ok = absf(c.r - 0.95) < 0.02 and absf(c.g - 0.77) < 0.02 and absf(c.b - 0.35) < 0.02 and absf(c.a - 0.5) < 0.01 \
+				and back.get_pixel(20, 20).is_equal_approx(Color("#1fa3a0")) and ShipLook.sanitize({"flag": {"paint": kept}}).flag.paint == kept
+	if ok:
+		steps += 1
+	else:
+		_fail("looks: the brush's layer wasn't kept straight")
+	# her look and designs, saved and back
+	var script: GDScript = load("res://src/core/progress.gd")
+	var file := "user://check-looks.json"
+	var make := func() -> Node:
+		var n: Node = script.new()
+		n.path = "user://check-looks-progress.json"
+		n.looks_path = file
+		return n
+	var mine := ShipLook.preset(5)
+	mine.name = "Check"
+	mine.flag.paint = kept
+	var saved := [{"id": "a1", "name": "Check", "look": mine}, {"id": "a2", "name": "Gull II", "look": ShipLook.random_look("Gull", rng)}]
+	var p: Node = make.call()
+	p.keep_look(mine)
+	p.keep_designs(saved)
+	p.save()
+	var q: Node = make.call()
+	q._load()
+	# (as JSON, the way it's kept: a float comes back to the digits it was written in)
+	if JSON.stringify(q.look, "", true) == JSON.stringify(mine, "", true) and JSON.stringify(q.designs, "", true) == JSON.stringify(saved, "", true):
+		steps += 1
+	else:
+		_fail("looks: her look or designs didn't come back whole from their save")
+	for n: Node in [p, q]:
+		n.free()
+	for f: String in [file, file + ".tmp", "user://check-looks-progress.json", "user://check-looks-progress.json.tmp"]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	print("looks: %d of 6 steps as expected" % steps)
 
 
 func _check_progress() -> void:

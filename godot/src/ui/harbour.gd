@@ -5,12 +5,14 @@ extends CanvasLayer
 ## camera slowly circles her (CameraRig's orbit, framed into the space this
 ## leaves free: framing()). The title runs along the top with the tools at the
 ## far end, her card hugs the left edge (her class and name, her numbers and
-## her qualities as bars), and the ship picker and Set Sail share the bottom
-## row. A/D or the arrows (or 1-3) pick a ship, Enter sets sail.
+## her qualities as bars), and the ship picker, the Shipwright and Set Sail
+## share the bottom row. A/D or the arrows (or 1-3) pick a ship, Enter sets sail.
 
 ## A ship was picked on the picker (the game swaps her in, then set_ship()).
 signal picked(id: String)
 signal sail
+## The Shipwright, to dress her: her flag, sails, paintwork and name.
+signal shipwright
 signal settings
 signal sound
 signal clicked
@@ -43,6 +45,7 @@ var _pips: Array[_Pips] = []
 var _tray: UiBox
 var _tabs: Array[_Tab] = []
 var _sail: UiButton
+var _wright: UiButton
 var _frame := Vector4(0.0, 0.0, 1.0, 1.0)
 
 
@@ -111,6 +114,8 @@ func _all_buttons() -> Array[UiButton]:
 		out.append(t)
 	if _sail != null:
 		out.append(_sail)
+	if _wright != null:
+		out.append(_wright)
 	return out
 
 
@@ -165,6 +170,13 @@ func _build() -> void:
 	_sail.position = _vp - Vector2(mx, my) - _sail.size
 	_sail.pressed.connect(func() -> void: sail.emit())
 	_root.add_child(_sail)
+	# the Shipwright beside it, in dark glass (the web's dock row)
+	_wright = MenuKit.pill("", "Shipwright", _sail.size.y, 16.0 * u, 14.5 * MenuKit.T, 700, Color(0.031, 0.102, 0.149, 0.66), HudStyle.INK, 0.04)
+	_wright.position = Vector2(_sail.position.x - 8.0 * u - _wright.size.x, _sail.position.y)
+	_wright.pressed.connect(func() -> void:
+		clicked.emit()
+		shipwright.emit())
+	_root.add_child(_wright)
 	# the stage left for her: right of her card, from the top down to the bottom row
 	var left := _card_slot.position.x + _card_w + 8.0 * MenuKit.PX
 	var bottom := minf(tray.position.y, _sail.position.y) - 4.0 * MenuKit.PX
@@ -175,6 +187,7 @@ func _build() -> void:
 	_reveal.add(tray, MenuKit.RISE, 0.15, 0.9, rise)
 	_reveal.add(tools, MenuKit.RISE, 0.15, 0.9, rise)
 	_reveal.add(_sail, MenuKit.RISE, 0.2, 0.9, rise)
+	_reveal.add(_wright, MenuKit.RISE, 0.2, 0.9, rise)
 	_step(0.0)
 
 

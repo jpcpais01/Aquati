@@ -3,7 +3,6 @@
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
-#include "res://shaders/inc/heraldry.gdshaderinc"
 #define LIT_SPECULAR 0.35
 #define LIT_BACKLIGHT
 #include "res://shaders/inc/lit.gdshaderinc"
@@ -11,8 +10,15 @@
 uniform vec3 c_sail : source_color = vec3(0.957, 0.918, 0.831);
 uniform vec3 c_seam : source_color = vec3(0.851, 0.788, 0.659);
 uniform vec3 c_emblem : source_color = vec3(0.843, 0.608, 0.18);
-/// 0 none, 1 sun
-uniform int emblem_kind = 1;
+/// the accent the canvas is patterned in, and the pattern: 0 plain, 1 stripes,
+/// 2 band, 3 border, 4 cross, 5 diagonal (ShipLook.SAIL_PATTERNS)
+uniform vec3 c_accent : source_color = vec3(0.851, 0.788, 0.659);
+uniform int sail_pattern = 0;
+/// the mark the mainsails carry (white where it inks), as Heraldry draws it:
+/// an emblem 0.56 of the sail across, the texture spanning 1.1 of its
+/// half-width either side of its middle
+uniform bool mark_on = false;
+uniform sampler2D mark_tex : filter_linear_mipmap, repeat_disable, hint_default_black;
 
 /// how full the canvas draws (wind on the sail x how much is set)
 instance uniform float sail_fill = 1.0;
@@ -53,7 +59,22 @@ void fragment() {
 	float px = 1.0 / 512.0;
 	float cloth = floor(c.x * 9.0);
 	float cx = fract(c.x * 9.0) / 9.0;
-	vec3 col = c_sail * (0.95 + hash11(cloth * 3.7 + 1.0) * 0.08);
+	// every other cloth in the accent for stripes, each a slightly different bolt
+	vec3 base = sail_pattern == 1 && mod(cloth, 2.0) > 0.5 ? c_accent : c_sail;
+	vec3 col = base * (0.95 + hash11(cloth * 3.7 + 1.0) * 0.08);
+	// the accent's pattern, under the seams and the reef bands as the web paints it
+	float acc = 0.0;
+	if (sail_pattern == 2) {
+		acc = vband(c.y, 0.6, 0.8);
+	} else if (sail_pattern == 3) {
+		acc = 1.0 - vband(c.x, 0.085, 0.915) * vband(c.y, 0.085, 0.915);
+	} else if (sail_pattern == 4) {
+		acc = max(vband(c.x, 0.43, 0.57), vband(c.y, 0.42, 0.56));
+	} else if (sail_pattern == 5) {
+		float d = c.y - 0.35 - c.x;
+		acc = clamp(d / max(fwidth(d), 1e-5) + 0.5, 0.0, 1.0);
+	}
+	col = mix(col, c_accent, acc);
 	// double-stitched seams between the cloths
 	col = mix(col, c_seam, vband(cx, -1.0, 2.5 * px) * 0.85);
 	col = mix(col, c_seam, vband(cx, 5.0 * px, 6.0 * px) * 0.3);
@@ -69,10 +90,9 @@ void fragment() {
 	col = mix(col, c_sail * 0.9, clamp((0.16 - (e.x + e.y)) / max(fwidth(e.x + e.y), 1e-5) + 0.5, 0.0, 1.0));
 	// a broad tabling along the foot
 	col = mix(col, c_sail * 0.92, vband(c.y, 1.0 - 22.0 * px, 2.0));
-	// the emblem
-	if (emblem_kind > 0 && v_emblem > 0.5) {
-		float d = emblem_at(emblem_kind, (c - vec2(0.5)) / 0.28);
-		col = mix(col, c_emblem, emblem_cover(d));
+	// the mark
+	if (mark_on && v_emblem > 0.5) {
+		col = mix(col, c_emblem, texture(mark_tex, (c - vec2(0.5)) / (0.28 * 2.2) + vec2(0.5)).r);
 	}
 	// weathering toward the foot, then the bolt rope round the edge
 	col = mix(col, vec3(0.235, 0.176, 0.078), 0.16 * c.y);

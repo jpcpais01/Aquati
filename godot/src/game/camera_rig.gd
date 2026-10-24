@@ -5,8 +5,9 @@ extends Camera3D
 ## and past the farthest zoom a cinematic lean toward the horizon. In the
 ## harbour it circles the ship at anchor instead, low and slow, and swings
 ## down into the follow view as she sets sail; tied up at a trading port it
-## holds the town's shot of her alongside the quay. Ported from the web
-## game's src/game/cameraRig.ts.
+## holds the town's shot of her alongside the quay, and at the Shipwright
+## glides from the orbit to whatever the open tab is about (and back into
+## the orbit when it's done). Ported from the web game's src/game/cameraRig.ts.
 
 ## Cinematic tilt at its fullest (radians above the horizon), and close in.
 const CINE_PITCH := 0.74
@@ -18,6 +19,8 @@ const FAR_DIST := 300.0
 ## The lens (vertical degrees), the web's at sea, and circling the harbour.
 const FOV := 34.0
 const ORBIT_FOV := 30.0
+## How long the camera takes to swing off a shot back into the orbit (s).
+const BACK := 1.2
 
 ## What the camera looks at, on the water.
 var target := Vector3.ZERO
@@ -73,9 +76,18 @@ var _b := 1.0
 var _orbit_dist := 0.0
 ## The frame slid across (shares of the screen), easing after orbit_frame.
 var _shift := Vector2.ZERO
-## The port shot as it glides: where the camera is and what it looks at.
+## The port shot as it glides: where the camera is, what it looks at and its lens.
 var _cur_pos := Vector3.ZERO
 var _cur_look := Vector3.ZERO
+var _cur_fov := 38.0
+## What the camera looked at last frame (a shot starts from it).
+var _look := Vector3.ZERO
+## Off a shot and back into the orbit: where it was and its lens when it
+## left the shot, and how far it still has to swing (1 .. 0, over BACK s).
+var _back_pos := Vector3.ZERO
+var _back_look := Vector3.ZERO
+var _back_fov := FOV
+var _back_k := 0.0
 
 
 func _ready() -> void:
@@ -199,7 +211,32 @@ func orbit_snap() -> void:
 func snap_shot() -> void:
 	_cur_pos = shot_pos
 	_cur_look = shot_look
+	_cur_fov = shot_fov
 	_shift = Vector2(port_frame.x, port_frame.y)
+
+
+## Onto a shot from wherever the camera is (the Shipwright, from the orbit):
+## it glides there rather than cutting.
+func begin_shot() -> void:
+	_cur_pos = global_position
+	_cur_look = _look
+	_cur_fov = fov
+	_back_k = 0.0
+	port = true
+
+
+## Off the shot and back into the orbit, swinging round into it from where
+## the shot left the camera (the orbit takes up the shot's side of her).
+func leave_shot() -> void:
+	if not port:
+		return
+	port = false
+	_back_pos = _cur_pos
+	_back_look = _cur_look
+	_back_fov = fov
+	_back_k = 1.0
+	var off := _cur_pos - orbit_xf * orbit_box.get_center()
+	orbit_angle = atan2(off.x, off.z)
 
 
 func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
@@ -241,6 +278,13 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 		pos = op.lerp(pos, _b)
 		look = aim.lerp(look, _b)
 		lens_now = lerpf(ORBIT_FOV, lens, _b)
+	if _back_k > 0.0:
+		# off a shot: from where it left the camera into the view it goes back to
+		_back_k = maxf(0.0, _back_k - dt / BACK)
+		var k := MathX.smoother(1.0 - _back_k)
+		pos = _back_pos.lerp(pos, k)
+		look = _back_look.lerp(look, k)
+		lens_now = lerpf(_back_fov, lens_now, k)
 	if cine_w > 0.0:
 		# whatever the camera follows now, blended toward the shot and its subject
 		pos = pos.lerp(cine_pos, cine_w)
@@ -253,6 +297,7 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	if s > 0.0:
 		var k := s * (0.6 + _zoom_smooth) * (1.0 - cine_w * 0.5)
 		pos += Vector3((sin(time * 47.0) + sin(time * 31.0)) * k * 0.6, sin(time * 53.0) * k * 0.5, sin(time * 41.0 + 1.0) * k * 0.6)
+	_look = look
 	global_transform = Transform3D(Basis.looking_at(look - pos, Vector3.UP), pos)
 	fov = lerpf(lens_now, cine_fov, cine_w)
 	# the near plane rides up with the camera: a far view keeps its depth precision
@@ -264,6 +309,8 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 func _port_shot(dt: float, time: float) -> void:
 	_cur_pos = _cur_pos.lerp(shot_pos, MathX.damp(2.4 * shot_pace, dt))
 	_cur_look = _cur_look.lerp(shot_look, MathX.damp(3.0 * shot_pace, dt))
+	_cur_fov = lerpf(_cur_fov, shot_fov, MathX.damp(3.0 * shot_pace, dt))
+	_look = _cur_look
 	var pos := _cur_pos
 	_trauma = maxf(0.0, _trauma - dt * 1.6)
 	var s := _trauma * _trauma
@@ -272,7 +319,7 @@ func _port_shot(dt: float, time: float) -> void:
 	global_transform = Transform3D(Basis.looking_at(_cur_look - pos, Vector3.UP), pos)
 	target = Vector3(_cur_look.x, 0.0, _cur_look.z)
 	_focus = target
-	fov = shot_fov
+	fov = _cur_fov
 	near = 2.0
 	far = 2600.0
 	_slide_frame(dt)

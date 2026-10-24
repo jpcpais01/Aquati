@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T03:00Z',
+    entries: [
+      {
+        title: 'Android: the shipwright',
+        notes: [
+          'The fourteenth Android build opens the Shipwright. Tap Shipwright beside Set Sail in the harbour and the camera glides in to your ship while a glass panel comes in with four tabs: Flag, Sails, Hull and Presets. Every choice is on her the moment you tap it, and she keeps her look between plays.',
+          'Make her flag your own: four shapes, the field, a pattern, an emblem with something behind it, their colours and the emblem\'s size, all waving on a little stage of their own. Tap Paint to take up the brush, with inks, three sizes, an eraser, undo and clear, and every stroke shows on the flag at her masthead. The rainbow at the end of each row of colours opens a picker for any colour at all.',
+          'Dress her sails in their cloth, an accent and a pattern, with her flag\'s emblem on the mainsails if you like, and paint her hull part by part from topsides to gilding. Presets lets you name her, save up to twelve designs to sail with later and take the colours of eight famous ships, Surprise me rolls a whole new look, and the camera follows each tab round her: drag to swing round, pinch to come closer.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T01:00Z',
     entries: [
       {

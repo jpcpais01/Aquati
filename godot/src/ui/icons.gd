@@ -85,6 +85,23 @@ const MARK := {
 	"crew": '<circle cx="8" cy="4.6" r="2.6" fill="#e4d8ff"/><path d="M3.2 14c.4-3.4 2.2-5 4.8-5s4.4 1.6 4.8 5z" fill="#e4d8ff"/><path d="M2 2.5l12 11" stroke="#ff7563" stroke-width="1.8" stroke-linecap="round"/>',
 }
 
+## The Shipwright's art (the web's customizer icons), stroked a little
+## heavier than the HUD's: its tabs, the way back, the die of "Surprise me"
+## and the brush's tools.
+const WRIGHT := {
+	"sw_flag": '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
+	"sw_sails": '<path d="M12 3v17"/><path d="M12 4c4 3 6 8 6 13h-6"/><path d="M11 6c-3 3-5 7-5 11h5"/><path d="M4 20h16"/>',
+	"sw_hull": '<path d="M3 13h18l-2.5 6h-13z"/><path d="M7 13V9h7v4"/><path d="M10 9V5"/>',
+	"sw_star": '<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/>',
+	"sw_back": '<path d="M15 5l-7 7 7 7"/>',
+	"die": '<rect x="4" y="4" width="16" height="16" rx="3.2"/><g fill="#ffffff" stroke="none"><circle cx="8.6" cy="8.6" r="1.55"/><circle cx="15.4" cy="8.6" r="1.55"/><circle cx="12" cy="12" r="1.55"/><circle cx="8.6" cy="15.4" r="1.55"/><circle cx="15.4" cy="15.4" r="1.55"/></g>',
+	"pencil": '<path d="M4.5 19.5l1-4.4L15.6 5a2.1 2.1 0 0 1 3 3L8.5 18.1z"/><path d="M13.6 7l3 3"/>',
+	"check": '<path d="M5 12.6l4.4 4.4L19 7.4"/>',
+	"eraser": '<path d="M9 5.5h11v13H9l-6-6.5z"/><path d="M12 9.5l5 5M17 9.5l-5 5"/>',
+	"undo": '<path d="M9 13.5 4.5 9 9 4.5"/><path d="M4.5 9h10a5 5 0 0 1 0 10H11"/>',
+	"plus": '<path d="M12 5.5v13M5.5 12h13"/>',
+}
+
 ## The web's plunder and shot art (tools/bake_art.mjs), on a 40 grid.
 static var _plunder := {}
 
@@ -106,6 +123,8 @@ static func density() -> float:
 static func texture(id: String, size: float) -> Texture2D:
 	if LINE.has(id):
 		return svg(id, '<g fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">%s</g>' % LINE[id], Vector2(size, size))
+	if WRIGHT.has(id):
+		return svg(id, '<g fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">%s</g>' % WRIGHT[id], Vector2(size, size))
 	if HELM.has(id):
 		var v: float = HELM[id][1]
 		return svg(id, HELM[id][0], Vector2(size, size), Rect2(0.0, 0.0, v, v))
