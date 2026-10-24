@@ -1192,8 +1192,17 @@ func _show_odds() -> void:
 	_clear(_odds)
 	_odds.size = _vp
 	_odds.mouse_filter = Control.MOUSE_FILTER_STOP
+	# over everything else on the screen, the sea and the dock frosted behind it
+	_odds.get_parent().move_child(_odds, -1)
 	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.024, 0.047, 0.6)
+	var frost := ShaderMaterial.new()
+	frost.shader = preload("res://shaders/menu_blur.gdshader")
+	frost.set_shader_parameter("lod", clampf(log(maxf(1.0, 12.0 * px * Icons.density())) / log(2.0) - 0.5, 1.0, 6.0))
+	frost.set_shader_parameter("saturate", 1.1)
+	frost.set_shader_parameter("lr_rgb", Vector3(0.0, 6.0, 12.0) / 255.0)
+	frost.set_shader_parameter("lr_a", Vector3(0.6, 0.6, 0.6))
+	frost.set_shader_parameter("fade", 1.0)
+	dim.material = frost
 	dim.size = _vp
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	dim.gui_input.connect(func(e: InputEvent) -> void:

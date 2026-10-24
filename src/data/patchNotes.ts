@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T10:00Z',
+    entries: [
+      {
+        title: 'Android: the Treasure Vault',
+        notes: [
+          'The eighteenth Android build opens the Treasure Vault, from a new Vault button beside the Shipwright on the home screen (a gold pip says your free chest of the day is waiting) or from the Shipwright\'s Vault banner. A gilded sea chest rises out of the water beside your ship and the camera glides down next to it. Tap it or open one for 300 gold, or ten for 2,700 with an epic or better guaranteed.',
+          'The chest shakes harder and glows brighter as its light climbs through the rarities inside, with a ring of that colour running out over the swell, then bursts open in a column of light and a shower of coins (a legendary brings fireworks). The cards fly out of its mouth and turn over one at a time or all at once, with NEW on first finds and gold paid back for duplicates. A tap skips straight to them.',
+          'Tap a card and your ship tries it on out on the water: a skin on the whole of her as the camera circles, or a blast or trail in a broadside every few seconds. The collection shows every item by kind, the odds and pity rules are a tap away, and every ten opened comes with a bonus ship part.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T08:00Z',
     entries: [
       {

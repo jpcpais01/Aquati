@@ -2535,7 +2535,8 @@ func _frame_vault(dt: float) -> void:
 ## 1|10 opens the chest (the purse topped up for it), skipping to the cards
 ## unless the view is the opening; reveal and show turn them all over,
 ## show then shows card --vault-show I off on her (--vault-equip wears
-## it); coll opens the collection on --vault-kind skin|blast|trail.
+## it); coll opens the collection on --vault-kind skin|blast|trail (and
+## with --vault-show I shows its card I off).
 func _drive_vault() -> void:
 	var want := str(_args["vault-open"]) if _args["vault-open"] is String else "home"
 	match _v_drive:
@@ -2552,6 +2553,8 @@ func _drive_vault() -> void:
 			else:
 				if want == "coll":
 					vault.show_collection(str(_args.get("vault-kind", "skin")))
+					if _args.has("vault-show"):
+						vault.show_card(int(_args["vault-show"]))
 				elif want == "odds":
 					vault.show_odds()
 				_v_drive = 0

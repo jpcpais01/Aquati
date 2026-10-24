@@ -194,7 +194,8 @@ func _build() -> void:
 	var vt: Control = _vault.get_node("Text")
 	var cw := 20.0 * MenuKit.PX
 	var gap := 8.0 * u
-	_vault.resize(_vault.size + Vector2(cw + gap, 0.0))
+	# (and room on the right for the pip, clear of the word)
+	_vault.resize(_vault.size + Vector2(cw + gap + 12.0 * MenuKit.PX, 0.0))
 	vt.position.x += cw + gap
 	var chest := _VaultChest.new(Vector2(cw, 17.0 * MenuKit.PX))
 	chest.position = Vector2(16.0 * u, (_vault.size.y - chest.size.y) * 0.5)
