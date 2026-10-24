@@ -10,7 +10,8 @@
 //                     number, or a varying set in fragment() where it varies)
 //   LIT_CLEARCOAT     a varnish: set lit_coat (CLEARCOAT, CLEARCOAT_ROUGHNESS)
 //                     and lit_geo (normalize(NORMAL) before any bump) in fragment()
-//   LIT_BACKLIGHT     light through thin cloth (reads BACKLIGHT)
+//   LIT_BACKLIGHT     light through thin cloth (reads BACKLIGHT); cloth takes
+//                     no sun shadow
 // and it sets lit_cloud = cloud_shadow(world xz) in vertex(). Rain-soaked
 // surfaces go darker and glossier: wet_dim() and wet_gloss() in fragment().
 
@@ -19,6 +20,13 @@
 
 #ifndef LIT_SPECULAR
 #define LIT_SPECULAR 0.5
+#endif
+
+// the surface as built, before any bump: what the sun's grazing is judged by
+#ifdef LIT_CLEARCOAT
+#define LIT_GEO lit_geo
+#else
+#define LIT_GEO NORMAL
 #endif
 
 /// how much of the sun gets through the clouds overhead (1 clear .. ~0.5)
@@ -33,6 +41,12 @@ float lit_schlick(float u) {
 	float m2 = m * m;
 	return m2 * m2 * m;
 }
+
+// A highlight's ceiling. Far brighter than the screen can show, but phones
+// hand light() its sums in half floats, which overflow past 65504: the
+// varnish's needle-sharp glint (roughness 0.001) runs past that and would come
+// back infinite, a speck of white or black on the hull.
+const float LIT_PEAK = 256.0;
 
 // (left unclamped, as the engine does: a sharp highlight runs far over 1)
 float lit_ggx(float noh, float a) {
@@ -52,7 +66,20 @@ float wet_gloss() {
 
 void light() {
 	// the sun (or the moon) through the clouds; lamps and fires as they are
+#ifdef LIT_BACKLIGHT
+	// thin cloth takes no sun shadow (render_mode shadows_disabled as well):
+	// bellying and fluttering, it would only shadow itself in flickering blocks
+	float att = LIGHT_IS_DIRECTIONAL ? lit_cloud : ATTENUATION;
+#else
 	float att = ATTENUATION * (LIGHT_IS_DIRECTIONAL ? lit_cloud : 1.0);
+	if (LIGHT_IS_DIRECTIONAL) {
+		// where the sun only grazes a surface, its shadow map can't tell
+		// whether the surface is in its own shadow and flickers between the
+		// two in blocks a texel wide (a hull side turned from the sun): fade
+		// the sun out over the last few degrees before it turns away
+		att *= smoothstep(0.0, 0.12, dot(LIT_GEO, LIGHT));
+	}
+#endif
 	float cndl = clamp(dot(NORMAL, LIGHT), 0.0, 1.0);
 	float cndv = max(dot(NORMAL, VIEW), 1e-4);
 	vec3 H = normalize(VIEW + LIGHT);
@@ -71,7 +98,7 @@ void light() {
 		float gr = 0.25 / (cldh * cldh + 1e-4);
 		float fr = mix(0.04, 1.0, ldh5) * lit_coat.x;
 		coat_att = 1.0 - fr;
-		SPECULAR_LIGHT += dr * gr * fr * cc_ndl * LIGHT_COLOR * att * SPECULAR_AMOUNT;
+		SPECULAR_LIGHT += min(dr * gr * fr * cc_ndl * LIGHT_COLOR * att * SPECULAR_AMOUNT, vec3(LIT_PEAK));
 	}
 #endif
 	if (METALLIC < 1.0) {
@@ -93,7 +120,7 @@ void light() {
 #endif
 		float f90 = clamp(dot(f0, vec3(50.0 * 0.33)), METALLIC, 1.0);
 		vec3 F = f0 + (f90 - f0) * ldh5;
-		SPECULAR_LIGHT += cndl * d * F * g * LIGHT_COLOR * att * coat_att * glint * SPECULAR_AMOUNT;
+		SPECULAR_LIGHT += min(cndl * d * F * g * LIGHT_COLOR * att * coat_att * glint * SPECULAR_AMOUNT, vec3(LIT_PEAK));
 	}
 }
 

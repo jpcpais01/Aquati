@@ -20,6 +20,8 @@ extends Node3D
 ## closing itself; opened again, the pin's card, "Lift pin", the chart closed
 ## with the back button; then a market, a part bought from its shipwright
 ## among the rest) and says what it saw in SMOKE MENU.
+## The loading screen for a shot: --loading holds it up (--load-times prints
+## how long each piece of the world took to build).
 ## The menus for a shot: --menu opens in the harbour (--orbit A sets how far
 ## round her the camera has come), --seapick on the sea picker, --pause puts
 ## the voyage on hold, --settings opens Settings (over the harbour, or with
@@ -207,6 +209,11 @@ var hold: Treasure.Hold
 
 var _args := {}
 var _frames := 0
+## The loading screen while the world goes up (null once it has lifted), and
+## whether the world is all built.
+var loading: LoadingScreen
+var _ready_to_play := false
+var _load_us := 0
 var _sky_day := -1.0
 var _sky_revision := 0.0
 ## Her farewell while it plays, else null.
@@ -328,6 +335,19 @@ func _ready() -> void:
 	_vault_flags()
 	if _args.has("phone"):
 		Settings.pretend_phone(412.0 if _args.phone is bool else float(_args.phone))
+	# nothing plays until the world is up: the loading screen holds the stage
+	set_process(false)
+	set_process_input(false)
+	loading = LoadingScreen.new()
+	add_child(loading)
+	await _load()
+
+
+## The world goes up a piece a frame behind the loading screen, so its
+## crest keeps turning and its bar keeps moving; once it's all built, every
+## shader has been drawn and the frames have settled, it lifts on the harbour.
+func _load() -> void:
+	await _loaded_to(0.04)
 	# her look, and the pirates' colours: their flags and marks are drawn on
 	# the worker threads while the sea and the isles go up
 	outfitter = Outfitter.new()
@@ -341,13 +361,19 @@ func _ready() -> void:
 	world.sound = sound
 	_setup_sky()
 	_build_environment()
+	await _loaded_to(0.1)
 	_build_sea()
-	_build_islands()
+	await _loaded_to(0.18)
+	await _build_islands(0.18, 0.4)
+	await _loaded_to(0.4)
 	Livery.bake_finish()
 	_build_player()
+	await _loaded_to(0.48)
 	_build_camera()
 	_build_fleet()
-	_build_ports()
+	await _loaded_to(0.56)
+	await _build_ports(0.56, 0.66)
+	await _loaded_to(0.66)
 	controls = Controls.new()
 	add_child(controls)
 	hud = Hud.new()
@@ -373,6 +399,7 @@ func _ready() -> void:
 	hud.sky_tapped.connect(_on_sky_tap)
 	hud.jump_pressed.connect(func() -> void: controls.jump = true)
 	add_child(hud)
+	await _loaded_to(0.72)
 	maps.world = world
 	maps.player = player
 	maps.ports = ports.ports
@@ -422,7 +449,9 @@ func _ready() -> void:
 	wreck.harbour.connect(_wreck_to_harbour)
 	wreck.tallied.connect(sound.tally)
 	add_child(wreck)
+	await _loaded_to(0.78)
 	_build_menus()
+	await _loaded_to(0.84)
 	Settings.changed.connect(_on_settings)
 	_on_settings()
 	world.hit.connect(_on_hit)
@@ -461,6 +490,29 @@ func _ready() -> void:
 	_start_updates()
 	_stage_menus()
 	_warm_up()
+	set_process(true)
+	set_process_input(true)
+	_ready_to_play = true
+	# (--loading: a shot of the loading screen itself, held up)
+	if _args.has("loading"):
+		loading.progress(0.62)
+		return
+	await loading.finish(_args.has("shot") or _args.has("smoke"))
+	loading = null
+	if harbour.is_open():
+		harbour.replay()
+
+
+## The loading screen's bar to `p` (0..1), then a frame for it to draw
+## (--load-times prints how long each piece took).
+func _loaded_to(p: float) -> void:
+	if _args.has("load-times"):
+		var now := Time.get_ticks_usec()
+		print("LOAD %.2f in %.1f ms" % [p, (now - _load_us) / 1000.0])
+		_load_us = now
+	loading.progress(p)
+	await get_tree().process_frame
+	_load_us = Time.get_ticks_usec()
 
 
 ## A first wound, the first plank in the water, the first town in view: none
@@ -742,8 +794,16 @@ func _build_sea() -> void:
 	spindrift.setup(world)
 
 
-func _build_islands() -> void:
-	regions = Region.load_all()
+## (A frame for the loading screen after each archipelago's maps, its ground
+## and its plants, its bar climbing from `p0` to `p1`.)
+func _build_islands(p0: float, p1: float) -> void:
+	var specs := Region.specs()
+	var n := specs.size() * 3
+	var i := 0
+	for d in specs:
+		regions.append(Region.new(d))
+		i += 1
+		await _loaded_to(lerpf(p0, p1, float(i) / n))
 	world.regions = regions
 	for r in regions:
 		isles_total += r.islands.size()
@@ -752,11 +812,15 @@ func _build_islands() -> void:
 		g.build(r, Settings.quality == Settings.Quality.LOW)
 		add_child(g)
 		grounds.append(g)
+		i += 1
+		await _loaded_to(lerpf(p0, p1, float(i) / n))
 		var f := Flora.new()
 		f.build(r)
 		f.visible = not _args.has("noflora")
 		add_child(f)
 		floras.append(f)
+		i += 1
+		await _loaded_to(lerpf(p0, p1, float(i) / n))
 	ocean.set_glow_centres(_glow_centres)
 	hazards = Hazards.new(world)
 	hazards.struck.connect(_on_hazard)
@@ -892,11 +956,13 @@ func _build_fleet() -> void:
 
 
 ## The trading ports' towns along their quays, their folk drawn with the crews.
-func _build_ports() -> void:
+## (A frame for the loading screen between the towns, the home port and the
+## shore, its bar climbing from `p0` to `p1`.)
+func _build_ports(p0: float, p1: float) -> void:
 	ports = TradePorts.new()
 	ports.name = "TradePorts"
 	add_child(ports)
-	ports.setup(world, crew)
+	await ports.setup(world, crew, func(k: float) -> void: await _loaded_to(p0 + (p1 - p0) * 0.6 * k))
 	# the harbourmaster rings her in, loud on her own quay
 	ports.bell_rung.connect(func(port: TradePort, _at: Vector3) -> void: sound.bell(2, 0.22 if port == dock_port else 0.08))
 	ports.delivered.connect(_delivered)
@@ -907,6 +973,7 @@ func _build_ports() -> void:
 			if site.home:
 				home.setup(site, ports.arts(), world, crew)
 	add_child(home)
+	await _loaded_to(p0 + (p1 - p0) * 0.7)
 	# the islands as ground to walk, and the landing party's boat and people
 	shore_ground = ShoreGround.new(world, world.regions)
 	shore = Shore.new(shore_ground, crew, ports.arts().parts)
@@ -3896,7 +3963,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _notification(what: int) -> void:
-	if not is_node_ready():
+	if not _ready_to_play:
 		return
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_go_back(true)

@@ -47,12 +47,20 @@ var isle_tex: Texture2D
 
 static func load_all() -> Array[Region]:
 	var out: Array[Region] = []
+	for d in specs():
+		out.append(Region.new(d))
+	return out
+
+
+## Every archipelago as world.json lists it (Region.new(d) unpacks one).
+static func specs() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
 	var w: Variant = JSON.parse_string(FileAccess.get_file_as_string(ROOT + "world.json"))
 	if not w is Dictionary:
 		push_error("world.json is missing: run tools/world/bake_world.mjs")
 		return out
 	for d: Dictionary in w.regions:
-		out.append(Region.new(d))
+		out.append(d)
 	return out
 
 
