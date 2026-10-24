@@ -52,6 +52,10 @@ static func rasterize(svg: String, kind := FLAT) -> Texture2D:
 		return null
 	if kind == MARK:
 		img.convert(Image.FORMAT_R8)
+	else:
+		# the clear texels round a cut take their neighbours' colour, so
+		# filtering never drags a dark fringe in round the edge
+		img.fix_alpha_edges()
 	if kind != FLAT:
 		img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)

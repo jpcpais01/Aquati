@@ -254,6 +254,14 @@ static func paint_flag(l: Livery, layer: Texture2D) -> void:
 		m.set_shader_parameter("paint_tex", layer)
 
 
+## The middle of her flag at the masthead, in the world (the Shipwright's shot of it).
+func flag_centre() -> Vector3:
+	for f in flags:
+		if f.get_parent() == flag_pivot:
+			return f.global_transform * f.get_aabb().get_center()
+	return flag_pivot.global_position
+
+
 func _cannon_y(t: float) -> float:
 	return shape.main_deck_y(t) + 0.5
 

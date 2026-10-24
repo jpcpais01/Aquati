@@ -16,6 +16,8 @@ const SLOP := 14.0
 
 ## How far it squeezes while held (1: not at all).
 var squeeze := 0.97
+## The size it rests at (a chosen swatch stands a little proud): set_rest().
+var rest := 1.0
 var enabled := true
 var down := false
 var _from := Vector2.ZERO
@@ -63,9 +65,16 @@ func _gui_input(event: InputEvent) -> void:
 		cancel()
 
 
+## Comes to rest at a size (it eases there).
+func set_rest(r: float) -> void:
+	if r != rest:
+		rest = r
+		set_process(true)
+
+
 func _process(dt: float) -> void:
-	_k += ((squeeze if down else 1.0) - _k) * MathX.damp(30.0, dt)
-	if not down and absf(_k - 1.0) < 0.002:
-		_k = 1.0
+	_k += ((squeeze * rest if down else rest) - _k) * MathX.damp(30.0, dt)
+	if not down and absf(_k - rest) < 0.002:
+		_k = rest
 		set_process(false)
 	scale = Vector2(_k, _k)

@@ -582,7 +582,7 @@ static func shape_cut(shape: String, w: float, h: float) -> String:
 ## web), drawn `px` pixels big: field, pattern, emblem on its backing, the
 ## hand-painted layer (unless `paint` is false) and the shape cut from its fly
 ## as transparency. No weave and no sleeve: whatever shows it adds those.
-static func flag_svg(d: Dictionary, w: float, h: float, px: Vector2i, paint := true) -> String:
+static func flag_svg(d: Dictionary, w: float, h: float, px: Vector2i, paint := true, corner := 0.0) -> String:
 	var area := Rect2(0.0, 0.0, w, h)
 	var defs := '<g id="u"><rect width="%s" height="%s" fill="%s"/>%s</g>' % [n(w), n(h), str(d.bg), pattern_art(str(d.pattern), w, h, str(d.pattern_color))]
 	var pat := str(d.pattern)
@@ -598,6 +598,10 @@ static func flag_svg(d: Dictionary, w: float, h: float, px: Vector2i, paint := t
 	if cut != "":
 		defs += '<mask id="sh" maskUnits="userSpaceOnUse" x="0" y="0" width="%s" height="%s"><rect width="%s" height="%s" fill="#fff"/>%s</mask>' % [n(w), n(h), n(w), n(h), cut]
 		body = '<g mask="url(#sh)">%s</g>' % body
+	if corner > 0.0:
+		# a picker's tile: the drawing's corners rounded off (the web's border-radius)
+		defs += '<clipPath id="rr"><rect width="%s" height="%s" rx="%s"/></clipPath>' % [n(w), n(h), n(corner)]
+		body = '<g clip-path="url(#rr)">%s</g>' % body
 	return '<svg %s width="%d" height="%d" viewBox="0 0 %s %s" preserveAspectRatio="none"><defs>%s</defs>%s</svg>' % [_NS, px.x, px.y, n(w), n(h), defs, body]
 
 

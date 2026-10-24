@@ -94,8 +94,8 @@ static func set_icon(b: Control, icon: String, tint: Color = Color.WHITE) -> voi
 
 
 ## A glass pill, `h` tall with `pad` either side: an icon (if any) and words.
-static func pill(icon: String, label: String, h: float, pad: float, px: float, weight := 600, fill: Color = HudStyle.GLASS_2, ink: Color = HudStyle.INK) -> UiButton:
-	var t := words(label, "inter", weight, px, ink)
+static func pill(icon: String, label: String, h: float, pad: float, px: float, weight := 600, fill: Color = HudStyle.GLASS_2, ink: Color = HudStyle.INK, em := 0.0) -> UiButton:
+	var t := words(label, "inter", weight, px, ink, em)
 	var ip := px * 1.3
 	var gap := 8.0 * U
 	var w := pad * 2.0 + t.size.x + ((ip + gap) if icon != "" else 0.0)

@@ -96,10 +96,11 @@ func flag_px() -> int:
 	return FLAG_PX if id == "player" else FLAG_PX_SMALL
 
 
-## The SVG her flag is drawn from.
-func flag_svg() -> String:
+## The SVG her flag is drawn from (without the hand-painted layer while the
+## Shipwright's brush has it).
+func flag_svg(paint := true) -> String:
 	var w := flag_px()
-	return Heraldry.flag_svg(flag_design, 256.0, 256.0 * Heraldry.ASPECT, Vector2i(w, roundi(w * Heraldry.ASPECT)))
+	return Heraldry.flag_svg(flag_design, 256.0, 256.0 * Heraldry.ASPECT, Vector2i(w, roundi(w * Heraldry.ASPECT)), paint)
 
 
 ## Starts drawing these liveries' flags and marks on the worker threads

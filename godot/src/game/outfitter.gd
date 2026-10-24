@@ -8,8 +8,9 @@ extends Node
 ## hull in her new colours, swapped in under her (Ship.refit) as soon as it's
 ## built: no tap ever waits on a whole ship being lofted.
 
-## Her flag was drawn afresh (the Shipwright's stage shows it too).
-signal flag_drawn(tex: Texture2D)
+## Her flag was drawn afresh (the Shipwright's stage shows it too); `painted`:
+## with the brush's latest work in it, so the brush's layer can come down.
+signal flag_drawn(tex: Texture2D, painted: bool)
 
 var look := ShipLook.fresh()
 var baker := LookBaker.new()
@@ -22,8 +23,17 @@ var refitting := false
 var _livery: Livery
 var _flag_key := ""
 var _mark_key := ""
-## The flag drawing asked for last: one drawn for an older design is dropped.
-var _flag_ask := 0
+## A drawing of her flag is under way, and another is wanted when it lands
+## (a colour dragged across the picker asks every frame: one at a time, the
+## latest always next, so the workers never fall behind).
+var _flag_busy := false
+var _flag_again := false
+## The Shipwright's brush is out (her flag drawn without its paint, the
+## brush's layer over it), or was put away and its layer stays up until her
+## flag is drawn with the paint in it; each time it comes out or goes away.
+var _painting := false
+var _lift := false
+var _brush := 0
 
 
 func _init() -> void:
@@ -75,19 +85,33 @@ func apply(p_look: Dictionary) -> void:
 
 
 func _draw_flag() -> void:
-	_flag_ask += 1
-	var ask := _flag_ask
-	var t := baker.draw(_livery.flag_svg(), func(tex: Texture2D) -> void: _flag_in(ask, tex), LookBaker.MIPS)
+	if _flag_busy:
+		_flag_again = true
+		return
+	var painted := not _painting
+	var brush := _brush
+	var t := baker.draw(_livery.flag_svg(painted), func(tex: Texture2D) -> void:
+		_flag_busy = false
+		_flag_in(tex, painted, brush)
+		if _flag_again:
+			_flag_again = false
+			_draw_flag(), LookBaker.MIPS)
 	if t != null:
-		_flag_in(ask, t)
+		_flag_in(t, painted, brush)
+	else:
+		_flag_busy = true
 
 
-func _flag_in(ask: int, tex: Texture2D) -> void:
-	if ask != _flag_ask or tex == null:
+func _flag_in(tex: Texture2D, painted: bool, brush: int) -> void:
+	if tex == null:
 		return
 	_livery.flag_tex = tex
 	ShipModel.restyle(_livery)
-	flag_drawn.emit(tex)
+	var latest := painted and brush == _brush
+	if _lift and latest:
+		_lift = false
+		ShipModel.paint_flag(_livery, null)
+	flag_drawn.emit(tex, latest)
 
 
 func _draw_mark() -> void:
@@ -109,9 +133,18 @@ func _mark_in(key: String, tex: Texture2D) -> void:
 	ShipModel.restyle(_livery)
 
 
-## The Shipwright's brush is at work on her flag (its layer; null put down).
-func paint(layer: Texture2D) -> void:
-	ShipModel.paint_flag(_livery, layer)
+## The Shipwright's brush came out (its layer, shown over her flag as it's
+## painted) or was put away (null: the layer stays up until her flag is drawn
+## with the paint in it, the change that brings it following at once).
+func set_painting(layer: Texture2D) -> void:
+	_brush += 1
+	_painting = layer != null
+	_lift = not _painting
+	# drawn afresh at the next change: without the paint (the layer has it), or with it
+	_flag_key = ""
+	if _painting:
+		ShipModel.paint_flag(_livery, layer)
+		_draw_flag()
 
 
 ## Her flag as last drawn.

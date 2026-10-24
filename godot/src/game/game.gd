@@ -11,7 +11,9 @@ extends Node3D
 ## card at frame N, --newship N chooses a new ship off it, back to the
 ## harbour); starting in the harbour it first walks the menus (a
 ## ship picked, Set Sail for Las Brumas, paused there, Settings opened and
-## closed, back to the harbour; Set Sail for the home waters, paused and
+## closed, back to the harbour; a turn at the Shipwright (the Sails tab, a
+## famous ship's colours, the brush on her flag, a design saved and deleted,
+## Done); Set Sail for the home waters, paused and
 ## resumed with the back button; the sea chart opened off the minimap, a pin
 ## dropped on it, "Sail there" and the helmsman setting a course, the chart
 ## closing itself; opened again, the pin's card, "Lift pin", the chart closed
@@ -19,7 +21,11 @@ extends Node3D
 ## The menus for a shot: --menu opens in the harbour (--orbit A sets how far
 ## round her the camera has come), --seapick on the sea picker, --pause puts
 ## the voyage on hold, --settings opens Settings (over the harbour, or with
-## --pause over the paused voyage).
+## --pause over the paused voyage), --shipwright TAB opens the Shipwright on
+## a tab (flag, sails, hull or presets) with --paint the brush out and a
+## stroke across her flag, or --any-colour the colour picker up.
+## Her look: --colours N dresses her in the N-th famous colours (0 .. 7),
+## --colours random in a surprise (--seed S), and --name NAME christens her.
 ## --shot PATH saves a frame and quits, with --hour H, --view N (0 close ..
 ## 3 leaned over) or --zoom Z (0..1) and --tilt T (0..1), --fov F to narrow
 ## the lens for a close-up (degrees), --frames N to let it settle first,
@@ -113,6 +119,20 @@ var chart_art: ChartArt
 var helm: Helmsman
 ## Her look from the Shipwright: her livery dressed in it, her flag drawn.
 var outfitter: Outfitter
+## The Shipwright, over her at anchor in the harbour; and its camera: what
+## the open tab is about ("flag", "sails", "hull" or "overview"), swung
+## round her by a drag (radians from the shot's own angle) and in or out by
+## a pinch, the side of her it stands off and which face of her flag it
+## sees, and its clock (the shot sways a little).
+var shipwright: Shipwright
+var _sw_focus := "flag"
+var _sw_az := 0.0
+var _sw_zoom := 1.0
+var _sw_side := 1.0
+var _sw_face := 1.0
+var _sw_t := 0.0
+## How far through its turn at the Shipwright the smoke test is (_tour_wright).
+var _sw_tour := 0
 var dock_port: TradePort
 var market: MarketPanel
 var collisions := Collisions.new()
@@ -989,6 +1009,8 @@ func _tick(real_dt: float) -> void:
 		dock_port.pin(player)
 		market.tick(real_dt, world.time)
 		_frame_dock(real_dt)
+	if shipwright.is_open():
+		_frame_shipwright(real_dt)
 	if player.alive and sailing:
 		voyage.metres += Vector2(player.vel.x, player.vel.z).length() * dt
 		# the crew patches her up between fights
@@ -1787,7 +1809,7 @@ func _reset_world(id: String) -> void:
 ## set piece at sea (a shot of the voyage, a fight, a farewell, a voyage on
 ## hold), unless a shot of the menus is asked for.
 func _harbour_first() -> bool:
-	if _args.has("menu") or _args.has("seapick") or (_args.has("settings") and not _args.has("pause")):
+	if _args.has("menu") or _args.has("seapick") or _args.has("shipwright") or (_args.has("settings") and not _args.has("pause")):
 		return true
 	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause", "dock", "off"]:
 		if _args.has(k):
@@ -1802,10 +1824,27 @@ func _build_menus() -> void:
 	harbour = Harbour.new()
 	harbour.picked.connect(_preview)
 	harbour.sail.connect(_choose_sea)
+	harbour.shipwright.connect(_open_shipwright)
 	harbour.settings.connect(_open_settings)
 	harbour.sound.connect(_toggle_sound)
 	harbour.clicked.connect(sound.click)
 	add_child(harbour)
+	shipwright = Shipwright.new()
+	shipwright.baker = outfitter.baker
+	shipwright.changed.connect(outfitter.apply)
+	shipwright.brush.connect(outfitter.set_painting)
+	shipwright.designs_changed.connect(Progress.keep_designs)
+	# a tab (or a part of her hull) brings the camera round to its own shot
+	shipwright.focus.connect(func(what: String) -> void:
+		_sw_focus = what
+		_sw_az = 0.0)
+	# the web's drag and pinch: a screen's width swings it 2.6 rad, within reason
+	shipwright.swing.connect(func(dx: float) -> void: _sw_az = clampf(_sw_az - dx * 2.6, -1.25, 1.0))
+	shipwright.zoom.connect(func(f: float) -> void: _sw_zoom = clampf(_sw_zoom * f, 0.6, 1.5))
+	shipwright.done.connect(_close_shipwright)
+	shipwright.clicked.connect(sound.click)
+	add_child(shipwright)
+	outfitter.flag_drawn.connect(shipwright.set_flag)
 	market = MarketPanel.new()
 	market.sell.connect(_sell)
 	market.sell_all.connect(_sell.bind(""))
@@ -1860,8 +1899,17 @@ func _open_settings() -> void:
 	_note_tour("Settings")
 
 
-## The menus a shot opens on (--seapick, --pause, --settings).
+## The menus a shot opens on (--seapick, --pause, --settings, --shipwright
+## TAB with --paint or --any-colour).
 func _stage_menus() -> void:
+	if _args.has("shipwright"):
+		_open_shipwright()
+		shipwright.pick_tab(str(_args.shipwright))
+		if _args.has("paint"):
+			# a flourish of gold across her flag, the brush still out
+			shipwright.paint_stroke(PackedVector2Array([Vector2(0.18, 0.78), Vector2(0.32, 0.62), Vector2(0.48, 0.7), Vector2(0.64, 0.52), Vector2(0.8, 0.6)]))
+		if _args.has("any-colour"):
+			shipwright.pick_any()
 	if _args.has("seapick"):
 		_choose_sea()
 	if _args.has("pause"):
@@ -1987,6 +2035,106 @@ func _choose_sea() -> void:
 	sea_pick.setup(_sea_cards())
 	sea_pick.open(Progress.start_sea, Progress.sea_picked)
 	_note_tour("Set Sail")
+
+
+## The Shipwright, over her at anchor: the harbour's menu goes, the camera
+## glides off its orbit to the Flag tab's shot of her flag (from the side of
+## her it's on), and the panel comes in down the right.
+func _open_shipwright() -> void:
+	if state != State.HARBOUR or veil.busy or shipwright.is_open() or sea_pick.is_open():
+		return
+	harbour.close()
+	var p := player
+	_sw_side = 1.0 if (camera.global_position - p.pos).dot(p.port_dir()) >= 0.0 else -1.0
+	_sw_face = 0.0
+	_sw_az = 0.0
+	_sw_zoom = 1.0
+	_sw_t = 0.0
+	shipwright.place = "Home Harbour"
+	shipwright.open(outfitter.look, Progress.designs)
+	shipwright.set_flag(outfitter.flag_texture())
+	camera.begin_shot()
+	_frame_shipwright(0.0)
+	_note_tour("Shipwright")
+
+
+## Done at the Shipwright: the camera swings back into its orbit round her,
+## and the harbour's menu comes back up.
+func _close_shipwright() -> void:
+	if not shipwright.is_open():
+		return
+	shipwright.close()
+	outfitter.baker.forget()
+	camera.leave_shot()
+	harbour.open(player.cls.id)
+	camera.orbit_frame = harbour.framing()
+	_note_tour("left the Shipwright")
+
+
+## The Shipwright's camera on whatever the open tab is about, framed in the
+## space its panel leaves, swaying a little (the web's framePort).
+func _frame_shipwright(dt: float) -> void:
+	_sw_t += dt
+	var sway := sin(_sw_t * 0.16) * 0.07
+	var fit := _fit_panel(shipwright.panel_rect())
+	var shot := _wright_shot(_sw_focus, player, _sw_az + sway, _sw_zoom * fit)
+	camera.shot_pos = shot[0]
+	camera.shot_look = shot[1]
+	camera.shot_fov = 38.0
+	camera.shot_pace = 1.0
+
+
+## The Shipwright's shot of her (the web's port.shot): where the camera
+## stands and what it looks at for her flag, her sails, her hull or the
+## whole of her, swung `az` round her from the shot's own angle and `zoom`
+## times as far off. Her flag is seen face on however the wind streams it.
+func _wright_shot(focus: String, s: Ship, az: float, zoom: float) -> Array[Vector3]:
+	var L := s.cls.length
+	var c := Vector3(s.pos.x, 0.0, s.pos.z)
+	var along := s.forward()
+	var out := s.port_dir() * _sw_side
+	var mast_h := s.model.flag_pivot.global_position.y
+	var look: Vector3
+	var dist: float
+	var elev: float
+	var a0: float
+	match focus:
+		"flag":
+			var fb := s.model.flag_pivot.global_basis
+			var n := Vector3(fb.z.x, 0.0, fb.z.z).normalized()
+			# the face toward the camera's side of her, kept until the wind
+			# has swung it well round (no flapping from face to face)
+			if _sw_face == 0.0:
+				_sw_face = 1.0 if n.dot(out) >= 0.0 else -1.0
+			elif n.dot(out) * _sw_face < -0.3:
+				_sw_face = -_sw_face
+			out = n * _sw_face
+			# toward her hoist, as the web's shot stands toward her bow
+			along = -Vector3(fb.x.x, 0.0, fb.x.z).normalized()
+			look = s.model.flag_centre()
+			dist = 10.0 + L * 0.22
+			elev = 0.05
+			a0 = 0.35
+		"sails":
+			look = c + Vector3.UP * mast_h * 0.5
+			dist = L * 1.05 + 16.0
+			elev = 0.14
+			a0 = 0.32
+		"hull":
+			look = c + Vector3.UP * 1.6
+			dist = L * 0.78 + 10.0
+			elev = 0.1
+			a0 = 0.42
+		_:
+			look = c + Vector3.UP * mast_h * 0.3 + along * 4.0
+			dist = L * 1.2 + 26.0
+			elev = 0.3
+			a0 = 0.48
+	var a := a0 + az
+	var dir := out * cos(a) + along * sin(a)
+	var eye := look + dir * cos(elev) * dist * zoom + Vector3.UP * sin(elev) * dist * zoom
+	eye.y = maxf(eye.y, 2.2)
+	return [eye, look]
 
 
 ## What the sea picker shows of each archipelago: its isles, where you'd
@@ -2664,7 +2812,7 @@ func _go_back(os_back: bool) -> void:
 	_back_frame = f
 	if veil.busy:
 		return
-	if settings_sheet.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back():
+	if settings_sheet.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
 		return
 	if _farewell != null:
 		if _farewell.shown:
@@ -2684,7 +2832,8 @@ func _go_back(os_back: bool) -> void:
 ## The smoke test's walk through the menus, a step once the last has
 ## settled: another ship picked and at anchor, Set Sail for Las Brumas;
 ## there the voyage paused, Settings opened and closed, and back to the
-## harbour; then Set Sail for the home waters, paused and resumed with the
+## harbour; a turn at the Shipwright (_tour_wright); then Set Sail for the
+## home waters, paused and resumed with the
 ## back button; the sea chart opened off the minimap, a pin dropped on it by
 ## a tap and "Sail there" on its card, the helmsman's course set and the
 ## chart closing itself; the chart opened again, the pin's card, "Lift pin"
@@ -2718,7 +2867,8 @@ func _tour_menus() -> void:
 		6:
 			pause_screen.harbour.emit()
 		7:
-			if state != State.HARBOUR:
+			# a turn at the Shipwright first
+			if state != State.HARBOUR or _tour_wright():
 				return
 			harbour.sail.emit()
 		8:
@@ -2820,6 +2970,64 @@ func _tour_menus() -> void:
 			_go_back(false)
 	_tour_step += 1
 	_tour_at = _frames
+
+
+## The smoke test's turn at the Shipwright, a step at a time (true while
+## it's under way): opened off the harbour, the Sails tab, a famous ship's
+## colours taken (and a fresh hull in them off the yard), the brush across
+## her flag and its work kept, the design saved and deleted again, and
+## Done with the back button.
+func _tour_wright() -> bool:
+	if _sw_tour >= 8:
+		return false
+	match _sw_tour:
+		0:
+			harbour.shipwright.emit()
+			if not shipwright.is_open() or not camera.port:
+				printerr("SMOKE FAILED: the Shipwright didn't open over her")
+		1:
+			shipwright.pick_tab("sails")
+			if _sw_focus != "sails":
+				printerr("SMOKE FAILED: the Sails tab didn't bring the camera round to her sails")
+		2:
+			var l := ShipLook.preset(2)
+			l.name = "Smoke Test"
+			shipwright.take(l)
+			_note_tour("took the %s colours" % str(ShipLook.PRESETS[2][0]))
+		3:
+			# her fresh hull in its new paint (a while on the yard's slipway)
+			if outfitter.refitting and _frames - _tour_at < 600:
+				return true
+			if outfitter.refitting:
+				printerr("SMOKE FAILED: her hull was never refitted in its new paint")
+			if player.ship_name != "Smoke Test":
+				printerr("SMOKE FAILED: her new name didn't reach her (%s)" % player.ship_name)
+			shipwright.paint_stroke(PackedVector2Array([Vector2(0.2, 0.3), Vector2(0.5, 0.55), Vector2(0.8, 0.35)]))
+		4:
+			shipwright.paint_done()
+		5:
+			if shipwright.paint_busy() and _frames - _tour_at < 300:
+				return true
+			# (a headless run draws nothing to read back: the work goes unkept)
+			if str(outfitter.look.flag.paint).begins_with("data:image/png"):
+				_note_tour("painted her flag")
+			elif DisplayServer.get_name() != "headless":
+				printerr("SMOKE FAILED: the brush's work wasn't kept on her flag")
+			var n := Progress.designs.size()
+			if not shipwright.save_design() or Progress.designs.size() != mini(n + 1, ShipLook.MAX_SAVED):
+				printerr("SMOKE FAILED: the design wasn't saved")
+			else:
+				_note_tour("saved %s" % str(Progress.designs[0].name))
+		6:
+			if not Progress.designs.is_empty() and str(Progress.designs[0].look.name) == "Smoke Test":
+				shipwright.delete_design(str(Progress.designs[0].id))
+		7:
+			_go_back(false)
+			if shipwright.is_open() or not harbour.is_open() or camera.port:
+				printerr("SMOKE FAILED: the back button left the Shipwright open")
+	_sw_tour += 1
+	_tour_at = _frames
+	return true
 
 
 ## A tap on the open chart over the world spot `w` (x, z), as a finger makes it.
