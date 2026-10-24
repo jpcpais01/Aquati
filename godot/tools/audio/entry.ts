@@ -286,6 +286,17 @@ for (let n = 1; n <= 3; n++)
     a.gull(1, 0, n);
   });
 
+// ashore: a footfall in dry sand, in the wet (the walk's middle pace), on
+// planks or stone, and a jump's push-off and landings (in sand, in the
+// shallows, on something hard)
+shot('sand_step', 3, 0.3, (a) => a.sandStep(0.5, false));
+shot('wet_step', 2, 0.4, (a) => a.sandStep(0.5, true));
+shot('foot_step', 2, 0.3, (a) => a.footstep(0.5));
+shot('hop_up', 2, 0.3, (a) => a.hop(true, 0, false, false));
+shot('hop_sand', 2, 0.6, (a) => a.hop(false, 0.6, false, false));
+shot('hop_wet', 1, 0.7, (a) => a.hop(false, 0.6, true, false));
+shot('hop_hard', 1, 0.6, (a) => a.hop(false, 0.6, false, true));
+
 // ------------------------------------------------------------------ the sea's own sound: the noise its beds are cut from
 jobs.push({ name: 'noise_0', sr: SR, exact: true, render: () => [pink(7.3, SR)] });
 
