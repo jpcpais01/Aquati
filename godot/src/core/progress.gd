@@ -232,6 +232,15 @@ func pull(n: int, rnd := Callable()) -> Array[Dictionary]:
 	return out
 
 
+## A ten-pull's bonus ship part (the web's onPull): a rarity rolled (half the
+## time common, one in two hundred mythic), then a part of it, favouring
+## the ones not yet found; its find as grant_part gives it.
+func vault_bonus(rnd := Callable()) -> Dictionary:
+	var r := Parts._r(rnd)
+	var t := 0 if r < 0.5 else (1 if r < 0.82 else (2 if r < 0.96 else (3 if r < 0.995 else 4)))
+	return grant_part(str(Parts.roll_part(t, owns, rnd).id))
+
+
 ## A trophy from the sea (a vault item won outright): {item, fresh, refund},
 ## a duplicate's refund paid into the purse.
 func award(id: String) -> Dictionary:

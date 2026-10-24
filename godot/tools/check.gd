@@ -1501,6 +1501,8 @@ func _check_cosmetics() -> void:
 	a.earn(3000)
 	var before: int = a.purse
 	var got: Array[Dictionary] = a.pull(10, Mulberry32.new(5).next)
+	# a ten-pull's bonus ship part
+	var bonus: Dictionary = a.vault_bonus(Mulberry32.new(9).next)
 	var paid := before - Cosmetics.TEN_COST
 	for g in got:
 		paid += int(g.refund)
@@ -1511,7 +1513,7 @@ func _check_cosmetics() -> void:
 	var b: Node = script.new()
 	b.path = file
 	b._load()
-	if r1.fresh and not r2.fresh and int(r2.refund) == refund and a.purse == paid and wore and not cant and unseen and seen \
+	if r1.fresh and not r2.fresh and int(r2.refund) == refund and a.purse == paid and wore and not cant and unseen and seen and bonus.has("part") \
 			and got.size() == 10 and best >= 2 and b.wearing("skin") == "skin:kintsugi" and b.owns_item("skin:kintsugi") \
 			and int(b.vault.pulls) == 10 and b.purse == a.purse:
 		steps += 1
