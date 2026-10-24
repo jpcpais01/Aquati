@@ -66,6 +66,7 @@ func _initialize() -> void:
 	_check_looks()
 	_check_progress()
 	_check_parts()
+	_check_cosmetics()
 	# the helm's reach is a share of the window, and a strike is aimed by the
 	# lens: those checks wait for the tree to run
 	await process_frame
@@ -1363,7 +1364,8 @@ func _check_progress() -> void:
 	f.close()
 	var c: Node = make.call()
 	c._load()
-	if c.ship == "sloop" and c.start_sea == "home" and not c.sea_picked and c.view == Vector2(1.0, 0.0) and c.purse == 0 \
+	# (a save from before the vault gets the vault's opening purse, once)
+	if c.ship == "sloop" and c.start_sea == "home" and not c.sea_picked and c.view == Vector2(1.0, 0.0) and c.purse == Cosmetics.START_PURSE \
 			and c.charted("brumas") and int(c.records.voyages) == 0 and float(c.records.time) == 0.0 and int(c.records.gold) == 640 and int(c.records.kills) == 0 \
 			and c.pins == [[1, 2, 4], [4, -2, 0], [10, 10, 1], [20, 20, 2], [30, 30, 3]]:
 		steps += 1
@@ -1378,7 +1380,7 @@ func _check_progress() -> void:
 	f.close()
 	var d: Node = make.call()
 	d._load()
-	if d.ship == "brig" and d.purse == 77:
+	if d.ship == "brig" and d.purse == 77 + Cosmetics.START_PURSE:
 		steps += 1
 	else:
 		_fail("progress: the fresh copy wasn't taken after a crash mid-swap (%s, %d gold)" % [d.ship, d.purse])
@@ -1387,7 +1389,8 @@ func _check_progress() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
 	var e: Node = make.call()
 	e._load()
-	if e.ship == "sloop" and e.start_sea == "home" and not e.sea_picked and e.view.x < 0.0 and e.purse == 0 and e.charts.is_empty() and e.pins.is_empty():
+	if e.ship == "sloop" and e.start_sea == "home" and not e.sea_picked and e.view.x < 0.0 and e.purse == Cosmetics.START_PURSE and e.charts.is_empty() \
+			and e.pins.is_empty() and e.wearing("skin") == "skin:none" and e.owns_item("trail:powder") and not e.owns_item("skin:kraken"):
 		steps += 1
 	else:
 		_fail("progress: a fresh game doesn't start from the defaults")
@@ -1397,6 +1400,155 @@ func _check_progress() -> void:
 		if FileAccess.file_exists(g):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
 	print("progress: %d of 4 steps as expected" % steps)
+
+
+## The vault's cosmetics against the web's own (tools/cosmetics_web.json,
+## from src/data/cosmetics.ts on fixed seeds): the catalogue in the web's
+## order, then two dozen runs of singles and tens on the same mulberry32
+## streams, every find, refund, pity count and purse after each open. Then
+## a damaged vault cleaned, and the Progress side: wear, award, pull, seen,
+## a save and a load. And her colours: a skin on the player's livery.
+func _check_cosmetics() -> void:
+	var web: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://tools/cosmetics_web.json"))
+	if not web is Dictionary:
+		_fail("cosmetics: tools/cosmetics_web.json is unreadable")
+		return
+	var steps := 0
+	# the catalogue
+	var mine := Cosmetics.all()
+	var items: Array = web.items
+	var bad := ""
+	if mine.size() != items.size():
+		bad = "%d items, the web has %d" % [mine.size(), items.size()]
+	for i in mini(mine.size(), items.size()):
+		var it: Dictionary = mine[i]
+		var w: Array = items[i]
+		var ok: bool = it.id == w[0] and it.rarity == int(w[1])
+		if ok and it.kind == "skin":
+			ok = it.pattern == int(w[2]) and is_equal_approx(it.sail, float(w[4])) and is_equal_approx(it.glow, float(w[5])) \
+					and it.animated == bool(w[6]) and it.base == bool(w[7])
+			for c in 3:
+				ok = ok and (it.colors[c] as Color).is_equal_approx(Color(str(w[3][c])))
+		elif ok:
+			var styles: Array[String] = Cosmetics.BLAST_STYLES if it.kind == "blast" else Cosmetics.TRAIL_STYLES
+			ok = styles[it.style] == str(w[2]) and it.base == bool(w[4]) \
+					and (it.tint[0] as Color).is_equal_approx(Color(str(w[3][0]))) and (it.tint[1] as Color).is_equal_approx(Color(str(w[3][1])))
+		if not ok and bad == "":
+			bad = "%s differs from the web's %s" % [it.id, w]
+	if bad == "":
+		steps += 1
+	else:
+		_fail("cosmetics: the catalogue isn't the web's: " + bad)
+	# the runs: a fresh vault and 21500 gold, one day, singles and tens
+	var ops: Array = web.ops
+	var runs_ok := 0
+	for run: Array in web.runs:
+		var v := Cosmetics.fresh()
+		var purse := Cosmetics.START_PURSE + 20000
+		var rnd := Mulberry32.new(int(run[0]) * 7907 + 3)
+		var why := ""
+		for k in ops.size():
+			var n := int(ops[k])
+			var left := Cosmetics.pay(v, n, purse, "2026-01-01")
+			if left < 0:
+				why = "open %d couldn't be paid from %d" % [k, purse]
+				break
+			purse = left
+			var got: Array = []
+			for r in Cosmetics.open(v, n, rnd.next):
+				purse += int(r.refund)
+				got.append([r.item.id, r.fresh, r.refund])
+			var step: Array = run[1][k]
+			var pl := Cosmetics.pity_left(v)
+			var same: bool = got.size() == (step[0] as Array).size()
+			for j in got.size() if same else 0:
+				var x: Array = step[0][j]
+				same = same and got[j][0] == str(x[0]) and got[j][1] == bool(x[1]) and got[j][2] == int(x[2])
+			if not same or pl != Vector2i(int(step[1][0]), int(step[1][1])) \
+					or purse != int(step[2]) or int(v.pulls) != int(step[3]):
+				why = "open %d: %s, pity %s, %d gold, %d pulls; the web's %s" % [k, got, pl, purse, v.pulls, step]
+				break
+		if why == "":
+			runs_ok += 1
+		elif runs_ok >= 0:
+			_fail("cosmetics: seed %d's run strays from the web's at %s" % [run[0], why])
+			runs_ok = -1000
+	if runs_ok == (web.runs as Array).size():
+		steps += 1
+	# a damaged vault: only what makes sense is kept
+	var d := Cosmetics.sanitize({"owned": {"skin:kintsugi": 2.7, "skin:nope": 1, "blast:seasalt": "x", "trail:comet": -3},
+		"equip": {"skin": "skin:kintsugi", "blast": "blast:seasalt", "trail": "skin:none"}, "pity": {"leg": 99, "epic": -4},
+		"pulls": "many", "daily": "2026-01-01T09:00", "unseen": ["skin:kintsugi", 7, "nope"]})
+	if (d.owned as Dictionary).size() == 5 and int(d.owned["skin:kintsugi"]) == 2 and int(d.owned["trail:comet"]) == 1 \
+			and d.equip == {"skin": "skin:kintsugi", "blast": "blast:powder", "trail": "trail:powder"} and d.pity == {"leg": 49, "epic": 0} \
+			and int(d.pulls) == 0 and d.daily == "2026-01-01" and d.unseen == ["skin:kintsugi"] and Cosmetics.collected(d) == 2:
+		steps += 1
+	else:
+		_fail("cosmetics: a damaged vault let something malformed in: %s" % d)
+	# Progress: a trophy, a duplicate's refund, wearing it, a pull, seen, kept
+	var script: GDScript = load("res://src/core/progress.gd")
+	var file := "user://check-vault.json"
+	var a: Node = script.new()
+	a.path = file
+	var r1: Dictionary = a.award("skin:kintsugi")
+	var r2: Dictionary = a.award("skin:kintsugi")
+	var refund := int(Cosmetics.RARITIES[int(Cosmetics.item("skin:kintsugi").rarity)].refund)
+	var wore: bool = a.wear("skin:kintsugi")
+	var cant: bool = a.wear("skin:harbour")
+	var unseen: bool = a.has_unseen("skin")
+	a.mark_items_seen("skin")
+	var seen: bool = not a.has_unseen("skin")
+	a.earn(3000)
+	var before: int = a.purse
+	var got: Array[Dictionary] = a.pull(10, Mulberry32.new(5).next)
+	var paid := before - Cosmetics.TEN_COST
+	for g in got:
+		paid += int(g.refund)
+	var best := 0
+	for g in got:
+		best = maxi(best, int(g.item.rarity))
+	a.save()
+	var b: Node = script.new()
+	b.path = file
+	b._load()
+	if r1.fresh and not r2.fresh and int(r2.refund) == refund and a.purse == paid and wore and not cant and unseen and seen \
+			and got.size() == 10 and best >= 2 and b.wearing("skin") == "skin:kintsugi" and b.owns_item("skin:kintsugi") \
+			and int(b.vault.pulls) == 10 and b.purse == a.purse:
+		steps += 1
+	else:
+		_fail("cosmetics: the vault's purse and wardrobe went astray: fresh %s/%s refund %d, wore %s/%s, %d gold (expected %d), best %d, kept %s" \
+				% [r1.fresh, r2.fresh, r2.refund, wore, cant, a.purse, paid, best, b.vault])
+	for n: Node in [a, b]:
+		n.free()
+	for g: String in [file, file + ".tmp"]:
+		if FileAccess.file_exists(g):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
+	# her colours: a skin on the player's livery reaches every painted material
+	var l := Livery.named("player")
+	var was: Dictionary = l.skin
+	l.skin = Cosmetics.skin("skin:kintsugi")
+	ShipModel.restyle(l)
+	var model := ShipModel.create(ShipClass.named("sloop"), l)
+	var skinned := 0
+	var plain := 0
+	for mi: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+		for s in mi.mesh.get_surface_count() if mi.mesh != null else 0:
+			var m := mi.get_active_material(s) as ShaderMaterial
+			if m == null:
+				continue
+			var path := m.shader.resource_path
+			if path.ends_with("_skin.gdshader"):
+				skinned += 1 if int(m.get_shader_parameter("skin_id")) == int(l.skin.pattern) else 0
+			elif path.contains("ship_hull") or path.contains("ship_sail"):
+				plain += 1
+	model.free()
+	l.skin = was
+	ShipModel.restyle(l)
+	if skinned >= 3 and plain == 0:
+		steps += 1
+	else:
+		_fail("cosmetics: the player's skin reached %d materials (%d left plain)" % [skinned, plain])
+	print("cosmetics: %d of 5 steps as expected; %d runs of %d opens matched the web's" % [steps, maxi(runs_ok, 0), ops.size()])
 
 
 ## Ship parts: their maths against the web's own (tools/parts_web.json, from

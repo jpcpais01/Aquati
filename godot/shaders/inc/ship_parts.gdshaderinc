@@ -1,6 +1,7 @@
 // The body of ship_parts.gdshader and ship_parts_dmg.gdshader (with DAMAGE
 // defined: the scorch and breaches of ship_damage.gdshaderinc, and the parts
-// of a spar shot away dropped from the mesh).
+// of a spar shot away dropped from the mesh), and of their SKIN variants
+// (your own ship's: her painted woodwork, kind 6, wears her vault skin).
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
@@ -19,6 +20,10 @@ varying vec3 v_obj;
 #ifdef DAMAGE
 #include "res://shaders/inc/ship_damage.gdshaderinc"
 #endif
+#ifdef SKIN
+#include "res://shaders/inc/ship_skin.gdshaderinc"
+varying vec3 v_skin_n;
+#endif
 
 void vertex() {
 #ifdef DAMAGE
@@ -30,6 +35,9 @@ void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	v_obj = VERTEX;
 	lit_cloud = cloud_shadow(v_world.xz);
+#ifdef SKIN
+	v_skin_n = NORMAL;
+#endif
 }
 
 void fragment() {
@@ -59,6 +67,17 @@ void fragment() {
 	col *= 1.0 - glass;
 	float metal = iron * 0.75 + gilt * 0.8;
 	float rough = wood * 0.66 + rope * 0.9 + iron * 0.32 + gilt * 0.3 + glass * 0.15;
+#ifdef SKIN
+	if (skin_id > 0 && kind == 6) {
+		// painted woodwork (her inner bulwarks, a pavisade's shields), laid on
+		// whichever way the face looks most
+		vec3 sn = abs(normalize(v_skin_n));
+		vec2 sp = sn.y > max(sn.x, sn.z) ? v_obj.zx : (sn.x >= sn.z ? v_obj.zy : v_obj.xy);
+		vec3 se = vec3(0.0);
+		col = aq_skin(sp, abs(dot(normalize(NORMAL), VIEW)), TIME, 0.0, se, metal, rough);
+		glow += skin_light(se * (0.55 + night * 0.9), 1.25);
+	}
+#endif
 #ifdef DAMAGE
 	bool drop;
 	// the hold's floor (kind 5) is never shot through

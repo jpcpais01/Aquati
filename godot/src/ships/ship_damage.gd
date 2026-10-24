@@ -44,8 +44,14 @@ const DMG_SHADERS := {
 	"sail": preload("res://shaders/ship_sail_dmg.gdshader"),
 	"flag": preload("res://shaders/ship_flag_dmg.gdshader"),
 }
+## The same for your own ship, which can wear a vault skin (Livery.skinned).
+const DMG_SKIN_SHADERS := {
+	"hull": preload("res://shaders/ship_hull_skin_dmg.gdshader"),
+	"parts": preload("res://shaders/ship_parts_skin_dmg.gdshader"),
+	"sail": preload("res://shaders/ship_sail_skin_dmg.gdshader"),
+}
 ## Her meshes, and the kind of material each draws with.
-const SKINNED := {"Hull": "hull", "Transom": "stern", "Deck": "deck", "Parts": "parts", "Small": "parts", "Fine": "parts", "Rigging": "rope"}
+const MESH_KINDS := {"Hull": "hull", "Transom": "stern", "Deck": "deck", "Parts": "parts", "Small": "parts", "Fine": "parts", "Rigging": "rope"}
 ## The materials that draw her breaches.
 const HOLED: Array[String] = ["hull", "stern", "deck", "parts"]
 enum Mode { CAPSIZE, SPLIT }
@@ -87,8 +93,8 @@ var _canvas := 0.0
 var _gone := 0
 var _sent_state := Vector4(-1.0, -1.0, -1.0, -1.0)
 ## Her own damage materials by kind, from her first wound; the bow half's once she breaks in two.
-var _skin := {}
-var _bow_skin := {}
+var _wound_mats := {}
+var _bow_mats := {}
 var _shards: MultiMeshInstance3D
 ## The breaches with shards (a bit per slot), and every shard's place and paint, as set.
 var _shard_slots := 0
@@ -136,44 +142,62 @@ func _bow_frame() -> Transform3D:
 	return ship.transform * _bow.transform
 
 
-# ------------------------------------------------------------------ the skin
+# ------------------------------------------------------------------ her wounded materials
 
 ## Her first wound: her own copies of the damage materials, drawn from the shared ones.
-func _ensure_skin() -> void:
-	if not _skin.is_empty():
+func _ensure_wound_mats() -> void:
+	if not _wound_mats.is_empty():
 		return
 	var model := ship.model
 	if _noise == null:
 		_noise = load("res://art/noise.png")
 	for kind: String in DMG_SHADERS:
-		var base := model.shared_material(kind)
 		var m := ShaderMaterial.new()
-		m.shader = DMG_SHADERS[kind]
-		for u: Dictionary in base.shader.get_shader_uniform_list():
-			var v: Variant = base.get_shader_parameter(u.name)
-			if v != null:
-				m.set_shader_parameter(u.name, v)
+		m.shader = dmg_shader(kind, model.livery.skinned)
+		_copy_paint(model.shared_material(kind), m)
 		m.set_shader_parameter("dmg_noise", _noise)
-		_skin[kind] = m
-	for part: String in SKINNED:
+		_wound_mats[kind] = m
+	for part: String in MESH_KINDS:
 		var mi := model.get_node_or_null(part) as MeshInstance3D
 		if mi != null:
-			mi.material_override = _skin[SKINNED[part]]
+			mi.material_override = _wound_mats[MESH_KINDS[part]]
 	for sd in model.sails:
-		(sd.node as MeshInstance3D).material_override = _skin["sail"]
+		(sd.node as MeshInstance3D).material_override = _wound_mats["sail"]
 	for f in model.flags:
-		f.material_override = _skin["flag"]
+		f.material_override = _wound_mats["flag"]
 	_sync_holes()
 	_sync_state()
 	_sync_gone()
 
 
+## The damage shader for a kind of material, a skinned livery's own (yours).
+static func dmg_shader(kind: String, skinned: bool) -> Shader:
+	return DMG_SKIN_SHADERS[kind] if skinned and DMG_SKIN_SHADERS.has(kind) else DMG_SHADERS[kind]
+
+
+## What the shared material paints (her livery's colours, her skin) onto
+## her own damage copy of it.
+static func _copy_paint(base: ShaderMaterial, m: ShaderMaterial) -> void:
+	for u: Dictionary in base.shader.get_shader_uniform_list():
+		var v: Variant = base.get_shader_parameter(u.name)
+		if v != null:
+			m.set_shader_parameter(u.name, v)
+
+
+## Her paint changed while she carries wounds (a skin put on in port): her
+## damage materials take it from the shared ones again.
+func repaint() -> void:
+	for mats: Dictionary in [_wound_mats, _bow_mats]:
+		for kind: String in mats:
+			_copy_paint(ship.model.shared_material(kind), mats[kind])
+
+
 func _materials() -> Array:
-	return _skin.values() + _bow_skin.values()
+	return _wound_mats.values() + _bow_mats.values()
 
 
 func _sync_holes() -> void:
-	if _skin.is_empty():
+	if _wound_mats.is_empty():
 		return
 	var shape := ship.model.shape
 	var hv := PackedVector4Array()
@@ -188,8 +212,8 @@ func _sync_holes() -> void:
 		# breaches only open up above the hold's floor; lower ones read as dark, flooded holes
 		iv[i] = Vector4(float(h.side), shape.main_deck_y(shape.t_at(c.z)) - 0.18, float(h.seed), float(h.birth))
 	for kind in HOLED:
-		for skin: Dictionary in [_skin, _bow_skin]:
-			var m: ShaderMaterial = skin.get(kind)
+		for mats: Dictionary in [_wound_mats, _bow_mats]:
+			var m: ShaderMaterial = mats.get(kind)
 			if m != null:
 				m.set_shader_parameter("dmg_holes", hv)
 				m.set_shader_parameter("dmg_info", iv)
@@ -198,7 +222,7 @@ func _sync_holes() -> void:
 
 ## Wear, fire and torn canvas, when they have changed enough to show.
 func _sync_state() -> void:
-	if _skin.is_empty():
+	if _wound_mats.is_empty():
 		return
 	var st := Vector4(_wear, ship.burning, _seed, _canvas)
 	var d := (st - _sent_state).abs()
@@ -210,9 +234,9 @@ func _sync_state() -> void:
 
 
 func _sync_gone() -> void:
-	for skin: Dictionary in [_skin, _bow_skin]:
+	for mats: Dictionary in [_wound_mats, _bow_mats]:
 		for kind: String in ["parts", "rope"]:
-			var m: ShaderMaterial = skin.get(kind)
+			var m: ShaderMaterial = mats.get(kind)
 			if m != null:
 				m.set_shader_parameter("dmg_gone", _gone)
 
@@ -268,13 +292,13 @@ static func warm_meshes(model: ShipModel) -> Array[Node3D]:
 	var mats := {}
 	for kind: String in DMG_SHADERS:
 		var m := ShaderMaterial.new()
-		m.shader = DMG_SHADERS[kind]
+		m.shader = dmg_shader(kind, model.livery.skinned)
 		mats[kind] = m
 	var meshes: Array = []
-	for part: String in SKINNED:
+	for part: String in MESH_KINDS:
 		var mi := model.get_node_or_null(part) as MeshInstance3D
 		if mi != null:
-			meshes.append([mi.mesh, mats[SKINNED[part]]])
+			meshes.append([mi.mesh, mats[MESH_KINDS[part]]])
 	if not model.sails.is_empty():
 		meshes.append([(model.sails[0].node as MeshInstance3D).mesh, mats["sail"]])
 	if not model.flags.is_empty():
@@ -366,7 +390,7 @@ func on_hit(at: Variant, dmg: float) -> void:
 	var shape := s.model.shape
 	var L := s.cls.length
 	_since_hit = 0.0
-	_ensure_skin()
+	_ensure_wound_mats()
 	var frame := _frame()
 	var local: Vector3
 	if at is Vector3:
@@ -458,7 +482,7 @@ func on_rig_hit(kind: int, mast: int, at: Vector3, ball_vel: Vector3) -> void:
 	var fx := ship.world.fx
 	_since_hit = 0.0
 	if kind == 1:
-		_ensure_skin()
+		_ensure_wound_mats()
 		_sail_hits += 1.0
 		var cloth := ship.livery.sail.srgb_to_linear()
 		for i in 6:
@@ -526,7 +550,7 @@ func _break_bowsprit(delay: float) -> void:
 ## carries, hangs on a hinge at the break that topples about `axis` (after
 ## `delay` s), up to `max_angle`, then falls free into the sea.
 func _snap(sp: ShipModel.Spar, axis: Vector3, max_angle: float, delay: float) -> void:
-	_ensure_skin()
+	_ensure_wound_mats()
 	var model := ship.model
 	sp.broken = true
 	sp.axis = axis
@@ -836,7 +860,7 @@ func on_death() -> void:
 	var s := ship
 	var c := s.cls
 	var shape := s.model.shape
-	_ensure_skin()
+	_ensure_wound_mats()
 	# a spar still going up is whole enough to come down again with the rest
 	if not _raising.is_empty():
 		_finish_rig()
@@ -895,8 +919,8 @@ func on_death() -> void:
 		if standing.size() > 1 and randf() < 0.6:
 			_break_mast(standing[randi() % standing.size()], Vector3(fall_x, 0.0, randf_range(-0.3, 0.3)), randf_range(0.6, 2.5))
 	# lights out: lanterns dark, the great cabin's windows black
-	(_skin["stern"] as ShaderMaterial).set_shader_parameter("lit", 0.0)
-	(_skin["parts"] as ShaderMaterial).set_shader_parameter("glow_gain", 0.0)
+	(_wound_mats["stern"] as ShaderMaterial).set_shader_parameter("lit", 0.0)
+	(_wound_mats["parts"] as ShaderMaterial).set_shader_parameter("glow_gain", 0.0)
 	var halos := s.model.get_node_or_null("Halos") as Node3D
 	if halos != null:
 		halos.visible = false
@@ -924,13 +948,13 @@ func _split_hull() -> void:
 		var src := model.get_node_or_null(part) as MeshInstance3D
 		if src == null:
 			continue
-		var kind: String = SKINNED[part]
-		if not _bow_skin.has(kind):
-			_bow_skin[kind] = (_skin[kind] as ShaderMaterial).duplicate()
+		var kind: String = MESH_KINDS[part]
+		if not _bow_mats.has(kind):
+			_bow_mats[kind] = (_wound_mats[kind] as ShaderMaterial).duplicate()
 		var mi := MeshInstance3D.new()
 		mi.name = part
 		mi.mesh = src.mesh
-		mi.material_override = _bow_skin[kind]
+		mi.material_override = _bow_mats[kind]
 		mi.cast_shadow = src.cast_shadow
 		mi.visibility_range_end = src.visibility_range_end
 		mi.visibility_range_end_margin = src.visibility_range_end_margin
@@ -969,9 +993,9 @@ func _split_hull() -> void:
 		if sp.stump != null and sp.centre.z > _split_z:
 			sp.stump.reparent(_bow)
 	var jag := 1.6 + ship.cls.beam * 0.12
-	for m: ShaderMaterial in _skin.values():
+	for m: ShaderMaterial in _wound_mats.values():
 		m.set_shader_parameter("dmg_split", Vector4(_split_z, -1.0, jag, 1.0))
-	for m: ShaderMaterial in _bow_skin.values():
+	for m: ShaderMaterial in _bow_mats.values():
 		m.set_shader_parameter("dmg_split", Vector4(_split_z, 1.0, jag, 1.0))
 	# a burst of timber and spray where she snaps
 	var world := ship.world
@@ -1059,9 +1083,9 @@ func wreck_pose(t: float, dt: float) -> void:
 		if absf(burn - _burn) > 0.01:
 			_burn = burn
 			var jag := 1.6 + c.beam * 0.12
-			for m: ShaderMaterial in _skin.values():
+			for m: ShaderMaterial in _wound_mats.values():
 				m.set_shader_parameter("dmg_split", Vector4(_split_z, -1.0, jag, burn))
-			for m: ShaderMaterial in _bow_skin.values():
+			for m: ShaderMaterial in _bow_mats.values():
 				m.set_shader_parameter("dmg_split", Vector4(_split_z, 1.0, jag, burn))
 	_sync_state()
 	_update_hinges(dt)

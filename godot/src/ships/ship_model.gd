@@ -50,6 +50,13 @@ const SHADERS := {
 	"flag": preload("res://shaders/ship_flag.gdshader"),
 	"halo": preload("res://shaders/lamp_halo.gdshader"),
 }
+## What a livery that can wear a vault skin draws its hull, woodwork and
+## canvas with (Livery.skinned: yours).
+const SKIN_SHADERS := {
+	"hull": preload("res://shaders/ship_hull_skin.gdshader"),
+	"parts": preload("res://shaders/ship_parts_skin.gdshader"),
+	"sail": preload("res://shaders/ship_sail_skin.gdshader"),
+}
 ## A halo card's corners (shaders/lamp_halo.gdshader).
 const CARD: Array[Vector2] = [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]
 ## How far past its lamp a halo card can reach (m): a lamp a long way off wears a wide one.
@@ -190,7 +197,7 @@ func shared_material(kind: String) -> ShaderMaterial:
 	var key := kind
 	if kind in ["hull", "stern"]:
 		key = "%s|%s|%s" % [kind, cls.id, livery.id]
-	elif kind in ["sail", "flag"]:
+	elif kind in ["sail", "flag"] or (kind == "parts" and livery.skinned):
 		key = "%s|%s" % [kind, livery.id]
 	_materials_lock.lock()
 	var m: ShaderMaterial = _materials.get(key)
@@ -203,7 +210,7 @@ func shared_material(kind: String) -> ShaderMaterial:
 
 func _new_material(kind: String) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
-	m.shader = SHADERS[kind]
+	m.shader = SKIN_SHADERS[kind] if livery.skinned and SKIN_SHADERS.has(kind) else SHADERS[kind]
 	_paint_material(m, kind, livery)
 	match kind:
 		"hull":
@@ -245,6 +252,22 @@ static func _paint_material(m: ShaderMaterial, kind: String, l: Livery) -> void:
 			m.set_shader_parameter("mark_tex", l.mark_tex)
 		"flag":
 			m.set_shader_parameter("flag_tex", l.flag_tex)
+	if l.skinned and kind in SKIN_SHADERS:
+		_skin_material(m, l.skin)
+
+
+## A vault skin's uniforms (ship_skin.gdshaderinc) on a material: its
+## pattern (0, or no skin: her own paint), colours and glow.
+static func _skin_material(m: ShaderMaterial, sk: Dictionary) -> void:
+	var pattern := int(sk.get("pattern", 0))
+	m.set_shader_parameter("skin_id", pattern)
+	if pattern == 0:
+		return
+	var cs: Array = sk.colors
+	m.set_shader_parameter("skin_a", cs[0])
+	m.set_shader_parameter("skin_b", cs[1])
+	m.set_shader_parameter("skin_c", cs[2])
+	m.set_shader_parameter("skin_p", Vector4(float(sk.glow), float(sk.sail), 0.0, fmod(pattern * 7.31, 10.0)))
 
 
 ## Repaints every material made for a livery (every class's hull and stern,
@@ -351,8 +374,8 @@ func _build_hull() -> void:
 			var u := clampf(x / maxf(hw, 0.01), -1.0, 1.0)
 			windows.append(Vector3(x, y, z0 - bulge * (1.0 - u * u) * pow(maxf(sin(PI * h), 0.0), 0.6)))
 
-	# inner bulwark walls, facing in
-	_core.paint(MeshKit.shade(livery.strake, 0.8), MeshKit.WOOD, 0.0)
+	# inner bulwark walls, facing in (a vault skin paints them too)
+	_core.paint(MeshKit.shade(livery.strake, 0.8), MeshKit.PAINT, 0.0)
 	var base := _core.vertex_count()
 	var rows := 0
 	for t in ts:

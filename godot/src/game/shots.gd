@@ -26,6 +26,9 @@ const TRAIL_SEGMENTS := 40
 const RAKE_GATHER := 0.22
 ## Seconds between the sparks a lit fuse spits, and the embers red-hot iron sheds.
 const SPARK_EVERY := 0.035
+## The vault trails that shed motes behind round shot (Cosmetics.TRAIL_STYLES):
+## powder and soot leave only their smoke.
+const MOTES: Array[bool] = [false, true, false, true, true, true, true, true, true, true]
 
 var world: World
 ## Balls fired this voyage, by kind (each of a bag of grape counts).
@@ -65,6 +68,8 @@ class _Ball:
 	## The ship whose canvas it last tore through (once a ship, as it flies on).
 	var tore: Ship
 	var spark := 0.0
+	## The vault trail round shot flies with (Cosmetics.TRAIL_STYLES).
+	var style := 0
 	## Heard tearing past the listener already.
 	var heard := false
 
@@ -145,8 +150,10 @@ static func _mesh(v: PackedVector3Array, idx: PackedInt32Array) -> ArrayMesh:
 	return m
 
 
-## Looses one ball of `kind` (Ammo) from `pos` at `vel` (m/s, the ship's own way included).
-func fire(pos: Vector3, vel: Vector3, owner: Ship, damage: float, kind: int = Ammo.ROUND) -> void:
+## Looses one ball of `kind` (Ammo) from `pos` at `vel` (m/s, the ship's own
+## way included); round shot flies with the vault trail `style` (a special
+## shot always with its own).
+func fire(pos: Vector3, vel: Vector3, owner: Ship, damage: float, kind: int = Ammo.ROUND, style := 0) -> void:
 	fired[kind] += 1
 	var pellet := kind == Ammo.GRAPE
 	var slot: int
@@ -171,6 +178,7 @@ func fire(pos: Vector3, vel: Vector3, owner: Ship, damage: float, kind: int = Am
 	b.owner = owner
 	b.damage = damage
 	b.spark = randf() * SPARK_EVERY
+	b.style = style if kind == Ammo.ROUND else 0
 	_live.append(b)
 	var buf := _pbuf if pellet else _buf
 	var o := slot * STRIDE
@@ -191,7 +199,7 @@ func fire(pos: Vector3, vel: Vector3, owner: Ship, damage: float, kind: int = Am
 	buf[o + 16] = _now
 	buf[o + 17] = _now + MAX_AGE + 1.0
 	buf[o + 18] = randf()
-	buf[o + 19] = float(kind)
+	buf[o + 19] = float(kind + 8 * b.style)
 	if pellet:
 		_pdirty = true
 	else:
@@ -227,7 +235,7 @@ func step(dt: float) -> void:
 		else:
 			if not b.heard:
 				_tear_past(b)
-			if b.kind == Ammo.SHELL or b.kind == Ammo.FIRE:
+			if b.kind == Ammo.SHELL or b.kind == Ammo.FIRE or (b.kind == Ammo.ROUND and MOTES[b.style]):
 				_spit(b, dt)
 	_flush_rakes(dt)
 	_shot_mat.set_shader_parameter("now", _now)
@@ -257,22 +265,27 @@ func _tear_past(b: _Ball) -> void:
 	world.sound.whoosh(h.x, h.y * 3.0, to.y * 3.0, 0.55 if b.kind == Ammo.CHAIN else (1.5 if b.kind == Ammo.GRAPE else 1.0))
 
 
-## A lit fuse sputtering on a shell, embers shed off red-hot iron.
+## A lit fuse sputtering on a shell, embers shed off red-hot iron, and what
+## a vault trail leaves hanging behind round shot (the web's trail()).
 func _spit(b: _Ball, dt: float) -> void:
 	b.spark += dt
-	var shell := b.kind == Ammo.SHELL
-	var j := 0.08 if shell else 0.16
 	while b.spark > SPARK_EVERY:
 		b.spark -= SPARK_EVERY
-		if not shell and randf() >= 0.7:
-			continue
-		var p := at(b, b.t - b.spark) + Vector3(randf_range(-j, j), randf_range(-j, j), randf_range(-j, j))
-		if shell:
-			world.fx.emit(p, Vector3(randf_range(-1.5, 1.5), randf_range(-0.5, 2.0), randf_range(-1.5, 1.5)), randf_range(0.18, 0.4), randf_range(0.12, 0.2), 0.03,
+		var p := at(b, b.t - b.spark)
+		if b.kind == Ammo.SHELL:
+			var j := Vector3(randf_range(-0.08, 0.08), randf_range(-0.08, 0.08), randf_range(-0.08, 0.08))
+			world.fx.emit(p + j, Vector3(randf_range(-1.5, 1.5), randf_range(-0.5, 2.0), randf_range(-1.5, 1.5)), randf_range(0.18, 0.4), randf_range(0.12, 0.2), 0.03,
 					Color(8.0, 5.0, 1.6), Color(3.0, 1.0, 0.1), 6.0, 1.0, Particles.SPARK, 0.001, Vector2.ZERO, 0.0, true)
+		elif b.kind == Ammo.FIRE:
+			if randf() < 0.7:
+				world.fx.emit(p + _jit(0.16), Vector3(randf_range(-0.8, 0.8), randf_range(0.0, 1.6), randf_range(-0.8, 0.8)), randf_range(0.5, 1.0), randf_range(0.14, 0.24), 0.04,
+						Color(8.0, 3.4, 0.7), Color(2.0, 0.3, 0.02), 4.0, 0.6, Particles.SPARK, 0.01, Vector2.ZERO, 0.0, true)
 		else:
-			world.fx.emit(p, Vector3(randf_range(-0.8, 0.8), randf_range(0.0, 1.6), randf_range(-0.8, 0.8)), randf_range(0.5, 1.0), randf_range(0.14, 0.24), 0.04,
-					Color(8.0, 3.4, 0.7), Color(2.0, 0.3, 0.02), 4.0, 0.6, Particles.SPARK, 0.01, Vector2.ZERO, 0.0, true)
+			world.fx.trail_mote(p, vel_at(b, b.t), b.style, _now)
+
+
+static func _jit(r: float) -> Vector3:
+	return Vector3(randf_range(-r, r), randf_range(-r, r), randf_range(-r, r))
 
 
 ## Walks a ball along its arc from t0 to t1 (s of flight), in steps short

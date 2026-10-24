@@ -29,6 +29,11 @@ var flag := Color("#1fa3a0")
 var flag2 := Color("#f2c45a")
 ## Her flag, as Heraldry draws it.
 var flag_design := {}
+## Whether ships in it can wear a Treasure Vault skin (yours: "player"), and
+## the one they wear (a Cosmetics skin; empty or pattern 0, her own paint).
+## A skin is only uniforms on the livery's materials: no hull is rebuilt.
+var skinned := false
+var skin := {}
 ## Bumped whenever her paintwork changes: hulls built before it are stale
 ## (the shipyard builds a fresh one, see Shipyard._fits).
 var rev := 0
@@ -68,6 +73,7 @@ static func named(livery_id: String) -> Livery:
 		return _cache[livery_id]
 	var l := Livery.new()
 	l.id = livery_id
+	l.skinned = livery_id == "player"
 	var d: Dictionary = DEFS[livery_id]
 	for key: String in d:
 		var v: String = d[key]

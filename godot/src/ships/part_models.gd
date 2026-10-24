@@ -251,8 +251,8 @@ static func _pavisade(k: Kit) -> void:
 				continue
 			var y := s.top(t) - r * 0.15
 			var m := _side_frame(s, t, minf(y, s.top(t) - 0.05), side, 0.06, 0.1)
-			# the shield's face, a shallow dome in the livery's colours
-			k.core.paint(faces[n % 2], MeshKit.WOOD, 0.03)
+			# the shield's face, a shallow dome in the livery's colours (or her vault skin)
+			k.core.paint(faces[n % 2], MeshKit.PAINT, 0.03)
 			n += 1
 			k.core.sphere(m * _t(_v(0, 0, -r * 0.5)) * _s(1, 1, 0.6) * _rx(PI * 0.5), r, seg, 3, 0.0, TAU, 0.0, 0.55)
 			_metal(k.core, METAL.bronze)

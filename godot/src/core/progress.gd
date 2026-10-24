@@ -2,8 +2,9 @@ extends Node
 ## What the game keeps between voyages: the ship you sail, the waters you set
 ## out in, the view you sailed with, your purse, the archipelagos you've
 ## charted, the waypoints on your sea chart and your records, your locker of
-## ship parts and each ship's refit, and her look and your saved designs from
-## the Shipwright. Autoloaded as `Progress`.
+## ship parts and each ship's refit, your Treasure Vault (the skins, blasts
+## and trails you've won, what she wears and the vault's pity), and her look
+## and your saved designs from the Shipwright. Autoloaded as `Progress`.
 ##
 ## It lives in user://progress.json, written whole to a fresh file and swapped
 ## in, so a crash or a dead battery mid-write can never leave it half-written.
@@ -16,6 +17,8 @@ extends Node
 signal purse_changed(gold: int)
 ## A part came into the locker, or one was fitted or taken off.
 signal parts_changed
+## Something came into the vault, or she put on something else.
+signal vault_changed
 
 const PATH := "user://progress.json"
 const LOOKS := "user://looks.json"
@@ -48,6 +51,9 @@ var records := {"voyages": 0, "renown": 0, "gold": 0, "kills": 0, "isles": 0, "t
 ## Your ship parts and what each class has bolted on (Parts.fresh): {owned:
 ## {id: count}, fit: {class: loadout}, unseen: [found, not yet looked at]}.
 var parts := Parts.fresh()
+## Your Treasure Vault (Cosmetics.fresh): {owned, equip: {skin, blast, trail},
+## pity, pulls, daily, unseen}.
+var vault := Cosmetics.fresh()
 ## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
 var look := ShipLook.fresh()
 var designs := []
@@ -168,6 +174,94 @@ func _parts_touched() -> void:
 	touch()
 
 
+# ------------------------------------------------------------------ the vault
+
+
+## Whether a vault item (a skin, a blast, a trail) is yours.
+func owns_item(id: String) -> bool:
+	return (vault.owned as Dictionary).has(id)
+
+
+## What she wears of a kind ("skin", "blast", "trail"): an item id.
+func wearing(kind: String) -> String:
+	return str((vault.equip as Dictionary).get(kind, Cosmetics.BASE[kind]))
+
+
+## She wears an item of yours from now on; false if it isn't yours.
+func wear(id: String) -> bool:
+	var it := Cosmetics.item(id)
+	if it.is_empty() or not owns_item(id):
+		return false
+	if wearing(it.kind) == id:
+		return true
+	vault.equip[it.kind] = id
+	_vault_touched()
+	return true
+
+
+## The vault's finds of a kind (all kinds if "") looked at now.
+func mark_items_seen(kind := "") -> void:
+	var before: int = vault.unseen.size()
+	vault.unseen = (vault.unseen as Array).filter(func(id: String) -> bool:
+		return kind != "" and str(Cosmetics.item(id).get("kind", "")) != kind)
+	if vault.unseen.size() != before:
+		_vault_touched()
+
+
+## Whether a kind has finds not yet looked at.
+func has_unseen(kind: String) -> bool:
+	for id: String in vault.unseen:
+		if str(Cosmetics.item(id).get("kind", "")) == kind:
+			return true
+	return false
+
+
+## Opens the vault's chest n times (1 or 10), paid from the purse (the day's
+## first single is free): each open's {item, fresh, refund}, a duplicate's
+## refund paid into the purse; empty if the purse is short.
+func pull(n: int, rnd := Callable()) -> Array[Dictionary]:
+	var left := Cosmetics.pay(vault, n, purse)
+	if left < 0:
+		return []
+	purse = left
+	var out := Cosmetics.open(vault, n, rnd)
+	for r in out:
+		purse += int(r.refund)
+	purse_changed.emit(purse)
+	_vault_touched()
+	return out
+
+
+## A trophy from the sea (a vault item won outright): {item, fresh, refund},
+## a duplicate's refund paid into the purse.
+func award(id: String) -> Dictionary:
+	var it := Cosmetics.item(id)
+	if it.is_empty():
+		return {}
+	var r := Cosmetics.gain(vault, it)
+	if int(r.refund) > 0:
+		earn(int(r.refund))
+	_vault_touched()
+	return r
+
+
+## Every vault item yours (a debug flag's); true if anything was new.
+func grant_all_items() -> bool:
+	var changed := false
+	for it in Cosmetics.pool():
+		if not owns_item(it.id):
+			vault.owned[it.id] = 1
+			changed = true
+	if changed:
+		_vault_touched()
+	return changed
+
+
+func _vault_touched() -> void:
+	vault_changed.emit()
+	touch()
+
+
 ## Charts an archipelago for good: true the first time.
 func chart(id: String) -> bool:
 	if charts.has(id):
@@ -260,6 +354,7 @@ func save() -> void:
 		"pins": pins,
 		"records": records,
 		"parts": parts,
+		"vault": vault,
 	}
 	_write(path, JSON.stringify(data, "\t"))
 	if _looks_dirty:
@@ -286,7 +381,9 @@ func _load() -> void:
 	var d: Variant = _read(path)
 	if not d is Dictionary:
 		d = _read(path + ".tmp")
+	var had_vault := false
 	if d is Dictionary:
+		had_vault = (d as Dictionary).has("vault")
 		_adopt(d)
 	elif FileAccess.file_exists(OLD_RECORDS):
 		var old: Variant = _read(OLD_RECORDS)
@@ -299,6 +396,10 @@ func _load() -> void:
 	if l is Dictionary:
 		look = ShipLook.sanitize((l as Dictionary).get("look"))
 		designs = ShipLook.sanitize_designs((l as Dictionary).get("designs"))
+	# the vault opens with a purse to try it with (the web's fresh vault), once
+	if not had_vault:
+		purse += Cosmetics.START_PURSE
+		touch()
 
 
 ## A save's contents, or null if it's missing or not whole JSON (quietly:
@@ -334,6 +435,7 @@ func _adopt(d: Dictionary) -> void:
 			if e is Array and (e as Array).size() == 3 and _numbers(e) and pins.size() < PINS:
 				pins.append([roundi(float(e[0])), roundi(float(e[1])), clampi(int(e[2]), 0, PINS - 1)])
 	parts = Parts.sanitize(d.get("parts"))
+	vault = Cosmetics.sanitize(d.get("vault"))
 	var r: Variant = d.get("records")
 	if r is Dictionary:
 		for k: String in records:
