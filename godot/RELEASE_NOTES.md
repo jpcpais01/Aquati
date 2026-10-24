@@ -1,38 +1,35 @@
-## Shores O' Fortune for Android: skins, blasts and trails
+## Shores O' Fortune for Android: the Treasure Vault
 
-The seventeenth build brings the Treasure Vault's collection aboard: hull
-skins, muzzle blasts and shot trails, worn from two new Shipwright tabs.
-The Vault itself, where they're won, opens in the next build. Your purse
-gets 1,500 gold to open it with.
+The eighteenth build opens the Treasure Vault. Its chest is a real chest:
+it rises out of the sea beside your ship, and everything you win is tried
+on her right there on the water.
 
-- **Eighteen hull skins.** Harbour stripes, harlequin diamonds, fish scale
-  and coral polka, then tiger shark, reef camo, sunset chevrons, tartan and
-  Carrara marble, then kintsugi lacquer with gold in its cracks, kraken ink,
-  royal damask and mermaid scales, and five legendaries that glow: Molten
-  Core, Aurora Borealis, Starlit Voyage, Ghostfire and Living Tide, which
-  move as she sails and shine brighter after dark. A skin covers her hull,
-  her bulwarks and pavisade shields and, on most of them, her sails. Her
-  gunports, wale and gilding stay her own, and it holds through battle
-  damage too.
-- **Eight muzzle blasts.** Sea salt, blackpowder soot, embers, smoke rings,
-  azure flame, a carnival salute of confetti, a dragon's breath of fire and
-  a thunderclap that cracks the water around her.
-- **Eight shot trails.** Sea spray, soot, an ember tail, frost wisp, a golden
-  comet, ghostlight, a rainbow ribbon and starfall, each a coloured streak
-  behind her round shot with sparks shed along the way.
-- **Skins and Guns in the Shipwright.** Every item has a living card: a
-  little ship in its skin riding a moving sea, or a gun firing its blast or
-  a ball flying out with its trail. The ones you haven't found are greyed and
-  locked, new finds get a NEW badge and a gold dot on the tab, and a tap puts
-  one on. On the Guns tab, "Test fire a broadside" fires her out to sea with
-  the camera swung round to watch (fitting new guns on the Refit tab tries
-  them out too).
-- **Built light.** Skins are a few settings on her own materials, so nothing
-  is compiled mid-voyage and pirates pay nothing for them. Trails ride in the
-  shot data the guns already send, and a skin's card is drawn once (only the
-  moving legendaries keep drawing, and only while they're on screen).
+- **A Vault button in the harbour,** beside the Shipwright, with a gold pip
+  when your free daily chest is waiting. The Shipwright's Vault banner and
+  its locked cards open it too.
+- **The chest.** A gilded, studded sea chest surfaces off her quarter on
+  the side with open water and the camera glides down beside it. Tap it,
+  or open one for 300 gold (the first each day is free), or ten for 2,700
+  with an epic or better guaranteed.
+- **The opening.** The chest shakes harder and glows brighter as its light
+  climbs through the rarities inside, a ring of that colour running out
+  over the swell, then bursts open in a column of light, a shower of coins
+  and treasure and, for a legendary, fireworks overhead. A tap skips
+  straight to the cards.
+- **The cards** fly out of the chest's mouth and turn over one by one or
+  all at once: a frame and a glow for each rarity, rays behind a
+  legendary, NEW on a first find and the gold paid back for a duplicate.
+- **The showcase.** Tap a card and your ship tries it on out on the
+  water: a skin on the whole of her as the camera circles, or a blast or
+  a trail in a broadside every few seconds. Equip keeps it.
+- **The collection and the odds.** Every item in the vault, found ones in
+  colour, a tab each for skins, blasts and trails; and the odds and pity
+  rules in full (an epic at least every ten opens, a legendary at least
+  every fifty, likelier from the thirty-fifth).
+- **A bonus ship part with every ten,** told when you leave the vault.
 
-Still aboard from the earlier builds: the Refit tab and its twenty ship
+Still aboard from the earlier builds: the hull skins, muzzle blasts and
+shot trails with the Shipwright's Skins and Guns tabs, the Refit tab and its twenty ship
 parts, Puerto Marézia with its townsfolk, the Shipwright with its flag brush
 and colour picker, the helmsman, the minimap and the sea chart with your
 waypoints, the harbour where you choose your ship, "Where shall we sail?",

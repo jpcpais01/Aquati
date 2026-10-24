@@ -145,6 +145,22 @@ var _sw_face := 1.0
 var _sw_t := 0.0
 ## How far through its turn at the Shipwright the smoke test is (_tour_wright).
 var _sw_tour := 0
+## The Treasure Vault (the web's vault): its screen, its chest out on the sea
+## beside her, the camera's shot of them (home, charge, burst, cards, ship,
+## guns), what the showcase has her try on ("" nothing), its clock and the
+## next showcase broadside, the ten-pulls' bonus parts (told when it
+## closes), whether it opened over the Shipwright, and the smoke test's turn.
+var vault: VaultScreen
+var vstage: VaultStage
+var _v_shot := "home"
+var _v_show := ""
+var _v_t := 0.0
+var _v_fire := 0.0
+var _v_finds: Array[Dictionary] = []
+var _v_wright := false
+var _v_tour := 0
+## How far a shot of the vault has got (_drive_vault).
+var _v_drive := 0
 var dock_port: TradePort
 var market: MarketPanel
 var collisions := Collisions.new()
@@ -674,6 +690,10 @@ func _build_sea() -> void:
 	world.loot.name = "Loot"
 	add_child(world.loot)
 	world.loot.setup(world)
+	vstage = VaultStage.new(world, ocean)
+	vstage.name = "VaultStage"
+	add_child(vstage)
+	vstage.quake.connect(func(a: float) -> void: camera.shake(a))
 	pins = Waypoints.new()
 	pins.name = "Waypoints"
 	add_child(pins)
@@ -1153,7 +1173,11 @@ func _tick(real_dt: float) -> void:
 		# (her colours on the awning and the bunting follow the Shipwright's every change)
 		home.set_look(outfitter.look)
 		home.update(dt)
-	if shipwright.is_open():
+	if vault.is_open():
+		if _v_drive > 0:
+			_drive_vault()
+		_frame_vault(real_dt)
+	elif shipwright.is_open():
 		_frame_shipwright(real_dt)
 	if player.alive and sailing:
 		voyage.metres += Vector2(player.vel.x, player.vel.z).length() * dt
@@ -1960,7 +1984,7 @@ func _reset_world(id: String) -> void:
 ## set piece at sea (a shot of the voyage, a fight, a farewell, a voyage on
 ## hold), unless a shot of the menus is asked for.
 func _harbour_first() -> bool:
-	if _args.has("menu") or _args.has("seapick") or _args.has("shipwright") or (_args.has("settings") and not _args.has("pause")):
+	if _args.has("menu") or _args.has("seapick") or _args.has("shipwright") or _args.has("vault-open") or (_args.has("settings") and not _args.has("pause")):
 		return true
 	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause", "dock", "off"]:
 		if _args.has(k):
@@ -1977,6 +2001,7 @@ func _build_menus() -> void:
 	harbour.picked.connect(_preview)
 	harbour.sail.connect(_choose_sea)
 	harbour.shipwright.connect(_open_shipwright)
+	harbour.vault.connect(_open_vault)
 	harbour.settings.connect(_open_settings)
 	harbour.sound.connect(_toggle_sound)
 	harbour.clicked.connect(sound.click)
@@ -2005,6 +2030,28 @@ func _build_menus() -> void:
 	Progress.parts_changed.connect(func() -> void: shipwright.set_parts(Progress.parts))
 	add_child(shipwright)
 	outfitter.flag_drawn.connect(shipwright.set_flag)
+	shipwright.vault.connect(_open_vault)
+	vault = VaultScreen.new()
+	vault.progress = Progress
+	vault.stage.connect(_vault_stage)
+	# the opening is a quick cut-in; everything else glides
+	vault.focus.connect(func(shot: String) -> void:
+		_v_shot = shot
+		camera.shot_pace = 1.1 if shot == "charge" else (0.9 if shot == "burst" else 0.75))
+	vault.preview.connect(_vault_preview)
+	# every full ten comes with a ship part on top, told when the vault closes
+	vault.pulled.connect(func(n: int) -> void:
+		if n == 10:
+			var f := Progress.vault_bonus()
+			if not f.is_empty():
+				_v_finds.append(f))
+	# the showcase keeps dressing her; the choice is kept (Progress.wear)
+	vault.equipped.connect(func(_id: String) -> void: _vault_preview(_v_show))
+	vault.sfx.connect(_vault_sound)
+	vault.closed.connect(_close_vault)
+	add_child(vault)
+	harbour.vault_ready = _vault_ready()
+	Progress.vault_changed.connect(func() -> void: harbour.vault_ready = _vault_ready())
 	market = MarketPanel.new()
 	market.sell.connect(_sell)
 	market.sell_all.connect(_sell.bind(""))
@@ -2076,6 +2123,9 @@ func _stage_menus() -> void:
 			shipwright.paint_stroke(PackedVector2Array([Vector2(0.18, 0.78), Vector2(0.32, 0.62), Vector2(0.48, 0.7), Vector2(0.64, 0.52), Vector2(0.8, 0.6)]))
 		if _args.has("any-colour"):
 			shipwright.pick_any()
+	if _args.has("vault-open"):
+		_open_vault()
+		_v_drive = 1 if vault.is_open() else 0
 	if _args.has("seapick"):
 		_choose_sea()
 	if _args.has("pause"):
@@ -2320,6 +2370,205 @@ func _test_fire(anywhere := false) -> void:
 	at.y = 0.0
 	if p.fire(k, null, at):
 		_sw_az = 0.5 if k > 0 else -0.5
+
+
+## What the vault's screen asks of its chest out on the sea.
+func _vault_stage(op: String, tier: int) -> void:
+	match op:
+		"charge":
+			vstage.charge(tier)
+		"burst":
+			vstage.burst(tier)
+		"pulse":
+			vstage.pulse(tier)
+		_:
+			vstage.settle()
+
+
+func _vault_sound(what: String, tier: int) -> void:
+	match what:
+		"rumble":
+			sound.vault_rumble(tier)
+		"burst":
+			sound.vault_burst(tier)
+		"flip":
+			sound.card_flip(tier)
+		"coin":
+			sound.coin()
+		_:
+			sound.click()
+
+
+## A free open waiting today or a find not yet looked at: the harbour's
+## Vault pill wears its pip.
+func _vault_ready() -> bool:
+	return Cosmetics.free_ready(Progress.vault) or not (Progress.vault.unseen as Array).is_empty()
+
+
+## The Treasure Vault (the web's openVault), over the harbour or over the
+## Shipwright at the home port: a gilded chest surfaces beside her on the
+## side with open water, and the camera glides down off her quarter to it.
+func _open_vault() -> void:
+	if vault.is_open() or veil.busy or state != State.HARBOUR:
+		return
+	_v_wright = shipwright.is_open()
+	if _v_wright:
+		shipwright.set_away(true)
+	else:
+		if not harbour.is_open() or sea_pick.is_open() or settings_sheet.is_open():
+			return
+		harbour.close()
+		# the ship picked comes round, even if the yard hasn't finished her hull
+		_swap_in(true)
+		camera.begin_shot()
+	_v_shot = "home"
+	_v_show = ""
+	_v_t = 0.0
+	_v_fire = 0.0
+	camera.shot_pace = 0.55
+	vstage.show_by(player, _sea_side(player))
+	vault.open()
+	_frame_vault(0.0)
+	_note_tour("Treasure Vault")
+
+
+## Done with the vault (the web's closeVault): the chest sinks, she's back
+## in what she wears, a ten-pull's bonus parts are told, and the camera
+## goes back to the harbour's orbit or the Shipwright's shot.
+func _close_vault() -> void:
+	if not vault.is_open():
+		return
+	vault.close()
+	for i in _v_finds.size():
+		get_tree().create_timer(0.5 + i * 0.9).timeout.connect(_announce_part.bind(_v_finds[i], "Bonus from the Treasure Vault"))
+	_v_finds.clear()
+	_v_show = ""
+	vstage.hushed = false
+	vstage.sink()
+	_dress()
+	camera.port_frame = Vector4(0.0, 0.0, 1.0, 1.0)
+	camera.shot_pace = 1.0
+	camera.shot_fov = 38.0
+	if _v_wright and shipwright.is_open():
+		shipwright.set_away(false)
+	elif state == State.HARBOUR:
+		camera.leave_shot()
+		harbour.open(player.cls.id)
+		camera.orbit_frame = harbour.framing()
+	_note_tour("left the vault")
+
+
+## Which side of her has the open water, a little astern (+1 port, -1
+## starboard): the chest surfaces there (the web's seaSide).
+func _sea_side(s: Ship) -> int:
+	var l := s.port_dir()
+	var back := -s.forward() * (s.cls.length * 0.5)
+	var hp := 0.0
+	var hs := 0.0
+	for r: float in [14.0, 30.0, 55.0]:
+		hp += world.ground_height(s.pos.x + l.x * r + back.x, s.pos.z + l.z * r + back.z)
+		hs += world.ground_height(s.pos.x - l.x * r + back.x, s.pos.z - l.z * r + back.z)
+	return 1 if hp <= hs else -1
+
+
+## The showcase: she tries on an item (`id`), or goes back to what she
+## wears (""); a skin is shown off on the whole of her, a blast or a trail
+## in a broadside every few seconds (the web's vaultPreview).
+func _vault_preview(id: String) -> void:
+	_v_show = id
+	vstage.hushed = id != ""
+	_dress()
+	if id == "" or player == null:
+		return
+	var it := Cosmetics.item(id)
+	if it.is_empty():
+		return
+	if str(it.kind) == "skin":
+		var l := Livery.named(Shipyard.MINE)
+		l.skin = Cosmetics.skin(id)
+		ShipModel.restyle(l)
+		if player.dmg != null:
+			player.dmg.repaint()
+		_v_shot = "ship"
+	else:
+		if str(it.kind) == "blast":
+			player.blast = Cosmetics.style_of(id)
+		else:
+			player.trail = Cosmetics.style_of(id)
+		_v_shot = "guns"
+		_v_fire = minf(_v_fire, 1.1)
+	camera.shot_pace = 0.7
+
+
+## The vault's camera, framed in the space its panels leave free, and the
+## showcase's broadsides coming every 3.4 s; the chest's place on screen
+## handed to the screen for its tap target and the cards' flight.
+func _frame_vault(dt: float) -> void:
+	if not vstage.active or player == null:
+		return
+	_v_t += dt
+	var vp := get_viewport().get_visible_rect().size
+	var r := vault.free_rect()
+	var fw := maxf(1.0, r.size.x)
+	var fh := maxf(1.0, r.size.y)
+	var mid := r.get_center()
+	camera.port_frame = Vector4(mid.x / vp.x - 0.5, mid.y / vp.y - 0.5, fw / vp.x, fh / vp.y)
+	var fit := clampf(pow(maxf(1.3 / (fw / vp.y), vp.y / fh), 0.85), 1.0, 2.4)
+	var shot := vstage.shot(_v_shot, fit, _v_t)
+	camera.shot_pos = shot[0]
+	camera.shot_look = shot[1]
+	camera.shot_fov = shot[2]
+	if _v_shot == "guns" and _v_show != "":
+		_v_fire -= dt
+		if _v_fire <= 0.0:
+			_v_fire = 3.4
+			var g := vstage.gun_side()
+			var side: int = g[0]
+			player.reload[player.side_index(side)] = 0.0
+			player.fire(side, null, g[1])
+	vault.chest_rect = vstage.screen_rect(camera) if _v_shot == "home" else Rect2()
+	vault.chest_at = vstage.screen_point(camera)
+
+
+## A shot of the vault (--vault-open [home|opening|reveal|show|coll|odds] over
+## the harbour, or over the Shipwright with --shipwright TAB): --vault-pull
+## 1|10 opens the chest (the purse topped up for it), skipping to the cards
+## unless the view is the opening; reveal and show turn them all over,
+## show then shows card --vault-show I off on her (--vault-equip wears
+## it); coll opens the collection on --vault-kind skin|blast|trail (and
+## with --vault-show I shows its card I off).
+func _drive_vault() -> void:
+	var want := str(_args["vault-open"]) if _args["vault-open"] is String else "home"
+	match _v_drive:
+		1:
+			if _args.has("vault-pull"):
+				var n := 10 if int(_args["vault-pull"]) == 10 else 1
+				var cost := Cosmetics.TEN_COST if n == 10 else Cosmetics.PULL_COST
+				if Progress.purse < cost:
+					Progress.earn(cost - Progress.purse + 120)
+				vault.buy(n)
+				if want != "opening":
+					vault.go_back()
+				_v_drive = 2
+			else:
+				if want == "coll":
+					vault.show_collection(str(_args.get("vault-kind", "skin")))
+					if _args.has("vault-show"):
+						vault.show_card(int(_args["vault-show"]))
+				elif want == "odds":
+					vault.show_odds()
+				_v_drive = 0
+		2:
+			if vault.cards_out():
+				if want == "reveal" or want == "show":
+					vault.reveal_all()
+				_v_drive = 3 if want == "show" else 0
+		3:
+			if vault.all_open():
+				vault.show_card(int(_args.get("vault-show", 0)))
+				if _args.has("vault-equip"):
+					vault.equip_shown()
+				_v_drive = 0
 
 
 ## Which trading port's shipwright has a part in today ("" none: the web's whereSold).
@@ -3161,7 +3410,7 @@ func _go_back(os_back: bool) -> void:
 	_back_frame = f
 	if veil.busy:
 		return
-	if settings_sheet.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
+	if settings_sheet.go_back() or vault.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
 		return
 	if _farewell != null:
 		if _farewell.shown:
@@ -3216,8 +3465,8 @@ func _tour_menus() -> void:
 		6:
 			pause_screen.harbour.emit()
 		7:
-			# a turn at the Shipwright first
-			if state != State.HARBOUR or _tour_wright():
+			# a turn at the Shipwright and one in the Treasure Vault first
+			if state != State.HARBOUR or _tour_wright() or _tour_vault():
 				return
 			harbour.sail.emit()
 		8:
@@ -3431,6 +3680,66 @@ func _tour_wright() -> bool:
 			if shipwright.is_open() or not harbour.is_open() or camera.port or home.visible:
 				printerr("SMOKE FAILED: the back button didn't take her back out to the anchorage")
 	_sw_tour += 1
+	_tour_at = _frames
+	return true
+
+
+## The smoke test's turn in the Treasure Vault (true while it's under way):
+## opened off the harbour's pill (the chest up beside her, the camera down
+## by it), ten opened (the purse topped up for them), the opening skipped
+## with the back button, every card turned over, the first shown off on
+## her and worn, then back a view at a time and out; the ten's bonus part
+## told, and her own colours and powder back on.
+func _tour_vault() -> bool:
+	if _v_tour >= 9:
+		return false
+	match _v_tour:
+		0:
+			harbour.vault.emit()
+		1:
+			if not vault.is_open() or not vstage.active or not camera.port or harbour.is_open():
+				printerr("SMOKE FAILED: the Treasure Vault didn't open over the harbour")
+			Progress.earn(maxi(0, Cosmetics.TEN_COST - Progress.purse))
+			var pulls := int(Progress.vault.pulls)
+			if not vault.buy(10) or int(Progress.vault.pulls) != pulls + 10:
+				printerr("SMOKE FAILED: Open ×10 didn't open the chest ten times")
+		2:
+			# a beat of the chest charging, then skipped
+			vault.go_back()
+		3:
+			if not vault.cards_out() and _frames - _tour_at < 600:
+				return true
+			if not vault.cards_out():
+				printerr("SMOKE FAILED: the cards never came out of the chest (%s)" % vault.view_name())
+			if _v_finds.size() != 1:
+				printerr("SMOKE FAILED: the ten brought no bonus ship part")
+			vault.reveal_all()
+		4:
+			if not vault.all_open() and _frames - _tour_at < 300:
+				return true
+			vault.show_card(0)
+			if _v_show == "" or vault.view_name() != "show":
+				printerr("SMOKE FAILED: the showcase didn't dress her in the card (%s)" % vault.view_name())
+			elif not vault.equip_shown() or Progress.wearing(str(Cosmetics.item(_v_show).kind)) != _v_show:
+				printerr("SMOKE FAILED: Equip didn't put %s on her" % _v_show)
+			else:
+				_note_tour("wore %s from the vault" % _v_show)
+		5:
+			_go_back(false)
+			if vault.view_name() != "reveal" or _v_show != "":
+				printerr("SMOKE FAILED: back from the showcase didn't go back to the cards")
+		6:
+			_go_back(false)
+			if vault.view_name() != "home":
+				printerr("SMOKE FAILED: back from the cards didn't go back to the chest")
+		7:
+			_go_back(false)
+			if vault.is_open() or not harbour.is_open() or camera.port:
+				printerr("SMOKE FAILED: the back button didn't close the vault back to the harbour")
+		8:
+			for k: String in ["skin", "blast", "trail"]:
+				Progress.wear(str(Cosmetics.BASE[k]))
+	_v_tour += 1
 	_tour_at = _frames
 	return true
 

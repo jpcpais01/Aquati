@@ -33,6 +33,8 @@ signal fit(slot: String, id: String)
 signal seen
 ## The Guns tab's "Test fire a broadside".
 signal test_fire
+## The Treasure Vault asked for (its banner, or a card still in it).
+signal vault
 signal done
 signal clicked
 
@@ -180,6 +182,7 @@ func open(p_look: Dictionary, p_designs: Array, p_cls := "", p_locker: Dictionar
 	tab = "flag"
 	part = "topsides"
 	visible = true
+	_root.visible = true
 	_t = 0.0
 	_scroll = 0.0
 	_fling = 0.0
@@ -209,6 +212,20 @@ func close() -> void:
 
 func is_open() -> bool:
 	return visible
+
+
+## Out of the way while the Treasure Vault is up over it (`on`); back with
+## whatever the vault turned up (its banner and the locked cards redrawn).
+func set_away(on: bool) -> void:
+	if not visible or _root.visible != on:
+		return
+	_root.visible = not on
+	if not on:
+		_render(false)
+
+
+func is_away() -> bool:
+	return visible and not _root.visible
 
 
 ## The back button: the picker closes, the keyboard goes, or the Shipwright is done.
@@ -747,7 +764,8 @@ func _render_cosmetics(kinds: Array) -> void:
 	banner.position = Vector2(_x0, _y + 12.0 * px)
 	banner.pressed.connect(func() -> void:
 		clicked.emit()
-		banner.nudge())
+		banner.nudge()
+		vault.emit())
 	_content.add_child(banner)
 	_cbuttons.append(banner)
 	_y = banner.position.y + banner.size.y
@@ -803,7 +821,7 @@ func _render_cosmetics(kinds: Array) -> void:
 func _tap_item(c: CosArt.Card, kind: String) -> void:
 	clicked.emit()
 	if not c.owned:
-		c.shake()
+		vault.emit()
 		return
 	if _wearing(kind) == c.id:
 		return

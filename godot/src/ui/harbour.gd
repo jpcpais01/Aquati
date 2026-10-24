@@ -13,6 +13,8 @@ signal picked(id: String)
 signal sail
 ## The Shipwright, to dress her: her flag, sails, paintwork and name.
 signal shipwright
+## The Treasure Vault's pill.
+signal vault
 signal settings
 signal sound
 signal clicked
@@ -49,6 +51,10 @@ var _tray: UiBox
 var _tabs: Array[_Tab] = []
 var _sail: UiButton
 var _wright: UiButton
+var _vault: UiButton
+var _vault_dot: _VaultDot
+## A free open waiting or finds not yet looked at: the Vault's pill wears a pip.
+var vault_ready := false
 var _frame := Vector4(0.0, 0.0, 1.0, 1.0)
 
 
@@ -119,6 +125,8 @@ func _all_buttons() -> Array[UiButton]:
 		out.append(_sail)
 	if _wright != null:
 		out.append(_wright)
+	if _vault != null:
+		out.append(_vault)
 	return out
 
 
@@ -180,6 +188,26 @@ func _build() -> void:
 		clicked.emit()
 		shipwright.emit())
 	_root.add_child(_wright)
+	# and the Treasure Vault beside that: a little gilded chest, a pip when
+	# a free open is waiting or a find hasn't been looked at
+	_vault = MenuKit.pill("", "Vault", _sail.size.y, 16.0 * u, 14.5 * MenuKit.T, 700, Color(0.031, 0.102, 0.149, 0.66), HudStyle.INK, 0.04)
+	var vt: Control = _vault.get_node("Text")
+	var cw := 20.0 * MenuKit.PX
+	var gap := 8.0 * u
+	# (and room on the right for the pip, clear of the word)
+	_vault.resize(_vault.size + Vector2(cw + gap + 12.0 * MenuKit.PX, 0.0))
+	vt.position.x += cw + gap
+	var chest := _VaultChest.new(Vector2(cw, 17.0 * MenuKit.PX))
+	chest.position = Vector2(16.0 * u, (_vault.size.y - chest.size.y) * 0.5)
+	_vault.add_child(chest)
+	_vault_dot = _VaultDot.new(9.0 * MenuKit.PX)
+	_vault_dot.position = Vector2(_vault.size.x - 8.0 * MenuKit.PX - _vault_dot.size.x, 6.0 * MenuKit.PX)
+	_vault.add_child(_vault_dot)
+	_vault.position = Vector2(_wright.position.x - 8.0 * u - _vault.size.x, _sail.position.y)
+	_vault.pressed.connect(func() -> void:
+		clicked.emit()
+		vault.emit())
+	_root.add_child(_vault)
 	# the stage left for her: right of her card, from the top down to the bottom row
 	var left := _card_slot.position.x + _card_w + 8.0 * MenuKit.PX
 	var bottom := minf(tray.position.y, _sail.position.y) - 4.0 * MenuKit.PX
@@ -191,6 +219,7 @@ func _build() -> void:
 	_reveal.add(tools, MenuKit.RISE, 0.15, 0.9, rise)
 	_reveal.add(_sail, MenuKit.RISE, 0.2, 0.9, rise)
 	_reveal.add(_wright, MenuKit.RISE, 0.2, 0.9, rise)
+	_reveal.add(_vault, MenuKit.RISE, 0.2, 0.9, rise)
 	_step(0.0)
 
 
@@ -404,6 +433,8 @@ func _step(dt: float) -> void:
 		p.set_t(_swap)
 	for tab in _tabs:
 		tab.tick(dt, _t)
+	if _vault_dot != null:
+		_vault_dot.tick(_t, vault_ready)
 
 
 ## The sun's glint across FORTUNE (the web's logoGlint): every 7 s from 1.2 s
@@ -632,3 +663,76 @@ static func _from_oklab(v: Vector3, alpha: float) -> Color:
 	s = s * s * s
 	var lin := Color(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s, alpha)
 	return Color(clampf(lin.r, 0.0, 1.0), clampf(lin.g, 0.0, 1.0), clampf(lin.b, 0.0, 1.0), alpha).linear_to_srgb()
+
+
+## The Vault pill's chest (the web's .mv-chest): a lid of warm wood over a
+## gilt band and a darker body, two gilt straps and a gilt rim.
+class _VaultChest:
+	extends Control
+
+	func _init(sz: Vector2) -> void:
+		size = sz
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		var r := w * 0.25
+		var gold := Color("#f1c35c")
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color("#5e3218")
+		sb.set_corner_radius_all(int(round(r * 0.6)))
+		sb.corner_radius_top_left = int(round(r))
+		sb.corner_radius_top_right = int(round(r))
+		draw_style_box(sb, Rect2(Vector2.ZERO, size))
+		var lid := sb.duplicate() as StyleBoxFlat
+		lid.bg_color = Color("#8a4f2a")
+		lid.corner_radius_bottom_left = 0
+		lid.corner_radius_bottom_right = 0
+		draw_style_box(lid, Rect2(0.0, 0.0, w, h * 0.42))
+		draw_rect(Rect2(0.0, h * 0.42, w, h * 0.1), gold)
+		draw_rect(Rect2(w * 0.18, 0.0, w * 0.1, h), gold)
+		draw_rect(Rect2(w * 0.72, 0.0, w * 0.1, h), gold)
+		var rim := StyleBoxFlat.new()
+		rim.draw_center = false
+		rim.border_color = Color(gold, 0.75)
+		rim.set_border_width_all(maxi(1, int(round(1.5 * MenuKit.PX))))
+		rim.corner_radius_top_left = sb.corner_radius_top_left
+		rim.corner_radius_top_right = sb.corner_radius_top_right
+		rim.corner_radius_bottom_left = sb.corner_radius_bottom_left
+		rim.corner_radius_bottom_right = sb.corner_radius_bottom_right
+		draw_style_box(rim, Rect2(Vector2.ZERO, size))
+
+
+## The Vault pill's pip (the web's .mv-dot): gold with a dark ring, breathing
+## a glow every 2.2 s while it's up; it pops in and out.
+class _VaultDot:
+	extends Control
+
+	var _on := 0.0
+	var _glow := 0.0
+
+	func _init(d: float) -> void:
+		size = Vector2(d, d)
+		pivot_offset = size * 0.5
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func tick(t: float, ready: bool) -> void:
+		var to := 1.0 if ready else 0.0
+		var dt := get_process_delta_time()
+		_on = move_toward(_on, to, dt / 0.25)
+		_glow = 0.5 - 0.5 * cos(t * TAU / 2.2)
+		modulate.a = _on
+		scale = Vector2.ONE * lerpf(0.4, 1.0, HudStyle.eased(_on))
+		visible = _on > 0.0
+		queue_redraw()
+
+	func _draw() -> void:
+		var c := size * 0.5
+		var r := size.x * 0.5
+		var gold := Color("#ffbe3d")
+		for i in 6:
+			var k := float(i + 1) / 6.0
+			draw_circle(c, r + 2.0 * MenuKit.PX + k * (5.0 + 6.0 * _glow) * MenuKit.PX, Color(gold, 0.07 * (1.0 - k) * (0.6 + _glow)))
+		draw_circle(c, r + 2.0 * MenuKit.PX, Color(0.008, 0.055, 0.086, 0.6))
+		draw_circle(c, r, gold)
