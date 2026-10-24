@@ -10,6 +10,8 @@ extends CanvasLayer
 
 signal closed
 signal clicked
+## Game updates, tapped: the update card (UpdateCard).
+signal updates
 
 ## The rows: [kind, the Settings field, title, line(, the choices)].
 const GROUPS := [
@@ -28,6 +30,9 @@ const GROUPS := [
 		["seg", "shake", "Camera shake", "From cannon fire, rams and treasure", [[1.0, "Full"], [0.4, "Gentle"], [0.0, "Off"]]],
 	]],
 ]
+
+## The game's updates (on the Android game: the GAME group's row shows them).
+var updater: Updater
 
 var _root: Control
 var _back: ShaderMaterial
@@ -138,7 +143,10 @@ func _build() -> void:
 	_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var inner := w - 16.0 * u - 20.0 * u
 	var y := 12.0 * u
-	for g: Array in GROUPS:
+	var groups: Array = GROUPS.duplicate()
+	if updater != null and updater.enabled:
+		groups.append(["GAME", [["update", "", "Game updates", _update_line()]]])
+	for g: Array in groups:
 		var h4 := MenuKit.words(str(g[0]), "inter", 700, 11.0 * t, HudStyle.AQUA, 0.22, 1.21)
 		h4.position = Vector2(20.0 * u + 2.0, y)
 		_content.add_child(h4)
@@ -210,6 +218,8 @@ func _row(r: Array, w: float) -> UiBox:
 		"slider":
 			ctl = _Slider.new(key)
 			_sliders.append(ctl)
+		"update":
+			ctl = _update_tag()
 		_:
 			ctl = _seg(key, r[4])
 	var pad_l := 16.0 * u
@@ -220,10 +230,15 @@ func _row(r: Array, w: float) -> UiBox:
 	var text_h := b.size.y + 3.0 * u + small.size.y
 	var h := maxf(64.0 * u, 16.0 * u + maxf(text_h, ctl.size.y))
 	var row: UiBox
-	if kind == "switch":
+	if kind == "switch" or kind == "update":
 		var btn := UiButton.new(Vector2(w, h), 18.0 * u, 4.0)
 		btn.squeeze = 0.99
-		btn.pressed.connect(func() -> void: _toggle(key))
+		if kind == "update":
+			btn.pressed.connect(func() -> void:
+				clicked.emit()
+				updates.emit())
+		else:
+			btn.pressed.connect(func() -> void: _toggle(key))
 		_buttons.append(btn)
 		row = btn
 	else:
@@ -236,6 +251,37 @@ func _row(r: Array, w: float) -> UiBox:
 	for n: Control in [b, small, ctl]:
 		row.add_child(n)
 	return row
+
+
+## The Game updates row's line: this build, and what's newer.
+func _update_line() -> String:
+	var v := "Version " + updater.installed
+	if updater.available():
+		return v + " · " + str(updater.latest.name) + " is out"
+	if updater.state == Updater.CURRENT:
+		return v + " · the newest build"
+	return v + " · tap to look for a newer one"
+
+
+## Its tag on the right: Update in gilt when there's one, else Check.
+func _update_tag() -> UiBox:
+	var u := MenuKit.U
+	var t := MenuKit.T
+	var on := updater.available()
+	var tt := MenuKit.words("Update" if on else "Check now", "inter", 700, 12.5 * t, HudStyle.GOLD_INK if on else HudStyle.INK)
+	var ic := Icons.rect("download" if on else "refresh", 15.0 * u, HudStyle.GOLD_INK if on else HudStyle.INK_2)
+	var bh := 34.0 * u
+	var box := UiBox.new(Vector2(14.0 * u + ic.size.x + 7.0 * u + tt.size.x + 16.0 * u, bh), bh * 0.5, 20.0 * u)
+	if on:
+		HudStyle.gold(box, u * 0.6)
+	else:
+		MenuKit.flat(box)
+		box.p("c_top", Color(1.0, 1.0, 1.0, 0.08)).p("c_foot", Color(1.0, 1.0, 1.0, 0.08)).p("c_border", Color(1.0, 1.0, 1.0, 0.1)).p("hi", 0.0)
+	ic.position = Vector2(14.0 * u, (bh - ic.size.y) * 0.5)
+	MenuKit.line_at(tt, ic.position.x + ic.size.x + 7.0 * u, 0.0, bh)
+	box.add_child(ic)
+	box.add_child(tt)
+	return box
 
 
 ## Choices in a pill, the chosen one lit white.

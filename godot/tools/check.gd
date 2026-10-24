@@ -20,7 +20,9 @@ extends SceneTree
 ## and kept (_check_looks), what's kept between voyages comes back whole
 ## from its save, takes nothing malformed from a damaged one and survives a
 ## crash mid-write (_check_progress), and the ship parts come out as the
-## web's do and every class carries each of them soundly (_check_parts).
+## web's do and every class carries each of them soundly (_check_parts),
+## and the game's updates read GitHub's releases as CI writes them, keep
+## user://updates tidy and lay their card out in every state (_check_updates).
 ## Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
@@ -76,12 +78,112 @@ func _initialize() -> void:
 	_check_touch()
 	_check_lightning()
 	_check_floaters()
+	await _check_updates()
 	await _check_sound()
 	if _errors == 0:
 		print("CHECK OK")
 	else:
 		printerr("CHECK FAILED: %d problem(s)" % _errors)
 	quit(1 if _errors > 0 else 0)
+
+
+## The in-game updates: versions and tags read, the releases picked over
+## (drafts, pre-releases, the web's tags and builds without an APK left
+## out), the notes split from CI's install line and set in blocks, the
+## builds since yours named once each, old downloads cleared, and the card
+## built in every state it can be in.
+func _check_updates() -> void:
+	var up: GDScript = load("res://src/core/updater.gd")
+	if up.code_of("0.19.65") != 65 or up.code_of("android-v0.20.67") != 67 or up.code_of("0.1.0") != 0 or up.code_of("") != 0:
+		_fail("updates: versions read wrong")
+	if up.short_of("0.20.67") != "0.20" or up.short_of("1.2") != "1.2":
+		_fail("updates: short versions wrong")
+	var body := "## Shores O' Fortune for Android: maelstroms and reefs\n\n**Fixed in this build:** sails no longer flicker,\nand the camera button is quiet.\n\nThe nineteenth build.\n\n- **Maelstroms.** The sea falls away\n  in a bowl.\n- **Their pull.** Round and in.\n\n---\n\nInstall: download `x.apk`.\n"
+	var n: PackedStringArray = up.notes_of(body)
+	if n[0] != "Maelstroms and reefs" or n[1].contains("Install:") or not n[1].begins_with("**Fixed"):
+		_fail("updates: notes split wrong: %s" % [n])
+	if up.key_of(body) != "release" or up.key_of(body + "\n_Signed with the shared test key until..._") != "fallback" or up.key_of("x\n<!-- signed: release -->\nshared test key") != "release":
+		_fail("updates: signing keys read wrong")
+	var bl: Array = up.blocks(n[1])
+	var kinds := []
+	for b: Dictionary in bl:
+		kinds.append(b.kind)
+	if kinds != ["p", "p", "li", "li"]:
+		_fail("updates: blocks %s" % [kinds])
+	elif bl[0].runs[0] != ["Fixed in this build:", true] or str(bl[2].runs[1][0]) != " The sea falls away in a bowl." or str(bl[0].runs[1][0]).contains("\n"):
+		_fail("updates: runs %s / %s" % [bl[0].runs, bl[2].runs])
+	var apk := func(name: String) -> Dictionary:
+		return {"name": name, "size": 1000, "state": "uploaded", "browser_download_url": "https://example.invalid/" + name, "digest": "sha256:ABC123"}
+	var rel := func(tag: String, title: String, assets: Array, more := {}) -> Dictionary:
+		var r := {"tag_name": tag, "draft": false, "prerelease": false, "assets": assets, "html_url": "https://example.invalid/" + tag, "published_at": "2026-10-24T12:06:54Z",
+				"body": "## Shores O' Fortune for Android: %s\n\nNotes.\n\n---\n\nInstall." % title}
+		r.merge(more, true)
+		return r
+	var releases := [
+		rel.call("android-v0.19.63", "maelstroms and reefs", [apk.call("a.apk")]),
+		rel.call("android-v0.21.70", "drafted", [apk.call("d.apk")], {"draft": true}),
+		rel.call("android-v0.21.71", "trial", [apk.call("p.apk")], {"prerelease": true}),
+		rel.call("v2.0.99", "the web", [apk.call("w.apk")]),
+		rel.call("android-v0.20.68", "no apk yet", [{"name": "notes.txt", "size": 3}]),
+		rel.call("android-v0.20.67", "the kraken", [apk.call("k.apk")]),
+		rel.call("android-v0.19.65", "maelstroms and reefs", [{"name": "big.apk", "size": 9, "digest": null, "browser_download_url": "u"}]),
+		"junk",
+	]
+	var picked: Array = up.pick(releases)
+	var codes := []
+	for b: Dictionary in picked:
+		codes.append(int(b.code))
+	if codes != [67, 65, 63]:
+		_fail("updates: picked %s" % [codes])
+	elif str(picked[0].sha256) != "ABC123" or str(picked[1].sha256) != "" or str(picked[0].title) != "The kraken" or int(picked[0].size) != 1000:
+		_fail("updates: build read wrong: %s" % [picked[0]])
+	var u: Node = up.new()
+	root.add_child(u)
+	u.installed_code = 63
+	u.take(releases)
+	if int(u.latest.get("code", 0)) != 67 or u.between != ["Maelstroms and reefs"]:
+		_fail("updates: newer read wrong: %s %s" % [u.latest.get("code"), u.between])
+	u.installed_code = 67
+	u.take(releases)
+	if not u.between.is_empty():
+		_fail("updates: builds since the newest")
+	# old downloads go, the newest stays
+	DirAccess.make_dir_recursive_absolute(up.DIR)
+	for f: String in ["shores-o-fortune-0.19.60.apk", "shores-o-fortune-0.20.67.apk", "shores-o-fortune-0.21.80.apk.part", "shores-o-fortune-0.21.80.apk"]:
+		FileAccess.open(up.DIR.path_join(f), FileAccess.WRITE).store_string("x")
+	u.tidy()
+	var left := Array(DirAccess.get_files_at(up.DIR))
+	if left != ["shores-o-fortune-0.21.80.apk"]:
+		_fail("updates: tidy left %s" % [left])
+	# and a build overtaken by a newer one goes too
+	FileAccess.open(up.DIR.path_join("shores-o-fortune-0.21.81.apk"), FileAccess.WRITE).store_string("x")
+	u.tidy(up.DIR.path_join("shores-o-fortune-0.21.81.apk"))
+	left = Array(DirAccess.get_files_at(up.DIR))
+	if left != ["shores-o-fortune-0.21.81.apk"]:
+		_fail("updates: tidy kept %s" % [left])
+	for f: String in left:
+		DirAccess.remove_absolute(up.DIR.path_join(f))
+	# the card in every state
+	var card: CanvasLayer = load("res://src/ui/update_card.gd").new()
+	card.updater = u
+	root.add_child(card)
+	await process_frame
+	for at: String in ["offer", "downloading", "ready", "failed", "rekeyed"]:
+		u.demo(card.own_notes, at)
+		card.open()
+		await process_frame
+		if not card.is_open() or (at == "downloading") != (card._bar != null) or (at != "downloading") != (card._gold_btn != null) or (at == "rekeyed") != u.key_changed():
+			_fail("updates: the card at %s laid out wrong" % at)
+	for st: int in [up.CURRENT, up.CHECKING, up.IDLE]:
+		u.state = st
+		u.latest = {}
+		u.changed.emit()
+		await process_frame
+		if card._built != st or card._content == null or card._content.size.y <= 0.0:
+			_fail("updates: the card at state %d laid out wrong" % st)
+	card.close()
+	card.queue_free()
+	u.queue_free()
 
 
 func _fail(msg: String) -> void:
