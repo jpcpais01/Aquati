@@ -154,7 +154,7 @@ cd godot
 godot --headless --import                       # compiles every script
 godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world, builds the market towns (prices to the coin against the web's), drops and strikes off waypoints, lays out the sea chart against the web's own numbers, plots the helmsman's courses for a sloop and a galleon (round an isle, out to Las Brumas, onto a shore) and sounds every leg for deep water, loads the sound, stacks a broadside's damage numbers, makes her look whole from anything and draws every flag, emblem and sail the Shipwright offers, keeps the brush's work as a PNG, saves and loads your progress (and a damaged save)
 godot --headless --script res://tools/bake.gd   # builds every figurehead
-godot --headless --fixed-fps 60 --quit-after 2100 -- --smoke --smoke-at 1900  # walks the menus, the Shipwright, the sea chart and the helmsman, a market, then sails on
+godot --headless --fixed-fps 60 --quit-after 2500 -- --smoke --smoke-at 2300  # walks the menus, the Shipwright, the sea chart and the helmsman, a market, then sails on
 ```
 
 ## Signing the release APK
