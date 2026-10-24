@@ -254,6 +254,11 @@ func build_soon(after: float = BUILD_AFTER) -> void:
 		_wait = after
 
 
+## Its build is waiting for its moment or under way.
+func building() -> bool:
+	return not built and (_task >= 0 or _wait >= 0.0)
+
+
 ## Builds it now (waiting for a build under way), into the scene.
 func build_now() -> void:
 	if built:

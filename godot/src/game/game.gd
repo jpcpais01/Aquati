@@ -214,6 +214,11 @@ var _frames := 0
 var loading: LoadingScreen
 var _ready_to_play := false
 var _load_us := 0
+## What the loading's workers hand back (the archipelagos, her first hull,
+## the sea's grid).
+var _boot_regions: Array[Region] = []
+var _boot_model: ShipModel
+var _boot_grid: ArrayMesh
 var _sky_day := -1.0
 var _sky_revision := 0.0
 ## Her farewell while it plays, else null.
@@ -340,13 +345,19 @@ func _ready() -> void:
 	# nothing plays until the world is up: the loading screen holds the stage
 	set_process(false)
 	set_process_input(false)
-	loading = LoadingScreen.new()
-	add_child(loading)
+	# (the boot scene hands its own over: it has been up since the first frame)
+	if loading == null:
+		loading = LoadingScreen.new()
+		add_child(loading)
 	await _load()
 
 
 ## The world goes up a piece a frame behind the loading screen, so its
-## crest keeps turning and its bar keeps moving; once it's all built, every
+## crest keeps turning and its bar keeps moving: the heaviest pieces (the sea's
+## grid, the islands' ground and plants, her hull, the towns) are built on
+## worker threads while the frames carry on, and the camera is up from the
+## start, so each piece's shaders are built on its own first draw rather than
+## all at once on the first frame with a camera. Once it's all built, every
 ## shader has been drawn and the frames have settled, it lifts on the harbour.
 func _load() -> void:
 	await _loaded_to(0.04)
@@ -363,18 +374,23 @@ func _load() -> void:
 	world.sound = sound
 	_setup_sky()
 	_build_environment()
+	_raise_camera()
 	await _loaded_to(0.1)
-	_build_sea()
+	await _build_sea()
 	await _loaded_to(0.18)
 	await _build_islands(0.18, 0.4)
-	await _loaded_to(0.4)
 	Livery.bake_finish()
-	_build_player()
-	await _loaded_to(0.48)
+	await _loaded_to(0.4)
+	await _launch_player()
 	_build_camera()
+	await _loaded_to(0.48)
 	_build_fleet()
 	await _loaded_to(0.56)
 	await _build_ports(0.56, 0.66)
+	if _harbour_first():
+		# the home port's quay goes up on a worker while the rest does
+		home.build_soon(0.0)
+		home.prepare(0.0)
 	await _loaded_to(0.66)
 	controls = Controls.new()
 	add_child(controls)
@@ -490,8 +506,14 @@ func _load() -> void:
 	_tick(0.0)
 	camera.snap_to(_watched().pos)
 	_start_updates()
+	await _loaded_to(0.86)
 	_stage_menus()
-	_warm_up()
+	# (the home port shares the towns' materials with the warm-up: built first)
+	while not home.built and home.building():
+		home.prepare(0.0)
+		await _idle()
+		await _loaded_to(0.86)
+	await _warm_up()
 	set_process(true)
 	set_process_input(true)
 	_ready_to_play = true
@@ -510,11 +532,51 @@ func _load() -> void:
 func _loaded_to(p: float) -> void:
 	if _args.has("load-times"):
 		var now := Time.get_ticks_usec()
-		print("LOAD %.2f in %.1f ms" % [p, (now - _load_us) / 1000.0])
+		var R := RenderingServer
+		print("LOAD %.2f in %.1f ms; shaders built ahead %d, on a draw %d" % [p, (now - _load_us) / 1000.0,
+				R.get_rendering_info(R.RENDERING_INFO_PIPELINE_COMPILATIONS_SURFACE) + R.get_rendering_info(R.RENDERING_INFO_PIPELINE_COMPILATIONS_MESH),
+				R.get_rendering_info(R.RENDERING_INFO_PIPELINE_COMPILATIONS_DRAW)])
 		_load_us = now
 	loading.progress(p)
 	await get_tree().process_frame
 	_load_us = Time.get_ticks_usec()
+
+
+## Waits for a worker's task while the frames carry on.
+func _join(task: int) -> void:
+	while not WorkerThreadPool.is_task_completed(task):
+		await _idle()
+		await get_tree().process_frame
+	WorkerThreadPool.wait_for_task_completion(task)
+
+
+## (Headless, where frames cost nothing, a wait for a worker lets 25 ms pass
+## a frame, so a run's frame count isn't spent on waiting.)
+func _idle() -> void:
+	if DisplayServer.get_name() == "headless":
+		OS.delay_msec(25)
+
+
+## Her hull for the first voyage, lofted, rigged and painted on a worker (as
+## the yard builds every other one) while the loading screen runs on.
+func _launch_player() -> void:
+	var id := _player_class()
+	var livery := str(_args.get("livery", Shipyard.MINE))
+	var cls := ShipClass.named(id)
+	var lv := Livery.named(livery)
+	var fit := Progress.loadout(id) if livery == Shipyard.MINE else {}
+	await _join(WorkerThreadPool.add_task(func() -> void:
+		Figurehead.warm()
+		_boot_model = ShipModel.create(cls, lv, true, fit), false, "Her hull"))
+	var model := _boot_model
+	_boot_model = null
+	_build_player(id, model)
+
+
+## The class of her first hull: a set piece's (--ship, a shot's sloop), else
+## the one last picked in the harbour.
+func _player_class() -> String:
+	return str(_args.get("ship", "sloop" if _args.has("shot") else Progress.ship))
 
 
 ## A first wound, the first plank in the water, the first town in view: none
@@ -525,17 +587,13 @@ func _warm_up() -> void:
 	var w := Node3D.new()
 	w.name = "WarmUp"
 	w.transform = Transform3D(Basis.from_scale(Vector3.ONE * 1e-4), Vector3(0.0, 0.0, -40.0))
-	for n in ShipDamage.warm_meshes(player.model):
-		w.add_child(n)
-	for n in world.debris.warm_meshes():
-		w.add_child(n)
-	for n in world.loot.warm_meshes():
-		w.add_child(n)
-	for n in ports.warm_meshes():
-		w.add_child(n)
-	for n in home.warm_meshes():
-		w.add_child(n)
 	camera.add_child(w)
+	# (one a frame: each one's first draw builds its own shaders)
+	var sets := [ShipDamage.warm_meshes.bind(player.model), world.debris.warm_meshes, world.loot.warm_meshes, ports.warm_meshes, home.warm_meshes]
+	for i in sets.size():
+		for n: Node in sets[i].call():
+			w.add_child(n)
+			await _loaded_to(0.87 + 0.005 * i)
 	hud.warm()
 	chart_art.build(self)
 	get_tree().create_timer(1.0).timeout.connect(w.queue_free)
@@ -761,19 +819,25 @@ func _build_sea() -> void:
 	world.fx.name = "Particles"
 	world.fx.wind = world.wind
 	add_child(world.fx)
+	# (the sea's grid, a worker's while the frames carry on)
+	await _join(WorkerThreadPool.add_task(func() -> void: _boot_grid = Ocean.grid_mesh(), false, "The sea"))
 	ocean = Ocean.new()
 	ocean.name = "Ocean"
 	add_child(ocean)
-	ocean.setup(world.waves, world.wind, world.wake)
+	ocean.setup(world.waves, world.wind, world.wake, _boot_grid)
+	_boot_grid = null
 	ocean.visible = not _args.has("noocean")
+	await _loaded_to(0.12)
 	world.debris = Debris.new()
 	world.debris.name = "Debris"
 	add_child(world.debris)
 	world.debris.setup(world)
+	await _loaded_to(0.14)
 	world.loot = Loot.new()
 	world.loot.name = "Loot"
 	add_child(world.loot)
 	world.loot.setup(world)
+	await _loaded_to(0.16)
 	vstage = VaultStage.new(world, ocean)
 	vstage.name = "VaultStage"
 	add_child(vstage)
@@ -796,33 +860,64 @@ func _build_sea() -> void:
 	spindrift.setup(world)
 
 
-## (A frame for the loading screen after each archipelago's maps, its ground
-## and its plants, its bar climbing from `p0` to `p1`.)
+## The archipelagos: read off the world bake, then every one's ground and
+## plants built at once on the worker threads (out of the scene, where a
+## worker may build), and set into the scene a few islands a frame (the
+## rendering server takes in what enters the scene on the frame after), the
+## bar climbing from `p0` to `p1`.
 func _build_islands(p0: float, p1: float) -> void:
-	var specs := Region.specs()
-	var n := specs.size() * 3
-	var i := 0
-	for d in specs:
-		regions.append(Region.new(d))
-		i += 1
-		await _loaded_to(lerpf(p0, p1, float(i) / n))
+	var lite := Settings.quality == Settings.Quality.LOW
+	# (everything the builds load, loaded first: a worker waiting on a load
+	# another worker is making can starve the pool)
+	await _join(WorkerThreadPool.add_task(func() -> void:
+		_boot_regions = Region.load_all()
+		Flora.kit()
+		for path: String in ["res://shaders/terrain_lite.gdshader" if lite else "res://shaders/terrain.gdshader", "res://art/noise.png", "res://art/foam.png"]:
+			load(path), false, "Charting the archipelagos"))
+	regions = _boot_regions
+	_boot_regions = []
 	world.regions = regions
+	await _loaded_to(lerpf(p0, p1, 0.3))
+	var tasks: Array[int] = []
 	for r in regions:
 		isles_total += r.islands.size()
 		_glow_centres.append(Vector2(r.centre.x, r.centre.z))
 		var g := Ground.new()
-		g.build(r, Settings.quality == Settings.Quality.LOW)
-		add_child(g)
 		grounds.append(g)
-		i += 1
-		await _loaded_to(lerpf(p0, p1, float(i) / n))
+		tasks.append(WorkerThreadPool.add_task(g.build.bind(r, lite), false, "Ground: " + r.id))
 		var f := Flora.new()
-		f.build(r)
 		f.visible = not _args.has("noflora")
-		add_child(f)
 		floras.append(f)
-		i += 1
-		await _loaded_to(lerpf(p0, p1, float(i) / n))
+		tasks.append(WorkerThreadPool.add_task(f.build.bind(r), false, "Flora: " + r.id))
+	for t in tasks:
+		await _join(t)
+	await _loaded_to(lerpf(p0, p1, 0.6))
+	var parts: Array[Node3D] = []
+	for i in regions.size():
+		parts.append(grounds[i])
+		parts.append(floras[i])
+	var n := 0
+	for part in parts:
+		n += part.get_child_count()
+	var done := 0
+	for part in parts:
+		# its islands out of it, then back in a few at a time once it's in
+		# the scene; an island's far planting before its squares, which hang
+		# their visibility on it
+		var isles := part.get_children()
+		for c in isles:
+			part.remove_child(c)
+		add_child(part)
+		isles.sort_custom(func(a: Node, b: Node) -> bool: return a.name.ends_with("_far") and not b.name.ends_with("_far"))
+		var batch := 0
+		for c in isles:
+			part.add_child(c)
+			done += 1
+			batch += maxi(1, c.find_children("*", "GeometryInstance3D", true, false).size())
+			if batch >= 24:
+				batch = 0
+				await _loaded_to(lerpf(p0, p1, 0.6 + 0.4 * float(done) / float(n)))
+		await _loaded_to(lerpf(p0, p1, 0.6 + 0.4 * float(done) / float(n)))
 	ocean.set_glow_centres(_glow_centres)
 	hazards = Hazards.new(world)
 	hazards.struck.connect(_on_hazard)
@@ -851,13 +946,16 @@ func _pick_region(x: float, z: float) -> void:
 
 
 ## Your ship for a fresh voyage, of class `id` (else the one picked in the
-## harbour, or a set piece's): a hull in your colours off the yard's slipway
+## harbour, or a set piece's): `built` for her (the first voyage's, built
+## while the game loads), else a hull in your colours off the yard's slipway
 ## when one is ready, else built here.
-func _build_player(id := "") -> void:
+func _build_player(id := "", built: ShipModel = null) -> void:
 	if id == "":
-		id = str(_args.get("ship", "sloop" if _args.has("shot") else Progress.ship))
+		id = _player_class()
 	var livery := str(_args.get("livery", Shipyard.MINE))
-	var model := shipyard.take(id, livery) if shipyard != null and livery == Shipyard.MINE else null
+	var model := built
+	if model == null and shipyard != null and livery == Shipyard.MINE:
+		model = shipyard.take(id, livery)
 	var fit := Progress.loadout(id) if livery == Shipyard.MINE else {}
 	player = Ship.create(ShipClass.named(id), Livery.named(livery), world, Ship.Team.PLAYER, model, fit)
 	_arm(player)
@@ -914,11 +1012,18 @@ func _build_player(id := "") -> void:
 			player.ammo = k
 
 
-func _build_camera() -> void:
+## The camera, up before anything else in the world, so each piece is
+## drawn (behind the loading screen) on the frame after it comes in: the
+## shaders a first draw has to build are built a piece at a time, not all at
+## once on the first frame with a camera.
+func _raise_camera() -> void:
 	camera = CameraRig.new()
 	camera.name = "Camera"
 	add_child(camera)
 	camera.current = true
+
+
+func _build_camera() -> void:
 	if _args.has("view"):
 		var v: Array = CameraRig.VIEWS[clampi(int(_args.view), 0, 3)]
 		camera.set_view(v[0], v[1])
@@ -958,13 +1063,20 @@ func _build_fleet() -> void:
 
 
 ## The trading ports' towns along their quays, their folk drawn with the crews.
-## (A frame for the loading screen between the towns, the home port and the
+## (A frame for the loading screen after the towns, the home port and the
 ## shore, its bar climbing from `p0` to `p1`.)
 func _build_ports(p0: float, p1: float) -> void:
 	ports = TradePorts.new()
 	ports.name = "TradePorts"
+	# (the towns go up on a worker, out of the scene, then into it a town a frame)
+	await _join(WorkerThreadPool.add_task(ports.setup.bind(world, crew), false, "Trading ports"))
+	var towns := ports.get_children()
+	for t in towns:
+		ports.remove_child(t)
 	add_child(ports)
-	await ports.setup(world, crew, func(k: float) -> void: await _loaded_to(p0 + (p1 - p0) * 0.6 * k))
+	for i in towns.size():
+		ports.add_child(towns[i])
+		await _loaded_to(p0 + (p1 - p0) * 0.6 * float(i + 1) / towns.size())
 	# the harbourmaster rings her in, loud on her own quay
 	ports.bell_rung.connect(func(port: TradePort, _at: Vector3) -> void: sound.bell(2, 0.22 if port == dock_port else 0.08))
 	ports.delivered.connect(_delivered)
