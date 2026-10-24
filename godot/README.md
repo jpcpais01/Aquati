@@ -85,7 +85,7 @@ before the frame. The vault's cosmetics: `--vault all`, `--vault none` or
 `--vault kintsugi,blast:dragon` fills, empties or adds to her collection,
 `--skin aurora`, `--blast dragon` and `--trail rainbow` put one on (won first
 if need be), and with `--shipwright guns`, `--test-fire [N]` fires the Guns
-tab's broadside N frames (12) before the frame.
+tab's broadside N frames (12) before the frame (at sea too, to seaward).
 
 Handy flags (after `--`): `--hour 18.5` sets the time of day (or `--time
 dusk` by name), `--wx storm` holds a weather (clear, fair, cloudy, mist, rain,

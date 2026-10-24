@@ -504,8 +504,15 @@ func _vault_flags() -> void:
 			Progress.vault = Cosmetics.fresh()
 			Progress.vault_changed.emit()
 		else:
-			for id in v.split(",", false):
-				if not Progress.owns_item(id):
+			for key in v.split(",", false):
+				# a bare key is the first kind that has it (kintsugi, dragon, rainbow)
+				var id := key
+				for kind in Cosmetics.KINDS:
+					if not id.contains(":") and not Cosmetics.item(kind + ":" + key).is_empty():
+						id = kind + ":" + key
+				if Cosmetics.item(id).is_empty():
+					push_warning("--vault: no such item %s" % key)
+				elif not Progress.owns_item(id):
 					Progress.award(id)
 	for kind in Cosmetics.KINDS:
 		if not _args.has(kind):
@@ -1004,9 +1011,9 @@ func _process(delta: float) -> void:
 		hud.open_pie(Ammo.ID.find(str(_args.pie)))
 	if _args.has("strike") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.strike if str(_args.strike).is_valid_int() else 2)):
 		_strike_now = true
-	# the Guns tab's broadside, N frames before the shot (12 by default)
+	# the Guns tab's broadside (or at sea, one to seaward), N frames before the shot (12 by default)
 	if _args.has("test-fire") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args["test-fire"] if str(_args["test-fire"]).is_valid_int() else 12)):
-		_test_fire()
+		_test_fire(true)
 	if _args.has("sell") and _frames == maxi(1, int(_args.get("frames", 90)) - 24):
 		# (the coins are in the air as the frame is saved)
 		_sell("" if str(_args.sell) == "all" else str(_args.sell))
@@ -2299,10 +2306,10 @@ func _fit_part(slot: String, id: String) -> void:
 
 ## The Guns tab's broadside (the web's testFire): from the side with open
 ## water off it (the deeper 45 m out), at a point 70 m out and a touch
-## ahead, the camera swung round to watch.
-func _test_fire() -> void:
+## ahead, the camera swung round to watch. (`anywhere`: a shot's flag, at sea too.)
+func _test_fire(anywhere := false) -> void:
 	var p := player
-	if p == null or not shipwright.is_open():
+	if p == null or not (anywhere or shipwright.is_open()):
 		return
 	var left := p.port_dir()
 	var hl := world.ground_height(p.pos.x + left.x * 45.0, p.pos.z + left.z * 45.0)

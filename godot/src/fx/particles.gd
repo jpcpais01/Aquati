@@ -192,13 +192,14 @@ func muzzle(pos: Vector3, dir: Vector3, carry: Vector3, style := POWDER) -> void
 			_smoke(pos, dir, carry, Color(1.08, 1.06, 1.1), 4, 2, 0, 0.8)
 		DRAGON:
 			_flash(pos, 3.8, Color(12.0, 7.0, 2.2), Color(4.0, 1.2, 0.2))
-			# a roaring cone of fire, white-hot at the mouth
-			for i in 38:
+			# a roaring cone of fire, white-hot at the mouth (kept well under
+			# white where its flames overlap: there's no bloom to carry it)
+			for i in 30:
 				var sp := randf_range(12.0, 30.0)
 				var spread := sp * 0.12
 				var hot := i < 10
 				emit(pos, Vector3(dir.x * sp + randf_range(-spread, spread) + carry.x, randf_range(-spread, spread) * 0.6 + 0.6, dir.z * sp + randf_range(-spread, spread) + carry.z),
-						randf_range(0.35, 0.7) * (0.7 if hot else 1.0), randf_range(0.6, 1.0), randf_range(2.2, 3.4), Color(12.0, 9.0, 4.0) if hot else Color(10.0, 4.6, 1.1), Color(3.0, 0.55, 0.06),
+						randf_range(0.35, 0.7) * (0.7 if hot else 1.0), randf_range(0.6, 1.0), randf_range(2.0, 3.0), Color(3.4, 2.4, 1.0) if hot else Color(2.8, 1.25, 0.3), Color(0.85, 0.15, 0.02),
 						-2.5, 2.6, SOFT, 0.001, Vector2.ZERO, randf_range(-2.0, 2.0), true)
 			_embers(pos, dir, carry, 20, 1.3)
 			_smoke(pos, dir, carry, Color(0.34, 0.31, 0.3), 8, 4, 3, 1.1)
