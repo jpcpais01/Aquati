@@ -99,12 +99,17 @@ class _Tag:
 		var h := _ink.size.y
 		var dot := Vector2(6.0 * U + 3.5 * U, h * 0.5)
 		if _edge:
-			# an arrowhead pointing the way, softly glowing
+			# an arrowhead pointing the way, softly glowing (about as much ink
+			# as the web's 9 by 10 triangle, but long and slim: near equilateral,
+			# turned on a slant it reads as pointing elsewhere)
 			MapMarks.glow(_ink, dot, 4.0 * U, 4.0 * HudStyle.PX, Color(_color, 0.6))
 			var pts := PackedVector2Array()
-			for q: Vector2 in [Vector2(5.5, 0.0), Vector2(-3.5, -5.0), Vector2(-3.5, 5.0)]:
+			for q: Vector2 in [Vector2(7.0, 0.0), Vector2(-5.0, -3.6), Vector2(-5.0, 3.6)]:
 				pts.append(dot + (q * U).rotated(_angle))
 			_ink.draw_colored_polygon(pts, _color)
+			# (its edges smoothed, so a slanting one isn't a staircase)
+			pts.append(pts[0])
+			_ink.draw_polyline(pts, _color, 1.0, true)
 		else:
 			MapMarks.glow(_ink, dot, 3.5 * U, 8.0 * HudStyle.PX, Color(_color, 0.7))
 			_ink.draw_circle(dot, 3.5 * U, _color, true, -1.0, true)
