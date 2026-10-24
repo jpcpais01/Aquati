@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-24T14:00Z',
     entries: [
       {
+        title: 'A smooth start',
+        notes: [
+          'The loading screen now comes up the instant the game opens, instead of after a few seconds on a plain teal screen, and keeps moving the whole way in. The heavy work of building the world (the islands\' ground and plants, the six market towns, your ship\'s hull and the sea itself) now runs on the other cores of your phone or PC while the screen carries on, and the islands, towns and warm-up go in a little at a time, so the rose keeps turning and the bar keeps gliding.',
+          'Each piece of the world now has its shaders prepared as it arrives instead of all at once in one long pause, and the home port\'s quay is built before the harbour opens, so the first seconds in the harbour don\'t hitch. The first launch after an update has the most to prepare; after that it\'s kept and the game opens faster.',
+        ],
+      },
+      {
         title: 'Shores O\' Fortune is on Windows',
         notes: [
           'Every new build now comes as a Windows game too, beside the Android one, from the same code and looking just the same. It\'s a single .exe with nothing to install: download it from the releases page (or the Windows button on the website), run it, and you\'re in the harbour.',

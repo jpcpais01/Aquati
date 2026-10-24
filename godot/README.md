@@ -74,9 +74,13 @@ the view over toward the horizon), and tap the minimap for the sea chart:
 drag it, pinch it, double tap to zoom in, and tap the sea to drop a pin there,
 or a pin, a market town or an isle for its card ("Sail there", "Lift pin").
 
-The game opens on its loading screen, which lifts once the world is built and
-its frames run even (`--loading` holds it up for a shot; `--load-times` prints
-how long each piece of the build took), then in the harbour. A shot of the voyage, a fight or a
+The game opens on its loading screen (scenes/boot.tscn puts it up on the
+first frame and loads the game's scripts on a worker behind it), which lifts
+once the world is built and its frames run even (`--loading` holds it up for
+a shot; `--load-times` prints how long each piece of the build took and how
+many shaders were built ahead or on a draw), then in the harbour. The heavy
+pieces (the sea's grid, the islands' ground and plants, her hull, the towns)
+are built on worker threads while it runs. A shot of the voyage, a fight or a
 farewell (below) starts at sea instead; for the menus, `--menu` opens on the
 harbour (`--orbit A` sets how far round her the camera has come),
 `--seapick` on "Where shall we sail?", `--pause` puts the voyage on hold and

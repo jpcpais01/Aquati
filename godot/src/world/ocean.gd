@@ -29,11 +29,11 @@ var funnels: Array[MeshInstance3D] = []
 var _funnel_mesh: ArrayMesh
 
 
-func setup(p_waves: Waves, p_wind: Wind, p_wake: WakeField) -> void:
+func setup(p_waves: Waves, p_wind: Wind, p_wake: WakeField, grid: ArrayMesh = null) -> void:
 	waves = p_waves
 	wind = p_wind
 	wake = p_wake
-	mesh = _build_mesh()
+	mesh = grid if grid != null else grid_mesh()
 	cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	extra_cull_margin = 16384.0
 	material = ShaderMaterial.new()
@@ -45,7 +45,9 @@ func setup(p_waves: Waves, p_wind: Wind, p_wake: WakeField) -> void:
 	material_override = material
 
 
-func _build_mesh() -> ArrayMesh:
+## The sea's grid (`setup` builds it if it isn't handed one: the game has a
+## worker build it while it loads).
+static func grid_mesh() -> ArrayMesh:
 	var n := HALF * 2 + 1
 	var verts := PackedVector3Array()
 	verts.resize(n * n)

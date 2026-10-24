@@ -1,4 +1,27 @@
-## Shores O' Fortune for Android and Windows: now on Windows
+## Shores O' Fortune for Android and Windows: a smooth start
+
+The twenty-fourth build makes the loading screen live up to its looks:
+it's there the moment the game opens and keeps moving the whole way in.
+
+- **Up on the very first frame.** The game used to sit on a plain teal
+  screen for a few seconds while it read its own code. Now the loading
+  screen comes up at once and the game loads behind it, the rose already
+  turning.
+- **The heavy work, off to one side.** The islands' ground and plants,
+  the six market towns, your ship's hull and the sea itself are now built
+  on the other cores of your phone or PC while the screen carries on,
+  instead of each one holding it still. The islands then go in a few at a time, and
+  the warm-up of every shader a fight or a town will need goes in a piece
+  a frame.
+- **Shaders a piece at a time.** The camera is up from the start, so
+  each piece of the world has its shaders built as it arrives rather
+  than everything at once in one long pause. The first launch after an
+  update still has the most to build; after that they're kept and
+  the game opens much faster.
+- **The home port's quay is built before the harbour opens**, so the
+  first seconds in the harbour no longer hitch as it goes up.
+
+### Also from the last build: now on Windows
 
 The twenty-third build sails onto the PC. Every release now comes as a
 Windows game as well as the Android one, built from the same code and
