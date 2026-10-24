@@ -28,12 +28,13 @@ func is_empty() -> bool:
 	return indices.is_empty()
 
 
-## One rope from a to b, radius r (m); sag is how far its middle droops.
-func rope(a: Vector3, b: Vector3, r: float = 0.03, col: Color = TAR, sag: float = 0.0) -> void:
+## One rope from a to b, radius r (m); sag is how far its middle droops, in
+## `pieces` straight runs (0: as many as it needs).
+func rope(a: Vector3, b: Vector3, r: float = 0.03, col: Color = TAR, sag: float = 0.0, pieces: int = 0) -> void:
 	var length := a.distance_to(b)
 	if length < 1e-3:
 		return
-	var segs := 4 if sag > 0.0 and length > 4.0 else 1
+	var segs := pieces if pieces > 0 else (4 if sag > 0.0 and length > 4.0 else 1)
 	var jit := pow(0.9 + _rng.randf() * 0.2, 0.4545)
 	var paint := Color(minf(col.r * jit, 1.0), minf(col.g * jit, 1.0), minf(col.b * jit, 1.0), (owner + 0.5) / 255.0)
 	var base := verts.size()

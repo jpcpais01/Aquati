@@ -8,8 +8,14 @@ extends RefCounted
 ## pose is written. Rotations are the web's: hips in XYZ order, the head
 ## nodding, turning and tilting.
 
-## The sculpt's joints (the web's RIG).
+## The sculpt's joints (the web's RIG): hips, neck, shoulders, elbows and
+## the grip of a fist.
 const HIP := 0.88
+const NECK_Y := 1.48
+const SH_X := 0.215
+const SH_Y := 1.4
+const EL_Y := 1.125
+const GRIP_Y := 0.818
 
 var style: Dictionary
 var look: CrewLook
@@ -25,7 +31,8 @@ var girth := 1.0
 var mood := 0.0
 var prop := CrewModel.PROP_NONE
 
-# the skeleton, in the town's frame
+# the skeleton, in the town's frame (or in what carries them: `parent`)
+var parent := Transform3D.IDENTITY
 var root_pos := Vector3.ZERO
 var root_yaw := 0.0
 var size := 1.0
@@ -137,7 +144,26 @@ func place(x: float, z: float, yaw: float, y: float) -> void:
 
 ## The town-frame transform of their hips (props hang from it).
 func hips_xf() -> Transform3D:
-	return Transform3D(Basis(Vector3.UP, root_yaw).scaled(Vector3.ONE * size), root_pos) * Transform3D(Basis.from_euler(hips_rot, EULER_ORDER_XYZ), hips_pos)
+	return parent * Transform3D(Basis(Vector3.UP, root_yaw).scaled(Vector3.ONE * size), root_pos) * Transform3D(Basis.from_euler(hips_rot, EULER_ORDER_XYZ), hips_pos)
+
+
+## Their fist as the crews' sailor draws it (the arm swung about its
+## shoulder, the forearm about its elbow), in the town's frame: what they
+## hold hangs from it, down the forearm along its -y.
+func hand_xf(left: bool) -> Transform3D:
+	var e := _crew_arm(arm_l if left else arm_r, reach_l if left else reach_r)
+	var x := SH_X if left else -SH_X
+	var sh := Vector3(x, SH_Y, 0.0)
+	var el := Vector3(x, EL_Y, 0.0)
+	var arm := Transform3D(Basis(Vector3.BACK, e.y) * Basis(Vector3.RIGHT, -e.x), sh) * Transform3D(Basis.IDENTITY, -sh)
+	var fore := Transform3D(Basis(Vector3.RIGHT, elbow_l if left else elbow_r), el) * Transform3D(Basis.IDENTITY, -el)
+	var xf := body_xf() * arm * fore * Transform3D(Basis.IDENTITY, Vector3(x, GRIP_Y, 0.0))
+	return Transform3D(xf.basis.orthonormalized(), xf.origin)
+
+
+## Where their head sits on their neck, in the town's frame.
+func head_pos() -> Vector3:
+	return hips_xf() * Vector3(0.0, NECK_Y - HIP, 0.0)
 
 
 ## The sculpt's placement (its hip joint on the skeleton's hips), in the town's frame.
@@ -241,6 +267,8 @@ static func look_of(st: Dictionary, seed_value: int) -> CrewLook:
 	var flags: int = CrewModel.F_BOOTS | int(st.get("flags", 0))
 	if beard != "":
 		flags |= (CrewModel.F_BEARD | CrewModel.F_MOUSTACHE) if rnd.call() < 0.7 else CrewModel.F_MOUSTACHE
+	if bool(st.get("patch", false)):
+		flags |= CrewModel.F_PATCH
 	if sleeves >= 0.25 and sleeves < 0.6:
 		flags |= CrewModel.F_ROLLED
 	elif sleeves >= 0.6:

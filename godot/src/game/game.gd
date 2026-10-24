@@ -23,7 +23,10 @@ extends Node3D
 ## the voyage on hold, --settings opens Settings (over the harbour, or with
 ## --pause over the paused voyage), --shipwright TAB opens the Shipwright on
 ## a tab (flag, sails, hull or presets) with --paint the brush out and a
-## stroke across her flag, or --any-colour the colour picker up.
+## stroke across her flag, or --any-colour the colour picker up; it opens at
+## the home port's quay, where --port-eye X,Y,Z and --port-look X,Y,Z stand
+## the lens in the port's own frame (+x along the quay toward the tavern,
+## +z out to sea, the quay's boards 1.8 m up) instead of the tab's shot.
 ## Her look: --colours N dresses her in the N-th famous colours (0 .. 7),
 ## --colours random in a surprise (--seed S), and --name NAME christens her.
 ## --shot PATH saves a frame and quits, with --hour H, --view N (0 close ..
@@ -108,6 +111,8 @@ var gunnery: Gunnery
 var crew: Crew
 ## The trading ports, and the one she's tied up at (null at sea).
 var ports: TradePorts
+## Puerto Marézia, the home port, where the Shipwright works on her.
+var home: HomePort
 ## The waypoints on the sea chart, raised in the world as pillars of light.
 var pins: Waypoints
 ## What the minimap and the sea chart show.
@@ -119,10 +124,10 @@ var chart_art: ChartArt
 var helm: Helmsman
 ## Her look from the Shipwright: her livery dressed in it, her flag drawn.
 var outfitter: Outfitter
-## The Shipwright, over her at anchor in the harbour; and its camera: what
-## the open tab is about ("flag", "sails", "hull" or "overview"), swung
-## round her by a drag (radians from the shot's own angle) and in or out by
-## a pinch, the side of her it stands off and which face of her flag it
+## The Shipwright, at the home port's quay; and its camera: what the open
+## tab is about ("flag", "sails", "hull" or "overview"), swung round her by
+## a drag (radians from the shot's own angle) and in or out by a pinch, the
+## side of her it stands off (the sea's) and which face of her flag it
 ## sees, and its clock (the shot sways a little).
 var shipwright: Shipwright
 var _sw_focus := "flag"
@@ -419,6 +424,8 @@ func _warm_up() -> void:
 		w.add_child(n)
 	for n in ports.warm_meshes():
 		w.add_child(n)
+	for n in home.warm_meshes():
+		w.add_child(n)
 	camera.add_child(w)
 	hud.warm()
 	chart_art.build(self)
@@ -710,6 +717,13 @@ func _build_ports() -> void:
 	# the harbourmaster rings her in, loud on her own quay
 	ports.bell_rung.connect(func(port: TradePort, _at: Vector3) -> void: sound.bell(2, 0.22 if port == dock_port else 0.08))
 	ports.delivered.connect(_delivered)
+	# the home port's quay, built the first time the harbour opens
+	home = HomePort.new()
+	for r in world.regions:
+		for site: Dictionary in r.ports:
+			if site.home:
+				home.setup(site, ports.arts(), world, crew)
+	add_child(home)
 
 
 ## A lot set down in the warehouse of the quay she's tied to: it glints in
@@ -994,9 +1008,11 @@ func _tick(real_dt: float) -> void:
 	# shove and stave each other in, and the shot in the air flies; in the
 	# harbour a sail or two on the horizon, and the ship picked comes in
 	pirates.step(dt, player if sailing else null)
-	if state == State.HARBOUR:
+	# (at the home port's quay the harbour's sea waits for her back at anchor)
+	if state == State.HARBOUR and not home.visible:
 		pirates.step_harbour(dt, player.pos, camera)
 		_swap_in(false)
+	home.prepare(real_dt)
 	for s in world.ships:
 		s.step(dt)
 	if dt > 0.0:
@@ -1009,6 +1025,11 @@ func _tick(real_dt: float) -> void:
 		dock_port.pin(player)
 		market.tick(real_dt, world.time)
 		_frame_dock(real_dt)
+	if home.visible:
+		home.pin(player)
+		# (her colours on the awning and the bunting follow the Shipwright's every change)
+		home.set_look(outfitter.look)
+		home.update(dt)
 	if shipwright.is_open():
 		_frame_shipwright(real_dt)
 	if player.alive and sailing:
@@ -1198,13 +1219,15 @@ func _lamps() -> void:
 		var t := camera.target
 		var reach := camera.ground_radius() + 50.0
 		for s in world.ships:
-			if s.alive and s.model.visible and Vector2(s.pos.x - t.x, s.pos.z - t.z).length() < reach:
+			if s.alive and s.visible and s.model.visible and Vector2(s.pos.x - t.x, s.pos.z - t.z).length() < reach:
 				var xf := s.model.global_transform
 				for l in s.model.lamps:
 					var at := xf * Vector3(l.x, l.y, l.z)
 					_lamp_list.append(Vector4(at.x, at.y, at.z, on * l.w))
 		# the towns' lanterns and lighthouse lamps
 		for l in ports.lamps(t, reach):
+			_lamp_list.append(Vector4(l.x, l.y, l.z, on * l.w))
+		for l in home.lamps():
 			_lamp_list.append(Vector4(l.x, l.y, l.z, on * l.w))
 		if _lamp_list.size() > Ocean.MAX_LAMPS:
 			_lamp_list.sort_custom(func(a: Vector4, b: Vector4) -> bool:
@@ -1903,7 +1926,7 @@ func _open_settings() -> void:
 ## TAB with --paint or --any-colour).
 func _stage_menus() -> void:
 	if _args.has("shipwright"):
-		_open_shipwright()
+		_open_shipwright(true)
 		shipwright.pick_tab(str(_args.shipwright))
 		if _args.has("paint"):
 			# a flourish of gold across her flag, the brush still out
@@ -1937,6 +1960,7 @@ func _enter_harbour(menu := true) -> void:
 	if not menu:
 		return
 	pirates.dress_harbour()
+	home.build_soon()
 	harbour.open(player.cls.id)
 	harbour.set_sound(Settings.sound)
 	camera.orbit_frame = harbour.framing()
@@ -2037,37 +2061,74 @@ func _choose_sea() -> void:
 	_note_tour("Set Sail")
 
 
-## The Shipwright, over her at anchor: the harbour's menu goes, the camera
-## glides off its orbit to the Flag tab's shot of her flag (from the side of
-## her it's on), and the panel comes in down the right.
-func _open_shipwright() -> void:
+## The Shipwright, at the home port (the web's openShipwright): she rows
+## round from the anchorage behind the veil (`now`: at once) and ties up
+## alongside its quay, the harbour's menu gone and the other ships out of the
+## picture, and the camera stands off her seaward side on the Flag tab's
+## shot of her flag, the town behind her, with the panel down the right.
+func _open_shipwright(now := false) -> void:
 	if state != State.HARBOUR or veil.busy or shipwright.is_open() or sea_pick.is_open():
 		return
+	if now:
+		_into_port()
+	else:
+		veil.cover("Rowing to %s…" % home.title, _into_port)
+
+
+func _into_port() -> void:
+	if state != State.HARBOUR:
+		return
 	harbour.close()
+	# the ship picked comes round, even if the yard hasn't finished her hull
+	_swap_in(true)
 	var p := player
-	_sw_side = 1.0 if (camera.global_position - p.pos).dot(p.port_dir()) >= 0.0 else -1.0
+	for s in world.ships:
+		s.visible = s == p
+	var b := home.berth(p.cls.beam)
+	p.place(b.x, b.y, b.z)
+	p.anchored = true
+	p.sail_target = 1.0
+	p.sail_level = 1.0
+	home.show_port(outfitter.look, p)
+	_sw_side = -1.0
 	_sw_face = 0.0
+	_sw_focus = "flag"
 	_sw_az = 0.0
 	_sw_zoom = 1.0
 	_sw_t = 0.0
-	shipwright.place = "Home Harbour"
+	shipwright.place = home.title
 	shipwright.open(outfitter.look, Progress.designs)
 	shipwright.set_flag(outfitter.flag_texture())
 	camera.begin_shot()
 	_frame_shipwright(0.0)
-	_note_tour("Shipwright")
+	camera.snap_shot()
+	sound.quay(true)
+	_note_tour("Shipwright at %s" % home.title)
 
 
-## Done at the Shipwright: the camera swings back into its orbit round her,
-## and the harbour's menu comes back up.
+## Done at the Shipwright: back out to the anchorage behind the veil, the
+## port put away, her at anchor again with the camera circling her and the
+## harbour's menu up.
 func _close_shipwright() -> void:
-	if not shipwright.is_open():
+	if not shipwright.is_open() or veil.busy:
 		return
+	veil.cover("Back to the open sea…", _out_of_port)
+
+
+func _out_of_port() -> void:
 	shipwright.close()
 	outfitter.baker.forget()
-	camera.leave_shot()
+	home.hide_port()
+	for s in world.ships:
+		s.visible = true
+	camera.port = false
+	sound.quay(false)
+	if state != State.HARBOUR:
+		return
+	_moor(player)
 	harbour.open(player.cls.id)
 	camera.orbit_frame = harbour.framing()
+	camera.orbit_snap()
 	_note_tour("left the Shipwright")
 
 
@@ -2078,6 +2139,9 @@ func _frame_shipwright(dt: float) -> void:
 	var sway := sin(_sw_t * 0.16) * 0.07
 	var fit := _fit_panel(shipwright.panel_rect())
 	var shot := _wright_shot(_sw_focus, player, _sw_az + sway, _sw_zoom * fit)
+	if _args.has("port-eye"):
+		# a shot's own lens on the home port (in its frame: +x along the quay, +z out to sea)
+		shot = [home.xf * _vec3(str(_args["port-eye"])), home.xf * _vec3(str(_args.get("port-look", "0,2,-8")))]
 	camera.shot_pos = shot[0]
 	camera.shot_look = shot[1]
 	camera.shot_fov = 38.0
@@ -2973,19 +3037,23 @@ func _tour_menus() -> void:
 
 
 ## The smoke test's turn at the Shipwright, a step at a time (true while
-## it's under way): opened off the harbour, the Sails tab, a famous ship's
-## colours taken (and a fresh hull in them off the yard), the brush across
-## her flag and its work kept, the design saved and deleted again, and
-## Done with the back button.
+## it's under way): opened off the harbour (she rows round to the home
+## port's quay), the Sails tab, a famous ship's colours taken (and a fresh
+## hull in them off the yard), the brush across her flag and its work kept,
+## the design saved and deleted again, and Done with the back button (back
+## out to the anchorage).
 func _tour_wright() -> bool:
-	if _sw_tour >= 8:
+	if _sw_tour >= 9:
 		return false
 	match _sw_tour:
 		0:
 			harbour.shipwright.emit()
-			if not shipwright.is_open() or not camera.port:
-				printerr("SMOKE FAILED: the Shipwright didn't open over her")
 		1:
+			var b := home.berth(player.cls.beam)
+			if not shipwright.is_open() or not camera.port or not home.visible:
+				printerr("SMOKE FAILED: the Shipwright didn't open over her at %s" % home.title)
+			elif Vector2(player.pos.x - b.x, player.pos.z - b.y).length() > 0.5:
+				printerr("SMOKE FAILED: she isn't alongside %s's quay" % home.title)
 			shipwright.pick_tab("sails")
 			if _sw_focus != "sails":
 				printerr("SMOKE FAILED: the Sails tab didn't bring the camera round to her sails")
@@ -3023,8 +3091,9 @@ func _tour_wright() -> bool:
 				shipwright.delete_design(str(Progress.designs[0].id))
 		7:
 			_go_back(false)
-			if shipwright.is_open() or not harbour.is_open() or camera.port:
-				printerr("SMOKE FAILED: the back button left the Shipwright open")
+		8:
+			if shipwright.is_open() or not harbour.is_open() or camera.port or home.visible:
+				printerr("SMOKE FAILED: the back button didn't take her back out to the anchorage")
 	_sw_tour += 1
 	_tour_at = _frames
 	return true

@@ -399,7 +399,7 @@ func _build() -> void:
 		_stall(n, f, i, -5.6)
 	_props(n)
 	for p in LANTERNS:
-		_lantern(n, p.x, p.y)
+		_lamps.append(lantern(n, p.x, p.y))
 	# the flagpole on the office's back slope (both builds)
 	for b: TownKit in [n, f]:
 		b.cyl(0.07, 0.1, 5.7, Vector3(-6.2, DECK + 10.75, -depth + 2.6), C_TIMBER_DARK, 6)
@@ -426,19 +426,19 @@ func _build_deck(n: TownKit, f: TownKit) -> void:
 	var W := HALF * 2.0
 	var deck := MeshInstance3D.new()
 	deck.name = "Deck"
-	deck.mesh = _slab(W, 0.32, D)
+	deck.mesh = slab(W, 0.32, D)
 	deck.material_override = _arts.deck
 	deck.position = Vector3(0.0, DECK - 0.16, -D * 0.5)
 	add_child(deck)
 	var rnd := Mulberry32.new(31 + index * 7)
 	for x in _steps(-W * 0.5 + 0.3, W * 0.5, 4.0, true):
-		_pile(n, x, -0.25, rnd.next())
+		pile(n, x, -0.25, rnd.next())
 		if roundi(x) % 8 == 0:
-			_pile(f, x, -0.25, rnd.next())
+			pile(f, x, -0.25, rnd.next())
 	var z := -4.0
 	while z > -D:
-		_pile(n, -W * 0.5 + 0.3, z, rnd.next())
-		_pile(n, W * 0.5 - 0.3, z, rnd.next())
+		pile(n, -W * 0.5 + 0.3, z, rnd.next())
+		pile(n, W * 0.5 - 0.3, z, rnd.next())
 		z -= 4.0
 	# cross-bracing under the quay's face
 	for x in _steps(-W * 0.5 + 0.3, W * 0.5 - 4.0, 4.0, false):
@@ -471,8 +471,9 @@ static func _steps(from: float, to: float, step: float, upto: bool) -> PackedFlo
 
 
 ## A pile driven into the seabed, leaning a hair (`r` its random draw):
-## weed-dark below the waterline, weathered timber above.
-func _pile(b: TownKit, x: float, z: float, r: float) -> void:
+## weed-dark below the waterline, weathered timber above; `cap` gives it a
+## head showing through the boards.
+static func pile(b: TownKit, x: float, z: float, r: float, cap := false) -> void:
 	var length := DECK + 9.0
 	var p := TownKit.place(Vector3(x, (DECK - 9.0) * 0.5 + 0.05, z), 0.0, 0.0, (r - 0.5) * 0.05)
 	var lo := p * Vector3(0.0, -length * 0.5, 0.0)
@@ -488,12 +489,14 @@ func _pile(b: TownKit, x: float, z: float, r: float) -> void:
 	b.kit.spar(mid, hi, r_mid, 0.21, 7, true)
 	b.paint_from(m, func(q: Vector3) -> Color:
 		return TownKit.shade(C_PILE, 0.9 + fmod(q.y * 3.0, 1.0) * 0.04), TownKit.WOOD)
+	if cap:
+		b.cyl(0.25, 0.25, 0.12, Vector3(x, DECK + 0.02, z), C_TIMBER_DARK, 7)
 
 
 ## The quay's boards: a slab whose top is drawn in the town's own metres (UV
 ## (x, z), so the planks run out to the berth); its edges' UVs are pushed far
 ## off, out of reach of the lanterns' pools.
-static func _slab(w: float, h: float, d: float) -> ArrayMesh:
+static func slab(w: float, h: float, d: float) -> ArrayMesh:
 	var pos := PackedVector3Array()
 	var nrm := PackedVector3Array()
 	var uv := PackedVector2Array()
@@ -528,24 +531,24 @@ static func _slab(w: float, h: float, d: float) -> ArrayMesh:
 	return mesh
 
 
-func _lantern(b: TownKit, x: float, z: float) -> void:
-	var h := LANTERN_H
+## A lantern on its post; returns its lamp (x, y, z, brightness).
+static func lantern(b: TownKit, x: float, z: float, h: float = LANTERN_H) -> Vector4:
 	b.cyl(0.09, 0.12, h, Vector3(x, DECK + h * 0.5, z), C_TIMBER_DARK, 6)
 	b.box(0.08, 0.08, 0.7, Vector3(x, DECK + h - 0.1, z + 0.3), C_TIMBER_DARK)
 	var ly := DECK + h - 0.55
 	b.ball(0.17, Vector3(x, ly, z + 0.6), C_LAMP, TownKit.GLOW, Vector3(1.0, 1.3, 1.0))
 	b.cone(0.24, 0.24, Vector3(x, ly + 0.3, z + 0.6), C_IRON, 6, TownKit.IRON)
 	b.cyl(0.14, 0.11, 0.08, Vector3(x, ly - 0.24, z + 0.6), C_IRON, 8, TownKit.IRON)
-	_lamps.append(Vector4(x, ly, z + 0.6, 1.0))
+	return Vector4(x, ly, z + 0.6, 1.0)
 
 
-func _siding(b: TownKit, w: float, h: float, x: float, y0: float, z: float, col: Color) -> void:
+static func siding(b: TownKit, w: float, h: float, x: float, y0: float, z: float, col: Color) -> void:
 	var n := floori(h / 0.32)
 	for i in n:
 		b.box(w, 0.3, 0.06, Vector3(x, y0 + 0.16 + i * (h / n), z), TownKit.shade(col, 0.94 if i % 2 else 1.03))
 
 
-func _window(b: TownKit, x: float, y: float, z: float, w: float, h: float, shutter: Color, flowers: bool = false) -> void:
+static func window(b: TownKit, x: float, y: float, z: float, w: float, h: float, shutter: Color, flowers: bool = false) -> void:
 	b.box(w + 0.26, h + 0.26, 0.14, Vector3(x, y, z), C_CREAM)
 	b.box(w, h, 0.06, Vector3(x, y, z + 0.05), C_GLASS, 0.0, TownKit.GLOW)
 	b.box(0.07, h, 0.06, Vector3(x, y, z + 0.1), C_CREAM)
@@ -560,7 +563,7 @@ func _window(b: TownKit, x: float, y: float, z: float, w: float, h: float, shutt
 			b.ball(0.11, Vector3(x - w * 0.5 + 0.05 + (i / 6.0) * (w - 0.1), y - h * 0.5 - 0.06, z + 0.22 + (i % 2) * 0.06), TownKit.lin("#3f8a3a" if i % 3 == 1 else cols[i % 4]))
 
 
-func _door(b: TownKit, x: float, y0: float, z: float, w: float = 1.6, h: float = 2.5) -> void:
+static func door(b: TownKit, x: float, y0: float, z: float, w: float = 1.6, h: float = 2.5) -> void:
 	b.box(w + 0.3, h + 0.25, 0.18, Vector3(x, y0 + (h + 0.25) * 0.5, z), C_CREAM)
 	b.box(w, h, 0.12, Vector3(x, y0 + h * 0.5, z + 0.05), C_DOOR)
 	b.ball(0.07, Vector3(x + w * 0.32, y0 + h * 0.45, z + 0.14), C_GOLD, TownKit.GILT)
@@ -594,7 +597,7 @@ func _warehouse(n: TownKit, f: TownKit, cx: float, back: float) -> void:
 		b.box(W, H, Dp, Vector3(cx, y0 + H * 0.5, cz), wall, 0.1)
 		b.gable(Dp + 0.2, 2.6, W + 0.2, Vector3(cx, y0 + H, cz), wall, true)
 		_roof(b, b == f, W, Dp + 0.2, 2.6, cx, y0 + H, cz, TownKit.lin(spec.roof))
-	_siding(n, W - 0.5, H - 0.1, cx, y0, front + 0.02, wall)
+	siding(n, W - 0.5, H - 0.1, cx, y0, front + 0.02, wall)
 	for sx: float in [-1.0, 1.0]:
 		for sz: float in [-1.0, 1.0]:
 			n.box(0.4, H + 0.1, 0.4, Vector3(cx + sx * (W * 0.5 + 0.02), y0 + H * 0.5, cz + sz * (Dp * 0.5 + 0.02)), trim, 0.08)
@@ -629,18 +632,18 @@ func _office(n: TownKit, f: TownKit, cx: float, back: float) -> void:
 		b.box(W + 0.5, 3.0, Dp + 0.4, Vector3(cx, y0 + 5.0, cz), TownKit.shade(wall, 0.92), 0.1)
 		b.gable(Dp + 0.4, 2.4, W + 0.5, Vector3(cx, y0 + 6.5, cz), wall, true)
 		_roof(b, b == f, W + 0.4, Dp + 0.4, 2.4, cx, y0 + 6.5, cz, roof)
-	_siding(n, W - 0.4, 3.2, cx, y0, front + 0.02, wall)
+	siding(n, W - 0.4, 3.2, cx, y0, front + 0.02, wall)
 	n.box(W + 0.9, 0.3, Dp + 0.9, Vector3(cx, y0 + 3.5, cz), C_TIMBER_DARK, 0.08)
 	# balcony with a rail over the door
 	n.box(W - 1.6, 0.16, 1.3, Vector3(cx, y0 + 3.62, front + 0.7), C_TIMBER)
 	for i in 11:
 		n.box(0.07, 0.8, 0.07, Vector3(cx - (W - 1.8) * 0.5 + (i / 10.0) * (W - 1.8), y0 + 4.08, front + 1.3), C_CREAM)
 	n.box(W - 1.6, 0.08, 0.1, Vector3(cx, y0 + 4.5, front + 1.3), TownKit.lin(spec.trim))
-	_door(n, cx, y0, front + 0.04)
-	_window(n, cx - 2.6, y0 + 1.7, front + 0.08, 1.1, 1.0, roof, true)
-	_window(n, cx + 2.6, y0 + 1.7, front + 0.08, 1.1, 1.0, roof, true)
+	door(n, cx, y0, front + 0.04)
+	window(n, cx - 2.6, y0 + 1.7, front + 0.08, 1.1, 1.0, roof, true)
+	window(n, cx + 2.6, y0 + 1.7, front + 0.08, 1.1, 1.0, roof, true)
 	for wx: float in [-2.4, 0.0, 2.4]:
-		_window(n, cx + wx, y0 + 5.1, front + 0.28, 0.9, 1.0, roof, false)
+		window(n, cx + wx, y0 + 5.1, front + 0.28, 0.9, 1.0, roof, false)
 	# a clock in a dormer over the eaves
 	var gy := y0 + 7.3
 	n.box(1.7, 1.6, 1.6, Vector3(cx, gy, front - 0.6), wall)
@@ -679,9 +682,9 @@ func _landmark(n: TownKit, f: TownKit, cx: float, back: float) -> float:
 				n.box(0.7, 0.2, 0.7, Vector3(cx + k * 0.95, y0 + 5.2, front + 1.0), trim)
 			n.box(7.6, 0.4, 1.8, Vector3(cx, y0 + 5.45, front + 0.85), C_CREAM)
 			n.gable(7.6, 1.3, 1.8, Vector3(cx, y0 + 5.65, front + 0.85), C_CREAM, false)
-			_door(n, cx, y0 + 0.48, front + 0.04, 1.7, 2.8)
+			door(n, cx, y0 + 0.48, front + 0.04, 1.7, 2.8)
 			for wx: float in [-3.6, 3.6]:
-				_window(n, cx + wx, y0 + 3.0, front + 0.06, 0.9, 1.7, TownKit.lin("#27407a"))
+				window(n, cx + wx, y0 + 3.0, front + 0.06, 0.9, 1.7, TownKit.lin("#27407a"))
 			return front + 1.7
 		"bazaar":
 			var Dp := 7.0
@@ -733,7 +736,7 @@ func _landmark(n: TownKit, f: TownKit, cx: float, back: float) -> float:
 			var face := front + 0.15
 			n.cyl(0.85, 0.85, 0.1, Vector3(cx, y0 + 6.3, face + 0.05), C_GLASS, 16, TownKit.GLOW, PI * 0.5)
 			n.torus(0.9, 0.12, 6, 18, Transform3D(Basis.IDENTITY, Vector3(cx, y0 + 6.3, face + 0.1)), TownKit.lin(spec.trim))
-			_door(n, cx, y0, front + 0.04, 1.9, 3.0)
+			door(n, cx, y0, front + 0.04, 1.9, 3.0)
 			n.torus(1.0, 0.13, 6, 14, Transform3D(Basis.IDENTITY, Vector3(cx, y0 + 3.0, front + 0.14)), TownKit.lin(spec.trim), TownKit.WOOD, PI)
 			for s: float in [-1.0, 1.0]:
 				var ex := cx + s * 3.2
@@ -759,9 +762,9 @@ func _landmark(n: TownKit, f: TownKit, cx: float, back: float) -> float:
 				n.box(1.2 - inset, 11.0 / 33.0, 1.2 - inset, Vector3(cx - 3.6, y0 + (i + 0.5) * 11.0 / 33.0, back + 1.2), TownKit.shade(brick, 0.85 if i % 2 else 0.99))
 			_chimney = Vector3(cx - 3.6, y0 + 11.2, back + 1.2)
 			n.box(1.45, 0.3, 1.45, Vector3(cx - 3.6, y0 + 11.0, back + 1.2), C_TIMBER_DARK)
-			_siding(n, W - 0.5, 4.6, cx, y0, front + 0.02, barn)
-			_door(n, cx + 1.5, y0, front + 0.04, 2.6, 3.0)
-			_window(n, cx - 2.6, y0 + 2.2, front + 0.08, 1.2, 1.1, TownKit.lin(spec.wall2), true)
+			siding(n, W - 0.5, 4.6, cx, y0, front + 0.02, barn)
+			door(n, cx + 1.5, y0, front + 0.04, 2.6, 3.0)
+			window(n, cx - 2.6, y0 + 2.2, front + 0.08, 1.2, 1.1, TownKit.lin(spec.wall2), true)
 			# copper still with its swan neck, and a pyramid of rum barrels
 			var sx := cx + 5.6
 			var sz := front + 1.3
@@ -1064,7 +1067,7 @@ func _extras() -> void:
 	_plank.material_override = _arts.parts
 	_plank.visible = false
 	add_child(_plank)
-	_near.add_child(_halo_mesh())
+	_near.add_child(halo_mesh(_lamps, _arts.halo))
 	for i in 4:
 		_walkers.append(Walker.new())
 	# the strollers' loops: one along the market front, one along the warehouse end
@@ -1094,15 +1097,15 @@ func _extras() -> void:
 		_porters.append(p)
 
 
-## The halos round the quay's lanterns and the lighthouse's lamp after dark
+## The halos round a town's lanterns and its lighthouse's lamp after dark
 ## (ShipModel's halo cards: four corners at each light).
-func _halo_mesh() -> MeshInstance3D:
+static func halo_mesh(lamps: Array[Vector4], mat: Material) -> MeshInstance3D:
 	var pos := PackedVector3Array()
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
 	var col := PackedColorArray()
 	var idx := PackedInt32Array()
-	for l in _lamps:
+	for l in lamps:
 		var o := pos.size()
 		var at := Vector3(l.x, l.y, l.z)
 		for c in ShipModel.CARD:
@@ -1124,7 +1127,7 @@ func _halo_mesh() -> MeshInstance3D:
 	var mi := MeshInstance3D.new()
 	mi.name = "Halos"
 	mi.mesh = mesh
-	mi.material_override = _arts.halo
+	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.extra_cull_margin = ShipModel.HALO_MARGIN
 	return mi

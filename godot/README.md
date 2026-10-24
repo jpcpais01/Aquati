@@ -20,13 +20,13 @@ way and keep the APK as a workflow artifact.
 | `src/ships` | Ship classes and liveries; her look (`ShipLook`: her flag, sails, paintwork and name, the famous colours and Surprise me) and the heraldry it's drawn with (`Heraldry`: every flag shape, pattern, emblem and backing as the web draws them, rasterized off the main thread by `LookBaker`); the procedural ship builder, figureheads, the sailing physics, battle damage, dismasting, re-rigging and sinking (`ShipDamage`), the pirate captains (`PirateAI`), the crews on deck (`ShipCrew` for a ship's sailors and their deck, `Crew` and `CrewView` to run and draw every crew afloat) |
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave, the wreckage afloat (`Debris`), the rain, the lightning and the spindrift a gale tears off the crests (all three drawn from one static buffer each, animated on the GPU) |
 | `src/game` | The voyage scene (and docking at a trading port), the camera rig (with the port's shot of her alongside and the Shipwright's shots of her flag, sails and hull), the controls; her look worn (`Outfitter`: her flag and the mark on her sails drawn on worker threads, a fresh hull off the yard when her paintwork changes); the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time; plunder, the hold and each port's market (`Treasure`); the waypoints (`Waypoints`: pillars of light on the sea, all in one draw); the helmsman (`Helmsman`: plots a course round the isles and shoals on each archipelago's sea room, `SeaNav`, worked out on a thread of its own, then sails her there, beating to windward, easing in at the end) |
-| `src/port` | The trading ports (`TradePorts`, `TradePort`): six market towns along their quays, each built once in two cuts (whole near the camera, a shell further off) with the mesh kit in `TownKit`, its harbourmaster, porters carrying goods ashore, merchants, fishers and the town band (`Figure`, drawn by the crews' sailor), its lamps mirrored by the sea after dark |
+| `src/port` | The trading ports (`TradePorts`, `TradePort`): six market towns along their quays, each built once in two cuts (whole near the camera, a shell further off) with the mesh kit in `TownKit`, its harbourmaster, porters carrying goods ashore, merchants, fishers and the town band (`Figure`, drawn by the crews' sailor), its lamps mirrored by the sea after dark; and the home port, Puerto Marézia (`HomePort`), where the Shipwright works on her: its quay, the Salty Gull, the sail loft flying her flag under an awning and bunting in her colours, the cargo shed, the lookout tower and the crane, built on a worker thread the first time the harbour opens, and its dozen townsfolk at their day's work |
 | `src/ui` | The harbour (`Harbour`) and "Where shall we sail?" (`SeaPick`), the Shipwright (`Shipwright`: her flag on its stage with the brush, `FlagStage`, the colour picker, `ColourPop`, and her saved designs), a trading port's market and the prompt to come alongside (`MarketPanel`), the voyage on hold (`PauseScreen`), Settings (`SettingsSheet`), the veil between scenes and the frame counter; the HUD, the touch helm, the sail lever, the fire pad, the shot pie, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`); the maps: the minimap (`Minimap`) and the sea chart (`SeaChart`, its geography and engravings in `ChartArt`, the marks they share in `MapMarks`, the card over a place tapped on it in `ChartCard`) and the helmsman's pill on the HUD (`HelmPill`). `MenuKit`, `UiBox`, `UiButton` and `UiText` draw the web's glass panels, gilt buttons and type |
 | `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, the night sky, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
-| `art` | The tiling textures every shader samples, the moon's face (baked from the web game's own), the baked figurehead sculptures, the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) and the towns' painted signs and flags (`town_signs.png`, `town_flags.png`) |
+| `art` | The tiling textures every shader samples, the moon's face (baked from the web game's own), the baked figurehead sculptures, the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) the towns' painted signs and flags (`town_signs.png`, `town_flags.png`) and the home port's boards and the notes and snores that rise off its folk (`home_signs.png`, `home_glyphs.png`) |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
 | `audio` | The sounds (`audio/sfx`) and the songs (`audio/music`), rendered from the web game's own audio code, and `sounds.json`: the level each sound was rendered at, which are stereo, and each song's title, its leaning to day or night and when its last note is done |
-| `tools` | The CI checks and the asset generators (`tools/crew` bakes the sailor, `tools/audio` the sounds and songs and `tools/bake_signs.mjs` the towns' signs and flags, all from the web game's own code) |
+| `tools` | The CI checks and the asset generators (`tools/crew` bakes the sailor, `tools/audio` the sounds and songs and `tools/bake_signs.mjs` the towns' and the home port's signs, flags and glyphs, all from the web game's own code) |
 
 ## Running it
 
@@ -38,9 +38,10 @@ godot --path godot
 ```
 
 In the harbour A / D or the arrows (or 1 to 3) pick a ship and Enter sets
-sail; the Shipwright beside Set Sail dresses her (her flag, which you can
-paint by hand, her sails, her paintwork and her name), where a drag across
-her swings the camera round and the wheel or a pinch brings it closer. Esc, like Android's back button, closes whatever is on top and puts a
+sail; the Shipwright beside Set Sail rows her round to the home port's quay
+and dresses her there (her flag, which you can paint by hand, her sails,
+her paintwork and her name), where a drag across her swings the camera round
+and the wheel or a pinch brings it closer. Esc, like Android's back button, closes whatever is on top and puts a
 voyage on hold (in the harbour Android's back button leaves the game).
 
 At sea: A / D or the arrows steer, W / S set and take in sail, Q and E fire
@@ -67,7 +68,9 @@ harbour (`--orbit A` sets how far round her the camera has come),
 `--settings` opens Settings (over the harbour, or with `--pause` over the
 paused voyage), `--shipwright TAB` opens the Shipwright on a tab (flag,
 sails, hull or presets; `--paint` takes the brush to her flag, `--any-colour`
-opens the colour picker), and `--dock K` ties her up at the K-th market town (0 to 5:
+opens the colour picker; it opens at the home port's quay, where `--port-eye
+X,Y,Z` and `--port-look X,Y,Z` stand the lens in the port's own frame: +x
+along the quay toward the tavern, +z out to sea, its boards 1.8 m up), and `--dock K` ties her up at the K-th market town (0 to 5:
 the home waters' four, then Las Brumas' two) with its market open (`--hold`
 puts goods aboard to sell, and `--sell ID` or `--sell all` sells just before
 the frame); `--off K` puts her off its quay instead, the prompt to come
@@ -81,8 +84,9 @@ shot, `--view 0..3`
 start somewhere else, `--shot out.png` saves a frame and quits (after
 `--frames N`, and prints the frame's triangles and draw calls), `--smoke`
 walks the menus (a ship picked, Set Sail for Las Brumas, paused, Settings,
-back to the harbour, a turn at the Shipwright: the Sails tab, a famous ship's
-colours, the brush on her flag, a design saved and deleted, then out into the home waters, paused and resumed with the
+back to the harbour, a turn at the Shipwright: rowed round to the home port,
+the Sails tab, a famous ship's colours, the brush on her flag, a design saved
+and deleted and back out to the anchorage, then out into the home waters, paused and resumed with the
 back button, the sea chart opened off the minimap, a pin dropped on it,
 "Sail there" and the helmsman setting a course, the chart closing itself, the
 pin's card opened again and the pin lifted, then off a market's quay: the prompt tapped, goods sold, her hull
@@ -152,7 +156,7 @@ kept in `Settings`.
 ```sh
 cd godot
 godot --headless --import                       # compiles every script
-godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world, builds the market towns (prices to the coin against the web's), drops and strikes off waypoints, lays out the sea chart against the web's own numbers, plots the helmsman's courses for a sloop and a galleon (round an isle, out to Las Brumas, onto a shore) and sounds every leg for deep water, loads the sound, stacks a broadside's damage numbers, makes her look whole from anything and draws every flag, emblem and sail the Shipwright offers, keeps the brush's work as a PNG, saves and loads your progress (and a damaged save)
+godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world, builds the market towns (prices to the coin against the web's) and the home port (on its worker, within its triangle budget, a galleon alongside in deep enough water, its townsfolk at work and her colours on its awning and bunting), drops and strikes off waypoints, lays out the sea chart against the web's own numbers, plots the helmsman's courses for a sloop and a galleon (round an isle, out to Las Brumas, onto a shore) and sounds every leg for deep water, loads the sound, stacks a broadside's damage numbers, makes her look whole from anything and draws every flag, emblem and sail the Shipwright offers, keeps the brush's work as a PNG, saves and loads your progress (and a damaged save)
 godot --headless --script res://tools/bake.gd   # builds every figurehead
 godot --headless --fixed-fps 60 --quit-after 2500 -- --smoke --smoke-at 2300  # walks the menus, the Shipwright, the sea chart and the helmsman, a market, then sails on
 ```

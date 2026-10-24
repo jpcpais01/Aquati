@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T05:00Z',
+    entries: [
+      {
+        title: 'Android: Puerto Marézia',
+        notes: [
+          'The fifteenth Android build takes the Shipwright ashore. Tap Shipwright and she rows round from the anchorage to Puerto Marézia, the home port, and ties up alongside its quay with her lines out and the gangplank down, while the camera stands off her seaward side with the whole town behind her. Done takes her back out to the open sea.',
+          'The town is all there: the plank quay on its pilings with its bollards and lanterns, the Salty Gull with smoke curling from its chimney, the sail loft, the cargo shed, the lookout tower with its cannon, a crane swinging its load out over the water, and palms and bunting. The loft flies your own flag, brush strokes and all, its awning is striped in your sails\' colours and the bunting is in your flag\'s.',
+          'A dozen townsfolk keep the quay busy. One rolls a barrel round the crates, a porter carries a crate overhead to the crane, a fisherman dangles his legs over the edge, and an accordion player sends notes into the air while a dancer jigs to it. Two drinkers clink tankards at the tavern table, a painter touches up your hull from a rowboat, the lookout sweeps the horizon, a deckhand swabs the boards, the captain and his parrot point you out, and someone snores in the hammock between the palms.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T03:00Z',
     entries: [
       {

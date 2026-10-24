@@ -28,6 +28,8 @@ const REGIONS := ["home", "brumas"]
 ## A town's triangles close up and as its shell, at most.
 const TOWN_TRIS := 26000
 const TOWN_SHELL_TRIS := 3000
+## Puerto Marézia's triangles (its quay, buildings, palms and what moves; its folk are the crews').
+const HOME_TRIS := 34000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "bell", "blast", "bosun_pipe", "bubbles",
 		"cannon0", "cannon1", "cannon2", "chain", "cheer4", "cheer6", "chime", "click", "clunk", "coin", "creak0", "creak1", "creak2",
@@ -43,6 +45,8 @@ const BUSES := [&"UI", &"Mix", &"SFX", &"Air6k", &"Air2k5", &"Air1k", &"Air450",
 		&"Rain", &"Roar", &"Music", &"Deep"]
 
 var _errors := 0
+## The baked world, for the home port's check (once the tree runs: her lines are tied to where she lies in it).
+var _home_world: World
 
 
 func _initialize() -> void:
@@ -60,6 +64,8 @@ func _initialize() -> void:
 	# the helm's reach is a share of the window, and a strike is aimed by the
 	# lens: those checks wait for the tree to run
 	await process_frame
+	if _home_world != null:
+		_check_home_port(_home_world)
 	_check_touch()
 	_check_lightning()
 	_check_floaters()
@@ -774,6 +780,7 @@ func _check_world() -> void:
 		_fail("world: the spawn point is aground (%.1f m)" % w.ground_height(spawn.x, spawn.y))
 	print("world: %d archipelagos, %d plants in %d batches, loaded in %.0f ms" % [regions.size(), plants, batches, (Time.get_ticks_usec() - t0) / 1000.0])
 	_check_ports(w)
+	_home_world = w
 	_check_maps(w)
 	_check_helm(w)
 
@@ -914,6 +921,118 @@ func _check_ports(w: World) -> void:
 	steps += 1 if built else 0
 	print("ports: %d of 3 steps as expected; %d towns, at most %d triangles close up and %d as a shell, built in %.0f ms" % [
 			steps, sites.size(), near, far, (Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## Puerto Marézia, the home port, as the game builds it: on a worker,
+## within its triangle budget; a galleon alongside with water enough under
+## her keel from bow to stern, her flag flying on the loft's pole; its dozen
+## folk dressed, about their business for five seconds with nothing thrown
+## out of place, and drawn with the crews; and her look on the awning, the
+## bunting and the painter's bucket, each repainted only when its own
+## colours change.
+func _check_home_port(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var steps := 0
+	var site := {}
+	for r in w.regions:
+		for p: Dictionary in r.ports:
+			if p.home:
+				site = p
+	if site.is_empty():
+		_fail("home: no home port in the world bake")
+		return
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new(0.6)
+	sea.waves = Waves.new(0.6)
+	# (in the tree: its buffer is laid out when it's ready)
+	var fx := Particles.new()
+	root.add_child(fx)
+	sea.fx = fx
+	# (loaded, not named: the crews read Settings)
+	var crew: Node3D = load("res://src/ships/crew.gd").new()
+	var town: GDScript = load("res://src/port/trade_port.gd")
+	var port: Node3D = load("res://src/port/home_port.gd").new()
+	port.setup(site, town.Arts.new(), sea, crew)
+	var title: String = port.title
+	root.add_child(port)
+	# built on a worker, as the harbour has it built a moment after it opens
+	port.build_soon(0.0)
+	var waited := 0
+	while not port.built and waited < 30000:
+		port.prepare(0.0)
+		OS.delay_msec(5)
+		waited += 5
+	var tris: int = port.tris
+	if not port.built:
+		_fail("home: %s wasn't built on its worker in 30 s" % title)
+	elif tris <= 0 or tris > HOME_TRIS:
+		_fail("home: %s built %d triangles (budget %d)" % [title, tris, HOME_TRIS])
+	else:
+		steps += 1
+	var built_ms := waited
+	# a galleon alongside, as the Shipwright ties her up
+	var g := Ship.create(ShipClass.named("galleon"), Livery.named("player"), sea)
+	root.add_child(g)
+	var look := ShipLook.preset(3)
+	port.show_port(look, g)
+	var b: Vector3 = port.berth(g.cls.beam)
+	g.place(b.x, b.y, b.z)
+	var shallow := INF
+	for f: float in [-0.5, -0.25, 0.0, 0.25, 0.5]:
+		for side: float in [-0.5, 0.5]:
+			var at := Vector3(b.x, 0.0, b.y) + g.forward() * g.cls.length * f + g.port_dir() * g.cls.beam * side
+			shallow = minf(shallow, -sea.ground_height(at.x, at.z))
+	var flag: MeshInstance3D = port._flag
+	if shallow < g.cls.draft + 1.0:
+		_fail("home: a galleon at %s's quay has %.1f m under her keel" % [title, shallow - g.cls.draft])
+	elif flag.material_override != g.model.shared_material("flag"):
+		_fail("home: the loft's pole doesn't fly her flag")
+	else:
+		steps += 1
+	# five seconds of the quay's day: everyone where they should be, all drawn
+	var sound := true
+	for i in 300:
+		port.pin(g)
+		port.update(1.0 / 60.0)
+	for fig: Variant in port.figures:
+		var o: Vector3 = (port.xf * fig.body_xf()).origin
+		if not (is_finite(o.x) and is_finite(o.y) and is_finite(o.z)) or o.y < -2.0 or o.y > 20.0:
+			sound = false
+			_fail("home: a townsperson is thrown out to (%.1f, %.1f, %.1f)" % [o.x, o.y, o.z])
+			break
+	var drawn := [0]
+	var crowds: Array[Callable] = crew.crowds
+	for c in crowds:
+		c.call(func(_xf: Transform3D, _pose: PackedFloat32Array, _hat: int, _prop: int, _kit: Array[PackedInt32Array]) -> void:
+			drawn[0] += 1)
+	if drawn[0] != 12 or port.figures.size() != 12:
+		sound = false
+		_fail("home: %d of its %d folk drawn, not 12" % [drawn[0], port.figures.size()])
+	steps += 1 if sound else 0
+	# her look on the quay, repainted for its own colours only
+	var awning: Mesh = port._awning.mesh
+	var bunting: Mesh = port._bunting.mesh
+	var tip: Mesh = port._brush_tip.mesh
+	var renamed := look.duplicate(true)
+	renamed.name = "Check"
+	port.set_look(renamed)
+	var kept: bool = port._awning.mesh == awning and port._bunting.mesh == bunting and port._brush_tip.mesh == tip
+	var recut := renamed.duplicate(true)
+	recut.sail.cloth = "#123456" if str(recut.sail.cloth) != "#123456" else "#654321"
+	port.set_look(recut)
+	var redone: bool = port._awning.mesh != awning and port._bunting.mesh == bunting and port._brush_tip.mesh == tip
+	if awning == null or bunting == null or tip == null or not kept or not redone:
+		_fail("home: her look's colours on the quay (made %s, kept %s, repainted %s)" % [awning != null and bunting != null and tip != null, kept, redone])
+	else:
+		steps += 1
+	port.hide_port()
+	port.free()
+	g.free()
+	fx.free()
+	crew.free()
+	print("home: %d of 4 steps as expected; %s, %d triangles, built on a worker in %d ms, a galleon alongside in %.1f m of water, checked in %.0f ms" % [
+			steps, title, tris, built_ms, shallow, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## Progress, on a scratch file of its own: a save comes back whole; a save
