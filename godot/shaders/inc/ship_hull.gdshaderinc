@@ -1,5 +1,7 @@
 // The body of ship_hull.gdshader and ship_hull_dmg.gdshader (with DAMAGE
-// defined: the breaches, scorch and break line of ship_damage.gdshaderinc).
+// defined: the breaches, scorch and break line of ship_damage.gdshaderinc),
+// and of their SKIN variants (ship_hull_skin*.gdshader, your own ship's,
+// which can wear a Treasure Vault skin over her painted strakes).
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
@@ -22,12 +24,22 @@ varying vec3 v_world;
 #include "res://shaders/inc/ship_damage.gdshaderinc"
 varying vec3 v_obj;
 #endif
+#ifdef SKIN
+#include "res://shaders/inc/ship_skin.gdshaderinc"
+// where on her (m) and which way her side faces, in her own frame
+varying vec3 v_skin_p;
+varying vec3 v_skin_n;
+#endif
 
 void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	lit_cloud = cloud_shadow(v_world.xz);
 #ifdef DAMAGE
 	v_obj = VERTEX;
+#endif
+#ifdef SKIN
+	v_skin_p = VERTEX;
+	v_skin_n = NORMAL;
 #endif
 }
 
@@ -72,6 +84,8 @@ void fragment() {
 	// ---- gunports: a gilded frame, a dark recess and a lit sill
 	float metal = 0.0;
 	float relief = -seam * 0.6 - butt * 0.4;
+	// clear of every port and its frame (a skin keeps off them)
+	float clear = 1.0;
 	for (int i = 0; i < 8; i++) {
 		if (i >= port_count) {
 			break;
@@ -79,6 +93,8 @@ void fragment() {
 		vec4 pt = ports[i];
 		vec2 d = abs(vec2(u, v) - pt.xy);
 		vec2 fr = vec2(3.0 / 1024.0, 3.0 / 512.0);
+		vec2 pad = d - pt.zw - fr * 2.0;
+		clear = min(clear, step(0.0, max(pad.x, pad.y)));
 		if (d.x < pt.z + fr.x && d.y < pt.w + fr.y) {
 			if (d.x < pt.z && d.y < pt.w) {
 				col = vec3(0.006, 0.004, 0.003);
@@ -98,9 +114,27 @@ void fragment() {
 	}
 
 	float rough = mix(0.48, 0.32, metal);
+#ifdef SKIN
+	if (skin_id > 0) {
+		// her painted strakes take it: the bottom, the boot-top, the wale and
+		// the ports keep her own paint (the web's relief-map mask)
+		float mask = max(band(v, 0.318, 0.655), band(v, 0.716, 0.93)) * clear;
+		vec3 sn = normalize(v_skin_n);
+		vec2 sp = abs(sn.x) >= abs(sn.z) ? v_skin_p.zy : v_skin_p.xy;
+		vec3 se = vec3(0.0);
+		float sm = 0.0;
+		float sr = 0.5;
+		vec3 sc = aq_skin(sp, abs(dot(normalize(NORMAL), VIEW)), TIME, 0.0, se, sm, sr);
+		col = mix(col, sc, mask);
+		metal = mix(metal, sm, mask);
+		rough = mix(rough, sr, mask);
+		// glowing skins come alive after dark
+		EMISSION = skin_light(se * mask * (0.55 + night * 0.9), 1.25);
+	}
+#endif
 #ifdef DAMAGE
 	bool drop;
-	EMISSION = hull_damage(v_obj, FRONT_FACING, true, col, rough, metal, drop);
+	EMISSION += hull_damage(v_obj, FRONT_FACING, true, col, rough, metal, drop);
 	if (drop) {
 		discard;
 	}

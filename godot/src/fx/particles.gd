@@ -22,6 +22,21 @@ const SMOKE := 1
 const SPARK := 2
 const CHUNK := 3
 
+## The muzzle blasts, in Cosmetics.BLAST_STYLES' order.
+const POWDER := 0
+const SEASALT := 1
+const SOOT := 2
+const EMBER := 3
+const RING := 4
+const AZURE := 5
+const CONFETTI := 6
+const DRAGON := 7
+const THUNDER := 8
+const WRAITH := 9
+## The carnival salute's paper.
+const CONFETTI_COLOURS: Array[Color] = [Color(1.5, 0.35, 0.75), Color(1.5, 1.2, 0.2), Color(0.25, 1.2, 1.5), Color(0.6, 1.4, 0.3),
+		Color(1.5, 0.6, 0.15), Color(0.9, 0.45, 1.5), Color(1.6, 1.6, 1.6)]
+
 ## The breeze smoke rides when it is launched with none of its own.
 var wind: Wind
 
@@ -118,29 +133,143 @@ func sand_hit(pos: Vector3) -> void:
 				randf_range(1.0, 2.0), 1.0, randf_range(3.0, 5.0), sand, sand, 2.0, 1.6, SMOKE)
 
 
-## A gun going off: the flash, a spit of sparks, and the three layers of
+## A gun going off in one of the vault's blasts (Cosmetics.BLAST_STYLES; the
+## web's muzzle): the flash, a spit of sparks, and the three layers of
 ## powder smoke (a fast jet along the barrel, a slow bank by the port, dark
-## wisps from the flash). `carry` is the ship's own way, which the smoke keeps.
-func muzzle(pos: Vector3, dir: Vector3, carry: Vector3) -> void:
-	emit(pos, Vector3.ZERO, 0.12, 2.6, 4.16, Color(9.0, 6.0, 2.6, 1.0), Color(4.0, 1.4, 0.3), 0.0, 0.0, SOFT, 0.001, Vector2.ZERO, 0.0, true)
-	for i in 5:
-		var sp := randf_range(10.0, 22.0)
-		emit(pos, Vector3(dir.x * sp + randf_range(-2.0, 2.0) + carry.x, dir.y * sp + randf_range(-1.0, 2.0), dir.z * sp + randf_range(-2.0, 2.0) + carry.z),
-				randf_range(0.1, 0.22), randf_range(0.8, 1.6), 0.3, Color(6.0, 3.2, 1.0, 1.0), Color(2.0, 0.5, 0.1), 0.0, 6.0, SOFT, 0.001, Vector2.ZERO, 0.0, true)
-	for i in 8:
-		var sp := randf_range(5.0, 16.0)
-		var g := randf_range(0.74, 0.9)
-		emit(pos + dir * 0.6, Vector3(dir.x * sp + randf_range(-1.4, 1.4) + carry.x * 0.6, randf_range(0.1, 1.4), dir.z * sp + randf_range(-1.4, 1.4) + carry.z * 0.6),
-				randf_range(2.4, 4.0), randf_range(1.0, 1.7), randf_range(5.5, 8.5), Color(g * 1.1, g * 1.08, g * 1.05, randf_range(0.5, 0.72)), Color(g * 1.02, g * 1.02, g * 1.04), -0.3, 2.0, SMOKE, 0.04)
-	for i in 4:
-		var sp := randf_range(1.5, 4.0)
-		var g := randf_range(0.82, 0.95)
-		emit(pos + dir * 1.2 + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.5), randf_range(-0.6, 0.6)), Vector3(dir.x * sp + carry.x * 0.8, randf_range(0.3, 0.9), dir.z * sp + carry.z * 0.8),
-				randf_range(4.5, 6.5), randf_range(2.2, 3.2), randf_range(9.0, 13.0), Color(g, g, g * 1.02, randf_range(0.28, 0.4)), Color(g * 1.04, g * 1.04, g * 1.07), -0.18, 1.2, SMOKE, 0.25)
-	for i in 3:
-		var sp := randf_range(14.0, 24.0)
-		emit(pos, Vector3(dir.x * sp + randf_range(-3.0, 3.0) + carry.x, randf_range(-0.5, 2.0), dir.z * sp + randf_range(-3.0, 3.0) + carry.z),
-				randf_range(0.9, 1.5), randf_range(0.5, 0.8), randf_range(2.5, 3.5), Color(0.36, 0.33, 0.3, randf_range(0.5, 0.7)), Color(0.7, 0.68, 0.66), -0.2, 4.5, SMOKE, 0.01)
+## wisps from the flash), each blast its own. `carry` is the ship's own way,
+## which the smoke keeps.
+func muzzle(pos: Vector3, dir: Vector3, carry: Vector3, style := POWDER) -> void:
+	match style:
+		SEASALT:
+			_flash(pos, 2.8, Color(9.0, 9.4, 10.0), Color(3.0, 3.6, 4.4))
+			_sparks(pos, dir, carry, 6, Color(7.0, 7.5, 8.0), Color(2.5, 3.0, 3.6))
+			_smoke(pos, dir, carry, Color(1.12, 1.14, 1.16), 9, 6, 0, 1.15)
+			var salt := Color(1.4, 1.5, 1.55, 0.9)
+			for i in 10:
+				var sp := randf_range(6.0, 14.0)
+				emit(pos, Vector3(dir.x * sp + randf_range(-2.0, 2.0) + carry.x, randf_range(1.0, 5.0), dir.z * sp + randf_range(-2.0, 2.0) + carry.z),
+						randf_range(0.6, 1.1), randf_range(0.1, 0.2), 0.08, salt, salt, 12.0, 1.2, SOFT, 0.01)
+		SOOT:
+			_flash(pos, 3.0, Color(9.0, 4.6, 1.3), Color(3.5, 1.0, 0.2))
+			_sparks(pos, dir, carry, 7, Color(7.0, 3.0, 0.8), Color(2.0, 0.5, 0.1))
+			_smoke(pos, dir, carry, Color(0.4, 0.37, 0.35), 9, 5, 6, 1.25)
+		EMBER:
+			_flash(pos, 3.0, Color(10.0, 5.2, 1.6), Color(4.0, 1.2, 0.2))
+			_sparks(pos, dir, carry, 6, Color(8.0, 3.6, 0.9), Color(2.4, 0.5, 0.06))
+			_embers(pos, dir, carry, 26, 1.0)
+			_smoke(pos, dir, carry, Color(1.08, 0.98, 0.88), 7, 3, 2)
+		RING:
+			_flash(pos, 2.4, Color(9.0, 6.0, 2.6), Color(4.0, 1.4, 0.3))
+			# a vortex ring rolling out of the gunport, widening as it goes
+			var side := Vector3(-dir.z, 0.0, dir.x).normalized()
+			for i in 26:
+				var a := TAU * i / 26.0
+				var r := Vector3(side.x * cos(a), sin(a), side.z * cos(a))
+				var sp := randf_range(7.5, 8.5)
+				emit(pos + Vector3(dir.x * 1.1, 0.0, dir.z * 1.1) + r * 0.35, Vector3(dir.x * sp + carry.x * 0.7, 0.35, dir.z * sp + carry.z * 0.7) + r * 2.6,
+						randf_range(2.6, 3.2), 0.7, randf_range(2.0, 2.4), Color(1.12, 1.12, 1.14, 0.78), Color(1.05, 1.06, 1.1), -0.12, 1.25, SMOKE, 0.03)
+			_smoke(pos, dir, carry, Color(1.0, 1.0, 1.0), 3, 2, 0, 0.7)
+		AZURE:
+			_flash(pos, 3.0, Color(3.0, 6.5, 11.0), Color(0.5, 1.6, 4.5))
+			_sparks(pos, dir, carry, 12, Color(2.5, 6.0, 10.0), Color(0.4, 1.4, 4.0), SPARK)
+			for i in 9:
+				var sp := randf_range(6.0, 16.0)
+				emit(pos, Vector3(dir.x * sp + randf_range(-1.0, 1.0) + carry.x, randf_range(-0.2, 1.0), dir.z * sp + randf_range(-1.0, 1.0) + carry.z),
+						randf_range(0.25, 0.45), randf_range(0.6, 1.0), randf_range(1.6, 2.4), Color(2.0, 4.6, 9.0), Color(0.3, 0.7, 2.4), 0.0, 4.0, SOFT, 0.001, Vector2.ZERO, 0.0, true)
+			_smoke(pos, dir, carry, Color(0.84, 0.94, 1.18), 8, 3, 0)
+		CONFETTI:
+			_flash(pos, 2.2, Color(9.0, 8.0, 5.0), Color(4.0, 2.6, 1.0))
+			for i in 46:
+				var sp := randf_range(5.0, 15.0)
+				var c: Color = CONFETTI_COLOURS[i % CONFETTI_COLOURS.size()]
+				var sz := randf_range(0.13, 0.22)
+				emit(pos + Vector3(dir.x, 0.0, dir.z) * 0.5, Vector3(dir.x * sp + randf_range(-4.0, 4.0) + carry.x, randf_range(2.0, 9.0), dir.z * sp + randf_range(-4.0, 4.0) + carry.z),
+						randf_range(2.4, 4.0), sz, sz, c, c, 2.4, 1.9, CHUNK, 0.001, Vector2.ZERO, randf_range(-12.0, 12.0))
+			for i in 14:
+				var sp := randf_range(4.0, 12.0)
+				emit(pos, Vector3(dir.x * sp + randf_range(-3.0, 3.0) + carry.x, randf_range(1.0, 6.0), dir.z * sp + randf_range(-3.0, 3.0) + carry.z),
+						randf_range(0.5, 1.0), randf_range(0.2, 0.35), 0.05, Color(7.0, 5.5, 2.0), Color(3.0, 1.6, 0.4), 2.0, 2.0, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+			_smoke(pos, dir, carry, Color(1.08, 1.06, 1.1), 4, 2, 0, 0.8)
+		DRAGON:
+			_flash(pos, 3.8, Color(12.0, 7.0, 2.2), Color(4.0, 1.2, 0.2))
+			# a roaring cone of fire, white-hot at the mouth (kept well under
+			# white where its flames overlap: there's no bloom to carry it)
+			for i in 30:
+				var sp := randf_range(12.0, 30.0)
+				var spread := sp * 0.12
+				var hot := i < 10
+				emit(pos, Vector3(dir.x * sp + randf_range(-spread, spread) + carry.x, randf_range(-spread, spread) * 0.6 + 0.6, dir.z * sp + randf_range(-spread, spread) + carry.z),
+						randf_range(0.35, 0.7) * (0.7 if hot else 1.0), randf_range(0.6, 1.0), randf_range(2.0, 3.0), Color(3.4, 2.4, 1.0) if hot else Color(2.8, 1.25, 0.3), Color(0.85, 0.15, 0.02),
+						-2.5, 2.6, SOFT, 0.001, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+			_embers(pos, dir, carry, 20, 1.3)
+			_smoke(pos, dir, carry, Color(0.34, 0.31, 0.3), 8, 4, 3, 1.1)
+		THUNDER:
+			_flash(pos, 3.4, Color(8.0, 8.5, 13.0), Color(3.0, 2.0, 9.0))
+			# crackling arcs flung every way, mostly forward
+			for i in 18:
+				var sp := randf_range(18.0, 42.0)
+				var f := randf_range(0.2, 1.0)
+				emit(pos, Vector3(dir.x * sp * f + randf_range(-1.0, 1.0) * sp * 0.6 + carry.x, randf_range(-0.5, 1.0) * sp * 0.4, dir.z * sp * f + randf_range(-1.0, 1.0) * sp * 0.6 + carry.z),
+						randf_range(0.12, 0.3), randf_range(0.18, 0.3), 0.05, Color(7.0, 7.0, 14.0), Color(3.0, 1.5, 9.0), 0.0, 8.0, SPARK, 0.001, Vector2.ZERO, 0.0, true)
+			# a flat violet shock ring racing out over the water
+			for i in 24:
+				var a := TAU * i / 24.0
+				emit(pos + Vector3(dir.x * 1.5, -0.3, dir.z * 1.5), Vector3(cos(a) * 15.0 + carry.x, 0.0, sin(a) * 15.0 + carry.z),
+						0.32, 0.9, 1.8, Color(2.2, 1.8, 5.5), Color(0.6, 0.4, 2.2), 0.0, 3.2, SOFT, 0.001, Vector2.ZERO, 0.0, true)
+			_smoke(pos, dir, carry, Color(1.02, 1.0, 1.1), 7, 3, 0)
+		WRAITH:
+			# a phantom's gun: a cold green flash, ghost-fire licking out of the
+			# port, and pale corpse-light smoke that hangs too long
+			_flash(pos, 2.6, Color(1.2, 5.2, 3.1), Color(0.15, 1.6, 0.8))
+			_sparks(pos, dir, carry, 6, Color(2.4, 8.0, 5.0), Color(0.2, 1.8, 0.9))
+			for i in 16:
+				var sp := randf_range(7.0, 18.0)
+				emit(pos, Vector3(dir.x * sp + randf_range(-1.6, 1.6) + carry.x, randf_range(-0.3, 1.6), dir.z * sp + randf_range(-1.6, 1.6) + carry.z),
+						randf_range(0.3, 0.6), randf_range(0.5, 0.9), randf_range(1.6, 2.6), Color(1.6, 7.5, 4.2), Color(0.1, 1.2, 0.55), -2.4, 3.0, SOFT, 0.001, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+			_smoke(pos, dir, carry, Color(0.74, 1.08, 0.94), 7, 4, 0, 0.75)
+		_:
+			_flash(pos, 2.6, Color(9.0, 6.0, 2.6), Color(4.0, 1.4, 0.3))
+			_sparks(pos, dir, carry, 5, Color(6.0, 3.2, 1.0), Color(2.0, 0.5, 0.1))
+			_smoke(pos, dir, carry)
+
+
+## What a vault trail leaves hanging behind a round shot at `pos` (flying at
+## `vel`), every few hundredths of a second (the web's trail(); `now` turns
+## the ghostlight's coils and the rainbow's colours). Powder and soot leave
+## only their smoke.
+func trail_mote(pos: Vector3, vel: Vector3, style: int, now: float) -> void:
+	var j := func(r: float) -> Vector3: return Vector3(randf_range(-r, r), randf_range(-r, r), randf_range(-r, r))
+	match style:
+		1:
+			var c := Color(1.4, 1.5, 1.55, 0.85)
+			emit(pos + j.call(0.08), Vector3(randf_range(-1.0, 1.0), randf_range(0.0, 1.5), randf_range(-1.0, 1.0)), randf_range(0.4, 0.7), randf_range(0.08, 0.14), 0.05,
+					c, c, 9.0, 0.0, SOFT, 0.01)
+		3:
+			emit(pos + j.call(0.08), Vector3(randf_range(-0.8, 0.8), randf_range(-0.5, 1.2), randf_range(-0.8, 0.8)), randf_range(0.5, 1.0), randf_range(0.14, 0.24), 0.04,
+					Color(7.0, 3.0, 0.6), Color(2.0, 0.3, 0.02), 5.0, 0.6, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+		4:
+			if randf() < 0.7:
+				emit(pos + j.call(0.24), Vector3(randf_range(-0.4, 0.4), randf_range(-0.6, 0.2), randf_range(-0.4, 0.4)), randf_range(0.6, 1.1), randf_range(0.12, 0.2), 0.03,
+						Color(3.0, 5.0, 7.0), Color(1.0, 2.4, 4.0), 0.0, 0.0, SPARK, 0.05, Vector2.ZERO, 0.0, true)
+		5:
+			if randf() < 0.6:
+				emit(pos + j.call(0.16), Vector3(randf_range(-0.6, 0.6), randf_range(-0.4, 0.6), randf_range(-0.6, 0.6)), randf_range(0.7, 1.2), randf_range(0.14, 0.24), 0.03,
+						Color(7.0, 5.0, 1.6), Color(3.0, 1.4, 0.2), 1.5, 0.0, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+		6, 9:
+			# will-o'-wisp motes drifting off the green ribbon
+			if randf() < 0.6:
+				var ph := now * 6.0
+				emit(pos + Vector3(sin(ph) * 0.25, cos(ph * 1.3) * 0.25, randf_range(-0.16, 0.16)), Vector3(randf_range(-0.4, 0.4), randf_range(0.3, 1.0), randf_range(-0.4, 0.4)),
+						randf_range(0.6, 1.1), randf_range(0.12, 0.2), 0.03, Color(1.5, 5.0, 3.0), Color(0.15, 1.1, 0.6), 0.0, 0.0, SPARK, 0.02, Vector2.ZERO, 0.0, true)
+		7:
+			if randf() < 0.7:
+				var h := Color.from_hsv(fposmod(now * 0.7 + randf_range(-0.25, 0.25), 1.0), 1.0, 1.0)
+				emit(pos + j.call(0.24), Vector3(randf_range(-0.8, 0.8), randf_range(-0.3, 0.9), randf_range(-0.8, 0.8)), randf_range(0.7, 1.3), randf_range(0.14, 0.24), 0.03,
+						Color(h.r * 5.0, h.g * 5.0, h.b * 5.0), h, 1.0, 0.0, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+		8:
+			var c := Color(6.0, 6.0, 7.5) if randf() < 0.5 else Color(4.5, 3.2, 8.0)
+			emit(pos + j.call(0.16), Vector3(randf_range(-0.3, 0.3) - vel.x * 0.02, randf_range(-0.4, 0.2), randf_range(-0.3, 0.3) - vel.z * 0.02), randf_range(1.3, 2.2), randf_range(0.2, 0.34), 0.06,
+					c, Color(1.6, 1.2, 3.0), 0.5, 1.0, SPARK, 0.02, Vector2.ZERO, 0.0, true)
 
 
 ## A ball striking timber: a hot flash, a spray of tumbling splinters, a puff
@@ -385,6 +514,28 @@ func _embers(pos: Vector3, dir: Vector3, carry: Vector3, n: int, reach: float) -
 		var sp := randf_range(5.0, 15.0) * reach
 		emit(pos, Vector3(dir.x * sp + randf_range(-3.0, 3.0) + carry.x, randf_range(2.0, 9.0), dir.z * sp + randf_range(-3.0, 3.0) + carry.z),
 				randf_range(1.0, 2.2), randf_range(0.14, 0.28), 0.05, Color(7.0, 3.2, 0.7, 1.0), Color(2.4, 0.4, 0.04), 8.0, 0.7, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+
+
+## The three layers of gun smoke, `tint`ed and `alpha` times as thick: a
+## fast dense jet out along the barrel, a slow bank that hangs by the
+## gunport, and dark powder wisps from the flash.
+func _smoke(pos: Vector3, dir: Vector3, carry: Vector3, tint := Color(1.0, 1.0, 1.0), jet := 8, bank := 4, wisps := 3, alpha := 1.0) -> void:
+	for i in jet:
+		var sp := randf_range(5.0, 16.0)
+		var g := randf_range(0.74, 0.9)
+		emit(pos + dir * 0.6, Vector3(dir.x * sp + randf_range(-1.4, 1.4) + carry.x * 0.6, randf_range(0.1, 1.4), dir.z * sp + randf_range(-1.4, 1.4) + carry.z * 0.6),
+				randf_range(2.4, 4.0), randf_range(1.0, 1.7), randf_range(5.5, 8.5), Color(g * 1.1 * tint.r, g * 1.08 * tint.g, g * 1.05 * tint.b, minf(1.0, randf_range(0.5, 0.72) * alpha)),
+				Color(g * 1.02 * tint.r, g * 1.02 * tint.g, g * 1.04 * tint.b), -0.3, 2.0, SMOKE, 0.04)
+	for i in bank:
+		var sp := randf_range(1.5, 4.0)
+		var g := randf_range(0.82, 0.95)
+		emit(pos + dir * 1.2 + Vector3(randf_range(-0.6, 0.6), randf_range(-0.2, 0.5), randf_range(-0.6, 0.6)), Vector3(dir.x * sp + carry.x * 0.8, randf_range(0.3, 0.9), dir.z * sp + carry.z * 0.8),
+				randf_range(4.5, 6.5), randf_range(2.2, 3.2), randf_range(9.0, 13.0), Color(g * tint.r, g * tint.g, g * 1.02 * tint.b, minf(1.0, randf_range(0.28, 0.4) * alpha)),
+				Color(g * 1.04 * tint.r, g * 1.04 * tint.g, g * 1.07 * tint.b), -0.18, 1.2, SMOKE, 0.25)
+	for i in wisps:
+		var sp := randf_range(14.0, 24.0)
+		emit(pos, Vector3(dir.x * sp + randf_range(-3.0, 3.0) + carry.x, randf_range(-0.5, 2.0), dir.z * sp + randf_range(-3.0, 3.0) + carry.z),
+				randf_range(0.9, 1.5), randf_range(0.5, 0.8), randf_range(2.5, 3.5), Color(0.36, 0.33, 0.3, randf_range(0.5, 0.7)), Color(0.7, 0.68, 0.66), -0.2, 4.5, SMOKE, 0.01)
 
 
 ## An HDR colour (0..16 a channel) as one exactly representable float, 8 bits

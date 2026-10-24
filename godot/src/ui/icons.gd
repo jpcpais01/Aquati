@@ -94,6 +94,8 @@ const WRIGHT := {
 	"sw_hull": '<path d="M3 13h18l-2.5 6h-13z"/><path d="M7 13V9h7v4"/><path d="M10 9V5"/>',
 	"sw_refit": '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L4 16.8V20h3.2l5.3-5.3a4 4 0 0 0 5.2-5.4l-2.4 2.4-2.6-.6-.6-2.6z"/>',
 	"sw_star": '<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.5 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/>',
+	"sw_skins": '<path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-1 2-2 0-1.5-1.2-1.6-1.2-2.8 0-1 .8-1.7 1.8-1.7H17a4 4 0 0 0 4-4c0-4.2-4-7.5-9-7.5z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/>',
+	"sw_guns": '<path d="M3 12.5l13-4 1.5 4.5-13 4z"/><circle cx="8" cy="18" r="2.5"/><path d="M18.5 9.5l2.5-1M19 12.5l2.5.5M17.5 7l1-2.5"/>',
 	"sw_back": '<path d="M15 5l-7 7 7 7"/>',
 	"die": '<rect x="4" y="4" width="16" height="16" rx="3.2"/><g fill="#ffffff" stroke="none"><circle cx="8.6" cy="8.6" r="1.55"/><circle cx="15.4" cy="8.6" r="1.55"/><circle cx="12" cy="12" r="1.55"/><circle cx="8.6" cy="15.4" r="1.55"/><circle cx="15.4" cy="15.4" r="1.55"/></g>',
 	"pencil": '<path d="M4.5 19.5l1-4.4L15.6 5a2.1 2.1 0 0 1 3 3L8.5 18.1z"/><path d="M13.6 7l3 3"/>',

@@ -70,6 +70,10 @@ var last_cause := "shot"
 var burning := 0.0
 ## The shot her guns load for the next broadside (Ammo.ROUND ..).
 var ammo := Ammo.ROUND
+## The look of her guns going off and of her round shot's trail
+## (Cosmetics.BLAST_STYLES / TRAIL_STYLES: your vault's, plain powder for anyone else).
+var blast := 0
+var trail := 0
 ## Seconds left burning (fire shot), and who lit her.
 var afire := 0.0
 var afire_by: Ship
@@ -312,10 +316,15 @@ func _shoot(p: Array) -> void:
 		var fp := pitch + ((randf() - 0.5) * spread if b > 0 else 0.0)
 		var vk := randf_range(0.94, 1.04) if b > 0 else 1.0
 		var bv := Vector3(sin(fy) * cos(fp), sin(fp), cos(fy) * cos(fp)) * v * vk + vel
-		world.shots.fire(at, bv, self, dealt, kind)
-	world.fx.muzzle(at, dir, vel)
+		world.shots.fire(at, bv, self, dealt, kind, trail)
+	world.fx.muzzle(at, dir, vel, blast)
 	if kind != Ammo.ROUND:
 		world.fx.shot_muzzle(at, dir, vel, kind)
+	if blast == Particles.THUNDER:
+		# the thunderclap's shockwave rings out across the water
+		var w := at + dir * 2.5
+		world.wake.stamp(w.x, w.z, 4.0, 0.9, true)
+		world.wake.push(w.x, w.z, 2.2, -0.25)
 	if world.sound != null:
 		var h := world.heard(at)
 		world.sound.cannon(h.x, h.y, h.z, clampf((cls.length - 15.0) / 14.0, 0.0, 1.0))

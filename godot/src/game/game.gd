@@ -282,6 +282,7 @@ class Farewell:
 func _ready() -> void:
 	_args = _parse_args()
 	_parts_flags()
+	_vault_flags()
 	if _args.has("phone"):
 		Settings.pretend_phone(412.0 if _args.phone is bool else float(_args.phone))
 	# her look, and the pirates' colours: their flags and marks are drawn on
@@ -492,6 +493,73 @@ func _parts_flags() -> void:
 		Progress.equip(cls_id, p.slot, id)
 
 
+## --vault all|none|ids (what your vault holds), and --skin, --blast,
+## --trail ID (what she wears: the item's key, or its whole id).
+func _vault_flags() -> void:
+	if _args.has("vault"):
+		var v := str(_args.vault)
+		if _args.vault is bool or v == "all":
+			Progress.grant_all_items()
+		elif v == "none":
+			Progress.vault = Cosmetics.fresh()
+			Progress.vault_changed.emit()
+		else:
+			for key in v.split(",", false):
+				# a bare key is the first kind that has it (kintsugi, dragon, rainbow)
+				var id := key
+				for kind in Cosmetics.KINDS:
+					if not id.contains(":") and not Cosmetics.item(kind + ":" + key).is_empty():
+						id = kind + ":" + key
+				if Cosmetics.item(id).is_empty():
+					push_warning("--vault: no such item %s" % key)
+				elif not Progress.owns_item(id):
+					Progress.award(id)
+	for kind in Cosmetics.KINDS:
+		if not _args.has(kind):
+			continue
+		var id := str(_args[kind])
+		if not id.contains(":"):
+			id = kind + ":" + id
+		if Cosmetics.item(id).is_empty():
+			push_warning("--%s: no such item %s" % [kind, id])
+			continue
+		if not Progress.owns_item(id):
+			Progress.award(id)
+		Progress.wear(id)
+	# your livery wears your skin before the first of your hulls is built
+	_dress_livery()
+	Progress.vault_changed.connect(_dress)
+
+
+## What she wears from the vault: the skin on your livery's materials (every
+## hull in your colours at once, wounds and all), the blast and trail on
+## your ship's guns (the web's applyCosmetics).
+func _dress() -> void:
+	_dress_livery()
+	for s in world.ships:
+		if s.model.livery.skinned and s.dmg != null:
+			s.dmg.repaint()
+	if player != null and is_instance_valid(player):
+		_arm(player)
+
+
+func _dress_livery() -> void:
+	var l := Livery.named(Shipyard.MINE)
+	var sk := Cosmetics.skin(Progress.wearing("skin"))
+	if l.skin == sk:
+		return
+	l.skin = sk
+	ShipModel.restyle(l)
+
+
+## Your guns go off in the blast you wear and their round shot flies with
+## your trail (a set piece in someone else's colours keeps plain powder).
+func _arm(s: Ship) -> void:
+	var mine := s.model.livery.skinned
+	s.blast = Cosmetics.style_of(Progress.wearing("blast")) if mine else 0
+	s.trail = Cosmetics.style_of(Progress.wearing("trail")) if mine else 0
+
+
 func _parse_args() -> Dictionary:
 	var out := {}
 	var a := OS.get_cmdline_user_args()
@@ -673,6 +741,7 @@ func _build_player(id := "") -> void:
 	var model := shipyard.take(id, livery) if shipyard != null and livery == Shipyard.MINE else null
 	var fit := Progress.loadout(id) if livery == Shipyard.MINE else {}
 	player = Ship.create(ShipClass.named(id), Livery.named(livery), world, Ship.Team.PLAYER, model, fit)
+	_arm(player)
 	add_child(player)
 	if livery == Shipyard.MINE:
 		player.ship_name = outfitter.name_for(player.cls)
@@ -942,6 +1011,9 @@ func _process(delta: float) -> void:
 		hud.open_pie(Ammo.ID.find(str(_args.pie)))
 	if _args.has("strike") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.strike if str(_args.strike).is_valid_int() else 2)):
 		_strike_now = true
+	# the Guns tab's broadside (or at sea, one to seaward), N frames before the shot (12 by default)
+	if _args.has("test-fire") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args["test-fire"] if str(_args["test-fire"]).is_valid_int() else 12)):
+		_test_fire(true)
 	if _args.has("sell") and _frames == maxi(1, int(_args.get("frames", 90)) - 24):
 		# (the coins are in the air as the frame is saved)
 		_sell("" if str(_args.sell) == "all" else str(_args.sell))
@@ -1926,6 +1998,9 @@ func _build_menus() -> void:
 	# the Refit tab: a part fitted, the new ones looked at, where one is sold
 	shipwright.fit.connect(_fit_part)
 	shipwright.seen.connect(func() -> void: Progress.mark_seen())
+	# the Guns tab: a broadside to see her blast and trail
+	shipwright.test_fire.connect(_test_fire)
+	shipwright.progress = Progress
 	shipwright.where_sold = _where_sold
 	Progress.parts_changed.connect(func() -> void: shipwright.set_parts(Progress.parts))
 	add_child(shipwright)
@@ -2107,6 +2182,7 @@ func _swap_in(now: bool) -> void:
 	world.ships.erase(old)
 	old.queue_free()
 	player = Ship.create(ShipClass.named(id), Livery.named(Shipyard.MINE), world, Ship.Team.PLAYER, model, Progress.loadout(id))
+	_arm(player)
 	add_child(player)
 	player.ship_name = outfitter.name_for(player.cls)
 	outfitter.ship = player
@@ -2219,10 +2295,31 @@ func _fit_part(slot: String, id: String) -> void:
 	}[slot]
 	var tier := mini(4, int(pt.tier) + 1)
 	world.fx.treasure(p.model.to_global(local), Loot.GLOW[tier], tier)
+	# new guns want trying out
+	if slot == "guns":
+		get_tree().create_timer(0.65).timeout.connect(_test_fire)
 	if int(pt.tier) >= 2:
 		sound.treasure(tier)
 	else:
 		sound.coin()
+
+
+## The Guns tab's broadside (the web's testFire): from the side with open
+## water off it (the deeper 45 m out), at a point 70 m out and a touch
+## ahead, the camera swung round to watch. (`anywhere`: a shot's flag, at sea too.)
+func _test_fire(anywhere := false) -> void:
+	var p := player
+	if p == null or not (anywhere or shipwright.is_open()):
+		return
+	var left := p.port_dir()
+	var hl := world.ground_height(p.pos.x + left.x * 45.0, p.pos.z + left.z * 45.0)
+	var hr := world.ground_height(p.pos.x - left.x * 45.0, p.pos.z - left.z * 45.0)
+	var k := 1 if hl <= hr else -1
+	p.reload[p.side_index(k)] = 0.0
+	var at := p.pos + left * (k * 70.0) + Vector3(sin(p.heading), 0.0, cos(p.heading)) * 6.0
+	at.y = 0.0
+	if p.fire(k, null, at):
+		_sw_az = 0.5 if k > 0 else -0.5
 
 
 ## Which trading port's shipwright has a part in today ("" none: the web's whereSold).
@@ -3239,10 +3336,11 @@ func _tour_menus() -> void:
 ## it's under way): opened off the harbour (she rows round to the home
 ## port's quay), the Sails tab, a famous ship's colours taken (and a fresh
 ## hull in them off the yard), the brush across her flag and its work kept,
-## the design saved and deleted again, and Done with the back button (back
-## out to the anchorage).
+## the design saved and deleted again, a part fitted on the Refit tab, a
+## vault skin put on and a broadside test-fired with a vault blast, and Done
+## with the back button (back out to the anchorage).
 func _tour_wright() -> bool:
-	if _sw_tour >= 11:
+	if _sw_tour >= 13:
 		return false
 	match _sw_tour:
 		0:
@@ -3305,8 +3403,31 @@ func _tour_wright() -> bool:
 				_note_tour("refitted with %s" % player.model.fit_key)
 			shipwright.pick_part("hull", "")
 		9:
-			_go_back(false)
+			# the Skins tab: a skin from the vault put on, her livery wearing it
+			if not Progress.owns_item("skin:kintsugi"):
+				Progress.award("skin:kintsugi")
+			shipwright.pick_tab("skins")
+			if not shipwright.pick_item("skin:kintsugi") or str(Livery.named(Shipyard.MINE).skin.get("id", "")) != "skin:kintsugi":
+				printerr("SMOKE FAILED: the Skins tab didn't dress her in kintsugi (%s)" % Progress.wearing("skin"))
+			else:
+				_note_tour("dressed in %s" % Progress.wearing("skin"))
 		10:
+			# the Guns tab: the dragon's blast on, a broadside tried out to seaward
+			if not Progress.owns_item("blast:dragon"):
+				Progress.award("blast:dragon")
+			shipwright.pick_tab("guns")
+			shipwright.pick_item("blast:dragon")
+			shipwright.fire_test()
+			if player.blast != Cosmetics.style_of("blast:dragon") or player.readiness(1) >= 1.0 and player.readiness(-1) >= 1.0:
+				printerr("SMOKE FAILED: the Guns tab's broadside didn't go off with her dragon blast (style %d)" % player.blast)
+			else:
+				_note_tour("test-fired a broadside")
+		11:
+			# her own colours and powder back
+			Progress.wear(Cosmetics.BASE.skin)
+			Progress.wear(Cosmetics.BASE.blast)
+			_go_back(false)
+		12:
 			if shipwright.is_open() or not harbour.is_open() or camera.port or home.visible:
 				printerr("SMOKE FAILED: the back button didn't take her back out to the anchorage")
 	_sw_tour += 1

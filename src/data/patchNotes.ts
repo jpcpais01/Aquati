@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T08:00Z',
+    entries: [
+      {
+        title: 'Android: skins, blasts and trails',
+        notes: [
+          'The seventeenth Android build brings the Treasure Vault\'s collection aboard: eighteen hull skins, from harbour stripes and fish scale through tiger shark, tartan and kintsugi lacquer with gold in its cracks to five glowing legendaries (Molten Core, Aurora Borealis, Starlit Voyage, Ghostfire and Living Tide) that move as she sails and shine brighter after dark. A skin covers her hull, bulwarks and shields and, on most of them, her sails, and holds through battle damage.',
+          'Eight muzzle blasts (sea salt, soot, embers, smoke rings, azure flame, a confetti salute, a dragon\'s breath of fire and a thunderclap that cracks the water) and eight shot trails (spray, soot, ember, frost, a golden comet, ghostlight, a rainbow ribbon and starfall) change how her broadsides look.',
+          'Two new Shipwright tabs, Skins and Guns, show every item on a living card: a little ship in its skin on a moving sea, or a gun firing its blast or a ball trailing its trail. Locked ones are greyed, new finds get a NEW badge, and a tap puts one on. "Test fire a broadside" on the Guns tab fires her out to sea while the camera swings round to watch. The Vault where they\'re won opens in the next build, and your purse gets 1,500 gold to open it with.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T07:00Z',
     entries: [
       {

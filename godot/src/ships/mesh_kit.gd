@@ -18,6 +18,9 @@ const GLOW := 0.75
 const GILT := 1.0
 ## Timber a breach never opens through (the hold's floor): see ship_damage.gdshaderinc.
 const HOLD := 1.25
+## Painted woodwork a vault skin covers on your own ship (her inner bulwarks,
+## a pavisade's shields): plain wood on anyone else's (ship_parts.gdshaderinc).
+const PAINT := 1.5
 
 var verts := PackedVector3Array()
 var normals := PackedVector3Array()

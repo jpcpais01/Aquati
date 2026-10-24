@@ -31,11 +31,16 @@ signal designs_changed(list: Array)
 signal fit(slot: String, id: String)
 ## The Refit tab was looked at: the parts found since are new no longer.
 signal seen
+## The Guns tab's "Test fire a broadside".
+signal test_fire
 signal done
 signal clicked
 
-const TABS := [["flag", "Flag", "sw_flag"], ["sails", "Sails", "sw_sails"], ["hull", "Hull", "sw_hull"], ["refit", "Refit", "sw_refit"], ["presets", "Presets", "sw_star"]]
-const FOCUS := {"flag": "flag", "sails": "sails", "hull": "hull", "refit": "overview", "presets": "overview"}
+const TABS := [["flag", "Flag", "sw_flag"], ["sails", "Sails", "sw_sails"], ["hull", "Hull", "sw_hull"], ["refit", "Refit", "sw_refit"],
+		["skins", "Skins", "sw_skins"], ["guns", "Guns", "sw_guns"], ["presets", "Presets", "sw_star"]]
+const FOCUS := {"flag": "flag", "sails": "sails", "hull": "hull", "refit": "overview", "skins": "overview", "guns": "guns", "presets": "overview"}
+## The test-fire button rests this long between broadsides (s).
+const FIRE_COOL := 1.6
 ## The shot each of the Refit tab's slots brings the camera round to.
 const SLOT_FOCUS := {"hull": "hull", "sails": "sails", "guns": "guns", "figure": "bow"}
 ## The standard fit's colour where a part has its rarity's (the web's
@@ -133,6 +138,12 @@ var _paint_task := -1
 var _paint_out := [""]
 var _paint_gen := 0
 var _gen := 0
+## Who keeps the vault (the Progress autoload, handed over by the game:
+## the checks run without one, and an empty vault then).
+var progress = null
+## The Guns tab's test-fire button, and how long it rests yet.
+var _fire: UiButton
+var _fire_cool := 0.0
 var _save_after_paint := false
 
 
@@ -344,18 +355,28 @@ func _build_tabs(w: float) -> UiBox:
 	var pad := 3.0 * px
 	var gap := 4.0 * px
 	var bw := w - 12.0 * px
-	var tray := UiBox.new(Vector2(bw, th + pad * 2.0), 16.0 * px, 4.0)
-	MenuKit.flat(tray)
-	tray.p("c_top", Color(0.0, 0.0, 0.0, 0.24)).p("c_foot", Color(0.0, 0.0, 0.0, 0.24)).p("c_border", Color(1.0, 1.0, 1.0, 0.06)).p("hi", 0.0)
-	tray.position = Vector2(6.0, 6.0) * px
 	var tw := (bw - pad * 2.0 - gap * (TABS.size() - 1)) / TABS.size()
-	# the names go when they don't all fit beside their icons (as on the web on a phone)
+	# the names sit beside their icons where they all fit, else small under
+	# them (the web's seven tabs on a phone), else they go
 	var labels: Array[UiText] = []
 	var named := true
 	for t: Array in TABS:
 		var l := MenuKit.words(str(t[1]).to_upper(), "inter", 700, 10.5 * px, Color.WHITE, 0.12)
 		labels.append(l)
 		named = named and 17.0 * px + 6.0 * px + l.size.x + 12.0 * px <= tw
+	var stacked := false
+	if not named:
+		stacked = true
+		for i in TABS.size():
+			labels[i].queue_free()
+			labels[i] = MenuKit.words(str(TABS[i][1]).to_upper(), "inter", 700, 8.5 * px, Color.WHITE, 0.08)
+			stacked = stacked and labels[i].size.x + 4.0 * px <= tw
+		if stacked:
+			th = (5.0 + 17.0 + 1.0 + 5.0) * px + labels[0].size.y
+	var tray := UiBox.new(Vector2(bw, th + pad * 2.0), 16.0 * px, 4.0)
+	MenuKit.flat(tray)
+	tray.p("c_top", Color(0.0, 0.0, 0.0, 0.24)).p("c_foot", Color(0.0, 0.0, 0.0, 0.24)).p("c_border", Color(1.0, 1.0, 1.0, 0.06)).p("hi", 0.0)
+	tray.position = Vector2(6.0, 6.0) * px
 	for i in TABS.size():
 		var id := str(TABS[i][0])
 		var b := UiButton.new(Vector2(tw, th), 13.0 * px, 24.0 * px)
@@ -363,10 +384,14 @@ func _build_tabs(w: float) -> UiBox:
 		b.p("border", 0.0).p("hi", 0.0)
 		var ic := Icons.rect(str(TABS[i][2]), 17.0 * px)
 		var label := labels[i]
-		label.visible = named
-		var cw := ic.size.x + (6.0 * px + label.size.x if named else 0.0)
-		ic.position = Vector2((tw - cw) * 0.5, (th - ic.size.y) * 0.5)
-		label.position = Vector2(ic.position.x + ic.size.x + 6.0 * px, (th - label.size.y) * 0.5)
+		label.visible = named or stacked
+		if stacked:
+			ic.position = Vector2((tw - ic.size.x) * 0.5, 5.0 * px)
+			label.position = Vector2((tw - label.size.x) * 0.5, ic.position.y + ic.size.y + 1.0 * px)
+		else:
+			var cw := ic.size.x + (6.0 * px + label.size.x if named else 0.0)
+			ic.position = Vector2((tw - cw) * 0.5, (th - ic.size.y) * 0.5)
+			label.position = Vector2(ic.position.x + ic.size.x + 6.0 * px, (th - label.size.y) * 0.5)
 		b.add_child(ic)
 		b.add_child(label)
 		# something new behind it: a gold dot over its corner (the web's .sw-new)
@@ -439,6 +464,7 @@ func _render(top := false) -> void:
 		_content.remove_child(c)
 		c.queue_free()
 	_cbuttons.clear()
+	_fire = null
 	_grids.clear()
 	_rows.clear()
 	_part_btns.clear()
@@ -463,6 +489,10 @@ func _render(top := false) -> void:
 			_render_hull()
 		"refit":
 			_render_refit()
+		"skins":
+			_render_cosmetics(["skin"])
+		"guns":
+			_render_cosmetics(["blast", "trail"])
 		_:
 			_render_presets()
 	_y += 12.0 * px
@@ -704,6 +734,114 @@ func _render_refit() -> void:
 		_block(func() -> void: _render_slot(slot, owned, unseen))
 	if not unseen.is_empty():
 		seen.emit()
+
+
+## The vault's cosmetics of these kinds (the web's renderCosmetics): the
+## Treasure Vault's banner, on the Guns tab a test-fire button, then each
+## kind's cards, hers first (the standard one leading), the best of the rest
+## after; a tap on one she owns puts it on. Looking marks them seen.
+func _render_cosmetics(kinds: Array) -> void:
+	var px := _px
+	var v := _vault()
+	var banner := CosArt.Banner.new(_iw, Cosmetics.collected(v), Cosmetics.pool().size(), int(progress.purse) if progress != null else 0, "skins" if kinds[0] == "skin" else "cannon effects")
+	banner.position = Vector2(_x0, _y + 12.0 * px)
+	banner.pressed.connect(func() -> void:
+		clicked.emit()
+		banner.nudge())
+	_content.add_child(banner)
+	_cbuttons.append(banner)
+	_y = banner.position.y + banner.size.y
+	if kinds[0] != "skin":
+		_fire = UiButton.new(Vector2(_iw, 44.0 * px), 22.0 * px, 40.0 * px)
+		HudStyle.gold(_fire, MenuKit.U)
+		var ic := Icons.rect("sw_guns", 20.0 * px, HudStyle.GOLD_INK)
+		var t := MenuKit.words("Test fire a broadside", "inter", 700, 13.0 * px, HudStyle.GOLD_INK, 0.02)
+		var cw := ic.size.x + 10.0 * px + t.size.x
+		ic.position = Vector2((_iw - cw) * 0.5, (_fire.size.y - ic.size.y) * 0.5)
+		t.position = Vector2(ic.position.x + ic.size.x + 10.0 * px, (_fire.size.y - t.size.y) * 0.5)
+		_fire.add_child(ic)
+		_fire.add_child(t)
+		_fire.position = Vector2(_x0, _y + 10.0 * px)
+		_fire.pressed.connect(fire_test)
+		_content.add_child(_fire)
+		_cbuttons.append(_fire)
+		_y = _fire.position.y + _fire.size.y
+	var gap := 10.0 * px
+	var cw := (_iw - gap) * 0.5
+	var n := 0
+	for kind: String in kinds:
+		var items := Cosmetics.of_kind(kind)
+		# the standard first, then hers, the rarest of each first
+		items.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			if a.base != b.base:
+				return a.base
+			var oa := _owns(a.id)
+			if oa != _owns(b.id):
+				return oa
+			return int(a.rarity) > int(b.rarity))
+		var own := 0
+		for it in items:
+			own += 1 if _owns(it.id) else 0
+		_section(str(Cosmetics.KIND_NAMES[kind]) + "s", "%d/%d" % [own, items.size()])
+		var cards: Array[UiButton] = []
+		for it in items:
+			var c := CosArt.Card.new(cw, it, _owns(it.id), (v.unseen as Array).has(it.id), n)
+			n += 1
+			c.set_on(_wearing(kind) == it.id)
+			c.pressed.connect(_tap_item.bind(c, kind))
+			cards.append(c)
+		_lay_cards(cards, cw, gap)
+		_y += 4.0 * px
+	# what she came to look at is no longer new
+	if progress != null:
+		for kind: String in kinds:
+			progress.mark_items_seen(kind)
+
+
+## A vault card tapped: one she owns put on (the card ringed), one still in
+## the vault given a shake (the vault itself opens in the next update).
+func _tap_item(c: CosArt.Card, kind: String) -> void:
+	clicked.emit()
+	if not c.owned:
+		c.shake()
+		return
+	if _wearing(kind) == c.id:
+		return
+	if progress != null:
+		progress.wear(c.id)
+	for b in _cbuttons:
+		if b is CosArt.Card and Cosmetics.item((b as CosArt.Card).id).kind == kind:
+			(b as CosArt.Card).set_on(b == c)
+
+
+## Puts on a vault item by id from its card (the smoke tour's tap); false if it isn't showing or isn't hers.
+func pick_item(id: String) -> bool:
+	for b in _cbuttons:
+		if b is CosArt.Card and (b as CosArt.Card).id == id:
+			_tap_item(b, str(Cosmetics.item(id).kind))
+			return _wearing(str(Cosmetics.item(id).kind)) == id
+	return false
+
+
+## The Guns tab's broadside: fired, then the button rests a moment.
+func fire_test() -> void:
+	if _fire_cool > 0.0:
+		return
+	clicked.emit()
+	test_fire.emit()
+	_fire_cool = FIRE_COOL
+
+
+func _vault() -> Dictionary:
+	return progress.vault if progress != null else Cosmetics.fresh()
+
+
+func _owns(id: String) -> bool:
+	return progress.owns_item(id) if progress != null else bool(Cosmetics.item(id).get("base", false))
+
+
+func _wearing(kind: String) -> String:
+	return progress.wearing(kind) if progress != null else str(Cosmetics.BASE[kind])
 
 
 ## A slot's track: the standard fit and its five parts in six steps along
@@ -1235,6 +1373,10 @@ func _process(dt: float) -> void:
 		set_process(_paint_task >= 0)
 		return
 	_t += dt
+	if _fire_cool > 0.0:
+		_fire_cool = maxf(0.0, _fire_cool - dt)
+		if is_instance_valid(_fire):
+			_fire.modulate.a = 0.6 if _fire_cool > 0.0 else 1.0
 	if not _down and absf(_fling) > 1.0:
 		_scroll_to(_scroll + _fling * dt)
 		_fling *= exp(-4.0 * dt)
@@ -1285,7 +1427,14 @@ func _tick_tabs(dt: float) -> void:
 ## Whether a tab has something new behind it (the Refit tab: parts found
 ## and not yet looked at).
 func _has_new(id: String) -> bool:
-	return id == "refit" and not (locker.get("unseen", []) as Array).is_empty()
+	match id:
+		"refit":
+			return not (locker.get("unseen", []) as Array).is_empty()
+		"skins":
+			return progress != null and progress.has_unseen("skin")
+		"guns":
+			return progress != null and (progress.has_unseen("blast") or progress.has_unseen("trail"))
+	return false
 
 
 ## The camera brought round to `what` (unless it's on it already and `keep`:

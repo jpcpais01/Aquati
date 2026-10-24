@@ -1,5 +1,6 @@
 // The body of ship_sail.gdshader and ship_sail_dmg.gdshader (with DAMAGE
-// defined: canvas torn and burnt, see ship_damage.gdshaderinc).
+// defined: canvas torn and burnt, see ship_damage.gdshaderinc), and of their
+// SKIN variants (your own ship's: her bare canvas wears her vault skin).
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
@@ -35,6 +36,9 @@ varying float v_emblem;
 #ifdef DAMAGE
 #include "res://shaders/inc/ship_damage.gdshaderinc"
 #endif
+#ifdef SKIN
+#include "res://shaders/inc/ship_skin.gdshaderinc"
+#endif
 
 void vertex() {
 	float bx = sin(UV.x * PI);
@@ -60,35 +64,7 @@ float vband(float x, float a, float b) {
 // The web game's GLSL_PART_SAIL: one branch per part, picked by sail_part.x,
 // so changing her sails never compiles anything.
 
-float ps_h(vec2 p) {
-	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-	p3 += dot(p3, p3.yzx + 33.33);
-	return fract((p3.x + p3.y) * p3.z);
-}
-
-vec2 ps_h2(vec2 p) {
-	vec3 p3 = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
-	p3 += dot(p3, p3.yzx + 33.33);
-	return fract((p3.xx + p3.yz) * p3.zy);
-}
-
-float ps_n(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	vec2 u = f * f * (3.0 - 2.0 * f);
-	return mix(mix(ps_h(i), ps_h(i + vec2(1.0, 0.0)), u.x), mix(ps_h(i + vec2(0.0, 1.0)), ps_h(i + vec2(1.0, 1.0)), u.x), u.y);
-}
-
-float ps_fbm(vec2 p) {
-	float s = 0.0;
-	float a = 0.5;
-	for (int i = 0; i < 4; i++) {
-		s += a * ps_n(p);
-		p = mat2(vec2(1.6, 1.2), vec2(-1.2, 1.6)) * p + vec2(1.7, 9.2);
-		a *= 0.5;
-	}
-	return s;
-}
+#include "res://shaders/inc/skin_noise.gdshaderinc"
 
 // lines every `period` along x, `w` wide, antialiased
 float ps_line(float x, float period, float w) {
@@ -156,7 +132,7 @@ void sail_part_paint(float id, vec2 uv, float t, float cloth, inout vec3 col, in
 		float tiers = ps_line(r, 0.09, 0.004);
 		float body = 1.0 - smoothstep(0.055, 0.062, length(vec2(p.x * 1.4, p.y + 0.02)));
 		float head = 1.0 - smoothstep(0.03, 0.036, length(vec2(p.x, p.y + 0.11)));
-		float fl = ps_fbm(vec2(u * 7.0, v * 3.0 - t * 0.6));
+		float fl = sk_fbm(vec2(u * 7.0, v * 3.0 - t * 0.6));
 		float lick = v + fl * 0.32 - 0.12 * sin(u * 18.0 + t);
 		float flame = smoothstep(0.62, 0.66, lick) * smoothstep(0.98, 0.9, v);
 		float flame_edge = flame * (1.0 - smoothstep(0.62, 0.7, lick - 0.05));
@@ -173,12 +149,12 @@ void sail_part_paint(float id, vec2 uv, float t, float cloth, inout vec3 col, in
 		vec3 deep = mix(vec3(0.03, 0.025, 0.1), vec3(0.11, 0.05, 0.2), v);
 		col = mix(col, deep, 0.9 * cloth + 0.45 * (1.0 - cloth));
 		vec2 q = vec2(u * 2.2, v * 2.6 - t * 0.05);
-		q += 0.35 * vec2(ps_fbm(q * 1.1 + vec2(0.0, t * 0.08)), ps_fbm(q * 1.1 + vec2(5.2, -t * 0.06)));
+		q += 0.35 * vec2(sk_fbm(q * 1.1 + vec2(0.0, t * 0.08)), sk_fbm(q * 1.1 + vec2(5.2, -t * 0.06)));
 		float rid = 0.0;
 		float amp = 0.62;
 		vec2 qq = q * 1.4;
 		for (int i = 0; i < 3; i++) {
-			float r = 1.0 - abs(2.0 * ps_n(qq) - 1.0);
+			float r = 1.0 - abs(2.0 * sk_n(qq) - 1.0);
 			rid += amp * r * r * r * r * r * r;
 			qq = qq * 2.03 + vec2(1.7, -t * 0.16);
 			amp *= 0.55;
@@ -186,13 +162,13 @@ void sail_part_paint(float id, vec2 uv, float t, float cloth, inout vec3 col, in
 		float line = smoothstep(0.34, 0.62 + fwidth(rid) * 2.0, rid);
 		vec3 cyan = vec3(0.16, 0.75, 1.5);
 		vec3 violet = vec3(0.8, 0.25, 1.5);
-		vec3 lc = mix(cyan, violet, smoothstep(0.35, 0.7, ps_n(q * 0.9 + 3.0)));
+		vec3 lc = mix(cyan, violet, smoothstep(0.35, 0.7, sk_n(q * 0.9 + 3.0)));
 		float pulse = 0.7 + 0.3 * sin(t * 1.9 - v * 6.0 + u * 2.0);
 		emis += lc * line * pulse * 1.3;
 		col = mix(col, lc * 0.25, line * 0.6);
 		vec2 cell = floor(uv * vec2(24.0, 28.0));
-		float h = ps_h(cell);
-		vec2 sp = fract(uv * vec2(24.0, 28.0)) - 0.5 - (ps_h2(cell) - 0.5) * 0.6;
+		float h = sk_h(cell);
+		vec2 sp = fract(uv * vec2(24.0, 28.0)) - 0.5 - (sk_h2(cell) - 0.5) * 0.6;
 		float star = step(0.9, h) * (1.0 - smoothstep(0.03, 0.1, length(sp)));
 		float tw = sin(t * 2.6 + h * 60.0);
 		emis += vec3(1.1, 1.15, 1.5) * star * (0.35 + 0.65 * tw * tw);
@@ -253,6 +229,28 @@ void fragment() {
 	col = mix(col, vec3(0.235, 0.176, 0.078), 0.16 * c.y);
 	float edge = min(e.x, e.y);
 	col = mix(col, c_seam * 0.8, vband(edge, -1.0, 8.0 * px));
+	float metal = 0.0;
+	float rough = 0.92;
+#ifdef SKIN
+	vec3 skin_glow = vec3(0.0);
+	if (skin_id > 0) {
+		// her vault skin wherever the canvas still shows its own colour (the
+		// web's test, so her mark and an accent in another colour stay on
+		// top), shaded as the cloth was: seams, reefs and weathering show
+		vec3 r = col / max(c_sail, vec3(0.02));
+		float mean = (r.r + r.g + r.b) / 3.0;
+		float spread = (max(r.r, max(r.g, r.b)) - min(r.r, min(r.g, r.b))) / max(mean, 0.05);
+		float mask = (1.0 - smoothstep(0.1, 0.24, spread)) * smoothstep(0.5, 0.66, mean) * (1.0 - smoothstep(1.3, 1.5, mean)) * skin_p.y;
+		vec3 se = vec3(0.0);
+		float sm = 0.0;
+		float sr = 0.5;
+		vec3 sc = aq_skin(vec2(UV.x * 6.0, (1.0 - UV.y) * 7.0), abs(dot(normalize(NORMAL), VIEW)), TIME, 1.0, se, sm, sr);
+		col = mix(col, sc * clamp(mean, 0.6, 1.1), mask);
+		metal = sm * mask;
+		rough = mix(rough, sr, mask);
+		skin_glow = se * mask * (0.55 + night * 0.9);
+	}
+#endif
 	// her refit's cloth over it all, where the bare canvas shows
 	vec3 pc_emis = vec3(0.0);
 	float pc_metal = 0.0;
@@ -273,6 +271,9 @@ void fragment() {
 	NORMAL = bump(NORMAL, VERTEX, h * 0.02 * fade);
 
 	EMISSION = pc_emis;
+#ifdef SKIN
+	EMISSION = skin_light(EMISSION + skin_glow, 1.25);
+#endif
 #ifdef DAMAGE
 	bool drop;
 	EMISSION += canvas_damage(UV, sail_phase, col, drop);
@@ -281,8 +282,8 @@ void fragment() {
 	}
 #endif
 	ALBEDO = col * wet_dim();
-	METALLIC = pc_metal * pc_amt;
-	ROUGHNESS = mix(0.92, pc_rough, pc_amt) * wet_gloss();
+	METALLIC = mix(metal, pc_metal, pc_amt);
+	ROUGHNESS = mix(rough, pc_rough, pc_amt) * wet_gloss();
 	SPECULAR = 0.35;
 	// sunlight glows through the canvas from behind
 	BACKLIGHT = col * 0.32;

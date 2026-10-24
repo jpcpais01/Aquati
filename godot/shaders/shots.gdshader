@@ -6,7 +6,8 @@
 //
 // Instance packing (src/game/shots.gd):
 //   MODEL_MATRIX[3].xyz  muzzle position     MODEL_MATRIX[0].xyz  launch velocity
-//   INSTANCE_CUSTOM      launch time, time it stops, seed, kind (Ammo)
+//   INSTANCE_CUSTOM      launch time, time it stops, seed, kind (Ammo) + 8 x the
+//                        trail it flies with (Cosmetics.TRAIL_STYLES: round shot's)
 // The mesh is four quads: the streak (VERTEX.z 0: x along the flight, tail
 // to head, y across), the ball (z 1, a billboard drawn as a sphere), and for
 // chain shot only its second half-ball (z 2) and the chain slung between
@@ -31,6 +32,14 @@ const float STREAK_TIME[5] = { 0.075, 0.09, 0.22, 0.05, 0.045 };
 const float STREAK_WIDTH[5] = { 0.42, 0.36, 0.7, 0.62, 0.13 };
 const float BALL_SIZE[5] = { 1.0, 1.12, 1.0, 0.8, 0.42 };
 const vec3 IRON[5] = { vec3(0.05, 0.05, 0.055), vec3(0.075, 0.062, 0.052), vec3(0.3, 0.05, 0.012), vec3(0.068, 0.074, 0.084), vec3(0.11, 0.11, 0.115) };
+// Round shot's streak in each of the vault's trails (Cosmetics.TRAIL_STYLES):
+// its tint, its look (0 the pale air-wake, 1 a glowing ribbon, 2 every colour
+// at once), how many seconds of flight it trails and its width (m).
+const vec3 TRAIL_TINT[10] = { vec3(0.0), vec3(0.0), vec3(0.0), vec3(2.6, 1.0, 0.25), vec3(0.9, 1.8, 2.6), vec3(3.0, 2.0, 0.6),
+		vec3(0.6, 2.6, 1.4), vec3(1.0), vec3(2.2, 2.0, 3.2), vec3(0.5, 2.4, 1.3) };
+const float TRAIL_LOOK[10] = { 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0 };
+const float TRAIL_TIME[10] = { 0.075, 0.075, 0.075, 0.1, 0.12, 0.17, 0.13, 0.2, 0.16, 0.075 };
+const float TRAIL_WIDTH[10] = { 0.42, 0.42, 0.42, 0.44, 0.44, 0.62, 0.5, 0.58, 0.5, 0.4 };
 /// The chain between chain shot's halves: dark iron, and its width (m).
 const vec3 LINK_IRON = vec3(0.045, 0.045, 0.05);
 const float LINK_WIDTH = 0.07;
@@ -39,6 +48,7 @@ varying vec2 v_uv;
 /// 0 the streak, 1 a ball, 3 the chain.
 varying float v_part;
 varying float v_kind;
+varying float v_style;
 varying float v_str;
 varying float v_flick;
 varying vec3 v_world;
@@ -55,7 +65,9 @@ vec3 strip(vec3 a, vec3 b, float along, float across, float width, vec3 cam) {
 void vertex() {
 	float t = now - INSTANCE_CUSTOM.x;
 	float stop = INSTANCE_CUSTOM.y - INSTANCE_CUSTOM.x;
-	int kind = clamp(int(INSTANCE_CUSTOM.w + 0.5), 0, 4);
+	int code = int(INSTANCE_CUSTOM.w + 0.5);
+	int kind = clamp(code % 8, 0, 4);
+	int style = clamp(code / 8, 0, 9);
 	float part = VERTEX.z;
 	// the second half-ball and the chain are chain shot's alone
 	if (t < 0.0 || t >= stop || (part > 1.5 && kind != 3)) {
@@ -94,14 +106,15 @@ void vertex() {
 		} else {
 			// grows out of the muzzle, then a fixed slice of the flight path,
 			// thicker toward the ball, a hair past it so the head is rounded
-			float sw = STREAK_WIDTH[kind];
-			vec3 tail = head - vel * min(t, STREAK_TIME[kind]);
+			float sw = kind == 0 ? TRAIL_WIDTH[style] : STREAK_WIDTH[kind];
+			vec3 tail = head - vel * min(t, kind == 0 ? TRAIL_TIME[style] : STREAK_TIME[kind]);
 			float along = VERTEX.x + 0.5;
 			w = strip(tail, head, along, VERTEX.y, sw * (0.45 + 0.55 * along), CAMERA_POSITION_WORLD);
 			w += normalize(head - tail + vec3(1e-5)) * sw * 0.5 * step(0.99, along);
 			v_uv = vec2(along, VERTEX.y * 2.0);
 		}
 		v_kind = float(kind);
+		v_style = float(style);
 		// fades as the shot slows and drops
 		v_str = max(0.35, 1.0 - t * 0.18);
 		// red-hot iron flickers as it cools in the air
@@ -115,6 +128,8 @@ void fragment() {
 	vec4 fog = air_fog(v_world, CAMERA_POSITION_WORLD);
 	float f = fog.a * 0.85;
 	int kind = clamp(int(v_kind + 0.5), 0, 4);
+	int style = clamp(int(v_style + 0.5), 0, 9);
+	float look = kind == 0 ? TRAIL_LOOK[style] : STREAK_GLOW[kind];
 	float across = 1.0 - v_uv.y * v_uv.y;
 	if (v_part > 2.5) {
 		// the chain: an opaque, softly edged strip of iron
@@ -145,15 +160,19 @@ void fragment() {
 			ALBEDO = mix(col, fog.rgb, f) * a;
 		}
 		ALPHA = a;
-	} else if (STREAK_GLOW[kind] > 0.5) {
-		// a glowing tail: the fuse's sparks, the heat off red-hot iron
+	} else if (look > 0.5) {
+		// a glowing tail: the fuse's sparks, the heat off red-hot iron, a
+		// vault trail's coloured ribbon (or every colour at once)
 		float t = v_uv.x;
 		float a = across * pow(t, 1.4) * v_str;
 		if (a < 0.003) {
 			discard;
 		}
 		float core = pow(max(across, 0.0), 5.0) * smoothstep(0.35, 1.0, t);
-		vec3 tint = STREAK_TINT[kind] * (kind == 2 ? v_flick : 1.0);
+		vec3 tint = kind == 0 ? TRAIL_TINT[style] : STREAK_TINT[kind] * (kind == 2 ? v_flick : 1.0);
+		if (look > 1.5) {
+			tint = clamp(abs(fract(t * 1.4 - now * 1.6 + vec3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0) * 2.6 + 0.2;
+		}
 		ALBEDO = tint * (a * 0.6 + core * 1.7) * (1.0 + night * 0.6) * (1.0 - f);
 		ALPHA = a * 0.32;
 	} else {
