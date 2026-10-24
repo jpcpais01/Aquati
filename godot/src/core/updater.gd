@@ -21,6 +21,11 @@ extends Node
 ## can be tried again; a finished one survives the game being closed (the
 ## next launch offers it ready to install), and once a build is installed its
 ## APK is deleted.
+##
+## The Windows game (`desktop`) looks for the same releases' .exe instead and
+## never downloads anything itself: its card offers the new build with its
+## notes, and Download opens the .exe in the browser. The saves live in the
+## user's own folder, so the new one picks up where this one left off.
 
 ## The state changed, or a download moved on.
 signal changed
@@ -38,8 +43,10 @@ const RECHECK := 3600.0
 const HASH_STEP := 4 << 20
 
 var state := IDLE
-## Off unless this is the Android game (or a desktop run told to pretend).
+## Off unless this is the Android or Windows game (or a run told to pretend).
 var enabled := false
+## The Windows game: offers the release's .exe, opened in the browser.
+var desktop := false
 ## This build: its version ("0.19.65") and the run it was made by (65; 0 for
 ## a build made outside CI).
 var installed := ""
@@ -77,6 +84,7 @@ func _ready() -> void:
 	installed = str(ProjectSettings.get_setting("application/config/version", "0.0.0"))
 	installed_code = code_of(installed)
 	signed_with = str(ProjectSettings.get_setting("aquati/signing", "local"))
+	desktop = OS.has_feature("windows")
 	_http = HTTPRequest.new()
 	_http.timeout = 15.0
 	_http.request_completed.connect(_on_list)
@@ -162,10 +170,15 @@ func _on_list(result: int, code: int, _h: PackedStringArray, body: PackedByteArr
 	_checked(true)
 
 
-## Reads GitHub's list of releases: the newest Android build with an APK,
-## and the others since this one.
+## The file a build ships as here: the APK, or on Windows the game's .exe.
+func asset_ext() -> String:
+	return ".exe" if desktop else ".apk"
+
+
+## Reads GitHub's list of releases: the newest build with this platform's
+## file, and the others since this one.
 func take(releases: Array) -> void:
-	var builds := pick(releases)
+	var builds := pick(releases, asset_ext())
 	between.clear()
 	if builds.is_empty() or int(builds[0].code) <= installed_code:
 		latest = {} if builds.is_empty() else builds[0]
@@ -177,8 +190,9 @@ func take(releases: Array) -> void:
 			between.append(t)
 
 
-## The Android builds in a list of releases that carry an APK, newest first.
-static func pick(releases: Array) -> Array[Dictionary]:
+## The builds in a list of releases that carry a file ending in `ext` (the
+## APK, or the Windows .exe), newest first.
+static func pick(releases: Array, ext := ".apk") -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for r: Variant in releases:
 		if not (r is Dictionary):
@@ -193,7 +207,7 @@ static func pick(releases: Array) -> Array[Dictionary]:
 		var assets: Variant = r.get("assets", [])
 		if assets is Array:
 			for a: Variant in assets:
-				if a is Dictionary and str(a.get("name", "")).ends_with(".apk") and str(a.get("state", "uploaded")) == "uploaded":
+				if a is Dictionary and str(a.get("name", "")).ends_with(ext) and str(a.get("state", "uploaded")) == "uploaded":
 					apk = a
 					break
 		if apk.is_empty():
@@ -228,7 +242,7 @@ static func key_of(body: String) -> String:
 ## The newest build was signed with another key than this one, so Android
 ## won't install it over this (only after this one is uninstalled).
 func key_changed() -> bool:
-	if latest.is_empty() or not (signed_with in ["fallback", "release"]):
+	if desktop or latest.is_empty() or not (signed_with in ["fallback", "release"]):
 		return false
 	var k := str(latest.get("key", ""))
 	return k in ["fallback", "release"] and k != signed_with
@@ -309,6 +323,14 @@ func _checked(ok: bool) -> void:
 		tidy()
 		changed.emit()
 		return
+	if desktop:
+		# nothing to fetch in here: the card hands the .exe to the browser
+		state = OFFER
+		changed.emit()
+		if _told != int(latest.code):
+			_told = int(latest.code)
+			found.emit()
+		return
 	# a build downloaded earlier and since overtaken goes
 	tidy(_file())
 	if _ready_file() != "":
@@ -323,9 +345,15 @@ func _checked(ok: bool) -> void:
 		found.emit()
 
 
-## Downloads the newest build's APK.
+## Downloads the newest build's APK (on Windows: opens its .exe in the
+## browser, which keeps it in Downloads).
 func download() -> void:
 	if latest.is_empty() or state in [CHECKING, DOWNLOADING, VERIFYING]:
+		return
+	if desktop:
+		var url := str(latest.url) if str(latest.url) != "" else str(latest.page)
+		if url != "":
+			OS.shell_open(url)
 		return
 	if _ready_file() != "":
 		state = READY
@@ -515,7 +543,7 @@ static func _size_of(path: String) -> int:
 
 
 func _headers(extra: Array) -> PackedStringArray:
-	var h := PackedStringArray(["User-Agent: ShoresOFortune/%s (Android)" % installed])
+	var h := PackedStringArray(["User-Agent: ShoresOFortune/%s (%s)" % [installed, "Windows" if desktop else "Android"]])
 	for e: String in extra:
 		h.append(e)
 	return h

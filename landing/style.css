@@ -130,7 +130,7 @@ svg { fill: currentColor; }
 .cta-row { display: flex; flex-wrap: wrap; gap: 14px; }
 .cta-row.center { justify-content: center; }
 .js-apk.is-android { order: -1; }
-.js-apk.soon .btn-ic, .platform.soon .pf-ic { color: rgba(255, 255, 255, 0.75); }
+.js-apk.soon .btn-ic, .js-exe.soon .btn-ic, .platform.soon .pf-ic { color: rgba(255, 255, 255, 0.75); }
 
 /* ---------- nav ---------- */
 .nav {
@@ -420,6 +420,8 @@ svg { fill: currentColor; }
 .pf-ic svg { width: 24px; height: 24px; margin-left: 2px; }
 .pf-ic.android { color: #0d2a16; background: linear-gradient(180deg, #c6ffd0, #6fdc8c); box-shadow: 0 10px 24px rgba(80, 220, 130, 0.25); }
 .pf-ic.android svg { margin: 0; }
+.pf-ic.windows { color: #04203a; background: linear-gradient(180deg, #d2efff, #6cc4f5); box-shadow: 0 10px 24px rgba(70, 170, 240, 0.25); }
+.pf-ic.windows svg { margin: 0; width: 22px; height: 22px; }
 .pf-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .pf-body b { font-size: 17px; }
 .pf-body small { font-size: 14px; color: var(--ink-3); line-height: 1.45; }

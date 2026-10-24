@@ -26,6 +26,12 @@ var shake := 1.0
 var fps := true
 ## Phones and tablets: touch controls, a 60 fps cap, the lean graphics path.
 var mobile := false
+## A computer (the Windows game): a window that can go full screen, and a
+## way back to the desktop.
+var desktop := false
+## The window fills the screen (the desktop game's default; F11 or
+## Alt+Enter switches, as does Settings).
+var fullscreen := true
 ## A run told to play as a phone (--phone): the short side of the screen it
 ## pretends to have, in dp; 0 reads the real screen.
 var phone_lines := 0.0
@@ -39,6 +45,7 @@ var _cfg := ConfigFile.new()
 
 func _ready() -> void:
 	mobile = OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
+	desktop = OS.has_feature("pc") and not mobile
 	quality = Quality.MEDIUM if mobile else Quality.HIGH
 	if _cfg.load(PATH) == OK:
 		quality = clampi(_cfg.get_value("graphics", "quality", quality), 0, 2) as Quality
@@ -52,7 +59,13 @@ func _ready() -> void:
 		fps = _cfg.get_value("interface", "fps", fps)
 		weather = _cfg.get_value("sky", "weather", weather)
 		time = _cfg.get_value("sky", "time", time)
+		fullscreen = _cfg.get_value("display", "fullscreen", fullscreen)
 	apply()
+	# only an exported game takes the whole screen on its own: a run from the
+	# editor binary (the checks, the shots) keeps the window it was given
+	if desktop and OS.has_feature("template"):
+		apply_window()
+	get_window().size_changed.connect(_on_window_resized)
 
 
 ## Play as a phone `lines` dp across its short side would, at its default
@@ -60,9 +73,61 @@ func _ready() -> void:
 ## screen (a desktop run's --phone, to see what a phone draws).
 func pretend_phone(lines: float) -> void:
 	mobile = true
+	desktop = false
 	quality = Quality.MEDIUM
 	phone_lines = clampf(lines, 320.0, 720.0)
 	apply()
+
+
+## The window as `fullscreen` says: the whole screen (borderless, so
+## Alt+Tab is instant), or a window of most of it, centred, that can be
+## resized freely.
+func apply_window() -> void:
+	if not desktop or DisplayServer.get_name() == "headless":
+		return
+	var w := get_window()
+	if fullscreen:
+		w.mode = Window.MODE_FULLSCREEN
+		return
+	if w.mode == Window.MODE_WINDOWED:
+		return
+	w.mode = Window.MODE_WINDOWED
+	var screen := DisplayServer.screen_get_usable_rect(w.current_screen)
+	var size := Vector2i((Vector2(screen.size) * 0.8).round())
+	# 16:9 at most, so a wide monitor doesn't get a letterbox of a window
+	size.x = mini(size.x, roundi(size.y * 16.0 / 9.0))
+	w.size = size
+	w.position = screen.position + (screen.size - size) / 2
+
+
+func set_fullscreen(on: bool) -> void:
+	fullscreen = on
+	save()
+	apply_window()
+	changed.emit()
+
+
+## F11, or Alt+Enter: full screen or a window, from anywhere in the game.
+func _input(event: InputEvent) -> void:
+	var k := event as InputEventKey
+	if k == null or not k.pressed or k.echo or not desktop:
+		return
+	if k.keycode == KEY_F11 or (k.alt_pressed and k.keycode in [KEY_ENTER, KEY_KP_ENTER]):
+		get_viewport().set_input_as_handled()
+		set_fullscreen(not fullscreen)
+
+
+## The window was put into or out of full screen some other way (the
+## system's own keys or title bar): the switch follows.
+func _on_window_resized() -> void:
+	if not desktop or not OS.has_feature("template"):
+		return
+	var w := get_window()
+	var full := w.mode == Window.MODE_FULLSCREEN or w.mode == Window.MODE_EXCLUSIVE_FULLSCREEN
+	if full != fullscreen and DisplayServer.get_name() != "headless":
+		fullscreen = full
+		save()
+		changed.emit()
 
 
 func set_quality(q: Quality) -> void:
@@ -83,6 +148,7 @@ func save() -> void:
 	_cfg.set_value("interface", "fps", fps)
 	_cfg.set_value("sky", "weather", weather)
 	_cfg.set_value("sky", "time", time)
+	_cfg.set_value("display", "fullscreen", fullscreen)
 	_cfg.save(PATH)
 
 

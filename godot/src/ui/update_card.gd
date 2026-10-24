@@ -433,11 +433,15 @@ func _build_foot(w: float) -> Control:
 			Updater.OFFER:
 				btns.append(later.call("Later"))
 				var size := int(updater.latest.size)
-				_gold_btn = MenuKit.gold("download", "UPDATE" + ("  ·  " + _mb(size) if size > 0 else ""), bh, 22.0 * u, 14.5 * t, 19.0 * u)
+				_gold_btn = MenuKit.gold("download", ("DOWNLOAD" if updater.desktop else "UPDATE") + ("  ·  " + _mb(size) if size > 0 else ""), bh, 22.0 * u, 14.5 * t, 19.0 * u)
 				_gold_btn.pressed.connect(func() -> void:
 					clicked.emit()
 					updater.download())
-				line = "Everything you've won stays aboard."
+				if updater.desktop:
+					# the browser fetches the new .exe; the saves are the user's, not the file's
+					line = "It downloads in your browser. Close this one, run the new one, and everything you've won is there."
+				else:
+					line = "Everything you've won stays aboard."
 			Updater.DOWNLOADING, Updater.VERIFYING:
 				var cancel := MenuKit.pill("", "Cancel", bh, 18.0 * u, 14.0 * t, 700, ghost, HudStyle.INK, 0.02)
 				cancel.pressed.connect(func() -> void:

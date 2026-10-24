@@ -1,15 +1,16 @@
-# Builds the native Android game (godot/) into a signed APK.
+# Builds the native game (godot/) into a signed Android APK and a Windows
+# .exe (one file, the game packed inside it).
 #
-# Every push to main that touches the Godot project publishes the APK as a
-# GitHub release. Pull requests and other pushes build and smoke-test it the
-# same way and keep the APK as a workflow artifact.
+# Every push to main that touches the Godot project publishes both as one
+# GitHub release. Pull requests and other pushes build and smoke-test them the
+# same way and keep them as workflow artifacts.
 #
 # Signing: add the repository secrets ANDROID_KEYSTORE_BASE64,
 # ANDROID_KEYSTORE_PASSWORD and ANDROID_KEY_ALIAS (see godot/README.md). Until
 # they exist, the APK is signed with the shared fallback key in
 # .github/android/fallback-debug.keystore, so releases keep working.
 
-name: Android build
+name: Android and Windows build
 
 on:
   push:
@@ -38,7 +39,7 @@ env:
 
 jobs:
   apk:
-    name: Build APK
+    name: Build the APK and the Windows game
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -56,9 +57,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/godot-dl
-          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}-android-v1
+          key: godot-${{ env.GODOT_VERSION }}-${{ env.GODOT_RELEASE }}-android-windows-v2
 
-      - name: Download Godot and its Android export templates
+      - name: Download Godot and its Android and Windows export templates
         if: steps.godot-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
@@ -71,7 +72,7 @@ jobs:
           chmod +x godot
           curl -fsSL --retry 4 -o templates.tpz "${BASE}/Godot_v${V}_export_templates.tpz"
           mkdir -p tpl
-          unzip -q -j templates.tpz 'templates/android_*' 'templates/version.txt' -d tpl
+          unzip -q -j templates.tpz 'templates/android_*' 'templates/windows_release_x86_64.exe' 'templates/version.txt' -d tpl
           rm templates.tpz
           ls -la tpl
 
@@ -95,7 +96,10 @@ jobs:
           sed -i "s|^version/code=.*|version/code=${GITHUB_RUN_NUMBER}|" godot/export_presets.cfg
           sed -i "s|^version/name=.*|version/name=\"${NAME}\"|" godot/export_presets.cfg
           sed -i "s|^config/version=.*|config/version=\"${NAME}\"|" godot/project.godot
-          grep -n "^version/" godot/export_presets.cfg
+          # Windows wants four numbers in the .exe's version
+          sed -i "s|^application/file_version=.*|application/file_version=\"${NAME}.0\"|" godot/export_presets.cfg
+          sed -i "s|^application/product_version=.*|application/product_version=\"${NAME}.0\"|" godot/export_presets.cfg
+          grep -nE "^(version/|application/(file|product)_version)" godot/export_presets.cfg
 
       - name: Signing key
         env:
@@ -222,11 +226,33 @@ jobs:
           grep -q '"io.github.jpcpais01.aquati.fileprovider"' "$RUNNER_TEMP/manifest.txt" || { echo "::error::The FileProvider's authority isn't the game's (OS.shell_open asks for <package>.fileprovider)"; exit 1; }
           grep -A3 "FileProvider" "$RUNNER_TEMP/manifest.txt" || true
 
+      - name: Export the Windows game
+        working-directory: godot
+        run: |
+          set -uo pipefail
+          godot --headless --export-release "Windows" ../build/shores-o-fortune.exe 2>&1 | tee "$RUNNER_TEMP/export-windows.log"
+          test -s ../build/shores-o-fortune.exe || { echo "::error::No .exe came out of the Windows export"; exit 1; }
+          # one file: the game is packed inside the .exe, no .pck beside it
+          if [ -e ../build/shores-o-fortune.pck ]; then echo "::error::The Windows game left its .pck outside the .exe"; exit 1; fi
+          file ../build/shores-o-fortune.exe | tee "$RUNNER_TEMP/exe.txt"
+          grep -q "PE32+ executable" "$RUNNER_TEMP/exe.txt" || { echo "::error::The Windows game isn't a 64-bit Windows program"; exit 1; }
+          SIZE=$(stat -c %s ../build/shores-o-fortune.exe)
+          BARE=$(stat -c %s "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}/windows_release_x86_64.exe")
+          [ "$SIZE" -gt $((BARE + 10000000)) ] || { echo "::error::The .exe is ${SIZE} bytes, hardly more than the bare engine's ${BARE}: the game didn't get packed into it"; exit 1; }
+          ls -la ../build
+
       - name: Keep the APK
         uses: actions/upload-artifact@v4
         with:
           name: shores-o-fortune-${{ steps.ver.outputs.name }}
           path: build/shores-o-fortune.apk
+          retention-days: 14
+
+      - name: Keep the Windows game
+        uses: actions/upload-artifact@v4
+        with:
+          name: shores-o-fortune-${{ steps.ver.outputs.name }}-windows
+          path: build/shores-o-fortune.exe
           retention-days: 14
 
       - name: Publish the release
@@ -238,13 +264,17 @@ jobs:
           NAME="${{ steps.ver.outputs.name }}"
           TAG="android-v${NAME}"
           APK="build/shores-o-fortune-${NAME}.apk"
+          EXE="build/shores-o-fortune-${NAME}-windows.exe"
           cp build/shores-o-fortune.apk "$APK"
+          cp build/shores-o-fortune.exe "$EXE"
           {
             cat godot/RELEASE_NOTES.md
             echo
             echo "---"
             echo
             echo "Install: download \`shores-o-fortune-${NAME}.apk\` on your phone and open it (allow installs from your browser if Android asks). Needs Android 7 or newer, 64-bit. From 0.21 on, the game offers each new build itself: tap Update in the harbour."
+            echo
+            echo "On Windows: download \`shores-o-fortune-${NAME}-windows.exe\` and run it, nothing to install (Windows 10 or 11, 64-bit). Windows may say it protected your PC from an unrecognised app: choose More info, then Run anyway. Your saves stay in your user folder, so each new build carries on where the last left off, and the game tells you in the harbour when there's a newer one."
             echo
             echo "<!-- signed: ${SIGNED_WITH} -->"
             if [ "${SIGNED_WITH}" = "fallback" ]; then
@@ -254,8 +284,8 @@ jobs:
             echo
             echo "Built from ${GITHUB_SHA::7}."
           } > "$RUNNER_TEMP/notes.md"
-          gh release create "$TAG" "$APK" \
-            --title "Shores O' Fortune for Android ${NAME}" \
+          gh release create "$TAG" "$APK" "$EXE" \
+            --title "Shores O' Fortune ${NAME} for Android and Windows" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --target "$GITHUB_SHA" \
             --latest
