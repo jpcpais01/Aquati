@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-24T14:00Z',
     entries: [
       {
+        title: 'Shores O\' Fortune is on Windows',
+        notes: [
+          'Every new build now comes as a Windows game too, beside the Android one, from the same code and looking just the same. It\'s a single .exe with nothing to install: download it from the releases page (or the Windows button on the website), run it, and you\'re in the harbour.',
+          'It plays with the mouse and keyboard: A and D steer, W and S trim the sails, Q and E fire each broadside, Space fires whichever side bears and a click on the sea aims where you point. It opens full screen, F11 or Alt+Enter (or the new switch in Settings) puts it in a window you can size freely, Settings lists every key and has Quit to desktop, and the harbour tells you when a newer build is out.',
+        ],
+      },
+      {
         title: 'Android: a loading screen, and steady sails',
         notes: [
           'The Android game now opens on a loading screen like the web\'s: a ship off the pink shore of Las Brumas drifting slowly closer, the crest\'s rose turning above the gilt name, a tip that changes every few seconds and a bar filling aqua to gold. The world is built a little at a time behind it so it never freezes, and it waits until everything has been drawn once before fading into the harbour, so the game starts smooth instead of stuttering.',

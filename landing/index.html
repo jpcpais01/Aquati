@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Shores O’ Fortune · A pirate archipelago you can play anywhere</title>
-  <meta name="description" content="Sail a sun-drenched pirate archipelago. Three ships, two archipelagos, sea battles, buried treasure, the Kraken and a living sky. Free to play in your browser or on Android.">
+  <meta name="description" content="Sail a sun-drenched pirate archipelago. Three ships, two archipelagos, sea battles, buried treasure, the Kraken and a living sky. Free to play in your browser, on Android or on Windows.">
   <meta name="theme-color" content="#04131d">
   <link rel="icon" href="favicon.ico" sizes="any">
   <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Shores O’ Fortune">
-  <meta property="og:description" content="Sail a sun-drenched pirate archipelago. Free to play in your browser or on Android.">
+  <meta property="og:description" content="Sail a sun-drenched pirate archipelago. Free to play in your browser, on Android or on Windows.">
   <meta property="og:image" content="og.jpg">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="og.jpg">
@@ -35,6 +35,7 @@
       <circle cx="32" cy="32" r="2.4" fill="#0b3546" stroke="url(#gold)" stroke-width="1.2"/>
     </symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.6-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5Z" fill="currentColor"/></symbol>
+    <symbol id="i-windows" viewBox="0 0 24 24"><path fill="currentColor" d="M3 5.1 10.4 4v7.2H3V5.1Zm0 13.8 7.4 1.1v-7.1H3v6Zm8.3 1.2L21 21.5v-8.6h-9.7v7.2Zm0-16.2v7.3H21V2.5l-9.7 1.4Z"/></symbol>
     <symbol id="i-android" viewBox="0 0 24 24"><path fill="currentColor" d="M17.6 9.48 19.44 6.3a.38.38 0 0 0-.66-.38l-1.86 3.22a11.5 11.5 0 0 0-9.84 0L5.22 5.92a.38.38 0 0 0-.66.38L6.4 9.48A10.8 10.8 0 0 0 1 18h22a10.8 10.8 0 0 0-5.4-8.52ZM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5Z"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
@@ -83,7 +84,7 @@
     <div class="hero-shade"></div>
 
     <div class="hero-inner">
-      <p class="pill reveal"><span class="pill-dot"></span>Free to play · Browser &amp; Android</p>
+      <p class="pill reveal"><span class="pill-dot"></span>Free to play · Browser, Android &amp; Windows</p>
       <h1 class="logo reveal" style="--d:.08s">
         <span class="logo-pre">Shores <em>O’</em></span>
         <span class="logo-main">Fortune</span>
@@ -97,6 +98,10 @@
         <a class="btn btn-glass btn-lg js-apk" href="https://github.com/jpcpais01/Aquati/releases/latest">
           <span class="btn-ic"><svg><use href="#i-android"/></svg></span>
           <span class="btn-txt"><b>Download for Android</b><small class="js-apk-note">Free APK</small></span>
+        </a>
+        <a class="btn btn-glass btn-lg js-exe" href="https://github.com/jpcpais01/Aquati/releases/latest" hidden>
+          <span class="btn-ic"><svg><use href="#i-windows"/></svg></span>
+          <span class="btn-txt"><b>Download for Windows</b><small class="js-exe-note">Free · one file, nothing to install</small></span>
         </a>
       </div>
       <button class="trailer-link reveal js-trailer" type="button" style="--d:.3s">
@@ -351,6 +356,14 @@
             </span>
             <svg class="pf-go"><use href="#i-arrow"/></svg>
           </a>
+          <a class="platform reveal js-exe" style="--d:.16s" href="https://github.com/jpcpais01/Aquati/releases/latest">
+            <span class="pf-ic windows"><svg><use href="#i-windows"/></svg></span>
+            <span class="pf-body">
+              <b>Download for Windows</b>
+              <small><span class="js-exe-note">Free</span> · the native game in one file, full screen, mouse and keys. Just run it.</small>
+            </span>
+            <svg class="pf-go"><use href="#i-arrow"/></svg>
+          </a>
         </div>
       </div>
 
@@ -389,6 +402,10 @@
           <span class="btn-ic"><svg><use href="#i-android"/></svg></span>
           <span class="btn-txt"><b>Download for Android</b><small class="js-apk-note">Free APK</small></span>
         </a>
+        <a class="btn btn-glass btn-lg js-exe" href="https://github.com/jpcpais01/Aquati/releases/latest" hidden>
+          <span class="btn-ic"><svg><use href="#i-windows"/></svg></span>
+          <span class="btn-txt"><b>Download for Windows</b><small class="js-exe-note">Free · one file, nothing to install</small></span>
+        </a>
       </div>
     </div>
   </section>
@@ -403,6 +420,7 @@
     <nav class="foot-links" aria-label="Footer">
       <a class="js-play" href="https://aquati.vercel.app">Play</a>
       <a class="js-apk" href="https://github.com/jpcpais01/Aquati/releases/latest">Android</a>
+      <a class="js-exe" href="https://github.com/jpcpais01/Aquati/releases/latest">Windows</a>
       <a href="https://github.com/jpcpais01/Aquati">GitHub</a>
     </nav>
     <p class="foot-note">© 2026 Shores O’ Fortune · Every image on this page is a real in‑game render · Fair winds!</p>

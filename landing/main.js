@@ -13,14 +13,18 @@
   // ---------- platform hints ----------
   const ua = navigator.userAgent;
   const isAndroid = /Android/i.test(ua);
+  const isWindows = /Windows NT/i.test(ua) && !/Windows Phone/i.test(ua);
   const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   if (isIOS) {
     // no APK for iPhone: point them at the home-screen install instead
     for (const a of $$('.cta-row .js-apk')) a.hidden = true;
     for (const p of $$('.ios-tip')) p.hidden = false;
   }
+  // on a Windows PC the big buttons offer the Windows game in the APK's place
+  for (const a of $$('.cta-row .js-exe')) a.hidden = !isWindows;
+  if (isWindows) for (const a of $$('.cta-row .js-apk')) a.hidden = true;
 
-  // ---------- Android APK: link straight to the newest release's .apk ----------
+  // ---------- downloads: link straight to the newest release's .apk and .exe ----------
   const RELEASES = `https://github.com/${REPO}/releases`;
   const setApk = (info) => {
     for (const a of $$('.js-apk')) {
@@ -33,27 +37,37 @@
     }
     for (const n of $$('.js-apk-note')) n.textContent = info ? `${info.tag} · ${info.mb} MB APK` : 'Coming soon · follow on GitHub';
   };
-  const findApk = async () => {
+  const setExe = (info) => {
+    for (const a of $$('.js-exe')) {
+      a.href = info ? info.url : RELEASES;
+      a.classList.toggle('soon', !info);
+      a.closest('.platform')?.classList.toggle('soon', !info);
+      if (info) a.setAttribute('download', '');
+    }
+    for (const n of $$('.js-exe-note')) n.textContent = info ? `${info.tag.replace(/^android-/, '')} · ${info.mb} MB · Windows 10 & 11` : 'Coming soon · follow on GitHub';
+  };
+  // the newest release that carries each kind of file (a release may have one and not yet the other)
+  const findBuilds = async () => {
     try {
-      const cached = sessionStorage.getItem('sof-apk');
+      const cached = sessionStorage.getItem('sof-builds');
       if (cached) return JSON.parse(cached);
     } catch {}
     const r = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=12`, { headers: { Accept: 'application/vnd.github+json' } });
     if (!r.ok) throw new Error(String(r.status));
     const list = await r.json();
-    let info = null;
+    const found = { apk: null, exe: null };
     for (const rel of list) {
-      if (rel.draft) continue;
-      const apk = (rel.assets || []).find((x) => /\.apk$/i.test(x.name));
-      if (apk) {
-        info = { url: apk.browser_download_url, tag: rel.tag_name || rel.name || 'Latest', mb: (apk.size / 1048576).toFixed(apk.size > 1e8 ? 0 : 1) };
-        break;
+      if (rel.draft || rel.prerelease) continue;
+      for (const [kind, re] of [['apk', /\.apk$/i], ['exe', /\.exe$/i]]) {
+        const f = found[kind] ? null : (rel.assets || []).find((x) => re.test(x.name));
+        if (f) found[kind] = { url: f.browser_download_url, tag: rel.tag_name || rel.name || 'Latest', mb: (f.size / 1048576).toFixed(f.size > 1e8 ? 0 : 1) };
       }
+      if (found.apk && found.exe) break;
     }
-    try { sessionStorage.setItem('sof-apk', JSON.stringify(info)); } catch {}
-    return info;
+    try { sessionStorage.setItem('sof-builds', JSON.stringify(found)); } catch {}
+    return found;
   };
-  findApk().then(setApk, () => { /* offline or rate limited: keep the releases link */ });
+  findBuilds().then((b) => { setApk(b.apk); setExe(b.exe); }, () => { /* offline or rate limited: keep the releases links */ });
 
   // ---------- nav turns to glass once you leave the hero ----------
   const nav = $('#nav');

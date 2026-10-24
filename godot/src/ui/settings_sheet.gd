@@ -12,6 +12,8 @@ signal closed
 signal clicked
 ## Game updates, tapped: the update card (UpdateCard).
 signal updates
+## Quit to desktop, tapped (the desktop game).
+signal quit
 
 ## The rows: [kind, the Settings field, title, line(, the choices)].
 const GROUPS := [
@@ -31,7 +33,15 @@ const GROUPS := [
 	]],
 ]
 
-## The game's updates (on the Android game: the GAME group's row shows them).
+## On a computer: the window's switch, the keys, and the way out.
+const DESKTOP_GRAPHICS := ["switch", "fullscreen", "Full screen", "Or a window you can size as you like (F11 or Alt+Enter switches too)"]
+const KEYS := [
+	["keys", "", "At the helm", "A / D or the arrows steer · W / S set more or less sail · Shift runs ashore · Space jumps"],
+	["keys", "", "The guns", "Q / E fire port / starboard · Space fires the side that bears · click the sea to aim · 1 to 5 load a shot, R the next"],
+	["keys", "", "Around the sea", "M the sea chart · F come alongside a quay · C or V the camera · the wheel zooms · Esc pauses"],
+]
+
+## The game's updates (on the Android and Windows games: the GAME group's row shows them).
 var updater: Updater
 
 var _root: Control
@@ -143,9 +153,16 @@ func _build() -> void:
 	_content.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var inner := w - 16.0 * u - 20.0 * u
 	var y := 12.0 * u
-	var groups: Array = GROUPS.duplicate()
+	var groups: Array = GROUPS.duplicate(true)
+	var game_rows := []
 	if updater != null and updater.enabled:
-		groups.append(["GAME", [["update", "", "Game updates", _update_line()]]])
+		game_rows.append(["update", "", "Game updates", _update_line()])
+	if Settings.desktop:
+		(groups[1][1] as Array).append(DESKTOP_GRAPHICS)
+		groups.append(["KEYS", KEYS])
+		game_rows.append(["quit", "", "Quit to desktop", "Everything you've won is kept"])
+	if not game_rows.is_empty():
+		groups.append(["GAME", game_rows])
 	for g: Array in groups:
 		var h4 := MenuKit.words(str(g[0]), "inter", 700, 11.0 * t, HudStyle.AQUA, 0.22, 1.21)
 		h4.position = Vector2(20.0 * u + 2.0, y)
@@ -220,6 +237,11 @@ func _row(r: Array, w: float) -> UiBox:
 			_sliders.append(ctl)
 		"update":
 			ctl = _update_tag()
+		"quit":
+			ctl = _tag("close", "Quit", false)
+		"keys":
+			ctl = Control.new()
+			ctl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_:
 			ctl = _seg(key, r[4])
 	var pad_l := 16.0 * u
@@ -230,13 +252,17 @@ func _row(r: Array, w: float) -> UiBox:
 	var text_h := b.size.y + 3.0 * u + small.size.y
 	var h := maxf(64.0 * u, 16.0 * u + maxf(text_h, ctl.size.y))
 	var row: UiBox
-	if kind == "switch" or kind == "update":
+	if kind == "switch" or kind == "update" or kind == "quit":
 		var btn := UiButton.new(Vector2(w, h), 18.0 * u, 4.0)
 		btn.squeeze = 0.99
 		if kind == "update":
 			btn.pressed.connect(func() -> void:
 				clicked.emit()
 				updates.emit())
+		elif kind == "quit":
+			btn.pressed.connect(func() -> void:
+				clicked.emit()
+				quit.emit())
 		else:
 			btn.pressed.connect(func() -> void: _toggle(key))
 		_buttons.append(btn)
@@ -265,11 +291,16 @@ func _update_line() -> String:
 
 ## Its tag on the right: Update in gilt when there's one, else Check.
 func _update_tag() -> UiBox:
+	var on := updater.available()
+	return _tag("download" if on else "refresh", "Update" if on else "Check now", on)
+
+
+## A row's tag: an icon and a word in a pill, gilt when `on`.
+func _tag(icon: String, word: String, on: bool) -> UiBox:
 	var u := MenuKit.U
 	var t := MenuKit.T
-	var on := updater.available()
-	var tt := MenuKit.words("Update" if on else "Check now", "inter", 700, 12.5 * t, HudStyle.GOLD_INK if on else HudStyle.INK)
-	var ic := Icons.rect("download" if on else "refresh", 15.0 * u, HudStyle.GOLD_INK if on else HudStyle.INK_2)
+	var tt := MenuKit.words(word, "inter", 700, 12.5 * t, HudStyle.GOLD_INK if on else HudStyle.INK)
+	var ic := Icons.rect(icon, 15.0 * u, HudStyle.GOLD_INK if on else HudStyle.INK_2)
 	var bh := 34.0 * u
 	var box := UiBox.new(Vector2(14.0 * u + ic.size.x + 7.0 * u + tt.size.x + 16.0 * u, bh), bh * 0.5, 20.0 * u)
 	if on:
@@ -316,6 +347,10 @@ func _seg(key: String, opts: Array) -> Control:
 
 func _toggle(key: String) -> void:
 	clicked.emit()
+	if key == "fullscreen":
+		Settings.set_fullscreen(not Settings.fullscreen)
+		_sync()
+		return
 	Settings.set(key, not bool(Settings.get(key)))
 	_apply(true)
 

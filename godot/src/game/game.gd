@@ -254,6 +254,8 @@ var _strikes := 0
 ## Where the game is: in the harbour choosing a ship, or out on a voyage.
 enum State { HARBOUR, VOYAGE, DOCKED }
 var state := State.VOYAGE
+## The keys were shown this run (a computer's first voyage).
+var _keys_told := false
 ## The voyage on hold (Anchored): nothing at sea moves.
 var paused := false
 var harbour: Harbour
@@ -2379,6 +2381,9 @@ func _build_menus() -> void:
 	add_child(update_card)
 	settings_sheet.updater = updater
 	settings_sheet.updates.connect(_open_updates)
+	settings_sheet.quit.connect(func() -> void:
+		Progress.save()
+		get_tree().quit())
 	harbour.update.connect(_open_updates)
 	updater.changed.connect(_on_update)
 	updater.found.connect(_offer_update)
@@ -2410,7 +2415,7 @@ func _open_settings() -> void:
 	_note_tour("Settings")
 
 
-## Looks for a newer build: on the Android game (never in a smoke test),
+## Looks for a newer build: on the Android and Windows games (never in a smoke test),
 ## or a pretend one for a shot (--update-demo [offer|downloading|ready|failed]
 ## [--nocard]).
 func _start_updates() -> void:
@@ -2419,7 +2424,7 @@ func _start_updates() -> void:
 		# (--nocard: just the harbour's Update pill)
 		if not _args.has("nocard"):
 			_offer_update(0.0)
-	elif OS.has_feature("android") and not _args.has("smoke"):
+	elif (OS.has_feature("android") or OS.has_feature("windows")) and not _args.has("smoke"):
 		updater.start()
 
 
@@ -3099,7 +3104,19 @@ func _start_voyage(sea: String) -> void:
 		_arrive(away)
 	else:
 		hud.toast("Weigh anchor", "The %s sets sail" % p.ship_name, 3.0)
+	_tell_keys()
 	_note_tour("sailed from %s" % (away.id if away != null else "home"))
+
+
+## On a computer, the first voyage of a run: the keys, once, after the
+## first toast has had its moment (Settings lists them all).
+func _tell_keys() -> void:
+	if _keys_told or not Settings.desktop or hud.touch_ui() or _args.has("shot") or _args.has("smoke"):
+		return
+	_keys_told = true
+	await get_tree().create_timer(3.4).timeout
+	if state == State.VOYAGE and _farewell == null and not hud.touch_ui():
+		hud.toast("A · D steer   W · S sails   Q · E fire", "Click the sea to aim · M the chart · Esc pauses", 6.0)
 
 
 ## Her anchorage moved to `r`'s berth (in deep water, clear of other

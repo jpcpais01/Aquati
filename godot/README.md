@@ -1,13 +1,25 @@
-# Shores O' Fortune for Android
+# Shores O' Fortune for Android and Windows
 
-The native Android game, built with Godot 4 (GDScript, Mobile renderer on
-Vulkan). It is a rebuild of the web game in `../src`, not a line-by-line copy:
+The native Android and Windows game, built with Godot 4 (GDScript, Mobile
+renderer on Vulkan, on phones and PCs alike so both look the same). It is a rebuild of the web game in `../src`, not a line-by-line copy:
 the look and the feel are the same, the engineering is redone for phones.
 
-Every push to `main` that touches this folder builds a signed APK in GitHub
-Actions and publishes it as a GitHub release (see
+Every push to `main` that touches this folder builds a signed APK and a
+Windows `.exe` in GitHub Actions and publishes both as one GitHub release (see
 `.github/workflows/android.yml`). Pull requests build and smoke-test the same
-way and keep the APK as a workflow artifact.
+way and keep both as workflow artifacts.
+
+## Windows
+
+The `Windows` export preset makes one 64-bit `.exe` with the game packed
+inside it (`binary_format/embed_pck`), its icon (`art/icon.ico`) and version
+written into it by the engine (no rcedit needed). It plays with the keyboard
+and mouse (Settings lists the keys) and opens full screen, borderless; F11 or
+Alt+Enter, or Settings' Full screen switch, puts it in a window that can be
+resized freely, and the choice is kept. Settings also has Quit to desktop. The
+saves live in `%APPDATA%\Godot\app_userdata\Shores O' Fortune`, so every new
+`.exe` carries on where the last left off. It's unsigned, so SmartScreen asks
+once (More info, Run anyway).
 
 ## Layout
 
@@ -207,7 +219,9 @@ with the same key. CI stamps the key it used into the build
 (`<!-- signed: … -->`); when they differ, the card says so and points to the
 release page instead of offering a download that can't install.
 
-Desktop runs never check. `--update-demo [offer|downloading|ready|failed|rekeyed]`
+The Windows game checks the same releases for their `.exe` instead and never
+downloads anything itself: its card's Download opens the `.exe` in the
+browser. Other desktop runs (the editor binary, the checks) never check. `--update-demo [offer|downloading|ready|failed|rekeyed]`
 (with `--nocard`, just the harbour's pill) stages the card for a shot.
 
 ## Signing the release APK

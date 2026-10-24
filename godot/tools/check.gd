@@ -137,8 +137,17 @@ func _check_updates() -> void:
 		_fail("updates: picked %s" % [codes])
 	elif str(picked[0].sha256) != "ABC123" or str(picked[1].sha256) != "" or str(picked[0].title) != "The kraken" or int(picked[0].size) != 1000:
 		_fail("updates: build read wrong: %s" % [picked[0]])
+	# the Windows game takes the same releases' .exe, and only those that have one
+	var win_rel := releases.duplicate()
+	win_rel.append(rel.call("android-v0.23.80", "on windows", [apk.call("w.apk"), apk.call("shores-o-fortune-0.23.80-windows.exe")]))
+	var wins: Array = up.pick(win_rel, ".exe")
+	if wins.size() != 1 or int(wins[0].code) != 80 or not str(wins[0].url).ends_with("-windows.exe"):
+		_fail("updates: the Windows build read wrong: %s" % [wins])
+	elif int(up.pick(win_rel)[0].code) != 80 or not str(up.pick(win_rel)[0].url).ends_with("w.apk"):
+		_fail("updates: the APK of a release with both read wrong")
 	var u: Node = up.new()
 	root.add_child(u)
+	u.desktop = false
 	u.installed_code = 63
 	u.take(releases)
 	if int(u.latest.get("code", 0)) != 67 or u.between != ["Maelstroms and reefs"]:
