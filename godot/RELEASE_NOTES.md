@@ -1,42 +1,41 @@
-## Shores O' Fortune for Android: the shipwright
+## Shores O' Fortune for Android: Puerto Marézia
 
-The fourteenth build opens the Shipwright: dress your ship in your own
-colours, right where she lies at anchor in the harbour.
+The fifteenth build takes the Shipwright ashore: she rows round to the home
+port, Puerto Marézia, and is dressed alongside its quay with the whole town
+going about its day behind her.
 
-- **The Shipwright.** "Shipwright" sits beside Set Sail. The harbour's menu
-  goes, the camera glides in to her flag and a glass panel comes in down the
-  right with four tabs: Flag, Sails, Hull and Presets. Every choice is hers
-  the moment you tap it, on the ship in front of you.
-- **Her flag.** Four shapes (square, swallowtail, tattered, burgee), the
-  field's colour, a pattern and its colour, an emblem with something behind
-  it (bones, blades, a ring, laurel or rays), its colour and its size. It
-  flies on its own little stage at the top of the tab, waving as it will at
-  her masthead.
-- **Paint it yourself.** "Paint" holds the flag still and brings out the
-  brush: the flag's own colours and a few more, three brush sizes, the
-  eraser, undo and clear. Her flag at the masthead shows every stroke as you
-  make it, and your painting is kept with her flag.
-- **Any colour at all.** The rainbow round at the end of every row of
-  colours opens a picker: drag across its square and its strip of hues and
-  watch her change as you go.
-- **Sails and hull.** Her sailcloth, its accent colour and its pattern
-  (stripes, a band, a border, a cross or a diagonal), and whether her
-  mainsails carry the emblem from her flag. Her paintwork part by part:
-  topsides, planking, bottom, waterline, wale and gilding. A fresh hull in
-  her new paint is built in the background and swapped in under her.
-- **Presets.** Name her (or let the dice do it), save the design to sail with
-  later (up to twelve, each with its own card; tap a card's cross twice to
-  delete it), or take the colours of one of eight famous ships under her own
-  name.
-- **Surprise me** rolls the dice on a whole new look that still goes
-  together.
-- **The camera follows the tab**: her flag up close, her sails, her hull
-  along the waterline, or the whole of her for Presets. Drag across her to
-  swing round, pinch to come closer. Done (or the back button) swings it
-  back into its slow circle round her.
+- **Rowing to Puerto Marézia.** Tap Shipwright and the screen washes over
+  in the sea's teal while she comes round from the anchorage. She ties up
+  alongside the quay with her lines out to the bollards and the gangplank
+  down, and the camera stands off her seaward side with the town behind
+  her. Done (or the back button) takes her back out to the open sea.
+- **The town.** A plank quay on its pilings, with rope fenders, bollards,
+  lantern posts and steps down to the beach. The Salty Gull tavern has its
+  shuttered windows, flower boxes and a smoking chimney. There's a sail loft
+  with racks of cloth, a bench of paint pots and a chest spilling gold, and
+  a cargo shed with its doors flung open and an anchor against the wall.
+  There's also a lookout tower with a cannon and a pyramid of shot at its
+  foot, a working crane swinging its load out over the water, and palms
+  with bunting strung between the roofs.
+- **Your colours on the quay.** The loft flies your own flag, brush strokes
+  and all. The awning over its door is striped in your sails' colours, the
+  bunting is in your flag's, and the painter's bucket holds your topsides'
+  paint. Change them in the Shipwright and the town follows.
+- **A dozen townsfolk.** A barrel rolled round the crates, a crate carried
+  overhead to the crane, and a fisherman with his legs over the edge who
+  gets a bite now and then. An accordion player sits on a barrel with notes
+  rising off it, and a dancer jigs to it. Two drinkers at the tavern table
+  clink tankards every round. A painter touches up your hull from a
+  rowboat, and the lookout sweeps the horizon with his glass. A deckhand
+  swabs the boards, the captain stands with his parrot and points you out,
+  and someone naps in the hammock between the palms, snoring.
+- **Built quietly.** The town is put together on a worker thread a moment
+  after the harbour opens, so the first trip to the Shipwright doesn't
+  stutter, and it's put away again when you sail back out.
 
-Still aboard from the earlier builds: the helmsman, the minimap and the sea
-chart with your waypoints, the harbour where you choose your ship, "Where shall we sail?",
+Still aboard from the earlier builds: the Shipwright with its flag brush and
+colour picker, the helmsman, the minimap and the sea chart with your
+waypoints, the harbour where you choose your ship, "Where shall we sail?",
 the pause screen and Settings, your progress kept between plays, the trading
 ports with their markets and chandleries, the open sea with its swells, sun
 glitter and turning day, the weather (eight skies, storms with lightning,

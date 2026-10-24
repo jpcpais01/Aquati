@@ -60,7 +60,7 @@ void fragment() {
 		float on = smoothstep(0.12, 0.7, night);
 		vec3 pool = vec3(0.0);
 		if (on > 0.0) {
-			for (int i = 0; i < 4; i++) {
+			for (int i = 0; i < TOWN_POOLS.length(); i++) {
 				vec2 d = (UV - TOWN_POOLS[i]) / 4.2;
 				float r2 = dot(d, d);
 				float a = max(exp(-r2 * 4.0) * 0.75 + exp(-r2 * 1.4) * 0.25 - 0.25 * exp(-1.4), 0.0);

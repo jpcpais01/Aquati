@@ -50,6 +50,11 @@ func setup(world: World, crew: Crew) -> void:
 	crew.crowds.append(_draw_folk)
 
 
+## What the towns share: their materials and the meshes of what moves.
+func arts() -> TradePort.Arts:
+	return _arts
+
+
 ## The town whose quay is nearest a point.
 func nearest(p: Vector3) -> TradePort:
 	var best: TradePort = null

@@ -133,7 +133,8 @@ func update(dt: float, world: World, camera: Camera3D, focus: Vector3, view_r: f
 		var p := s.position
 		if Vector2(p.x - focus.x, p.z - focus.z).length() > view_r + c.L:
 			continue
-		var seen := _ship_in_view(s)
+		# (a ship put out of the picture, as at the home port's quay, has her crew with her)
+		var seen := _ship_in_view(s) if s.visible else 0
 		var reach := speck + c.L * 0.6
 		var stride := 3 if seen == 0 else (2 if _eye.distance_squared_to(p) > reach * reach else 1)
 		if dt > 0.0:
