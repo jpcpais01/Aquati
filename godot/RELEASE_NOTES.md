@@ -1,5 +1,8 @@
 ## Shores O' Fortune for Android: maelstroms and reefs
 
+**Fixed in this build:** sails no longer flicker with blocky pale patches,
+and the camera button no longer pops up the view's name beside it.
+
 The nineteenth build brings the sea's own dangers. Four great maelstroms
 turn out in deep water, three off the home islands and one in Las Brumas,
 and the open-sea reefs finally warn you before you hit them.

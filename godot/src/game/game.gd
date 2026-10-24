@@ -336,8 +336,7 @@ func _ready() -> void:
 	hud.helm_cancel.connect(func() -> void: _stop_pilot("You have the helm"))
 	hud.view_pressed.connect(func() -> void:
 		sound.click()
-		camera.next_view()
-		hud.announce_view(camera.view_index()))
+		camera.next_view())
 	hud.map_pressed.connect(func() -> void:
 		sound.click()
 		_open_chart())
@@ -1146,7 +1145,6 @@ func _tick(real_dt: float) -> void:
 			camera.zoom_by(controls.zoom, world.time)
 		if controls.view_next:
 			camera.next_view()
-			hud.announce_view(camera.view_index())
 		if controls.chart:
 			if chart.is_open():
 				chart.close()

@@ -1246,7 +1246,7 @@ export class Game {
       const i = (this.rig.view + 1) % CameraRig.VIEWS.length;
       const v = CameraRig.VIEWS[i];
       this.rig.setView(v.zoom, v.tilt);
-      this.ui.setZoomView(i, v.name, true);
+      this.ui.setZoomView(i, v.name);
     };
     ui.onMap = (on) => this.setChart(on);
     ui.onPin = (x, z, pick) => this.tapPin(x, z, pick);

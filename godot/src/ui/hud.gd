@@ -447,11 +447,6 @@ static func _gap(w: float) -> Control:
 	return c
 
 
-## The camera stepped to another stop: its pips, and its name beside the button.
-func announce_view(view: int) -> void:
-	_zoom.announce(view)
-
-
 ## The helmsman's pill: his view of her course (Helmsman.view; {} while he
 ## hasn't the wheel), the rudder he holds, and the frame's seconds.
 func show_helm(view: Dictionary, rudder: float, dt: float) -> void:
@@ -1091,16 +1086,11 @@ class _SkyKey:
 
 
 ## The zoom button: a lens over four pips that fill up through close, mid,
-## far and leaned over (the last swelling a little), and the stop's name
-## beside it for a moment as it steps to it.
+## far and leaned over (the last swelling a little).
 class _ZoomButton:
 	extends UiButton
-	const NAMES := ["Close", "Mid", "Far", "Cinematic"]
 	var view := -1
 	var _pips: Control
-	var _tag: PanelContainer
-	var _tag_name: Label
-	var _tag_t := 0.0
 
 	func _init() -> void:
 		var d := maxf(28.0 * HudStyle.PX, 32.0 * HudStyle.K)
@@ -1115,44 +1105,11 @@ class _ZoomButton:
 		_pips.size = size
 		_pips.draw.connect(_draw_pips)
 		add_child(_pips)
-		# the stop's name, a pill to the left of the button
-		var box := HudStyle.panel(999, Vector2(10.0, 4.0) * HudStyle.PX)
-		box.bg_color = Color(10.0 / 255.0, 28.0 / 255.0, 40.0 / 255.0, 0.86)
-		box.shadow_size = 0
-		_tag = PanelContainer.new()
-		_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_tag.add_theme_stylebox_override("panel", box)
-		_tag_name = HudStyle.label("", "inter", 600, roundi(11.0 * HudStyle.PX), HudStyle.INK)
-		_tag.add_child(_tag_name)
-		_tag.visible = false
-		add_child(_tag)
 
 	func set_view(v: int) -> void:
 		if v != view:
 			view = v
 			_pips.queue_redraw()
-
-	## The stop's name pops up beside it.
-	func announce(v: int) -> void:
-		set_view(v)
-		_tag_name.text = NAMES[clampi(v, 0, 3)]
-		_tag.size = _tag.get_combined_minimum_size()
-		_tag_t = 0.0
-		_tag.visible = true
-		set_process(true)
-
-	func _process(dt: float) -> void:
-		super(dt)
-		if not _tag.visible:
-			return
-		_tag_t += dt
-		# in over a quarter second sliding 6 px, held, then out
-		var a := clampf(_tag_t / 0.25, 0.0, 1.0) if _tag_t < 1.3 else clampf(1.0 - (_tag_t - 1.3) / 0.25, 0.0, 1.0)
-		_tag.modulate.a = a
-		var slide := (1.0 - HudStyle.eased(clampf(_tag_t / 0.3, 0.0, 1.0))) * 6.0 * HudStyle.PX if _tag_t < 1.3 else 0.0
-		_tag.position = Vector2(-8.0 * HudStyle.PX - _tag.size.x + slide, (size.y - _tag.size.y) * 0.5)
-		if _tag_t > 1.6:
-			_tag.visible = false
 
 	func _draw_pips() -> void:
 		var r := 1.5 * HudStyle.PX

@@ -3215,30 +3215,6 @@ body[data-hud='large'] #hud {
   transform: scale(1.35);
 }
 
-.zoom-btn::after {
-  content: attr(data-name);
-  position: absolute;
-  right: calc(100% + 8px);
-  top: 50%;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--stroke);
-  background: rgba(10, 28, 40, 0.86);
-  color: var(--ink);
-  font: 600 11px/1.2 Inter, system-ui, sans-serif;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  opacity: 0;
-  transform: translate(6px, -50%);
-  pointer-events: none;
-  transition: opacity 0.25s, transform 0.3s var(--ease);
-}
-
-.zoom-btn.tag::after {
-  opacity: 1;
-  transform: translate(0, -50%);
-}
-
 .view-btn.on {
   color: var(--gold-ink);
   border-color: transparent;
