@@ -19,9 +19,9 @@ way and keep the APK as a workflow artifact.
 | `src/audio` | The sound (`Sound`: the mix, the sea, the wind and the rain round you, thunder rolling in late from the strike, every gun, blow and splash heard where it happens, late by its distance and dulled by the air, and a trading port's quay: its bell, the squeezebox, gold counted out, the yard at work, gulls, the water among the pilings and the crowd) and the music (`Music`: the voyage band's songs for fair sailing, the high seas' own theme out on the open ocean) |
 | `src/ships` | Ship classes and liveries, the procedural ship builder, figureheads, the sailing physics, battle damage, dismasting, re-rigging and sinking (`ShipDamage`), the pirate captains (`PirateAI`), the crews on deck (`ShipCrew` for a ship's sailors and their deck, `Crew` and `CrewView` to run and draw every crew afloat) |
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave, the wreckage afloat (`Debris`), the rain, the lightning and the spindrift a gale tears off the crests (all three drawn from one static buffer each, animated on the GPU) |
-| `src/game` | The voyage scene (and docking at a trading port), the camera rig (with the port's shot of her alongside), the controls; the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time; plunder, the hold and each port's market (`Treasure`); the waypoints (`Waypoints`: pillars of light on the sea, all in one draw) |
+| `src/game` | The voyage scene (and docking at a trading port), the camera rig (with the port's shot of her alongside), the controls; the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time; plunder, the hold and each port's market (`Treasure`); the waypoints (`Waypoints`: pillars of light on the sea, all in one draw); the helmsman (`Helmsman`: plots a course round the isles and shoals on each archipelago's sea room, `SeaNav`, worked out on a thread of its own, then sails her there, beating to windward, easing in at the end) |
 | `src/port` | The trading ports (`TradePorts`, `TradePort`): six market towns along their quays, each built once in two cuts (whole near the camera, a shell further off) with the mesh kit in `TownKit`, its harbourmaster, porters carrying goods ashore, merchants, fishers and the town band (`Figure`, drawn by the crews' sailor), its lamps mirrored by the sea after dark |
-| `src/ui` | The harbour (`Harbour`) and "Where shall we sail?" (`SeaPick`), a trading port's market and the prompt to come alongside (`MarketPanel`), the voyage on hold (`PauseScreen`), Settings (`SettingsSheet`), the veil between scenes and the frame counter; the HUD, the touch helm, the sail lever, the fire pad, the shot pie, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`); the maps: the minimap (`Minimap`) and the sea chart (`SeaChart`, its geography and engravings in `ChartArt`, the marks they share in `MapMarks`). `MenuKit`, `UiBox`, `UiButton` and `UiText` draw the web's glass panels, gilt buttons and type |
+| `src/ui` | The harbour (`Harbour`) and "Where shall we sail?" (`SeaPick`), a trading port's market and the prompt to come alongside (`MarketPanel`), the voyage on hold (`PauseScreen`), Settings (`SettingsSheet`), the veil between scenes and the frame counter; the HUD, the touch helm, the sail lever, the fire pad, the shot pie, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`); the maps: the minimap (`Minimap`) and the sea chart (`SeaChart`, its geography and engravings in `ChartArt`, the marks they share in `MapMarks`, the card over a place tapped on it in `ChartCard`) and the helmsman's pill on the HUD (`HelmPill`). `MenuKit`, `UiBox`, `UiButton` and `UiText` draw the web's glass panels, gilt buttons and type |
 | `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, the night sky, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
 | `art` | The tiling textures every shader samples, the moon's face (baked from the web game's own), the baked figurehead sculptures, the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) and the towns' painted signs and flags (`town_signs.png`, `town_flags.png`) |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
@@ -46,15 +46,17 @@ the port and starboard broadsides and Space whichever side bears (or click the
 sea on the side to fire), C changes the camera, the mouse wheel zooms, M
 opens the sea chart, and Enter sails again from the farewell card; 1 to 5 load
 a kind of shot and R cycles them. On the chart, drag to pan, the wheel zooms
-and a click drops a waypoint (or lifts the one under it). Off a market town's quay F comes alongside (or tap the prompt at
+and a click on the sea drops a waypoint; a click on a pin, a market town or
+an isle opens its card, where "Sail there" hands the helmsman the wheel (steer
+yourself, or the cross on his pill, and you have it back). Off a market town's quay F comes alongside (or tap the prompt at
 the foot of the screen); tied up, Enter sells the whole hold and Esc casts
 off. On a phone: drag from low on the left (by the sail lever) to
 steer, use the lever bottom left for the sails and the guns bottom right,
 hold the shot button over Fire and slide onto a kind of shot to load it (or
 tap it, then tap one), pinch to zoom (all the way out, a fresh pinch leans
 the view over toward the horizon), and tap the minimap for the sea chart:
-drag it, pinch it, double tap to zoom in, and tap the sea to drop a pin there
-(or a pin to lift it).
+drag it, pinch it, double tap to zoom in, and tap the sea to drop a pin there,
+or a pin, a market town or an isle for its card ("Sail there", "Lift pin").
 
 The game opens in the harbour. A shot of the voyage, a fight or a
 farewell (below) starts at sea instead; for the menus, `--menu` opens on the
@@ -76,15 +78,18 @@ start somewhere else, `--shot out.png` saves a frame and quits (after
 `--frames N`, and prints the frame's triangles and draw calls), `--smoke`
 walks the menus (a ship picked, Set Sail for Las Brumas, paused, Settings,
 back to the harbour, out into the home waters, paused and resumed with the
-back button, the sea chart opened off the minimap, a pin dropped on it and
-lifted again, then off a market's quay: the prompt tapped, goods sold, her hull
+back button, the sea chart opened off the minimap, a pin dropped on it,
+"Sail there" and the helmsman setting a course, the chart closing itself, the
+pin's card opened again and the pin lifted, then off a market's quay: the prompt tapped, goods sold, her hull
 mended, fresh shot and cast off), prints what it saw in `SMOKE MENU`, sails
 on for a few seconds and prints `SMOKE OK` (`--smoke-at N`: after N frames). `--noshadow`, `--noocean` and
 `--noflora` leave a layer out, and `--discover` charts islands during a shot.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off
-her.
+her. `--sail-to DX,DZ` (or `port:K`, `isle:REGION/ID`) hands the helmsman the
+wheel at the start, bound for a waypoint that far off her (the K-th market
+town, an isle), the chart left shut unless `--chart` asks for it too.
 For fights: `--battle brig` puts a pirate off your beam (`--foe-dist M`,
 `--foe-hp F`, `--foe-wounds N` for breaches already in her, `--foe-dismast
 0,2` to bring masts down, `--foe-anchor` to hold her still, `--foe-sink S` to
@@ -140,9 +145,9 @@ kept in `Settings`.
 ```sh
 cd godot
 godot --headless --import                       # compiles every script
-godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world, builds the market towns (prices to the coin against the web's), drops and strikes off waypoints, lays out the sea chart against the web's own numbers, loads the sound, stacks a broadside's damage numbers, saves and loads your progress (and a damaged save)
+godot --headless --script res://tools/check.gd  # loads every script, builds each ship (normals, triangle budgets), loads the world, builds the market towns (prices to the coin against the web's), drops and strikes off waypoints, lays out the sea chart against the web's own numbers, plots the helmsman's courses for a sloop and a galleon (round an isle, out to Las Brumas, onto a shore) and sounds every leg for deep water, loads the sound, stacks a broadside's damage numbers, saves and loads your progress (and a damaged save)
 godot --headless --script res://tools/bake.gd   # builds every figurehead
-godot --headless --fixed-fps 60 --quit-after 1400 -- --smoke --smoke-at 1200  # walks the menus, the sea chart and a market, then sails for a few seconds
+godot --headless --fixed-fps 60 --quit-after 1700 -- --smoke --smoke-at 1500  # walks the menus, the sea chart and the helmsman, a market, then sails on
 ```
 
 ## Signing the release APK

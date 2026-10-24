@@ -67,6 +67,16 @@ const SKY := {
 	"lock": '<g transform="scale(1.5)"><path d="M5 7V5a3 3 0 0 1 6 0v2" fill="none" stroke="#ffd27a" stroke-width="1.8"/><rect x="3" y="7" width="10" height="8" rx="2" fill="#ffd27a"/></g>',
 }
 
+## The helmsman's art (the web's src/ui/helm.ts), each with its own strokes:
+## the ship's wheel (on a 32 grid), the sail of "Sail there", the card's
+## close cross and the lifted pin.
+const HELM := {
+	"wheel": ['<g fill="none" stroke="#ffffff" stroke-linecap="round"><circle cx="16" cy="16" r="9" stroke-width="2.2"/><circle cx="16" cy="16" r="2.6" stroke-width="2"/><path stroke-width="1.7" d="M16 2.2v11.2M16 18.6v11.2M2.2 16h11.2M18.6 16h11.2M6.2 6.2l7.9 7.9M17.9 17.9l7.9 7.9M25.8 6.2l-7.9 7.9M14.1 17.9l-7.9 7.9"/></g>', 32.0],
+	"sail": ['<path d="M12 2.5v15M12 3.5c3.6 2.6 6 6.6 6.6 11.5H12M11 5.5C8.4 8 7 11.3 6.8 15H11" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 18.5h17l-1.8 2.2a2 2 0 0 1-1.5.8H6.8a2 2 0 0 1-1.5-.8z" fill="#ffffff"/>', 24.0],
+	"x": ['<path d="M6.5 6.5l11 11M17.5 6.5l-11 11" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>', 24.0],
+	"pin_off": ['<path d="M12 21s-6-5.6-6-10.5a6 6 0 0 1 12 0C18 15.4 12 21 12 21z" fill="none" stroke="#ffffff" stroke-width="1.8"/><path d="M9.5 8.5l5 5M14.5 8.5l-5 5" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round"/>', 24.0],
+}
+
 ## What special shot has done to a ship, on her bar (a 16 grid): ablaze, her
 ## canvas shredded, her gun crews cut down.
 const MARK := {
@@ -96,6 +106,9 @@ static func density() -> float:
 static func texture(id: String, size: float) -> Texture2D:
 	if LINE.has(id):
 		return svg(id, '<g fill="none" stroke="#ffffff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">%s</g>' % LINE[id], Vector2(size, size))
+	if HELM.has(id):
+		var v: float = HELM[id][1]
+		return svg(id, HELM[id][0], Vector2(size, size), Rect2(0.0, 0.0, v, v))
 	return svg(id, BADGE.get(id, SKY.get(id, "")), Vector2(size, size))
 
 

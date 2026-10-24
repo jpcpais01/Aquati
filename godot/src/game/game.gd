@@ -13,8 +13,9 @@ extends Node3D
 ## ship picked, Set Sail for Las Brumas, paused there, Settings opened and
 ## closed, back to the harbour; Set Sail for the home waters, paused and
 ## resumed with the back button; the sea chart opened off the minimap, a pin
-## dropped on it and lifted, the chart closed with the back button; then a
-## market) and says what it saw in SMOKE MENU.
+## dropped on it, "Sail there" and the helmsman setting a course, the chart
+## closing itself; opened again, the pin's card, "Lift pin", the chart closed
+## with the back button; then a market) and says what it saw in SMOKE MENU.
 ## The menus for a shot: --menu opens in the harbour (--orbit A sets how far
 ## round her the camera has come), --seapick on the sea picker, --pause puts
 ## the voyage on hold, --settings opens Settings (over the harbour, or with
@@ -56,6 +57,9 @@ extends Node3D
 ## The maps: --pins DX,DZ;DX,DZ.. drops waypoints that far east and south of
 ## her; --chart opens the sea chart on her (--chart-at X,Z and --chart-zoom Z
 ## to look elsewhere, --chart-tap DX,DZ to tap the chart that far off her).
+## The helmsman: --sail-to DX,DZ (or port:K, isle:REGION/ID) gives him the
+## wheel for a waypoint that far off her (the K-th market, an isle) at the
+## start, the chart left shut unless --chart is asked for too.
 ## --phone [DP] plays as a phone DP (412) dp across would at MEDIUM: the
 ## lean path, its plants and crews sized for that screen (with --touch for
 ## its controls).
@@ -72,7 +76,7 @@ const SPAWN_HEADING := PI * 0.82
 ## went down, as on the web.
 const DIVE := 8.6
 ## The steps of the smoke test's tour of the menus (_tour_menus).
-const TOUR_STEPS := 22
+const TOUR_STEPS := 26
 ## Frames the tour waits off a quay for pirates to leave her be.
 const TOUR_CHASED := 240
 
@@ -105,6 +109,8 @@ var maps := MapScene.new()
 ## The sea chart, and its geography and engravings.
 var chart: SeaChart
 var chart_art: ChartArt
+## The helmsman: sails her to a place picked on the chart.
+var helm: Helmsman
 var dock_port: TradePort
 var market: MarketPanel
 var collisions := Collisions.new()
@@ -189,6 +195,9 @@ var _tour_at := 0
 var _tour_log := PackedStringArray()
 ## The pins on the chart before the tour tapped it.
 var _tour_pins := 0
+## What the chart's card is open over ({} none): the place (a Helmsman.Target),
+## the pin if it's a waypoint, the mark's colour, and whether she's bound there.
+var _sel := {}
 ## Since she came alongside (the port shot settles in over it).
 var _dock_t := 0.0
 ## The pirate she was fighting last frame (it holds on a little further).
@@ -258,7 +267,8 @@ func _ready() -> void:
 	add_child(controls)
 	hud = Hud.new()
 	hud.controls = controls
-	hud.sail_set.connect(func(n: int) -> void: player.sail_target = n / 3.0)
+	hud.sail_set.connect(func(n: int) -> void: _set_sails(n / 3.0))
+	hud.helm_cancel.connect(func() -> void: _stop_pilot("You have the helm"))
 	hud.view_pressed.connect(func() -> void:
 		sound.click()
 		camera.next_view()
@@ -290,7 +300,28 @@ func _ready() -> void:
 	chart.scene = maps
 	chart.clicked.connect(sound.click)
 	chart.tapped.connect(_chart_tap)
+	chart.pins_cleared.connect(func() -> void:
+		if helm.target != null and helm.target.pin >= 0:
+			_stop_pilot("Course cleared")
+		if not _sel.is_empty() and _sel.pin != null:
+			_close_card())
 	add_child(chart)
+	chart.card.sail.connect(func() -> void:
+		if not _sel.is_empty():
+			_sail_to(_sel.target))
+	chart.card.stop.connect(func() -> void: _stop_pilot("You have the helm"))
+	chart.card.lift.connect(_lift_card_pin)
+	chart.card.closed.connect(_close_card)
+	helm = Helmsman.new()
+	helm.name = "Helmsman"
+	helm.setup(world.regions)
+	helm.plotted.connect(_plotted)
+	helm.arrived.connect(_pilot_arrived)
+	helm.gave_up.connect(func(why: String) -> void:
+		hud.toast("The helmsman gives up", why, 3.6)
+		sound.click())
+	add_child(helm)
+	helm.prepare(player.cls)
 	hud.sky_pins(atmosphere.mode != &"auto", atmosphere.time_mode != &"auto")
 	atmosphere.changed.connect(func(_kind: StringName, title: String, line: String) -> void:
 		if _farewell == null:
@@ -735,6 +766,34 @@ func _stage_plunder() -> void:
 				pins.add(player.pos.x + float(a[0]), player.pos.z + float(a[1]))
 
 
+## A set piece's course (--sail-to): the helmsman given the wheel for a
+## waypoint DX,DZ off her, the K-th market ("port:K") or an isle
+## ("isle:REGION/ID"); with the chart open, its card open over the place.
+func _stage_sail_to(spec: String) -> void:
+	var hit := {}
+	if spec.begins_with("port:"):
+		var tp: TradePort = ports.ports[clampi(int(spec.trim_prefix("port:")), 0, ports.ports.size() - 1)]
+		var at := MapScene.port_at(tp)
+		hit = _chart_pick(at.x, at.y, 1.0)
+	elif spec.begins_with("isle:"):
+		var a := spec.trim_prefix("isle:").split("/")
+		for r in world.regions:
+			if r.id != a[0]:
+				continue
+			for isl: Dictionary in r.islands:
+				if int(isl.id) == int(a[1]):
+					hit = _chart_pick(float(isl.x), float(isl.z), 1.0)
+	else:
+		var d := spec.split(",")
+		hit = _pin_target(pins.add(player.pos.x + float(d[0]), player.pos.z + float(d[1]), player.pos))
+	if hit.is_empty():
+		printerr("--sail-to: nothing to sail to at ", spec)
+		return
+	helm.engage(player, hit.target)
+	if chart.is_open():
+		_select_on_chart(hit)
+
+
 ## A set piece at a market town: tied up at the K-th market's quay (--dock
 ## K, 0 .. 5: the home waters' four, then Las Brumas' two) with the market
 ## open, or off it with the prompt to come alongside up (--off K).
@@ -770,6 +829,8 @@ func _process(delta: float) -> void:
 	if _args.has("chart-tap") and _frames == 8:
 		var d := str(_args["chart-tap"]).split(",")
 		_tour_tap(Vector2(player.pos.x + float(d[0]), player.pos.z + float(d[1])))
+	if _args.has("sail-to") and _frames == 5:
+		_stage_sail_to(str(_args["sail-to"]))
 	if _args.has("pie") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
 		hud.open_pie(Ammo.ID.find(str(_args.pie)))
 	if _args.has("strike") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.strike if str(_args.strike).is_valid_int() else 2)):
@@ -837,9 +898,12 @@ func _tick(real_dt: float) -> void:
 	controls.poll()
 	# in the harbour she rides at anchor, and the helm and the guns are no one's
 	var sailing := state == State.VOYAGE
+	# docked, sunk, back in the harbour: the helmsman's watch is over
+	if helm.state != Helmsman.State.IDLE and (not sailing or not player.alive or _farewell != null):
+		helm.disengage()
 	if player.alive and sailing:
 		voyage.time += dt
-		_helm()
+		_helm(dt)
 	else:
 		player.rudder = 0.0
 	if not sailing:
@@ -985,6 +1049,9 @@ func _tick(real_dt: float) -> void:
 	# the chart is for sailing: it goes when she ties up, goes down or heads home
 	if chart.is_open() and (not sailing or _farewell != null or not player.alive):
 		chart.close()
+	# the helmsman's pill while he has the wheel (the prompt to come alongside steps up over it)
+	hud.show_helm(helm.view(player) if sailing else {}, player.rudder, real_dt)
+	market.set_pill(hud.helm_height())
 	if not sailing:
 		return
 	hud.show_state(player, w, camera.view_index(), atmosphere.vignette)
@@ -996,7 +1063,9 @@ func _tick(real_dt: float) -> void:
 	hud.show_hold(hold)
 	hud.show_bars(world.ships, player, camera)
 	maps.player = player
+	maps.route = helm.route(player.pos)
 	hud.minimap.tick(real_dt)
+	_sync_card()
 	hud.show_pins(pins, player.pos, camera, world)
 	if player.alive and (not _args.has("shot") or _args.has("discover")):
 		_chart(player.pos)
@@ -1190,15 +1259,42 @@ func _watched() -> Ship:
 	return _foe if _foe != null and _args.has("watch") else player
 
 
-## The helm and the canvas.
-func _helm() -> void:
+## The helm and the canvas; the helmsman steering, while he has the wheel.
+func _helm(dt: float) -> void:
+	# a hand on the wheel (or the touch helm) takes it back from him
+	if helm.active() and (controls.rudder != 0.0 or controls.steering):
+		_stop_pilot("You have the helm")
 	if controls.sail_delta != 0:
-		player.sail_target = clampf(roundf(player.sail_target * 3.0 + controls.sail_delta) / 3.0, 0.0, 1.0)
+		var now := helm.cruise if helm.active() else player.sail_target
+		_set_sails(clampf(roundf(now * 3.0 + controls.sail_delta) / 3.0, 0.0, 1.0))
 	if controls.steering:
 		# the touch helm only steers: put the bow where the finger points
 		player.rudder = clampf(MathX.angle_delta(player.heading, controls.steer_heading) * 2.4, -1.0, 1.0)
 	else:
 		player.rudder = controls.rudder
+	if helm.state != Helmsman.State.IDLE:
+		var t := helm.target
+		var gone := false
+		if t != null and t.pin >= 0 and helm.active():
+			gone = true
+			for q in pins.pins:
+				if q.id == t.pin:
+					gone = false
+					break
+		helm.steer(player, dt, world.wind, world.ships, gone)
+
+
+## The canvas set (the lever's notch, or W / S): under the helmsman it's
+## what he cruises under, and furling it all takes the wheel from him.
+func _set_sails(level: float) -> void:
+	if not helm.active():
+		player.sail_target = level
+	elif level > 0.0:
+		helm.cruise = level
+		player.sail_target = level
+	else:
+		_stop_pilot("Sails furled")
+		player.sail_target = 0.0
 
 
 ## The guns: a side called by its key or button, the one-button fire, a click
@@ -1654,6 +1750,8 @@ func _reset_world(id: String) -> void:
 	player.struck.connect(func(a: float) -> void: camera.shake(a))
 	camera.snap_to(player.pos)
 	hud.watch_hold(hold)
+	helm.disengage()
+	helm.prepare(player.cls)
 
 
 ## Whether the game opens in the harbour, as it does for play: not for a
@@ -1845,6 +1943,7 @@ func _swap_in(now: bool) -> void:
 	player.struck.connect(func(a: float) -> void: camera.shake(a))
 	_moor(player)
 	player.sail_level = sails
+	helm.prepare(player.cls)
 	_note_tour("the %s at anchor" % id)
 
 
@@ -1906,6 +2005,9 @@ func _start_voyage(sea: String) -> void:
 	harbour.close()
 	sea_pick.close()
 	state = State.VOYAGE
+	# the helmsman lays out the waters for her hull (if he hasn't already)
+	helm.disengage()
+	helm.prepare(player.cls)
 	shipyard.harbour = false
 	shipyard.want = ""
 	sound.harbour(false)
@@ -2273,20 +2375,201 @@ func _open_chart() -> void:
 	_note_tour("chart open")
 
 
-## A tap on the chart (the web's tapPin): the pin under the finger lifted,
-## else a new one dropped there, anywhere on the known sea.
+## A tap on the chart (the web's tapPin): the card opens over whatever lies
+## under the finger (a pin, a port, an isle); on open sea a pin is dropped
+## there, anywhere on the known sea, and its card opens. With a card already
+## open, a tap on open sea only closes it.
 func _chart_tap(x: float, z: float, pick: float) -> void:
-	var hit := pins.near(x, z, pick)
-	if hit != null:
-		pins.lift(hit)
+	var hit := _chart_pick(x, z, pick)
+	if not hit.is_empty():
+		_select_on_chart(hit)
 		sound.click()
-		_note_tour("pin lifted")
+		_note_tour("card over %s" % (hit.target as Helmsman.Target).name)
+		return
+	if chart.card.is_open():
+		_close_card()
 		return
 	if world.past_edge(x, z).z > 0.0:
 		return
-	pins.add(x, z, player.pos)
+	var pin := pins.add(x, z, player.pos)
 	sound.knock()
 	_note_tour("pin dropped")
+	_select_on_chart(_pin_target(pin))
+
+
+# ------------------------------------------------------------------ the helmsman
+
+
+## A waypoint as a place to sail to.
+func _pin_target(pin: Waypoints.Pin) -> Dictionary:
+	var t := Helmsman.Target.make(&"pin", "Waypoint %d" % pins.number(pin), pin.x, pin.z)
+	t.pin = pin.id
+	return {"target": t, "pin": pin, "color": MapMarks.PIN[pin.hue], "kicker": "Waypoint"}
+
+
+## What lies under a tap on the chart, nearest kind first: a pin (its head
+## stands above its spot, so a tap on that counts too), a market town, an
+## isle (made for on the shore facing her); {} for open sea.
+func _chart_pick(x: float, z: float, pick: float) -> Dictionary:
+	var pin := pins.near(x, z, pick * 1.4)
+	if pin == null:
+		pin = pins.near(x, z + pick * 1.1, pick * 1.2)
+	if pin != null:
+		return _pin_target(pin)
+	for tp in ports.ports:
+		var at := MapScene.port_at(tp)
+		if not chart.shows(at.x, at.y) or Vector2(at.x - x, at.y - z).length() > pick * 2.0:
+			continue
+		var t := Helmsman.Target.make(&"port", tp.title, at.x, at.y)
+		var aim := tp.to_world(Vector3(0.0, 0.0, 48.0))
+		t.aim = Vector2(aim.x, aim.z)
+		t.port = tp
+		return {"target": t, "pin": null, "color": Color("#ffd77a"), "kicker": "Trading port"}
+	for r in world.regions:
+		for isl: Dictionary in r.islands:
+			var ix := float(isl.x)
+			var iz := float(isl.z)
+			var ir := float(isl.r)
+			if not chart.shows(ix, iz) or Vector2(ix - x, iz - z).length() > ir * 0.85 + pick:
+				continue
+			var known := maps.known(r, isl)
+			var a := atan2(player.pos.x - ix, player.pos.z - iz)
+			var t := Helmsman.Target.make(&"isle", str(isl.name) if known else "Uncharted isle", ix, iz)
+			t.aim = Vector2(ix + sin(a) * ir * 0.9, iz + cos(a) * ir * 0.9)
+			return {"target": t, "pin": null, "color": Color("#fff1c8"), "kicker": "Island" if known else "Island · unexplored"}
+	return {}
+
+
+func _select_on_chart(hit: Dictionary) -> void:
+	var t: Helmsman.Target = hit.target
+	var bound := _bound_for(t)
+	_sel = {"target": t, "pin": hit.pin, "color": hit.color, "bound": bound}
+	chart.show_card(t.x, t.z, {"kicker": hit.kicker, "name": t.name, "sub": _card_sub(t), "warn": _card_warn(t), "accent": hit.color, "pin": hit.pin != null, "bound": bound})
+
+
+func _close_card() -> void:
+	_sel = {}
+	chart.hide_card()
+
+
+## Each frame with the chart open: the card's distance runs down as she
+## sails, and its button follows the helmsman (a pin struck off closes it).
+func _sync_card() -> void:
+	if _sel.is_empty():
+		return
+	if not chart.is_open() or not chart.card.is_open():
+		_sel = {}
+		return
+	var pin: Waypoints.Pin = _sel.pin
+	if pin != null and not pins.pins.has(pin):
+		_close_card()
+		return
+	var t: Helmsman.Target = _sel.target
+	chart.card.set_sub(_card_sub(t))
+	var b := _bound_for(t)
+	if b != _sel.bound:
+		_sel.bound = b
+		chart.card.set_bound(b)
+
+
+## She's already bound for this very place.
+func _bound_for(t: Helmsman.Target) -> bool:
+	var c := helm.target
+	return helm.active() and c != null and c.kind == t.kind and c.x == t.x and c.z == t.z
+
+
+## How far, how long, and a word on the wind.
+func _card_sub(t: Helmsman.Target) -> String:
+	var p := player
+	if _bound_for(t):
+		var v := helm.view(p)
+		if not v.is_empty():
+			return MapScene.distance(v.left) + ((" · " + HelmPill.eta(v.eta)) if float(v.eta) >= 0.0 else "") + " · under way"
+	var dx := t.aim.x - p.pos.x
+	var dz := t.aim.y - p.pos.z
+	var d := sqrt(dx * dx + dz * dz)
+	if d < 40.0:
+		return "Right here"
+	# a rough reckoning: the course runs a little longer than the crow flies
+	var eta := d * 1.2 / maxf(3.0, p.cls.max_speed * 0.8)
+	var w := world.wind
+	var up := absf(MathX.angle_delta(atan2(-w.dir_x, -w.dir_z), atan2(dx, dz))) < 0.7
+	var open := float(maps.nearest_region(p.pos.x, p.pos.z)[1]) > MapScene.HIGH_SEAS_R
+	return "%s · %s%s" % [MapScene.distance(d), HelmPill.eta(eta), " · upwind, she’ll beat" if up and not open and d > 200.0 else ""]
+
+
+func _card_warn(t: Helmsman.Target) -> String:
+	return "Charting it pays a bounty" if t.kind == &"isle" and t.name == "Uncharted isle" else ""
+
+
+## "Sail there": the helmsman plots her course (a frame or two on a worker,
+## then _plotted) and takes the wheel.
+func _sail_to(t: Helmsman.Target) -> void:
+	if not player.alive or state != State.VOYAGE or _farewell != null:
+		return
+	helm.engage(player, t)
+	_note_tour("sail to %s" % t.name)
+	if not _sel.is_empty():
+		_sel.bound = _bound_for(_sel.target)
+		chart.card.set_bound(_sel.bound)
+
+
+## The course plotted (`ok`), or no sea to sail there through.
+func _plotted(ok: bool) -> void:
+	if not ok:
+		hud.toast("No way through", "Not even the old charts show a passage there", 3.0)
+		sound.click()
+		return
+	var v := helm.view(player)
+	hud.toast("As near as she can get" if helm.short() else "Course set", helm.target.name + ((" · " + MapScene.distance(v.left)) if not v.is_empty() else ""), 2.6)
+	sound.bosun_pipe()
+	_note_tour("course set, %d legs" % maxi(0, helm.route(player.pos).size() - 1))
+	if _args.has("shot"):
+		return
+	# a beat to watch the course draw itself, then back to the sea (unless a hand is on the chart)
+	var at := Time.get_ticks_msec()
+	get_tree().create_timer(1.4).timeout.connect(func() -> void:
+		if chart.is_open() and chart.poked_ms < at and helm.active() and state == State.VOYAGE:
+			chart.close()
+			_note_tour("chart closed itself"))
+
+
+## The captain takes the helm back (or the course is cleared): she sails on
+## as she is, her canvas back on one of the lever's notches.
+func _stop_pilot(why: String) -> void:
+	var was := helm.active()
+	helm.disengage()
+	if was:
+		player.sail_target = roundf(player.sail_target * 3.0) / 3.0
+		if why != "":
+			hud.toast("Autopilot off", why, 1.8)
+	if not _sel.is_empty() and _sel.bound:
+		_sel.bound = false
+		chart.card.set_bound(false)
+
+
+## Arrived (a waypoint says so itself, in its own flare and chime).
+func _pilot_arrived(t: Helmsman.Target) -> void:
+	if t.kind == &"pin":
+		return
+	sound.chime()
+	var sub := "Lying off the shore"
+	if t.kind == &"port":
+		sub = "Tap the prompt to come alongside" if hud.touch_ui() else "Press F to come alongside"
+	hud.toast("Arrived · %s" % t.name, sub, 3.4)
+
+
+## "Lift pin" on its card: the course to it cleared, the pin lifted, the card closed.
+func _lift_card_pin() -> void:
+	var pin: Waypoints.Pin = _sel.get("pin")
+	if pin == null:
+		return
+	if helm.target != null and helm.target.pin == pin.id:
+		_stop_pilot("Course cleared")
+	pins.lift(pin)
+	_close_card()
+	sound.click()
+	_note_tour("pin lifted")
 
 
 ## Anchored: the voyage on hold under the pause screen (the HUD's pause
@@ -2371,10 +2654,12 @@ func _go_back(os_back: bool) -> void:
 ## settled: another ship picked and at anchor, Set Sail for Las Brumas;
 ## there the voyage paused, Settings opened and closed, and back to the
 ## harbour; then Set Sail for the home waters, paused and resumed with the
-## back button; the sea chart opened off the minimap, a pin dropped on it
-## and lifted again by taps, and the chart closed with the back button; then
-## off a market's quay, the prompt tapped, a lot sold and then the rest, her
-## hull mended and her racks filled, and cast off with the back button.
+## back button; the sea chart opened off the minimap, a pin dropped on it by
+## a tap and "Sail there" on its card, the helmsman's course set and the
+## chart closing itself; the chart opened again, the pin's card, "Lift pin"
+## (the course cleared with it) and the chart closed with the back button;
+## then off a market's quay, the prompt tapped, a lot sold and then the rest,
+## her hull mended and her racks filled, and cast off with the back button.
 ## What it saw goes in SMOKE MENU.
 func _tour_menus() -> void:
 	if _tour_step >= TOUR_STEPS or _frames - _tour_at < 20 or veil.busy:
@@ -2420,26 +2705,53 @@ func _tour_menus() -> void:
 		12:
 			if not chart.is_open():
 				return
+			# pins kept from earlier plays: cleared first, so the tap drops a fresh one
+			if not pins.pins.is_empty():
+				_note_tour("cleared %d pins" % pins.pins.size())
+				chart.clear_pins()
+				return
 			_tour_pins = pins.pins.size()
 			_tour_tap(Vector2(player.pos.x + 140.0, player.pos.z + 90.0))
 		13:
-			# (a beat between the taps, or two make a double tap and zoom)
-			if _frames - _tour_at < 40:
-				return
+			# (the tap has landed: the chart waits out a second one first)
 			if pins.pins.size() != _tour_pins + 1:
 				printerr("SMOKE FAILED: a tap on the chart dropped no pin")
-			_tour_tap(Vector2(player.pos.x + 140.0, player.pos.z + 90.0))
+			if not chart.card.is_open():
+				printerr("SMOKE FAILED: the pin dropped opened no card over it")
+			chart.card.sail.emit()
 		14:
-			if _frames - _tour_at < 40:
+			# the course is plotted on a worker (after her waters, if they're still being laid out)
+			if helm.state == Helmsman.State.PLOTTING and _frames - _tour_at < 600:
 				return
-			if pins.pins.size() != _tour_pins:
-				printerr("SMOKE FAILED: a tap on a pin left it standing")
+			if helm.state != Helmsman.State.SAILING or maps.route.size() < 2:
+				printerr("SMOKE FAILED: the helmsman set no course (%s)" % Helmsman.State.keys()[helm.state])
+		15:
+			# a beat to watch the course draw itself, and the chart closes itself
+			if chart.is_open() and _frames - _tour_at < 240:
+				return
+			if chart.is_open():
+				printerr("SMOKE FAILED: the chart stayed open over the course set")
+			if not hud.helm_on():
+				printerr("SMOKE FAILED: no helmsman's pill on the HUD")
+			hud.map_pressed.emit()
+		16:
+			if not chart.is_open():
+				return
+			var last := pins.pins[pins.pins.size() - 1]
+			_tour_tap(Vector2(last.x, last.z))
+		17:
+			if not chart.card.is_open() or not bool(_sel.get("bound", false)):
+				printerr("SMOKE FAILED: no card over the pin she's bound for")
+			chart.card.lift.emit()
+			if helm.active() or pins.pins.size() != _tour_pins or chart.card.is_open():
+				printerr("SMOKE FAILED: Lift pin left the course, the pin or its card")
+		18:
 			_go_back(false)
 			if chart.is_open():
 				printerr("SMOKE FAILED: the back button left the chart open")
 			else:
 				_note_tour("chart closed")
-		15:
+		19:
 			# a trading port: off the first market's quay, a little in the
 			# hold, her hull knocked about, a rack of special shot spent and
 			# gold enough for the chandlery whichever ship the tour sails
@@ -2454,7 +2766,7 @@ func _tour_menus() -> void:
 			stock[Ammo.SPECIALS[0]] = 0
 			player.gold = maxi(player.gold, 500)
 			_note_tour("off %s" % port.title)
-		16:
+		20:
 			# the prompt tapped (pirates on her tail keep her off the quay: the
 			# tour gives the port up after a while rather than wait on them)
 			if not market.prompt_ok():
@@ -2463,17 +2775,17 @@ func _tour_menus() -> void:
 					_tour_step = TOUR_STEPS
 				return
 			market.dock.emit()
-		17:
+		21:
 			if state != State.DOCKED:
 				return
 			market.sell.emit("rum")
-		18:
+		22:
 			market.sell_all.emit()
-		19:
+		23:
 			market.repair.emit()
-		20:
+		24:
 			market.restock.emit()
-		21:
+		25:
 			_go_back(false)
 	_tour_step += 1
 	_tour_at = _frames

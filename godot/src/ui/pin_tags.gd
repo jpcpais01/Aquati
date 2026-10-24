@@ -10,6 +10,8 @@ const U := HudStyle.K
 ## How far in from the screen's edge a tag rides (the web's 28 and 32 px).
 const EDGE := Vector2(28.0, 32.0) * HudStyle.PX
 
+## A panel on screen the edge's tags step up over (the helmsman's pill), if any.
+var keep_off := Rect2()
 var _tags: Array[_Tag] = []
 
 
@@ -47,6 +49,8 @@ func show_pins(pins: Waypoints, from: Vector3, cam: Camera3D, world: World) -> v
 		var t := _tags[i]
 		t.set_pin(MapMarks.PIN[pin.hue], MapScene.distance(d), edge, atan2(o.y, o.x))
 		t.position = c + o + Vector2(-28.0, 16.0) * U
+		if edge and keep_off.has_area() and keep_off.grow(4.0 * HudStyle.PX).intersects(t.get_rect()):
+			t.position.y = keep_off.position.y - t.size.y - 6.0 * HudStyle.PX
 		# a tag fades as you close in
 		t.modulate.a = 1.0 if edge else clampf((d - 20.0) / 60.0, 0.15, 1.0)
 
