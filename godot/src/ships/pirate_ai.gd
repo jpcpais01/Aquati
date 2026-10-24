@@ -55,18 +55,20 @@ func _pick_waypoint(world: World) -> void:
 		var z := ship.pos.z + sin(a) * r
 		if world.region_at(x, z) != home or world.past_edge(x, z).z > -60.0:
 			continue
-		if world.ground_height(x, z) < -7.0:
+		if world.ground_height(x, z) < -7.0 and (world.hazards == null or not world.hazards.vortex_at(x, z, 1.6)):
 			_wp = Vector2(x, z)
 			return
 
 
 ## Steers off the shallows: probes ahead and to either side, and turns the
 ## least that clears them. Hot on your heels a captain reads the breakers
-## over a reef too late.
-func _avoid(world: World, heading: float) -> float:
+## over a reef too late, and skirts a maelstrom far too close. `escaping`:
+## already in a maelstrom's grip, she only looks for land.
+func _avoid(world: World, heading: float, escaping := false) -> float:
 	var s := ship
 	var L := s.cls.length
 	var reckless := mode == Mode.ENGAGE
+	var hz := world.hazards
 	var look := [L * 0.8, L * 1.6, L * 2.6 + s.speed * 2.0]
 	var blocked := func(ang: float, d: float) -> bool:
 		var x := s.pos.x + sin(ang) * d
@@ -77,6 +79,8 @@ func _avoid(world: World, heading: float) -> float:
 				return true
 			if not reckless or d < L:
 				return true
+		if not escaping and hz != null and hz.vortex_at(x, z, 0.6 if reckless else 1.25):
+			return true
 		return world.past_edge(x, z).z > 0.0
 	var ahead := false
 	for d: float in look:
@@ -118,7 +122,7 @@ func update(dt: float, world: World, player: Ship) -> void:
 		_think = 0.4 + _rng.randf() * 0.3
 		var provoked := s.last_attacker != null and s.last_attacker == player and world.time - s.last_hit < 25.0
 		var pk := pack
-		if pk != null and pk.leader != null and not pk.leader.ship.alive:
+		if pk != null and pk.leader != null and (not is_instance_valid(pk.leader.ship) or not pk.leader.ship.alive):
 			pk.leader = null
 		# the pack answers a sighting by any of its ships
 		if pk != null and target != null and world.time - pk.alert_t < 20.0 and dist < 560.0:
@@ -179,13 +183,18 @@ func update(dt: float, world: World, player: Ship) -> void:
 			if Vector2(ox, oz).length() < (o.cls.length + s.cls.length) * 0.75:
 				_desired += MathX.angle_delta(_desired, atan2(-ox, -oz)) * 0.5
 
-	# hard on the coral, she claws off for deep water
-	if s.scrape > 0.12:
+	# the sea has her: in a maelstrom's grip every hand goes to the braces to
+	# spiral out with the flow, and hard on the coral she claws off for deep water
+	var esc := world.hazards.escape(s.pos.x, s.pos.z) if world.hazards != null else NAN
+	if not is_nan(esc):
+		_desired = esc
+		s.sail_target = 1.0
+	elif s.scrape > 0.12:
 		var g := world.ground_gradient(s.pos.x, s.pos.z)
 		if g.length_squared() > 1e-6:
 			_desired = atan2(-g.x, -g.y)
 		s.sail_target = 1.0
-	s.rudder = clampf(MathX.angle_delta(s.heading, _avoid(world, _desired)) * 2.2, -1.0, 1.0)
+	s.rudder = clampf(MathX.angle_delta(s.heading, _avoid(world, _desired, not is_nan(esc))) * 2.2, -1.0, 1.0)
 
 	# gunnery: a broadside the moment you bear
 	if target != null and mode != Mode.PATROL and dist < reach * 1.05:

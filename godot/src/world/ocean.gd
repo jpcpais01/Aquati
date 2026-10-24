@@ -21,6 +21,12 @@ var cell := 1.5
 ## The lattice's warp as the shader has it (see follow): x core half-extent
 ## (m), y warp coefficient, z cell size (m).
 var grid_warp := Vector4(66.0, 0.18, 1.5, 0.0)
+## Each maelstrom's own ring of sea (the web's Ocean.placeVortices): the
+## lattice is too coarse for a funnel's walls, so inside its rim the sea is
+## drawn on a polar mesh whose rings close in on the throat, with the same
+## material (the "funnel" instance uniform switches it over).
+var funnels: Array[MeshInstance3D] = []
+var _funnel_mesh: ArrayMesh
 
 
 func setup(p_waves: Waves, p_wind: Wind, p_wake: WakeField) -> void:
@@ -71,6 +77,69 @@ func _build_mesh() -> ArrayMesh:
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var m := ArrayMesh.new()
 	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return m
+
+
+## A ring of sea for each maelstrom (Vortex), placed and sized by follow_vortices.
+func place_vortices(vortices: Array) -> void:
+	for f in funnels:
+		f.queue_free()
+	funnels.clear()
+	if _funnel_mesh == null:
+		_funnel_mesh = funnel_mesh()
+	for v: Vortex in vortices:
+		var mi := MeshInstance3D.new()
+		mi.name = "Funnel"
+		mi.top_level = true
+		mi.mesh = _funnel_mesh
+		mi.material_override = material
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.set_instance_shader_parameter("funnel", 1.0)
+		mi.visible = false
+		add_child(mi)
+		funnels.append(mi)
+	follow_vortices(vortices, Vector3.ZERO)
+
+
+## Each ring over its maelstrom at its live radius; drawn only while it
+## turns and lies within sight of `eye`.
+func follow_vortices(vortices: Array, eye: Vector3) -> void:
+	for i in mini(vortices.size(), funnels.size()):
+		var v: Vortex = vortices[i]
+		var f := funnels[i]
+		f.visible = visible and v.k > 0.001 and Vector2(eye.x - v.x, eye.z - v.z).length() < v.r * Vortex.RIM + FAR * 0.6
+		if f.visible:
+			f.transform = Transform3D(Basis.from_scale(Vector3(v.r, 1.0, v.r)), Vector3(v.x, 0.0, v.z))
+
+
+## The ring of sea in radii: a centre and NR rings out to Vortex.RIM, packed
+## tight toward the throat (where the walls are steepest), NA spokes round.
+static func funnel_mesh(nr := 56, na := 112) -> ArrayMesh:
+	var verts := PackedVector3Array()
+	verts.append(Vector3.ZERO)
+	for i in range(1, nr + 1):
+		var u := Vortex.RIM * pow(float(i) / nr, 1.7)
+		for j in na:
+			var a := TAU * j / na
+			verts.append(Vector3(cos(a) * u, 0.0, sin(a) * u))
+	# (wound as the lattice is: front faces up)
+	var idx := PackedInt32Array()
+	for j in na:
+		idx.append_array([0, 1 + j, 1 + (j + 1) % na])
+	for i in range(1, nr):
+		var r0 := 1 + (i - 1) * na
+		var r1 := 1 + i * na
+		for j in na:
+			var j1 := (j + 1) % na
+			idx.append_array([r0 + j, r1 + j1, r0 + j1, r0 + j, r1 + j, r1 + j1])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var m := ArrayMesh.new()
+	m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	# (drawn down the throat, and lifted by the swell)
+	m.custom_aabb = AABB(Vector3(-Vortex.RIM, -70.0, -Vortex.RIM), Vector3(Vortex.RIM * 2.0, 76.0, Vortex.RIM * 2.0))
 	return m
 
 

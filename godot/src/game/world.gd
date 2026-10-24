@@ -40,10 +40,28 @@ var region: Region
 var regions: Array[Region] = []
 ## Seconds of play.
 var time := 0.0
+## The maelstroms' water (Hazards keeps them turning), and the hazards themselves.
+var vortices: Array[Vortex] = []
+var hazards: Hazards
 
 
 func water_height(x: float, z: float) -> float:
-	return waves.height_at(x, z, water_damp(x, z))
+	if vortices.is_empty():
+		return waves.height_at(x, z, water_damp(x, z))
+	var calm := 1.0
+	var dip := 0.0
+	for v in vortices:
+		calm *= v.calm(x, z)
+		dip += v.dip(x, z)
+	return waves.height_at(x, z, water_damp(x, z) * calm) - dip
+
+
+## How far the maelstroms draw the sea down at (x, z) (m, positive = lower).
+func funnel_at(x: float, z: float) -> float:
+	var dip := 0.0
+	for v in vortices:
+		dip += v.dip(x, z)
+	return dip
 
 
 ## The swell dies down over the shallows (the web's World.waterDamp).

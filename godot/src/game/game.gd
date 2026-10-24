@@ -129,6 +129,13 @@ var chart: SeaChart
 var chart_art: ChartArt
 ## The helmsman: sails her to a place picked on the chart.
 var helm: Helmsman
+## The sea's dangers (maelstroms, reefs), and her watch on them: what the
+## pill says, the dangers already named, the bell's rest, who was last called out.
+var hazards: Hazards
+var _hz_state := ""
+var _hz_seen := {}
+var _hz_bell := 0.0
+var _hz_called := {}
 ## Her look from the Shipwright: her livery dressed in it, her flag drawn.
 var outfitter: Outfitter
 ## The Shipwright, at the home port's quay; and its camera: what the open
@@ -728,6 +735,9 @@ func _build_islands() -> void:
 		add_child(f)
 		floras.append(f)
 	ocean.set_glow_centres(_glow_centres)
+	hazards = Hazards.new(world)
+	hazards.struck.connect(_on_hazard)
+	ocean.place_vortices(world.vortices)
 
 
 ## Points the sea at the archipelago nearest (x, z), as you cross the high seas.
@@ -774,6 +784,23 @@ func _build_player(id := "") -> void:
 	if _args.has("at"):
 		var p: PackedStringArray = str(_args.at).split(",")
 		at = Vector2(float(p[0]), float(p[1]))
+	# a set piece by a maelstrom (`--maelstrom I`, `--mael-u` radii out) or a reef (`--reef I`, `--reef-off` m off its edge)
+	if _args.has("maelstrom") and not hazards.maelstroms.is_empty():
+		var m: Dictionary = hazards.maelstroms[clampi(int(_args.maelstrom) if str(_args.maelstrom).is_valid_int() else 0, 0, hazards.maelstroms.size() - 1)]
+		var v: Vortex = m.v
+		var u := float(_args.get("mael-u", 0.55))
+		var a := float(_args.get("mael-a", 0.6))
+		at = Vector2(v.x + cos(a) * v.r * u, v.z + sin(a) * v.r * u)
+		# (her head along the flow)
+		h = atan2(-sin(a) * v.dir, cos(a) * v.dir)
+		if _args.has("mael-in"):
+			# (or facing its eye)
+			h = atan2(-cos(a), -sin(a))
+	if _args.has("reef") and not hazards.reefs.is_empty():
+		var rf: Dictionary = hazards.reefs[clampi(int(_args.reef) if str(_args.reef).is_valid_int() else 0, 0, hazards.reefs.size() - 1)]
+		var off := float(rf.r) + float(_args.get("reef-off", 60.0))
+		at = Vector2(float(rf.x), float(rf.z) - off)
+		h = 0.0
 	player.place(at.x, at.y, h)
 	player.sail_target = 2.0 / 3.0
 	player.sail_level = player.sail_target
@@ -1156,6 +1183,8 @@ func _tick(real_dt: float) -> void:
 		pirates.step_harbour(dt, player.pos, camera)
 		_swap_in(false)
 	home.prepare(real_dt)
+	# the maelstroms take hold of every hull in their reach before she sails
+	hazards.update(dt, camera.target, atmosphere.storm)
 	for s in world.ships:
 		s.step(dt)
 	if dt > 0.0:
@@ -1221,6 +1250,7 @@ func _tick(real_dt: float) -> void:
 	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
 	ocean.follow(camera.target, camera.distance())
+	ocean.follow_vortices(world.vortices, camera.global_position)
 	_lamps()
 	# the wreckage afloat, on the very swell the ocean draws (and shouldered aside by hulls still moving)
 	RenderingServer.global_shader_parameter_set("sea_clock", fmod(world.time, Debris.CLOCK_WRAP))
@@ -1272,11 +1302,14 @@ func _tick(real_dt: float) -> void:
 	hud.show_helm(helm.view(player) if sailing else {}, player.rudder, real_dt)
 	market.set_pill(hud.helm_height())
 	if not sailing:
+		hud.show_hazard({})
+		_hz_state = ""
 		return
 	hud.show_state(player, w, camera.view_index(), atmosphere.vignette)
 	hud.show_sky(atmosphere.hour(), atmosphere.icon())
 	_hold_sky(dt)
 	hud.show_hull(player, discovered.size(), isles_total)
+	_hazard_watch(dt)
 	hud.show_guns(player, gunnery)
 	hud.show_ammo(player.ammo, stock)
 	hud.show_hold(hold)
@@ -1418,6 +1451,8 @@ func _sound() -> void:
 	sound.set_gust(world.gust_at(focus.pos.x, focus.pos.z))
 	sound.set_sailing(clampf(player.speed / 14.0, 0.0, 1.0) if player.alive else 0.0)
 	sound.set_weather(a.rain, a.storm, a.wind)
+	var roar := hazards.roar()
+	sound.set_maelstrom(roar.x, roar.y, roar.z)
 	sound.voyage_music(state == State.VOYAGE and player.alive and _farewell == null and not _high_seas and a.storm < 0.45, a.night)
 
 
@@ -1743,6 +1778,137 @@ func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
 			hud.floater("Gun crews cut down!" if mine else "Crews cut down", at, camera, Floaters.Kind.CREW, 18.0)
 
 
+## The sea took a bite out of a ship (Hazards.struck): said over her, and
+## when it sinks a pirate you'd had under your guns, the kill is yours.
+func _on_hazard(ship: Ship, kind: String, dealt: float) -> void:
+	var p := player
+	var st := hazards.state_of(ship, 1.2)
+	var name := str(st.m.name) if not st.is_empty() else "the maelstrom"
+	var at := Vector3(ship.pos.x, ship.position.y + ship.cls.freeboard + 3.0, ship.pos.z)
+	if ship == p:
+		if state != State.VOYAGE:
+			return
+		if dealt >= 1.0:
+			hud.floater("-%d" % roundi(dealt), at, camera, Floaters.Kind.BAD)
+			if p.alive:
+				voyage.taken += dealt
+		camera.shake(0.12)
+		return
+	var near := p != null and Vector2(ship.pos.x - p.pos.x, ship.pos.z - p.pos.z).length() < 380.0
+	var last: float = _hz_called.get(ship, -100.0)
+	if near and ship.alive and world.time - last > 5.0:
+		_hz_called[ship] = world.time
+		hud.floater("Caught in the maelstrom!", at + Vector3(0.0, 4.0, 0.0), camera, Floaters.Kind.RARE, 14.0)
+	elif near and dealt >= 1.0 and ship.team == Ship.Team.PIRATE:
+		hud.floater(str(roundi(dealt)), at, camera)
+	if ship.alive:
+		return
+	_hz_called.erase(ship)
+	# she's gone: lured there by you (Hazards credits the guns that drove her)?
+	if ship.last_attacker == p and p.alive and state == State.VOYAGE and world.time - ship.last_hit < 90.0:
+		hud.floater("Swallowed by the maelstrom!", at + Vector3(0.0, 8.0, 0.0), camera, Floaters.Kind.EPIC, 20.0)
+		voyage.note("kill", "Drew the %s into %s" % [ship.ship_name, name], "The sea did the rest")
+
+
+## The pill under the top of the screen, the leadsman's bell and the first
+## sight of each danger (the web's updateHazards): a maelstrom's grip, and
+## coral under her keel or across her bow.
+func _hazard_watch(dt: float) -> void:
+	var p := player
+	_hz_bell -= dt
+	if not p.alive or _farewell != null:
+		hud.show_hazard({})
+		_hz_state = ""
+		return
+	var vs := hazards.state_of(p, 2.4)
+	var reef := hazards.reef_near(p.pos.x, p.pos.z, 170.0)
+	var draft := p.cls.draft
+	# the first sight of each: named, with what it means for your ship
+	if not vs.is_empty() and not _hz_seen.has(vs.m.name):
+		_hz_seen[vs.m.name] = true
+		hud.toast(str(vs.m.name), "A maelstrom turns here · keep clear of its pull", 4.0)
+	if not reef.is_empty() and not _hz_seen.has(reef.name):
+		_hz_seen[reef.name] = true
+		hud.toast(str(reef.name), "Coral reef · your shallow keel clears most of it" if draft < 1.8 else "Coral reef · watch for breakers, she draws too much water", 4.0)
+	var st := ""
+	var v := {}
+	if not vs.is_empty() and float(vs.u) < 0.95:
+		var u := float(vs.u)
+		var throat := u < 0.3
+		var free := float(vs.out) > 0.8 and not throat
+		var grip := clampf((0.95 - u) / 0.85, 0.0, 1.0)
+		st = "caught"
+		var out := hazards.escape(p.pos.x, p.pos.z)
+		# the throat dragging her under: the ring is how close the sea is to her rail
+		var under := p.drawn > 0.02
+		var title := "Caught in the maelstrom"
+		var sub := "%s · sail out with the wind" % vs.m.name
+		if under:
+			title = "She's going under!" if p.drawn > 0.6 else "The throat has her!"
+			sub = "The sea is dragging her down · crowd on sail and claw out!"
+		elif throat:
+			title = "In the maelstrom's throat!"
+			sub = "Her timbers are giving way · run before the wind!"
+		elif free:
+			title = "Breaking free"
+			sub = "%s · hold your course" % vs.m.name
+		v = {"kind": "vortex", "level": "warn" if free and not under else "danger", "title": title, "sub": sub,
+				"gauge": maxf(grip, p.drawn) if under else grip, "spin": lerpf(3.2, 0.7, grip) * (1.0 - p.drawn * 0.6),
+				"arrow": NAN if is_nan(out) else _screen_heading(out)}
+	elif p.scrape > 0.08:
+		st = "aground"
+		var depth := maxf(0.0, -world.ground_height(p.pos.x, p.pos.z))
+		# the way to deeper water: down the seabed's slope
+		var e := 6.0
+		var gx := world.ground_height(p.pos.x + e, p.pos.z) - world.ground_height(p.pos.x - e, p.pos.z)
+		var gz := world.ground_height(p.pos.x, p.pos.z + e) - world.ground_height(p.pos.x, p.pos.z - e)
+		var deep := NAN if gx * gx + gz * gz < 1e-6 else atan2(-gx, -gz)
+		v = {"kind": "reef", "level": "danger", "title": "Hard aground!" if p.scrape > 0.6 else "Scraping the reef!",
+				"sub": "%s · %.1f m of water, you draw %.1f m · steer for deep water" % [reef.get("name", "Coral"), depth, draft],
+				"gauge": p.scrape, "arrow": NAN if is_nan(deep) else _screen_heading(deep)}
+	else:
+		var look := maxf(40.0, absf(p.speed) * 7.0) + p.cls.length * 0.5
+		var shoal := hazards.shoal_ahead(p, look) if not reef.is_empty() else Vector2(-1.0, 0.0)
+		var under := -world.ground_height(p.pos.x, p.pos.z) if not reef.is_empty() else 99.0
+		if shoal.x >= 0.0:
+			st = "shoal"
+			v = {"kind": "reef", "level": "warn", "title": "Shoal water ahead",
+					"sub": "%s · %.1f m over the coral, you draw %.1f m" % [reef.name, shoal.y, draft],
+					"gauge": clampf(1.0 - shoal.x / look, 0.08, 1.0), "arrow": NAN}
+		elif not reef.is_empty() and under < 4.5 and world.reef_at(p.pos.x, p.pos.z) > 0.3:
+			st = "over"
+			v = {"kind": "reef", "level": "info", "title": "Over the reef",
+					"sub": "Your keel clears it · %.1f m of water, you draw %.1f m" % [under, draft],
+					"gauge": clampf(draft / maxf(under, 0.1), 0.0, 1.0), "arrow": NAN}
+		elif not vs.is_empty() and float(vs.u) < 2.1:
+			st = "near"
+			var m: Dictionary = vs.m
+			v = {"kind": "vortex", "level": "warn", "title": "Maelstrom ahead",
+					"sub": "%s · %d m to its pull" % [m.name, maxi(0, roundi(float(vs.dist) - (m.v as Vortex).r))],
+					"gauge": clampf((2.1 - float(vs.u)) / 1.15, 0.0, 1.0), "spin": 4.5, "arrow": NAN}
+	# the watch calls it: the bell for danger ahead, a groan of timber as the sea takes hold
+	if st != _hz_state:
+		if (st == "shoal" or st == "near") and _hz_bell <= 0.0:
+			sound.shoal_bell()
+			_hz_bell = 9.0
+		if st == "caught":
+			sound.groan()
+			camera.shake(0.3)
+		_hz_state = st
+	hud.show_hazard(v)
+
+
+## A heading on the sea (0 north, clockwise) as an angle on the screen (0 up, clockwise).
+func _screen_heading(h: float) -> float:
+	var p := player
+	var a := Vector3(p.pos.x, p.position.y, p.pos.z)
+	var b := a + Vector3(sin(h), 0.0, cos(h)) * 30.0
+	if camera.is_position_behind(a) or camera.is_position_behind(b):
+		return NAN
+	var d := camera.unproject_position(b) - camera.unproject_position(a)
+	return atan2(d.x, -d.y)
+
+
 func _on_bounty(ship: Ship, gold: int) -> void:
 	Progress.earn(gold)
 	hud.toast("+%d gold bounty" % gold, "%s sunk" % ship.ship_name, 3.6)
@@ -1788,7 +1954,13 @@ func _report(attacker: Ship) -> Dictionary:
 	if foe == null and is_instance_valid(p.last_attacker) and p.last_attacker != p and world.time - p.last_hit < 20.0:
 		foe = p.last_attacker
 	var cause := p.last_cause
-	if foe == null:
+	var swallowed := ""
+	if p.last_cause == "maelstrom" and world.time - p.last_hit < 20.0:
+		# the sea took her, whoever was shooting
+		var st := hazards.state_of(p, 1.5)
+		swallowed = str(st.m.name) if not st.is_empty() else "the maelstrom"
+		foe = null
+	elif foe == null:
 		cause = "aground"
 	var near := ""
 	var near_d := 520.0
@@ -1803,7 +1975,7 @@ func _report(attacker: Ship) -> Dictionary:
 		"time": voyage.time, "gold": p.gold, "kills": p.kills,
 		"isles": discovered.size(), "isles_total": isles_total,
 		"shots": voyage.shots, "hits": voyage.hits, "dealt": roundi(voyage.dealt), "taken": roundi(voyage.taken),
-		"miles": voyage.metres / 1852.0, "cause": cause,
+		"miles": voyage.metres / 1852.0, "cause": cause, "maelstrom": swallowed,
 		"killer": foe.ship_name if foe != null else "",
 		"killer_cls": foe.cls.id if foe != null else "",
 		"where": near,

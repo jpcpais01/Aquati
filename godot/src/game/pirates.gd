@@ -96,6 +96,9 @@ func find_open_water(cx: float, cz: float, r_min: float, r_max: float) -> Varian
 			continue
 		if world.ground_height(x, z) > -9.0:
 			continue
+		# (never in a maelstrom's pull)
+		if world.hazards != null and world.hazards.vortex_at(x, z, 1.4):
+			continue
 		if _unseen != null and _in_sight(x, z):
 			continue
 		var clear := true

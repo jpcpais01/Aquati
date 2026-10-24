@@ -790,6 +790,62 @@ func _check_world() -> void:
 	_home_world = w
 	_check_maps(w)
 	_check_helm(w)
+	_check_hazards(w)
+
+
+## The sea's dangers: every maelstrom turning (three at home, one in Las
+## Brumas, each its own way), its water falling away into a throat and the
+## swell stilled over it, the current carrying a hull round and in, the way
+## out given only inside its pull, and a galleon warned of the coral across
+## her bow.
+func _check_hazards(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var hz := Hazards.new(w)
+	var steps := 0
+	var names := hz.maelstroms.map(func(m: Dictionary) -> String: return str(m.name))
+	steps += 1 if hz.maelstroms.size() == 4 and w.vortices.size() == 4 and names.has("Sorvedouro da Bruma") and hz.reefs.size() > 0 else 0
+	# the water: deepest at the eye, nothing past the rim, falling all the way in; the swell stilled
+	var shape := true
+	for m in hz.maelstroms:
+		var v: Vortex = m.v
+		var was := -1.0
+		for i in range(20, -1, -1):
+			var d := v.dip(v.x + v.r * i / 20.0, v.z)
+			shape = shape and d >= was - 1e-4
+			was = d
+		shape = shape and v.dip(v.x + v.r * 1.01, v.z) == 0.0 and absf(v.dip(v.x, v.z) - Vortex.depth(v.r, v.k)) < 0.5
+		shape = shape and v.calm(v.x, v.z) < 0.5 and v.calm(v.x + v.r, v.z) > 0.99
+		shape = shape and absf(w.funnel_at(v.x + v.r * 0.3, v.z) - v.dip(v.x + v.r * 0.3, v.z)) < 1e-3
+	steps += 1 if shape else 0
+	# the current: round the way it turns and in toward the eye; the way out only inside its pull
+	var flow := true
+	for m in hz.maelstroms:
+		var v: Vortex = m.v
+		for a: float in [0.0, 1.3, 2.9, 4.4]:
+			var rx := cos(a)
+			var rz := sin(a)
+			var f := hz.flow_at(v.x + rx * v.r * 0.5, v.z + rz * v.r * 0.5)
+			var round_ := (-rz * f.x + rx * f.y) * v.dir
+			var inward := -(rx * f.x + rz * f.y)
+			flow = flow and round_ > 2.0 and inward > 0.3 and signf(f.z) == -signf(v.dir)
+		flow = flow and not is_nan(hz.escape(v.x + v.r * 0.5, v.z)) and is_nan(hz.escape(v.x + v.r * 1.2, v.z))
+		flow = flow and hz.vortex_at(v.x + v.r, v.z, 1.25) and not hz.vortex_at(v.x + v.r * 1.5, v.z, 1.25)
+	steps += 1 if flow else 0
+	# coral across a galleon's bow: the leadsman sees it coming
+	var rf: Dictionary = hz.reefs[0] if not hz.reefs.is_empty() else {}
+	var shoal := Vector2(-1.0, 0.0)
+	if not rf.is_empty():
+		var g := Ship.create(ShipClass.named("galleon"), Livery.named("player"), w)
+		# (set there, not placed: this world has no swell to float her on)
+		g.pos = Vector3(float(rf.x), 0.0, float(rf.z) - float(rf.r) - 40.0)
+		g.heading = 0.0
+		shoal = hz.shoal_ahead(g, 160.0)
+		g.free()
+	steps += 1 if shoal.x >= 0.0 and shoal.y < ShipClass.named("galleon").draft else 0
+	if steps != 4:
+		_fail("hazards: only %d of 4 steps as expected (%s; shape %s, flow %s, shoal %s)" % [steps, names, shape, flow, shoal])
+		return
+	print("hazards: 4 of 4 steps as expected; %s, %d reefs, a galleon warned of %s %.0f m ahead (%.1f m of water), checked in %.0f ms" % [", ".join(names), hz.reefs.size(), rf.name, shoal.x, shoal.y, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## The helmsman's waters (SeaNav), laid out for a sloop and a galleon: a

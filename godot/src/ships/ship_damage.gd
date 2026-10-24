@@ -1030,8 +1030,31 @@ func wreck_pose(t: float, dt: float) -> void:
 	afloat = 1.0
 	if t < life:
 		y = maxf(y, bed + c.draft * 0.55)
+	# the seabed as seen from her riding height: a maelstrom's funnel holds
+	# the water (and her) far below the open sea, over its carved abyss
+	var funnel := world.funnel_at(s.pos.x, s.pos.z) if not world.vortices.is_empty() else 0.0
 	done = not s.founders and t > life + WRECK_FINAL
-	if t > life and not s.founders:
+	if s.swallowed:
+		# down a maelstrom's throat: dragged under head first, turning with the
+		# water, and on down through the dark till she lands in the abyss below
+		var rest := bed + funnel + maxf(c.draft * 0.9, c.beam * 0.38)
+		var top := y - s.drawn_sink()
+		if rest_t < 0.0:
+			var left := top - _fall - rest
+			_fall_v = minf(minf(5.5, _fall_v + dt * 1.1), 0.3 + maxf(left, 0.0) * 0.6)
+			_fall += _fall_v * dt
+			if left < 0.12:
+				rest_t = t
+		var settled := 0.0 if rest_t < 0.0 else MathX.smooth(0.0, 3.5, t - rest_t)
+		y = maxf(top - _fall, rest)
+		# bow down into the throat, deeper the further she goes, easing as she lands
+		plunge = -minf(0.7, 0.24 + _fall * 0.025) * (1.0 - settled * 0.7)
+		heel = signf(_roll if _roll != 0.0 else 1.0) * minf(0.9, 0.12 + _fall * 0.02 + settled * 0.2)
+		afloat = 1.0 - MathX.smooth(0.0, c.draft * 2.0 + 1.5, _fall + s.drawn_sink())
+		# nobody follows a stranger's hulk into the abyss: gone once she lands
+		if not s.founders:
+			done = t - rest_t > 4.0 if rest_t >= 0.0 else t > 45.0
+	elif t > life and not s.founders:
 		var u := t - life
 		y -= u * u * 0.07 + u * 0.15
 	elif t > life:
@@ -1039,7 +1062,7 @@ func wreck_pose(t: float, dt: float) -> void:
 		# heels over as she sinks; she glides down at a stately pace and comes
 		# to rest on her side on the seabed
 		var u := t - life
-		var rest := bed + maxf(c.draft * 0.9, c.beam * 0.38)
+		var rest := bed + funnel + maxf(c.draft * 0.9, c.beam * 0.38)
 		if rest_t < 0.0:
 			# gathers way, then eases the last couple of metres onto the sand
 			var left := y - _fall - rest
