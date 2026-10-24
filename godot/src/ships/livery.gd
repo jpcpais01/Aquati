@@ -1,7 +1,10 @@
 class_name Livery
 extends RefCounted
-## A ship's paint: hull bands, canvas, emblem and flag. Colours are sRGB, as
-## a painter would pick them; the materials convert them.
+## A ship's paint: hull bands, canvas (its accent pattern and the mark her
+## mainsails carry) and flag. Colours are sRGB, as a painter would pick them;
+## the materials convert them. The player's is dressed from her look
+## (ShipLook.dress); the pirates' come from DEFS, their flags and marks drawn
+## the web's way (liveryFlag, legacyMark): a jolly roger, skull and bones.
 
 var id := ""
 ## planking base
@@ -13,11 +16,25 @@ var wale := Color("#21160f")
 var trim := Color("#e2b552")
 var sail := Color("#f4ead4")
 var sail_seam := Color("#d9c9a8")
-## "sun", "skull" or "none"
+## The accent her canvas is patterned in, and the pattern (an index of
+## ShipLook.SAIL_PATTERNS: 0 plain .. 5 diagonal).
+var sail_accent := Color("#d9c9a8")
+var sail_pattern := 0
+## The mark her mainsails carry, {emblem, backing}, in emblem_color (empty: none).
+var sail_mark := {}
+## "sun", "skull" or "none": the mark's emblem, for whoever only needs a word.
 var emblem := "sun"
 var emblem_color := Color("#d79b2e")
 var flag := Color("#1fa3a0")
 var flag2 := Color("#f2c45a")
+## Her flag, as Heraldry draws it.
+var flag_design := {}
+## Bumped whenever her paintwork changes: hulls built before it are stale
+## (the shipyard builds a fresh one, see Shipyard._fits).
+var rev := 0
+## Her flag (alpha cut to its shape) and her mark, as drawn (null till bake()).
+var flag_tex: Texture2D
+var mark_tex: Texture2D
 
 const DEFS := {
 	"player": {
@@ -36,8 +53,14 @@ const DEFS := {
 		"flag": "#1a1414", "flag2": "#e9e1d2",
 	},
 }
+## The player's flag is drawn this wide (the Shipwright shows it close), everyone else's as the web draws them.
+const FLAG_PX := 1024
+const FLAG_PX_SMALL := 256
 
 static var _cache := {}
+static var _bake_task := -1
+static var _bake_jobs: Array = []
+static var _bake_list: Array[Livery] = []
 
 
 static func named(livery_id: String) -> Livery:
@@ -49,5 +72,82 @@ static func named(livery_id: String) -> Livery:
 	for key: String in d:
 		var v: String = d[key]
 		l.set(key, v if key == "emblem" else Color(v))
+	l.sail_accent = l.sail_seam
+	# the web's liveryFlag and legacyMark: the Brethren fly a ragged jolly roger
+	var skull := l.emblem == "skull"
+	l.flag_design = {
+		"shape": "tattered" if skull else "square", "bg": "#" + l.flag.to_html(false), "pattern": "plain",
+		"pattern_color": "#" + l.flag2.to_html(false), "emblem": l.emblem, "emblem_color": "#" + l.flag2.to_html(false),
+		"backing": "bones" if skull else "none", "emblem_scale": 0.95, "paint": "",
+	}
+	if l.emblem != "none":
+		l.sail_mark = {"emblem": l.emblem, "backing": "bones" if skull else "none"}
 	_cache[livery_id] = l
 	return l
+
+
+## A colour each channel times f, as the web's shadeHex rounds it.
+static func shade(c: Color, f: float) -> Color:
+	return Color8(clampi(roundi(c.r8 * f), 0, 255), clampi(roundi(c.g8 * f), 0, 255), clampi(roundi(c.b8 * f), 0, 255))
+
+
+## How wide her flag is drawn.
+func flag_px() -> int:
+	return FLAG_PX if id == "player" else FLAG_PX_SMALL
+
+
+## The SVG her flag is drawn from.
+func flag_svg() -> String:
+	var w := flag_px()
+	return Heraldry.flag_svg(flag_design, 256.0, 256.0 * Heraldry.ASPECT, Vector2i(w, roundi(w * Heraldry.ASPECT)))
+
+
+## Starts drawing these liveries' flags and marks on the worker threads
+## (the game sets it going first thing and collects it with bake_finish()
+## before the first ship is built, the islands going up meanwhile).
+static func bake_start(list: Array[Livery]) -> void:
+	bake_finish()
+	_bake_jobs.clear()
+	_bake_list = list.duplicate()
+	var marks := {}
+	for l in list:
+		_bake_jobs.append([l, false, null])
+		if not l.sail_mark.is_empty():
+			var key := "%s|%s" % [l.sail_mark.emblem, l.sail_mark.backing]
+			if not marks.has(key):
+				marks[key] = true
+				_bake_jobs.append([l, true, null])
+	if not _bake_jobs.is_empty():
+		_bake_task = WorkerThreadPool.add_group_task(func(i: int) -> void: Livery._bake_one(i), _bake_jobs.size(), -1, false, "Livery bake")
+
+
+static func _bake_one(i: int) -> void:
+	var job: Array = _bake_jobs[i]
+	var l: Livery = job[0]
+	if job[1]:
+		Heraldry.mark_texture(str(l.sail_mark.emblem), str(l.sail_mark.backing))
+	else:
+		job[2] = LookBaker.rasterize(l.flag_svg(), LookBaker.MIPS)
+
+
+## Waits for bake_start's drawing and hands each livery its flag and mark.
+static func bake_finish() -> void:
+	if _bake_task < 0:
+		return
+	WorkerThreadPool.wait_for_group_task_completion(_bake_task)
+	_bake_task = -1
+	for job: Array in _bake_jobs:
+		var l: Livery = job[0]
+		if not job[1]:
+			l.flag_tex = job[2]
+	for l in _bake_list:
+		if not l.sail_mark.is_empty():
+			l.mark_tex = Heraldry.mark_texture(str(l.sail_mark.emblem), str(l.sail_mark.backing))
+	_bake_jobs.clear()
+	_bake_list.clear()
+
+
+## Draws these liveries' flags and marks now (tools and checks).
+static func bake(list: Array[Livery]) -> void:
+	bake_start(list)
+	bake_finish()

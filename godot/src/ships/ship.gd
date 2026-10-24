@@ -147,6 +147,21 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 	return s
 
 
+## A fresh hull of her class in place of the one she wears (her paintwork
+## changed in the Shipwright): she rides on as she was, her crew aboard.
+## Only for a ship that hasn't been in a fight (her wounds live on the old one).
+func refit(p_model: ShipModel) -> void:
+	var old := model
+	var at := old.get_index()
+	p_model.transform = old.transform
+	remove_child(old)
+	old.queue_free()
+	model = p_model
+	add_child(model)
+	move_child(model, at)
+	dmg = ShipDamage.new(self)
+
+
 func forward() -> Vector3:
 	return Vector3(sin(heading), 0.0, cos(heading))
 

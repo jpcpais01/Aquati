@@ -1,18 +1,21 @@
 extends Node
 ## What the game keeps between voyages: the ship you sail, the waters you set
 ## out in, the view you sailed with, your purse, the archipelagos you've
-## charted, the waypoints on your sea chart and your records. Autoloaded as
-## `Progress`.
+## charted, the waypoints on your sea chart and your records, and her look
+## and your saved designs from the Shipwright. Autoloaded as `Progress`.
 ##
 ## It lives in user://progress.json, written whole to a fresh file and swapped
 ## in, so a crash or a dead battery mid-write can never leave it half-written.
 ## A change is kept a moment and written with whatever follows it, and at
-## once when the game goes to the background or closes.
+## once when the game goes to the background or closes. The looks (a painted
+## flag is a picture) keep a file of their own, user://looks.json, written
+## only when they change.
 
 ## Gold came in or went out of the purse.
 signal purse_changed(gold: int)
 
 const PATH := "user://progress.json"
+const LOOKS := "user://looks.json"
 const VERSION := 1
 ## The farewell card kept its records here before they moved in (phase 3).
 const OLD_RECORDS := "user://records.json"
@@ -39,11 +42,16 @@ var charts := {}
 var pins := []
 ## Your bests over every voyage, and how many you've sailed.
 var records := {"voyages": 0, "renown": 0, "gold": 0, "kills": 0, "isles": 0, "time": 0.0}
+## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
+var look := ShipLook.fresh()
+var designs := []
 
 ## Where it's kept (tools/check.gd keeps a scratch copy elsewhere).
 var path := PATH
+var looks_path := LOOKS
 
 var _wait := -1.0
+var _looks_dirty := false
 
 
 func _ready() -> void:
@@ -101,6 +109,22 @@ func keep_pins(list: Array) -> void:
 		touch()
 
 
+## Her look, as the Shipwright leaves it.
+func keep_look(l: Dictionary) -> void:
+	if l != look:
+		look = l.duplicate(true)
+		_looks_dirty = true
+		touch()
+
+
+## Your saved designs, as the Shipwright leaves them.
+func keep_designs(list: Array) -> void:
+	if list != designs:
+		designs = list.duplicate(true).slice(0, ShipLook.MAX_SAVED)
+		_looks_dirty = true
+		touch()
+
+
 ## Something changed: written a moment from now, with whatever follows it.
 func touch() -> void:
 	if _wait < 0.0:
@@ -136,16 +160,24 @@ func save() -> void:
 		"pins": pins,
 		"records": records,
 	}
-	var tmp := path + ".tmp"
+	_write(path, JSON.stringify(data, "\t"))
+	if _looks_dirty:
+		_looks_dirty = false
+		_write(looks_path, JSON.stringify({"version": VERSION, "look": look, "designs": designs}))
+
+
+## A file written whole: to a fresh one first, then swapped in for the old.
+func _write(file: String, text: String) -> void:
+	var tmp := file + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		push_warning("progress: can't write %s (%s)" % [tmp, error_string(FileAccess.get_open_error())])
 		return
-	f.store_string(JSON.stringify(data, "\t"))
+	f.store_string(text)
 	f.close()
-	var err := DirAccess.rename_absolute(tmp, path)
+	var err := DirAccess.rename_absolute(tmp, file)
 	if err != OK:
-		push_warning("progress: can't swap in %s (%s)" % [path, error_string(err)])
+		push_warning("progress: can't swap in %s (%s)" % [file, error_string(err)])
 
 
 func _load() -> void:
@@ -160,6 +192,12 @@ func _load() -> void:
 		if old is Dictionary:
 			_adopt({"records": old})
 			save()
+	var l: Variant = _read(looks_path)
+	if not l is Dictionary:
+		l = _read(looks_path + ".tmp")
+	if l is Dictionary:
+		look = ShipLook.sanitize((l as Dictionary).get("look"))
+		designs = ShipLook.sanitize_designs((l as Dictionary).get("designs"))
 
 
 ## A save's contents, or null if it's missing or not whole JSON (quietly:

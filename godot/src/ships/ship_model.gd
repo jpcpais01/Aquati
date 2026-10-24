@@ -60,6 +60,9 @@ static var _materials_lock := Mutex.new()
 
 var cls: ShipClass
 var livery: Livery
+## The livery's rev she was built at: her hull's paint is baked in, so a
+## later one makes her stale (Shipyard._fits).
+var rev := 0
 var shape: HullShape
 var head: Figurehead.Head
 var detail := true
@@ -136,6 +139,7 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_detail: bool = true) ->
 	var m := ShipModel.new()
 	m.cls = p_cls
 	m.livery = p_livery
+	m.rev = p_livery.rev
 	m.detail = p_detail
 	m.name = "Model"
 	m._build()
@@ -180,15 +184,9 @@ func shared_material(kind: String) -> ShaderMaterial:
 func _new_material(kind: String) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = SHADERS[kind]
-	var l := livery
+	_paint_material(m, kind, livery)
 	match kind:
 		"hull":
-			m.set_shader_parameter("c_hull", l.hull)
-			m.set_shader_parameter("c_bottom", l.bottom)
-			m.set_shader_parameter("c_boot", l.boot)
-			m.set_shader_parameter("c_strake", l.strake)
-			m.set_shader_parameter("c_wale", l.wale)
-			m.set_shader_parameter("c_trim", l.trim)
 			m.set_shader_parameter("length_m", cls.length)
 			var ports: Array[Vector4] = []
 			for t in cls.cannon_ts():
@@ -201,25 +199,44 @@ func _new_material(kind: String) -> ShaderMaterial:
 			m.set_shader_parameter("ports", ports.slice(0, 8))
 			m.set_shader_parameter("port_count", mini(cls.cannons_per_side, 8))
 		"stern":
+			m.set_shader_parameter("rows", _window_rows())
+	return m
+
+
+## Sets what a livery paints on a kind of material: the hull's bands, the
+## canvas and its mark, the flag.
+static func _paint_material(m: ShaderMaterial, kind: String, l: Livery) -> void:
+	match kind:
+		"hull", "stern":
 			m.set_shader_parameter("c_hull", l.hull)
 			m.set_shader_parameter("c_bottom", l.bottom)
 			m.set_shader_parameter("c_boot", l.boot)
 			m.set_shader_parameter("c_strake", l.strake)
 			m.set_shader_parameter("c_trim", l.trim)
-			m.set_shader_parameter("rows", _window_rows())
+			if kind == "hull":
+				m.set_shader_parameter("c_wale", l.wale)
 		"sail":
 			m.set_shader_parameter("c_sail", l.sail)
 			m.set_shader_parameter("c_seam", l.sail_seam)
+			m.set_shader_parameter("c_accent", l.sail_accent)
+			m.set_shader_parameter("sail_pattern", l.sail_pattern)
 			m.set_shader_parameter("c_emblem", l.emblem_color)
-			m.set_shader_parameter("emblem_kind", _emblem_kind(l))
+			m.set_shader_parameter("mark_on", l.mark_tex != null and not l.sail_mark.is_empty())
+			m.set_shader_parameter("mark_tex", l.mark_tex)
 		"flag":
-			m.set_shader_parameter("c_field", l.flag)
-			m.set_shader_parameter("c_emblem", l.flag2)
-			m.set_shader_parameter("emblem_kind", _emblem_kind(l))
-			m.set_shader_parameter("aspect", FLAG_ASPECT)
-			# the Brethren fly their colours ragged and shot through
-			m.set_shader_parameter("tattered", l.emblem == "skull")
-	return m
+			m.set_shader_parameter("flag_tex", l.flag_tex)
+
+
+## Repaints every material made for a livery (every class's hull and stern,
+## the canvas and the flag) after its colours, flag or mark changed: the ships
+## wearing it change at once. Her timbers' paint (the gilding, the wale's
+## mouldings) is baked into her hull: a change there needs a fresh one (rev).
+static func restyle(l: Livery) -> void:
+	_materials_lock.lock()
+	for key: String in _materials:
+		if key.ends_with("|" + l.id):
+			_paint_material(_materials[key], key.get_slice("|", 0), l)
+	_materials_lock.unlock()
 
 
 ## Rows of windows in the great cabin: one, two under a stern castle, three in a galleon.
@@ -227,14 +244,14 @@ func _window_rows() -> int:
 	return 1 if cls.stern_castle.is_empty() else (3 if cls.id == "galleon" else 2)
 
 
-## The heraldry shaders' emblem number for a livery.
-static func _emblem_kind(l: Livery) -> int:
-	match l.emblem:
-		"sun":
-			return 1
-		"skull":
-			return 2
-	return 0
+## The Shipwright's brush at work on the livery's flag (null: put down).
+static func paint_flag(l: Livery, layer: Texture2D) -> void:
+	_materials_lock.lock()
+	var m: ShaderMaterial = _materials.get("flag|" + l.id)
+	_materials_lock.unlock()
+	if m != null:
+		m.set_shader_parameter("painting", layer != null)
+		m.set_shader_parameter("paint_tex", layer)
 
 
 func _cannon_y(t: float) -> float:

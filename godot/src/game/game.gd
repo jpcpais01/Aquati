@@ -111,6 +111,8 @@ var chart: SeaChart
 var chart_art: ChartArt
 ## The helmsman: sails her to a place picked on the chart.
 var helm: Helmsman
+## Her look from the Shipwright: her livery dressed in it, her flag drawn.
+var outfitter: Outfitter
 var dock_port: TradePort
 var market: MarketPanel
 var collisions := Collisions.new()
@@ -249,6 +251,11 @@ func _ready() -> void:
 	_args = _parse_args()
 	if _args.has("phone"):
 		Settings.pretend_phone(412.0 if _args.phone is bool else float(_args.phone))
+	# her look, and the pirates' colours: their flags and marks are drawn on
+	# the worker threads while the sea and the isles go up
+	outfitter = Outfitter.new()
+	add_child(outfitter)
+	outfitter.start(_first_look())
 	sound = Sound.new()
 	sound.name = "Sound"
 	add_child(sound)
@@ -259,6 +266,7 @@ func _ready() -> void:
 	_build_environment()
 	_build_sea()
 	_build_islands()
+	Livery.bake_finish()
 	_build_player()
 	_build_camera()
 	_build_fleet()
@@ -395,6 +403,23 @@ func _warm_up() -> void:
 	hud.warm()
 	chart_art.build(self)
 	get_tree().create_timer(1.0).timeout.connect(w.queue_free)
+
+
+## Her look to start with: kept from the Shipwright, or for a shot one of
+## the famous colours (--colours N, 0 .. 7) or Surprise me (--colours
+## random, --seed S), with --name to christen her.
+func _first_look() -> Dictionary:
+	if not _args.has("colours"):
+		return Progress.look
+	var l: Dictionary
+	if str(_args.colours) == "random":
+		var rng := RandomNumberGenerator.new()
+		rng.seed = int(_args.get("seed", 7))
+		l = ShipLook.random_look("", rng)
+	else:
+		l = ShipLook.preset(clampi(int(_args.colours), 0, ShipLook.PRESETS.size() - 1))
+	l.name = ShipLook.clean_name(str(_args.get("name", "")))
+	return l
 
 
 func _parse_args() -> Dictionary:
@@ -578,6 +603,9 @@ func _build_player(id := "") -> void:
 	var model := shipyard.take(id, livery) if shipyard != null and livery == Shipyard.MINE else null
 	player = Ship.create(ShipClass.named(id), Livery.named(livery), world, Ship.Team.PLAYER, model)
 	add_child(player)
+	if livery == Shipyard.MINE:
+		player.ship_name = outfitter.name_for(player.cls)
+	outfitter.ship = player
 	# two-thirds of her canvas set and already making way
 	var h := SPAWN_HEADING
 	if _args.has("heading"):
@@ -636,6 +664,7 @@ func _build_fleet() -> void:
 	shipyard = Shipyard.new()
 	shipyard.name = "Shipyard"
 	add_child(shipyard)
+	outfitter.shipyard = shipyard
 	# a set piece builds what it needs on the spot; the yard works for a live sea
 	shipyard.set_process(not _args.has("shot"))
 	pirates = Pirates.new()
@@ -1939,6 +1968,8 @@ func _swap_in(now: bool) -> void:
 	old.queue_free()
 	player = Ship.create(ShipClass.named(id), Livery.named(Shipyard.MINE), world, Ship.Team.PLAYER, model)
 	add_child(player)
+	player.ship_name = outfitter.name_for(player.cls)
+	outfitter.ship = player
 	world.ships.append(player)
 	player.struck.connect(func(a: float) -> void: camera.shake(a))
 	_moor(player)

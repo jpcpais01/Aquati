@@ -46,6 +46,12 @@ func _process(delta: float) -> void:
 			_stock.append(_built)
 			_built = null
 		return
+	# your hulls painted before the Shipwright last changed your colours go
+	for i in range(_stock.size() - 1, -1, -1):
+		var m := _stock[i]
+		if m.livery.id == MINE and m.rev != m.livery.rev:
+			_stock.remove_at(i)
+			m.free()
 	_idle -= delta
 	if _idle > 0.0:
 		return
@@ -100,8 +106,12 @@ func take(id: String, livery := "") -> ShipModel:
 	return null
 
 
+## A hull fits a livery wanted (a pirate's for none) unless it was painted
+## before her colours last changed (the Shipwright).
 func _fits(m: ShipModel, livery: String) -> bool:
-	return m.livery.id != MINE if livery.is_empty() else m.livery.id == livery
+	if livery.is_empty():
+		return m.livery.id != MINE
+	return m.livery.id == livery and m.rev == m.livery.rev
 
 
 ## Holds new keels for a few seconds.
