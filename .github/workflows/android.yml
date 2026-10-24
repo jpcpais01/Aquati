@@ -182,8 +182,9 @@ jobs:
           # a fixed 60 frames a second of game time, however fast the runner
           # draws them: the tour of the menus takes its steps on frames (and
           # waits up to 600 of them twice for a hull off the slipway, which
-          # on a fast runner takes more frames, so it has room for both)
-          timeout 400 godot --headless --fixed-fps 60 --quit-after 2800 -- --smoke --smoke-at 2600 2>&1 | tee "$RUNNER_TEMP/smoke.log"
+          # on a fast runner takes more frames, and walks a landing party ashore
+          # and back, so it has room for all of it)
+          timeout 400 godot --headless --fixed-fps 60 --quit-after 3600 -- --smoke --smoke-at 3400 2>&1 | tee "$RUNNER_TEMP/smoke.log"
           if grep -E "SCRIPT ERROR|Parse Error|Invalid call|Invalid access|Invalid get|Invalid set|Nonexistent function|SMOKE FAILED" "$RUNNER_TEMP/smoke.log"; then
             echo "::error::Errors while running the game"
             exit 1
