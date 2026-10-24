@@ -33,6 +33,8 @@ signal fit(slot: String, id: String)
 signal seen
 ## The Guns tab's "Test fire a broadside".
 signal test_fire
+## The Treasure Vault asked for (its banner, or a card still in it).
+signal vault
 signal done
 signal clicked
 
@@ -747,7 +749,8 @@ func _render_cosmetics(kinds: Array) -> void:
 	banner.position = Vector2(_x0, _y + 12.0 * px)
 	banner.pressed.connect(func() -> void:
 		clicked.emit()
-		banner.nudge())
+		banner.nudge()
+		vault.emit())
 	_content.add_child(banner)
 	_cbuttons.append(banner)
 	_y = banner.position.y + banner.size.y
@@ -803,7 +806,7 @@ func _render_cosmetics(kinds: Array) -> void:
 func _tap_item(c: CosArt.Card, kind: String) -> void:
 	clicked.emit()
 	if not c.owned:
-		c.shake()
+		vault.emit()
 		return
 	if _wearing(kind) == c.id:
 		return
