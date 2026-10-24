@@ -13,7 +13,10 @@ extends SceneTree
 ## another, every sound and song is baked and plays as the web's do (see
 ## _check_sound), the waypoints drop, number, arm and strike off as the web's,
 ## the sea chart's geography lands where the web's does and its view maps the
-## sea to the canvas and back (_check_maps), and what's kept between voyages
+## sea to the canvas and back (_check_maps), the helmsman's courses keep to
+## water deep enough for her keel, round the isles, across the high seas, off
+## a goal on land and inside the edge of the known sea (_check_helm), and
+## what's kept between voyages
 ## comes back whole from its save, takes nothing malformed from a damaged one
 ## and survives a crash mid-write (_check_progress). Prints CHECK OK.
 
@@ -770,6 +773,70 @@ func _check_world() -> void:
 	print("world: %d archipelagos, %d plants in %d batches, loaded in %.0f ms" % [regions.size(), plants, batches, (Time.get_ticks_usec() - t0) / 1000.0])
 	_check_ports(w)
 	_check_maps(w)
+	_check_helm(w)
+
+
+## The helmsman's waters (SeaNav), laid out for a sloop and a galleon: a
+## course round an isle, one across the high seas to Las Brumas, a goal on
+## land moved off it onto open water and one past the edge of the known sea
+## brought back inside, every leg in water deeper than her keel needs; and
+## the pill's times as the web writes them.
+func _check_helm(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var steps := 0
+	var soundings := []
+	var centres := PackedVector2Array()
+	for r in w.regions:
+		soundings.append(SeaNav.Soundings.take(r))
+		centres.append(Vector2(r.centre.x, r.centre.z))
+	var helm: GDScript = load("res://src/game/helmsman.gd")
+	var isl: Dictionary = w.regions[0].islands[0]
+	var ix := float(isl.x)
+	var iz := float(isl.z)
+	var ir := float(isl.r)
+	var brumas := Vector2(w.regions[1].centre.x, w.regions[1].centre.z)
+	for id: String in ["sloop", "galleon"]:
+		var cls := ShipClass.named(id)
+		var nav := SeaNav.build(soundings, centres, cls.draft, helm.hard_reach(cls))
+		var deep := cls.draft + 1.0
+		# (the shoalest water along a course's legs, sounded every 2 m)
+		var shoal := func(c: Dictionary) -> float:
+			var xs: PackedVector2Array = c.xs
+			var top := -INF
+			for i in range(1, xs.size()):
+				var n := maxi(1, ceili(xs[i - 1].distance_to(xs[i]) / 2.0))
+				for k in n + 1:
+					var p := xs[i - 1].lerp(xs[i], k / float(n))
+					top = maxf(top, w.ground_height(p.x, p.y))
+			return top
+		var round_isle := nav.plot(ix - ir - 150.0, iz, ix + ir + 150.0, iz)
+		var across := nav.plot(40.0, 210.0, brumas.x, brumas.y)
+		var ashore := nav.plot(40.0, 210.0, ix, iz)
+		var beyond := nav.plot(40.0, 210.0, -3000.0, 3500.0)
+		var bad := []
+		if round_isle.is_empty() or (round_isle.xs as PackedVector2Array).size() < 3 or shoal.call(round_isle) > -deep:
+			bad.append("round %s: %s" % [isl.name, "no course" if round_isle.is_empty() else "%d legs, %.1f m at the shoalest" % [(round_isle.xs as PackedVector2Array).size() - 1, -shoal.call(round_isle)]])
+		if across.is_empty() or across.short or float(across.rest[0]) < 6800.0 or float(across.rest[0]) > 9500.0 or shoal.call(across) > -deep:
+			bad.append("to Las Brumas: %s" % ("no course" if across.is_empty() else "%.0f m, short %s, %.1f m at the shoalest" % [across.rest[0], across.short, -shoal.call(across)]))
+		if ashore.is_empty() or (ashore.goal as Vector2).distance_to(Vector2(ix, iz)) < ir * 0.3 or w.ground_height(ashore.goal.x, ashore.goal.y) > -deep or shoal.call(ashore) > -deep:
+			bad.append("for %s's heart: %s" % [isl.name, "no course" if ashore.is_empty() else "goal %s, %.1f m deep" % [ashore.goal, -w.ground_height(ashore.goal.x, ashore.goal.y)]])
+		if beyond.is_empty() or w.past_edge(beyond.goal.x, beyond.goal.y).z > -60.0:
+			bad.append("past the edge: %s" % ("no course" if beyond.is_empty() else "goal %s, %.0f m past it" % [beyond.goal, w.past_edge(beyond.goal.x, beyond.goal.y).z]))
+		if bad.is_empty():
+			steps += 1
+		else:
+			_fail("helm: the %s's courses: %s" % [id, "; ".join(bad)])
+	var pill: GDScript = load("res://src/ui/helm_pill.gd")
+	var eta := {-1.0: "", 7.0: "~10 s", 24.0: "~20 s", 25.0: "~30 s", 49.0: "~50 s", 50.0: "~1 min", 90.0: "~2 min", 3599.0: "~1 h 0 min", 7260.0: "~2 h 1 min"}
+	var said := []
+	for t: float in eta:
+		if pill.eta(t) != eta[t]:
+			said.append("%s for %d s" % [pill.eta(t), t])
+	if said.is_empty() and is_equal_approx(helm.hard_reach(ShipClass.named("sloop")), 25.05):
+		steps += 1
+	else:
+		_fail("helm: times read %s, a sloop's room %.2f m" % [", ".join(said), helm.hard_reach(ShipClass.named("sloop"))])
+	print("helm: %d of 3 steps as expected; courses plotted in %.0f ms" % [steps, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## The trading ports: the web's own numbers (Mulberry32) and every market's

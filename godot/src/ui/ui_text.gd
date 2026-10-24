@@ -9,6 +9,9 @@ extends Control
 var runs: Array = []
 var wrap := 0.0
 var lead := 1.25
+## Lines exactly `lead` ems apart, glyphs centred in them (a CSS line-height
+## set outright); otherwise never closer than the font's own ascent and descent.
+var exact := false
 var align := HORIZONTAL_ALIGNMENT_LEFT
 ## A width to align within (0: the text's own).
 var fixed := 0.0
@@ -21,11 +24,12 @@ var _lh := 0.0
 var _cut := 0.0
 
 
-func _init(p_runs: Array, p_wrap := 0.0, p_lead := 1.25) -> void:
+func _init(p_runs: Array, p_wrap := 0.0, p_lead := 1.25, p_exact := false) -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	runs = p_runs
 	wrap = p_wrap
 	lead = p_lead
+	exact = p_exact
 	_layout()
 
 
@@ -71,7 +75,7 @@ func _layout() -> void:
 		asc = maxf(asc, f.get_ascent(r[2]))
 		desc = maxf(desc, f.get_descent(r[2]))
 		big = maxf(big, float(r[2]))
-	_lh = maxf(asc + desc, big * lead)
+	_lh = big * lead if exact else maxf(asc + desc, big * lead)
 	_asc = asc + (_lh - asc - desc) * 0.5
 	var line := 0
 	var x := 0.0

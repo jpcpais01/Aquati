@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T01:00Z',
+    entries: [
+      {
+        title: 'Android: the helmsman',
+        notes: [
+          'The thirteenth Android build puts a helmsman at the wheel. Tap a waypoint, a market town or an island on the sea chart and a card opens over it with its name, how far it is and roughly how long she\'ll take. Press Sail there and he plots a course round the islands, the living coral and every shoal too shallow for your keel, then sails her there himself. Tapping open sea still drops a pin, and its card lets you sail to it or lift it.',
+          'He works the wind like a real seaman: when the course runs into its eye he beats up it in long tacks, and he lays off for the current, gives way to ships under your bow, shortens sail into sharp turns and eases in so she glides to a stop on her mark. At a market town he brings her up off the quay with the prompt to come alongside waiting.',
+          'The course glows on the chart and the minimap as a thread of gold flowing toward your goal, and a pill low on the screen shows where you\'re bound, the distance and time left, how she\'s sailing and a ship\'s wheel that turns as he steers. Steer yourself or tap its cross to take the helm back; raising or lowering sail sets the canvas he cruises under.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T00:00Z',
     entries: [
       {

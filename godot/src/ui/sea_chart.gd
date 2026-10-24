@@ -7,9 +7,10 @@ extends CanvasLayer
 ## archipelago engraved from the seabed you sail (a rumour under mist until
 ## you've sailed into it), its isles named once charted and its market towns
 ## marked; and live over it all your ship, the pirates within spyglass
-## range, the plunder afloat, the wind and your waypoints. Drag to pan,
-## pinch or the wheel to zoom, a double tap zooms in; a tap drops a pin on
-## the sea, or lifts the one under the finger.
+## range, the plunder afloat, the wind, your waypoints and the helmsman's
+## course. Drag to pan, pinch or the wheel to zoom, a double tap zooms in;
+## a tap opens a card over the pin, port or isle under the finger (on open
+## sea it drops a pin there first) to sail there or lift the pin.
 ##
 ## Drawn in four layers: the sea and the archipelagos with their names, and
 ## the isles and towns over them, are drawn again only when the view moves;
@@ -21,6 +22,8 @@ signal closed
 signal clicked
 ## A tap on the chart: the world spot, and how far round it a fingertip reaches (m).
 signal tapped(x: float, z: float, pick: float)
+## The Clear pill lifted every pin.
+signal pins_cleared
 
 ## The web's CSS pixels in HUD units: the chart's canvas pixels, and its
 ## buttons' --u.
@@ -33,10 +36,15 @@ const DOUBLE := 0.45
 const SEA_INK := Color(8.0 / 255.0, 30.0 / 255.0, 40.0 / 255.0)
 const GLASS_3 := Color(8.0 / 255.0, 20.0 / 255.0, 30.0 / 255.0, 0.86)
 const PIN_GOLD := Color("#ffd27a")
-const LEGEND := [["you", "You"], ["foe", "Pirates"], ["loot", "Salvage"], ["wind", "Wind"], ["pin", "Tap: add / remove pin"]]
+const LEGEND := [["you", "You"], ["foe", "Pirates"], ["loot", "Salvage"], ["wind", "Wind"], ["pin", "Tap: pin · sail there"]]
 
 var art: ChartArt
 var scene: MapScene
+## The card over the place last tapped (the game fills it and answers its buttons).
+var card: ChartCard
+## When a finger or the mouse last went down on the chart (ms): the
+## helmsman leaves it open while a hand is on it.
+var poked_ms := 0
 
 var _root: Control
 var _back: ColorRect
@@ -82,6 +90,9 @@ var _tap_at := -1.0
 var _last_up := -10.0
 var _last_at := Vector2.ZERO
 var _down_outside := false
+## The world spot the card stands over, and its mark's colour for the ring breathing round it.
+var _card_at := Vector2.ZERO
+var _card_color := HudStyle.GOLD
 
 
 func _ready() -> void:
@@ -120,6 +131,8 @@ func _ready() -> void:
 	_ui = Control.new()
 	_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_ui)
+	card = ChartCard.new()
+	_ui.add_child(card)
 	var g := Gradient.new()
 	g.offsets = PackedFloat32Array([0.0, 0.7, 1.0])
 	g.colors = PackedColorArray([Color8(206, 222, 226, 87), Color8(180, 204, 212, 41), Color8(180, 204, 212, 0)])
@@ -166,6 +179,7 @@ func close() -> void:
 			b.cancel()
 	_pts.clear()
 	_tap_at = -1.0
+	card.hide_card()
 	visible = false
 	set_process(false)
 
@@ -174,13 +188,34 @@ func is_open() -> bool:
 	return visible
 
 
-## The back button: the chart closes.
+## The back button: the card closes, else the chart.
 func go_back() -> bool:
 	if not visible:
 		return false
+	if card.is_open():
+		card.closed.emit()
+		return true
 	close()
 	closed.emit()
 	return true
+
+
+## Opens the card over a world spot (ChartCard.show_place's `info`), its
+## mark ringed in the card's colour; already open, it hops over.
+func show_card(x: float, z: float, info: Dictionary) -> void:
+	_card_at = Vector2(x, z)
+	_card_color = info.get("accent", HudStyle.GOLD)
+	card.show_place(info, Vector2(_W, _H))
+	_place_card()
+
+
+func hide_card() -> void:
+	card.hide_card()
+
+
+func _place_card() -> void:
+	if card.is_open():
+		card.place(to_canvas(_card_at.x, _card_at.y), _W, _H)
 
 
 ## Back over your ship, at the zoom you have.
@@ -244,6 +279,7 @@ func _refresh() -> void:
 	_flow.queue_redraw()
 	_live.queue_redraw()
 	_sync_head()
+	_place_card()
 
 
 ## The chart coming in: the world frosting over (the web's fade, 0.35 s),
@@ -328,6 +364,8 @@ static func _blur_lod(r: float) -> float:
 
 func _build_ui() -> void:
 	for c in _ui.get_children():
+		if c == card:
+			continue
 		_ui.remove_child(c)
 		c.queue_free()
 	_clear = null
@@ -364,6 +402,8 @@ func _build_ui() -> void:
 		go_back())
 	_btns.add_child(_centre)
 	_btns.add_child(_close)
+	# the card over everything in the frame
+	_ui.move_child(card, -1)
 	_sync_head()
 
 
@@ -440,9 +480,15 @@ func _clear_pill(n: int) -> UiButton:
 	b.add_child(t)
 	b.pressed.connect(func() -> void:
 		clicked.emit()
-		if scene.pins != null:
-			scene.pins.clear())
+		clear_pins())
 	return b
+
+
+## Lifts every waypoint off the chart (its "Clear pins").
+func clear_pins() -> void:
+	if scene.pins != null:
+		scene.pins.clear()
+	pins_cleared.emit()
 
 
 # ------------------------------------------------------------------ the view
@@ -495,7 +541,7 @@ func _region_at(x: float, z: float) -> Region:
 
 
 ## Whether the chart may show a spot (not inside a rumoured archipelago).
-func _shown(x: float, z: float) -> bool:
+func shows(x: float, z: float) -> bool:
 	return _charted(_region_at(x, z))
 
 
@@ -545,6 +591,7 @@ func _handle(e: InputEvent) -> void:
 
 func _press(id: int, at: Vector2, down: bool) -> void:
 	if down:
+		poked_ms = Time.get_ticks_msec()
 		if _pts.is_empty():
 			_multi = false
 		_pts[id] = at
@@ -892,7 +939,7 @@ func _paint_over(ci: CanvasItem) -> void:
 	# the market towns
 	for tp in scene.ports:
 		var w := MapScene.port_at(tp)
-		if not _shown(w.x, w.y):
+		if not shows(w.x, w.y):
 			continue
 		var at := to_canvas(w.x, w.y)
 		if not view.has_point(at):
@@ -902,14 +949,20 @@ func _paint_over(ci: CanvasItem) -> void:
 			MapMarks.words(ci, at - Vector2(0.0, 18.0 * PX), tp.title, cinzel, _px(12.0), Color("#ffd77a"), 4.0 * PX, Color(SEA_INK, 0.8))
 
 
-## The live marks over it all: your spyglass's reach and your heading, the
-## pirates in range, you, your waypoints with their courses, the wind's rose
-## and the scale.
+## The live marks over it all: the helmsman's course, your spyglass's reach
+## and your heading, the pirates in range, you, your waypoints with their
+## courses, the place the card is open over, the wind's rose and the scale.
 func _paint_live(ci: CanvasItem) -> void:
 	var s := _scale()
 	var view := Rect2(Vector2.ZERO, Vector2(_W, _H)).grow(4.0 * PX)
 	var me := scene.player
 	var pc := to_canvas(me.pos.x, me.pos.z)
+	if scene.route.size() > 1:
+		var course := PackedVector2Array()
+		course.resize(scene.route.size())
+		for i in scene.route.size():
+			course[i] = to_canvas(scene.route[i].x, scene.route[i].y)
+		MapMarks.route(ci, course, _clock, PX, view.grow(20.0 * PX))
 	# the spyglass's reach, and the way she's heading
 	var reach := ChartArt.SPYGLASS * s
 	var ring := PackedVector2Array()
@@ -967,6 +1020,13 @@ func _paint_live(ci: CanvasItem) -> void:
 			var t := MapScene.distance(Vector2(pin.x - me.pos.x, pin.z - me.pos.z).length())
 			var fs := _px(11.5)
 			MapMarks.words(ci, Vector2(at.x, at.y + 7.0 * PX + inter6.get_ascent(fs)), t, inter6, fs, css, 3.5 * PX, Color(SEA_INK, 0.8), true)
+	# the place whose card is open: a soft ring breathing round it
+	if card.is_open():
+		var at := to_canvas(_card_at.x, _card_at.y)
+		var b := 0.5 + 0.5 * sin(_clock * 3.2)
+		var rr := (15.0 + b * 3.0) * PX
+		ci.draw_arc(at, rr, 0.0, TAU, 64, Color(_card_color, 0.55 + 0.35 * b), 2.0 * PX, true)
+		ci.draw_arc(at, rr, 0.0, TAU, 64, Color(_card_color, 0.25), 6.0 * PX, true)
 	var w := scene.world.wind
 	_wind_rose(ci, Vector2(_W - 58.0 * PX, _H - 58.0 * PX), 40.0 * PX, w.dir_x, w.dir_z)
 	_scale_bar(ci, Vector2(18.0 * PX, _H - 22.0 * PX), s)

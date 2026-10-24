@@ -173,7 +173,7 @@ jobs:
           set -uo pipefail
           # a fixed 60 frames a second of game time, however fast the runner
           # draws them: the tour of the menus takes its steps on frames
-          timeout 300 godot --headless --fixed-fps 60 --quit-after 1400 -- --smoke --smoke-at 1200 2>&1 | tee "$RUNNER_TEMP/smoke.log"
+          timeout 300 godot --headless --fixed-fps 60 --quit-after 1700 -- --smoke --smoke-at 1500 2>&1 | tee "$RUNNER_TEMP/smoke.log"
           if grep -E "SCRIPT ERROR|Parse Error|Invalid call|Invalid access|Invalid get|Invalid set|Nonexistent function|SMOKE FAILED" "$RUNNER_TEMP/smoke.log"; then
             echo "::error::Errors while running the game"
             exit 1

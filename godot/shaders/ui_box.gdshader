@@ -28,9 +28,10 @@ uniform float ring = 0.0;
 /// The drop shadow: colour, then (y offset, blur).
 uniform vec4 c_shadow = vec4(0.0, 0.031, 0.055, 0.38);
 uniform vec2 shadow = vec2(18.0, 50.0);
-/// A glow round the box (box-shadow 0 0 blur), its blur.
+/// A glow round the box (box-shadow 0 0 blur spread), its blur and spread.
 uniform vec4 c_glow = vec4(0.0);
 uniform float glow = 0.0;
+uniform float glow_spread = 0.0;
 /// A glow inside the edge (box-shadow inset 0 0 blur), its blur.
 uniform vec4 c_inset = vec4(0.0);
 uniform float inset = 0.0;
@@ -76,7 +77,7 @@ void fragment() {
 		col = over(col, c_shadow.rgb, c_shadow.a * soft(ds, shadow.y) * outside);
 	}
 	if (glow > 0.0 && c_glow.a > 0.0) {
-		col = over(col, c_glow.rgb, c_glow.a * soft(d, glow) * outside);
+		col = over(col, c_glow.rgb, c_glow.a * soft(d - glow_spread, glow) * outside);
 	}
 	if (ring > 0.0) {
 		col = over(col, c_ring.rgb, c_ring.a * outside * clamp(0.5 - (d - ring) / aa, 0.0, 1.0));

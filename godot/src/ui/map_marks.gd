@@ -108,6 +108,33 @@ static func pin(ci: CanvasItem, at: Vector2, r: float, color: Color, label: Stri
 	ci.draw_string(font, Vector2(head.x - font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x * 0.5, head.y + middle(font, sz)), label, HORIZONTAL_ALIGNMENT_LEFT, -1, sz, ink)
 
 
+## The helmsman's course (the web's drawRoute), through `pts` on the canvas:
+## a broad faint underlay, gold dashes flowing on ahead of her (`time` in
+## seconds) in a soft glow, and her goal ringed and dotted; `s` scales it all
+## (the chart draws it in its CSS pixels, the minimap half as big again).
+## Dashes reaching outside `clip` are left out.
+static func route(ci: CanvasItem, pts: PackedVector2Array, time: float, s: float, clip: Rect2) -> void:
+	if pts.size() < 2:
+		return
+	# the underlay: one shape (round-capped and round-jointed), so its faint gold never doubles up
+	for poly in Geometry2D.offset_polyline(pts, 3.5 * s, Geometry2D.JOIN_ROUND, Geometry2D.END_ROUND):
+		if not Geometry2D.is_polygon_clockwise(poly):
+			ci.draw_colored_polygon(poly, Color(1.0, 206.0 / 255.0, 110.0 / 255.0, 0.2))
+	# the dashes flowing on ahead, in a glow (the canvas shadow, as two soft broader strokes under them)
+	var off := -time * 26.0 * s
+	var wide := dashes(pts, 9.0 * s, 7.0 * s, off, 2.5 * s, clip)
+	if not wide.is_empty():
+		ci.draw_multiline(wide, Color(1.0, 200.0 / 255.0, 90.0 / 255.0, 0.1), 9.4 * s, true)
+		ci.draw_multiline(dashes(pts, 9.0 * s, 7.0 * s, off, 1.75 * s, clip), Color(1.0, 200.0 / 255.0, 90.0 / 255.0, 0.14), 5.9 * s, true)
+		ci.draw_multiline(dashes(pts, 9.0 * s, 7.0 * s, off, 1.2 * s, clip), Color("#ffdc8c"), 2.4 * s, true)
+	# her goal: a ring spreading off it, and a gold dot
+	var end := pts[pts.size() - 1]
+	var ring := fposmod(time * 0.7, 1.0)
+	ci.draw_arc(end, (5.0 + ring * 14.0) * s, 0.0, TAU, 48, Color(1.0, 220.0 / 255.0, 140.0 / 255.0, 0.8 * (1.0 - ring)), 2.0 * s, true)
+	ci.draw_circle(end, 4.0 * s, Color("#ffe3a0"), true, -1.0, true)
+	ci.draw_circle(end, 4.0 * s, Color(40.0 / 255.0, 26.0 / 255.0, 4.0 / 255.0, 0.8), false, 1.5 * s, true)
+
+
 ## How far below a line's middle its baseline sits, for text set on its
 ## middle (the canvas's textBaseline "middle").
 static func middle(font: Font, size: int) -> float:
@@ -130,11 +157,15 @@ static func words(ci: CanvasItem, at: Vector2, text: String, font: Font, size: i
 ## pattern shifted `offset` along it (its lineDashOffset): each dash straight
 ## from its start to its end, lengthened `cap` past both (a round cap's
 ## reach), and only those reaching into `clip`. Pairs for draw_multiline.
+## (Stretches of line well clear of `clip` are stepped over in one go, so a
+## long course on a chart zoomed in costs no more than what shows of it.)
 static func dashes(pts: PackedVector2Array, on: float, off: float, offset: float, cap: float, clip: Rect2) -> PackedVector2Array:
 	var out := PackedVector2Array()
 	var period := on + off
 	if pts.size() < 2 or on <= 0.0 or off <= 0.0:
 		return out
+	# a dash reaching into the clip lies wholly within this
+	var near := clip.grow(on + cap + 1.0)
 	var ph := fposmod(offset, period)
 	var start := pts[0]
 	for i in range(1, pts.size()):
@@ -144,12 +175,18 @@ static func dashes(pts: PackedVector2Array, on: float, off: float, offset: float
 		if length <= 0.0:
 			continue
 		var dir := (b - a) / length
-		var t := 0.0
+		var span := _span(a, dir, length, near)
+		var t := span.x
+		if t > 0.0:
+			# over the stretch before the line comes near: a dash begun in it starts where it began
+			ph = fposmod(ph + t, period)
+			if ph < on and t - ph >= 0.0:
+				start = a + dir * (t - ph)
 		while true:
 			var bound := on if ph < on else period
 			var need := bound - ph
-			if t + need > length:
-				ph += length - t
+			if t + need > span.y:
+				ph += span.y - t
 				break
 			t += need
 			var p := a + dir * t
@@ -159,10 +196,38 @@ static func dashes(pts: PackedVector2Array, on: float, off: float, offset: float
 			else:
 				ph = 0.0
 				start = p
+		if span.y < length:
+			# and over the stretch after it
+			ph = fposmod(ph + length - span.y, period)
+			if ph < on and length - ph >= span.y:
+				start = b - dir * ph
 	# (the last dash cut short where the line ends, unless it hasn't begun)
 	if ph > 0.0 and ph < on:
 		_dash(out, start, pts[pts.size() - 1], cap, clip)
 	return out
+
+
+## The stretch of a line from `a` along `dir` (`length` long) inside `r`:
+## (from, to) along it, both `length` when it never comes in.
+static func _span(a: Vector2, dir: Vector2, length: float, r: Rect2) -> Vector2:
+	var t0 := 0.0
+	var t1 := length
+	for axis in 2:
+		var p := a[axis]
+		var d := dir[axis]
+		var lo := r.position[axis]
+		var hi := r.end[axis]
+		if absf(d) < 1e-9:
+			if p < lo or p > hi:
+				return Vector2(length, length)
+			continue
+		var ta := (lo - p) / d
+		var tb := (hi - p) / d
+		t0 = maxf(t0, minf(ta, tb))
+		t1 = minf(t1, maxf(ta, tb))
+		if t0 >= t1:
+			return Vector2(length, length)
+	return Vector2(t0, t1)
 
 
 static func _dash(out: PackedVector2Array, a: Vector2, b: Vector2, cap: float, clip: Rect2) -> void:

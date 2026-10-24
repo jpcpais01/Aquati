@@ -28,6 +28,8 @@ signal map_pressed
 signal clicked
 ## The touch controls came up (a finger was seen) or went.
 signal touch_set(on: bool)
+## The helmsman's pill: the captain takes the helm back.
+signal helm_cancel
 
 var controls: Controls
 
@@ -90,6 +92,7 @@ var _pause: UiButton
 var _pins: PinTags
 var _lever: SailLever
 var _helm: HelmRing
+var _ap: HelmPill
 var _toasts: VBoxContainer
 var _toast_box: StyleBoxFlat
 var _shown := {}
@@ -314,6 +317,11 @@ func _ready() -> void:
 	_tag.visible = false
 	root.add_child(_tag)
 
+	# the helmsman's pill, low in the middle while he has the wheel
+	_ap = HelmPill.new()
+	_ap.cancel.connect(func() -> void: helm_cancel.emit())
+	root.add_child(_ap)
+
 	# notes across the top: an island discovered
 	_toasts = VBoxContainer.new()
 	_toasts.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -391,6 +399,8 @@ func _layout() -> void:
 		# between the thumbs is free (for the prompt to come alongside)
 		_pill.position = Vector2(mx, vp.y - my - SailLever.TH - 8.0 * HudStyle.PX - ps.y)
 	_lever.position = Vector2(mx, vp.y - my - SailLever.TH)
+	# the helmsman's pill: above the knots on a desktop; on touch, where the knots were
+	_ap.place(Vector2(vp.x * 0.5, vp.y - my - (0.0 if _touch_ui else 66.0 * k)), minf(420.0 * k, vp.x - 2.0 * mx - 24.0 * HudStyle.PX))
 	_pad.position = Vector2(vp.x - mx - _pad.size.x, vp.y - my - _pad.size.y)
 	# the shot button rides over Fire, a little clear of it
 	_pie.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotPie.BTN * 0.5)
@@ -435,8 +445,25 @@ func announce_view(view: int) -> void:
 	_zoom.announce(view)
 
 
+## The helmsman's pill: his view of her course (Helmsman.view; {} while he
+## hasn't the wheel), the rudder he holds, and the frame's seconds.
+func show_helm(view: Dictionary, rudder: float, dt: float) -> void:
+	_ap.show_view(view, rudder, dt)
+
+
+## Whether the helmsman's pill is up.
+func helm_on() -> bool:
+	return _ap.on()
+
+
+## How tall the helmsman's pill stands while it's up (0 if not): the prompt to come alongside steps up over it.
+func helm_height() -> float:
+	return _ap.size.y if _ap.on() else 0.0
+
+
 ## The waypoints' tags where their pillars stand, or on the screen's edge.
 func show_pins(pins: Waypoints, from: Vector3, cam: Camera3D, world: World) -> void:
+	_pins.keep_off = _ap.get_rect() if _ap.on() else Rect2()
 	_pins.show_pins(pins, from, cam, world)
 
 

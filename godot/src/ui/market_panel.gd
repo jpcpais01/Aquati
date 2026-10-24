@@ -128,6 +128,8 @@ var _p_state := ""
 var _p_dict := {}
 var _p_ok := false
 var _p_y := 0.0
+## The helmsman's pill is up in the bottom middle (this tall; 0: down): the prompt steps up over it.
+var _pill_h := 0.0
 var _p_t := -1.0
 
 
@@ -904,6 +906,15 @@ func set_dock(d: Dictionary) -> void:
 		_prompt.modulate.a = 0.0
 
 
+## The helmsman's pill up in the bottom middle, this tall (0: down): the prompt steps up over it.
+func set_pill(height: float) -> void:
+	if height == _pill_h:
+		return
+	_pill_h = height
+	if _prompt.visible:
+		_lay_prompt()
+
+
 ## The pill: the key for it (with keys), "Dock at" the town (or just its name
 ## while she may not), and the why above it; gold-edged while she may.
 func _lay_prompt() -> void:
@@ -952,7 +963,12 @@ func _lay_prompt() -> void:
 		_p_why.size = ws
 		_p_why.position = Vector2((w - ws.x) * 0.5, -5.0 * K - ws.y)
 	var my := vp.y * 0.03
-	_p_y = vp.y - my - h - (0.0 if touch else 104.0 * K)
+	# (the web's 58 and 160 px over the pill, and never onto it: on a small
+	# screen the pill's lines keep it taller than the web allowed for)
+	var lift := 0.0 if touch else 104.0 * K
+	if _pill_h > 0.0:
+		lift = maxf(58.0 * K, _pill_h + 6.0 * K) if touch else maxf(160.0 * K, 66.0 * K + _pill_h + 6.0 * K)
+	_p_y = vp.y - my - h - lift
 	_prompt.position = Vector2((vp.x - w) * 0.5, _p_y)
 
 

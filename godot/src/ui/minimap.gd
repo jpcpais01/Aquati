@@ -6,8 +6,9 @@ extends Control
 ## with the web's marks over them: the trading ports' gilt medallions (the
 ## nearest pinned to the rim when none is in sight), the waypoints (those
 ## past the rim pinned to it with how far to sail), the isles not yet charted,
-## plunder afloat by its rarity, the pirates and your ship; out on the high
-## seas each archipelago is pinned to the rim, named, to steer by.
+## plunder afloat by its rarity, the helmsman's course, the pirates and your
+## ship; out on the high seas each archipelago is pinned to the rim, named,
+## to steer by.
 ##
 ## The map is drawn into its own little canvas twenty times a second, as the
 ## web redraws its own, and shown every frame as a disc with a soft shadow
@@ -203,6 +204,13 @@ class _Marks:
 			var at3 := MapScene.port_at(near)
 			var a := atan2(at3.y - me.z, at3.x - me.x)
 			MapMarks.port(self, c + Vector2(cos(a), sin(a)) * (h - 18.0 * u), 10.0 * u, 0.9)
+		# the helmsman's course, flowing on ahead of her
+		if sc.route.size() > 1:
+			var course := PackedVector2Array()
+			course.resize(sc.route.size())
+			for i in sc.route.size():
+				course[i] = to_map.call(sc.route[i].x, sc.route[i].y)
+			MapMarks.route(self, course, Time.get_ticks_msec() / 1000.0, 1.5 * u, Rect2(Vector2.ZERO, size))
 		# the other ships: pirates in red, your escorts in the fleet's aqua
 		for s in sc.world.ships:
 			if s == sc.player or not s.alive:
