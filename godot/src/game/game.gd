@@ -13,17 +13,22 @@ extends Node3D
 ## ship picked, Set Sail for Las Brumas, paused there, Settings opened and
 ## closed, back to the harbour; a turn at the Shipwright (the Sails tab, a
 ## famous ship's colours, the brush on her flag, a design saved and deleted,
-## Done); Set Sail for the home waters, paused and
+## oak strakes fitted on the Refit tab and her hull rebuilt with them, Done);
+## Set Sail for the home waters, paused and
 ## resumed with the back button; the sea chart opened off the minimap, a pin
 ## dropped on it, "Sail there" and the helmsman setting a course, the chart
 ## closing itself; opened again, the pin's card, "Lift pin", the chart closed
-## with the back button; then a market) and says what it saw in SMOKE MENU.
+## with the back button; then a market, a part bought from its shipwright
+## among the rest) and says what it saw in SMOKE MENU.
 ## The menus for a shot: --menu opens in the harbour (--orbit A sets how far
 ## round her the camera has come), --seapick on the sea picker, --pause puts
 ## the voyage on hold, --settings opens Settings (over the harbour, or with
 ## --pause over the paused voyage), --shipwright TAB opens the Shipwright on
-## a tab (flag, sails, hull or presets) with --paint the brush out and a
-## stroke across her flag, or --any-colour the colour picker up; it opens at
+## a tab (flag, sails, hull, refit or presets) with --paint the brush out and
+## a stroke across her flag, --any-colour the colour picker up, or --refit
+## SLOT (or a part's id, or SLOT:standard) a part picked on the Refit tab;
+## the parts: --parts all|none|ID,ID fills (or empties) the locker, --fit
+## ID,ID|none bolts them on, --purse G puts G gold in the purse; it opens at
 ## the home port's quay, where --port-eye X,Y,Z and --port-look X,Y,Z stand
 ## the lens in the port's own frame (+x along the quay toward the tavern,
 ## +z out to sea, the quay's boards 1.8 m up) instead of the tab's shot.
@@ -52,8 +57,10 @@ extends Node3D
 ## clear, --voyage puts a long voyage behind her (to see a full farewell).
 ## A port: --dock K ties her up at the K-th market (0 .. 5) with its market
 ## open (with --hold, goods to sell; --sell ID, or all, sells it just
-## before the frame); --off K puts her off its quay, the prompt to come
-## alongside up.
+## before the frame; --wright scrolls to the shipwright's counter, and
+## --buy N buys its N-th part just before the frame); --off K puts her off
+## its quay, the prompt to come alongside up. --find ID finds a part a
+## second before the frame (its toast up).
 ## Shot and plunder: --ammo ID loads a kind of shot (round, shell, fire,
 ## chain, grape) and --foe-ammo ID has the set piece's foe fire nothing
 ## else; --loot N[,TIER] floats N barrels or chests (of a tier, 0..4) round
@@ -85,7 +92,7 @@ const SPAWN_HEADING := PI * 0.82
 ## went down, as on the web.
 const DIVE := 8.6
 ## The steps of the smoke test's tour of the menus (_tour_menus).
-const TOUR_STEPS := 26
+const TOUR_STEPS := 27
 ## Frames the tour waits off a quay for pirates to leave her be.
 const TOUR_CHASED := 240
 
@@ -274,6 +281,7 @@ class Farewell:
 
 func _ready() -> void:
 	_args = _parse_args()
+	_parts_flags()
 	if _args.has("phone"):
 		Settings.pretend_phone(412.0 if _args.phone is bool else float(_args.phone))
 	# her look, and the pirates' colours: their flags and marks are drawn on
@@ -447,6 +455,41 @@ func _first_look() -> Dictionary:
 		l = ShipLook.preset(clampi(int(_args.colours), 0, ShipLook.PRESETS.size() - 1))
 	l.name = ShipLook.clean_name(str(_args.get("name", "")))
 	return l
+
+
+## The parts' debug flags: --parts all|none|ID,ID puts them in the locker
+## (or empties it), --fit ID,ID|none bolts them onto the ship she sails out
+## in (found first if need be), or takes every part off; --purse G puts G
+## gold in the purse.
+func _parts_flags() -> void:
+	if _args.has("purse"):
+		Progress.purse = maxi(0, int(_args.purse))
+		Progress.purse_changed.emit(Progress.purse)
+	if _args.has("parts"):
+		if _args.parts is bool or str(_args.parts) == "all":
+			Progress.grant_all_parts()
+		elif str(_args.parts) == "none":
+			Progress.parts = Parts.fresh()
+			Progress.parts_changed.emit()
+		else:
+			for id in str(_args.parts).split(",", false):
+				if not Progress.owns(id):
+					Progress.grant_part(id)
+	if not _args.has("fit"):
+		return
+	var cls_id := str(_args.get("ship", "sloop" if _args.has("shot") else Progress.ship))
+	for slot in Parts.SLOTS:
+		Progress.equip(cls_id, slot, "")
+	if str(_args.fit) == "none":
+		return
+	for id in str(_args.fit).split(",", false):
+		var p := Parts.part(id)
+		if p.is_empty():
+			push_warning("--fit: no such part " + id)
+			continue
+		if not Progress.owns(id):
+			Progress.grant_part(id)
+		Progress.equip(cls_id, p.slot, id)
 
 
 func _parse_args() -> Dictionary:
@@ -628,7 +671,8 @@ func _build_player(id := "") -> void:
 		id = str(_args.get("ship", "sloop" if _args.has("shot") else Progress.ship))
 	var livery := str(_args.get("livery", Shipyard.MINE))
 	var model := shipyard.take(id, livery) if shipyard != null and livery == Shipyard.MINE else null
-	player = Ship.create(ShipClass.named(id), Livery.named(livery), world, Ship.Team.PLAYER, model)
+	var fit := Progress.loadout(id) if livery == Shipyard.MINE else {}
+	player = Ship.create(ShipClass.named(id), Livery.named(livery), world, Ship.Team.PLAYER, model, fit)
 	add_child(player)
 	if livery == Shipyard.MINE:
 		player.ship_name = outfitter.name_for(player.cls)
@@ -901,6 +945,13 @@ func _process(delta: float) -> void:
 	if _args.has("sell") and _frames == maxi(1, int(_args.get("frames", 90)) - 24):
 		# (the coins are in the air as the frame is saved)
 		_sell("" if str(_args.sell) == "all" else str(_args.sell))
+	if _args.has("wright") and _frames == maxi(1, int(_args.get("frames", 90)) - 40):
+		market.show_wright()
+	if _args.has("buy") and dock_port != null and _frames == maxi(1, int(_args.get("frames", 90)) - 9):
+		# (swelling on the counter as the frame is saved)
+		_buy_part(str(Parts.port_stock(dock_port.index + 1)[clampi(int(_args.buy), 0, 2)].id))
+	if _args.has("find") and _frames == maxi(1, int(_args.get("frames", 90)) - 60):
+		_find_part(str(_args.find), "In the treasure chest", player.pos)
 	if _args.has("smoke") and _frames == int(_args.get("smoke-at", 300)):
 		if _tour:
 			print("SMOKE MENU: " + ", ".join(_tour_log))
@@ -1507,9 +1558,10 @@ func _haul(it: Loot.Item) -> void:
 	sound.treasure(it.tier)
 	var r := Treasure.rarity_of(best)
 	if r >= 2:
-		hud.loot_toast(best, r, "%s plunder" % Treasure.RARITY_NAME[r], good, 3.8 if r == 4 else 3.0)
+		hud.loot_toast(Icons.plunder(best, 48.0), r, "%s plunder" % Treasure.RARITY_NAME[r], good, 3.8 if r == 4 else 3.0)
 	if it.tier >= 3:
 		camera.shake(0.22 if it.tier == 4 else 0.1)
+	_chest_part(it.tier, at, 0.9)
 
 
 ## Says, now and then, that the hold is full and where to empty it.
@@ -1600,6 +1652,10 @@ func _on_bounty(ship: Ship, gold: int) -> void:
 	hud.toast("+%d gold bounty" % gold, "%s sunk" % ship.ship_name, 3.6)
 	sound.coin()
 	voyage.note("kill", "Sank the %s" % ship.ship_name, "%s · +%d gold" % [ship.cls.name, gold])
+	# whatever she had bolted on is yours to pull from the wreck
+	var fit: Dictionary = ship.model.fit
+	if not fit.is_empty():
+		get_tree().create_timer(1.4).timeout.connect(_find_part.bind(str(fit.values()[0]), "Salvaged from the wreck", ship.pos))
 
 
 ## She's going down: the blow lands in slow motion, the HUD steps aside and
@@ -1845,6 +1901,7 @@ func _harbour_first() -> bool:
 ## the veil between scenes and the frame counter.
 func _build_menus() -> void:
 	harbour = Harbour.new()
+	harbour.loadout = Progress.loadout
 	harbour.picked.connect(_preview)
 	harbour.sail.connect(_choose_sea)
 	harbour.shipwright.connect(_open_shipwright)
@@ -1866,6 +1923,11 @@ func _build_menus() -> void:
 	shipwright.zoom.connect(func(f: float) -> void: _sw_zoom = clampf(_sw_zoom * f, 0.6, 1.5))
 	shipwright.done.connect(_close_shipwright)
 	shipwright.clicked.connect(sound.click)
+	# the Refit tab: a part fitted, the new ones looked at, where one is sold
+	shipwright.fit.connect(_fit_part)
+	shipwright.seen.connect(func() -> void: Progress.mark_seen())
+	shipwright.where_sold = _where_sold
+	Progress.parts_changed.connect(func() -> void: shipwright.set_parts(Progress.parts))
 	add_child(shipwright)
 	outfitter.flag_drawn.connect(shipwright.set_flag)
 	market = MarketPanel.new()
@@ -1873,6 +1935,7 @@ func _build_menus() -> void:
 	market.sell_all.connect(_sell.bind(""))
 	market.repair.connect(_repair)
 	market.restock.connect(_restock)
+	market.buy_part.connect(_buy_part)
 	market.leave.connect(_cast_off)
 	market.dock.connect(_dock_here)
 	# (the market's buttons knock on the merchant's counter)
@@ -1923,11 +1986,16 @@ func _open_settings() -> void:
 
 
 ## The menus a shot opens on (--seapick, --pause, --settings, --shipwright
-## TAB with --paint or --any-colour).
+## TAB with --paint, --any-colour or --refit SLOT|PART).
 func _stage_menus() -> void:
 	if _args.has("shipwright"):
 		_open_shipwright(true)
 		shipwright.pick_tab(str(_args.shipwright))
+		if _args.has("refit"):
+			# a slot's track on the Refit tab and its fitted step tapped, or a
+			# part's (--refit hull:aegis), or the standard fit's (hull:standard)
+			var r := str(_args.refit)
+			shipwright.pick_part(r.get_slice(":", 0), "?" if not r.contains(":") else ("" if r.ends_with(":standard") else r))
 		if _args.has("paint"):
 			# a flourish of gold across her flag, the brush still out
 			shipwright.paint_stroke(PackedVector2Array([Vector2(0.18, 0.78), Vector2(0.32, 0.62), Vector2(0.48, 0.7), Vector2(0.64, 0.52), Vector2(0.8, 0.6)]))
@@ -2038,7 +2106,7 @@ func _swap_in(now: bool) -> void:
 	old.removed = true
 	world.ships.erase(old)
 	old.queue_free()
-	player = Ship.create(ShipClass.named(id), Livery.named(Shipyard.MINE), world, Ship.Team.PLAYER, model)
+	player = Ship.create(ShipClass.named(id), Livery.named(Shipyard.MINE), world, Ship.Team.PLAYER, model, Progress.loadout(id))
 	add_child(player)
 	player.ship_name = outfitter.name_for(player.cls)
 	outfitter.ship = player
@@ -2097,7 +2165,7 @@ func _into_port() -> void:
 	_sw_zoom = 1.0
 	_sw_t = 0.0
 	shipwright.place = home.title
-	shipwright.open(outfitter.look, Progress.designs)
+	shipwright.open(outfitter.look, Progress.designs, p.cls.id, Progress.parts)
 	shipwright.set_flag(outfitter.flag_texture())
 	camera.begin_shot()
 	_frame_shipwright(0.0)
@@ -2132,6 +2200,40 @@ func _out_of_port() -> void:
 	_note_tour("left the Shipwright")
 
 
+## A part fitted at the Shipwright, or the standard fit (""): hers, and the
+## yard builds it into her (Outfitter); a burst of its rarity's light where
+## it goes on, and its chime (the web's refitPreview).
+func _fit_part(slot: String, id: String) -> void:
+	var p := player
+	Progress.equip(p.cls.id, slot, id)
+	var pt := Parts.part(id)
+	if pt.is_empty():
+		return
+	var sh := p.model.shape
+	var mast: Dictionary = p.cls.masts[0]
+	var local: Vector3 = {
+		"hull": Vector3(0.0, sh.top(0.5) + 0.6, 0.0),
+		"sails": Vector3(0.0, float(mast.height) * 0.7, sh.z(float(mast.t))),
+		"guns": Vector3(0.0, sh.main_deck_y(0.5) + 1.0, 0.0),
+		"figure": Vector3(0.0, sh.top(1.0), sh.z(1.0) + 0.6),
+	}[slot]
+	var tier := mini(4, int(pt.tier) + 1)
+	world.fx.treasure(p.model.to_global(local), Loot.GLOW[tier], tier)
+	if int(pt.tier) >= 2:
+		sound.treasure(tier)
+	else:
+		sound.coin()
+
+
+## Which trading port's shipwright has a part in today ("" none: the web's whereSold).
+func _where_sold(id: String) -> String:
+	for port in ports.ports:
+		for pt in Parts.port_stock(port.index + 1):
+			if pt.id == id:
+				return port.title
+	return ""
+
+
 ## The Shipwright's camera on whatever the open tab is about, framed in the
 ## space its panel leaves, swaying a little (the web's framePort).
 func _frame_shipwright(dt: float) -> void:
@@ -2149,8 +2251,8 @@ func _frame_shipwright(dt: float) -> void:
 
 
 ## The Shipwright's shot of her (the web's port.shot): where the camera
-## stands and what it looks at for her flag, her sails, her hull or the
-## whole of her, swung `az` round her from the shot's own angle and `zoom`
+## stands and what it looks at for her flag, her sails, her hull, her
+## figurehead, her guns or the whole of her, swung `az` round her from the shot's own angle and `zoom`
 ## times as far off. Her flag is seen face on however the wind streams it.
 func _wright_shot(focus: String, s: Ship, az: float, zoom: float) -> Array[Vector3]:
 	var L := s.cls.length
@@ -2189,6 +2291,17 @@ func _wright_shot(focus: String, s: Ship, az: float, zoom: float) -> Array[Vecto
 			dist = L * 0.78 + 10.0
 			elev = 0.1
 			a0 = 0.42
+		"bow":
+			# the figurehead: from ahead and a little off to the side
+			look = s.model.to_global(s.model.figure_at)
+			dist = 8.0 + L * 0.22
+			elev = 0.1
+			a0 = 0.62
+		"guns":
+			look = c + Vector3.UP * (s.model.shape.main_deck_y(0.5) + 0.4)
+			dist = L * 0.6 + 8.0
+			elev = 0.16
+			a0 = 0.18
 		_:
 			look = c + Vector3.UP * mast_h * 0.3 + along * 4.0
 			dist = L * 1.2 + 26.0
@@ -2431,6 +2544,7 @@ func _dock(port: TradePort, now := false) -> void:
 		p.place(b.x, b.y, b.z)
 		market.open(port.title, port.market, hold, p.gold, world.time)
 		_services()
+		_refresh_parts()
 		_dock_t = 0.0
 		camera.port = true
 		_frame_dock(0.0)
@@ -2520,6 +2634,7 @@ func _sell(id: String) -> void:
 	else:
 		market.sold_all(total)
 	_services()
+	_refresh_parts()
 	port.unload(goods)
 	port.cheer(2.0 if total >= 1500 or best >= 4 else (1.0 if total >= 250 or best >= 2 else 0.5))
 	sound.sale(total, best)
@@ -2555,6 +2670,79 @@ func _restock() -> void:
 	sound.purchase(&"shot")
 	_services()
 	_note_tour("restocked for %d gold" % c.shot)
+
+
+## The shipwright's counter at the quay she's tied to: today's three
+## parts, which of them are yours already, and the purse (`bought`, one just
+## bought, swells on it).
+func _refresh_parts(bought := "") -> void:
+	if dock_port == null:
+		return
+	var offers := []
+	for pt in Parts.port_stock(dock_port.index + 1):
+		offers.append({"part": pt, "owned": Progress.owns(pt.id)})
+	market.set_parts(offers, Progress.purse, bought)
+
+
+## A part bought off the shipwright, out of the purse (the web's buyPart):
+## a bolt of calico comes aboard with it and the quay cheers.
+func _buy_part(id: String) -> void:
+	var port := dock_port
+	var pt := Parts.part(id)
+	if state != State.DOCKED or port == null or pt.is_empty() or Progress.owns(id):
+		return
+	var price: int = Parts.RARITIES[pt.tier].price
+	if not Progress.spend(price):
+		return
+	var f := Progress.grant_part(id)
+	if not f.is_empty():
+		_announce_part(f, "Bought at %s" % port.title)
+	port.unload(PackedStringArray(["calico"]), true)
+	port.cheer(2.0 if int(pt.tier) >= 3 else 1.0)
+	_refresh_parts(id)
+	voyage.note("trade", "Bought %s" % pt.name, "%s · %s gold" % [port.title, MenuKit.num(price)])
+	_note_tour("bought %s for %d gold" % [id, price])
+
+
+## A chest may have a ship part in it (the web's chestPart), the finer the
+## chest the likelier and the finer, and her figurehead's luck on top; found
+## `delay` s after she hauls it up.
+func _chest_part(tier: int, at: Vector3, delay: float) -> void:
+	var t := Parts.chest_part(tier, float(Parts.loadout_stats(player.model.fit).luck))
+	if t < 0:
+		return
+	var found := Parts.roll_part(t, Progress.owns)
+	get_tree().create_timer(delay).timeout.connect(_find_part.bind(str(found.id), "In the treasure chest" if tier >= 3 else "Found in the salvage", at))
+
+
+## A part into the locker, and told (the web's findPart).
+func _find_part(id: String, kicker: String, at: Variant = null) -> void:
+	var f := Progress.grant_part(id)
+	if not f.is_empty():
+		_announce_part(f, kicker, at)
+
+
+## A part come into the locker, told as its rarity deserves (the web's
+## announcePart): a toast with its portrait, a line in the log, a chime and,
+## at `at` on the sea, a burst of its colour; a spare is paid out in gold.
+func _announce_part(f: Dictionary, kicker: String, at: Variant = null) -> void:
+	var pt: Dictionary = f.part
+	var tier: int = pt.tier
+	var rarity: Dictionary = Parts.RARITIES[tier]
+	var refund: int = f.refund
+	if refund > 0:
+		Progress.earn(refund)
+	var slot := str(Parts.SLOT_NAMES[pt.slot]).to_lower()
+	var title: String = pt.name if f.fresh else "%s (spare · +%s gold)" % [pt.name, MenuKit.num(refund)]
+	hud.loot_toast(Icons.part(pt.id, 48.0), [0, 2, 3, 4, 5][tier], "%s %s · %s" % [rarity.name, slot, kicker], title, 4.6 if tier >= 3 else 3.6)
+	voyage.note("chest", "Found %s" % pt.name, "%s %s%s" % [rarity.name, slot, " · fit it at the Shipwright" if f.fresh else ""])
+	var glow := mini(4, tier + 1)
+	sound.treasure(glow)
+	if at is Vector3 and state == State.VOYAGE:
+		world.fx.treasure(Vector3(at.x, 2.0, at.z), Loot.GLOW[glow], glow)
+	if tier >= 3:
+		camera.shake(0.12)
+	_note_tour("found %s (%s)" % [pt.id, kicker])
 
 
 ## Casts off: back out to sea, clear of the quay, sails set (the web's castOff).
@@ -3031,6 +3219,17 @@ func _tour_menus() -> void:
 		24:
 			market.restock.emit()
 		25:
+			# the shipwright: the plainest part on her counter, the purse topped up for it
+			var pt: Dictionary = Parts.port_stock(dock_port.index + 1)[0]
+			Progress.earn(maxi(0, int(Parts.RARITIES[pt.tier].price) - Progress.purse))
+			_refresh_parts()
+			var had := Progress.owns(pt.id)
+			market.buy_part.emit(pt.id)
+			if not Progress.owns(pt.id):
+				printerr("SMOKE FAILED: the shipwright's %s wasn't bought" % pt.id)
+			elif had:
+				_note_tour("%s owned already" % pt.id)
+		26:
 			_go_back(false)
 	_tour_step += 1
 	_tour_at = _frames
@@ -3043,7 +3242,7 @@ func _tour_menus() -> void:
 ## the design saved and deleted again, and Done with the back button (back
 ## out to the anchorage).
 func _tour_wright() -> bool:
-	if _sw_tour >= 9:
+	if _sw_tour >= 11:
 		return false
 	match _sw_tour:
 		0:
@@ -3090,8 +3289,24 @@ func _tour_wright() -> bool:
 			if not Progress.designs.is_empty() and str(Progress.designs[0].look.name) == "Smoke Test":
 				shipwright.delete_design(str(Progress.designs[0].id))
 		7:
-			_go_back(false)
+			# the Refit tab: oak strakes found and bolted onto her hull
+			if not Progress.owns("hull:strakes"):
+				Progress.grant_part("hull:strakes")
+			shipwright.pick_part("hull", "hull:strakes")
+			if Progress.equipped(player.cls.id, "hull") != "hull:strakes" or _sw_focus != "hull":
+				printerr("SMOKE FAILED: the Refit tab didn't fit her hull plating (%s, the camera on %s)" % [Progress.equipped(player.cls.id, "hull"), _sw_focus])
 		8:
+			# her hull rebuilt with them (off the yard's slipway), then her standard fit back
+			if player.model.fit_key != Parts.key(Progress.loadout(player.cls.id)) and _frames - _tour_at < 600:
+				return true
+			if player.model.fit.get("hull", "") != "hull:strakes":
+				printerr("SMOKE FAILED: her hull never got its oak strakes (%s)" % player.model.fit_key)
+			else:
+				_note_tour("refitted with %s" % player.model.fit_key)
+			shipwright.pick_part("hull", "")
+		9:
+			_go_back(false)
+		10:
 			if shipwright.is_open() or not harbour.is_open() or camera.port or home.visible:
 				printerr("SMOKE FAILED: the back button didn't take her back out to the anchorage")
 	_sw_tour += 1

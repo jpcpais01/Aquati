@@ -98,10 +98,12 @@ static func italic(f: Font) -> Font:
 
 
 ## Text painted with a gradient down its line (shaders/text_grad.gdshader):
-## [c0, c1, c2, c3, stops] over `height` units from `top`.
-static func text_grad(g: Array, top: float, height: float) -> ShaderMaterial:
+## [c0, c1, c2, c3, stops] over `height` units from `top` (or, `across`,
+## along it over that many units from that far in).
+static func text_grad(g: Array, top: float, height: float, across := false) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = preload("res://shaders/text_grad.gdshader")
+	m.set_shader_parameter("across", across)
 	m.set_shader_parameter("c0", g[0])
 	m.set_shader_parameter("c1", g[1])
 	m.set_shader_parameter("c2", g[2])

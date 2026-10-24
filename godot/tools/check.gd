@@ -17,12 +17,16 @@ extends SceneTree
 ## water deep enough for her keel, round the isles, across the high seas, off
 ## a goal on land and inside the edge of the known sea (_check_helm), her
 ## look and the Shipwright's designs are made whole from anything, drawn
-## and kept (_check_looks), and what's kept between voyages comes back whole
+## and kept (_check_looks), what's kept between voyages comes back whole
 ## from its save, takes nothing malformed from a damaged one and survives a
-## crash mid-write (_check_progress). Prints CHECK OK.
+## crash mid-write (_check_progress), and the ship parts come out as the
+## web's do and every class carries each of them soundly (_check_parts).
+## Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
+## How far over her budget a class may go with a full set of parts bolted on.
+const PARTS_OVER := 1.3
 ## The archipelagos the bake writes.
 const REGIONS := ["home", "brumas"]
 ## A town's triangles close up and as its shell, at most.
@@ -61,6 +65,7 @@ func _initialize() -> void:
 	_check_world()
 	_check_looks()
 	_check_progress()
+	_check_parts()
 	# the helm's reach is a share of the window, and a strike is aimed by the
 	# lens: those checks wait for the tree to run
 	await process_frame
@@ -1392,3 +1397,201 @@ func _check_progress() -> void:
 		if FileAccess.file_exists(g):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
 	print("progress: %d of 4 steps as expected" % steps)
+
+
+## Ship parts: their maths against the web's own (tools/parts_web.json, from
+## src/ships/parts.ts on fixed seeds through tools' dump): the catalogue in
+## the web's order, each port's stock over forty days, what chests, rolls and
+## pirates come up with on the same mulberry32 streams, every refit and its
+## bars, and each part's lines on its card. Then the locker: a find, a spare
+## and its refund, fits right and wrong, a save and a load, and a damaged
+## save cleaned. And each class built with each rarity's set bolted on:
+## sound, within budget, every gun still with its muzzle where the barrel
+## ends, and the mythic parts turning.
+func _check_parts() -> void:
+	var web: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://tools/parts_web.json"))
+	if not web is Dictionary:
+		_fail("parts: tools/parts_web.json is unreadable")
+		return
+	var steps := 0
+	var ids := PackedStringArray()
+	for p in Parts.all():
+		ids.append(p.id)
+	if ids == PackedStringArray(web.parts):
+		steps += 1
+	else:
+		_fail("parts: the catalogue isn't the web's: %s" % ", ".join(ids))
+	var off := 0
+	for e: Array in web.stock:
+		var got := PackedStringArray()
+		for p in Parts.port_stock(int(e[0]), int(e[1])):
+			got.append(p.id)
+		if got != PackedStringArray(e[2]):
+			off += 1
+			if off <= 3:
+				_fail("parts: port %d's shipwright has %s in on day %d, the web's %s" % [e[0], ", ".join(got), e[1], ", ".join(PackedStringArray(e[2]))])
+	steps += 1 if off == 0 else 0
+	off = 0
+	for e: Array in web.chest:
+		var tier := int(e[0])
+		var luck := float(e[1])
+		var got := ""
+		for k in range(1, 201):
+			var t := Parts.chest_part(tier, luck, Mulberry32.new(k * 7919 + tier * 31 + roundi(luck * 100.0)).next)
+			got += "-" if t < 0 else str(t)
+		if got != str(e[2]):
+			off += 1
+			_fail("parts: chests of tier %d at luck %.2f come up %s, the web's %s" % [tier, luck, got, e[2]])
+	var every := int(web.owned_every)
+	var owned := {}
+	for i in ids.size():
+		if i % every == 0:
+			owned[ids[i]] = true
+	var owns := func(pid: String) -> bool: return owned.has(pid)
+	for e: Array in web.roll:
+		var tier := int(e[0])
+		for k in range(1, 61):
+			var got := str(Parts.roll_part(tier, owns, Mulberry32.new(k * 104729 + tier).next).id)
+			if got != str(e[1][k - 1]):
+				off += 1
+				_fail("parts: roll %d of tier %d found %s, the web's %s" % [k, tier, got, e[1][k - 1]])
+				break
+	for e: Array in web.pirate:
+		var cls := str(e[0])
+		for k in range(1, 301):
+			var f := Parts.pirate_fit(cls, Mulberry32.new(k * 15485863 + cls.length()).next)
+			var got := "" if f.is_empty() else str(f.values()[0])
+			if got != str(e[1][k - 1]):
+				off += 1
+				_fail("parts: pirate %s %d carries %s, the web's %s" % [cls, k, got, e[1][k - 1]])
+				break
+	steps += 1 if off == 0 else 0
+	off = 0
+	for e: Array in web.refit:
+		var c := Parts.refit(ShipClass.named(str(e[0])), e[2])
+		var got := [c.hp, c.armor, c.max_speed, c.accel, c.turn_rate, c.reload, c.damage, c.muzzle_speed]
+		var b := Parts.refit_bars(ShipClass.named(str(e[0])), e[2])
+		var bars := [b.speed, b.agility, b.armour, b.hull, b.firepower]
+		for i in got.size():
+			if absf(float(got[i]) - float(e[3][i])) > 1e-6 * maxf(1.0, absf(float(e[3][i]))):
+				off += 1
+				_fail("parts: the %s's %s refit has %s, the web's %s" % [e[0], e[1], got, e[3]])
+				break
+		for i in bars.size():
+			if absf(float(bars[i]) - float(e[4][i])) > 1e-6:
+				off += 1
+				_fail("parts: the %s's %s refit bars are %s, the web's %s" % [e[0], e[1], bars, e[4]])
+				break
+	for e: Array in web.lines:
+		var got := Parts.stat_lines(Parts.part(str(e[0])).stats)
+		if JSON.stringify(got) != JSON.stringify(e[1]):
+			off += 1
+			_fail("parts: %s's card says %s, the web's %s" % [e[0], got, e[1]])
+	steps += 1 if off == 0 else 0
+	steps += _check_locker()
+	for id: String in SHIPS:
+		steps += _check_fitted(id, SHIPS[id])
+	print("parts: %d of %d steps as expected" % [steps, 5 + SHIPS.size()])
+
+
+## The locker kept by Progress: a find and a spare, fits right and wrong,
+## seen, a save and a load, and a damaged save cleaned (1 if all's well).
+func _check_locker() -> int:
+	var script: GDScript = load("res://src/core/progress.gd")
+	var file := "user://check-parts.json"
+	for f: String in [file, file + ".tmp"]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	var a: Node = script.new()
+	a.path = file
+	var bad := PackedStringArray()
+	var f1: Dictionary = a.grant_part("hull:aegis")
+	var f2: Dictionary = a.grant_part("hull:aegis")
+	if not f1.fresh or int(f1.refund) != 0 or f2.fresh or int(f2.refund) != 10000 or int(a.parts.owned["hull:aegis"]) != 2 or a.parts.unseen != ["hull:aegis"]:
+		bad.append("a find and its spare (%s, %s)" % [f1, f2])
+	if not a.grant_part("hull:nothing").is_empty():
+		bad.append("a part that isn't")
+	if not a.equip("brig", "hull", "hull:aegis") or a.equip("brig", "sails", "hull:aegis") or a.equip("brig", "guns", "guns:starfire") or a.equip("frigate", "hull", "hull:aegis"):
+		bad.append("fits right and wrong")
+	a.mark_seen(["hull:aegis"])
+	if not a.parts.unseen.is_empty() or a.loadout("brig") != {"hull": "hull:aegis"} or a.equipped("sloop", "hull") != "":
+		bad.append("seen, and the brig's loadout")
+	a.save()
+	var b: Node = script.new()
+	b.path = file
+	b._load()
+	if b.parts.owned != {"hull:aegis": 2} or b.loadout("brig") != {"hull": "hull:aegis"} or not b.parts.unseen.is_empty():
+		bad.append("a save and a load (%s)" % b.parts)
+	var f := FileAccess.open(file, FileAccess.WRITE)
+	f.store_string(JSON.stringify({"parts": {"owned": {"hull:aegis": 1, "hull:nope": 3, "sails:aether": -1, "guns:bronze": "x", "figure:lion": 2.0},
+			"fit": {"brig": {"hull": "hull:aegis", "sails": "sails:aether", "guns": "hull:aegis", "figure": "figure:lion"}, "frigate": {"hull": "hull:aegis"}, "sloop": 4},
+			"unseen": ["hull:aegis", "nope", 5, "hull:aegis"]}}))
+	f.close()
+	var c: Node = script.new()
+	c.path = file
+	c._load()
+	if c.parts.owned != {"hull:aegis": 1, "figure:lion": 2} or c.loadout("brig") != {"hull": "hull:aegis", "figure": "figure:lion"} \
+			or c.parts.fit.has("frigate") or c.parts.fit.has("sloop") or c.parts.unseen != ["hull:aegis"]:
+		bad.append("a damaged save (%s)" % c.parts)
+	for n: Node in [a, b, c]:
+		n.free()
+	for g: String in [file, file + ".tmp"]:
+		if FileAccess.file_exists(g):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
+	for w in bad:
+		_fail("parts: the locker got %s wrong" % w)
+	return 1 if bad.is_empty() else 0
+
+
+## A class built with each rarity's full set bolted on, and with each part
+## alone: no NaNs, within PARTS_OVER of her budget, every gun's muzzle out
+## at its barrel's end, and the mythic set's pieces turning (1 if all's well).
+func _check_fitted(id: String, budget: int) -> int:
+	var cls := ShipClass.named(id)
+	var base := ShipModel.create(cls, Livery.named("player"))
+	var guns := base.muzzles.size()
+	base.free()
+	var bad := 0
+	var line := PackedStringArray()
+	for tier in 5:
+		var fit := {}
+		for p in Parts.all():
+			if int(p.tier) == tier:
+				fit[p.slot] = p.id
+		var m := ShipModel.create(cls, Livery.named("player"), true, fit)
+		var total := 0
+		for node in m.find_children("*", "MeshInstance3D", true, false):
+			var mi := node as MeshInstance3D
+			if mi.mesh == null:
+				continue
+			for si in mi.mesh.get_surface_count():
+				var arrays := mi.mesh.surface_get_arrays(si)
+				var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+				total += idx.size() / 3 if not idx.is_empty() else (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size() / 3
+				for v: Vector3 in arrays[Mesh.ARRAY_VERTEX]:
+					if not v.is_finite():
+						_fail("parts: the %s with the %s set has a vertex that isn't finite (%s)" % [id, Parts.RARITIES[tier].id, mi.name])
+						bad += 1
+						break
+		line.append("%s %d" % [Parts.RARITIES[tier].id, total])
+		if total > budget * PARTS_OVER:
+			_fail("parts: the %s with the %s set has %d triangles, over %d" % [id, Parts.RARITIES[tier].id, total, roundi(budget * PARTS_OVER)])
+			bad += 1
+		if m.muzzles.size() != guns:
+			_fail("parts: the %s with the %s set has %d muzzles, not %d" % [id, Parts.RARITIES[tier].id, m.muzzles.size(), guns])
+			bad += 1
+		var tip := PartModels.barrel_tip(Parts.part(fit.guns))
+		for mz: Dictionary in m.muzzles:
+			if not (mz.pos as Vector3).is_finite() or absf((mz.dir as Vector3).length() - 1.0) > 1e-4:
+				_fail("parts: the %s with %s has a muzzle astray" % [id, fit.guns])
+				bad += 1
+				break
+		if tier == 4 and m._spinners.is_empty():
+			_fail("parts: nothing turns on the %s with the mythic set" % id)
+			bad += 1
+		if tier < 2 and not m._spinners.is_empty():
+			_fail("parts: something turns on the %s with the %s set" % [id, Parts.RARITIES[tier].id])
+			bad += 1
+		m.free()
+	print("  %s fitted: %s" % [id, ", ".join(line)])
+	return 1 if bad == 0 else 0

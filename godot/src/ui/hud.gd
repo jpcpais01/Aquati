@@ -823,7 +823,11 @@ func toast(kicker: String, title: String, life := 3.4) -> void:
 ## A fine piece of plunder hauled aboard: a toast with its portrait, its
 ## kicker in the colour of its rarity (2 rare .. 4 legendary), the card's
 ## edge violet for an epic find and gold and glowing for a legendary one.
-func loot_toast(good: String, rarity: int, kicker: String, title: String, life := 3.0) -> void:
+## A find told with its picture (`art`): plunder of a `rarity` (0..4), or a
+## ship part as the web ranks them (0, 2, 3, 4, and 5 for a mythic one,
+## edged in violet in a glow of its kind's colours, its kicker running
+## aqua to violet to pink).
+func loot_toast(art: Texture2D, rarity: int, kicker: String, title: String, life := 3.0) -> void:
 	var panel := PanelContainer.new()
 	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var box := _toast_box.duplicate() as StyleBoxFlat
@@ -831,16 +835,20 @@ func loot_toast(good: String, rarity: int, kicker: String, title: String, life :
 	box.content_margin_right = 18.0
 	if rarity == 3:
 		box.border_color = Color(0.769, 0.545, 1.0, 0.6)
-	elif rarity >= 4:
+	elif rarity == 4:
 		box.border_color = Color(1.0, 0.71, 0.18, 0.8)
 		box.shadow_color = Color(1.0, 0.71, 0.18, 0.3)
 		box.shadow_size = 18
 		box.shadow_offset = Vector2.ZERO
+	elif rarity >= 5:
+		# (its glows are drawn behind it, and its drop shadow would only dull them)
+		box.border_color = Color(0.776, 0.608, 1.0, 0.9)
+		box.shadow_color = Color(0.0, 0.0, 0.0, 0.0)
 	panel.add_theme_stylebox_override("panel", box)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	var icon := TextureRect.new()
-	icon.texture = Icons.plunder(good, 48.0)
+	icon.texture = art
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.custom_minimum_size = Vector2(48.0, 48.0)
@@ -849,25 +857,45 @@ func loot_toast(good: String, rarity: int, kicker: String, title: String, life :
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 0)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	var ink: Color = [HudStyle.GOLD, HudStyle.GOLD, Color("#6cc8ff"), Color("#c48bff"), Color("#ffbe3d")][clampi(rarity, 0, 4)]
-	for l: Label in [HudStyle.label(kicker.to_upper(), "inter", 700, 9, ink, 2), HudStyle.label(title, "cinzel", 700, 15, HudStyle.INK, 1)]:
+	var ink: Color = [HudStyle.GOLD, HudStyle.GOLD, Color("#6cc8ff"), Color("#c48bff"), Color("#ffbe3d"), Color.WHITE][clampi(rarity, 0, 5)]
+	var lines: Array[Label] = [HudStyle.label(kicker.to_upper(), "inter", 700, 9, ink, 2), HudStyle.label(title, "cinzel", 700, 15, HudStyle.INK, 1)]
+	for l in lines:
 		l.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.6))
 		l.add_theme_constant_override("shadow_offset_x", 0)
 		l.add_theme_constant_override("shadow_offset_y", 1)
 		col.add_child(l)
 	row.add_child(col)
 	panel.add_child(row)
-	_card(panel, life)
+	var glow: UiBox = null
+	if rarity >= 5:
+		# the kicker's colours run across the words' column (no shadow under them)
+		var w := col.get_combined_minimum_size().x
+		lines[0].remove_theme_color_override("font_shadow_color")
+		lines[0].material = HudStyle.text_grad([Color("#7fe8ff"), Color("#c69bff"), Color("#ff5f9e"), Color("#ff5f9e"), Vector2(0.5, 1.0)], 0.0, maxf(w, 1.0), true)
+		# two glows round it, aqua wide and pink close in, under its drop shadow
+		var sz := panel.get_combined_minimum_size()
+		glow = UiBox.new(sz, sz.y * 0.5, 60.0 * HudStyle.K)
+		glow.p("c_top", Color(0.0, 0.0, 0.0, 0.0)).p("c_foot", Color(0.0, 0.0, 0.0, 0.0)).p("border", 0.0).p("hi", 0.0)
+		glow.p("c_glow", Color(0.498, 0.91, 1.0, 0.35)).p("glow", 40.0 * HudStyle.K)
+		glow.p("c_shadow", Color(1.0, 0.373, 0.62, 0.3)).p("shadow", Vector2(0.0, 22.0 * HudStyle.K))
+	_card(panel, life, glow)
 
 
 ## Sets a toast's card in the stack across the top: in on a spring from just
-## above, out drifting up as it fades; three at most.
-func _card(panel: PanelContainer, life: float) -> void:
+## above, out drifting up as it fades; three at most. A `glow` behind it
+## rides with it.
+func _card(panel: PanelContainer, life: float, glow: UiBox = null) -> void:
 	# the stack lays out the slot; the card moves freely inside it
 	var slot := Control.new()
 	slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	slot.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	slot.add_child(panel)
+	var card: Control = panel
+	if glow != null:
+		card = Control.new()
+		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(glow)
+		card.add_child(panel)
+	slot.add_child(card)
 	_toasts.add_child(slot)
 	while _toasts.get_child_count() > 3:
 		var old := _toasts.get_child(0)
@@ -876,16 +904,17 @@ func _card(panel: PanelContainer, life: float) -> void:
 	var size := panel.get_combined_minimum_size()
 	slot.custom_minimum_size = size
 	panel.size = size
-	panel.pivot_offset = size * 0.5
-	panel.modulate.a = 0.0
-	panel.position.y = -14.0
-	panel.scale = Vector2(0.94, 0.94)
-	var tw := panel.create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_property(panel, "modulate:a", 1.0, 0.35).set_trans(Tween.TRANS_SINE)
-	tw.tween_property(panel, "position:y", 0.0, 0.55)
-	tw.tween_property(panel, "scale", Vector2.ONE, 0.55)
-	tw.chain().tween_property(panel, "modulate:a", 0.0, 0.6).set_delay(maxf(life - 0.55, 0.0)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tw.tween_property(panel, "position:y", -8.0, 0.6).set_delay(maxf(life - 0.55, 0.0)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	card.size = size
+	card.pivot_offset = size * 0.5
+	card.modulate.a = 0.0
+	card.position.y = -14.0
+	card.scale = Vector2(0.94, 0.94)
+	var tw := card.create_tween().set_parallel(true).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(card, "modulate:a", 1.0, 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(card, "position:y", 0.0, 0.55)
+	tw.tween_property(card, "scale", Vector2.ONE, 0.55)
+	tw.chain().tween_property(card, "modulate:a", 0.0, 0.6).set_delay(maxf(life - 0.55, 0.0)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(card, "position:y", -8.0, 0.6).set_delay(maxf(life - 0.55, 0.0)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tw.chain().tween_callback(slot.queue_free)
 
 

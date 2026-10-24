@@ -18,6 +18,11 @@ extends Node3D
 ## - each sail, and the two flags, as their own small meshes on pivots;
 ## - the lanterns' halos after dark, a card turned to the eye per lamp.
 ##
+## Her refit (Parts) is built in too: the plating on her sides, the sails'
+## dressing on the masts, her guns' barrels and the figure on the knee (see
+## PartModels); the few pieces that float and turn on their own are meshes of
+## their own, moved by tick().
+##
 ## Every mast, and the bowsprit, is a Spar that a ball can snap: where it
 ## breaks is settled as she's built, everything above the break is marked as
 ## standing on it (in the vertex paint, and on the ropes made fast to it), and
@@ -66,6 +71,10 @@ var rev := 0
 var shape: HullShape
 var head: Figurehead.Head
 var detail := true
+## Her refit: {slot: part id} (Parts), and as one word (Parts.key), so a
+## refitted hull isn't mistaken for a standard one (Shipyard._fits).
+var fit := {}
+var fit_key := ""
 
 ## Where the guns fire from: {pos, dir, side (+1 port, -1 starboard)}.
 var muzzles: Array[Dictionary] = []
@@ -133,14 +142,24 @@ var _deck_mesh: ArrayMesh
 var _last_fill := -1.0
 var _last_wind := -1.0
 var _phase := 0.0
+## The parts of her refit by slot, and what their builders are handed.
+var _parts := {}
+var _kit: PartModels.Kit
+## The masts as the parts dress them: {z, y0, h, r0, spar}.
+var _masts: Array[Dictionary] = []
+## The parts that move on their own: {node, p0, b0, axis, spin, bob, rate, phase, spar}.
+var _spinners: Array[Dictionary] = []
 
 
-static func create(p_cls: ShipClass, p_livery: Livery, p_detail: bool = true) -> ShipModel:
+static func create(p_cls: ShipClass, p_livery: Livery, p_detail: bool = true, p_fit: Dictionary = {}) -> ShipModel:
 	var m := ShipModel.new()
 	m.cls = p_cls
 	m.livery = p_livery
 	m.rev = p_livery.rev
 	m.detail = p_detail
+	m.fit = Parts.clean(p_fit)
+	m.fit_key = Parts.key(m.fit)
+	m._parts = Parts.loadout_parts(m.fit)
 	m.name = "Model"
 	m._build()
 	return m
@@ -159,6 +178,7 @@ func _build() -> void:
 	_build_bow()
 	_build_details()
 	_build_deck_life()
+	_build_parts()
 	_finish()
 
 
@@ -562,7 +582,9 @@ func _build_cannons() -> void:
 		Vector2(0.2, 0.0), Vector2(0.17, 0.05), Vector2(0.155, 0.52), Vector2(0.19, 0.6), Vector2(0.2, 0.68),
 		Vector2(0.17, 0.71), Vector2(0.1, 0.71), Vector2(0.1, 0.6), Vector2(0, 0.6),
 	])
-	var tip := 0.85
+	# an upgrade swaps the standard barrel for its own (and moves the muzzle with it)
+	var gun: Dictionary = _parts.get("guns", {})
+	var tip := 0.85 if gun.is_empty() else PartModels.barrel_tip(gun) + 0.14
 	var carriage_col := MeshKit.shade(livery.bottom, 0.8)
 	var wheel_col := Color("#3e2a1a")
 	var lining := livery.bottom
@@ -572,8 +594,14 @@ func _build_cannons() -> void:
 			var y := _cannon_y(t)
 			var zz := s.z(t)
 			var x := s.half_width_at_y(t, y)
-			_core.paint(IRON_PAINT, MeshKit.IRON, 0.03)
-			_core.lathe(Transform3D(Basis(Vector3.BACK, -side * PI * 0.5) * ksc, Vector3(side * (x + 0.12 * k), y, zz)), barrel, 12 if detail else 8)
+			var mount := Transform3D(Basis(Vector3.BACK, -side * PI * 0.5) * ksc, Vector3(side * (x + 0.12 * k), y, zz))
+			if gun.is_empty():
+				_core.paint(IRON_PAINT, MeshKit.IRON, 0.03)
+				_core.lathe(mount, barrel, 12 if detail else 8)
+			else:
+				# turned end for end about its bore on the starboard side, so what
+				# stands on top of the barrel (a dragon's brow) is on top both sides
+				PartModels.barrel(_core, gun, mount * Transform3D(Basis(Vector3.UP, PI) if side < 0.0 else Basis.IDENTITY, Vector3.ZERO), detail)
 			muzzles.append({"pos": Vector3(side * (x + tip * k), y, zz), "dir": Vector3(side, 0, 0), "side": side})
 
 			# truck carriage on the deck behind the port: stepped cheeks bolted across a bed
@@ -769,6 +797,7 @@ func _build_rig() -> void:
 					_on_spar(sp.group if yy > y_cut else 0)
 					_fine.hoop(Vector3(0, yy, zz), r0 * (1.0 - low_taper * minf(1.0, (yy - y0) / low_len)) + 0.014, 0.026, 4, 12)
 		_on_spar(0)
+		_masts.append({"z": zz, "y0": y0, "h": hh, "r0": r0, "spar": sp.group})
 		var top := Vector3(0, y0 + hh, zz)
 		_mast_tops.append(top)
 		perches.append({"pos": Vector3(0, y0 + hh + 0.05 + r0 * 0.4, zz), "spar": mi})
@@ -1243,6 +1272,9 @@ func _add_sail(parent: Node3D, tl: Vector2, tr: Vector2, bl: Vector2, br: Vector
 	var mi := _mesh_child(parent, mesh, shared_material("sail"), true)
 	mi.name = "Sail"
 	mi.set_instance_shader_parameter("sail_phase", _phase + sails.size() * 1.7)
+	if _parts.has("sails"):
+		# the cloth of her refit (ship_sail's part branches), and where in its drift it starts
+		mi.set_instance_shader_parameter("sail_part", Vector2(int(_parts.sails.tier) + 1, _phase))
 	return mi
 
 
@@ -1288,7 +1320,11 @@ func _build_bow() -> void:
 	figure_at = head.centre
 	var wale_col := MeshKit.blend(livery.wale, livery.hull, 0.4)
 	var knee := Figurehead.build_knee(s, cls, head, _core, _core, wale_col, livery.trim, detail)
-	Figurehead.build_figure("mermaid", head, {"wood": _core, "iron": _core, "trim": _core, "glow": _core}, livery.trim)
+	# the figure on the knee: the mermaid, or the one her refit carries
+	var fig := str(_parts.figure.key) if _parts.has("figure") else "mermaid"
+	Figurehead.build_figure(fig, head, {"wood": _core, "iron": _core, "trim": _core, "glow": _core}, livery.trim)
+	if fig == "seraph":
+		PartModels.seraph_lights(_part_kit(), head)
 	# gilded trailboards: carved scrolls down each side of the bows, laid on the planking
 	_core.paint(livery.trim, MeshKit.GILT, 0.02)
 	for side: float in [1.0, -1.0]:
@@ -1761,6 +1797,50 @@ func _build_deck_life() -> void:
 	_fine.ball(at * Vector3(0, 0.27, 0.147), 0.008, 4, 3)
 
 
+# ------------------------------------------------------------------ parts
+
+## What the part builders may add to (see PartModels.Kit).
+func _part_kit() -> PartModels.Kit:
+	if _kit == null:
+		_kit = PartModels.Kit.new()
+		_kit.shape = shape
+		_kit.cls = cls
+		_kit.livery = livery
+		_kit.detail = detail
+		_kit.core = _core
+		_kit.small = _small
+		_kit.fine = _fine
+		_kit.ropes = _ropes
+		_kit.cannon_ts = cls.cannon_ts()
+		_kit.masts = _masts
+	return _kit
+
+
+## Hull plating and the sails' dressing on the masts (her guns and figure go
+## on with the standard fittings they replace).
+func _build_parts() -> void:
+	if _parts.has("hull"):
+		PartModels.build_hull(_part_kit(), _parts.hull)
+	if _parts.has("sails"):
+		PartModels.build_sails(_part_kit(), _parts.sails)
+	_on_spar(0)
+
+
+## The floating parts drift and turn; called every frame with the world's clock.
+func tick(time: float) -> void:
+	for sp in _spinners:
+		var node: MeshInstance3D = sp.node
+		# a crown goes over the side with its mast
+		var g: int = sp.spar
+		node.visible = g == 0 or not spars[g - 1].broken
+		if not node.visible:
+			continue
+		var a: float = time * float(sp.spin) + float(sp.phase)
+		var b0: Basis = sp.b0
+		var p0: Vector3 = sp.p0
+		node.transform = Transform3D(b0 * Basis(sp.axis, a), p0 + Vector3(0, sin(time * float(sp.rate) + float(sp.phase)) * float(sp.bob), 0))
+
+
 # ------------------------------------------------------------------ out
 
 ## Smooth-shaded mesh from three.js-wound (counter-clockwise) triangles.
@@ -1818,6 +1898,16 @@ func _finish() -> void:
 		var halos := _mesh_child(self, _halo_mesh(), shared_material("halo"), false)
 		halos.name = "Halos"
 		halos.extra_cull_margin = HALO_MARGIN
+	if _kit != null:
+		for spec: Dictionary in _kit.spinners:
+			var node := _mesh_child(self, (spec.kit as MeshKit).commit(), shared_material("parts"), false)
+			node.name = "Spinner"
+			node.transform = Transform3D(spec.basis, spec.pos)
+			_spinners.append({
+				"node": node, "p0": spec.pos, "b0": spec.basis, "axis": spec.axis, "spin": spec.spin,
+				"bob": spec.bob, "rate": spec.rate, "phase": spec.phase, "spar": spec.spar,
+			})
+		_kit = null
 	# everything above each break, as the one mesh that goes over the side
 	for sp in spars:
 		var kit := MeshKit.new()

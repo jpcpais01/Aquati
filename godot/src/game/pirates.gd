@@ -70,7 +70,7 @@ func launch(id: String, x: float, z: float, heading: float, kills: int = 0, now:
 	if model == null and not now:
 		return null
 	var livery := model.livery if model != null else Livery.named(Shipyard.LIVERIES[randi() % Shipyard.LIVERIES.size()])
-	var s := Ship.create(ShipClass.named(id), livery, world, Ship.Team.PIRATE, model)
+	var s := Ship.create(ShipClass.named(id), livery, world, Ship.Team.PIRATE, model, Parts.pirate_fit(id) if model == null else {})
 	s.ship_name = NAMES[_name_idx % NAMES.size()]
 	_name_idx += 1
 	stage.add_child(s)
