@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-24T12:00Z',
     entries: [
       {
+        title: 'Android: going ashore',
+        notes: [
+          'The twentieth Android build puts your feet on the sand. Come in close to a beach and a pill offers to row ashore: your ship rides at anchor while the captain and four hands from her own deck pull the boat up on the sand and walk the island.',
+          'The landing party walks with a real stride and keeps a loose knot behind you, each hand setting off a beat late, stopping to look about and jogging to catch up, chatting as they go, and sitting down on the sand if you stand still a while. The camera drops low over the captain\'s shoulder: walk with WASD or the stick, run, jump, wade the shallows, and row back from the boat when you\'re done.',
+        ],
+      },
+      {
         title: 'Clean, steady sails',
         notes: [
           'Sails on Android no longer flicker with pale blocky patches as they belly and flutter: the canvas now takes the sun as it does on the web, crisp and even, flags too. And the camera button on both the web and Android just steps through its views now, without the little Close, Mid, Far or Cinematic label popping up beside it.',

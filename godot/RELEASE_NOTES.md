@@ -1,35 +1,24 @@
-## Shores O' Fortune for Android: maelstroms and reefs
+## Shores O' Fortune for Android: going ashore
 
-**Fixed in this build:** sails no longer flicker with blocky pale patches,
-and the camera button no longer pops up the view's name beside it.
+The twentieth build puts your feet on the sand. Off any beach you can lower
+the boat and row the captain and four hands ashore, then walk the islands.
 
-The nineteenth build brings the sea's own dangers. Four great maelstroms
-turn out in deep water, three off the home islands and one in Las Brumas,
-and the open-sea reefs finally warn you before you hit them.
+- **Go ashore.** Come in close to a beach and a pill offers to row ashore
+  (F, or tap it). Your ship rides at anchor while the boat is pulled up on
+  the sand. Not while pirates are on your tail, or with a maelstrom pulling.
+- **Your own crew.** The captain and four hands step off her deck, with the
+  same faces and clothes, and walk with a real stride: heel strike, swaying
+  hips, swinging arms, a run that leaves the ground, high steps through the
+  shallows.
+- **A living landing party.** The hands keep a loose knot behind you, each
+  on his own line, setting off a beat late, stopping to look at something
+  and jogging to catch up, chatting with a mate as they go. Stand still and
+  they watch the sea, lean, chat, and in the end sit down on the sand.
+- **On foot.** The camera drops low over the captain's shoulder. Walk with
+  WASD or the arrows (Shift runs, Space jumps), or on a phone with the stick
+  under your left thumb (push it to the rim to run) and the Jump button.
+  Trees, boulders, cliffs, deep water and the towns' walls stop you; sand
+  puffs up at a run and the shallows splash.
+- **Row back** from the boat (F, or tap the pill) and she weighs anchor.
 
-- **Maelstroms you can see into.** The sea falls away in a broad bowl and
-  then down steep jade walls into a throat tens of metres deep, with spiral
-  arms of foam winding in, mist boiling up off the churn and spray flung
-  off the turning water. The swell flattens over it, and in a storm every
-  maelstrom swells deeper and wider.
-- **Their pull.** Inside one the current drags your ship round and in and
-  swings her head with the spin; she heels down into the funnel you see.
-  Near the eye the strain wrings her timbers, and in the throat the sea
-  drags her under until it pours over her rail. Crowd on sail and claw
-  out, running before the wind with the flow, and she bobs back up.
-- **The hazard pill** under the top of the screen: amber when a maelstrom
-  or shoal water lies ahead, coral red and breathing once one has you,
-  aqua when your keel clears the coral. A ring shows how hard it grips, the
-  spiral turns faster the nearer the eye, and an arrow points the way out
-  (or to deeper water when you're aground). The leadsman rings the bell for
-  danger ahead, and each maelstrom and reef is named the first time you
-  meet it.
-- **Its roar.** A deep rolling roar of water that grows as you close, with
-  a hollow howl from the throat that climbs as you're drawn in.
-- **On the maps.** Every maelstrom is a wheeling coral spiral ringed by its
-  dashed pull on the minimap and the sea chart, and every reef carries the
-  old chartmakers' danger mark, each named on the chart.
-- **Pirates keep clear** of maelstroms on patrol (only just, when they're
-  hunting you), and the helmsman plots every course round them. Lure a
-  pirate you've been fighting into one and the kill and the bounty are
-  yours. Salvage afloat is swept round and swallowed too.
+Cutthroat camps, sword fights, buried treasure and forts come next.

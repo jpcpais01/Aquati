@@ -872,6 +872,30 @@ func thud(vol: float, pan: float, dist := 0.0) -> void:
 	_emit("earth", vol * 0.45, pan, dist, 0.85 + randf() * 0.3, 0.3)
 
 
+## Ashore, a footfall (`k` the pace: 0.3 a stroll .. 1 a run): a crunch of
+## dry sand, a slosh in the shallows, or a knock on planks and stone.
+func step(k: float, wet: bool, hard: bool) -> void:
+	var v := 0.11 + k * 0.08 if hard else (0.12 if wet else 0.08) + k * 0.06
+	if not _voice(v):
+		return
+	# (each take was rendered at the walk's middle pace)
+	var key := "foot_step" if hard else ("wet_step" if wet else "sand_step")
+	_one(key, v / (0.11 if key == "sand_step" else 0.15), (randf() - 0.5) * 0.2, 0.0, 0.92 + randf() * 0.16)
+
+
+## A jump: the push-off and a breath going out (up), or coming down (`k` how
+## hard, 0..1): a thump through the legs and the ground answering.
+func hop(up: bool, k: float, wet: bool, hard: bool) -> void:
+	var v := 0.12 if up else 0.2 + k * 0.14
+	if not _voice(v):
+		return
+	if up:
+		_one("hop_up", 1.0, (randf() - 0.5) * 0.12, 0.0, 0.95 + randf() * 0.1)
+		return
+	var key := "hop_hard" if hard else ("hop_wet" if wet else "hop_sand")
+	_one(key, v / 0.284, (randf() - 0.5) * 0.12, 0.0, 0.94 + randf() * 0.12)
+
+
 ## A gold doubloon flipped onto the counter: a heavy, warm chink and its bounces.
 func coin(delay := 0.0, vol := 0.5) -> void:
 	_emit("coin", vol, (randf() - 0.5) * 0.3, 0.0, 0.93 + randf() * 0.14, 0.18, delay)

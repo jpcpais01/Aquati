@@ -148,7 +148,8 @@ func update(dt: float, world: World, camera: Camera3D, focus: Vector3, view_r: f
 			continue
 		for sl in c.sailors:
 			if sl.mode == Sailor.Mode.ABOARD:
-				_emit(sl, c.matrix_of(sl), seen == 2)
+				if not sl.away:
+					_emit(sl, c.matrix_of(sl), seen == 2)
 			elif sl.mode != Sailor.Mode.GONE:
 				_emit(sl, CrewBrain.loose_xf(sl), false)
 	for i in range(_orphans.size() - 1, -1, -1):

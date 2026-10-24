@@ -37,13 +37,13 @@ const HOME_TRIS := 34000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "bell", "blast", "bosun_pipe", "bubbles",
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "click", "clunk", "coin", "creak0", "creak1", "creak2",
-		"crunch", "earth", "flames", "founder", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "ignite", "lap",
-		"mallet", "murmur", "noise", "pour0", "pour1", "purse", "recoil", "scrape0", "scrape1", "shell",
+		"crunch", "earth", "flames", "foot_step", "founder", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
+		"mallet", "murmur", "noise", "pour0", "pour1", "purse", "recoil", "sand_step", "scrape0", "scrape1", "shell",
 		"squeeze_arrival", "squeeze_flourish", "steam",
 		"tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
-		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "water", "whoosh", "wood"]
+		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "water", "wet_step", "whoosh", "wood"]
 ## The mix's buses past Master (Sound.build_buses).
 const BUSES := [&"UI", &"Mix", &"SFX", &"Air6k", &"Air2k5", &"Air1k", &"Air450", &"Echo",
 		&"EchoAir6k", &"EchoAir2k5", &"EchoAir1k", &"EchoAir450", &"Amb", &"Bed", &"Surf", &"Wind",
@@ -791,6 +791,91 @@ func _check_world() -> void:
 	_check_maps(w)
 	_check_helm(w)
 	_check_hazards(w)
+	_check_shore(w)
+
+
+## Ashore: the planting's trunks and boulders and the towns as walls, a
+## beach found off an island with dry sand past the boat, nobody wading out
+## past their depth or through a palm, and a walker's stride, jump and
+## landing all posed with finite joints.
+func _check_shore(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var g := ShoreGround.new(w, w.regions)
+	var steps := 0
+	var ports := 0
+	for r in w.regions:
+		ports += r.ports.size()
+	# (every trunk stands on its island, in both archipelagos)
+	var dry := 0
+	for cell: Array in g._solids.values():
+		for o: Vector3 in cell:
+			dry += 1 if w.ground_height(o.x, o.y) > -0.3 else 0
+	steps += 1 if g.solid_count > 500 and dry > g.solid_count * 0.97 and g.towns.size() == ports * 4 else 0
+	# a beach off the first island, from deep water out past its shore
+	var isl: Dictionary = w.regions[0].islands[0]
+	var beach := {}
+	for j in 16:
+		var a := j * TAU / 16.0 + 0.3
+		var d := float(isl.r) * 0.6
+		while d < float(isl.r) * 3.0 + 200.0 and w.ground_height(float(isl.x) + sin(a) * d, float(isl.z) + cos(a) * d) > -6.0:
+			d += 4.0
+		beach = g.landing(float(isl.x) + sin(a) * (d + 22.0), float(isl.z) + cos(a) * (d + 22.0), 70.0)
+		if not beach.is_empty():
+			break
+	var landed := not beach.is_empty() and g.height(beach.sand_x, beach.sand_z) > 0.3 and g.height(beach.x, beach.z) > -0.5 and g.open(beach.sand_x, beach.sand_z)
+	steps += 1 if landed else 0
+	# walking straight back out to sea: stopped at wading depth
+	var wade := landed
+	if landed:
+		var at := Vector2(beach.sand_x, beach.sand_z)
+		for i in 300:
+			at = g.step(at.x, at.y, -float(beach.dx) * 0.2, -float(beach.dz) * 0.2, 0.3)
+		wade = g.height(at.x, at.y) >= -ShoreGround.WADE - 0.05
+	steps += 1 if wade else 0
+	# walking square into a trunk: round it, never through it
+	var round_ := false
+	var probe := Vector2(float(isl.x), float(isl.z))
+	for k in 400:
+		var near := g.solids_near(probe.x + (k % 20) * 6.0 - 60.0, probe.y + (k / 20) * 6.0 - 60.0)
+		if near.is_empty():
+			continue
+		var o: Vector3 = near[0]
+		if not g.open(o.x - 2.0, o.y):
+			continue
+		var at := Vector2(o.x - 2.0, o.y)
+		var nearest := INF
+		for i in 60:
+			at = g.step(at.x, at.y, 0.08, 0.0, 0.3)
+			nearest = minf(nearest, at.distance_to(Vector2(o.x, o.y)))
+		round_ = nearest >= o.z + 0.3 - 0.02
+		break
+	steps += 1 if round_ else 0
+	# a stride, a jump and the landing, posed
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var wk := ShoreWalker.new(ShoreWalker.Team.PARTY, CrewLook.make(false, true, false, rng), 0, 120.0)
+	wk.place(0.0, 0.0, 0.4)
+	var finite := true
+	var air := 0.0
+	var came_down := 0.0
+	for f in 120:
+		wk.stride = 4.2
+		wk.phase += 4.2 / 60.0 / wk.step_len() * PI
+		if f == 40:
+			wk.jump()
+		wk.tick(1.0 / 60.0)
+		wk.animate(1.0 / 60.0, f / 60.0, 0.5)
+		came_down = maxf(came_down, wk.fly(1.0 / 60.0, 0.0))
+		wk.place3(0.0)
+		air = maxf(air, wk.air)
+		for v in wk.pose:
+			finite = finite and is_finite(v)
+		finite = finite and wk.xf.origin.is_finite() and wk.xf.basis.x.is_finite()
+	steps += 1 if finite and air > 0.5 and air < 1.0 and came_down > 3.0 else 0
+	if steps != 5:
+		_fail("shore: %d of 5 steps (%d solids, %d on dry ground, %d town walls for %d ports; beach %s; wade %s; round a trunk %s; posed %s, %.2f m aloft, down at %.1f m/s)" % [
+				steps, g.solid_count, dry, g.towns.size(), ports, "found" if landed else "none", wade, round_, finite, air, came_down])
+	print("shore: %d of 5 steps as expected; %d trunks and boulders, %d town walls, a beach on %s; %.0f ms" % [steps, g.solid_count, g.towns.size(), isl.name, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## The sea's dangers: every maelstrom turning (three at home, one in Las

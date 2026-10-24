@@ -360,7 +360,8 @@ func update(dt: float, world: World) -> void:
 
 	for sl in sailors:
 		if sl.mode == Sailor.Mode.ABOARD:
-			_think(sl, dt, world)
+			if not sl.away:
+				_think(sl, dt, world)
 		elif sl.mode == Sailor.Mode.AIR or sl.mode == Sailor.Mode.SWIM:
 			CrewBrain.step_loose(sl, dt, world)
 	# keep folk from standing inside each other (the helmsman holds his wheel,
@@ -369,11 +370,11 @@ func update(dt: float, world: World) -> void:
 	var shove := 0.5 * minf(1.0, dt * 8.0)
 	for i in n:
 		var a := sailors[i]
-		if a.mode != Sailor.Mode.ABOARD or a.seat >= 0:
+		if a.mode != Sailor.Mode.ABOARD or a.seat >= 0 or a.away:
 			continue
 		for j in range(i + 1, n):
 			var b := sailors[j]
-			if b.mode != Sailor.Mode.ABOARD or b.seat >= 0:
+			if b.mode != Sailor.Mode.ABOARD or b.seat >= 0 or b.away:
 				continue
 			var dx := a.x - b.x
 			var dz := a.z - b.z
@@ -388,6 +389,44 @@ func update(dt: float, world: World) -> void:
 			if b.act != Sailor.Act.HELM:
 				b.x -= dx * push
 				b.z -= dz * push
+
+
+# ------------------------------------------------------------------ the landing party
+
+## The captain and up to `n` hands called away from the deck to go ashore
+## (the web's muster): they leave the deck, and come back with welcome_back.
+func muster(n: int) -> Array[Sailor]:
+	var out: Array[Sailor] = []
+	var hands: Array[Sailor] = []
+	for role: Sailor.Role in [Sailor.Role.CAPTAIN, Sailor.Role.HAND, Sailor.Role.GUNNER]:
+		for sl in sailors:
+			if sl.role != role or sl.mode != Sailor.Mode.ABOARD or sl.away:
+				continue
+			if role == Sailor.Role.CAPTAIN:
+				if out.is_empty():
+					out.append(sl)
+			elif hands.size() < n:
+				hands.append(sl)
+	out.append_array(hands)
+	for sl in out:
+		sl.away = true
+		sl.seat = -1
+		sl.walking_to = false
+		sl.act = Sailor.Act.STAND
+	return out
+
+
+## Everyone called away is back aboard, each at a free spot on deck.
+func welcome_back() -> void:
+	for sl in sailors:
+		if not sl.away:
+			continue
+		sl.away = false
+		if sl.mode == Sailor.Mode.ABOARD:
+			var p := free_spot(sl.zone)
+			sl.x = p.x
+			sl.z = p.y
+			sl.act_dur = 0.0
 
 
 # ------------------------------------------------------------------ walking

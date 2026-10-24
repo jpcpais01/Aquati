@@ -92,7 +92,7 @@ const SPAWN_HEADING := PI * 0.82
 ## went down, as on the web.
 const DIVE := 8.6
 ## The steps of the smoke test's tour of the menus (_tour_menus).
-const TOUR_STEPS := 27
+const TOUR_STEPS := 33
 ## Frames the tour waits off a quay for pirates to leave her be.
 const TOUR_CHASED := 240
 
@@ -169,6 +169,21 @@ var _v_tour := 0
 ## How far a shot of the vault has got (_drive_vault).
 var _v_drive := 0
 var dock_port: TradePort
+## Ashore: the islands underfoot, the landing party and their boat.
+var shore_ground: ShoreGround
+var shore: Shore
+var _steer := Shore.Steer.new()
+## The beach she could put a boat on now (ShoreGround.landing; checked a few times a second).
+var _landing := {}
+var _land_t := 0.0
+## What the prompt pill would do if tapped: "dock", "land", "boat" or "".
+var _prompt_kind := ""
+## The zoom she had at sea, given back when the boat pulls out again.
+var _sea_zoom := 0.45
+var _shore_tip := false
+## A set piece's (or the smoke tour's) hand on the stick ashore.
+var _auto_walk := Vector2.ZERO
+var _tour_walk_from := Vector2.ZERO
 var market: MarketPanel
 var collisions := Collisions.new()
 var wreck: WreckScreen
@@ -351,6 +366,7 @@ func _ready() -> void:
 			controls.fire_side = side)
 	hud.ammo_picked.connect(func(kind: int) -> void: _pick_ammo(kind))
 	hud.sky_tapped.connect(_on_sky_tap)
+	hud.jump_pressed.connect(func() -> void: controls.jump = true)
 	add_child(hud)
 	maps.world = world
 	maps.player = player
@@ -427,6 +443,8 @@ func _ready() -> void:
 	_stage_plunder()
 	if _args.has("dock") or _args.has("off"):
 		_stage_dock()
+	if _args.has("ashore") or _args.has("beach"):
+		_stage_ashore()
 	_tour = _harbour_first() and _args.has("smoke")
 	if _harbour_first():
 		if _args.has("orbit"):
@@ -883,6 +901,12 @@ func _build_ports() -> void:
 			if site.home:
 				home.setup(site, ports.arts(), world, crew)
 	add_child(home)
+	# the islands as ground to walk, and the landing party's boat and people
+	shore_ground = ShoreGround.new(world, world.regions)
+	shore = Shore.new(shore_ground, crew, ports.arts().parts)
+	add_child(shore)
+	shore.stepped.connect(func(k: float, wet: bool, hard: bool) -> void: sound.step(k, wet, hard))
+	shore.hopped.connect(_on_hop)
 
 
 ## A lot set down in the warehouse of the quay she's tied to: it glints in
@@ -1133,9 +1157,13 @@ func _tick(real_dt: float) -> void:
 	# docked, sunk, back in the harbour: the helmsman's watch is over
 	if helm.state != Helmsman.State.IDLE and (not sailing or not player.alive or _farewell != null):
 		helm.disengage()
+	var ashore := shore.active
 	if player.alive and sailing:
 		voyage.time += dt
-		_helm(dt)
+		if ashore:
+			player.rudder = 0.0
+		else:
+			_helm(dt)
 	else:
 		player.rudder = 0.0
 	if not sailing:
@@ -1143,15 +1171,16 @@ func _tick(real_dt: float) -> void:
 	elif _farewell == null:
 		if controls.zoom != 0.0:
 			camera.zoom_by(controls.zoom, world.time)
-		if controls.view_next:
+		if controls.view_next and not ashore:
 			camera.next_view()
-		if controls.chart:
+		if controls.chart and not ashore:
 			if chart.is_open():
 				chart.close()
 			else:
 				_open_chart()
 		# the view you sail with is the next voyage's
-		Progress.keep_view(camera.zoom, camera.tilt)
+		if not ashore:
+			Progress.keep_view(camera.zoom, camera.tilt)
 	elif controls.skip:
 		_skip()
 
@@ -1189,6 +1218,14 @@ func _tick(real_dt: float) -> void:
 		collisions.resolve(world)
 	world.shots.step(dt)
 	pirates.sweep()
+	# the landing party, where you steer the captain
+	if ashore:
+		if not player.alive or _farewell != null:
+			_leave_shore()
+			ashore = false
+		else:
+			_control_shore()
+			shore.update(dt, world, _steer)
 	# the towns: hulls kept off their quays, and their folk about their business
 	ports.update(dt, player, camera.global_position, world.ships)
 	if state == State.DOCKED:
@@ -1212,17 +1249,18 @@ func _tick(real_dt: float) -> void:
 		if world.time - player.last_hit > 9.0:
 			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.01 * dt)
 	gunnery.pointer = _pointer_on_sea() if sailing else null
-	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null, world.time)
-	if sailing:
+	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null and not ashore, world.time)
+	if sailing and not ashore:
 		_guns()
 	if _sink_at >= 0.0 and sailing and player.alive and voyage.time >= _sink_at:
 		player.damage(player.max_hp * 4.0, _foe)
 	if _foe_sink_at >= 0.0 and _foe != null and _foe.alive and world.time >= _foe_sink_at:
 		_foe.damage(_foe.max_hp * 4.0, player)
 	if sailing:
-		_dock_prompt()
+		_prompt(dt)
 	else:
 		market.set_dock({})
+		_prompt_kind = ""
 	controls.consume()
 
 	world.listener = camera.target
@@ -1241,7 +1279,12 @@ func _tick(real_dt: float) -> void:
 	camera.orbit_xf.origin = Vector3(focus.pos.x, focus.position.y, focus.pos.z)
 	if harbour.is_open():
 		camera.orbit_frame = harbour.framing()
-	camera.update_rig(real_dt, focus.pos, focus.vel if sailing else Vector3.ZERO, world.time)
+	if shore.active:
+		# ashore the camera keeps over the captain's shoulder
+		var cap := shore.captain
+		camera.update_rig(real_dt, Vector3(cap.x, maxf(cap.y, -0.2) + 1.0, cap.z), Vector3(cap.vx, 0.0, cap.vz), world.time)
+	else:
+		camera.update_rig(real_dt, focus.pos, focus.vel if sailing else Vector3.ZERO, world.time)
 	# every crew afloat, after the camera has moved: they're culled and cut by it
 	crew.close_up = not sailing
 	crew.update(dt, world, camera, camera.target, camera.ground_radius() * 1.5, atmosphere.key_dir)
@@ -1259,7 +1302,7 @@ func _tick(real_dt: float) -> void:
 	world.debris.update(dt, pushers, ocean, camera.global_position)
 	# salvage afloat: drawn in and hauled aboard as she sails through it (a
 	# full hold leaves what it can't take bobbing on the swell)
-	var hauling := sailing and player.alive and _farewell == null
+	var hauling := sailing and player.alive and _farewell == null and not shore.active
 	var reach := (player.cls.beam * 0.5 + 5.0) * 2.0
 	var got := world.loot.update(dt, player.pos if hauling else null, reach, _refuse, ocean, camera.global_position)
 	for it in got:
@@ -1307,7 +1350,11 @@ func _tick(real_dt: float) -> void:
 	hud.show_sky(atmosphere.hour(), atmosphere.icon())
 	_hold_sky(dt)
 	hud.show_hull(player, discovered.size(), isles_total)
-	_hazard_watch(dt)
+	if shore.active:
+		hud.show_hazard({})
+		_hz_state = ""
+	else:
+		_hazard_watch(dt)
 	hud.show_guns(player, gunnery)
 	hud.show_ammo(player.ammo, stock)
 	hud.show_hold(hold)
@@ -2993,7 +3040,14 @@ func _arrive(r: Region) -> void:
 
 ## Off a quay's seaward face: the prompt to come alongside (a tap on it, or
 ## F), unless pirates are on her tail (the web's updateDockPrompt).
-func _dock_prompt() -> void:
+func _prompt(dt: float) -> void:
+	if shore.active:
+		_shore_prompt()
+	else:
+		_dock_prompt(dt)
+
+
+func _dock_prompt(dt: float) -> void:
 	var p := player
 	var port: TradePort = null
 	if p.alive and _farewell == null:
@@ -3001,8 +3055,9 @@ func _dock_prompt() -> void:
 		if near != null and near.in_reach(p.pos):
 			port = near
 	if port == null:
-		market.set_dock({})
+		_land_prompt(dt)
 		return
+	_prompt_kind = "dock"
 	var chased := _fighting() != null
 	var n := hold.count()
 	var why := "Repairs and fresh shot"
@@ -3013,6 +3068,205 @@ func _dock_prompt() -> void:
 	market.set_dock({"name": port.title, "ok": not chased, "why": why})
 	if not chased and controls.interact:
 		_dock(port)
+
+
+# ------------------------------------------------------------------ going ashore
+
+## Off a beach: the prompt to row the captain and four hands ashore (F or a
+## tap), unless she's chased, caught in a maelstrom's pull or under way.
+func _land_prompt(dt: float) -> void:
+	var p := player
+	_land_t -= dt
+	if _land_t <= 0.0:
+		_land_t = 0.3
+		_landing = shore_ground.landing(p.pos.x, p.pos.z, 55.0 + p.cls.beam) if p.alive and _farewell == null else {}
+	if _landing.is_empty():
+		market.set_dock({})
+		_prompt_kind = ""
+		return
+	var isle := str(_landing.island.name)
+	var chased := _fighting() != null
+	var pulled := p.drawn > 0.05
+	var sub := "The captain and four hands row in"
+	if chased:
+		sub = "Shake off your pursuers first"
+	elif pulled:
+		sub = "Not in the maelstrom's pull"
+	var ok := not chased and not pulled
+	market.set_dock({"name": isle, "title": "Go ashore on %s" % isle, "ok": ok, "why": sub})
+	_prompt_kind = "land"
+	if ok and controls.interact:
+		_go_ashore()
+
+
+## Ashore: the pill rows back from the boat.
+func _shore_prompt() -> void:
+	var pr := shore.prompt(player.name)
+	if pr.is_empty():
+		market.set_dock({})
+		_prompt_kind = ""
+		return
+	market.set_dock({"name": pr.title, "title": pr.title, "ok": pr.ok, "why": pr.sub})
+	_prompt_kind = str(pr.key)
+
+
+## Lowers the boat: she rides at anchor while the landing party rows in,
+## under the veil (`now`: at once, for a set piece).
+func _go_ashore(now := false) -> void:
+	var beach := _landing
+	if beach.is_empty() or state != State.VOYAGE or not player.alive or _farewell != null or veil.busy or shore.active:
+		return
+	if _fighting() != null or player.drawn > 0.05:
+		return
+	controls.reset()
+	hud.close_popups()
+	market.set_dock({})
+	if chart.is_open():
+		chart.close()
+	helm.disengage()
+	var isle := str(beach.island.name)
+	var row := func() -> void:
+		if state != State.VOYAGE or not player.alive or _farewell != null:
+			return
+		var p := player
+		p.anchored = true
+		p.sail_target = 0.0
+		p.rudder = 0.0
+		p.speed = 0.0
+		shore.land(p, beach, world)
+		controls.foot = true
+		hud.set_ashore(true)
+		_sea_zoom = camera.zoom
+		camera.zoom = 0.32
+		camera.foot = true
+		camera.snap_foot()
+		var cap := shore.captain
+		camera.snap_to(Vector3(cap.x, cap.y + 1.0, cap.z))
+		voyage.note("isle", "Went ashore on %s" % isle)
+		sound.splash(0.35, 0.0, 20.0)
+		hud.toast("Ashore", "%s: your hands follow your lead" % isle, 3.2)
+		if not _shore_tip:
+			_shore_tip = true
+			var how := "Steer with the stick on the left · push it to the rim to run · Jump to hop" if controls.touch else "WASD or the arrows to walk · Shift runs · Space jumps · F at the boat rows back"
+			get_tree().create_timer(3.8).timeout.connect(func() -> void:
+				if shore.active:
+					hud.toast("On foot", how, 6.0))
+		_note_tour("ashore on %s" % isle)
+	if now:
+		row.call()
+	else:
+		veil.cover("Rowing ashore to %s…" % isle, row)
+
+
+## Back into the boat and out to her: she weighs anchor under a little canvas.
+func _return_to_ship(why := "") -> void:
+	if not shore.active or veil.busy:
+		return
+	controls.reset()
+	var p := player
+	veil.cover(why if why != "" else "Rowing back to the %s…" % p.name, func() -> void:
+		if not shore.active:
+			return
+		_leave_shore()
+		p.anchored = false
+		_set_sails(1.0 / 3.0)
+		camera.snap_to(p.pos)
+		_note_tour("rowed back to the %s" % p.name))
+
+
+## Everyone aboard: the HUD, the controls and the camera go back to sailing.
+func _leave_shore() -> void:
+	if not shore.active:
+		return
+	shore.leave()
+	controls.foot = false
+	hud.set_ashore(false)
+	market.set_dock({})
+	_prompt_kind = ""
+	camera.foot = false
+	camera.snap_foot()
+	camera.zoom = _sea_zoom
+
+
+## F or a tap ashore: row back from the boat.
+func _shore_act() -> void:
+	if not shore.active or veil.busy:
+		return
+	if shore.interact() == "boat":
+		_return_to_ship()
+
+
+## Ashore: up the screen is north (the camera looks north), so the stick and
+## the keys walk the captain the way they point; Space jumps, F acts.
+func _control_shore() -> void:
+	var w := controls.walk if _auto_walk == Vector2.ZERO else _auto_walk
+	_steer.mx = w.x
+	_steer.mz = -w.y
+	_steer.run = controls.run or w.length() > 0.97
+	_steer.jump = controls.jump
+	if controls.interact:
+		_shore_act()
+
+
+func _on_hop(up: bool, k: float, wet: bool, hard: bool) -> void:
+	sound.hop(up, k, wet, hard)
+	if not up and k > 0.5:
+		camera.shake(0.04 * k)
+
+
+## A set piece ashore: `--beach` puts her off a beach (I: the island of her
+## waters, by number), `--ashore` lands the party there at once; `--walk x,y`
+## holds the stick (screen right, up; or `inland`, `inland-run` up the beach).
+func _stage_ashore() -> void:
+	var key := "ashore" if _args.has("ashore") else "beach"
+	var arg := str(_args[key])
+	var off := _beach_off(int(arg) if arg.is_valid_int() else 0)
+	if off.is_empty():
+		printerr("no beach to land on found")
+		return
+	player.place(off.x, off.z, off.heading)
+	player.speed = 0.0
+	player.sail_target = 0.0
+	camera.snap_to(player.pos)
+	_landing = shore_ground.landing(player.pos.x, player.pos.z, 55.0 + player.cls.beam)
+	if key == "ashore":
+		_go_ashore(true)
+	if _args.has("walk") and shore.active:
+		# (`inland`, up the beach; `inland-run`, at a run)
+		var wa := str(_args.walk)
+		if wa.begins_with("inland"):
+			_auto_walk = Vector2(float(shore.landing.dx), -float(shore.landing.dz)) * (1.0 if wa.ends_with("run") else 0.6)
+		else:
+			var d := wa.split(",")
+			_auto_walk = Vector2(float(d[0]), float(d[1]))
+
+
+## Where she can lie off island `n`'s beach (of the waters she's in): {x, z,
+## heading} a little out from a landing, her bow on the island; {} if none.
+func _beach_off(n: int) -> Dictionary:
+	var r := world.region_at(player.pos.x, player.pos.z)
+	if r == null:
+		r = world.regions[0]
+	var isles := r.islands.duplicate()
+	for k in isles.size():
+		var isl: Dictionary = isles[(n + k) % isles.size()]
+		var cx := float(isl.x)
+		var cz := float(isl.z)
+		for j in 16:
+			var a := j * TAU / 16.0 + 0.3
+			var dir := Vector2(sin(a), cos(a))
+			# out from the heart of the island to water deep enough for her keel
+			var d := float(isl.r) * 0.6
+			while d < float(isl.r) * 3.0 + 200.0 and world.ground_height(cx + dir.x * d, cz + dir.y * d) > -6.0:
+				d += 4.0
+			d += 22.0
+			var x := cx + dir.x * d
+			var z := cz + dir.y * d
+			if ports.nearest(Vector3(x, 0.0, z)).in_reach(Vector3(x, 0.0, z)):
+				continue
+			if not shore_ground.landing(x, z, 55.0 + player.cls.beam).is_empty():
+				return {"x": x, "z": z, "heading": atan2(-dir.x, -dir.y)}
+	return {}
 
 
 ## The pirate she's fighting, if one is near (the web's battleFoe): one
@@ -3305,6 +3559,13 @@ func _let_go() -> void:
 func _dock_here() -> void:
 	var p := player
 	if state != State.VOYAGE or not p.alive:
+		return
+	# the same pill goes ashore off a beach, and rows back from one
+	if _prompt_kind == "boat":
+		_shore_act()
+		return
+	if _prompt_kind == "land":
+		_go_ashore()
 		return
 	var near := ports.nearest(p.pos)
 	if near != null and near.in_reach(p.pos) and _fighting() == null:
@@ -3607,7 +3868,9 @@ func _go_back(os_back: bool) -> void:
 ## chart closing itself; the chart opened again, the pin's card, "Lift pin"
 ## (the course cleared with it) and the chart closed with the back button;
 ## then off a market's quay, the prompt tapped, a lot sold and then the rest,
-## her hull mended and her racks filled, and cast off with the back button.
+## her hull mended and her racks filled, and cast off with the back button;
+## last, off a beach, the prompt tapped and the landing party ashore, a walk
+## inland and a hop, back down to the boat and rowed back out to her.
 ## What it saw goes in SMOKE MENU.
 func _tour_menus() -> void:
 	if _tour_step >= TOUR_STEPS or _frames - _tour_at < 20 or veil.busy:
@@ -3747,6 +4010,68 @@ func _tour_menus() -> void:
 				_note_tour("%s owned already" % pt.id)
 		26:
 			_go_back(false)
+		27:
+			# off a beach, at rest
+			if state != State.VOYAGE:
+				return
+			var off := _beach_off(0)
+			if off.is_empty():
+				printerr("SMOKE FAILED: no beach to put a boat on")
+				_tour_step = TOUR_STEPS
+				return
+			player.place(off.x, off.z, off.heading)
+			player.speed = 0.0
+			player.sail_target = 0.0
+			camera.snap_to(player.pos)
+			_land_t = 0.0
+		28:
+			# the prompt tapped (pirates on her tail keep her off the beach, as off the quay)
+			if _prompt_kind != "land" or not market.prompt_ok():
+				if _frames - _tour_at > TOUR_CHASED:
+					_note_tour("no landing (%s)" % ("chased" if _fighting() != null else "no prompt"))
+					_tour_step = TOUR_STEPS
+				return
+			market.dock.emit()
+		29:
+			if not shore.active:
+				return
+			if shore.party.size() != 5 or camera.foot == false or not controls.foot:
+				printerr("SMOKE FAILED: ashore with %d of the party, the camera %s" % [shore.party.size(), "ashore" if camera.foot else "at sea"])
+			# inland, up the beach
+			_auto_walk = Vector2(float(shore.landing.dx), -float(shore.landing.dz))
+			_tour_walk_from = Vector2(shore.captain.x, shore.captain.z)
+		30:
+			if _frames - _tour_at < 90:
+				return
+			var cap := shore.captain
+			var far := 0.0
+			for m in shore.party:
+				far = maxf(far, Vector2(m.walker.x - cap.x, m.walker.z - cap.z).length())
+			var walked := Vector2(cap.x, cap.z).distance_to(_tour_walk_from)
+			_note_tour("ran %.0f m inland, the hands within %.1f m" % [walked, far])
+			if walked < 3.0 or far > 12.0:
+				printerr("SMOKE FAILED: the captain walked %.1f m, the hands strung out to %.1f m" % [walked, far])
+			controls.jump = true
+		31:
+			# back down to the boat, and the prompt to row back tapped
+			var cap := shore.captain
+			var b := shore.boat_pos()
+			var to := Vector2(b.x - cap.x, b.z - cap.z)
+			if _prompt_kind != "boat":
+				if _frames - _tour_at > 400:
+					printerr("SMOKE FAILED: never made it back to the boat (%.1f m off)" % to.length())
+					_auto_walk = Vector2.ZERO
+					_tour_step = TOUR_STEPS
+					return
+				_auto_walk = Vector2(to.x, -to.y).normalized()
+				return
+			_auto_walk = Vector2.ZERO
+			market.dock.emit()
+		32:
+			if shore.active:
+				return
+			if player.anchored or camera.foot or controls.foot:
+				printerr("SMOKE FAILED: rowed back, but still at anchor or on foot")
 	_tour_step += 1
 	_tour_at = _frames
 

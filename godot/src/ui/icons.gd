@@ -34,6 +34,8 @@ const LINE := {
 	# the trading port: Cast off, and the chandlery's repairs and fresh shot
 	"flag": '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
 	"hammer": '<path d="M14.5 4.5 19.5 9.5 17 12l-5-5zM12 7 4 15a2 2 0 0 0 0 2.8l.2.2a2 2 0 0 0 2.8 0L15 10"/>',
+	# ashore: a hop up off the ground
+	"jump": '<path d="M12 16V4.5M7 9.5l5-5 5 5M4.5 20h15"/>',
 	"shot": '<circle cx="9" cy="14" r="5"/><circle cx="16.5" cy="9" r="3.5"/><path d="M7.4 12.2a2 2 0 0 1 2-1.1"/>',
 }
 

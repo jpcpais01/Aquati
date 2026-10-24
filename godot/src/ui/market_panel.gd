@@ -1053,9 +1053,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 # ------------------------------------------------------------------ the prompt
 
-## The prompt as she comes in off a quay: {name, ok, why}, or {} to put it away.
+## The prompt as she comes in off a quay: {name, ok, why}, or {} to put it
+## away; a `title` says it instead of "Dock at" (off a beach, or ashore).
 func set_dock(d: Dictionary) -> void:
-	var key := "" if d.is_empty() else "%s|%s|%s" % [d.get("name", ""), d.get("ok", false), d.get("why", "")]
+	var key := "" if d.is_empty() else "%s|%s|%s|%s" % [d.get("name", ""), d.get("ok", false), d.get("why", ""), d.get("title", "")]
 	if key == _p_state:
 		return
 	_p_state = key
@@ -1093,7 +1094,8 @@ func _lay_prompt() -> void:
 	var h := maxf(28.0 * PX, 32.0 * K) if touch else maxf(24.0 * PX, 28.0 * K)
 	var pad_l := (8.0 if touch else 6.0) * K
 	var pad_r := (14.0 if touch else 12.0) * K
-	var title: String = ("Dock at %s" % d.get("name", "")) if _p_ok else str(d.get("name", ""))
+	# (going ashore and rowing back say their own)
+	var title: String = str(d.title) if d.has("title") else ("Dock at %s" % d.get("name", "")) if _p_ok else str(d.get("name", ""))
 	var t := UiText.new([[title, HudStyle.font("inter", 700), roundi(maxf(10.5 * PX, 12.0 * K)), HudStyle.INK]], 0.0, 1.0)
 	var key: UiBox = null if touch else _kbd("F", false, _p_ok)
 	var x := pad_l
