@@ -5,11 +5,13 @@ extends Node
 ## Keys: A / D or the arrows put the helm over, W / S (or up / down) set more
 ## or less canvas a notch at a time, Q and E fire the port and starboard
 ## broadsides and Space whichever suits, 1 to 5 load a kind of shot and R
-## the next kind aboard, F comes alongside a quay, C cycles the camera, the wheel zooms. A click on the sea fires the side you point into, at what you
-## point at. Touch: a drag that starts low on the left, where the thumb
-## rests by the sail lever, is the helm (point where the bow should go: screen
-## up is north, as the camera looks), the sail lever bottom left sets the
-## canvas, the guns sit bottom right, two fingers anywhere pinch the zoom.
+## the next kind aboard, F comes alongside a quay, C cycles the camera, M
+## opens the sea chart, the wheel zooms. A click on the sea fires the side
+## you point into, at what you point at. Touch: a drag that starts low on
+## the left, where the thumb rests by the sail lever, is the helm (point
+## where the bow should go: screen up is north, as the camera looks), the
+## sail lever bottom left sets the canvas, the guns sit bottom right, two
+## fingers anywhere pinch the zoom.
 
 signal touch_seen
 
@@ -45,6 +47,8 @@ var ammo_cycle := false
 var skip := false
 ## A pulse: come alongside the quay she's off (F).
 var interact := false
+## A pulse: the sea chart opened or closed (M).
+var chart := false
 ## The mouse over the sea (screen units), while there is one.
 var pointer := Vector2.ZERO
 var pointer_active := false
@@ -73,6 +77,7 @@ const _ACTIONS := {
 	"ammo_5": [KEY_5, KEY_KP_5],
 	"confirm": [KEY_ENTER, KEY_KP_ENTER],
 	"interact": [KEY_F],
+	"sea_chart": [KEY_M],
 }
 
 
@@ -108,6 +113,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			ammo_cycle = true
 		elif event.is_action("interact"):
 			interact = true
+		elif event.is_action("sea_chart"):
+			chart = true
 		else:
 			for i in Ammo.COUNT:
 				if event.is_action("ammo_%d" % (i + 1)):
@@ -219,3 +226,4 @@ func consume() -> void:
 	ammo_cycle = false
 	skip = false
 	interact = false
+	chart = false

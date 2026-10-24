@@ -22,6 +22,8 @@ signal fire_pressed(side: int)
 signal ammo_picked(kind: int)
 ## The sky badge tapped: its clock (true) or the weather's picture.
 signal sky_tapped(clock: bool)
+## The minimap was tapped: open the sea chart.
+signal map_pressed
 ## A button with nothing more to say than its click (the hold's chip).
 signal clicked
 ## The touch controls came up (a finger was seen) or went.
@@ -81,8 +83,11 @@ var _say_title: Label
 var _say_line: Label
 var _say_left := 0.0
 var _say_e := 0.0
-var _view: _ViewButton
-var _pause: _PauseButton
+## The round minimap atop the corner column.
+var minimap: Minimap
+var _zoom: _ZoomButton
+var _pause: UiButton
+var _pins: PinTags
 var _lever: SailLever
 var _helm: HelmRing
 var _toasts: VBoxContainer
@@ -170,64 +175,88 @@ func _ready() -> void:
 		_peek.toggle())
 	root.add_child(_peek)
 
-	# the wind and the sky badge (a hairline between), then the camera
+	# the corner column (the web's .nav): the minimap, the wind and the sky
+	# under it in a slim strip, and a row of round buttons under that
+	minimap = Minimap.new()
+	minimap.pressed.connect(func() -> void: map_pressed.emit())
+	root.add_child(minimap)
+	# the strip: the wind's arrow, a hairline, the weather and the clock
+	var px := HudStyle.PX
+	var strip := StyleBoxFlat.new()
+	strip.bg_color = Color(8.0 / 255.0, 22.0 / 255.0, 32.0 / 255.0, 0.72)
+	strip.border_color = Color(1.0, 1.0, 1.0, 0.08)
+	strip.set_border_width_all(1)
+	strip.set_corner_radius_all(99)
+	strip.corner_detail = 10
+	strip.anti_aliasing = true
+	strip.content_margin_left = 8.0 * k
+	strip.content_margin_right = 11.0 * k
 	_nav = PanelContainer.new()
 	_nav.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_nav.add_theme_stylebox_override("panel", HudStyle.panel(999, Vector2(12, 5)))
+	_nav.add_theme_stylebox_override("panel", strip)
+	_nav.custom_minimum_size = Vector2(0.0, maxf(22.0 * px, 28.0 * k))
 	var nav_row := HBoxContainer.new()
-	nav_row.add_theme_constant_override("separation", 8)
+	nav_row.add_theme_constant_override("separation", 0)
+	var icon := maxf(15.0 * px, 19.0 * k)
 	_wind = _WindArrow.new()
+	_wind.custom_minimum_size = Vector2(icon, icon)
+	_wind.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	nav_row.add_child(_wind)
+	nav_row.add_child(_gap(9.0 * k))
+	# the hairline before the sky, inset so it never touches the rim
 	var hair := ColorRect.new()
 	hair.color = Color(1.0, 1.0, 1.0, 0.14)
-	hair.custom_minimum_size = Vector2(1.0, 12.0)
+	hair.custom_minimum_size = Vector2(1.0, roundf(_nav.custom_minimum_size.y * 0.56))
 	hair.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hair.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	nav_row.add_child(hair)
-	var sky := HBoxContainer.new()
-	sky.add_theme_constant_override("separation", 6)
+	nav_row.add_child(_gap(9.0 * k - 1.0))
 	_sky_icon = _SkyKey.new()
+	_sky_icon.custom_minimum_size = Vector2(icon, icon)
 	_sky_icon.pressed.connect(func() -> void: sky_tapped.emit(false))
-	_clock = HudStyle.label("09:00", "inter", 700, 14, HudStyle.INK_2)
+	nav_row.add_child(_sky_icon)
+	nav_row.add_child(_gap(6.0 * k))
+	_clock = HudStyle.label("09:00", "inter", 700, roundi(maxf(10.0 * px, 12.0 * k)), HudStyle.INK, 1)
+	_clock.add_theme_font_override("font", HudStyle.tnum(HudStyle.font("inter", 700, 1)))
 	_clock_key = _SkyKey.new(_clock)
 	_clock_key.pressed.connect(func() -> void: sky_tapped.emit(true))
-	sky.add_child(_sky_icon)
-	sky.add_child(_clock_key)
-	nav_row.add_child(sky)
+	nav_row.add_child(_clock_key)
 	_nav.add_child(nav_row)
 	root.add_child(_nav)
-	_say_box = HudStyle.panel(999, Vector2(13, 0))
+	_say_box = HudStyle.panel(999, Vector2(11.0 * k, 0))
 	_say_box.bg_color = Color(0.031, 0.086, 0.125, 0.82)
 	_say_box.border_color = Color(1.0, 1.0, 1.0, 0.1)
 	_say_box.shadow_color = Color(0.0, 0.03, 0.055, 0.25)
-	_say_box.shadow_size = 12
-	_say_box.shadow_offset = Vector2(0, 6)
+	_say_box.shadow_size = roundi(12.0 * px)
+	_say_box.shadow_offset = Vector2(0.0, 6.0 * px)
 	_say = PanelContainer.new()
 	_say.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_say.add_theme_stylebox_override("panel", _say_box)
 	_say.visible = false
 	var say_col := VBoxContainer.new()
-	say_col.add_theme_constant_override("separation", 2)
+	say_col.add_theme_constant_override("separation", roundi(2.0 * k))
 	say_col.alignment = BoxContainer.ALIGNMENT_CENTER
 	var say_row := HBoxContainer.new()
-	say_row.add_theme_constant_override("separation", 5)
-	_say_lock = Icons.rect("lock", 12.0)
+	var say_px := roundi(maxf(10.0 * px, 12.0 * k))
+	say_row.add_theme_constant_override("separation", roundi(say_px * 0.4))
+	_say_lock = Icons.rect("lock", say_px * 0.85)
 	_say_lock.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	say_row.add_child(_say_lock)
-	_say_title = HudStyle.label("", "inter", 600, 14, HudStyle.INK)
+	_say_title = HudStyle.label("", "inter", 600, say_px, HudStyle.INK)
 	say_row.add_child(_say_title)
 	say_col.add_child(say_row)
-	_say_line = HudStyle.label("", "inter", 500, 13, Color(1.0, 1.0, 1.0, 0.78))
+	_say_line = HudStyle.label("", "inter", 500, roundi(maxf(10.0 * px, 11.5 * k)), Color(1.0, 1.0, 1.0, 0.78))
 	_say_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	say_col.add_child(_say_line)
 	_say.add_child(say_col)
 	root.add_child(_say)
-	_view = _ViewButton.new()
-	_view.pressed.connect(func() -> void: view_pressed.emit())
-	root.add_child(_view)
-	_pause = _PauseButton.new()
+	# the round buttons: pause, and the camera's zoom with its four stops
+	_pause = _round_button("pause")
 	_pause.pressed.connect(func() -> void: pause_pressed.emit())
 	root.add_child(_pause)
+	_zoom = _ZoomButton.new()
+	_zoom.pressed.connect(func() -> void: view_pressed.emit())
+	root.add_child(_zoom)
 
 	# canvas and speed, and on a desktop the shot rack beside them
 	_pill = PanelContainer.new()
@@ -305,6 +334,9 @@ func _ready() -> void:
 	_bars = EnemyBars.new()
 	root.add_child(_bars)
 	root.move_child(_bars, _status.get_index())
+	_pins = PinTags.new()
+	root.add_child(_pins)
+	root.move_child(_pins, _status.get_index())
 
 	# touch: the helm ring, the sail lever and the guns
 	_helm = HelmRing.new()
@@ -337,12 +369,20 @@ func _layout() -> void:
 	_chips.position = Vector2(0.0, _ship_panel.size.y + 5.0 * HudStyle.K)
 	_chips.size = _chips.get_combined_minimum_size()
 	_status.position = Vector2(mx, my)
+	# the corner column, centred under the minimap: the strip, then the
+	# buttons (three to a row in the web's, so as wide as three)
+	var k := HudStyle.K
+	var b := _pause.size.x
+	var col_w := 3.0 * b + 16.0 * k
+	var cx := vp.x - mx - col_w * 0.5
+	minimap.position = Vector2(cx - Minimap.SIZE * 0.5, my)
 	var ns := _nav.get_combined_minimum_size()
 	_nav.size = ns
-	var vb := _view.custom_minimum_size
-	_view.position = Vector2(vp.x - mx - vb.x, my)
-	_pause.position = Vector2(_view.position.x - 8.0 - vb.x, my)
-	_nav.position = Vector2(_pause.position.x - 8.0 - ns.x, my + (vb.y - ns.y) * 0.5)
+	_nav.position = Vector2(roundf(cx - ns.x * 0.5), my + Minimap.SIZE + 9.0 * k)
+	var by := _nav.position.y + ns.y + 7.0 * k
+	var gap := 8.0 * k
+	_pause.position = Vector2(cx - gap * 0.5 - b, by)
+	_zoom.position = Vector2(cx + gap * 0.5, by)
 	var ps := _pill.get_combined_minimum_size()
 	_pill.size = ps
 	_pill.position = Vector2((vp.x - ps.x) * 0.5, vp.y - my - ps.y)
@@ -360,6 +400,46 @@ func _layout() -> void:
 	_toasts.offset_top = my
 
 
+## A round glass button with a line icon (the web's .icon-btn in the corner).
+func _round_button(icon: String) -> UiButton:
+	var d := maxf(28.0 * HudStyle.PX, 32.0 * HudStyle.K)
+	var b := UiButton.new(Vector2(d, d), d * 0.5, 24.0 * HudStyle.PX)
+	round_look(b)
+	var ic := Icons.rect(icon, maxf(13.0 * HudStyle.PX, 15.0 * HudStyle.K))
+	ic.position = (b.size - ic.size) * 0.5
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(ic)
+	return b
+
+
+## The corner's round buttons: dark glass, a hairline, a soft shadow; they
+## take the touch (the sea under them is not steered).
+static func round_look(b: UiButton) -> void:
+	var fill := Color(10.0 / 255.0, 28.0 / 255.0, 40.0 / 255.0, 0.78)
+	b.p("c_top", fill).p("c_foot", fill).p("c_border", HudStyle.STROKE).p("hi", 0.09).p("hi_px", HudStyle.PX)
+	b.p("c_shadow", Color(0.0, 8.0 / 255.0, 14.0 / 255.0, 0.2)).p("shadow", Vector2(6.0, 18.0) * HudStyle.PX)
+	b.squeeze = 0.92
+	b.mouse_filter = Control.MOUSE_FILTER_STOP
+
+
+## A fixed gap in a row.
+static func _gap(w: float) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(w, 0.0)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+## The camera stepped to another stop: its pips, and its name beside the button.
+func announce_view(view: int) -> void:
+	_zoom.announce(view)
+
+
+## The waypoints' tags where their pillars stand, or on the screen's edge.
+func show_pins(pins: Waypoints, from: Vector3, cam: Camera3D, world: World) -> void:
+	_pins.show_pins(pins, from, cam, world)
+
+
 ## The HUD's view of the voyage; text only changes when the number it shows does.
 func show_state(ship: Ship, wind: Wind, view: int, vignette: float) -> void:
 	_text("speed", _speed, str(roundi(absf(ship.speed) * 1.94)))
@@ -367,7 +447,7 @@ func show_state(ship: Ship, wind: Wind, view: int, vignette: float) -> void:
 	_pips.set_level(lvl)
 	_lever.show_state(lvl, ship.sail_level)
 	_wind.set_wind(wind.dir_x, wind.dir_z)
-	_view.set_view(view)
+	_zoom.set_view(view)
 	_helm.heading = ship.heading
 	_text("class", _ship_class, ship.cls.name.to_upper())
 	_text("name", _ship_name, ship.ship_name)
@@ -380,10 +460,10 @@ func show_sky(hour: float, icon: String) -> void:
 	var m := int(fmod(hour, 24.0) * 60.0) / 5 * 5
 	if _text("clock", _clock, "%02d:%02d" % [m / 60, m % 60]):
 		var night := hour < 5.5 or hour > 19.5
-		_clock.add_theme_color_override("font_color", Color("#d3dcff") if night else HudStyle.INK_2)
+		_clock.add_theme_color_override("font_color", Color("#d3dcff") if night else HudStyle.INK)
 	if _shown.get("sky", "") != icon:
 		_shown["sky"] = icon
-		_sky_icon.set_icon(Icons.texture(icon, 20.0))
+		_sky_icon.set_icon(Icons.texture(icon, _sky_icon.custom_minimum_size.x))
 
 
 ## Gold pips on the weather's picture and on the clock while the weather or
@@ -402,12 +482,14 @@ func sky_say(text: String, need := "") -> void:
 	_say_lock.visible = card
 	_say_line.visible = card
 	_say_line.text = need
-	_say_line.custom_minimum_size = Vector2(212.0, 0.0) if card else Vector2.ZERO
-	_say_box.set_corner_radius_all(14 if card else 999)
-	_say_box.content_margin_top = 9.0 if card else 0.0
-	_say_box.content_margin_bottom = 9.0 if card else 0.0
-	_say_box.content_margin_left = 14.0 if card else 13.0
-	_say_box.content_margin_right = 14.0 if card else 13.0
+	# a card as the web's .sky-say.need: 150 px wide, its padding 8 by 12 at its --k
+	var k := HudStyle.K
+	_say_line.custom_minimum_size = Vector2(150.0 * HudStyle.PX - 24.0 * k, 0.0) if card else Vector2.ZERO
+	_say_box.set_corner_radius_all(roundi(12.0 * k) if card else 999)
+	_say_box.content_margin_top = 8.0 * k if card else 0.0
+	_say_box.content_margin_bottom = 8.0 * k if card else 0.0
+	_say_box.content_margin_left = 12.0 * k if card else 11.0 * k
+	_say_box.content_margin_right = 12.0 * k if card else 11.0 * k
 	_say_title.add_theme_font_override("font", HudStyle.font("inter", 700 if card else 600))
 	_say.custom_minimum_size = Vector2(0.0, 0.0 if card else _nav.size.y)
 	_say.reset_size()
@@ -420,8 +502,8 @@ func _place_say() -> void:
 	if _say == null:
 		return
 	_say.size = _say.get_combined_minimum_size()
-	var slide := (1.0 - HudStyle.eased(_say_e)) * 8.0
-	_say.position = Vector2(_nav.position.x - 8.0 - _say.size.x + slide, _nav.position.y + (_nav.size.y - _say.size.y) * 0.5)
+	var slide := (1.0 - HudStyle.eased(_say_e)) * 8.0 * HudStyle.PX
+	_say.position = Vector2(_nav.position.x - 8.0 * HudStyle.K - _say.size.x + slide, _nav.position.y + (_nav.size.y - _say.size.y) * 0.5)
 
 
 ## A soft ring ripples off the wind's arrow as the wind comes round.
@@ -936,57 +1018,82 @@ class _SkyKey:
 			draw_circle(at, 2.5 * lerpf(0.4, 1.0, e), Color(HudStyle.GOLD, _pin), true, -1.0, true)
 
 
-## The camera button: a lens and four pips for close, mid, far and leaned over.
-class _ViewButton:
-	extends Control
-	signal pressed
+## The zoom button: a lens over four pips that fill up through close, mid,
+## far and leaned over (the last swelling a little), and the stop's name
+## beside it for a moment as it steps to it.
+class _ZoomButton:
+	extends UiButton
+	const NAMES := ["Close", "Mid", "Far", "Cinematic"]
 	var view := -1
+	var _pips: Control
+	var _tag: PanelContainer
+	var _tag_name: Label
+	var _tag_t := 0.0
 
 	func _init() -> void:
-		custom_minimum_size = Vector2(44, 44)
-		size = custom_minimum_size
-		mouse_filter = Control.MOUSE_FILTER_STOP
+		var d := maxf(28.0 * HudStyle.PX, 32.0 * HudStyle.K)
+		super(Vector2(d, d), d * 0.5, 24.0 * HudStyle.PX)
+		Hud.round_look(self)
+		var ic := Icons.rect("zoom", maxf(13.0 * HudStyle.PX, 15.0 * HudStyle.K))
+		ic.position = (size - ic.size) * 0.5 - Vector2(0.0, 2.0 * HudStyle.PX)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(ic)
+		_pips = Control.new()
+		_pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_pips.size = size
+		_pips.draw.connect(_draw_pips)
+		add_child(_pips)
+		# the stop's name, a pill to the left of the button
+		var box := HudStyle.panel(999, Vector2(10.0, 4.0) * HudStyle.PX)
+		box.bg_color = Color(10.0 / 255.0, 28.0 / 255.0, 40.0 / 255.0, 0.86)
+		box.shadow_size = 0
+		_tag = PanelContainer.new()
+		_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_tag.add_theme_stylebox_override("panel", box)
+		_tag_name = HudStyle.label("", "inter", 600, roundi(11.0 * HudStyle.PX), HudStyle.INK)
+		_tag.add_child(_tag_name)
+		_tag.visible = false
+		add_child(_tag)
 
 	func set_view(v: int) -> void:
 		if v != view:
 			view = v
-			queue_redraw()
+			_pips.queue_redraw()
 
-	func _gui_input(event: InputEvent) -> void:
-		if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION):
-			pressed.emit()
-			accept_event()
+	## The stop's name pops up beside it.
+	func announce(v: int) -> void:
+		set_view(v)
+		_tag_name.text = NAMES[clampi(v, 0, 3)]
+		_tag.size = _tag.get_combined_minimum_size()
+		_tag_t = 0.0
+		_tag.visible = true
+		set_process(true)
 
-	func _draw() -> void:
-		draw_style_box(HudStyle.panel(12), Rect2(Vector2.ZERO, size))
-		var c := Vector2(size.x * 0.5, size.y * 0.44)
-		draw_arc(c + Vector2(-2, -2), 7.5, 0.0, TAU, 28, HudStyle.INK, 2.2, true)
-		draw_line(c + Vector2(3.5, 3.5), c + Vector2(9, 9), HudStyle.INK, 2.6, true)
+	func _process(dt: float) -> void:
+		super(dt)
+		if not _tag.visible:
+			return
+		_tag_t += dt
+		# in over a quarter second sliding 6 px, held, then out
+		var a := clampf(_tag_t / 0.25, 0.0, 1.0) if _tag_t < 1.3 else clampf(1.0 - (_tag_t - 1.3) / 0.25, 0.0, 1.0)
+		_tag.modulate.a = a
+		var slide := (1.0 - HudStyle.eased(clampf(_tag_t / 0.3, 0.0, 1.0))) * 6.0 * HudStyle.PX if _tag_t < 1.3 else 0.0
+		_tag.position = Vector2(-8.0 * HudStyle.PX - _tag.size.x + slide, (size.y - _tag.size.y) * 0.5)
+		if _tag_t > 1.6:
+			_tag.visible = false
+
+	func _draw_pips() -> void:
+		var r := 1.5 * HudStyle.PX
+		var step := 3.0 * HudStyle.PX + 2.0 * HudStyle.PX
+		var y := size.y * 0.87 - r
 		for i in 4:
-			var p := Vector2(size.x * 0.5 - 9.0 + i * 6.0, size.y - 7.0)
-			draw_circle(p, 1.7, HudStyle.GOLD if i == view else HudStyle.INK_4, true, -1.0, true)
-
-
-## The pause button: two bars, the voyage held where it is.
-class _PauseButton:
-	extends Control
-	signal pressed
-
-	func _init() -> void:
-		custom_minimum_size = Vector2(44, 44)
-		size = custom_minimum_size
-		mouse_filter = Control.MOUSE_FILTER_STOP
-
-	func _gui_input(event: InputEvent) -> void:
-		if (event is InputEventScreenTouch and event.pressed) or (event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and event.device != InputEvent.DEVICE_ID_EMULATION):
-			pressed.emit()
-			accept_event()
-
-	func _draw() -> void:
-		draw_style_box(HudStyle.panel(12), Rect2(Vector2.ZERO, size))
-		var c := size * 0.5
-		for dx: float in [-3.6, 3.6]:
-			draw_line(c + Vector2(dx, -6.5), c + Vector2(dx, 6.5), HudStyle.INK, 2.6, true)
+			var at := Vector2(size.x * 0.5 + (i - 1.5) * step, y)
+			if i <= view:
+				var big := 1.35 if view == 3 and i == 3 else 1.0
+				MapMarks.glow(_pips, at, r * big, 4.0 * HudStyle.PX, Color(244.0 / 255.0, 213.0 / 255.0, 138.0 / 255.0, 0.7))
+				_pips.draw_circle(at, r * big, HudStyle.GOLD, true, -1.0, true)
+			else:
+				_pips.draw_circle(at, r, Color(1.0, 1.0, 1.0, 0.28), true, -1.0, true)
 
 
 ## A tally on the HUD: a badge and a number, popping gold when it goes up;

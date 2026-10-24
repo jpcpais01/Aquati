@@ -11,9 +11,11 @@ extends SceneTree
 ## the baked world loads whole (both archipelagos, their ground maps and
 ## their planting), a broadside's damage numbers stack up clear of one
 ## another, every sound and song is baked and plays as the web's do (see
-## _check_sound), and what's kept between voyages comes back whole from its
-## save, takes nothing malformed from a damaged one and survives a crash
-## mid-write (_check_progress). Prints CHECK OK.
+## _check_sound), the waypoints drop, number, arm and strike off as the web's,
+## the sea chart's geography lands where the web's does and its view maps the
+## sea to the canvas and back (_check_maps), and what's kept between voyages
+## comes back whole from its save, takes nothing malformed from a damaged one
+## and survives a crash mid-write (_check_progress). Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
 const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
@@ -767,6 +769,7 @@ func _check_world() -> void:
 		_fail("world: the spawn point is aground (%.1f m)" % w.ground_height(spawn.x, spawn.y))
 	print("world: %d archipelagos, %d plants in %d batches, loaded in %.0f ms" % [regions.size(), plants, batches, (Time.get_ticks_usec() - t0) / 1000.0])
 	_check_ports(w)
+	_check_maps(w)
 
 
 ## The trading ports: the web's own numbers (Mulberry32) and every market's
@@ -848,6 +851,165 @@ func _check_ports(w: World) -> void:
 ## damaged or edited by hand is taken field by field, nothing malformed let
 ## in; a crash between writing the fresh copy and swapping it in loses
 ## nothing; and a fresh game starts from the harbour's defaults.
+## The maps: the waypoints (at most five, each its own colour, armed once
+## you've sailed off and struck off when you sail into one), the distances
+## they're labelled with, the sea chart's geography against the web's own
+## numbers (its noise bit for bit, its lane, rose, shoal and soundings), the
+## chart's view (a spot to the canvas and back, a zoom keeping the spot under
+## the finger, the sea kept on the chart) and its dashed lines broken as a
+## canvas breaks them.
+func _check_maps(w: World) -> void:
+	var steps := 0
+	# the waypoints keep themselves with your progress: a scratch copy meanwhile
+	var prog: Node = root.get_node_or_null("Progress")
+	if prog == null:
+		_fail("maps: no Progress to keep the pins with")
+		return
+	var kept_path: String = prog.path
+	var kept_pins: Array = prog.pins.duplicate(true)
+	prog.path = "user://check-maps.json"
+	# (loaded, not named: they read Progress, which a script this one names
+	# compiles without)
+	var pins: Node3D = load("res://src/game/waypoints.gd").new()
+	pins.visible = false
+	for i in 6:
+		pins.add(100.0 * (i + 1), 0.0, Vector3.ZERO)
+	var hues := {}
+	for p: Variant in pins.pins:
+		hues[p.hue] = true
+	if pins.pins.size() == 5 and pins.pins[0].x == 200.0 and hues.size() == 5 and prog.pins.size() == 5 and prog.pins[0] == [200, 0, pins.pins[0].hue]:
+		steps += 1
+	else:
+		_fail("maps: six pins dropped left %d standing (oldest at %s), %d colours, %d kept" % [pins.pins.size(), pins.pins[0].x if not pins.pins.is_empty() else -1.0, hues.size(), prog.pins.size()])
+	var third: Variant = pins.near(305.0, -4.0, 26.0)
+	if third != null and third.x == 300.0 and pins.number(third) == 2 and pins.near(250.0, 0.0, 26.0) == null:
+		steps += 1
+	else:
+		_fail("maps: a tap by the second pin didn't find it")
+	# one dropped under the ship waits till she's sailed off, then sailing in strikes it off
+	pins.wipe()
+	var pin: Variant = pins.add(10.0, 0.0, Vector3.ZERO)
+	var early: Variant = pins.update(0.1, Vector3(14.0, 0.0, 0.0), null, Vector3.ZERO)
+	pins.update(0.1, Vector3(100.0, 0.0, 0.0), null, Vector3.ZERO)
+	var hit: Variant = pins.update(0.1, Vector3(20.0, 0.0, 6.0), null, Vector3.ZERO)
+	if early == null and hit == pin and pins.pins.is_empty() and pin.reached and pin.gone >= 0.0:
+		steps += 1
+	else:
+		_fail("maps: a pin under the ship was struck off %s, sailing back in %s" % ["at once" if early != null else "not at once", "struck it" if hit == pin else "missed it"])
+	pins.add(-50.0, 40.0)
+	pins.wipe()
+	if pins.pins.is_empty() and prog.pins.is_empty():
+		steps += 1
+	else:
+		_fail("maps: a wipe left pins standing")
+	pins.free()
+	prog.save()
+	for f: String in [prog.path, prog.path + ".tmp"]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	prog.path = kept_path
+	prog.pins = kept_pins
+	# the distances the pins are labelled with, as the web writes them
+	var scene: GDScript = load("res://src/ui/map_scene.gd")
+	var dist := {0.0: "0 m", 283.0: "280 m", 996.0: "1000 m", 1049.0: "1.0 km", 1120.0: "1.1 km", 9940.0: "9.9 km", 23400.0: "23 km"}
+	var bad := []
+	for m: float in dist:
+		if scene.distance(m) != dist[m]:
+			bad.append("%s for %d m" % [scene.distance(m), m])
+	if bad.is_empty():
+		steps += 1
+	else:
+		_fail("maps: distances read %s" % ", ".join(bad))
+	# the chart's geography, against the web's own numbers (tools: node on src/ui/chart.ts)
+	var art := ChartArt.new(w.regions)
+	var near := func(a: float, b: float, tol: float) -> bool: return absf(a - b) <= tol
+	var lane := art.lane()
+	var cur := art.lane(330.0)
+	var geo: bool = art.sea == Rect2(-1700.0, -4500.0, 10000.0, 6200.0) and near.call(art.max_zoom, 29.296875, 1e-6) \
+			and near.call(art.rose.x, 4041.7657, 0.05) and near.call(art.rose.y, -291.6753, 0.05) and art.rose.z == 300.0 \
+			and near.call(art.bank.x, 4321.2039, 0.05) and near.call(art.bank.y, -1735.8387, 0.05) \
+			and lane.a.distance_to(Vector2(1058.669, -449.1323)) < 0.05 and lane.q.distance_to(Vector2(3503.0859, -921.2975)) < 0.05 \
+			and lane.b.distance_to(Vector2(5541.331, -2350.8677)) < 0.05 and lane.u.distance_to(Vector2(0.92058178, -0.39054985)) < 1e-5 \
+			and cur.a.distance_to(Vector2(1187.5505, -145.3403)) < 0.05 and cur.q.distance_to(Vector2(3651.2996, -571.9367)) < 0.05 \
+			and cur.b.distance_to(Vector2(5670.2124, -2047.0757)) < 0.05
+	if geo:
+		steps += 1
+	else:
+		_fail("maps: the chart's sea %s, rose %s, shoal %s, lane %s %s %s" % [art.sea, art.rose, art.bank, lane.a, lane.q, lane.b])
+	var noise := {Vector2(0.3, 0.7): 0.6083508325702471, Vector2(-3.25, 12.5): 0.4017994024496699,
+			Vector2(17.9, -9.1): 0.7800817280147193, Vector2(-24.6, 44.2): 0.4766380195464571}
+	var deep := {Vector2(3000.0, -1500.0): 0.6068891884104751, Vector2(4200.0, 600.0): 0.8949079718085009,
+			Vector2(-1500.0, -2000.0): 0.7509545250952342, Vector2(5000.0, -1200.0): 0.5975958328072973}
+	var sea_ok: bool = near.call(art.edge(3000.0, -1500.0), -1490.7768677556235, 0.01) and near.call(art.edge(9000.0, -4000.0), 983.2815729997478, 0.01)
+	for at: Vector2 in noise:
+		# (the lattice points as the web's doubles: Vector2 holds them a touch off)
+		var x := snappedf(at.x, 0.01)
+		var z := snappedf(at.y, 0.01)
+		sea_ok = sea_ok and near.call(ChartArt.vnoise(x, z), noise[at], 1e-6)
+	for at: Vector2 in deep:
+		sea_ok = sea_ok and near.call(art.depth(at.x, at.y), deep[at], 1e-4)
+	if sea_ok:
+		steps += 1
+	else:
+		_fail("maps: the open sea's depths aren't the web's (noise %.9f, depth %.6f, edge %.3f)" % [ChartArt.vnoise(0.3, 0.7), art.depth(3000.0, -1500.0), art.edge(3000.0, -1500.0)])
+	var fathoms := 0.0
+	for s in art.soundings:
+		fathoms += s.z
+	var sd := art.soundings
+	if sd.size() == 55 and fathoms == 23414.0 and Vector2(sd[0].x, sd[0].y).distance_to(Vector2(-1005.3429, -933.8859)) < 0.05 and sd[0].z == 37.0 \
+			and Vector2(sd[1].x, sd[1].y).distance_to(Vector2(3910.4459, -591.629)) < 0.05 and sd[1].z == 707.0 \
+			and Vector2(sd[2].x, sd[2].y).distance_to(Vector2(5550.8223, -3787.9724)) < 0.05 and sd[2].z == 63.0 \
+			and Vector2(sd[54].x, sd[54].y).distance_to(Vector2(4322.754, -3508.7944)) < 0.05 and sd[54].z == 1490.0:
+		steps += 1
+	else:
+		_fail("maps: %d soundings, %.0f fathoms in all, the first %s (the web's: 55, 23414, (-1005.3, -933.9, 37))" % [sd.size(), fathoms, sd[0] if not sd.is_empty() else null])
+	# the chart's view: a spot to the canvas and back, a zoom about the finger, the sea kept on it
+	var chart: CanvasLayer = load("res://src/ui/sea_chart.gd").new()
+	chart.art = art
+	chart._W = 1100.0
+	chart._H = 640.0
+	chart.look(3300.0, -1400.0, 3.0)
+	var round_trip := true
+	for at: Vector2 in [Vector2(3300.0, -1400.0), Vector2(1200.0, -300.0), Vector2(5150.0, -2650.0), Vector2(2400.0, 900.0)]:
+		var c: Vector2 = chart.to_canvas(at.x, at.y)
+		round_trip = round_trip and (chart.to_world(c) as Vector2).distance_to(at) < 0.05
+	round_trip = round_trip and (chart.to_canvas(3300.0, -1400.0) as Vector2).distance_to(Vector2(550.0, 320.0)) < 1e-3
+	var finger := Vector2(240.0, 170.0)
+	var under: Vector2 = chart.to_world(finger)
+	chart._zoom_at(1.5, finger)
+	var held := (chart.to_world(finger) as Vector2).distance_to(under) < 0.05 and is_equal_approx(chart.view().z, 4.5)
+	chart._zoom_at(1000.0, finger)
+	var deepest: float = chart.view().z
+	chart.look(-5000.0, 9000.0, 1.0)
+	var whole: Vector3 = chart.view()
+	if round_trip and held and is_equal_approx(deepest, art.max_zoom) and whole.is_equal_approx(Vector3(3300.0, -1400.0, 1.0)):
+		steps += 1
+	else:
+		_fail("maps: the chart's view: round trip %s, zoom about the finger %s, deepest zoom %.2f, the whole sea at %s" % [round_trip, held, deepest, whole])
+	chart.free()
+	# dashed lines broken as a canvas's setLineDash and lineDashOffset break them
+	var line := PackedVector2Array([Vector2.ZERO, Vector2(100.0, 0.0)])
+	var big := Rect2(-1e4, -1e4, 2e4, 2e4)
+	var spans := func(d: PackedVector2Array) -> Array:
+		var out := []
+		for i in range(0, d.size(), 2):
+			out.append([snappedf(d[i].x, 0.001), snappedf(d[i + 1].x, 0.001)])
+		return out
+	var corner := MapMarks.dashes(PackedVector2Array([Vector2.ZERO, Vector2(10.0, 0.0), Vector2(10.0, 10.0)]), 5.0, 1.0, 0.0, 0.0, big)
+	var capped := MapMarks.dashes(line, 10.0, 10.0, 0.0, 1.5, big)
+	if spans.call(MapMarks.dashes(line, 10.0, 10.0, 0.0, 0.0, big)) == [[0.0, 10.0], [20.0, 30.0], [40.0, 50.0], [60.0, 70.0], [80.0, 90.0]] \
+			and spans.call(MapMarks.dashes(line, 10.0, 10.0, -5.0, 0.0, big)) == [[5.0, 15.0], [25.0, 35.0], [45.0, 55.0], [65.0, 75.0], [85.0, 95.0]] \
+			and spans.call(MapMarks.dashes(line, 10.0, 10.0, 5.0, 0.0, big)) == [[0.0, 5.0], [15.0, 25.0], [35.0, 45.0], [55.0, 65.0], [75.0, 85.0], [95.0, 100.0]] \
+			and spans.call(MapMarks.dashes(line, 10.0, 10.0, 0.0, 0.0, Rect2(35.0, -5.0, 20.0, 10.0))) == [[40.0, 50.0]] \
+			and capped[0].is_equal_approx(Vector2(-1.5, 0.0)) and capped[1].is_equal_approx(Vector2(11.5, 0.0)) \
+			and corner.size() == 8 and corner[2].is_equal_approx(Vector2(6.0, 0.0)) and corner[3].is_equal_approx(Vector2(10.0, 1.0)) \
+			and MapMarks.dashes(line, 4.0, 0.0, 0.0, 0.0, big).is_empty():
+		steps += 1
+	else:
+		_fail("maps: dashes broke as %s" % [spans.call(MapMarks.dashes(line, 10.0, 10.0, 5.0, 0.0, big))])
+	print("maps: %d of 10 steps as expected" % steps)
+
+
 func _check_progress() -> void:
 	var script: GDScript = load("res://src/core/progress.gd")
 	var file := "user://check-progress.json"
@@ -867,6 +1029,7 @@ func _check_progress() -> void:
 	a.pick_ship("galleon")
 	a.pick_sea("brumas")
 	a.keep_view(0.731, 0.25)
+	a.keep_pins([[120, -40, 2], [3300, -1400, 0]])
 	a.records.voyages = 3
 	a.records.time = 912.5
 	a.save()
@@ -874,22 +1037,24 @@ func _check_progress() -> void:
 	b._load()
 	if b.ship == "galleon" and b.start_sea == "brumas" and b.sea_picked and b.purse == 1000 and b.charted("brumas") \
 			and not b.charted("home") and b.view.is_equal_approx(Vector2(0.731, 0.25)) and int(b.records.voyages) == 3 \
-			and is_equal_approx(float(b.records.time), 912.5) and not FileAccess.file_exists(file + ".tmp"):
+			and is_equal_approx(float(b.records.time), 912.5) and b.pins == [[120, -40, 2], [3300, -1400, 0]] and not FileAccess.file_exists(file + ".tmp"):
 		steps += 1
 	else:
-		_fail("progress: a save didn't come back whole: %s, %s, %d gold, view %s, records %s" % [b.ship, b.start_sea, b.purse, b.view, b.records])
+		_fail("progress: a save didn't come back whole: %s, %s, %d gold, view %s, pins %s, records %s" % [b.ship, b.start_sea, b.purse, b.view, b.pins, b.records])
 	# a damaged save: only what makes sense is taken
 	var f := FileAccess.open(file, FileAccess.WRITE)
 	f.store_string(JSON.stringify({"ship": "frigate", "start_sea": 7, "view": [9, -3], "purse": -40, "charts": {"brumas": 1700000000},
+			"pins": [[1, 2, 9], "x", [1, 2], [5, "y", 1], [3.6, -2.4, -3], [10, 10, 1], [20, 20, 2], [30, 30, 3], [40, 40, 4]],
 			"records": {"voyages": -2, "time": "a while", "gold": 640, "kills": "many"}, "extra": [1, 2]}))
 	f.close()
 	var c: Node = make.call()
 	c._load()
 	if c.ship == "sloop" and c.start_sea == "home" and not c.sea_picked and c.view == Vector2(1.0, 0.0) and c.purse == 0 \
-			and c.charted("brumas") and int(c.records.voyages) == 0 and float(c.records.time) == 0.0 and int(c.records.gold) == 640 and int(c.records.kills) == 0:
+			and c.charted("brumas") and int(c.records.voyages) == 0 and float(c.records.time) == 0.0 and int(c.records.gold) == 640 and int(c.records.kills) == 0 \
+			and c.pins == [[1, 2, 4], [4, -2, 0], [10, 10, 1], [20, 20, 2], [30, 30, 3]]:
 		steps += 1
 	else:
-		_fail("progress: a damaged save let something malformed in: %s, %s, view %s, %d gold, records %s" % [c.ship, c.start_sea, c.view, c.purse, c.records])
+		_fail("progress: a damaged save let something malformed in: %s, %s, view %s, %d gold, pins %s, records %s" % [c.ship, c.start_sea, c.view, c.purse, c.pins, c.records])
 	# a crash after the fresh copy was written, before it was swapped in
 	f = FileAccess.open(file, FileAccess.WRITE)
 	f.store_string("{\"ship\": \"brig\", \"pur")
@@ -908,7 +1073,7 @@ func _check_progress() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
 	var e: Node = make.call()
 	e._load()
-	if e.ship == "sloop" and e.start_sea == "home" and not e.sea_picked and e.view.x < 0.0 and e.purse == 0 and e.charts.is_empty():
+	if e.ship == "sloop" and e.start_sea == "home" and not e.sea_picked and e.view.x < 0.0 and e.purse == 0 and e.charts.is_empty() and e.pins.is_empty():
 		steps += 1
 	else:
 		_fail("progress: a fresh game doesn't start from the defaults")
