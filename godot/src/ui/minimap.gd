@@ -204,6 +204,21 @@ class _Marks:
 			var at3 := MapScene.port_at(near)
 			var a := atan2(at3.y - me.z, at3.x - me.x)
 			MapMarks.port(self, c + Vector2(cos(a), sin(a)) * (h - 18.0 * u), 10.0 * u, 0.9)
+		# a maelstrom's pull ringed in coral red round its wheeling spiral; a reef's danger mark
+		if sc.world.hazards != null:
+			var now := Time.get_ticks_msec() / 1000.0
+			for m in sc.world.hazards.maelstroms:
+				var v: Vortex = m.v
+				var at5: Vector2 = to_map.call(v.x, v.z)
+				var rr := v.r * k
+				if at5.distance_to(c) > h + rr + 14.0 * u:
+					continue
+				MapMarks.pull_ring(self, at5, rr, 6.0 * u, now * 8.0 * u * v.dir, Color(1.0, 130.0 / 255.0, 100.0 / 255.0, 0.7), 2.0 * u)
+				MapMarks.vortex(self, at5, clampf(rr * 0.5, 11.0 * u, 30.0 * u), now * 0.8, v.dir)
+			for rf: Dictionary in sc.world.hazards.reefs:
+				var at6: Vector2 = to_map.call(float(rf.x), float(rf.z))
+				if at6.distance_to(c) < h + 14.0 * u:
+					MapMarks.reef(self, at6, 9.0 * u)
 		# the helmsman's course, flowing on ahead of her
 		if sc.route.size() > 1:
 			var course := PackedVector2Array()

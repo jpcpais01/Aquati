@@ -263,3 +263,54 @@ static func _teardrop() -> PackedVector2Array:
 static func _bezier(a: Vector2, b: Vector2, c: Vector2, d: Vector2, t: float) -> Vector2:
 	var u := 1.0 - t
 	return a * u * u * u + b * 3.0 * u * u * t + c * 3.0 * u * t * t + d * t * t * t
+
+
+## A maelstrom (the web's vortexMark): an inked spiral winding in, turned by
+## `turn` (radians) so it slowly wheels on the live maps, mirrored for one
+## that turns the other way, round a dark eye.
+static func vortex(ci: CanvasItem, at: Vector2, r: float, turn := 0.0, dir := 1) -> void:
+	var pts := PackedVector2Array()
+	pts.resize(41)
+	for i in 41:
+		var t := i / 40.0
+		var a := t * PI * 4.2
+		var rr := r * (0.08 + 0.92 * t)
+		pts[i] = at + Vector2(cos(a) * rr * dir, sin(a) * rr).rotated(turn * dir)
+	ci.draw_polyline(pts, Color(8.0 / 255.0, 20.0 / 255.0, 28.0 / 255.0, 0.7), maxf(1.2, r * 0.42), true)
+	ci.draw_polyline(pts, Color("#ff9a7a"), maxf(1.2, r * 0.2), true)
+	ci.draw_circle(at, maxf(1.5, r * 0.14), Color("#1a0a08"), true, -1.0, true)
+
+
+## A maelstrom's pull: a dashed coral ring of radius `r`, its dashes
+## (`dash` long) running round with the water.
+static func pull_ring(ci: CanvasItem, at: Vector2, r: float, dash: float, run: float, color: Color, width: float) -> void:
+	if r < 2.0:
+		return
+	var circ := TAU * r
+	var n := maxi(2, int(circ / (dash * 2.0)))
+	var step := TAU / n
+	var off := fmod(run / r, step)
+	for i in n:
+		var a0 := off + i * step
+		ci.draw_arc(at, r, a0, a0 + step * 0.5, maxi(3, int(dash / 3.0)), color, width, true)
+
+
+## A reef (the web's reefMark): the old chartmakers' danger mark, a cross ringed with dots.
+static func reef(ci: CanvasItem, at: Vector2, r: float) -> void:
+	var ink := Color(8.0 / 255.0, 20.0 / 255.0, 28.0 / 255.0, 0.7)
+	var coral := Color("#ffb38a")
+	for pass_ in 2:
+		var w := maxf(1.1, r * (0.36 if pass_ == 0 else 0.17))
+		var c := ink if pass_ == 0 else coral
+		ci.draw_line(at + Vector2(-r * 0.55, 0.0), at + Vector2(r * 0.55, 0.0), c, w, true)
+		ci.draw_line(at + Vector2(0.0, -r * 0.55), at + Vector2(0.0, r * 0.55), c, w, true)
+		if pass_ == 0:
+			# (the strokes' round caps)
+			for e: Vector2 in [Vector2(-1, 0), Vector2(1, 0), Vector2(0, -1), Vector2(0, 1)]:
+				ci.draw_circle(at + e * r * 0.55, w * 0.5, c, true, -1.0, true)
+	var dot := maxf(1.0, r * 0.12)
+	for i in 8:
+		var a := i / 8.0 * TAU + PI / 8.0
+		var p := at + Vector2(cos(a), sin(a)) * r
+		ci.draw_circle(p, dot + 0.5, Color(8.0 / 255.0, 20.0 / 255.0, 28.0 / 255.0, 0.6), true, -1.0, true)
+		ci.draw_circle(p, dot, coral, true, -1.0, true)

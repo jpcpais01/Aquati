@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T11:00Z',
+    entries: [
+      {
+        title: 'Android: maelstroms and reefs',
+        notes: [
+          'The nineteenth Android build brings the sea\'s own dangers. Four great maelstroms turn in deep water, three off the home islands and one in Las Brumas: the sea falls away into a funnel with spiral arms of foam, steep jade walls and a throat tens of metres deep, mist boiling off it and a deep roar that grows as you close. In a storm they swell deeper and wider.',
+          'Inside one the current drags your ship round and in and she heels down into the funnel. Near the eye the strain wrings her timbers, and in the throat the sea drags her under until it pours over her rail. Crowd on sail and run out with the flow to break free. Lure a pirate you\'ve been fighting into one and the kill and bounty are yours.',
+          'A hazard pill under the top of the screen warns of a maelstrom or shoal water ahead, turns red once one has you, shows how hard it grips and points the way out. The leadsman rings the bell for danger ahead, maelstroms and reefs are marked and named on the minimap and the sea chart, and pirates and the helmsman steer clear of them.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T10:00Z',
     entries: [
       {

@@ -61,6 +61,22 @@ reflections/sky_reflections/roughness_layers=6
 
 [shader_globals]
 
+vortex_0={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 1.0, 0.0)
+}
+vortex_1={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 1.0, 0.0)
+}
+vortex_2={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 1.0, 0.0)
+}
+vortex_3={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 1.0, 0.0)
+}
 sun_dir={
 "type": "vec3",
 "value": Vector3(0.35, 0.8, 0.48)

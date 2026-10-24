@@ -93,6 +93,8 @@ var _pins: PinTags
 var _lever: SailLever
 var _helm: HelmRing
 var _ap: HelmPill
+var _hz: HazardPill
+var _hz_room := -1.0
 var _toasts: VBoxContainer
 var _toast_box: StyleBoxFlat
 var _shown := {}
@@ -321,6 +323,8 @@ func _ready() -> void:
 	_ap = HelmPill.new()
 	_ap.cancel.connect(func() -> void: helm_cancel.emit())
 	root.add_child(_ap)
+	_hz = HazardPill.new()
+	root.add_child(_hz)
 
 	# notes across the top: an island discovered
 	_toasts = VBoxContainer.new()
@@ -407,7 +411,10 @@ func _layout() -> void:
 	_peek.place(Vector2(mx, my + _chips.position.y + _chips.size.y + 8.0 * HudStyle.K))
 	_place_tag()
 	_place_say()
-	_toasts.offset_top = my
+	_hz.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
+	# the toasts step down under the pill while it's up
+	_hz_room = _hz.size.y + 8.0 * k if _hz.on() else 0.0
+	_toasts.offset_top = my + _hz_room
 
 
 ## A round glass button with a line icon (the web's .icon-btn in the corner).
@@ -449,6 +456,15 @@ func announce_view(view: int) -> void:
 ## hasn't the wheel), the rudder he holds, and the frame's seconds.
 func show_helm(view: Dictionary, rudder: float, dt: float) -> void:
 	_ap.show_view(view, rudder, dt)
+
+
+## The sea's dangers: what has her watch's attention (HazardPill.show_view; {} for nothing).
+func show_hazard(view: Dictionary) -> void:
+	_hz.show_view(view)
+	var room := _hz.size.y + 8.0 * HudStyle.K if _hz.on() else 0.0
+	if room != _hz_room:
+		_hz_room = room
+		_toasts.offset_top = get_viewport().get_visible_rect().size.y * 0.03 + room
 
 
 ## Whether the helmsman's pill is up.

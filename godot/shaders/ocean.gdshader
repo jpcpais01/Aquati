@@ -45,6 +45,11 @@ render_mode blend_mix, depth_draw_opaque, cull_back, world_vertex_coords, ambien
 #include "res://shaders/inc/sea_common.gdshaderinc"
 #include "res://shaders/inc/ground.gdshaderinc"
 #include "res://shaders/inc/wind.gdshaderinc"
+#include "res://shaders/inc/vortex.gdshaderinc"
+
+/// 1 on a maelstrom's own ring mesh (Ocean.funnels): it draws the sea inside
+/// the rim, drawn down its funnel; the lattice tucks itself under there.
+instance uniform float funnel = 0.0;
 
 /// x breaker height (m), y swash run-up (m), z storm, w the surf clock (s)
 global uniform vec4 surf;
@@ -109,7 +114,8 @@ varying vec3 v_bed_lit;
 const float FLOOR_PLANE_FROM = -15.5;
 
 float seen_floor(float h) {
-	return mix(h, -18.2 - 0.35 * region.z, 1.0 - smoothstep(FLOOR_PLANE_FROM - 0.2, FLOOR_PLANE_FROM + 0.2, h));
+	// (the abyss carved under a maelstrom falls away below that plane, smoothly)
+	return min(mix(h, -18.2 - 0.35 * region.z, 1.0 - smoothstep(FLOOR_PLANE_FROM - 0.2, FLOOR_PLANE_FROM + 0.2, h)), h + 12.0);
 }
 
 // How thick the sea-spark bloom is at p (SeaGlow.at): 0 none .. 1 the heart of one.
@@ -213,6 +219,12 @@ void vertex() {
 	vec2 s = VERTEX.xz - origin;
 	vec2 wp = origin + vec2(warp1(s.x), warp1(s.y));
 	vec2 span = vec2(dwarp1(s.x), dwarp1(s.y)) * grid_warp.z;
+	// a maelstrom's ring: already in the world, its rings closing in on the
+	// throat (Ocean.funnel_mesh), so it's about as fine as the lattice's core
+	if (funnel > 0.5) {
+		wp = VERTEX.xz;
+		span = vec2(grid_warp.z);
+	}
 	float dist = length(vec3(wp.x, 0.0, wp.y) - CAMERA_POSITION_WORLD);
 	vec3 n;
 	float crest;
@@ -222,8 +234,23 @@ void vertex() {
 	float damp = clamp(-th / 8.0, 0.12, 1.0);
 	// the swell fades by how far out across the sea it lies, not by the
 	// camera's height: looking straight down, the sea below keeps its chop
-	vec3 o = gerstner(wp, length(wp - CAMERA_POSITION_WORLD.xz), span, damp, n, crest, lost);
+	float calm = vortex_calm(wp);
+	vec3 o = gerstner(wp, length(wp - CAMERA_POSITION_WORLD.xz), span, damp * calm, n, crest, lost);
 	vec3 world = vec3(wp.x, 0.0, wp.y) + o;
+	float cut = vortex_cut(wp);
+	if (funnel > 0.5) {
+		// down the funnel, its spiral ridges winding round the walls; past
+		// the rim it tucks a hand's breadth under the lattice's own sea
+		vec2 vg;
+		world.y += vortex_height(wp, TIME, true, vg);
+		n.x -= vg.x;
+		n.z -= vg.y;
+		world.y -= 0.08 * smoothstep(0.0, -0.02, cut);
+	} else if (cut > 0.0) {
+		// the lattice inside the rim: well under the ring's sea, out of sight
+		vec2 vg;
+		world.y = min(world.y, vortex_height(wp, TIME, false, vg) - 3.0);
+	}
 	// the wake field's own swell (bow and stern waves, splash rings)
 	vec2 wuv = (world.xz - wake_rect.xy) * wake_rect.w + 0.5;
 	if (wuv.x > 0.0 && wuv.x < 1.0 && wuv.y > 0.0 && wuv.y < 1.0) {
@@ -654,6 +681,32 @@ void fragment() {
 		reef_foam = foam_cut(fv, clamp(r_cover, 0.0, 0.95), fp);
 		foam += reef_foam * 0.9;
 	}
+	// a maelstrom: foam torn along its spiral arms, thickening toward the
+	// throat, which boils white; its steep walls glow jade where the light
+	// comes through them, and the throat itself goes bottle-dark
+	float mael_foam = 0.0;
+	if (funnel > 0.5) {
+		vec4 mv = vortex_near(p);
+		float mk = abs(mv.w);
+		if (mk > 0.001) {
+			vec2 q = p - mv.xy;
+			float d = max(length(q), 0.01);
+			float u = d / mv.z;
+			float dir = mv.w > 0.0 ? 1.0 : -1.0;
+			float ph = 4.0 * atan(q.y, q.x) * dir + 7.6 * log(d + 4.0) - TIME * mk * 1.1;
+			float arm = smoothstep(0.35, 1.0, sin(ph) + (nz.g - 0.5) * 0.9);
+			float band = smoothstep(0.06, 0.22, u) * (1.0 - smoothstep(0.6, 1.0, u));
+			// (the foam map is laid flat, so down the steep throat it stretches:
+			// there it all but closes over, a solid boil of white)
+			float throat = 1.0 - smoothstep(0.04, 0.16, u);
+			float m_cover = (arm * band * (0.35 + 0.5 * (1.0 - u)) + throat * (0.85 + 0.12 * (1.0 - smoothstep(0.0, 0.08, u)))) * min(mk, 1.2);
+			mael_foam = foam_cut(fv, clamp(m_cover, 0.0, 0.95), fp);
+			foam += mael_foam * 0.85;
+			float wall = smoothstep(0.08, 0.2, u) * (1.0 - smoothstep(0.35, 0.7, u)) * min(mk, 1.0);
+			body_sun = mix(body_sun, vec3(0.1, 0.42, 0.3), wall * 0.55);
+			body_bed = mix(body_bed, body_bed * vec3(0.25, 0.5, 0.42), (1.0 - smoothstep(0.05, 0.3, u)) * 0.5 * min(mk, 1.0));
+		}
+	}
 	foam = clamp(foam, 0.0, 1.0);
 	float fa = foam * 0.9;
 	vec3 foam_base = vec3(0.96, 0.98, 1.0);
@@ -673,7 +726,7 @@ void fragment() {
 
 	// ---- bioluminescence: on dark nights churned water glows blue-green
 	if (night > 0.05) {
-		float churn = wake_foam * 0.9 * bubbles + surf_foam * 0.5 + reef_foam * 0.4
+		float churn = wake_foam * 0.9 * bubbles + surf_foam * 0.5 + reef_foam * 0.4 + mael_foam * 0.5
 				+ (crest_foam * 0.18 * cap_break + spume * 0.08 + caps * 0.12) * (1.0 - 0.5 * storm);
 		float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(noise_tex, p * 0.37 + vec2(TIME * 0.05, -TIME * 0.04)).b);
 		vec3 glow = vec3(0.02, 0.42, 0.62) * churn * spark * night * 0.4;

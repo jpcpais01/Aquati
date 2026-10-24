@@ -105,6 +105,11 @@ pin's card opened again and the pin lifted, then off a market's quay: the prompt
 mended, fresh shot, a part bought from the shipwright and cast off), prints what it saw in `SMOKE MENU`, sails
 on for a few seconds and prints `SMOKE OK` (`--smoke-at N`: after N frames). `--noshadow`, `--noocean` and
 `--noflora` leave a layer out, and `--discover` charts islands during a shot.
+For the sea's dangers: `--maelstrom I` starts her in maelstrom I's pull
+(0 La Gargantilha .. 3 Sorvedouro da Bruma), `--mael-u U` radii from its
+eye (0.55), `--mael-a A` at that bearing (radians), her head along the flow
+or, with `--mael-in`, facing the eye; `--reef I` starts her `--reef-off M`
+metres (60) south of reef I's edge, heading for it.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

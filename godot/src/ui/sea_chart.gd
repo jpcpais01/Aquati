@@ -957,6 +957,30 @@ func _paint_live(ci: CanvasItem) -> void:
 	var view := Rect2(Vector2.ZERO, Vector2(_W, _H)).grow(4.0 * PX)
 	var me := scene.player
 	var pc := to_canvas(me.pos.x, me.pos.z)
+	# the sea's dangers, inked in coral red: a maelstrom's pull dashed round its
+	# spiral, a reef's danger mark, each with its name in italic
+	if scene.world.hazards != null and _farness() < 0.5:
+		var serif := HudStyle.font("serif-italic", 600)
+		var ink := Color(SEA_INK, 0.8)
+		for m in scene.world.hazards.maelstroms:
+			var v: Vortex = m.v
+			if not shows(v.x, v.z):
+				continue
+			var at := to_canvas(v.x, v.z)
+			var rr := v.r * s
+			if not view.grow(rr + 30.0 * PX).has_point(at):
+				continue
+			MapMarks.pull_ring(ci, at, rr, 5.0 * PX, _clock * 6.0 * PX * v.dir, Color(1.0, 140.0 / 255.0, 110.0 / 255.0, 0.55), 1.5 * PX)
+			MapMarks.vortex(ci, at, clampf(rr * 0.45, 9.0 * PX, 26.0 * PX), _clock * 0.6, v.dir)
+			MapMarks.words(ci, at + Vector2(0.0, maxf(rr, 14.0 * PX) + 14.0 * PX), str(m.name), serif, _px(12.0), Color("#ffb59a"), 4.0 * PX, ink)
+		for rf: Dictionary in scene.world.hazards.reefs:
+			if not shows(float(rf.x), float(rf.z)):
+				continue
+			var at := to_canvas(float(rf.x), float(rf.z))
+			if not view.grow(30.0 * PX).has_point(at):
+				continue
+			MapMarks.reef(ci, at, 7.0 * PX)
+			MapMarks.words(ci, at - Vector2(0.0, 17.0 * PX), str(rf.name), serif, _px(12.0), Color("#ffc9a6"), 4.0 * PX, ink)
 	if scene.route.size() > 1:
 		var course := PackedVector2Array()
 		course.resize(scene.route.size())

@@ -99,6 +99,14 @@ var drift := Vector2.ZERO
 var anchored := false
 ## How hard her keel grinds on coral (0 clear .. 1 hard aground).
 var scrape := 0.0
+## The water's own flow under her (x, z m/s): a maelstrom's current, and
+## the swing it gives her head (rad/s); both set each frame by the Hazards.
+var current := Vector2.ZERO
+var spin := 0.0
+## How far a maelstrom's throat has dragged her under (0 .. 1: the sea over
+## her rail), and whether it has taken her (no blast: she goes down the throat).
+var drawn := 0.0
+var swallowed := false
 
 var _id := 0
 var _heave := 0.0
@@ -361,10 +369,19 @@ func die(attacker: Ship) -> void:
 	_pending.clear()
 	if attacker != null:
 		attacker.kills += 1
-	world.fx.explosion(Vector3(pos.x, model.shape.main_deck_y(0.5), pos.z), 0.6 + cls.length / 40.0)
-	if world.sound != null:
-		var h := world.heard(pos)
-		world.sound.explosion(h.x, h.y, h.z)
+	if swallowed:
+		# no blast: the sea closes over her rail and she goes, in a burst of white water
+		for i in 3:
+			var a := (i / 3.0 - 0.33) * cls.length
+			world.fx.splash(Vector3(pos.x + sin(heading) * a, position.y + 0.5, pos.z + cos(heading) * a), 0.9 + i * 0.2)
+		if world.sound != null:
+			var h := world.heard(pos)
+			world.sound.splash(h.x, h.y, h.z)
+	else:
+		world.fx.explosion(Vector3(pos.x, model.shape.main_deck_y(0.5), pos.z), 0.6 + cls.length / 40.0)
+		if world.sound != null:
+			var h := world.heard(pos)
+			world.sound.explosion(h.x, h.y, h.z)
 	world.shook.emit(1.2 if team == Team.PLAYER else 0.5 * world.loudness(pos))
 	dmg.on_death()
 	world.sunk.emit(self, attacker)
@@ -413,8 +430,16 @@ func place(x: float, z: float, h: float) -> void:
 	heading = h
 	speed = 0.0
 	ang_vel = 0.0
-	_heave = world.water_height(x, z)
+	drawn = 0.0
+	current = Vector2.ZERO
+	spin = 0.0
+	_heave = world.water_height(x, z) + world.funnel_at(x, z)
 	step(0.0)
+
+
+## How far below her riding height a maelstrom has dragged her (m).
+func drawn_sink() -> float:
+	return pow(minf(drawn, 1.2), 1.6) * (cls.freeboard + cls.draft * 0.35)
 
 
 ## Points of sail: how much of her best speed the wind gives her.
@@ -481,14 +506,14 @@ func step(dt: float) -> void:
 	if anchored:
 		speed = 0.0
 		ang_vel = 0.0
-	heading = wrapf(heading + ang_vel * dt, -PI, PI)
+	heading = wrapf(heading + (ang_vel + spin) * dt, -PI, PI)
 
 	# leeway: a little sideways slip with the wind
 	var port := port_dir()
 	var cross := w.dir_x * port.x + w.dir_z * port.z
 	var slip := cross * 0.35 * sail_level * w.strength
 	drift *= 1.0 - MathX.damp(1.5, dt)
-	vel = Vector3(fx * speed + port.x * slip + drift.x, 0.0, fz * speed + port.z * slip + drift.y)
+	vel = Vector3(fx * speed + port.x * slip + drift.x + current.x, 0.0, fz * speed + port.z * slip + drift.y + current.y)
 	pos.x += vel.x * dt
 	pos.z += vel.z * dt
 
@@ -507,7 +532,9 @@ func step(dt: float) -> void:
 	var h_port := world.water_height(pos.x + port.x * B * 0.5, pos.z + port.z * B * 0.5)
 	var h_stbd := world.water_height(pos.x - port.x * B * 0.5, pos.z - port.z * B * 0.5)
 	var resp := MathX.damp(3.2 / c.mass, dt) if dt > 0.0 else 1.0
-	var target_heave := (hb + hs + h_port + h_stbd) * 0.25
+	# a maelstrom's funnel is no swell to ride over: she sits down its wall at once
+	var funnel := world.funnel_at(pos.x, pos.z) if not world.vortices.is_empty() else 0.0
+	var target_heave := (hb + hs + h_port + h_stbd) * 0.25 + funnel
 	var target_pitch := -atan2(hb - hs, L * 0.76) * 0.9
 	var target_roll := atan2(h_port - h_stbd, B) * 0.8
 	# heel out of the turn, and to leeward under the press of canvas
@@ -533,10 +560,24 @@ func step(dt: float) -> void:
 		dmg.update(dt)
 		sink_y = -dmg.lowered
 		target_roll += dmg.list
+		if drawn > 0.0:
+			# a maelstrom's throat dragging her down: settling by the head, her
+			# timbers shuddering, till the sea comes in over the rail
+			var d := drawn
+			sink_y -= drawn_sink()
+			target_pitch += d * d * 0.22
+			target_roll += sin(world.time * 7.3 + pos.x) * 0.03 * d + sin(world.time * 2.1) * 0.05 * d
+			if randf() < dt * 6.0 * d:
+				# green water pouring in over her gunwales
+				var a := randf_range(-0.4, 0.4) * c.length
+				var side := 1.0 if randf() < 0.5 else -1.0
+				var gx := pos.x + fx * a + port.x * side * c.beam * 0.5
+				var gz := pos.z + fz * a + port.z * side * c.beam * 0.5
+				world.fx.splash(Vector3(gx, world.water_height(gx, gz), gz), 0.3 + d * 0.35)
 	_heave += (target_heave - _heave) * resp
 	_pitch += (target_pitch - _pitch) * resp
 	_roll += (target_roll - _roll) * resp
-	transform = Transform3D(Basis.from_euler(Vector3(_pitch, heading, _roll)), Vector3(pos.x, _heave + sink_y - c.draft * 0.06, pos.z))
+	transform = Transform3D(Basis.from_euler(Vector3(_pitch, heading, _roll)), Vector3(pos.x, _heave - funnel + sink_y - c.draft * 0.06, pos.z))
 
 	# ------------------------------------------------ the rig
 	var brace_target := clampf(rel * 0.45, -0.75, 0.75) * minf(1.0, absf(rel_deg) / 30.0)

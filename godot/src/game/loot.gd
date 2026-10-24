@@ -320,6 +320,17 @@ func all() -> Array[Item]:
 	return _items
 
 
+## Something carried an item off its drift (a maelstrom's current): redrawn.
+func moved() -> void:
+	_dirty = true
+
+
+## Gone from the sea (down a maelstrom's throat).
+func remove(it: Item) -> void:
+	_items.erase(it)
+	_dirty = true
+
+
 ## How many items of each tier are afloat.
 func counts() -> PackedInt32Array:
 	var n := PackedInt32Array([0, 0, 0, 0, 0])

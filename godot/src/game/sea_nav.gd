@@ -65,6 +65,16 @@ class Soundings:
 				var k := j * N + i
 				s.shoal[k] = maxf(top, h[r2 + c])
 				s.coral[k] = 1 if reef[r2 + c] >= CORAL else 0
+		# every maelstrom's pull (and a margin round it) is struck out like dry land
+		for m: Dictionary in r.maelstroms:
+			var pr := float(m.r) * 1.3
+			var ci := (float(m.x) - s.x0) / CELL
+			var cj := (float(m.z) - s.z0) / CELL
+			var span := ceili(pr / CELL) + 1
+			for j in range(maxi(0, floori(cj) - span), mini(N, floori(cj) + span + 1)):
+				for i in range(maxi(0, floori(ci) - span), mini(N, floori(ci) + span + 1)):
+					if Vector2(i + 0.5 - ci, j + 0.5 - cj).length() * CELL < pr:
+						s.shoal[j * N + i] = 1.0
 		return s
 
 

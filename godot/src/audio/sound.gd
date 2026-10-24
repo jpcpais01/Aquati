@@ -54,12 +54,13 @@ const PLAIN_VOICES := 32
 const MANIFEST := "res://audio/sounds.json"
 ## The beds, each the sea's noise looping through its own bus: the surf, the
 ## wind, the rain's hiss and its roar in a downpour; how fast each follows
-## the weather and her way (s), and its noise's rate and starting point.
-enum { SURF, WIND, RAIN, ROAR }
-const BED_BUS := [&"Surf", &"Wind", &"Rain", &"Roar"]
-const BED_TC := [0.5, 0.5, 0.6, 0.8]
-const BED_RATE := [1.0, 0.7, 1.0, 0.55]
-const BED_START := [0.0, 1.3, 0.7, 2.1]
+## the weather and her way (s), and its noise's rate and starting point. The
+## maelstrom's two (its roar and its throat's howl) skip the duck, as the web's.
+enum { SURF, WIND, RAIN, ROAR, VORTEX, HOWL }
+const BED_BUS := [&"Surf", &"Wind", &"Rain", &"Roar", &"Vortex", &"Howl"]
+const BED_TC := [0.5, 0.5, 0.6, 0.8, 0.4, 0.5]
+const BED_RATE := [1.0, 0.7, 1.0, 0.55, 0.42, 0.9]
+const BED_START := [0.0, 1.3, 0.7, 2.1, 0.4, 1.7]
 ## The sizes the pockets of air were rendered at.
 const AIR_SIZES := [0.6, 1.0, 1.5]
 ## The muffle's cutoff (Hz) above which it is left out of the mix.
@@ -111,10 +112,17 @@ var _sweeps: Array[Array] = []
 var _noise: AudioStream
 var _noise_gain := 1.0
 var _beds: Array[AudioStreamPlayer] = []
-var _bed := PackedFloat32Array([0.22, 0.05, 0.0, 0.0])
-var _bed_to := PackedFloat32Array([0.22, 0.05, 0.0, 0.0])
-var _bed_db := PackedFloat32Array([0.0, 0.0, 0.0, 0.0])
+var _bed := PackedFloat32Array([0.22, 0.05, 0.0, 0.0, 0.0, 0.0])
+var _bed_to := PackedFloat32Array([0.22, 0.05, 0.0, 0.0, 0.0, 0.0])
+var _bed_db := PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 var _wind_bp: AudioEffectFilter
+## The maelstrom's roar: its pan and lowpass, and the howl's swept band (and how near the eye, 0..1).
+var _vortex_pan: AudioEffectPanner
+var _vortex_lp: AudioEffectFilter
+var _howl_bp: AudioEffectFilter
+var _vortex_near := 0.0
+var _vortex_near_to := 0.0
+var _vortex_pan_to := 0.0
 var _gust := 0.0
 var _sailing := 0.0
 var _rain := 0.0
@@ -177,6 +185,9 @@ func _ready() -> void:
 	_amp = AudioServer.get_bus_effect(_bus[&"Mix"], 0)
 	_muffle = AudioServer.get_bus_effect(_bus[&"Mix"], 1)
 	_wind_bp = AudioServer.get_bus_effect(AudioServer.get_bus_index(&"Wind"), 0)
+	_vortex_lp = AudioServer.get_bus_effect(AudioServer.get_bus_index(&"Vortex"), 0)
+	_vortex_pan = AudioServer.get_bus_effect(AudioServer.get_bus_index(&"Vortex"), 1)
+	_howl_bp = AudioServer.get_bus_effect(AudioServer.get_bus_index(&"Howl"), 0)
 	_deep_lp = AudioServer.get_bus_effect(_bus[&"Deep"], 0)
 	# a 2D voice is panned by where it stands across the screen from the listener
 	get_viewport().audio_listener_enable_2d = true
@@ -201,7 +212,7 @@ func _ready() -> void:
 		add_child(p)
 		_plain.append(p)
 		_plain_free.append(i)
-	for i in 4:
+	for i in BED_BUS.size():
 		var p := AudioStreamPlayer.new()
 		p.bus = BED_BUS[i]
 		p.pitch_scale = BED_RATE[i]
@@ -289,6 +300,12 @@ static func build_buses() -> void:
 	AudioServer.add_bus_effect(rain, _filter(AudioEffectHighPassFilter.new(), 1400.0, Q_DEFAULT))
 	AudioServer.add_bus_effect(rain, _filter(AudioEffectLowPassFilter.new(), 9000.0, Q_DEFAULT))
 	AudioServer.add_bus_effect(_add_bus(&"Roar", &"Bed"), _filter(AudioEffectLowPassFilter.new(), 380.0, Q_DEFAULT))
+	# the maelstrom: slow heavy noise under a breathing lowpass, panned to it;
+	# and the throat's howl, a resonant band (Godot doubles a band-pass's Q: the web's 7)
+	var vortex := _add_bus(&"Vortex", &"Amb")
+	AudioServer.add_bus_effect(vortex, _filter(AudioEffectLowPassFilter.new(), 260.0, 0.9))
+	AudioServer.add_bus_effect(vortex, AudioEffectPanner.new())
+	AudioServer.add_bus_effect(_add_bus(&"Howl", &"Amb"), _filter(AudioEffectBandPassFilter.new(), 220.0, 3.5))
 	_add_bus(&"Music", &"Mix")
 	AudioServer.add_bus_effect(_add_bus(&"Deep", &"Mix"), _filter(AudioEffectLowPassFilter.new(), 160.0, Q_DEEP))
 
@@ -396,7 +413,7 @@ func _poll_loads() -> void:
 		if e[0] == "noise":
 			_noise = s
 			_noise_gain = _gains["noise"][0]
-			for i in 4:
+			for i in BED_BUS.size():
 				_beds[i].stream = s
 				_beds[i].volume_db = _db(_bed[i] * _noise_gain)
 				_beds[i].play(BED_START[i])
@@ -552,14 +569,17 @@ static func air_bus(cutoff: float) -> int:
 
 ## The sea and the wind round the listener, and the duck.
 func _step_beds(dt: float) -> void:
-	for i in 4:
+	for i in BED_BUS.size():
 		_bed[i] += (_bed_to[i] - _bed[i]) * (1.0 - exp(-dt / float(BED_TC[i])))
 	if _noise != null:
-		for i in 4:
+		for i in BED_BUS.size():
 			var g := _bed[i]
 			if i == SURF:
 				# the swell's slow breathing
 				g += 0.09 * sin(TAU * 0.11 * _now)
+			elif i == VORTEX:
+				# the roar breathes on its own slow swell
+				g *= 1.0 + 0.28 * sin(TAU * 0.23 * _now)
 			var v := maxf(0.0, g) * _noise_gain
 			var p := _beds[i]
 			var off := v < 1e-4 or _muted
@@ -570,6 +590,11 @@ func _step_beds(dt: float) -> void:
 				_bed_db[i] = db
 				p.volume_db = db
 		_wind_bp.cutoff_hz = 900.0 + 300.0 * sin(TAU * 0.07 * _now)
+		if _bed[VORTEX] > 1e-4:
+			_vortex_near += (_vortex_near_to - _vortex_near) * (1.0 - exp(-dt / 0.6))
+			_vortex_lp.cutoff_hz = 260.0 + 90.0 * sin(TAU * 0.071 * _now)
+			_howl_bp.cutoff_hz = 160.0 + _vortex_near * 260.0 + 40.0 * sin(TAU * 0.37 * _now)
+			_vortex_pan.pan += (_vortex_pan_to - _vortex_pan.pan) * (1.0 - exp(-dt / 0.3))
 	var duck := _db(AMBIENCE_LEVEL * duck_gain(_now))
 	if absf(duck - _duck_db) > 0.02:
 		_duck_db = duck
@@ -711,6 +736,16 @@ func _aim_beds() -> void:
 	_bed_to[WIND] = 0.04 + _sailing * 0.08 + _gust * 0.06 + maxf(0.0, _wind - 0.8) * 0.2 + _storm * 0.07
 	_bed_to[RAIN] = _rain * 0.13
 	_bed_to[ROAR] = _rain * _rain * 0.12 + _storm * 0.1
+
+
+## The maelstrom's voice, set every frame (the web's setMaelstrom): a deep
+## rolling roar of water pouring round and down, and a hollow howl from the
+## throat that climbs as you're drawn nearer (`near` 0..1). `vol` 0 stills it.
+func set_maelstrom(vol: float, pan: float, near: float) -> void:
+	_bed_to[VORTEX] = minf(1.0, vol) * 0.55 * 0.9
+	_bed_to[HOWL] = near * near * 0.9 * minf(1.0, vol) * 0.55
+	_vortex_pan_to = clampf(pan, -0.85, 0.85)
+	_vortex_near_to = near
 
 
 ## Thunder from a strike `dist` metres off: it arrives late, and a far peal is
@@ -1076,6 +1111,15 @@ func click() -> void:
 func founder() -> void:
 	if _voice(0.9):
 		_one("founder", 1.0, 0.0, 0.0, 1.0, 1.0)
+
+
+## The leadsman's warning (the web's shoalBell): two quick strokes of the
+## ship's bell, then a third, high and bright (shoal water ahead).
+func shoal_bell() -> void:
+	if not _voice(0.2):
+		return
+	for k in 3:
+		_one("bell", 0.2 * (0.84 if k == 2 else 1.0), 0.0, _now + [0.0, 0.2, 0.62][k], 1.9)
 
 
 ## The final plunge: timbers groaning under the strain as she goes by the stern.

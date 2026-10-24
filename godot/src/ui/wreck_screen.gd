@@ -1041,7 +1041,9 @@ func _cause_runs(r: Dictionary, base: Font, name_font: Font, sz: int, c_base: Co
 	var cause := str(r.get("cause", "shot"))
 	var lead := "Rammed by " if cause == "rammed" else "Sunk by "
 	var parts: Array
-	if cause == "aground":
+	if str(r.get("maelstrom", "")) != "":
+		parts = [["Swallowed by ", false], [str(r.maelstrom), true]]
+	elif cause == "aground":
 		parts = [["Holed on the reef", false]]
 	elif killer == "":
 		parts = [[lead + "pirates", false]]
@@ -1063,6 +1065,8 @@ func _epitaph(r: Dictionary) -> Array:
 	var fm := roundi(float(r.get("fathoms", 0.0)))
 	if str(r.cause) == "aground":
 		return [["She ran aground %s %s." % [where, at], f, sz, HudStyle.INK_2]]
+	if str(r.get("maelstrom", "")) != "":
+		return [["She was drawn down the maelstrom's throat %s." % at, f, sz, HudStyle.INK_2]]
 	if fm >= 3:
 		return [["She went down %s %s, and lies in " % [where, at], f, sz, HudStyle.INK_2],
 				["%d fathoms" % fm, _font("inter", 700, 0.0, 13.0 * u), sz, HudStyle.AQUA], [".", f, sz, HudStyle.INK_2]]
@@ -1089,6 +1093,10 @@ func _quip(r: Dictionary) -> String:
 		fits.append("The reef doesn't care how fast you were sailing.")
 	if str(r.cause) == "rammed":
 		fits.append("Close quarters. Very close quarters.")
+	if str(r.get("maelstrom", "")) != "":
+		fits.assign(["Round and round and down. The sea keeps what it takes.",
+				"Sail with the wind, the old hands say. Out, never across.",
+				"The whirlpool turns on without you, patient as ever."])
 	if str(r.killer_cls) == "galleon" and cls == "sloop":
 		fits.append("A sloop against a galleon. Brave. Briefly.")
 	if str(r.killer_cls) == "sloop" and cls == "galleon":
