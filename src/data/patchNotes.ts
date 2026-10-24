@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T13:00Z',
+    entries: [
+      {
+        title: 'Android: updates from the harbour',
+        notes: [
+          'The Android game now keeps itself up to date. When a new build is out, a card comes up over the harbour with the new version in gilt beside yours and everything the build brings (any builds you skipped are named too). Tap Update and your ship sails a gilt bar as it downloads, with the size, how far it\'s got and how long it has left; close the card and it carries on while the harbour\'s Update pill counts it up.',
+          'Once it\'s in and checked against its seal, Install hands it to Android: the first time, Android asks you to allow installs from Shores O\' Fortune, then it\'s one tap, and your ships, treasure and progress all stay aboard. Offline it stays quiet, a broken download can be retried, and Settings has a new Game updates row to look for a newer build whenever you like. Install this build by hand once, and every build after it comes to you.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T12:00Z',
     entries: [
       {

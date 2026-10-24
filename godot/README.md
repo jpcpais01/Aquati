@@ -13,7 +13,7 @@ way and keep the APK as a workflow artifact.
 
 | Folder | What lives there |
 | --- | --- |
-| `src/core` | Settings (quality tiers, the sound, the frame counter, the camera's shake), what's kept between plays (`Progress`: your ship, the waters you set out in, the view you sail with, your purse, the archipelagos charted, the waypoints on your sea chart, your records, your locker of ship parts with each ship's refit and the vault's cosmetics (what you've won and wear, and its pity), and apart from them her look from the Shipwright and the designs you've saved, each written whole to a fresh file and swapped in), small maths helpers and the web's own random numbers (`Mulberry32`, so seeded things come out as the web's do) |
+| `src/core` | Settings (quality tiers, the sound, the frame counter, the camera's shake), what's kept between plays (`Progress`: your ship, the waters you set out in, the view you sail with, your purse, the archipelagos charted, the waypoints on your sea chart, your records, your locker of ship parts with each ship's refit and the vault's cosmetics (what you've won and wear, and its pity), and apart from them her look from the Shipwright and the designs you've saved, each written whole to a fresh file and swapped in), small maths helpers, the web's own random numbers (`Mulberry32`, so seeded things come out as the web's do) and the game's own updates from its GitHub releases (`Updater`, see In-game updates) |
 | `src/world` | Waves, wind and gusts, the ocean surface, the wake field, the sky, the hour and the weather (`Atmosphere`: eight kinds of weather that follow one another, the wind backing and veering with them, the stars wheeling through the night and the moon in its phase), the sea-spark blooms on the high seas (`SeaGlow`); the archipelagos (`Region`), their ground (`Ground`) and their planting (`Flora`) |
 | `src/render` | The colour grade (a GPU-baked 3D LUT) |
 | `src/audio` | The sound (`Sound`: the mix, the sea, the wind and the rain round you, thunder rolling in late from the strike, every gun, blow and splash heard where it happens, late by its distance and dulled by the air, and a trading port's quay: its bell, the squeezebox, gold counted out, the yard at work, gulls, the water among the pilings and the crowd) and the music (`Music`: the voyage band's songs for fair sailing, the high seas' own theme out on the open ocean) |
@@ -21,7 +21,7 @@ way and keep the APK as a workflow artifact.
 | `src/fx` | Particles (one MultiMesh for every spray, splash and puff of smoke), the bow wave, the wreckage afloat (`Debris`), the rain, the lightning and the spindrift a gale tears off the crests (all three drawn from one static buffer each, animated on the GPU) |
 | `src/game` | The voyage scene (and docking at a trading port), the camera rig (with the port's shot of her alongside and the Shipwright's shots of her flag, sails and hull), the controls; her look worn (`Outfitter`: her flag and the mark on her sails drawn on worker threads, a fresh hull off the yard when her paintwork changes); the guns (`Gunnery`, `Shots`), hull-to-hull collisions, the pirates and the shipyard that builds their hulls ahead of time; plunder, the hold and each port's market (`Treasure`); the waypoints (`Waypoints`: pillars of light on the sea, all in one draw); the helmsman (`Helmsman`: plots a course round the isles and shoals on each archipelago's sea room, `SeaNav`, worked out on a thread of its own, then sails her there, beating to windward, easing in at the end) |
 | `src/port` | The trading ports (`TradePorts`, `TradePort`): six market towns along their quays, each built once in two cuts (whole near the camera, a shell further off) with the mesh kit in `TownKit`, its harbourmaster, porters carrying goods ashore, merchants, fishers and the town band (`Figure`, drawn by the crews' sailor), its lamps mirrored by the sea after dark; and the home port, Puerto Marézia (`HomePort`), where the Shipwright works on her: its quay, the Salty Gull, the sail loft flying her flag under an awning and bunting in her colours, the cargo shed, the lookout tower and the crane, built on a worker thread the first time the harbour opens, and its dozen townsfolk at their day's work |
-| `src/ui` | The harbour (`Harbour`) and "Where shall we sail?" (`SeaPick`), the Shipwright (`Shipwright`: her flag on its stage with the brush, `FlagStage`, the colour picker, `ColourPop`, her saved designs, the Refit tab, where the parts found are fitted, and the Skins and Guns tabs with their living card art, `CosArt`, and a test-fire broadside), a trading port's market with its shipwright's counter and the prompt to come alongside (`MarketPanel`), the voyage on hold (`PauseScreen`), Settings (`SettingsSheet`), the veil between scenes and the frame counter; the HUD, the touch helm, the sail lever, the fire pad, the shot pie, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`); the maps: the minimap (`Minimap`) and the sea chart (`SeaChart`, its geography and engravings in `ChartArt`, the marks they share in `MapMarks`, the card over a place tapped on it in `ChartCard`) and the helmsman's pill on the HUD (`HelmPill`). `MenuKit`, `UiBox`, `UiButton` and `UiText` draw the web's glass panels, gilt buttons and type |
+| `src/ui` | The harbour (`Harbour`) and "Where shall we sail?" (`SeaPick`), the Shipwright (`Shipwright`: her flag on its stage with the brush, `FlagStage`, the colour picker, `ColourPop`, her saved designs, the Refit tab, where the parts found are fitted, and the Skins and Guns tabs with their living card art, `CosArt`, and a test-fire broadside), a trading port's market with its shipwright's counter and the prompt to come alongside (`MarketPanel`), the voyage on hold (`PauseScreen`), Settings (`SettingsSheet`), the veil between scenes, the frame counter and a new build's card (`UpdateCard`); the HUD, the touch helm, the sail lever, the fire pad, the shot pie, the hull and enemy bars, damage numbers, and the farewell card (`WreckScreen`); the maps: the minimap (`Minimap`) and the sea chart (`SeaChart`, its geography and engravings in `ChartArt`, the marks they share in `MapMarks`, the card over a place tapped on it in `ChartCard`) and the helmsman's pill on the HUD (`HelmPill`). `MenuKit`, `UiBox`, `UiButton` and `UiText` draw the web's glass panels, gilt buttons and type |
 | `shaders` | Every shader; `shaders/inc` holds the shared pieces (atmosphere, the night sky, sea, ground, plants, ship lighting, battle damage, the sea's height for what floats). Each ship shader comes twice: the plain one every ship draws with, and a `_dmg` one a ship switches to with her first wound |
 | `art` | The tiling textures every shader samples, the moon's face (baked from the web game's own), the baked figurehead sculptures, the baked sailor (`crew.json`, `crew.bin`: four cuts of the web game's sculpt) the towns' painted signs and flags (`town_signs.png`, `town_flags.png`) and the home port's boards and the notes and snores that rise off its folk (`home_signs.png`, `home_glyphs.png`) |
 | `world` | The baked world: both archipelagos' heightfields, ground maps, surf fields and plants, and the plant meshes |
@@ -178,6 +178,31 @@ godot --headless --script res://tools/bake.gd   # builds every figurehead
 godot --headless --fixed-fps 60 --quit-after 2800 -- --smoke --smoke-at 2600  # walks the menus, the Shipwright (its Refit tab too), the Treasure Vault (a ten opened, shown off and worn), the sea chart and the helmsman, a market and its shipwright, then sails on
 ```
 
+## In-game updates
+
+The game updates itself from these releases (`src/core/updater.gd`, its card
+`src/ui/update_card.gd`). On launch, and on coming back to the harbour an
+hour later, it asks the GitHub API for the repository's releases, picks the
+newest `android-v*` one with an APK, and compares its run number (the tag's
+last part) with this build's (`application/config/version`, which CI writes).
+A newer build gets an Update pill in the harbour and, once a run, its card
+with the release notes. The APK downloads into `user://updates`, is checked
+against the SHA-256 GitHub keeps for the asset, and goes to Android's package
+installer through `OS.shell_open` with the file's path: the engine's own
+`FileProvider` (`<package>.fileprovider`, which covers the app's files) hands
+it over as a `content://` URI. That needs the `INTERNET` and
+`REQUEST_INSTALL_PACKAGES` permissions in `export_presets.cfg`; CI checks
+both and the provider are in every APK's manifest.
+
+Android installs a build over the one on the phone only if both were signed
+with the same key. CI stamps the key it used into the build
+(`aquati/signing`: `fallback` or `release`) and into each release's notes
+(`<!-- signed: … -->`); when they differ, the card says so and points to the
+release page instead of offering a download that can't install.
+
+Desktop runs never check. `--update-demo [offer|downloading|ready|failed|rekeyed]`
+(with `--nocard`, just the harbour's pill) stages the card for a shot.
+
 ## Signing the release APK
 
 Until the signing secrets exist, CI signs the APK with the shared test key in
@@ -210,7 +235,8 @@ somewhere safe: every future update must be signed with the same key):
 
 The next build is signed with your key. Android treats a new key as a new
 app, so uninstall a test-key build once before installing the first build
-signed with your key.
+signed with your key. The game's own updater can't cross that change: a test-key build
+points you to the new build's release page instead.
 
 ## Regenerating assets
 

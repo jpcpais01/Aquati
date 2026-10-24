@@ -128,6 +128,14 @@ jobs:
             echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
           } >> "$GITHUB_ENV"
 
+      - name: Stamp the signing key into the build
+        run: |
+          set -euo pipefail
+          # the in-game updater compares it with each release's, to warn
+          # before offering a build Android won't install over this one
+          sed -i "s|^signing=.*|signing=\"${SIGNED_WITH}\"|" godot/project.godot
+          grep -n "^signing=" godot/project.godot
+
       - name: Import the project
         working-directory: godot
         run: |
@@ -198,6 +206,21 @@ jobs:
           SIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
           "$SIGNER" verify --verbose --print-certs build/shores-o-fortune.apk | grep -E "Verified|Signer #1 certificate (DN|SHA-256)"
 
+      - name: Check the manifest (in-game updates)
+        run: |
+          set -euo pipefail
+          # the updater downloads over the internet and hands the APK to the
+          # package installer through the engine's FileProvider: all three
+          # must be in the exported manifest
+          AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2
+          "$AAPT" dump permissions build/shores-o-fortune.apk | tee "$RUNNER_TEMP/perms.txt"
+          grep -q "android.permission.INTERNET" "$RUNNER_TEMP/perms.txt" || { echo "::error::The APK can't reach the internet"; exit 1; }
+          grep -q "android.permission.REQUEST_INSTALL_PACKAGES" "$RUNNER_TEMP/perms.txt" || { echo "::error::The APK can't ask to install its updates"; exit 1; }
+          "$AAPT" dump xmltree --file AndroidManifest.xml build/shores-o-fortune.apk > "$RUNNER_TEMP/manifest.txt"
+          grep -q "androidx.core.content.FileProvider" "$RUNNER_TEMP/manifest.txt" || { echo "::error::The APK has no FileProvider to hand its updates to the installer"; exit 1; }
+          grep -q '"io.github.jpcpais01.aquati.fileprovider"' "$RUNNER_TEMP/manifest.txt" || { echo "::error::The FileProvider's authority isn't the game's (OS.shell_open asks for <package>.fileprovider)"; exit 1; }
+          grep -A3 "FileProvider" "$RUNNER_TEMP/manifest.txt" || true
+
       - name: Keep the APK
         uses: actions/upload-artifact@v4
         with:
@@ -220,7 +243,9 @@ jobs:
             echo
             echo "---"
             echo
-            echo "Install: download \`shores-o-fortune-${NAME}.apk\` on your phone and open it (allow installs from your browser if Android asks). Needs Android 7 or newer, 64-bit."
+            echo "Install: download \`shores-o-fortune-${NAME}.apk\` on your phone and open it (allow installs from your browser if Android asks). Needs Android 7 or newer, 64-bit. From 0.20 on, the game offers each new build itself: tap Update in the harbour."
+            echo
+            echo "<!-- signed: ${SIGNED_WITH} -->"
             if [ "${SIGNED_WITH}" = "fallback" ]; then
               echo
               echo "_Signed with the shared test key until the release key is added to the repository secrets._"

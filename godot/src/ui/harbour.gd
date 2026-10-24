@@ -15,6 +15,8 @@ signal sail
 signal shipwright
 ## The Treasure Vault's pill.
 signal vault
+## The Update pill: a newer build of the game is out (UpdateCard).
+signal update
 signal settings
 signal sound
 signal clicked
@@ -43,6 +45,11 @@ var _main_mat: ShaderMaterial
 var _main_box := Vector3.ZERO
 var _tools: Array[UiButton] = []
 var _sound_btn: UiButton
+## The Update pill beside the tools, shown while a newer build is out: its
+## words ("Update", how far its download has got, "Install") and its pip.
+var _update_btn: UiButton
+var _update_dot: _VaultDot
+var update_label := ""
 var _card_slot: Control
 var _card: Control
 var _card_w := 0.0
@@ -127,6 +134,8 @@ func _all_buttons() -> Array[UiButton]:
 		out.append(_wright)
 	if _vault != null:
 		out.append(_vault)
+	if _update_btn != null:
+		out.append(_update_btn)
 	return out
 
 
@@ -303,7 +312,40 @@ func _build_tools() -> Control:
 		_tools.append(b)
 		x += d + 7.0 * u
 	box.size = Vector2(x - 7.0 * u, d)
+	# the Update pill hangs off their left, in gilt-edged glass, when a newer
+	# build is out (set_update)
+	_update_btn = MenuKit.pill("download", "Update", d, 15.0 * u, 13.5 * MenuKit.T, 700, Color(0.031, 0.102, 0.149, 0.72), HudStyle.GOLD_HI, 0.02)
+	_update_btn.p("c_border", Color(1.0, 0.85, 0.5, 0.45)).p("border", 1.2 * MenuKit.PX)
+	_update_btn.p("c_glow", Color(1.0, 0.8, 0.4, 0.22)).p("glow", 12.0 * u)
+	var tw: float = (_update_btn.get_node("Text") as Control).size.x
+	var wide := MenuKit.words("Install", "inter", 700, 13.5 * MenuKit.T, HudStyle.GOLD_HI, 0.02).size.x
+	_update_btn.resize(_update_btn.size + Vector2(maxf(0.0, wide - tw) + 8.0 * MenuKit.PX, 0.0))
+	_update_dot = _VaultDot.new(8.0 * MenuKit.PX)
+	_update_dot.position = Vector2(_update_btn.size.x - 6.0 * MenuKit.PX - _update_dot.size.x, 4.0 * MenuKit.PX)
+	_update_btn.add_child(_update_dot)
+	_update_btn.position = Vector2(-7.0 * u - _update_btn.size.x, 0.0)
+	_update_btn.pressed.connect(func() -> void:
+		clicked.emit()
+		update.emit())
+	box.add_child(_update_btn)
+	_show_update()
 	return box
+
+
+## A newer build is out (`label` its pill's words) or not ("").
+func set_update(label: String) -> void:
+	if label == update_label:
+		return
+	update_label = label
+	_show_update()
+
+
+func _show_update() -> void:
+	if _update_btn == null:
+		return
+	_update_btn.visible = update_label != ""
+	if update_label != "":
+		(_update_btn.get_node("Text") as UiText).set_text(update_label)
 
 
 ## Her card: "The Corsair" (and how many parts she has fitted), her name,
@@ -435,6 +477,8 @@ func _step(dt: float) -> void:
 		tab.tick(dt, _t)
 	if _vault_dot != null:
 		_vault_dot.tick(_t, vault_ready)
+	if _update_dot != null and _update_btn.visible:
+		_update_dot.tick(_t, true)
 
 
 ## The sun's glint across FORTUNE (the web's logoGlint): every 7 s from 1.2 s

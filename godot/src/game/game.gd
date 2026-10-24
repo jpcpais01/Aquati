@@ -238,6 +238,11 @@ var harbour: Harbour
 var sea_pick: SeaPick
 var pause_screen: PauseScreen
 var settings_sheet: SettingsSheet
+## The game's own updates from its GitHub releases, and their card.
+var updater: Updater
+var update_card: UpdateCard
+## The card has come up by itself this run (it does once).
+var _update_shown := false
 var veil: Veil
 var fps_meter: FpsMeter
 ## A ship picked on the harbour's picker, waiting on the yard for her hull.
@@ -435,6 +440,7 @@ func _ready() -> void:
 	# one settled frame before anything draws
 	_tick(0.0)
 	camera.snap_to(_watched().pos)
+	_start_updates()
 	_stage_menus()
 	_warm_up()
 
@@ -2249,6 +2255,19 @@ func _build_menus() -> void:
 	settings_sheet = SettingsSheet.new()
 	settings_sheet.clicked.connect(sound.click)
 	add_child(settings_sheet)
+	# a newer build of the game: an Update pill in the harbour, the card
+	# once a run by itself, and Settings' Game updates row
+	updater = Updater.new()
+	add_child(updater)
+	update_card = UpdateCard.new()
+	update_card.updater = updater
+	update_card.clicked.connect(sound.click)
+	add_child(update_card)
+	settings_sheet.updater = updater
+	settings_sheet.updates.connect(_open_updates)
+	harbour.update.connect(_open_updates)
+	updater.changed.connect(_on_update)
+	updater.found.connect(_offer_update)
 	veil = Veil.new()
 	add_child(veil)
 	fps_meter = FpsMeter.new()
@@ -2275,6 +2294,61 @@ func _open_settings() -> void:
 		return
 	settings_sheet.open()
 	_note_tour("Settings")
+
+
+## Looks for a newer build: on the Android game (never in a smoke test),
+## or a pretend one for a shot (--update-demo [offer|downloading|ready|failed]
+## [--nocard]).
+func _start_updates() -> void:
+	if _args.has("update-demo"):
+		updater.demo(update_card.own_notes, "" if _args["update-demo"] is bool else str(_args["update-demo"]))
+		# (--nocard: just the harbour's Update pill)
+		if not _args.has("nocard"):
+			_offer_update(0.0)
+	elif OS.has_feature("android") and not _args.has("smoke"):
+		updater.start()
+
+
+## The Update pill's words: Update, how far its download has got, Install.
+func _on_update() -> void:
+	var label := ""
+	match updater.state:
+		Updater.OFFER, Updater.FAILED:
+			label = "Update"
+		Updater.DOWNLOADING:
+			label = "%d%%" % roundi(updater.progress() * 100.0)
+		Updater.VERIFYING:
+			label = "100%"
+		Updater.READY, Updater.INSTALLING:
+			label = "Install"
+	harbour.set_update(label)
+
+
+## A newer build is out: its card comes up over the harbour by itself (once
+## a run, `after` s in, when nothing else is up).
+func _offer_update(after := 1.6) -> void:
+	if _update_shown or not updater.available():
+		return
+	get_tree().create_timer(after).timeout.connect(func() -> void:
+		if _update_shown or not updater.available() or state != State.HARBOUR or not harbour.is_open() or veil.busy:
+			return
+		if settings_sheet.is_open() or vault.is_open() or sea_pick.is_open() or shipwright.is_open() or update_card.is_open():
+			return
+		_update_shown = true
+		update_card.ship = player.cls.id
+		update_card.open())
+
+
+## The Update pill or Settings' row: the card (asking GitHub again first
+## when there's nothing newer known).
+func _open_updates() -> void:
+	if veil.busy:
+		return
+	settings_sheet.close()
+	if updater.state in [Updater.IDLE, Updater.CURRENT]:
+		updater.check()
+	update_card.ship = player.cls.id
+	update_card.open()
 
 
 ## The menus a shot opens on (--seapick, --pause, --settings, --shipwright
@@ -2330,6 +2404,8 @@ func _enter_harbour(menu := true) -> void:
 	camera.orbit_snap()
 	sound.harbour(true)
 	_note_tour("in the harbour")
+	updater.harbour()
+	_offer_update()
 
 
 ## Her at anchor off the home port, every sail set and drawing (the web's
@@ -3563,6 +3639,10 @@ func _notification(what: int) -> void:
 		return
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		_go_back(true)
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		# back from Android's installer (it turned it down, or wanted
+		# installs from the game allowed first): Install again
+		updater.resumed()
 	elif what == NOTIFICATION_APPLICATION_PAUSED:
 		# the phone took the game away: the voyage waits for her captain, and
 		# what's kept is written before the system can close the game
@@ -3580,7 +3660,7 @@ func _go_back(os_back: bool) -> void:
 	_back_frame = f
 	if veil.busy:
 		return
-	if settings_sheet.go_back() or vault.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
+	if update_card.go_back() or settings_sheet.go_back() or vault.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
 		return
 	if _farewell != null:
 		if _farewell.shown:

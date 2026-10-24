@@ -24,6 +24,9 @@ const LINE := {
 	"pause": '<path d="M9 5.5v13M15 5.5v13"/>',
 	"harbour": '<path d="M3 20h18M5 20V10l7-5 7 5v10M9.5 20v-5h5v5"/>',
 	"close": '<path d="M6 6l12 12M18 6 6 18"/>',
+	# a new build to download, and the tick of one that's current
+	"download": '<path d="M12 3.5v11M7.2 10l4.8 4.8 4.8-4.8"/><path d="M4.5 15.5v2.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-2.5"/>',
+	"tick": '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
 	# the corner's zoom button
 	"zoom": '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5.5 5.5M8 10.5h5M10.5 8v5"/>',
 	# a ship's qualities, on the harbour's bars (with "hull")
