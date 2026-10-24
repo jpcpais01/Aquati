@@ -87,6 +87,12 @@ func open(id: String) -> void:
 	set_process(true)
 
 
+## Everything rises in again (the loading screen lifting on it).
+func replay() -> void:
+	_t = 0.0
+	_step(0.0)
+
+
 func close() -> void:
 	for b in _all_buttons():
 		b.cancel()

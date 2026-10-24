@@ -27,7 +27,8 @@ var _dressed: Array[TradePort] = []
 
 ## Builds the towns at the world bake's trading ports (every region's, the
 ## home harbour left out), in the web's order.
-func setup(world: World, crew: Crew) -> void:
+## (`between`, awaited after each town, gives the loading screen its frames.)
+func setup(world: World, crew: Crew, between := Callable()) -> void:
 	_crew = crew
 	_arts = TradePort.Arts.new()
 	var sites: Array[Dictionary] = []
@@ -47,6 +48,8 @@ func setup(world: World, crew: Crew) -> void:
 		port.delivered.connect(func(id: String, on: bool, at: Vector3) -> void: delivered.emit(port, id, on, at))
 		port.bell_rung.connect(func(at: Vector3) -> void: bell_rung.emit(port, at))
 		ports.append(port)
+		if between.is_valid():
+			await between.call(float(i + 1) / mini(sites.size(), TradePort.SPECS.size()))
 	crew.crowds.append(_draw_folk)
 
 

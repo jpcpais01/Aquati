@@ -4,7 +4,7 @@
 // behind like a ship's. UV.x runs from the hoist (0) out to the fly (1), and
 // UV.y down the town's row of the atlas; the flag is 3.2 m on the fly.
 shader_type spatial;
-render_mode cull_disabled;
+render_mode cull_disabled, shadows_disabled;
 
 #include "res://shaders/inc/atmos.gdshaderinc"
 #define LIT_SPECULAR 0.3

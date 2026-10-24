@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-24T14:00Z',
+    entries: [
+      {
+        title: 'Android: a loading screen, and steady sails',
+        notes: [
+          'The Android game now opens on a loading screen like the web\'s: a ship off the pink shore of Las Brumas drifting slowly closer, the crest\'s rose turning above the gilt name, a tip that changes every few seconds and a bar filling aqua to gold. The world is built a little at a time behind it so it never freezes, and it waits until everything has been drawn once before fading into the harbour, so the game starts smooth instead of stuttering.',
+          'The last pale blocks flickering over sails, flags and hulls are gone. They were the sun\'s shadow catching on surfaces it only grazes: canvas and flags now take no sun shadow at all (they still cast theirs), and where the sun just skims a hull its light now fades away smoothly. The sharpest glints off varnished hulls are also kept in check, so they can\'t flash as white specks on phones.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T13:00Z',
     entries: [
       {

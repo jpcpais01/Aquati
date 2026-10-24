@@ -62,7 +62,9 @@ the view over toward the horizon), and tap the minimap for the sea chart:
 drag it, pinch it, double tap to zoom in, and tap the sea to drop a pin there,
 or a pin, a market town or an isle for its card ("Sail there", "Lift pin").
 
-The game opens in the harbour. A shot of the voyage, a fight or a
+The game opens on its loading screen, which lifts once the world is built and
+its frames run even (`--loading` holds it up for a shot; `--load-times` prints
+how long each piece of the build took), then in the harbour. A shot of the voyage, a fight or a
 farewell (below) starts at sea instead; for the menus, `--menu` opens on the
 harbour (`--orbit A` sets how far round her the camera has come),
 `--seapick` on "Where shall we sail?", `--pause` puts the voyage on hold and
