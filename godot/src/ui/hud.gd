@@ -30,6 +30,8 @@ signal clicked
 signal touch_set(on: bool)
 ## The helmsman's pill: the captain takes the helm back.
 signal helm_cancel
+## Ashore on touch: the Jump button.
+signal jump_pressed
 
 var controls: Controls
 
@@ -94,6 +96,9 @@ var _lever: SailLever
 var _helm: HelmRing
 var _ap: HelmPill
 var _hz: HazardPill
+## Ashore: the sea's controls (the knots, the sail lever, the guns) stand down for the Jump button.
+var _ashore := false
+var _jump: UiButton
 var _hz_room := -1.0
 var _toasts: VBoxContainer
 var _toast_box: StyleBoxFlat
@@ -364,6 +369,23 @@ func _ready() -> void:
 	_pie = ShotPie.new()
 	_pie.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
 	root.add_child(_pie)
+	# ashore on touch: a big round Jump under the right thumb
+	var jd := 76.0 * HudStyle.KT
+	_jump = UiButton.new(Vector2(jd, jd), jd * 0.5, 24.0 * HudStyle.PX)
+	round_look(_jump)
+	var ji := Icons.rect("jump", 30.0 * HudStyle.KT, HudStyle.INK)
+	ji.position = Vector2((jd - ji.size.x) * 0.5, jd * 0.5 - ji.size.y * 0.62)
+	ji.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_jump.add_child(ji)
+	var jl := HudStyle.label("JUMP", "inter", 800, roundi(9.0 * HudStyle.KT), HudStyle.INK_3, roundi(9.0 * HudStyle.KT * 0.16))
+	jl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	jl.size = Vector2(jd, jl.get_minimum_size().y)
+	jl.position = Vector2(0.0, jd * 0.5 + ji.size.y * 0.42)
+	jl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_jump.add_child(jl)
+	_jump.held.connect(_on_jump_held)
+	_jump.visible = false
+	root.add_child(_jump)
 	show_touch(controls != null and controls.touch)
 	if controls:
 		controls.touch_seen.connect(func() -> void: show_touch(true))
@@ -406,6 +428,7 @@ func _layout() -> void:
 	# the helmsman's pill: above the knots on a desktop; on touch, where the knots were
 	_ap.place(Vector2(vp.x * 0.5, vp.y - my - (0.0 if _touch_ui else 66.0 * k)), minf(420.0 * k, vp.x - 2.0 * mx - 24.0 * HudStyle.PX))
 	_pad.position = Vector2(vp.x - mx - _pad.size.x, vp.y - my - _pad.size.y)
+	_jump.position = Vector2(vp.x - mx - _jump.size.x - 18.0 * HudStyle.KT, vp.y - my - _jump.size.y - 10.0 * HudStyle.KT)
 	# the shot button rides over Fire, a little clear of it
 	_pie.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotPie.BTN * 0.5)
 	_peek.place(Vector2(mx, my + _chips.position.y + _chips.size.y + 8.0 * HudStyle.K))
@@ -552,15 +575,7 @@ func wind_shift() -> void:
 ## The touch controls on (a touch was seen) or off.
 func show_touch(on: bool) -> void:
 	_touch_ui = on
-	_lever.visible = on
-	_pad.visible = on
-	_pie.visible = on
-	if not on:
-		_pie.set_open(false)
-	# the lever shows the canvas and the pie the shot, so the pill keeps just the knots
-	_pips.visible = not on
-	_rack.visible = not on
-	_rack_sep.visible = not on
+	_apply_mode()
 	# and on touch it's a slim chip over the sail lever: the number big, the unit a small "kn"
 	var k := HudStyle.K
 	_pill_box.content_margin_left = 9.0 * k if on else 18.0
@@ -585,6 +600,37 @@ func show_touch(on: bool) -> void:
 
 func touch_ui() -> bool:
 	return _touch_ui
+
+
+## Ashore (`on`) or afloat: the knots, the sail lever, the guns and the
+## shot stand down while the captain walks, and on touch the Jump comes up.
+func set_ashore(on: bool) -> void:
+	if on == _ashore:
+		return
+	_ashore = on
+	_apply_mode()
+	_layout()
+
+
+func _on_jump_held(on: bool) -> void:
+	if on:
+		jump_pressed.emit()
+
+
+func _apply_mode() -> void:
+	var on := _touch_ui
+	var sea := not _ashore
+	_lever.visible = on and sea
+	_pad.visible = on and sea
+	_pie.visible = on and sea
+	if not on or not sea:
+		_pie.set_open(false)
+	_jump.visible = on and not sea
+	_pill.visible = sea
+	# the lever shows the canvas and the pie the shot, so the pill keeps just the knots
+	_pips.visible = not on
+	_rack.visible = not on
+	_rack_sep.visible = not on
 
 
 ## Her hull and the tally: a blow shakes the panel and flushes its edge coral.

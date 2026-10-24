@@ -243,7 +243,7 @@ jobs:
             echo
             echo "---"
             echo
-            echo "Install: download \`shores-o-fortune-${NAME}.apk\` on your phone and open it (allow installs from your browser if Android asks). Needs Android 7 or newer, 64-bit. From 0.20 on, the game offers each new build itself: tap Update in the harbour."
+            echo "Install: download \`shores-o-fortune-${NAME}.apk\` on your phone and open it (allow installs from your browser if Android asks). Needs Android 7 or newer, 64-bit. From 0.21 on, the game offers each new build itself: tap Update in the harbour."
             echo
             echo "<!-- signed: ${SIGNED_WITH} -->"
             if [ "${SIGNED_WITH}" = "fallback" ]; then

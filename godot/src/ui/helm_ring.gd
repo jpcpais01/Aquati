@@ -32,6 +32,9 @@ func _draw() -> void:
 	if controls == null or not controls.helm_down():
 		return
 	var c := controls.helm_origin
+	if controls.foot:
+		_draw_stick(c)
+		return
 	draw_circle(c, RADIUS + 14.0, Color(0.04, 0.1, 0.15, 0.42), true, -1.0, true)
 	draw_arc(c, RADIUS, 0.0, TAU, 64, Color(1, 1, 1, 0.28), 2.0, true)
 	# the bow, where she points now
@@ -57,3 +60,17 @@ func _draw() -> void:
 	draw_circle(c + wd * RADIUS, 15.0, Color(0.97, 0.98, 0.99, 0.95), true, -1.0, true)
 	draw_circle(c + wd * RADIUS, 15.0, HudStyle.GOLD, false, 2.0, true)
 	draw_line(c + wd * (RADIUS - 6.0), c + wd * (RADIUS + 6.0), Color("#1f1404"), 2.0, true)
+
+
+## Ashore: a plain stick, its base where the thumb went down and the knob
+## following it out to the rim (gold once it's pushed to a run).
+func _draw_stick(c: Vector2) -> void:
+	var r := Controls.STICK * HudStyle.PX
+	draw_circle(c, r + 14.0, Color(0.04, 0.1, 0.15, 0.42), true, -1.0, true)
+	draw_arc(c, r, 0.0, TAU, 64, Color(1, 1, 1, 0.28), 2.0, true)
+	var d := controls.helm_at - c
+	var k := minf(d.length(), r) / maxf(d.length(), 1e-3)
+	var at := c + d * k
+	var running := d.length() > r * 0.94
+	draw_circle(at, 17.0, Color(0.97, 0.98, 0.99, 0.95), true, -1.0, true)
+	draw_circle(at, 17.0, HudStyle.GOLD if running else Color(1, 1, 1, 0.5), false, 2.0, true)

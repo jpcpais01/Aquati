@@ -14,6 +14,8 @@ var look: CrewLook
 ## His palette row (CrewView), -1 once released.
 var row := -1
 var mode := Mode.ABOARD
+## Called away ashore with the landing party: not on deck, not drawn there.
+var away := false
 var act := Act.STAND
 var act_t := 0.0
 var act_dur := 5.0

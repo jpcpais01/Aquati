@@ -53,7 +53,18 @@ var chart := false
 var pointer := Vector2.ZERO
 var pointer_active := false
 var touch := false
+## Ashore: the keys and the touch stick walk the captain instead of steering.
+var foot := false
+## The stride wanted ashore, screen right and up (length 0..1): the keys,
+## or the stick under the left thumb (pushed to its rim, a run).
+var walk := Vector2.ZERO
+var run := false
+## A pulse: jump (Space, or the Jump button).
+var jump := false
+## How far the stick reaches from where the thumb went down (px).
+const STICK := 60.0
 
+var _stick := Vector2.ZERO
 var _helm_id := -1
 ## When the helm finger went down (ms).
 var _helm_ms := 0
@@ -106,6 +117,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			fire_side = -1
 		elif event.is_action("fire_auto"):
 			fire_auto = true
+			jump = true
 			skip = true
 		elif event.is_action("confirm"):
 			skip = true
@@ -172,6 +184,7 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 		if e.index == _helm_id:
 			_helm_id = -1
 			steering = false
+			_stick = Vector2.ZERO
 		if _touches.size() < 2:
 			_pinch_d = -1.0
 
@@ -181,6 +194,12 @@ func _on_drag(e: InputEventScreenDrag) -> void:
 	if e.index == _helm_id:
 		helm_at = e.position
 		var d := e.position - helm_origin
+		if foot:
+			# afoot it's a plain stick: the way and how far, from where the thumb went down
+			var l := d.length()
+			_stick = Vector2(d.x, -d.y) / l * minf(1.0, l / (STICK * HudStyle.PX)) if l > 8.0 else Vector2.ZERO
+			steering = l > 8.0
+			return
 		# a little dead zone, then the bow follows the finger's bearing
 		if d.length() > 8.0:
 			steer_heading = atan2(d.x, d.y)
@@ -199,6 +218,9 @@ func _pinch_distance() -> float:
 ## Reads the held keys; call once a frame before using the state.
 func poll() -> void:
 	rudder = Input.get_action_strength("helm_port") - Input.get_action_strength("helm_starboard")
+	var keys := Vector2(-rudder, Input.get_action_strength("sail_more") - Input.get_action_strength("sail_less"))
+	walk = keys.normalized() if keys.length() > 0.01 else _stick
+	run = Input.is_physical_key_pressed(KEY_SHIFT) or (keys.length() <= 0.01 and _stick.length() > 0.94)
 
 
 func helm_down() -> bool:
@@ -211,6 +233,7 @@ func reset() -> void:
 	_touches.clear()
 	_helm_id = -1
 	steering = false
+	_stick = Vector2.ZERO
 	_pinch_d = -1.0
 	consume()
 
@@ -227,3 +250,4 @@ func consume() -> void:
 	skip = false
 	interact = false
 	chart = false
+	jump = false

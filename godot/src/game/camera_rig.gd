@@ -57,6 +57,12 @@ var orbit_angle := 0.6
 ## chases them), framed in the space the market's panel leaves free
 ## (`port_frame`, as orbit_frame).
 var port := false
+## Ashore: a close, lower third-person frame over the captain's shoulder (the
+## web's foot view), eased in and out; north stays up.
+var foot := false
+## Ground height under the camera ashore, so it never dips into a hillside.
+var ground := Callable()
+var _ft := 0.0
 var shot_pos := Vector3.ZERO
 var shot_look := Vector3.ZERO
 var shot_fov := 38.0
@@ -102,6 +108,9 @@ func _ready() -> void:
 ## it straightens up first, then closes in: one track out and back.
 func zoom_by(d: float, now: float) -> void:
 	var step := d * 0.06
+	if foot:
+		zoom = clampf(zoom + step, 0.0, 1.0)
+		return
 	if step < 0.0:
 		if tilt > 0.0:
 			tilt = maxf(0.0, tilt + step * 1.6)
@@ -147,7 +156,17 @@ func next_view() -> void:
 
 
 func tilt_blend() -> float:
-	return MathX.smoother(_tilt_smooth)
+	return MathX.smoother(_tilt_smooth) * (1.0 - foot_blend())
+
+
+## 0 at sea .. 1 ashore, eased.
+func foot_blend() -> float:
+	return _ft * _ft * (3.0 - 2.0 * _ft)
+
+
+## Cut straight to (or away from) the frame ashore, behind the veil.
+func snap_foot() -> void:
+	_ft = 1.0 if foot else 0.0
 
 
 ## How far the camera hangs from what it follows (drives shadow reach, sound
@@ -160,7 +179,7 @@ func distance() -> float:
 
 func _follow_distance() -> float:
 	var z := _zoom_smooth * _zoom_smooth * 0.6 + _zoom_smooth * 0.4
-	return lerpf(NEAR_DIST, FAR_DIST, z)
+	return lerpf(lerpf(NEAR_DIST, FAR_DIST, z), lerpf(13.0, 46.0, z), foot_blend())
 
 
 ## Visible half-extent of the sea round the focus.
@@ -253,16 +272,21 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	_zoom_smooth = zoom + (zx + zt) * ze
 	# a slow, weighty swing, like a crane shot settling
 	_tilt_smooth += (tilt - _tilt_smooth) * MathX.damp(2.2, dt)
+	_ft = clampf(_ft + (dt if foot else -dt) / 0.9, 0.0, 1.0)
+	var fb := foot_blend()
 
-	var ahead := Vector3(vel.x, 0.0, vel.z) * lerpf(1.4, 3.0, _zoom_smooth)
+	var ahead := Vector3(vel.x, 0.0, vel.z) * lerpf(lerpf(1.4, 3.0, _zoom_smooth), 0.45, fb)
 	_focus = _focus.lerp(follow + ahead, MathX.damp(2.2, dt))
 	target = _focus
 
 	# camera due south of the focus, looking north and down
-	var pitch := lerpf(lerpf(0.91, 1.1, _zoom_smooth), lerpf(CINE_PITCH_NEAR, CINE_PITCH, _zoom_smooth), tilt_blend())
+	# (ashore it sits lower, more over the shoulder than overhead)
+	var pitch := lerpf(lerpf(lerpf(0.91, 1.1, _zoom_smooth), lerpf(CINE_PITCH_NEAR, CINE_PITCH, _zoom_smooth), tilt_blend()), lerpf(0.62, 0.98, _zoom_smooth), fb)
 	_pitch = pitch
 	var dist := _follow_distance()
 	var pos := _focus + Vector3(0.0, sin(pitch) * dist, cos(pitch) * dist)
+	if fb > 0.0 and ground.is_valid():
+		pos.y = maxf(pos.y, float(ground.call(pos.x, pos.z)) + 2.2)
 	var look := _focus
 	# the harbour's orbit, and the swing between it and the follow view
 	_blend += ((0.0 if orbit else 1.0) - _blend) * MathX.damp(3.0 if orbit else 1.4, dt)
@@ -301,7 +325,8 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	global_transform = Transform3D(Basis.looking_at(look - pos, Vector3.UP), pos)
 	fov = lerpf(lens_now, cine_fov, cine_w)
 	# the near plane rides up with the camera: a far view keeps its depth precision
-	near = clampf(pos.y * 0.08, 2.0, 30.0)
+	# (ashore the lens is a few metres off the captain: the near plane comes in with it)
+	near = lerpf(clampf(pos.y * 0.08, 2.0, 30.0), 0.5, fb)
 	far = 2600.0
 	_slide_frame(dt)
 

@@ -102,7 +102,8 @@ them) and back out to the anchorage, then out into the home waters, paused and r
 back button, the sea chart opened off the minimap, a pin dropped on it,
 "Sail there" and the helmsman setting a course, the chart closing itself, the
 pin's card opened again and the pin lifted, then off a market's quay: the prompt tapped, goods sold, her hull
-mended, fresh shot, a part bought from the shipwright and cast off), prints what it saw in `SMOKE MENU`, sails
+mended, fresh shot, a part bought from the shipwright and cast off, then off a beach, ashore with the landing
+party, a run inland and a hop, back to the boat and rowed back out), prints what it saw in `SMOKE MENU`, sails
 on for a few seconds and prints `SMOKE OK` (`--smoke-at N`: after N frames). `--noshadow`, `--noocean` and
 `--noflora` leave a layer out, and `--discover` charts islands during a shot.
 For the sea's dangers: `--maelstrom I` starts her in maelstrom I's pull
@@ -110,6 +111,10 @@ For the sea's dangers: `--maelstrom I` starts her in maelstrom I's pull
 eye (0.55), `--mael-a A` at that bearing (radians), her head along the flow
 or, with `--mael-in`, facing the eye; `--reef I` starts her `--reef-off M`
 metres (60) south of reef I's edge, heading for it.
+Ashore: `--beach I` puts her off a beach of island I of her waters (the
+Go ashore prompt up), `--ashore I` lands the party there at once, and
+`--walk X,Y` holds the stick (screen right, up; `inland` or `inland-run` walks
+or runs up the beach).
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off
