@@ -6,25 +6,33 @@ extends CanvasLayer
 ## console's row, Settings, and Return to harbour, which asks for a second
 ## press before it gives the voyage up), and on the right "Voyage paused",
 ## her name under her silhouette and the voyage so far in four tiles. Up and
-## down (or W and S) move along the menu, Enter takes the row lit.
+## down (or W and S) move along the menu, Enter takes the row lit. On a
+## computer a last row quits the game, also on a second press.
 
 signal resume
 signal settings
 signal harbour
+## Quit game, pressed twice (the desktop game).
+signal quit
 signal clicked
 
 ## Seconds Return to harbour stays armed for its second press.
 const ARM := 3.2
 const ROWS := [["play", "Resume voyage"], ["sliders", "Settings"], ["harbour", "Return to harbour"]]
+const QUIT_ROW := ["power", "Quit game"]
+## What a second press is asked for on each warning row.
+const ARMED_LABELS := {2: "Press again to leave this voyage", 3: "Press again to quit the game"}
 
 var _root: Control
 var _back: ShaderMaterial
 var _rows: Array[_Row] = []
 var _reveal := MenuKit.Reveal.new()
 var _info := {}
-## The row lit (the keyboard's, or the first), and how long Return stays armed.
+## The row lit (the keyboard's, or the first), and how long the armed row
+## (Return, or Quit) stays armed.
 var _focus := 0
 var _armed := 0.0
+var _armed_row := -1
 var _t := 0.0
 
 
@@ -47,6 +55,7 @@ func open(info: Dictionary) -> void:
 	_t = 0.0
 	_focus = 0
 	_armed = 0.0
+	_armed_row = -1
 	visible = true
 	_build()
 	set_process(true)
@@ -130,17 +139,18 @@ func _build() -> void:
 	# the menu down the left, centred against that column
 	var lw := 320.0 * u
 	var rh := 50.0 * u
-	var list_h := rh * ROWS.size() + (ROWS.size() - 1) * 1.0 + 6.0 * u
+	var rows := _specs()
+	var list_h := rh * rows.size() + (rows.size() - 1) * 1.0 + 6.0 * u
 	var ly := top + (col_h - list_h) * 0.5
-	for i in ROWS.size():
-		var warn := i == ROWS.size() - 1
-		if warn:
+	for i in rows.size():
+		var warn := i >= 2
+		if i == 2:
 			ly += 6.0 * u
 			var rule := MenuKit.rule(lw - 36.0 * u)
 			rule.position = Vector2(mx + 8.0 * u + 18.0 * u, ly - 6.0 * u)
 			_root.add_child(rule)
 			_reveal.add(rule, MenuKit.FADE, 0.1 + i * 0.04, 0.5)
-		var row := _Row.new(str(ROWS[i][0]), str(ROWS[i][1]), Vector2(lw, rh), warn)
+		var row := _Row.new(str(rows[i][0]), str(rows[i][1]), Vector2(lw, rh), warn)
 		row.position = Vector2(mx + 8.0 * u, ly)
 		var k := i
 		row.pressed.connect(func() -> void: _act(k))
@@ -149,6 +159,14 @@ func _build() -> void:
 		_reveal.add(row, MenuKit.SLIDE, 0.1 + i * 0.04, 0.5, slide)
 		ly += rh + 1.0
 	_step(0.0)
+
+
+## The menu's rows: Quit game too on a computer.
+static func _specs() -> Array:
+	var rows: Array = ROWS.duplicate()
+	if Settings.desktop:
+		rows.append(QUIT_ROW)
+	return rows
 
 
 ## Her silhouette in her colours, her class over her name.
@@ -226,15 +244,27 @@ func _act(i: int) -> void:
 		1:
 			clicked.emit()
 			settings.emit()
-		2:
+		2, 3:
 			clicked.emit()
-			if _armed > 0.0:
-				_armed = 0.0
-				harbour.emit()
+			if _armed > 0.0 and _armed_row == i:
+				_disarm()
+				if i == 2:
+					harbour.emit()
+				else:
+					quit.emit()
 			else:
 				# a voyage is too much to lose to one stray tap
+				_disarm()
 				_armed = ARM
-				_rows[2].set_label("Press again to leave this voyage")
+				_armed_row = i
+				_rows[i].set_label(str(ARMED_LABELS[i]))
+
+
+func _disarm() -> void:
+	if _armed_row >= 0 and _armed_row < _rows.size():
+		_rows[_armed_row].set_label(str(_specs()[_armed_row][1]))
+	_armed = 0.0
+	_armed_row = -1
 
 
 func _process(dt: float) -> void:
@@ -242,8 +272,7 @@ func _process(dt: float) -> void:
 	if _armed > 0.0:
 		_armed -= dt
 		if _armed <= 0.0:
-			_armed = 0.0
-			_rows[2].set_label(str(ROWS[2][1]))
+			_disarm()
 	_step(dt)
 
 
@@ -251,7 +280,7 @@ func _step(dt: float) -> void:
 	_back.set_shader_parameter("fade", clampf(_t / 0.35, 0.0, 1.0))
 	_reveal.step(_t)
 	for i in _rows.size():
-		_rows[i].tick(dt, i == _focus, i == 2 and _armed > 0.0)
+		_rows[i].tick(dt, i == _focus, i == _armed_row and _armed > 0.0)
 
 
 ## Up and down along the menu, Enter takes the row lit; no key reaches the

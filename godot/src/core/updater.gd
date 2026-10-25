@@ -22,10 +22,14 @@ extends Node
 ## next launch offers it ready to install), and once a build is installed its
 ## APK is deleted.
 ##
-## The Windows game (`desktop`) looks for the same releases' .exe instead and
-## never downloads anything itself: its card offers the new build with its
-## notes, and Download opens the .exe in the browser. The saves live in the
-## user's own folder, so the new one picks up where this one left off.
+## The Windows game (`desktop`) looks for the same releases' .exe instead,
+## downloads and checks it the same way, and installs it itself: the running
+## .exe is renamed aside (Windows lets a running program be renamed, not
+## overwritten), the new one is copied into its place, so shortcuts keep
+## working, and started, and this one quits. The renamed old one is deleted
+## on the next launch. If the game's folder can't be written to, the new
+## build runs from where it was downloaded instead. The saves live in the
+## user's own folder, so the new build picks up where this one left off.
 
 ## The state changed, or a download moved on.
 signal changed
@@ -45,7 +49,7 @@ const HASH_STEP := 4 << 20
 var state := IDLE
 ## Off unless this is the Android or Windows game (or a run told to pretend).
 var enabled := false
-## The Windows game: offers the release's .exe, opened in the browser.
+## The Windows game: updates its own .exe.
 var desktop := false
 ## This build: its version ("0.19.65") and the run it was made by (65; 0 for
 ## a build made outside CI).
@@ -103,6 +107,16 @@ func start() -> void:
 	enabled = true
 	tidy()
 	check()
+	if desktop:
+		# the build this one replaced may still be closing: give it a moment
+		get_tree().create_timer(6.0).timeout.connect(_drop_old)
+
+
+## The .exe the last update renamed aside, once nothing runs it any more.
+func _drop_old() -> void:
+	var old := OS.get_executable_path() + ".old"
+	if FileAccess.file_exists(old):
+		DirAccess.remove_absolute(old)
 
 
 ## The run a version or a release tag was made by: its last number.
@@ -323,14 +337,6 @@ func _checked(ok: bool) -> void:
 		tidy()
 		changed.emit()
 		return
-	if desktop:
-		# nothing to fetch in here: the card hands the .exe to the browser
-		state = OFFER
-		changed.emit()
-		if _told != int(latest.code):
-			_told = int(latest.code)
-			found.emit()
-		return
 	# a build downloaded earlier and since overtaken goes
 	tidy(_file())
 	if _ready_file() != "":
@@ -345,15 +351,9 @@ func _checked(ok: bool) -> void:
 		found.emit()
 
 
-## Downloads the newest build's APK (on Windows: opens its .exe in the
-## browser, which keeps it in Downloads).
+## Downloads the newest build's APK (on Windows its .exe).
 func download() -> void:
 	if latest.is_empty() or state in [CHECKING, DOWNLOADING, VERIFYING]:
-		return
-	if desktop:
-		var url := str(latest.url) if str(latest.url) != "" else str(latest.page)
-		if url != "":
-			OS.shell_open(url)
 		return
 	if _ready_file() != "":
 		state = READY
@@ -405,7 +405,7 @@ func _on_download(result: int, code: int, _h: PackedStringArray, _b: PackedByteA
 			HTTPRequest.RESULT_CANT_CONNECT, HTTPRequest.RESULT_CANT_RESOLVE, HTTPRequest.RESULT_CONNECTION_ERROR, HTTPRequest.RESULT_TIMEOUT:
 				_fail("The connection dropped. Check you're online and try again.")
 			HTTPRequest.RESULT_DOWNLOAD_FILE_WRITE_ERROR, HTTPRequest.RESULT_DOWNLOAD_FILE_CANT_OPEN:
-				_fail("There's no room on the phone for the download. Free some space and try again.")
+				_fail("There's no room on the %s for the download. Free some space and try again." % ("computer" if desktop else "phone"))
 			_:
 				_fail("The download broke off. Try again in a moment.")
 		return
@@ -482,6 +482,9 @@ func install() -> void:
 	if apk == "":
 		download()
 		return
+	if desktop:
+		_swap_in(apk)
+		return
 	var err := OS.shell_open(ProjectSettings.globalize_path(apk))
 	if err != OK:
 		if str(latest.page) != "":
@@ -491,6 +494,38 @@ func install() -> void:
 		error = ""
 	state = INSTALLING
 	changed.emit()
+
+
+## Windows: the new .exe into the running one's place (renamed aside first),
+## then started, and this one closes. A frame or two first, so the card can
+## say it's restarting before the copy holds the game up for a moment.
+func _swap_in(file: String) -> void:
+	state = INSTALLING
+	error = ""
+	changed.emit()
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var src := ProjectSettings.globalize_path(file)
+	var exe := OS.get_executable_path()
+	var old := exe + ".old"
+	if FileAccess.file_exists(old):
+		DirAccess.remove_absolute(old)
+	var swapped := DirAccess.rename_absolute(exe, old) == OK
+	if swapped and DirAccess.copy_absolute(src, exe) != OK:
+		# couldn't write the new one: the old one goes back where it was
+		DirAccess.remove_absolute(exe)
+		DirAccess.rename_absolute(old, exe)
+		swapped = false
+	var run := exe if swapped else src
+	Progress.save()
+	if OS.create_process(run, []) < 0:
+		error = "The new build wouldn't start. Try again, or get it from the release page."
+		state = READY if _ready_file() != "" else OFFER
+		changed.emit()
+		return
+	if swapped:
+		DirAccess.remove_absolute(src)
+	get_tree().quit()
 
 
 ## Back from Android's installer without being replaced: it was turned down,
@@ -510,7 +545,7 @@ func tidy(keep := "") -> void:
 		return
 	for f in DirAccess.get_files_at(DIR):
 		var p := DIR.path_join(f)
-		if f.ends_with(".part") or not f.ends_with(".apk") or code_of(f.trim_suffix(".apk")) <= installed_code or (keep != "" and p != keep):
+		if f.ends_with(".part") or not f.ends_with(asset_ext()) or code_of(f.trim_suffix(asset_ext())) <= installed_code or (keep != "" and p != keep):
 			DirAccess.remove_absolute(p)
 
 
@@ -523,7 +558,7 @@ func _fail(msg: String) -> void:
 
 ## Where the newest build's APK goes.
 func _file() -> String:
-	return DIR.path_join("shores-o-fortune-%s.apk" % str(latest.get("name", "0")))
+	return DIR.path_join("shores-o-fortune-%s%s" % [str(latest.get("name", "0")), asset_ext()])
 
 
 ## The newest build's APK if it's here whole.

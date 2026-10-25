@@ -16,7 +16,15 @@ inside it (`binary_format/embed_pck`), its icon (`art/icon.ico`) and version
 written into it by the engine (no rcedit needed). It plays with the keyboard
 and mouse (Settings lists the keys) and opens full screen, borderless; F11 or
 Alt+Enter, or Settings' Full screen switch, puts it in a window that can be
-resized freely, and the choice is kept. Settings also has Quit to desktop. The
+resized freely, and the choice is kept. Exit game sits by Settings in the
+harbour and at the foot of the pause menu (and in Settings).
+
+The menus and HUD are laid out in units made for a phone held sideways (720
+tall). On a computer `Settings.fit_ui()` sets the window's
+`content_scale_factor` so they come out at the web game's desktop size: a CSS
+pixel per screen pixel at the display's scaling, the web's `--hs` for small
+windows, the canvas at most 1700 units tall on big screens at 100%, never
+less room than 1100x720, times Settings' Interface size. The
 saves live in `%APPDATA%\Godot\app_userdata\Shores O' Fortune`, so every new
 `.exe` carries on where the last left off. It's unsigned, so SmartScreen asks
 once (More info, Run anyway).
@@ -223,9 +231,14 @@ with the same key. CI stamps the key it used into the build
 (`<!-- signed: … -->`); when they differ, the card says so and points to the
 release page instead of offering a download that can't install.
 
-The Windows game checks the same releases for their `.exe` instead and never
-downloads anything itself: its card's Download opens the `.exe` in the
-browser. Other desktop runs (the editor binary, the checks) never check. `--update-demo [offer|downloading|ready|failed|rekeyed]`
+The Windows game checks the same releases for their `.exe` instead,
+downloads and seals it the same way, and installs it itself: the running
+`.exe` is renamed to `<name>.exe.old` (Windows allows renaming a running
+program, not overwriting it), the new one is copied into its place, started,
+and the old process quits; the next launch deletes the `.old`. If the folder
+can't be written, the new build runs from `user://updates`. Other desktop
+runs (the editor binary, the checks) never check; `--as-windows` with
+`--update-demo` stages the Windows card. `--update-demo [offer|downloading|ready|failed|rekeyed]`
 (with `--nocard`, just the harbour's pill) stages the card for a shot.
 
 ## Signing the release APK

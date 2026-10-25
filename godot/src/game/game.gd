@@ -2408,6 +2408,7 @@ func _build_menus() -> void:
 	harbour.vault.connect(_open_vault)
 	harbour.settings.connect(_open_settings)
 	harbour.sound.connect(_toggle_sound)
+	harbour.quit.connect(_quit_game)
 	harbour.clicked.connect(sound.click)
 	add_child(harbour)
 	shipwright = Shipwright.new()
@@ -2478,6 +2479,7 @@ func _build_menus() -> void:
 	pause_screen.resume.connect(_resume)
 	pause_screen.settings.connect(_open_settings)
 	pause_screen.harbour.connect(_quit_voyage)
+	pause_screen.quit.connect(_quit_game)
 	pause_screen.clicked.connect(sound.click)
 	add_child(pause_screen)
 	settings_sheet = SettingsSheet.new()
@@ -2493,9 +2495,7 @@ func _build_menus() -> void:
 	add_child(update_card)
 	settings_sheet.updater = updater
 	settings_sheet.updates.connect(_open_updates)
-	settings_sheet.quit.connect(func() -> void:
-		Progress.save()
-		get_tree().quit())
+	settings_sheet.quit.connect(_quit_game)
 	harbour.update.connect(_open_updates)
 	updater.changed.connect(_on_update)
 	updater.found.connect(_offer_update)
@@ -2532,6 +2532,8 @@ func _open_settings() -> void:
 ## [--nocard]).
 func _start_updates() -> void:
 	if _args.has("update-demo"):
+		# (--as-windows: the Windows game's card and pill)
+		updater.desktop = updater.desktop or _args.has("as-windows")
 		updater.demo(update_card.own_notes, "" if _args["update-demo"] is bool else str(_args["update-demo"]))
 		# (--nocard: just the harbour's Update pill)
 		if not _args.has("nocard"):
@@ -2551,7 +2553,7 @@ func _on_update() -> void:
 		Updater.VERIFYING:
 			label = "100%"
 		Updater.READY, Updater.INSTALLING:
-			label = "Install"
+			label = "Restart" if updater.desktop else "Install"
 	harbour.set_update(label)
 
 
@@ -3218,6 +3220,13 @@ func _start_voyage(sea: String) -> void:
 		hud.toast("Weigh anchor", "The %s sets sail" % p.ship_name, 3.0)
 	_tell_keys()
 	_note_tour("sailed from %s" % (away.id if away != null else "home"))
+
+
+## Exit game (a computer's): what's kept is written, and the window closes.
+func _quit_game() -> void:
+	Progress.save()
+	Settings.save()
+	get_tree().quit()
 
 
 ## On a computer, the first voyage of a run: the keys, once, after the

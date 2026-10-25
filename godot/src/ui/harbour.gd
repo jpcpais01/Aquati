@@ -19,6 +19,8 @@ signal vault
 signal update
 signal settings
 signal sound
+## Exit game (the desktop game's round button, by Settings and the sound).
+signal quit
 signal clicked
 
 const SHIPS: Array[String] = ["sloop", "brig", "galleon"]
@@ -297,7 +299,7 @@ func _build_head() -> Control:
 	return head
 
 
-## The tools, top right: Settings and the sound.
+## The tools, top right: Settings and the sound (and on a computer, Exit game).
 func _build_tools() -> Control:
 	var u := MenuKit.U
 	var box := Control.new()
@@ -311,8 +313,16 @@ func _build_tools() -> Control:
 	_sound_btn = MenuKit.round("sound", d, ip)
 	_sound_btn.pressed.connect(func() -> void: sound.emit())
 	set_sound(sound_on)
+	var tools: Array[UiButton] = [gear, _sound_btn]
+	if Settings.desktop:
+		var off := MenuKit.round("power", d, ip)
+		off.tooltip_text = "Exit game"
+		off.pressed.connect(func() -> void:
+			clicked.emit()
+			quit.emit())
+		tools.append(off)
 	var x := 0.0
-	for b: UiButton in [gear, _sound_btn]:
+	for b: UiButton in tools:
 		b.position = Vector2(x, 0.0)
 		box.add_child(b)
 		_tools.append(b)
@@ -324,7 +334,7 @@ func _build_tools() -> Control:
 	_update_btn.p("c_border", Color(1.0, 0.85, 0.5, 0.45)).p("border", 1.2 * MenuKit.PX)
 	_update_btn.p("c_glow", Color(1.0, 0.8, 0.4, 0.22)).p("glow", 12.0 * u)
 	var tw: float = (_update_btn.get_node("Text") as Control).size.x
-	var wide := MenuKit.words("Install", "inter", 700, 13.5 * MenuKit.T, HudStyle.GOLD_HI, 0.02).size.x
+	var wide := maxf(MenuKit.words("Install", "inter", 700, 13.5 * MenuKit.T, HudStyle.GOLD_HI, 0.02).size.x, MenuKit.words("Restart", "inter", 700, 13.5 * MenuKit.T, HudStyle.GOLD_HI, 0.02).size.x)
 	_update_btn.resize(_update_btn.size + Vector2(maxf(0.0, wide - tw) + 8.0 * MenuKit.PX, 0.0))
 	_update_dot = _VaultDot.new(8.0 * MenuKit.PX)
 	_update_dot.position = Vector2(_update_btn.size.x - 6.0 * MenuKit.PX - _update_dot.size.x, 4.0 * MenuKit.PX)
