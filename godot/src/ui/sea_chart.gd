@@ -1026,7 +1026,7 @@ func _paint_live(ci: CanvasItem) -> void:
 		if sh.team == Ship.Team.PLAYER:
 			MapMarks.ship(ci, at, sh.heading, HudStyle.AQUA, 11.0 * PX, 2.0 * PX, Color(0.0, 0.0, 0.0, 0.55))
 		elif Vector2(sh.pos.x - me.pos.x, sh.pos.z - me.pos.z).length() <= ChartArt.SPYGLASS:
-			MapMarks.ship(ci, at, sh.heading, Color("#ff6a55"), 10.0 * PX, 2.0 * PX, Color(0.0, 0.0, 0.0, 0.55))
+			MapMarks.ship(ci, at, sh.heading, Color("#f2c45a") if sh.team == Ship.Team.MERCHANT else Color("#ff6a55"), 10.0 * PX, 2.0 * PX, Color(0.0, 0.0, 0.0, 0.55))
 	# you are here
 	var pulse := fposmod(_clock * 0.8, 1.0)
 	ci.draw_arc(pc, (10.0 + pulse * 22.0) * PX, 0.0, TAU, 48, Color(1.0, 1.0, 1.0, 0.7 * (1.0 - pulse)), 2.0 * PX, true)

@@ -29,7 +29,8 @@ const PIRATE_ARC := 0.32
 ## Seconds a wreck lingers afloat before her final plunge.
 const WRECK_LIFE := 180.0
 
-enum Team { PLAYER, PIRATE }
+## MERCHANT: a trading house's hull in a convoy (Convoys), no one's to fight.
+enum Team { PLAYER, PIRATE, MERCHANT }
 const SMOKE := Color(0.82, 0.8, 0.78, 0.32)
 const SMOKE_END := Color(1.05, 1.04, 1.02)
 ## Seconds a laid ghost takes to dissolve.
@@ -104,6 +105,10 @@ var presence := 1.0
 ## (Boarding), and taken: sailing off under a prize crew, nobody's foe.
 var lashed := false
 var prize := false
+## A merchantman (Convoys): a beating holes her, but never sinks her.
+var hardy := false
+## Over the horizon (Convoys): just carried along her course, nothing drawn.
+var dormant := false
 var _flare := 0.0
 var _mist_t := 0.0
 
@@ -420,6 +425,8 @@ func damage(amount: float, attacker: Ship, at: Variant = null, hull: bool = true
 	if attacker != null:
 		last_attacker = attacker
 	_roll_kick += (randf() - 0.5) * 0.04
+	if hardy:
+		hp = maxf(hp, max_hp * 0.6)
 	if hp <= 0.0:
 		die(attacker)
 	return d
@@ -541,6 +548,13 @@ static func wind_factor(rel_deg: float) -> float:
 
 func step(dt: float) -> void:
 	var c := cls
+	if dormant:
+		heading = wrapf(heading + rudder * c.turn_rate * 0.5 * dt, -PI, PI)
+		pos.x += sin(heading) * speed * dt
+		pos.z += cos(heading) * speed * dt
+		vel = Vector3(sin(heading) * speed, 0.0, cos(heading) * speed)
+		position = Vector3(pos.x, position.y, pos.z)
+		return
 	# ------------------------------------------------ cannons
 	if not _pending.is_empty():
 		for i in range(_pending.size() - 1, -1, -1):

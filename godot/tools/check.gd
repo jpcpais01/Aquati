@@ -66,6 +66,87 @@ var _errors := 0
 var _home_world: World
 
 
+## Convoys: every house's goods real and each manifest a fair one (four to
+## six lots of her own goods, priced a little over fair or a bargain, finest
+## first); each house's hull built with her deck cargo and no guns; then a
+## convoy sent out mid-lane, hailed, released, fired on and called home.
+func _check_convoys(regions: Array[Region]) -> void:
+	var C: GDScript = load("res://src/game/convoys.gd")
+	for k: String in C.KINDS:
+		var h: Dictionary = C.HOUSES[k]
+		for id: String in h.wares:
+			Treasure.good(id)
+		for i in 30:
+			var m: Array[Dictionary] = C.manifest(k)
+			var ok := m.size() >= 4 and m.size() <= 6
+			var deals := 0
+			for j in m.size():
+				var w := m[j]
+				var r := float(w.price) / Treasure.price_of(w.id)
+				ok = ok and (h.wares as Array).has(w.id) and int(w.n) >= 1 and int(w.n) <= 4
+				ok = ok and (r > 0.8 and r < 0.95 if w.deal else r > 1.0 and r < 1.2)
+				ok = ok and (j == 0 or Treasure.price_of(m[j - 1].id) >= Treasure.price_of(w.id))
+				deals += 1 if w.deal else 0
+			if not ok or deals > 1:
+				_fail("convoys: a %s manifest %s" % [k, m])
+				break
+	var yard: Node = load("res://src/game/shipyard.gd").new()
+	var tris := PackedStringArray()
+	for k: String in C.KINDS:
+		var model := ShipModel.create(ShipClass.named(k), Livery.named(C.livery_of(k)))
+		if not model.muzzles.is_empty() or model.deck_props.size() < 8:
+			_fail("convoys: the %s has %d guns and %d deck props" % [k, model.muzzles.size(), model.deck_props.size()])
+		tris.append("%s %d" % [k, model.triangles()])
+		yard.keep(model)
+	var w := World.new()
+	w.waves = Waves.new(0.6)
+	w.wind = Wind.new(0.6)
+	w.regions = regions
+	var stage := Node3D.new()
+	root.add_child(stage)
+	var cv: RefCounted = C.new()
+	cv.setup(w, yard, stage)
+	var p := Ship.create(ShipClass.named("brig"), Livery.named("player"), w)
+	stage.add_child(p)
+	w.ships.append(p)
+	var a := regions[0].centre
+	var b := regions[1].centre
+	var mid := (a + b) * 0.5
+	p.place(mid.x, mid.z, atan2(b.x - a.x, b.z - a.z))
+	var got := []
+	cv.sighted.connect(func(_c: Variant) -> void: got.append("sighted"))
+	cv.scattered.connect(func(_c: Variant, _m: Variant) -> void: got.append("scattered"))
+	if not cv.spawn(p, 300.0, true):
+		_fail("convoys: none sent out mid-lane")
+	else:
+		var c: Variant = cv.convoy
+		cv.update(0.1, p, p.pos, 300.0, true, true)
+		var lead: Ship = c.fleet[0].ship
+		p.place(lead.pos.x + lead.port_dir().x * 9.0, lead.pos.z + lead.port_dir().z * 9.0, lead.heading)
+		var m: Variant = cv.hailable(p)
+		if m == null or w.ships.size() != 1 + c.fleet.size():
+			_fail("convoys: a merchantman 9 m abeam won't answer a hail")
+		else:
+			cv.parley(m, p)
+			if not m.ship.anchored or cv.hailable(p) != null:
+				_fail("convoys: hove to, she still answers")
+			cv.release()
+			cv.offend(m.ship, p)
+			if not c.scattered or cv.hailable(p) != null:
+				_fail("convoys: fired on, the convoy still trades")
+		var n: int = c.fleet.size()
+		cv.clear()
+		# the struck hull goes to the breakers, the rest back on the slipway
+		if cv.convoy != null or w.ships.size() != 1 or cv.stocked() != 3 - 1:
+			_fail("convoys: called home, %d ships afloat and %d hulls on the slipway" % [w.ships.size(), cv.stocked()])
+		print("convoys: %d sail sent out mid-lane, %s; hulls %s" % [n, ", ".join(PackedStringArray(got)), ", ".join(tris)])
+	stage.queue_free()
+	for k: String in C.KINDS:
+		while yard.count(k, C.livery_of(k)) > 0:
+			yard.take(k, C.livery_of(k)).free()
+	yard.free()
+
+
 ## Survivors: how many of a sunk ship's hands make it (and how they share
 ## out the wreckage), and the wreckage built; then a raft spawned, a line
 ## thrown to a ship alongside, and every hand swimming over and climbing aboard.
@@ -199,6 +280,8 @@ func _initialize() -> void:
 		_check_wildlife(_home_world.regions)
 	_check_bounty()
 	_check_survivors()
+	if _home_world != null:
+		_check_convoys(_home_world.regions)
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:

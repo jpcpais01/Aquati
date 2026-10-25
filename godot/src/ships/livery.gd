@@ -76,6 +76,40 @@ const DEFS := {
 		"trim": "#8fa89c", "sail": "#a9b8ae", "sail_seam": "#7f8f86", "emblem": "skull", "emblem_color": "#d8fff0",
 		"flag": "#0d1413", "flag2": "#c8f5e2",
 	},
+	# the merchant houses' (Convoys): the Ronvliet Company's brown and green
+	# with a gold star on a green swallowtail...
+	"merchant-fluyt": {
+		"hull": "#6b4528", "bottom": "#d6ccb2", "boot": "#f2ead6", "strake": "#2f6e3c", "wale": "#1c140e",
+		"trim": "#e8c25a", "sail": "#f3ead6", "sail_seam": "#dccdb0", "emblem": "none", "emblem_color": "#2f6e3c",
+		"flag": "#2f7d3a", "flag2": "#f0cf5e",
+	},
+	# ...the Aguadouro Bullion Line's blue, striped lateens and a crowned burgee...
+	"merchant-xebec": {
+		"hull": "#2c4a86", "bottom": "#e6dcc4", "boot": "#f3ecdc", "strake": "#f3ecdc", "wale": "#14203d",
+		"trim": "#e2b552", "sail": "#f6f0e2", "sail_seam": "#ddd1b8", "emblem": "none", "emblem_color": "#e2b552",
+		"flag": "#27407a", "flag2": "#e2b552",
+	},
+	# ...and Vila Garoa's tanned canvas, the colour of red ochre, under a moon
+	"merchant-ketch": {
+		"hull": "#7a5a3a", "bottom": "#b9545a", "boot": "#faf4ea", "strake": "#3f6f62", "wale": "#1b2420",
+		"trim": "#e7c46d", "sail": "#c7774f", "sail_seam": "#a65e3c", "emblem": "none", "emblem_color": "#f4e6dc",
+		"flag": "#3f6f62", "flag2": "#d9667a",
+	},
+}
+## The merchant houses' flags, sail marks and canvas, as the web dresses them.
+const HOUSE_DRESS := {
+	"merchant-fluyt": {
+		"flag": {"shape": "swallowtail", "bg": "#2f7d3a", "pattern": "band", "pattern_color": "#f0cf5e", "emblem": "star", "emblem_color": "#f6efd8", "backing": "none", "emblem_scale": 0.9, "paint": ""},
+		"mark": {"emblem": "star", "backing": "ring"}, "mark_color": "#2f7d3a",
+	},
+	"merchant-xebec": {
+		"flag": {"shape": "burgee", "bg": "#27407a", "pattern": "border", "pattern_color": "#e2b552", "emblem": "crown", "emblem_color": "#e2b552", "backing": "none", "emblem_scale": 1.0, "paint": ""},
+		"stripes": "#3a5a9c",
+	},
+	"merchant-ketch": {
+		"flag": {"shape": "swallowtail", "bg": "#3f6f62", "pattern": "hoist", "pattern_color": "#d9667a", "emblem": "moon", "emblem_color": "#faf4ea", "backing": "none", "emblem_scale": 0.9, "paint": ""},
+		"mark": {"emblem": "moon", "backing": "none"}, "mark_color": "#f4e6dc",
+	},
 }
 ## The player's flag is drawn this wide (the Shipwright shows it close), everyone else's as the web draws them.
 const FLAG_PX := 1024
@@ -111,6 +145,15 @@ static func named(livery_id: String) -> Livery:
 	}
 	if l.emblem != "none":
 		l.sail_mark = {"emblem": l.emblem, "backing": "bones" if skull else "none"}
+	if HOUSE_DRESS.has(livery_id):
+		var h: Dictionary = HOUSE_DRESS[livery_id]
+		l.flag_design = h.flag
+		if h.has("mark"):
+			l.sail_mark = h.mark
+			l.emblem_color = Color(h.mark_color)
+		if h.has("stripes"):
+			l.sail_pattern = 1
+			l.sail_accent = Color(h.stripes)
 	_cache[livery_id] = l
 	return l
 

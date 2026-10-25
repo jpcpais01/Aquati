@@ -214,6 +214,10 @@ var _cry_t := 0.0
 var _survivor_tip := false
 ## The voyage's heat: your infamy, the wanted level and the named captains it sends (Hunters).
 var hunters := Hunters.new()
+## Merchant convoys crossing the high seas, and the one you're alongside trading with.
+var convoys := Convoys.new()
+var trader: Convoys.Merchant
+var _test_convoy := false
 ## Each storm's one roll of the dice: 0 not yet, 1 rolled and it isn't coming, 2 it's coming.
 var _kr_storm := 0
 ## Seconds until it looks for deep water, once it's coming; till the seas may stir it again.
@@ -586,6 +590,8 @@ func _load() -> void:
 		_stage_voyage()
 	_stage_plunder()
 	_stage_survivors()
+	if _args.has("convoy"):
+		_stage_convoy()
 	if _args.has("bounty-banner"):
 		# a shot of the notices: a hunter's (or with `claimed`, the bounty claimed) over the voyage
 		var c: Dictionary = Bounty.CAPTAINS[4]
@@ -1184,6 +1190,9 @@ func _build_fleet() -> void:
 	pirates.name = "Pirates"
 	add_child(pirates)
 	pirates.setup(world, shipyard, self)
+	convoys.setup(world, shipyard, self)
+	convoys.sighted.connect(_sight_convoy)
+	convoys.scattered.connect(_on_scatter)
 	pirates.enabled = not (_args.has("shot") or _args.has("nopirates") or _args.has("battle"))
 	gunnery = Gunnery.new()
 	gunnery.name = "Gunnery"
@@ -1554,6 +1563,10 @@ func _process(delta: float) -> void:
 		print("SMOKE PORT: %d towns (%d triangles close up and %d as shells built); %d whole in view, drawing %d triangles; %s" % [
 				ports.ports.size(), built.x, built.y, drawn.y, drawn.x, "tied up at " + dock_port.title if dock_port != null else "at sea"])
 		_wild_line()
+		var cv := convoys.convoy
+		print("SMOKE CONVOY: %s; %d merchant hulls on the slipway%s" % [
+				("%d sail bound for %s%s%s" % [cv.fleet.size(), cv.dest.title, ", scattered" if cv.scattered else "", ", alongside the " + trader.ship.ship_name if trader != null else ""]) if cv != null else "none at sea",
+				convoys.stocked(), (", wanted: " + ", ".join(PackedStringArray(convoys.wanted()))) if not convoys.wanted().is_empty() else ""])
 		print("SMOKE SURVIVORS: %d rafts afloat with %d hands clinging on, %d rescued this voyage, reload x%.3f" % [survivors.rafts.size(), survivors.count(), rescued, float(player.boost.reload)])
 		print("SMOKE BOUNTY: infamy %d this voyage (wanted %d), %d hunters sent, %d claimed, %s; lifetime infamy %d, %d posters up" % [
 				hunters.pts, hunters.level(), hunters.sent, hunters.claimed,
@@ -1655,6 +1668,7 @@ func _tick(real_dt: float) -> void:
 	# the next sail is likelier a ghost in the dark, in mist and in foul weather
 	pirates.ghost_odds = minf(0.42, 0.05 + atmosphere.night * 0.24 + atmosphere.fog * 0.2 + atmosphere.storm * 0.06)
 	pirates.step(dt, player if sailing else null)
+	_sail_convoys(dt, sailing)
 	if sailing:
 		_heat(dt)
 		_survivor_cries(dt)
@@ -1695,9 +1709,13 @@ func _tick(real_dt: float) -> void:
 	ports.update(dt, player, camera.global_position, world.ships)
 	festivals.update(dt, real_dt, world, atmosphere.day, atmosphere.moon_phase, camera.global_position, state == State.VOYAGE or state == State.DOCKED)
 	if state == State.DOCKED:
-		dock_port.pin(player)
+		if dock_port != null:
+			dock_port.pin(player)
 		market.tick(real_dt, world.time)
-		_frame_dock(real_dt)
+		if trader != null:
+			_frame_trade(real_dt)
+		else:
+			_frame_dock(real_dt)
 	if home.visible:
 		home.pin(player)
 		# (her colours on the awning and the bunting follow the Shipwright's every change)
@@ -2429,6 +2447,9 @@ func _pointer_on_sea() -> Variant:
 
 
 func _on_hit(ship: Ship, attacker: Ship, dealt: float, at: Vector3) -> void:
+	# a merchantman struck (shot or rammed): her whole convoy runs
+	if ship.team == Ship.Team.MERCHANT:
+		convoys.offend(ship, attacker)
 	if dealt <= 0.0:
 		return
 	if attacker == player and ship != player:
@@ -2467,6 +2488,8 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 ## A bite of the flames burning a ship (fire shot): the damage ticks up off
 ## her deck in amber, yours or hers.
 func _on_burned(ship: Ship, attacker: Ship, dealt: float) -> void:
+	if ship.team == Ship.Team.MERCHANT:
+		convoys.offend(ship, attacker)
 	if dealt <= 0.0:
 		return
 	var p := player
@@ -2497,6 +2520,8 @@ func _say_power_once() -> void:
 
 ## A special shot left its mark: said over the ship, once for each fresh effect.
 func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
+	if ship.team == Ship.Team.MERCHANT:
+		convoys.offend(ship, attacker)
 	var p := player
 	if attacker != p and ship != p:
 		return
@@ -3111,6 +3136,7 @@ func _reset_world(id: String) -> void:
 	sound.high_seas(false)
 	_kraken_off()
 	_let_go()
+	convoys.clear()
 	wreck.end()
 	_farewell = null
 	time_scale = 1.0
@@ -3222,6 +3248,7 @@ func _build_menus() -> void:
 	market.restock.connect(_restock)
 	market.buy_part.connect(_buy_part)
 	market.buy_firework.connect(_buy_firework)
+	market.buy_ware.connect(_buy_ware)
 	market.leave.connect(_cast_off)
 	market.dock.connect(_dock_here)
 	# (the market's buttons knock on the merchant's counter)
@@ -3977,6 +4004,9 @@ func _start_voyage(sea: String) -> void:
 	boarding.reset()
 	# a new voyage starts cold: no price on your head yet
 	hunters.reset()
+	# no merchantman at sea yet
+	convoys.clear()
+	_test_convoy = false
 	# and with no one fished out of the sea
 	survivors.clear()
 	rescued = 0
@@ -4136,7 +4166,7 @@ func _dock_prompt(dt: float) -> void:
 		if near != null and near.in_reach(p.pos):
 			port = near
 	if port == null:
-		if not _board_prompt() and not _rescue_prompt(dt):
+		if not _board_prompt() and not _rescue_prompt(dt) and not _hail_prompt():
 			_land_prompt(dt)
 		return
 	_prompt_kind = "dock"
@@ -5423,8 +5453,10 @@ func _services() -> void:
 ## it ashore, finest first, and the quay cheers a good sale.
 func _sell(id: String) -> void:
 	var port := dock_port
-	if state != State.DOCKED or port == null:
+	var tr := trader
+	if state != State.DOCKED or (port == null and tr == null):
 		return
+	var mk: Treasure.Market = port.market if port != null else tr.market
 	var t := world.time
 	var goods := PackedStringArray()
 	var total := 0
@@ -5434,7 +5466,7 @@ func _sell(id: String) -> void:
 		var n: int = lot[1]
 		if n <= 0:
 			continue
-		total += port.market.price(lot[0], t) * n
+		total += mk.price(lot[0], t) * n
 		best = maxi(best, Treasure.rarity_of(lot[0]))
 		hold.take(lot[0], n, false)
 		for i in n:
@@ -5448,12 +5480,18 @@ func _sell(id: String) -> void:
 		market.sold(id, total)
 	else:
 		market.sold_all(total)
+	sound.sale(total, best)
+	var what := ("Sold %d × %s" % [goods.size(), Treasure.name_of(id)] if goods.size() > 1 else "Sold %s" % Treasure.name_of(id)) if id != "" else "Sold the hold (%d goods)" % goods.size()
+	if tr != null:
+		market.set_gold(player.gold)
+		market.set_wares(_ware_offers(tr))
+		voyage.note("trade", what, "The %s · +%d gold" % [tr.ship.ship_name, total])
+		_note_tour("sold %d to the %s for %d gold" % [goods.size(), tr.ship.ship_name, total])
+		return
 	_services()
 	_refresh_parts()
 	port.unload(goods)
 	port.cheer(2.0 if total >= 1500 or best >= 4 else (1.0 if total >= 250 or best >= 2 else 0.5))
-	sound.sale(total, best)
-	var what := ("Sold %d × %s" % [goods.size(), Treasure.name_of(id)] if goods.size() > 1 else "Sold %s" % Treasure.name_of(id)) if id != "" else "Sold the hold (%d goods)" % goods.size()
 	voyage.note("trade", what, "%s · +%d gold" % [port.title, total])
 	_note_tour("sold %d for %d gold" % [goods.size(), total])
 
@@ -5598,6 +5636,10 @@ func _announce_part(f: Dictionary, kicker: String, at: Variant = null) -> void:
 func _cast_off() -> void:
 	if state != State.DOCKED or veil.busy:
 		return
+	if trader != null:
+		sound.bosun_pipe()
+		veil.cover("Casting off…", _undock)
+		return
 	sound.port_depart()
 	veil.cover("Casting off…", _undock)
 
@@ -5607,6 +5649,9 @@ func _cast_off() -> void:
 func _undock() -> void:
 	var port := dock_port
 	var p := player
+	if trader != null:
+		_leave_trader()
+		return
 	if port == null:
 		return
 	_let_go()
@@ -5627,6 +5672,9 @@ func _undock() -> void:
 func _let_go() -> void:
 	market.close()
 	market.set_dock({})
+	if trader != null:
+		trader = null
+		convoys.release()
 	if dock_port != null:
 		dock_port.set_ship(null)
 		dock_port = null
@@ -5649,6 +5697,11 @@ func _dock_here() -> void:
 	if _prompt_kind == "rescue":
 		_throw_line()
 		return
+	if _prompt_kind == "hail":
+		var m := convoys.hailable(p)
+		if m != null and _fighting() == null and not kraken.fighting():
+			_hail(m)
+		return
 	if _prompt_kind == "board":
 		var e := _board_target()
 		if e != null:
@@ -5660,6 +5713,188 @@ func _dock_here() -> void:
 	var near := ports.nearest(p.pos)
 	if near != null and near.in_reach(p.pos) and _fighting() == null:
 		_dock(near)
+
+
+# ------------------------------------------------------------------ merchant convoys
+
+## The convoys sail on (and now and then one heaves into sight while you
+## cross the high seas); --convoy sends one right across her bows as soon
+## as the yard has the hulls.
+func _sail_convoys(dt: float, sailing: bool) -> void:
+	var playing := sailing and not shore.active and _farewell == null and player.alive
+	if _args.has("convoy") and playing and convoys.convoy == null and not _test_convoy and convoys.stocked() >= 2:
+		_test_convoy = convoys.spawn(player, camera.ground_radius(), true)
+		if _test_convoy and _args.has("trade"):
+			_hail(convoys.convoy.fleet[0], true)
+	convoys.update(dt, player if state != State.HARBOUR else null, camera.target, camera.ground_radius(), _high_seas and sailing, playing)
+	if _args.has("convoy"):
+		shipyard.trade_first = true
+
+
+## --convoy: she sails mid-lane on the high seas, bound for Las Brumas (a set
+## piece's hulls built on the spot).
+func _stage_convoy() -> void:
+	if world.regions.size() < 2:
+		return
+	var a := world.regions[0].centre
+	var b := world.regions[1].centre
+	var mid := (a + b) * 0.5
+	player.place(mid.x, mid.z, atan2(b.x - a.x, b.z - a.z))
+	player.speed = player.cls.max_speed * 0.4
+	camera.snap_to(player.pos)
+	if _args.has("shot"):
+		for k: String in Convoys.KINDS:
+			if shipyard.count(k, Convoys.livery_of(k)) == 0:
+				shipyard.keep(ShipModel.create(ShipClass.named(k), Livery.named(Convoys.livery_of(k))))
+
+
+func _sight_convoy(c: Convoys.Convoy) -> void:
+	var lead := c.fleet[0]
+	var more := ""
+	if c.fleet.size() == 2:
+		more = " and the %s %s" % [c.fleet[1].title(), c.fleet[1].ship.ship_name]
+	elif c.fleet.size() > 2:
+		more = " and %d consorts" % (c.fleet.size() - 1)
+	hud.toast("Sail ho! A merchant convoy", "The %s %s%s, bound for %s. Come alongside to trade" % [lead.title(), lead.ship.ship_name, more, c.dest.title], 5.5)
+	var names := PackedStringArray()
+	for m in c.fleet:
+		names.append(m.ship.ship_name)
+	voyage.note("trade", "Sighted a merchant convoy", "%s · bound for %s" % [", ".join(names), c.dest.title])
+	sound.bell(2, 0.16)
+	_note_tour("sighted a convoy: %s" % ", ".join(names))
+
+
+## You fired on one (or rammed her): the whole line cracks on sail and runs.
+func _on_scatter(_c: Convoys.Convoy, m: Convoys.Merchant) -> void:
+	hud.toast("The convoy scatters", "You fired on the %s. No ship in her line will trade with you now" % m.ship.ship_name, 4.5)
+	voyage.note("trade", "Fired on the %s" % m.ship.ship_name, "%s · the convoy scattered" % m.house())
+	_note_tour("the convoy scattered")
+
+
+## Close aboard a merchantman: the pill to hail her (F or a tap), unless
+## something is on your tail.
+func _hail_prompt() -> bool:
+	var p := player
+	var m := convoys.hailable(p) if p.alive else null
+	if m == null:
+		return false
+	var chased := _fighting() != null or kraken.fighting()
+	var nm := m.ship.ship_name
+	var why := "Shake off your pursuers first: no merchant heaves to with a fight on" if chased else "%s · buys your hold, sells her cargo" % m.title()
+	market.set_dock({"name": "The %s" % nm, "title": ("Hail the %s" % nm) if not chased else "The %s" % nm, "ok": not chased, "why": why})
+	_prompt_kind = "hail"
+	if not chased and (controls.interact or _args.has("trade")):
+		_hail(m)
+	return true
+
+
+## She heaves to and comes alongside; her master opens the hatches and the
+## trading begins (`now`: at once, for a set piece).
+func _hail(m: Convoys.Merchant, now := false) -> void:
+	if state != State.VOYAGE or not player.alive or _farewell != null or veil.busy:
+		return
+	controls.reset()
+	hud.close_popups()
+	market.set_dock({})
+	sound.bosun_pipe()
+	var nm := m.ship.ship_name
+	var tie := func() -> void:
+		var c := convoys.convoy
+		if state != State.VOYAGE or not player.alive or c == null or c.scattered or not c.fleet.has(m):
+			return
+		state = State.DOCKED
+		trader = m
+		hud.fade(false, 0.0)
+		var p := player
+		p.anchored = true
+		p.sail_target = 0.25
+		p.rudder = 0.0
+		p.speed = 0.0
+		convoys.parley(m, p)
+		market.kicker = m.title().to_upper()
+		market.open("The %s" % nm, m.market, hold, p.gold, world.time, _ware_offers(m))
+		_dock_t = 0.0
+		camera.port = true
+		_frame_trade(0.0)
+		camera.snap_shot()
+		voyage.note("trade", "Came alongside the %s" % nm, "%s · Master %s · bound for %s" % [m.house(), m.master, c.dest.title])
+		sound.bell(1, 0.14)
+		_note_tour("alongside the %s %s" % [m.title(), nm])
+	if now:
+		tie.call()
+	else:
+		veil.cover("Coming alongside the %s…" % nm, tie)
+
+
+## The two ships lying side by side on the swell, seen from off their bows
+## with the panel's room left free (the web's frameTrade).
+func _frame_trade(dt: float) -> void:
+	var m := trader
+	var p := player
+	_dock_t += dt
+	var s := m.ship
+	var fit := _fit_panel(market.panel_rect())
+	var settle := 1.0 + 0.8 * exp(-_dock_t * 0.7)
+	var f := p.forward()
+	var pd := p.port_dir()
+	var side := 1.0 if (s.pos.x - p.pos.x) * pd.x + (s.pos.z - p.pos.z) * pd.z >= 0.0 else -1.0
+	var look := Vector3((p.pos.x + s.pos.x) * 0.5, 2.4, (p.pos.z + s.pos.z) * 0.5)
+	# off the bows, round on your own free beam, swaying slowly
+	var a := 0.7 + sin(_dock_t * 0.13) * 0.08
+	var d := f * cos(a) - pd * side * sin(a)
+	var elev := 0.5
+	var dist := (26.0 + (p.cls.length + s.cls.length) * 0.72) * fit * settle
+	camera.shot_look = look
+	camera.shot_pos = look + Vector3(d.x * cos(elev), sin(elev), d.z * cos(elev)) * dist
+
+
+## Lets go of her: she sails on with her convoy, and you get under way.
+func _leave_trader() -> void:
+	var p := player
+	var nm := trader.ship.ship_name
+	_let_go()
+	state = State.VOYAGE
+	p.anchored = false
+	p.speed = 2.0
+	p.sail_target = 2.0 / 3.0
+	camera.snap_to(p.pos)
+	controls.reset()
+	hud.fade(true, 0.0)
+	_note_tour("cast off from the %s" % nm)
+
+
+## Her counter as the market shows it: each lot she has left, and whether the hold has room for one.
+func _ware_offers(m: Convoys.Merchant) -> Array:
+	var out: Array = []
+	for w: Dictionary in m.wares:
+		if int(w.n) > 0:
+			out.append({"id": w.id, "n": w.n, "price": w.price, "deal": w.deal, "room": hold.capacity - hold.used() >= Treasure.size_of(w.id)})
+	return out
+
+
+## Buys one of a lot off her counter, into the hold (never by tossing what's already in it).
+func _buy_ware(id: String) -> void:
+	var m := trader
+	var p := player
+	if m == null or state != State.DOCKED:
+		return
+	var w: Dictionary = {}
+	for x: Dictionary in m.wares:
+		if x.id == id and int(x.n) > 0:
+			w = x
+	if w.is_empty() or int(w.price) > p.gold or hold.capacity - hold.used() < Treasure.size_of(id):
+		return
+	hold.stow(PackedStringArray([id]))
+	w.n = int(w.n) - 1
+	p.gold -= int(w.price)
+	market.set_gold(p.gold)
+	market.restock_hold()
+	market.set_wares(_ware_offers(m), id)
+	sound.purchase(&"shot")
+	sound.coin(0.0, 0.35)
+	if Treasure.rarity_of(id) >= 2:
+		voyage.note("trade", "Bought %s" % Treasure.name_of(id), "The %s · %s gold" % [m.ship.ship_name, MenuKit.num(int(w.price))])
+	_note_tour("bought %s off the %s" % [id, m.ship.ship_name])
 
 
 ## The sea chart over the voyage (from the minimap or M): the helm let go,

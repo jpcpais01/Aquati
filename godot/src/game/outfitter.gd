@@ -72,6 +72,8 @@ func start(p_look: Dictionary) -> void:
 		list.append(Livery.named(id))
 	# (and the Brethren's named captains')
 	list.append_array(Bounty.liveries())
+	# (and the merchant houses')
+	list.append_array(Convoys.liveries())
 	Livery.bake_start(list)
 
 

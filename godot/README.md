@@ -185,6 +185,10 @@ BOUNTY line.
 Survivors: `--survivors [N]` puts N of a pirate's hands (3) on wreckage off
 her port beam, and `--rescue` throws them a line as soon as she's in reach;
 the smoke test prints a SMOKE SURVIVORS line.
+Convoys: `--convoy` puts her mid-lane on the high seas and sends a merchant
+convoy right across her bows as soon as the yard has two hulls (a shot builds
+them on the spot), and `--trade` comes alongside its leader at once; the smoke
+test prints a SMOKE CONVOY line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off
