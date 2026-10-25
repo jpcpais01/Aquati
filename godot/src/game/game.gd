@@ -207,6 +207,8 @@ var wildlife: Wildlife
 ## Pirates' hands clinging to the wreckage of their ship (Survivors), and
 ## how many you've hauled aboard this voyage.
 var survivors: Survivors
+## What the open sea carries: messages in bottles, and mats of flotsam with their crabs.
+var drift: Drift
 var rescued := 0
 var _rescuable: Survivors.Raft
 var _rescue_t := 0.0
@@ -593,6 +595,7 @@ func _load() -> void:
 		_stage_voyage()
 	_stage_plunder()
 	_stage_survivors()
+	_stage_drift()
 	if _args.has("convoy"):
 		_stage_convoy()
 	if not _harbour_first():
@@ -1210,6 +1213,10 @@ func _build_fleet() -> void:
 	survivors = Survivors.new(crew)
 	survivors.aboard.connect(_hand_aboard)
 	add_child(survivors)
+	drift = Drift.new()
+	# a crate caught up in the flotsam: a barrel, or in the weed now and then something finer
+	drift.crate.connect(func(x: float, z: float, kelp: bool) -> void: world.loot.place(x, z, 1 if kelp and randf() < 0.4 else 0))
+	add_child(drift)
 
 
 ## The trading ports' towns along their quays, their folk drawn with the crews.
@@ -1576,6 +1583,7 @@ func _process(delta: float) -> void:
 				("%d sail bound for %s%s%s" % [cv.fleet.size(), cv.dest.title, ", scattered" if cv.scattered else "", ", alongside the " + trader.ship.ship_name if trader != null else ""]) if cv != null else "none at sea",
 				convoys.stocked(), (", wanted: " + ", ".join(PackedStringArray(convoys.wanted()))) if not convoys.wanted().is_empty() else ""])
 		print("SMOKE FLEET: %d escorts (%s), order %s; %d on the roster, %d lost" % [escorts.ais.size(), ", ".join(PackedStringArray(_fleet_view().map(func(v: Dictionary) -> String: return "%s %d%% %s" % [v.name, roundi(float(v.hp) * 100.0), v.status]))), escorts.order, Progress.fleet.ships.size(), int(Progress.fleet.lost)])
+		print("SMOKE DRIFT: %d bottles afloat, %d mats of flotsam (%s) with %d crabs aboard, %d letters opened this voyage" % [drift.count(), drift.mats.size(), ", ".join(PackedStringArray(drift.mats.map(func(m: Drift.Mat) -> String: return "kelp" if drift.shapes[m.shape].kelp else "driftwood"))), drift.crab_count(), _letters])
 		print("SMOKE SURVIVORS: %d rafts afloat with %d hands clinging on, %d rescued this voyage, reload x%.3f" % [survivors.rafts.size(), survivors.count(), rescued, float(player.boost.reload)])
 		print("SMOKE BOUNTY: infamy %d this voyage (wanted %d), %d hunters sent, %d claimed, %s; lifetime infamy %d, %d posters up" % [
 				hunters.pts, hunters.level(), hunters.sent, hunters.claimed,
@@ -1833,6 +1841,10 @@ func _tick(real_dt: float) -> void:
 	var got := world.loot.update(dt, player.pos if hauling else null, reach, _refuse, ocean, camera.global_position)
 	for it in got:
 		_haul(it)
+	# the open sea's flotsam, and the bottles she sweeps up as she sails through them
+	var bottles := drift.update(dt, world, player.pos if hauling else null, reach, pushers, player if hauling else null, _high_seas)
+	for b in bottles:
+		_open_bottle(b)
 	_hold_nag = maxf(0.0, _hold_nag - dt)
 	# the waypoints' pillars of light (not over the harbour): sailing into one strikes it off
 	pins.visible = state != State.HARBOUR
@@ -2698,6 +2710,81 @@ func _screen_heading(h: float) -> float:
 	return atan2(d.x, -d.y)
 
 
+# ------------------------------------------------------------------ drift
+
+## Letters opened this voyage.
+var _letters := 0
+
+
+## A bottle swept up: a scrap of treasure map, a named captain's taunt, or
+## somebody's lost letter with something of worth rolled up in it.
+func _open_bottle(b: Drift.Bottle) -> void:
+	if state != State.VOYAGE:
+		return
+	var p := player
+	_letters += 1
+	var at := Vector3(b.x, 1.5, b.z)
+	if not camera.is_position_behind(at):
+		hud.floater("A message in a bottle!", at, camera, Floaters.Kind.RARE, 14.0)
+	sound.parchment()
+	world.fx.splash(Vector3(b.x, world.water_height(b.x, b.z), b.z), 0.3)
+	var kicker := "Message in a bottle"
+	var r := randf()
+	if not tmaps.complete() and (r < 0.5 or tmaps.count() == 0):
+		var n := tmaps.count() + 1
+		var l := Tidings.map_letter(n)
+		l.merge({"kicker": kicker, "reward": "Treasure map piece · %d of 3" % n})
+		hud.letter.show_letter(l)
+		get_tree().create_timer(1.1).timeout.connect(func() -> void: _found_piece(at))
+		_note_tour("bottle: treasure map piece %d" % n)
+		return
+	if r < 0.78:
+		var lv := hunters.level()
+		var pool := Bounty.CAPTAINS.filter(func(k: Dictionary) -> bool: return int(k.tier) <= lv + 1)
+		var c: Dictionary = hunters.next if not hunters.next.is_empty() else (pool.pick_random() if not pool.is_empty() else Bounty.CAPTAINS[0])
+		var gold := roundi(int(c.bounty) * Progress.bounty_bonus())
+		Progress.hunter_seen(str(c.id))
+		var l := Tidings.rival_letter(c, p.ship_name)
+		l.merge({"kicker": kicker, "art": Portrait.texture(c.face, 64.0 * HudStyle.K), "seal": "black", "reward": "%s · %s gold bounty" % [c.epithet, MenuKit.num(gold)]})
+		hud.letter.show_letter(l, 13.0)
+		voyage.note("bounty", "A bottle from %s" % c.epithet, str(c.taunt))
+		_note_tour("bottle: a taunt from %s" % c.epithet)
+		return
+	var port := ports.nearest(p.pos)
+	var isle := "a nameless rock"
+	var best := 900.0
+	for rg in regions:
+		for isl: Dictionary in rg.islands:
+			var d := Vector2(float(isl.x) - p.pos.x, float(isl.z) - p.pos.z).length()
+			if d < best:
+				best = d
+				isle = str(isl.name)
+	var l := Tidings.lost_letter(port.title if port != null else "Port Royal", isle)
+	var g := int(l.gold)
+	p.gold += g
+	Progress.earn(g)
+	sound.coin(0.4)
+	l.merge({"kicker": kicker, "reward": "+%d gold" % g})
+	hud.letter.show_letter(l)
+	voyage.note("chest", "A message in a bottle", "%s · +%d gold" % [str(l.title).rstrip(",:."), g])
+	_note_tour("bottle: a lost letter, +%d gold" % g)
+
+
+## --bottle: a message in a bottle bobbing off her bow; --flotsam [driftwood|kelp]:
+## a mat of flotsam with its crabs a little further on.
+func _stage_drift() -> void:
+	var p := player
+	if _args.has("bottle"):
+		var at := p.pos + p.forward() * (p.cls.length * 0.5 + 10.0) - p.port_dir() * 4.0
+		drift.drop_bottle(at.x, at.z)
+	if _args.has("flotsam"):
+		var k := -1
+		if _args["flotsam"] is String:
+			k = 1 if str(_args["flotsam"]) == "kelp" else 0
+		var at := p.pos + p.forward() * (p.cls.length * 0.5 + 16.0) + p.port_dir() * 9.0
+		drift.drop_mat(at.x, at.z, k)
+
+
 # ------------------------------------------------------------------ survivors
 
 ## Some of a sunk pirate's hands make it to the wreckage.
@@ -3173,6 +3260,8 @@ func _reset_world(id: String) -> void:
 	world.fx.clear()
 	world.debris.clear()
 	world.loot.clear()
+	drift.clear()
+	hud.letter.clear()
 	discovered.clear()
 	voyage = Voyage.new()
 	_foe = null
@@ -4036,9 +4125,14 @@ func _start_voyage(sea: String) -> void:
 	# and with no one fished out of the sea
 	survivors.clear()
 	rescued = 0
+	_letters = 0
 	_rescuable = null
 	p.boost.reload = 1.0
 	_stage_survivors()
+	# a fresh sea: no flotsam yet, no letter open
+	drift.clear()
+	hud.letter.clear()
+	_stage_drift()
 	if _args.has("wanted"):
 		hunters.add(int(_args.wanted))
 	# the X of a whole map waits on its sand

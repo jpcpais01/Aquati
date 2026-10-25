@@ -310,6 +310,85 @@ func _check_survivors() -> void:
 	ship.queue_free()
 
 
+
+## What the open sea carries: every shape built, a bottle swept up by the
+## magnet, crabs over the side of a mat as a hull comes by and the mat
+## shouldered aside, crates caught in the flotsam, the letters' words and
+## the card they unroll on.
+func _check_drift(regions: Array[Region]) -> void:
+	var D: GDScript = load("res://src/fx/drift.gd")
+	var dr: Node3D = D.new()
+	root.add_child(dr)
+	var tris := []
+	for sh: Variant in dr.shapes:
+		tris.append(int((sh.mesh as ArrayMesh).surface_get_array_index_len(0) / 3))
+	for mm: MultiMesh in [dr._bottle_mm, dr._crab_mm, dr._claw_mm]:
+		tris.append(int((mm.mesh as ArrayMesh).surface_get_array_index_len(0) / 3))
+	if tris.any(func(n: int) -> bool: return n < 20) or tris.reduce(func(a: int, b: int) -> int: return a + b, 0) > 30000:
+		_fail("drift: shapes of %s triangles" % [tris])
+	var w := World.new()
+	w.waves = Waves.new(0.6)
+	w.wind = Wind.new(0.6)
+	w.regions = regions
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	w.fx = fx
+	var ship := Ship.create(ShipClass.named("brig"), Livery.named("player"), w)
+	var ships: Array[Ship] = [ship]
+	var none: Array[Ship] = []
+	# a bottle 14 m off is drawn in and swept up
+	dr.drop_bottle(ship.pos.x + 14.0, ship.pos.z)
+	var got := 0
+	for f in 120:
+		got += (dr.update(1.0 / 30.0, w, ship.pos, 20.0, none, null, false) as Array).size()
+	if got != 1 or dr.count() != 0:
+		_fail("drift: %d bottles swept up from 14 m off (%d left)" % [got, dr.count()])
+	# a mat by her side: its crabs bolt and drop off, and she shoulders it aside
+	var crates := [0]
+	dr.crate.connect(func(_x: float, _z: float, _k: bool) -> void: crates[0] += 1)
+	dr.drop_mat(ship.pos.x + 4.0, ship.pos.z, 0)
+	var m: Variant = dr.mats[0]
+	var crabs: int = m.crabs.size()
+	var d0 := Vector2(m.x - ship.pos.x, m.z - ship.pos.z).length()
+	for f in 600:
+		dr.update(1.0 / 30.0, w, null, 0.0, ships, null, false)
+	var d1 := Vector2(m.x - ship.pos.x, m.z - ship.pos.z).length()
+	if crabs < 2 or m.crabs.size() != 0 or d1 < d0 + 3.0:
+		_fail("drift: %d of %d crabs still aboard a mat %.1f m -> %.1f m off" % [m.crabs.size(), crabs, d0, d1])
+	# far off, its crabs stay put
+	dr.clear()
+	dr.drop_mat(ship.pos.x + 200.0, ship.pos.z, 1)
+	var kelp: Variant = dr.mats[0]
+	var n0: int = kelp.crabs.size()
+	for f in 300:
+		dr.update(1.0 / 30.0, w, null, 0.0, ships, null, false)
+	if kelp.crabs.size() != n0 or n0 < 1 or kelp.scared:
+		_fail("drift: kelp's %d crabs went to %d with no ship near" % [n0, kelp.crabs.size()])
+	for i in 40:
+		dr.drop_mat(ship.pos.x + 300.0, ship.pos.z + i, -1)
+	if crates[0] < 3 or crates[0] > 30 or dr.mats.size() != D.MAT_MAX:
+		_fail("drift: %d crates in 41 mats, %d afloat" % [crates[0], dr.mats.size()])
+	var T: GDScript = load("res://src/game/tidings.gd")
+	var ml: Dictionary = T.map_letter(3)
+	var rl: Dictionary = T.rival_letter(Bounty.CAPTAINS[2], "Test")
+	var ll: Dictionary = T.lost_letter("Port", "Isle")
+	if str(ml.body[-1]) != "The last piece! The map is whole." or not str(rl.sign).contains(str(Bounty.CAPTAINS[2].epithet)) or int(ll.gold) <= 0 or not ["red", "gold"].has(ll.seal):
+		_fail("drift: letters %s / %s / %s" % [ml, rl, ll])
+	var card: Control = load("res://src/ui/letter_card.gd").new()
+	root.add_child(card)
+	rl.merge({"kicker": "Message in a bottle", "art": Portrait.texture(Bounty.CAPTAINS[2].face, 64.0), "seal": "black", "reward": "100 gold bounty"})
+	card.show_letter(rl)
+	card.show_letter(ll)
+	if not card.is_open() or card.size.x < 200.0 or card.size.y < 200.0 or card._queue.size() != 1:
+		_fail("drift: the letter card %s, %d waiting" % [card.size, card._queue.size()])
+	print("drift: shapes of %s triangles; 1 bottle swept up; %d crabs over the side, the mat shoved %.1f -> %.1f m; %d crates in 41 mats; letter card %dx%d" % [tris, crabs, d0, d1, crates[0], card.size.x, card.size.y])
+	card.queue_free()
+	dr.queue_free()
+	fx.queue_free()
+	ship.queue_free()
+
 ## Bounties: the wanted levels and the hunters they earn, the ledger made
 ## whole from junk, the Brethren's picks, every captain's colours and
 ## portrait, and the Wanted Board built over a ledger with each kind of notice.
@@ -404,6 +483,7 @@ func _initialize() -> void:
 	if _home_world != null:
 		_check_convoys(_home_world.regions)
 		_check_fleet(_home_world.regions)
+		_check_drift(_home_world.regions)
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:
