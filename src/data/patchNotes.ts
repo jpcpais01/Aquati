@@ -16,6 +16,13 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-25T14:00Z',
     entries: [
       {
+        title: 'Android and Windows: merchant convoys',
+        notes: [
+          'Merchant convoys come to the Android and Windows game. Out on the high seas, the trading houses sail their cargoes across in company: a Ronvliet fluyt, an Aguadouro xebec and a Vila Garoa ketch, shown in gold on the minimap and chart.',
+          'Come alongside and hail one: she heaves to, buys your hold at her own prices and sells you her cargo. Fire on any of them and the whole convoy runs.',
+        ],
+      },
+      {
         title: 'Android and Windows: shipwreck survivors',
         notes: [
           'Shipwreck survivors come to the Android and Windows game. When a pirate sinks, a few of her crew often cling to the wreckage, waving and shouting as you come near.',

@@ -205,6 +205,8 @@ func _build() -> void:
 	_build_bow()
 	_build_details()
 	_build_deck_life()
+	if cls.cargo > 0.0:
+		_build_cargo(cls.cargo)
 	if cls.haunt:
 		_build_haunt()
 	_build_parts()
@@ -2161,6 +2163,124 @@ func _build_deck_life() -> void:
 		_fine.ball(at * Vector3(ex * 0.023, 0.282, 0.118), 0.011, 5, 4)
 	_fine.paint(Color("#d27a82"))
 	_fine.ball(at * Vector3(0, 0.27, 0.147), 0.008, 4, 3)
+
+
+# ------------------------------------------------------------------ cargo
+
+## A merchantman's deck cargo (the web's buildCargo): tarpaulins lashed down
+## over her hatches, crates stacked in pairs, casks laid in tiers and
+## chocked, sacks piled against the bulwarks. Stowed clear of the masts and
+## the capstan, and set down as deck props so the crew walk round it.
+func _build_cargo(amount: float) -> void:
+	var s := shape
+	var c := cls
+	var length := c.length
+	var beam := c.beam
+	# a fixed pattern per hull, so every ship of a kind is stowed alike
+	var seed_state := [roundi(length * 131.0 + beam * 17.0)]
+	var rnd := func() -> float:
+		seed_state[0] = (int(seed_state[0]) * 16807) % 2147483647
+		return float(seed_state[0]) / 2147483647.0
+	var crate_cols: Array[Color] = [Color("#b08356"), Color("#9c7046"), Color("#c29a68"), Color("#8a6a48")]
+	# weathered tarpaulin, tarred dark against the spray
+	var tarp := Color("#6e6853")
+	var barrel_col := Color("#8b5a33")
+	var hoop := Color("#2f2a26")
+	var burlap := Color("#b39566")
+	var clear := func(t: float, r: float) -> bool:
+		for m: Dictionary in c.masts:
+			if absf(float(m.t) - t) * length <= 1.5 + r:
+				return false
+		return absf(t - 0.53) * length > 1.1 + r
+
+	# tarpaulins over the hatches, humped over the goods beneath and roped down
+	for t: float in [0.46, 0.6]:
+		var near_mast := false
+		for m: Dictionary in c.masts:
+			if absf(float(m.t) - t) < 0.05:
+				near_mast = true
+		if near_mast:
+			continue
+		var y := s.main_deck_y(t)
+		var zz := s.z(t)
+		var w := beam * 0.34
+		var l := length * 0.085
+		var h := 0.55 + 0.35 * amount
+		_core.paint(tarp, MeshKit.WOOD, 0.03)
+		_core.rbox(_at(Vector3(0, y + h * 0.5, zz)), Vector3(w, h, l), minf(0.3, h * 0.45), 2)
+		_small.paint(RopeKit.HEMP)
+		for f: float in [-0.3, 0.3]:
+			_small.torus(Transform3D(Basis.from_scale(Vector3(1.0, (h + 0.04) / (w * 0.5), 1.0)), Vector3(0, y + 0.02, zz + f * l)), w * 0.5, 0.03, 3, 12, PI)
+		deck_props.append(Vector3(0, zz, maxf(w, l) * 0.55))
+
+	var barrel := PackedVector2Array([Vector2(0, 0), Vector2(0.2, 0), Vector2(0.23, 0.08), Vector2(0.255, 0.3), Vector2(0.23, 0.52), Vector2(0.2, 0.6), Vector2(0, 0.6)])
+	var crate := func(x: float, y: float, zz: float, sz: float, rot: float) -> void:
+		_core.paint(crate_cols[int(rnd.call() * crate_cols.size()) % crate_cols.size()], MeshKit.WOOD, 0.04)
+		_core.rbox(Transform3D(Basis(Vector3.UP, rot), Vector3(x, y + sz * 0.41, zz)), Vector3(sz, sz * 0.82, sz), sz * 0.1, 1)
+		# a painted house band round some of them
+		if rnd.call() < 0.45:
+			_small.paint(livery.strake)
+			_small.box(Transform3D(Basis(Vector3.UP, rot), Vector3(x, y + sz * 0.5, zz)), Vector3(sz * 1.02, sz * 0.12, sz * 1.02))
+	var cask := func(x: float, y: float, zz: float) -> void:
+		# laid on her side, fore and aft
+		_core.paint(barrel_col, MeshKit.WOOD, 0.06)
+		_core.lathe(Transform3D(Basis(Vector3.RIGHT, PI * 0.5), Vector3(x, y + 0.25, zz)) * Transform3D(Basis.IDENTITY, Vector3(0, -0.3, 0)), barrel, 9)
+		_small.paint(hoop, MeshKit.IRON, 0.02)
+		for dz: float in [-0.17, 0.17]:
+			_small.torus(_at(Vector3(x, y + 0.25, zz + dz)), 0.24, 0.02, 3, 10)
+	var sack := func(x: float, y: float, zz: float, k: float) -> void:
+		_core.paint(burlap, MeshKit.WOOD, 0.08)
+		_core.sphere(Transform3D(Basis(Vector3.UP, rnd.call() * PI) * Basis.from_scale(Vector3(1.0, 0.55, 0.78)), Vector3(x, y + 0.14 * k, zz)), 0.3 * k, 7, 5)
+
+	# stacks along both sides of the waist, clear of the masts, the capstan and the gangway down the middle
+	var sc: float = float(c.stern_castle.t) if not c.stern_castle.is_empty() else 0.12
+	var fc: float = float(c.fore_castle.t) if not c.fore_castle.is_empty() else 0.86
+	var t := sc + 1.4 / length
+	while t < fc - 1.2 / length:
+		for side: float in [1.0, -1.0]:
+			if rnd.call() > 0.45 + amount * 0.5:
+				continue
+			var kind: float = rnd.call()
+			var y := s.main_deck_y(t)
+			var hw := s.half_width_at_y(t, y + 0.3) - 0.2
+			var zz := s.z(t)
+			if kind < 0.42:
+				var sz: float = 0.55 + rnd.call() * 0.2
+				if not clear.call(t, sz * 0.7):
+					continue
+				var x := side * (hw - sz * 0.62)
+				if absf(x) < beam * 0.2:
+					continue
+				crate.call(x, y, zz, sz, (rnd.call() - 0.5) * 0.3)
+				# a second crate stacked on top, a little askew
+				if rnd.call() < 0.55 * amount + 0.15:
+					crate.call(x + (rnd.call() - 0.5) * 0.1, y + sz * 0.82, zz + (rnd.call() - 0.5) * 0.12, sz * 0.82, (rnd.call() - 0.5) * 0.6)
+				deck_props.append(Vector3(x, zz, sz * 0.75))
+			elif kind < 0.74:
+				if not clear.call(t, 0.7):
+					continue
+				# a tier of casks: two below, one chocked in on top
+				var x := side * (hw - 0.3)
+				if absf(x) < beam * 0.2:
+					continue
+				var xi := x - side * 0.5
+				cask.call(x, y, zz)
+				cask.call(xi, y, zz)
+				if rnd.call() < 0.6:
+					cask.call((x + xi) * 0.5, y + 0.42, zz)
+				deck_props.append(Vector3((x + xi) * 0.5, zz, 0.75))
+			else:
+				if not clear.call(t, 0.5):
+					continue
+				var x := side * (hw - 0.32)
+				if absf(x) < beam * 0.2:
+					continue
+				sack.call(x, y, zz - 0.25, 1.0)
+				sack.call(x - side * 0.08, y, zz + 0.3, 0.9)
+				if rnd.call() < 0.7:
+					sack.call(x - side * 0.04, y + 0.2, zz + 0.02, 0.85)
+				deck_props.append(Vector3(x, zz, 0.6))
+		t += 1.35 / length
 
 
 # ------------------------------------------------------------------ parts

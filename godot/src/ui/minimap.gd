@@ -241,7 +241,8 @@ class _Marks:
 		for s in sc.world.ships:
 			if s == sc.player or not s.alive:
 				continue
-			var col := Color("#5ee3d4") if s.team == Ship.Team.PLAYER else Color("#ff6a55")
+			# (a merchantman willing to trade in gold)
+			var col := Color("#5ee3d4") if s.team == Ship.Team.PLAYER else (Color("#f2c45a") if s.team == Ship.Team.MERCHANT else Color("#ff6a55"))
 			var at4: Vector2 = to_map.call(s.pos.x, s.pos.z)
 			if at4.distance_to(c) < h + 14.0 * u:
 				MapMarks.ship(self, at4, s.heading, col, 11.0 * u, 2.0 * u)

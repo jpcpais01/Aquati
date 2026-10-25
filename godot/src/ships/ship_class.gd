@@ -53,6 +53,9 @@ var event := ""
 var livery := ""
 var haunt := false
 var ability := ""
+## A merchantman's deck cargo, 0 none .. 1 piled high (Convoys: her guns are
+## none, her waist full of crates, casks and sacks; ShipModel._build_cargo).
+var cargo := 0.0
 
 const DEFS := {
 	"sloop": {
@@ -118,6 +121,56 @@ const DEFS := {
 		"hp": 680.0, "armor": 0.36, "max_speed": 12.4, "accel": 0.36, "turn_rate": 0.56, "reload": 3.1,
 		"damage": 29.0, "muzzle_speed": 63.0, "mass": 2.1,
 		"stats": {"speed": 0.7, "agility": 0.52, "armour": 0.85, "hull": 0.9, "firepower": 0.85},
+	},
+	# the merchant houses' hulls (Convoys): no guns, cargo lashed on deck.
+	# A tubby Ronvliet fluyt, pear-shaped in section, broad at the waterline
+	# and pinched at the rail...
+	"fluyt": {
+		"name": "Fluyt", "title": "Fluyt", "cargo": 1.0,
+		"blurb": "A round-bellied Ronvliet cargo carrier, narrow on deck and wide in the hold.",
+		"length": 18.5, "beam": 6.4, "draft": 2.1, "freeboard": 1.7, "bulwark": 0.8, "transom": 0.46,
+		"sheer_bow": 0.75, "sheer_stern": 0.75, "tumblehome": 0.2,
+		"stern_castle": {"t": 0.2, "h": 1.7},
+		"masts": [
+			{"t": 0.16, "height": 10.5, "rig": "lateen", "tiers": 1, "span": 0.75},
+			{"t": 0.47, "height": 16.5, "rig": "square", "tiers": 2, "top": true},
+			{"t": 0.76, "height": 14.5, "rig": "square", "tiers": 2},
+		],
+		"bowsprit": 5.5, "jib": true, "cannons_per_side": 0, "chasers": 0,
+		"hp": 560.0, "armor": 0.1, "max_speed": 7.4, "accel": 0.26, "turn_rate": 0.42, "reload": 99.0,
+		"damage": 0.0, "muzzle_speed": 50.0, "mass": 2.1,
+		"stats": {"speed": 0.4, "agility": 0.3, "armour": 0.3, "hull": 0.7, "firepower": 0.0},
+	},
+	# ...a long, low Aguadouro xebec under three great lateens, running bullion...
+	"xebec": {
+		"name": "Xebec", "title": "Xebec", "cargo": 0.45,
+		"blurb": "A long, low bullion runner under three great lateens, quick enough to show any thief her stern.",
+		"length": 17.5, "beam": 4.4, "draft": 1.5, "freeboard": 1.35, "bulwark": 0.72, "transom": 0.5,
+		"sheer_bow": 1.0, "sheer_stern": 0.8, "tumblehome": 0.04,
+		"masts": [
+			{"t": 0.2, "height": 11.5, "rig": "lateen", "tiers": 1, "span": 0.85},
+			{"t": 0.5, "height": 15.0, "rig": "lateen", "tiers": 1, "span": 1.15},
+			{"t": 0.8, "height": 13.5, "rig": "lateen", "tiers": 1, "span": 1.05},
+		],
+		"bowsprit": 6.5, "jib": false, "cannons_per_side": 0, "chasers": 0,
+		"hp": 420.0, "armor": 0.1, "max_speed": 9.6, "accel": 0.4, "turn_rate": 0.7, "reload": 99.0,
+		"damage": 0.0, "muzzle_speed": 50.0, "mass": 1.2,
+		"stats": {"speed": 0.6, "agility": 0.7, "armour": 0.2, "hull": 0.5, "firepower": 0.0},
+	},
+	# ...and a little tan-sailed Vila Garoa ketch out of the mist, deck full of tea chests.
+	"ketch": {
+		"name": "Ketch", "title": "Ketch", "cargo": 0.8,
+		"blurb": "A little two-masted packet from the mist, tan sails and a deck full of tea chests.",
+		"length": 12.5, "beam": 4.3, "draft": 1.3, "freeboard": 1.3, "bulwark": 0.66, "transom": 0.64,
+		"sheer_bow": 0.75, "sheer_stern": 0.45, "tumblehome": 0.05,
+		"masts": [
+			{"t": 0.2, "height": 9.0, "rig": "gaff", "tiers": 1, "span": 0.5},
+			{"t": 0.6, "height": 12.5, "rig": "gaff", "tiers": 1, "span": 0.66},
+		],
+		"bowsprit": 4.6, "jib": true, "cannons_per_side": 0, "chasers": 0,
+		"hp": 300.0, "armor": 0.1, "max_speed": 10.2, "accel": 0.5, "turn_rate": 0.85, "reload": 99.0,
+		"damage": 0.0, "muzzle_speed": 50.0, "mass": 0.85,
+		"stats": {"speed": 0.7, "agility": 0.85, "armour": 0.15, "hull": 0.3, "firepower": 0.0},
 	},
 }
 

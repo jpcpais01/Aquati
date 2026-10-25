@@ -29,6 +29,12 @@ var want := ""
 ## colours, so she can sail the moment she's sent for. A hull built for
 ## anyone else is broken up.
 var hunter := ""
+## The merchant houses' hulls Convoys wants laid down (their classes, each
+## built in its house's livery, Convoys.livery_of), once the pirates are
+## stocked; `trade_first` (out on the high seas, where no pirate sails),
+## before them.
+var trade: Array[String] = []
+var trade_first := false
 
 var _stock: Array[ShipModel] = []
 var _task := -1
@@ -50,6 +56,9 @@ func _ready() -> void:
 		ShipClass.named(id)
 	for id: String in ShipEvents.liveries():
 		Livery.named(id)
+	for id: String in Convoys.KINDS:
+		ShipClass.named(id)
+		Livery.named(Convoys.livery_of(id))
 
 
 func _process(delta: float) -> void:
@@ -102,9 +111,13 @@ func _next() -> Array:
 		var c := Bounty.captain(hunter)
 		if not c.is_empty() and count(c.cls, "hunter:" + hunter) == 0:
 			return [c.cls, "hunter:" + hunter]
+	if trade_first and not trade.is_empty():
+		return [trade[0], Convoys.livery_of(trade[0])]
 	for id: String in STOCK:
 		if count(id) < int(STOCK[id]):
 			return [id, LIVERIES[randi() % LIVERIES.size()]]
+	if not trade.is_empty():
+		return [trade[0], Convoys.livery_of(trade[0])]
 	if not mine.is_empty() or not ghost().is_empty():
 		return mine
 	var r := randf()
@@ -170,10 +183,15 @@ func take(id: String, livery := "") -> ShipModel:
 ## fits the livery she was built for as long as it lasts.
 func _fits(m: ShipModel, livery: String) -> bool:
 	if livery.is_empty():
-		return m.asked != MINE and m.asked != GHOST and not m.asked.begins_with("hunter:")
+		return m.asked != MINE and m.asked != GHOST and not m.asked.begins_with("hunter:") and not m.asked.begins_with("merchant-")
 	if m.asked != livery or m.rev != m.livery.rev:
 		return false
 	return livery != MINE or m.cls.is_event() or m.fit_key == Parts.key(Progress.loadout(m.cls.id))
+
+
+## A hull back off the sea, as she was built (a convoy's merchantman home unscathed).
+func keep(m: ShipModel) -> void:
+	_stock.append(m)
 
 
 ## Holds new keels for a few seconds.

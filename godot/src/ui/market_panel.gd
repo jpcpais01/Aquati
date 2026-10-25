@@ -12,6 +12,10 @@ extends CanvasLayer
 ## finger, each section's name pinned to its top while the goods pass under
 ## it.
 ##
+## Alongside a merchantman (Convoys) the same card is her counter: your hold
+## sells at her house's prices, and her cargo is laid out under it to buy
+## (no chandlery, no stalls, no shipwright out at sea).
+##
 ## At sea, off a quay's seaward face, the prompt to come alongside sits at
 ## the foot of the screen (a tap on it, or F, docks), saying what's to be had
 ## there, or why not while pirates are on her tail.
@@ -24,6 +28,8 @@ signal restock
 signal buy_part(id: String)
 ## A rocket bought off the pyrotechnist's stall (Fireworks.ORDER).
 signal buy_firework(id: String)
+## One of a lot bought off a merchantman's counter.
+signal buy_ware(id: String)
 signal leave
 ## The prompt tapped while she may come alongside.
 signal dock
@@ -90,6 +96,11 @@ var _pyro: Control
 var _frows: Array[_PRow] = []
 var _pyro_offers: Array = []
 var _pyro_h := 0.0
+## Alongside a merchantman: her cargo ([{id, n, price, deal, room}]) is
+## laid on the stall's shelf instead, under HER CARGO.
+var _trader := false
+var _wares: Array = []
+var _bare: UiText
 var _wnote: UiText
 var _wp_coin: TextureRect
 var _wp_n: UiText
@@ -207,7 +218,10 @@ var kicker := "TRADING PORT"
 
 ## The market opens on `title`'s counter: `market`'s prices for `hold`, with
 ## `gold` in the purse, at the sea's clock `t`.
-func open(title: String, market: Treasure.Market, hold: Treasure.Hold, gold: int, t: float) -> void:
+## With `wares` (a merchantman's cargo, see set_wares) it's her counter.
+func open(title: String, market: Treasure.Market, hold: Treasure.Hold, gold: int, t: float, wares: Variant = null) -> void:
+	_trader = wares != null
+	_wares = wares if wares != null else []
 	_title = title
 	_market = market
 	_hold = hold
@@ -241,6 +255,8 @@ func close() -> void:
 	_prows.clear()
 	_frows.clear()
 	_offers = []
+	_trader = false
+	_wares = []
 
 
 func is_open() -> bool:
@@ -311,6 +327,25 @@ func set_pyro(offers: Array, bought := "") -> void:
 			r.t_just = 0.0
 
 
+## A merchantman's cargo: each lot ({id, n, price, deal, room}) at her
+## asking price, against the fair one; `bought`, one just bought, swells and
+## rings. The same lots again stay put, each brought up to date.
+func set_wares(offers: Array, bought := "") -> void:
+	var same := offers.size() == _frows.size()
+	for i in mini(offers.size(), _frows.size()):
+		same = same and str(offers[i].id) == _frows[i].id
+	_wares = offers
+	if _card == null or not _trader:
+		return
+	if same:
+		_fill_pyro()
+	else:
+		_build_pyro(true)
+	for r in _frows:
+		if r.id == bought:
+			r.t_just = 0.0
+
+
 ## The shipwright's counter: today's parts ([{part, owned}]) and what's in
 ## the purse they're paid from; `bought`, one just bought, swells and rings.
 ## The same parts again stay put, each brought up to date.
@@ -329,6 +364,12 @@ func set_parts(offers: Array, purse: int, bought := "") -> void:
 	for r in _prows:
 		if r.id == bought:
 			r.t_just = 0.0
+
+
+## The hold changed under the counter (a lot bought): its rows laid out afresh.
+func restock_hold() -> void:
+	if _open:
+		_render(false)
 
 
 ## A lot sold for `value`: its row flies coins into the purse and folds away.
@@ -494,6 +535,13 @@ func _build() -> void:
 	_pyro.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_below.add_child(_pyro)
 	_frows.clear()
+	# (a merchantman's bought out: her hold is bare)
+	_bare = UiText.new([["Her hold is bare. ", HudStyle.font("inter", 700), roundi(12.0 * PX), HudStyle.INK_2], ["You have bought everything she was carrying.", HudStyle.font("inter", 500), roundi(12.0 * PX), HudStyle.INK_3]], _iw - 4.0 * PX, 1.4)
+	_bare.position = Vector2(2.0 * PX, 4.0 * PX)
+	_bare.visible = false
+	_pyro.add_child(_bare)
+	_fix.visible = not _trader
+	_shot.visible = not _trader
 
 	# the shipwright's counter under that: today's parts, and a note
 	_wright = Control.new()
@@ -513,8 +561,8 @@ func _build() -> void:
 	_content.add_child(yard_band)
 	_bands.append(yard_band)
 	# (the stall's name drawn under the shipwright's, which pins over it)
-	var pyro_band := _band("PYROTECHNIST")
-	var pyro_note := _words("ROCKETS FOR YOUR FIREWORK LOCKER", 700, 9.0, HudStyle.INK_4, 0.12)
+	var pyro_band := _band("HER CARGO" if _trader else "PYROTECHNIST")
+	var pyro_note := _words("BUY HERE, SELL DEAR IN PORT" if _trader else "ROCKETS FOR YOUR FIREWORK LOCKER", 700, 9.0, HudStyle.INK_4, 0.12)
 	pyro_note.position = Vector2(pyro_band.size.x - _gx - 6.0 * PX - pyro_note.size.x, 8.0 * PX + 1.0 * PX)
 	pyro_band.add_child(pyro_note)
 	_content.add_child(pyro_band)
@@ -674,14 +722,20 @@ func _fill_wright() -> void:
 func _lay_wright() -> void:
 	if _wright == null:
 		return
-	_pyro.position = Vector2(0.0, _yard_y + _svc_h + 6.0 * PX + _band_h + 2.0 * PX)
+	# (alongside a merchantman her cargo comes straight under Sell everything)
+	var top0 := (_yard_y - _band_h - 2.0 * PX) if _trader else (_yard_y + _svc_h + 6.0 * PX)
+	_pyro.position = Vector2(0.0, top0 + _band_h + 2.0 * PX)
 	var py := 0.0
 	for r in _frows:
 		r.y_at = py
 		py += r.size.y + 6.0 * PX
+	_bare.visible = _trader and _frows.is_empty()
+	if _bare.visible:
+		py = _bare.size.y + 14.0 * PX
 	_pyro_h = py
-	_pyro.visible = not _frows.is_empty()
+	_pyro.visible = _trader or not _frows.is_empty()
 	var top := (_pyro.position.y + _pyro_h + _band_h + 2.0 * PX) if _pyro.visible else (_yard_y + _svc_h + 6.0 * PX + _band_h + 2.0 * PX)
+	_wright.visible = not _trader
 	_wright.position = Vector2(0.0, top)
 	var y := 0.0
 	for r in _prows:
@@ -689,7 +743,7 @@ func _lay_wright() -> void:
 		y += r.size.y + 6.0 * PX
 	_wnote.position = Vector2(2.0 * PX, y + 6.0 * PX)
 	_wright_h = _wnote.position.y + _wnote.size.y
-	_wright.visible = not _prows.is_empty()
+	_wright.visible = not _prows.is_empty() and not _trader
 
 
 func _on_buy(r: _PRow) -> void:
@@ -708,10 +762,11 @@ func _build_pyro(enter: bool) -> void:
 		_pyro.remove_child(r)
 		r.queue_free()
 	_frows.clear()
-	for i in _pyro_offers.size():
-		var o: Dictionary = _pyro_offers[i]
-		var r := _PRow.new({"fw": true, "id": o.id, "price": o.price}, _iw)
-		r.buy_btn.pressed.connect(_on_buy_fw.bind(r))
+	var list := _wares if _trader else _pyro_offers
+	for i in list.size():
+		var o: Dictionary = list[i]
+		var r := _PRow.new({"ware": true, "id": o.id, "price": o.price, "deal": o.deal}, _iw) if _trader else _PRow.new({"fw": true, "id": o.id, "price": o.price}, _iw)
+		r.buy_btn.pressed.connect((_on_buy_ware if _trader else _on_buy_fw).bind(r))
 		r.t_in = -minf(i, 5) * 0.04 if enter else ROW_IN
 		_pyro.add_child(r)
 		_frows.append(r)
@@ -723,10 +778,23 @@ func _build_pyro(enter: bool) -> void:
 ## Each rocket's Buy as things stand: its price (dimmed while the purse won't
 ## stretch to it), or Full once the locker can hold no more of it.
 func _fill_pyro() -> void:
+	if _trader:
+		for i in mini(_wares.size(), _frows.size()):
+			var w: Dictionary = _wares[i]
+			_frows[i].set_ware(int(w.n), bool(w.room), bool(w.room) and _gold >= int(w.price))
+		_lay_wright()
+		return
 	for i in mini(_pyro_offers.size(), _frows.size()):
 		var o: Dictionary = _pyro_offers[i]
 		_frows[i].set_fw(int(o.owned), int(o.room), int(o.room) > 0 and _gold >= int(o.price))
 	_lay_wright()
+
+
+func _on_buy_ware(r: _PRow) -> void:
+	if not r.buy_btn.enabled:
+		return
+	clicked.emit()
+	buy_ware.emit(r.id)
 
 
 func _on_buy_fw(r: _PRow) -> void:
@@ -895,14 +963,15 @@ func _step(dt: float) -> void:
 	for r in _frows:
 		_step_prow(r, dt)
 	# what's to scroll, the section names pinned, and the fade at the foot
-	var wares := not _prows.is_empty()
-	var pyro := not _frows.is_empty()
+	var wares := not _prows.is_empty() and not _trader
+	var pyro := not _frows.is_empty() or _trader
 	var content_h := _below.position.y + (_wright.position.y + _wright_h if wares else (_pyro.position.y + _pyro_h - 6.0 * PX if pyro else _yard_y + _svc_h)) + 6.0 * PX
 	_scroll_max = maxf(0.0, content_h - _body.size.y)
 	_scroll = clampf(_scroll, 0.0, _scroll_max)
 	_content.position.y = -_scroll
 	_bands[0].position.y = _scroll
 	_bands[1].position.y = maxf(_below.position.y + 48.0 * PX, _scroll)
+	_bands[1].visible = not _trader
 	_bands[2].visible = wares
 	_bands[2].position.y = maxf(_below.position.y + _wright.position.y - _band_h - 2.0 * PX, _scroll)
 	_bands[3].visible = pyro
@@ -1486,6 +1555,8 @@ class _PRow:
 	## A rocket (the pyrotechnist's), not a part: its one line of looks is cut to fit.
 	var _fw := false
 	var _tier_name := ""
+	## A merchantman's lot (Convoys), not a part.
+	var _ware := false
 
 	func _init(part: Dictionary, w: float) -> void:
 		var px := MarketPanel.PX
@@ -1493,6 +1564,9 @@ class _PRow:
 		id = part.id
 		if part.has("fw"):
 			_init_fw(part)
+			return
+		if part.has("ware"):
+			_init_ware(part)
 			return
 		var tier: int = part.tier
 		var rarity: Dictionary = Parts.RARITIES[tier]
@@ -1584,6 +1658,63 @@ class _PRow:
 		buy_btn = UiButton.new(Vector2(40.0, 30.0), 12.0 * px, 16.0 * px)
 		buy_btn.squeeze = 0.95
 		add_child(buy_btn)
+
+	## A lot on a merchantman's counter (Convoys): its portrait on a wash of
+	## its rarity's colour, its name and how many, its rarity and kind, how
+	## her asking price sits against the fair one, and its Buy.
+	func _init_ware(o: Dictionary) -> void:
+		var px := MarketPanel.PX
+		_ware = true
+		var r := Treasure.rarity_of(id)
+		rc = Treasure.RARITY_COLOR[r]
+		_price = int(o.price)
+		MenuKit.flat(self)
+		p("horiz", 1.0).p("hi", 0.0)
+		p("c_top", Color(rc, 0.14)).p("c_mid", Color(1.0, 1.0, 1.0, 0.03)).p("mid", 0.6).p("c_foot", Color(1.0, 1.0, 1.0, 0.03))
+		p("c_border", Color(rc, 0.22))
+		if o.deal:
+			p("c_inset", Color(MarketPanel.UP, 0.16)).p("inset", 22.0 * px)
+		var ico := 44.0 * px
+		_ico = UiBox.new(Vector2(ico, ico), 12.0 * px, 2.0)
+		MenuKit.flat(_ico)
+		_ico.p("border", 0.0).p("hi", 0.0).p("radial", Vector4(0.5, 0.4, 0.781, 0.781)).p("radial_stop", 0.75)
+		_ico.p("c_top", Color(rc, 0.3)).p("c_foot", Color(0.0, 0.0, 0.0, 0.18))
+		add_child(_ico)
+		var art := TextureRect.new()
+		art.texture = Icons.plunder(id, 40.0 * px)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_SCALE
+		art.size = Vector2(40.0, 40.0) * px
+		art.position = Vector2(2.0, 2.0) * px
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_ico.add_child(art)
+		_name = MarketPanel._words(Treasure.name_of(id), 700, 14.0, HudStyle.INK)
+		add_child(_name)
+		var f6 := HudStyle.font("inter", 600)
+		var sz := roundi(11.0 * px)
+		_line = UiText.new([[Treasure.RARITY_NAME[r], f6, sz, rc], [" · " + str(Treasure.CATEGORY_NAME[Treasure.cat_of(id)]), f6, sz, HudStyle.INK_3]], 0.0, 1.0)
+		add_child(_line)
+		var tr := float(_price) / Treasure.price_of(id) - 1.0
+		var chip := MarketPanel._words(("%d%% under fair" % roundi(-tr * 100.0)) if o.deal else ("%d%% over fair" % roundi(tr * 100.0)), 700, 9.5, MarketPanel.GOOD if o.deal else HudStyle.INK_3)
+		add_child(chip)
+		_chips.append(chip)
+		buy_btn = UiButton.new(Vector2(40.0, 30.0), 12.0 * px, 16.0 * px)
+		buy_btn.squeeze = 0.95
+		add_child(buy_btn)
+
+	## A lot's row as things stand: how many she has left, and its Buy (No
+	## room while none of your holds can take another).
+	func set_ware(n: int, room: bool, can: bool) -> void:
+		remove_child(_name)
+		_name.queue_free()
+		var f7 := HudStyle.font("inter", 700)
+		var px := MarketPanel.PX
+		var runs: Array = [[Treasure.name_of(id), f7, roundi(14.0 * px), HudStyle.INK]]
+		if n > 1:
+			runs.append([" ×%d" % n, f7, roundi(12.0 * px), HudStyle.INK_3])
+		_name = UiText.new(runs, 0.0, 1.0)
+		add_child(_name)
+		_set_buy(MenuKit.num(_price) if room else "No room", room, can)
 
 	## A rocket's row as things stand: how many the locker holds, and its Buy
 	## (Full once there's no room for another).
