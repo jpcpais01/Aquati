@@ -177,6 +177,11 @@ Wildlife: `--wild` surveys and settles every isle's beasts at the start
 (else each isle is settled as the view nears it), and `--wild-look K` holds
 the camera a few lengths off the nearest beast of kind K (0 goat .. 14
 hummingbird); a shot with `--wild` prints a SMOKE WILD line.
+Bounties: `--wanted N` starts the voyage with N infamy (3 lights the first
+skull and sends a hunter once the yard has her ready), and `--wanted-board`
+opens the Wanted Board over the harbour (`--bounty-banner [claimed]` shows a
+hunter's notice over the voyage); the smoke test prints a SMOKE
+BOUNTY line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

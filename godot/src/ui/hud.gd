@@ -65,6 +65,9 @@ var _hold: _Chip
 var _kills: _Chip
 var _isles: _Chip
 var _peek: HoldPeek
+var _wanted: WantedHud.Meter
+var _mark: WantedHud.Mark
+var _banner: WantedHud.Banner
 var _status: Control
 var _bars: EnemyBars
 var _floaters: Floaters
@@ -221,6 +224,9 @@ func _ready() -> void:
 	for c: _Chip in [_gold, _hold, _kills, _isles]:
 		_chips.add_child(c)
 	_status.add_child(_chips)
+	# the voyage's heat, under the tally once your guns have earned some
+	_wanted = WantedHud.Meter.new()
+	_status.add_child(_wanted)
 	# a tap on the hold peeks inside
 	_peek = HoldPeek.new()
 	_peek.opener = _hold
@@ -390,6 +396,13 @@ func _ready() -> void:
 	_prize = PrizeCard.new()
 	_prize.picked.connect(func(k: String) -> void: prize_picked.emit(k))
 	root.add_child(_prize)
+	# a named captain on your trail: her mark at the screen's edge, her banner when she sets out
+	_mark = WantedHud.Mark.new()
+	_mark.visible = false
+	root.add_child(_mark)
+	_banner = WantedHud.Banner.new()
+	_banner.visible = false
+	root.add_child(_banner)
 	map_chip = MapChip.new()
 	map_chip.set_host(root)
 	map_chip.pressed.connect(func() -> void:
@@ -509,6 +522,8 @@ func _layout() -> void:
 	var head := _party if _ashore else _ship_panel
 	_chips.position = Vector2(0.0, head.size.y + 5.0 * HudStyle.K)
 	_chips.size = _chips.get_combined_minimum_size()
+	_wanted.position.y = _chips.position.y + _chips.size.y + 6.0 * HudStyle.K
+	_wanted.size = _wanted.get_combined_minimum_size()
 	# a computer's HUD sits smaller than a phone's (the sea is the star, and
 	# a mouse needs no thumb-sized targets): the status card, the corner
 	# column and the console are scaled down from their top-left corners,
@@ -572,13 +587,14 @@ func _layout() -> void:
 		_ability.position = Vector2(_pill.position.x + ps.x * hk + 14.0 * k - am * ak, _pill.position.y + ps.y * hk * 0.5 - _ability.size.y * ak * 0.5)
 	_ability.pivot_offset = Vector2.ZERO
 	_ability.show_key(not _touch_ui)
-	_peek.place(Vector2(mx, my + (_chips.position.y + _chips.size.y) * hk + 8.0 * HudStyle.K))
+	_place_peek()
 	_place_tag()
 	_place_say()
 	_hz.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
 	_ft.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * k if _hz.on() else 0.0)), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
 	_kr.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * k if _hz.on() else 0.0)), minf(460.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
 	_place_map()
+	_place_banner()
 	# the toasts step down under the pill and the bar while they're up
 	_hz_room = _top_room()
 	_toasts.offset_top = my + _hz_room
@@ -1298,8 +1314,59 @@ func reset() -> void:
 	_pie.set_open(false)
 	_fw_pick.set_open(false)
 	_kr.clear()
+	_wanted.reset()
+	_mark.hide_mark()
+	_banner.clear()
 	_restack()
 	fade(true, 0.4)
+
+
+## The voyage's heat (Hunters): the wanted meter, and the named captain on
+## your trail, if any (her name and how far off).
+func heat(pts: int, level: int, hunter: String, dist: float) -> void:
+	var was := _wanted.size
+	var on := _wanted.visible
+	_wanted.show_heat(pts, level, hunter, dist)
+	_wanted.size = _wanted.get_combined_minimum_size()
+	if _wanted.size != was or _wanted.visible != on:
+		_place_peek()
+
+
+## The hunter's mark at the edge of the screen while she's off it (`at` her
+## spot in the world); `at` null hides it.
+func hunter_mark(at: Variant, cam: Camera3D, dist: float, hunter: String) -> void:
+	if at == null:
+		_mark.hide_mark()
+		return
+	var vp := get_viewport().get_visible_rect().size
+	var front := not cam.is_position_behind(at)
+	var sp := cam.unproject_position(at)
+	_mark.point(sp.x, sp.y, front, dist, hunter, vp)
+
+
+## A named captain sets out after you (`gold` her bounty).
+func hunt_banner(c: Dictionary, gold: int) -> void:
+	_banner.hunt(c, gold)
+	_place_banner()
+
+
+## Her bounty is yours.
+func claim_banner(c: Dictionary, gold: int, infamy: int) -> void:
+	_banner.claimed(c, gold, infamy)
+	_place_banner()
+
+
+## The hold's peek opens under the tally (and the wanted meter, while it's up).
+func _place_peek() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	var low := _wanted.position.y + _wanted.size.y if _wanted.visible else _chips.position.y + _chips.size.y
+	_peek.place(Vector2(vp.x * 0.03, vp.y * 0.03 + low * _hk() + 8.0 * HudStyle.K))
+
+
+func _place_banner() -> void:
+	var vp := get_viewport().get_visible_rect().size
+	var my := vp.y * 0.03
+	_banner.place(vp.x * 0.5, maxf(my + 150.0 * HudStyle.K, vp.y * 0.21))
 
 
 ## Fades the whole HUD out (her farewell) or back in (at once: no `seconds`).

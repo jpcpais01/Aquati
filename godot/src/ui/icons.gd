@@ -46,6 +46,8 @@ const LINE := {
 	# the treasure map's chip and the dig gauge
 	"scroll": '<path d="M7 4h11a2 2 0 0 1 2 2v1h-4M7 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7M7 4a2 2 0 0 1 2 2v12M11 9h4M11 12.5h4M11 16h2.5"/>',
 	"spade": '<path d="M8.5 3.5h7M12 3.5v10"/><path d="M8.5 13.5h7v2.8a3.5 3.5 0 0 1-7 0z"/>',
+	# the Wanted Board
+	"skull": '<path d="M12 3c-4.4 0-7.5 3.1-7.5 7.2 0 2.4 1.1 4 2.7 5.1V18a1.2 1.2 0 0 0 1.2 1.2h7.2a1.2 1.2 0 0 0 1.2-1.2v-2.7c1.6-1.1 2.7-2.7 2.7-5.1C19.5 6.1 16.4 3 12 3z"/><circle cx="9.2" cy="11" r="1.6"/><circle cx="14.8" cy="11" r="1.6"/><path d="M10.5 19.2v-2.4M13.5 19.2v-2.4"/>',
 	"shot": '<circle cx="9" cy="14" r="5"/><circle cx="16.5" cy="9" r="3.5"/><path d="M7.4 12.2a2 2 0 0 1 2-1.1"/>',
 }
 

@@ -45,6 +45,9 @@ var enabled := true
 ## the mist and the storm), and every one that can be (--ghosts).
 var ghost_odds := 0.05
 var all_ghosts := false
+## The Crown's reward on every pirate bounty, for how hot the voyage runs
+## and your infamy (Bounty.HEAT_BONUS, Bounty.bonus).
+var bounty_k := 1.0
 ## Her captain is ashore (or on a prize's deck): a ship at anchor is left be.
 var ashore := false
 
@@ -122,6 +125,53 @@ func _rise(s: Ship) -> void:
 	risen.emit(s)
 
 
+## A named captain sails in under her own colours, in the hull the yard laid
+## down for her (`model`), with her pack if she has one: escorts only from
+## hulls already waiting on the slipway, never one built on the spot.
+func launch_hunter(c: Dictionary, model: ShipModel, x: float, z: float, heading: float) -> PirateAI:
+	var s := Ship.create(ShipClass.named(c.cls), model.livery, world, Ship.Team.PIRATE, model)
+	s.ship_name = str(c.ship)
+	s.hunter = str(c.id)
+	s.set_boost(c.boost)
+	stage.add_child(s)
+	s.place(x, z, heading)
+	s.sail_target = 1.0
+	s.sail_level = 0.8
+	s.speed = s.cls.max_speed * 0.6
+	world.ships.append(s)
+	var ai := PirateAI.new(s, 4.0, c.ammo)
+	ais[s] = ai
+	if int(c.escorts) > 0:
+		var pack := PirateAI.Pack.new()
+		pack.leader = ai
+		ai.pack = pack
+		var sh := sin(heading)
+		var ch := cos(heading)
+		for i in int(c.escorts):
+			var id := ""
+			for k: String in ["brig", "sloop"]:
+				if shipyard != null and shipyard.count(k) > 0:
+					id = k
+					break
+			if id == "":
+				break
+			var side := 1.0 if i % 2 == 0 else -1.0
+			var slot := Vector2(side * 38.0, 34.0)
+			var ex := s.pos.x + ch * slot.x - sh * slot.y
+			var ez := s.pos.z - sh * slot.x - ch * slot.y
+			if world.ground_height(ex, ez) > -9.0:
+				var o: Variant = find_open_water(s.pos.x, s.pos.z, 50.0, 110.0)
+				if o == null:
+					continue
+				ex = (o as Vector2).x
+				ez = (o as Vector2).y
+			var e := launch(id, ex, ez, heading, 8)
+			if e != null:
+				e.pack = pack
+				e.slot = slot
+	return ai
+
+
 ## Whether the next sail on the horizon is a ghost: one is waiting in the
 ## yard's shadow, none is abroad already, and the odds come up.
 func _ghost_omen() -> bool:
@@ -163,7 +213,7 @@ func find_open_water(cx: float, cz: float, r_min: float, r_max: float) -> Varian
 func _alive_pirates() -> int:
 	var n := 0
 	for s: Ship in world.ships:
-		if s.team == Ship.Team.PIRATE and s.alive and not s.prize:
+		if s.team == Ship.Team.PIRATE and s.alive and not s.prize and s.hunter == "":
 			n += 1
 	return n
 
@@ -305,7 +355,7 @@ func set_sail() -> void:
 func _recycle(player: Ship) -> void:
 	for s: Ship in world.ships:
 		var ai: PirateAI = ais.get(s)
-		if ai == null or not s.alive or ai.mode != PirateAI.Mode.PATROL:
+		if ai == null or not s.alive or ai.mode != PirateAI.Mode.PATROL or s.hunter != "":
 			continue
 		if Vector2(s.pos.x - player.pos.x, s.pos.z - player.pos.z).length() > RECYCLE:
 			s.removed = true
@@ -336,8 +386,9 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 	spawn_timer = maxf(spawn_timer, 10.0)
 	if shipyard != null:
 		shipyard.rest(3.0)
-	if attacker != null and attacker.team == Ship.Team.PLAYER:
-		var gold: int = BOUNTY.get(ship.cls.id, 60) * (2 if ship.ghost else 1)
+	# a named captain's bounty is the Crown's own (the game claims it)
+	if attacker != null and attacker.team == Ship.Team.PLAYER and ship.hunter == "":
+		var gold := roundi(BOUNTY.get(ship.cls.id, 60) * (2 if ship.ghost else 1) * bounty_k)
 		attacker.gold += gold
 		bounty.emit(ship, gold)
 

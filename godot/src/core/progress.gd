@@ -67,6 +67,9 @@ var fireworks := {}
 var forts := {"taken": {}, "paid": {}, "tribute": 0}
 ## The treasure map in hand (TreasureMaps.state).
 var maps := TreasureMaps.fresh()
+## Your name among the Brethren (Bounty.fresh): lifetime infamy, each named
+## captain's poster and the bounty gold the Crown has paid.
+var bounty := Bounty.fresh()
 ## The island beasts you've seen, by species index (Wildlife), in order of sighting.
 var fauna: Array[int] = []
 ## The one-off tips already given on this device (the fireworks' night tip).
@@ -296,6 +299,48 @@ func tip_seen(id: String) -> bool:
 	tips.append(id)
 	touch()
 	return false
+
+
+## Lifetime infamy earned: the new rank (Bounty.REPUTE) if it just went up, else -1.
+func add_infamy(pts: int) -> int:
+	if pts <= 0:
+		return -1
+	var was := Bounty.repute_rank(int(bounty.infamy))
+	bounty.infamy = int(bounty.infamy) + pts
+	touch()
+	var now := Bounty.repute_rank(int(bounty.infamy))
+	return now if now > was else -1
+
+
+## The Crown's multiplier on bounties at your infamy.
+func bounty_bonus() -> float:
+	return Bounty.bonus(int(bounty.infamy))
+
+
+## A hunter set out after you (or word of one came): her poster goes up.
+func hunter_seen(id: String) -> void:
+	if (bounty.seen as Array).has(id):
+		return
+	bounty.seen.append(id)
+	touch()
+
+
+## A named captain sunk: their poster gets its stamp.
+func claim_bounty(id: String, gold: int) -> void:
+	bounty.sunk[id] = int(bounty.sunk.get(id, 0)) + 1
+	if not bounty.first.has(id):
+		bounty.first[id] = int(Time.get_unix_time_from_system())
+	hunter_seen(id)
+	bounty.claimed = int(bounty.claimed) + gold
+	touch()
+
+
+## The voyage's wanted level reached this high.
+func wanted_reached(level: int) -> void:
+	if level <= int(bounty.best):
+		return
+	bounty.best = level
+	touch()
 
 
 ## Marks a species seen; true the first time.
@@ -534,6 +579,7 @@ func save() -> void:
 		"forts": forts,
 		"maps": maps,
 		"fauna": fauna,
+		"bounty": bounty,
 		"tips": tips,
 	}
 	_write(path, JSON.stringify(data, "\t"))
@@ -638,6 +684,7 @@ func _adopt(d: Dictionary) -> void:
 						forts[k][str(id)] = float(m[id])
 		forts.tribute = maxi(0, int(float((fo as Dictionary).get("tribute", 0))))
 	maps = TreasureMaps.sanitize(d.get("maps"))
+	bounty = Bounty.sanitize(d.get("bounty"))
 	var fa: Variant = d.get("fauna")
 	if fa is Array:
 		for e: Variant in fa:

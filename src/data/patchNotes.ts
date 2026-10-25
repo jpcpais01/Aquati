@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T13:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: bounties and infamy',
+        notes: [
+          'Bounties come to the Android and Windows game. Sinking pirates, silencing fort guns and storming forts earns infamy, and the wanted meter under your tally lights a skull at a time. The hotter the voyage, the more the Crown pays.',
+          'At each new skull one of the Brethren\'s ten named captains sets out after you in their own colours, tougher and sharper than any crew. A mark at the screen\'s edge shows where they are. Sink or board them to claim the bounty.',
+          'A new Wanted Board, from the skull button in the harbour or the pause menu, shows your rank among the Brethren and a wall of wanted posters, stamped SUNK as you claim them.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T12:00Z',
     entries: [
       {

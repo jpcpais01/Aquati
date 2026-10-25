@@ -24,6 +24,11 @@ const GHOST_ODDS := {"sloop": 0.4, "brig": 0.45, "galleon": 0.15}
 ## just picked on its picker (`want`) first of all.
 var harbour := false
 var want := ""
+## The next named captain the Brethren will send (Bounty, her id; "" none):
+## her ship comes off the slipway before anything else at sea, in her own
+## colours, so she can sail the moment she's sent for. A hull built for
+## anyone else is broken up.
+var hunter := ""
 
 var _stock: Array[ShipModel] = []
 var _task := -1
@@ -64,6 +69,11 @@ func _process(delta: float) -> void:
 		if m.asked == MINE and not _fits(m, MINE):
 			_stock.remove_at(i)
 			m.free()
+	for i in range(_stock.size() - 1, -1, -1):
+		var m := _stock[i]
+		if m.asked.begins_with("hunter:") and m.asked != "hunter:" + hunter:
+			_stock.remove_at(i)
+			m.free()
 	_idle -= delta
 	if _idle > 0.0:
 		return
@@ -71,7 +81,8 @@ func _process(delta: float) -> void:
 	if not next.is_empty():
 		var id: String = next[0]
 		# (the refit settled here: the worker reads nothing that can change under it)
-		var fit := Progress.loadout(id) if next[1] == MINE else ({} if next[1] == GHOST else Parts.pirate_fit(id))
+		var hunted := str(next[1]).begins_with("hunter:")
+		var fit := Progress.loadout(id) if next[1] == MINE else ({} if next[1] == GHOST or hunted else Parts.pirate_fit(id))
 		_task = WorkerThreadPool.add_task(_build.bind(ShipClass.named(id), Livery.named(next[1]), fit), false, "Shipyard: %s" % id)
 
 
@@ -87,6 +98,10 @@ func _next() -> Array:
 			break
 	if harbour and not mine.is_empty():
 		return mine
+	if not harbour and hunter != "":
+		var c := Bounty.captain(hunter)
+		if not c.is_empty() and count(c.cls, "hunter:" + hunter) == 0:
+			return [c.cls, "hunter:" + hunter]
 	for id: String in STOCK:
 		if count(id) < int(STOCK[id]):
 			return [id, LIVERIES[randi() % LIVERIES.size()]]
@@ -155,7 +170,7 @@ func take(id: String, livery := "") -> ShipModel:
 ## fits the livery she was built for as long as it lasts.
 func _fits(m: ShipModel, livery: String) -> bool:
 	if livery.is_empty():
-		return m.asked != MINE and m.asked != GHOST
+		return m.asked != MINE and m.asked != GHOST and not m.asked.begins_with("hunter:")
 	if m.asked != livery or m.rev != m.livery.rev:
 		return false
 	return livery != MINE or m.cls.is_event() or m.fit_key == Parts.key(Progress.loadout(m.cls.id))

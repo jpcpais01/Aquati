@@ -204,6 +204,8 @@ var forts: Forts
 var kraken: Kraken
 ## The isles' beasts (Wildlife).
 var wildlife: Wildlife
+## The voyage's heat: your infamy, the wanted level and the named captains it sends (Hunters).
+var hunters := Hunters.new()
 ## Each storm's one roll of the dice: 0 not yet, 1 rolled and it isn't coming, 2 it's coming.
 var _kr_storm := 0
 ## Seconds until it looks for deep water, once it's coming; till the seas may stir it again.
@@ -335,6 +337,8 @@ var harbour: Harbour
 var sea_pick: SeaPick
 var pause_screen: PauseScreen
 var settings_sheet: SettingsSheet
+## The Wanted Board: your infamy and the named captains' notices.
+var bounty_board: BountyBoard
 ## The game's own updates from its GitHub releases, and their card.
 var updater: Updater
 var update_card: UpdateCard
@@ -573,6 +577,16 @@ func _load() -> void:
 	if _args.has("voyage"):
 		_stage_voyage()
 	_stage_plunder()
+	if _args.has("bounty-banner"):
+		# a shot of the notices: a hunter's (or with `claimed`, the bounty claimed) over the voyage
+		var c: Dictionary = Bounty.CAPTAINS[4]
+		var how := str(_args["bounty-banner"])
+		get_tree().create_timer(0.3).timeout.connect(func() -> void:
+			if how == "claimed":
+				hud.claim_banner(c, int(c.bounty), int(c.tier) * 3)
+			else:
+				hud.hunt_banner(c, int(c.bounty))
+			hunters.add(Bounty.WANTED_AT[2] + 2))
 	if _args.has("dock") or _args.has("off"):
 		_stage_dock()
 	if _args.has("fort"):
@@ -1528,6 +1542,10 @@ func _process(delta: float) -> void:
 		print("SMOKE PORT: %d towns (%d triangles close up and %d as shells built); %d whole in view, drawing %d triangles; %s" % [
 				ports.ports.size(), built.x, built.y, drawn.y, drawn.x, "tied up at " + dock_port.title if dock_port != null else "at sea"])
 		_wild_line()
+		print("SMOKE BOUNTY: infamy %d this voyage (wanted %d), %d hunters sent, %d claimed, %s; lifetime infamy %d, %d posters up" % [
+				hunters.pts, hunters.level(), hunters.sent, hunters.claimed,
+				("%s %d m off" % [hunters.ships[hunters.near].epithet, roundi(hunters.near_d)]) if hunters.ships.has(hunters.near) else "none at sea",
+				int(Progress.bounty.infamy), (Progress.bounty.seen as Array).size()])
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
 		if _args.has("wild"):
 			_wild_line()
@@ -1624,6 +1642,8 @@ func _tick(real_dt: float) -> void:
 	# the next sail is likelier a ghost in the dark, in mist and in foul weather
 	pirates.ghost_odds = minf(0.42, 0.05 + atmosphere.night * 0.24 + atmosphere.fog * 0.2 + atmosphere.storm * 0.06)
 	pirates.step(dt, player if sailing else null)
+	if sailing:
+		_heat(dt)
 	# (at the home port's quay the harbour's sea waits for her back at anchor)
 	if state == State.HARBOUR and not home.visible:
 		pirates.step_harbour(dt, player.pos, camera)
@@ -1740,6 +1760,7 @@ func _tick(real_dt: float) -> void:
 			if m.walker.visible:
 				_wild_walkers.append(m.walker)
 	wildlife.update(dt, camera, camera.target, _wild_walkers, _px_k)
+	_hunter_mark(sailing and not shore.active and _farewell == null)
 	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
 	ocean.follow(camera.target, camera.distance())
@@ -2411,11 +2432,20 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 	if ship == player:
 		_begin_farewell(attacker)
 		return
+	# a sinking buys a breather before the next hunter; a named captain's own is her bounty
+	hunters.cool = maxf(hunters.cool, 2.5)
+	var named := Bounty.captain(ship.hunter) if ship.hunter != "" else {}
+	if not named.is_empty():
+		_hunter_down(ship, attacker, named)
 	# what she carried comes up out of the wreck: the bigger the hull, the more
 	# and the finer, and a galleon always gives up a fine chest; a ghost's hold
 	# is full of the cursed gold she went down with
 	var luck: float = {"sloop": 0.0, "brig": 0.3, "galleon": 0.6}.get(ship.cls.id, 0.0) + (0.35 if ship.ghost else 0.0)
-	world.loot.drop(ship.pos.x, ship.pos.z, 3 + int(ship.cls.length / 8.0) + (2 if ship.ghost else 0), luck, ship.cls.id == "galleon" or ship.ghost)
+	var n := 3 + int(ship.cls.length / 8.0) + (2 if ship.ghost else 0)
+	if not named.is_empty():
+		n = 6 + int(named.tier)
+		luck += 0.25
+	world.loot.drop(ship.pos.x, ship.pos.z, n, luck, ship.cls.id == "galleon" or ship.ghost or not named.is_empty())
 
 
 ## A bite of the flames burning a ship (fire shot): the damage ticks up off
@@ -2609,9 +2639,88 @@ func _screen_heading(h: float) -> float:
 	return atan2(d.x, -d.y)
 
 
+## The voyage's heat each frame: the Crown's rate on pirate bounties, the
+## next hunter sent once she's earned, and the meter.
+func _heat(dt: float) -> void:
+	var p := player
+	pirates.bounty_k = hunters.heat_k() * Progress.bounty_bonus()
+	if hunters.step(dt, p, shipyard, _high_seas) and _farewell == null and not shore.active:
+		var c := hunters.send(p, pirates, shipyard)
+		if not c.is_empty():
+			var gold := roundi(int(c.bounty) * Progress.bounty_bonus())
+			hud.hunt_banner(c, gold)
+			sound.horn()
+			voyage.note("bounty", "%s came hunting" % c.epithet, "The %s · %d gold on her" % [c.ship, gold])
+			_note_tour("hunter sent: %s in the %s" % [c.epithet, c.ship])
+	var c2: Dictionary = hunters.ships.get(hunters.near, {})
+	hud.heat(hunters.pts, hunters.level(), str(c2.get("epithet", "")), hunters.near_d)
+
+
+## The nearest hunter's mark at the screen's edge while she's out of view.
+func _hunter_mark(on: bool) -> void:
+	var n := hunters.near
+	var c: Dictionary = hunters.ships.get(n, {}) if on and n != null and is_instance_valid(n) and n.alive else {}
+	if c.is_empty():
+		hud.hunter_mark(null, camera, 0.0, "")
+		return
+	hud.hunter_mark(Vector3(n.pos.x, n.position.y + n.cls.freeboard + 4.0, n.pos.z), camera, hunters.near_d, str(c.epithet))
+
+
+## Infamy earned (a pirate sunk or taken, a fort's gun silenced, a fort
+## taken): the voyage's wanted level, and your name in the Brethren's taverns.
+func _add_infamy(pts: int) -> void:
+	if state != State.VOYAGE or pts <= 0:
+		return
+	var lv := hunters.add(pts)
+	var rank := Progress.add_infamy(pts)
+	if lv.y > lv.x:
+		Progress.wanted_reached(lv.y)
+		sound.wanted(lv.y)
+		hud.toast("Wanted · %d skull%s" % [lv.y, "s" if lv.y > 1 else ""],
+				"The whole Brethren is hunting you" if lv.y >= Bounty.WANTED_AT.size() else "A hunter sets out · pirate bounties +%d%%" % roundi(lv.y * Bounty.HEAT_BONUS * 100.0), 3.6)
+		voyage.note("bounty", "Wanted: %d skull%s" % [lv.y, "s" if lv.y > 1 else ""], "The Brethren put a price on your head")
+	if rank >= 0:
+		var r: Array = Bounty.REPUTE[rank]
+		get_tree().create_timer(1.2).timeout.connect(func() -> void:
+			hud.toast("Your infamy grows · %s" % r[1], "%s Crown bounties +%d%%" % [r[2], roundi(rank * Bounty.REPUTE_BONUS * 100.0)], 4.6)
+			sound.chime())
+
+
+## A named captain gone down: her bounty yours if your guns did it.
+func _hunter_down(ship: Ship, attacker: Ship, c: Dictionary) -> void:
+	hunters.gone(ship)
+	if attacker == player and player.alive:
+		_claim_hunter(c, Vector3(ship.pos.x, ship.position.y + ship.cls.freeboard + 3.0, ship.pos.z))
+	else:
+		hud.toast("Her bounty goes unclaimed", "The %s went down to other guns" % c.ship, 3.4)
+
+
+## Her bounty is yours: the Crown's gold, her poster stamped SUNK, and more infamy.
+func _claim_hunter(c: Dictionary, at: Vector3) -> void:
+	if state != State.VOYAGE:
+		return
+	var p := player
+	var gold := roundi(int(c.bounty) * Progress.bounty_bonus())
+	Progress.earn(gold)
+	p.gold += gold
+	Progress.claim_bounty(str(c.id), gold)
+	hunters.claimed += 1
+	hunters.cool = 35.0
+	var inf := int(c.tier) * 3
+	_add_infamy(inf)
+	hud.claim_banner(c, gold, inf)
+	hud.floater("+%d gold" % gold, at, camera, Floaters.Kind.RARE, 12.0)
+	sound.bounty()
+	camera.shake(0.3)
+	world.fx.treasure(at, Loot.GLOW[3], 3)
+	voyage.note("bounty", "Claimed the bounty on %s" % c.epithet, "The %s · +%d gold" % [c.ship, gold])
+	_note_tour("claimed %s's bounty: %d gold" % [c.epithet, gold])
+
+
 func _on_bounty(ship: Ship, gold: int) -> void:
 	Progress.earn(gold)
 	sound.coin()
+	_add_infamy(int(Bounty.KILL_INFAMY.get(ship.cls.id, 1)))
 	if ship.ghost:
 		hud.toast("+%d gold cursed bounty" % gold, "The %s is laid to rest" % ship.ship_name, 3.6)
 		voyage.note("ghost", "Laid the %s to rest" % ship.ship_name, "Ghost %s · +%d gold" % [ship.cls.name.to_lower(), gold])
@@ -2880,7 +2989,7 @@ func _reset_world(id: String) -> void:
 ## set piece at sea (a shot of the voyage, a fight, a farewell, a voyage on
 ## hold), unless a shot of the menus is asked for.
 func _harbour_first() -> bool:
-	if _args.has("menu") or _args.has("seapick") or _args.has("shipwright") or _args.has("vault-open") or (_args.has("settings") and not _args.has("pause")):
+	if _args.has("menu") or _args.has("seapick") or _args.has("shipwright") or _args.has("vault-open") or _args.has("wanted-board") or (_args.has("settings") and not _args.has("pause")):
 		return true
 	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause", "dock", "off", "board"]:
 		if _args.has(k):
@@ -2901,6 +3010,7 @@ func _build_menus() -> void:
 	harbour.shipwright.connect(_open_shipwright)
 	harbour.vault.connect(_open_vault)
 	harbour.settings.connect(_open_settings)
+	harbour.board.connect(_open_board)
 	harbour.sound.connect(_toggle_sound)
 	harbour.quit.connect(_quit_game)
 	harbour.clicked.connect(sound.click)
@@ -2973,6 +3083,7 @@ func _build_menus() -> void:
 	pause_screen = PauseScreen.new()
 	pause_screen.resume.connect(_resume)
 	pause_screen.settings.connect(_open_settings)
+	pause_screen.board.connect(_open_board)
 	pause_screen.harbour.connect(_quit_voyage)
 	pause_screen.quit.connect(_quit_game)
 	pause_screen.clicked.connect(sound.click)
@@ -2980,6 +3091,9 @@ func _build_menus() -> void:
 	settings_sheet = SettingsSheet.new()
 	settings_sheet.clicked.connect(sound.click)
 	add_child(settings_sheet)
+	bounty_board = BountyBoard.new()
+	bounty_board.clicked.connect(sound.click)
+	add_child(bounty_board)
 	# a newer build of the game: an Update pill in the harbour, the card
 	# once a run by itself, and Settings' Game updates row
 	updater = Updater.new()
@@ -3022,6 +3136,14 @@ func _open_settings() -> void:
 	_note_tour("Settings")
 
 
+## The Wanted Board, over the harbour or the paused voyage.
+func _open_board() -> void:
+	if bounty_board.is_open() or settings_sheet.is_open() or veil.busy:
+		return
+	bounty_board.open()
+	_note_tour("Wanted Board")
+
+
 ## Looks for a newer build: on the Android and Windows games (never in a smoke test),
 ## or a pretend one for a shot (--update-demo [offer|downloading|ready|failed]
 ## [--nocard]).
@@ -3060,7 +3182,7 @@ func _offer_update(after := 1.6) -> void:
 	get_tree().create_timer(after).timeout.connect(func() -> void:
 		if _update_shown or not updater.available() or state != State.HARBOUR or not harbour.is_open() or veil.busy:
 			return
-		if settings_sheet.is_open() or vault.is_open() or sea_pick.is_open() or shipwright.is_open() or update_card.is_open():
+		if settings_sheet.is_open() or bounty_board.is_open() or vault.is_open() or sea_pick.is_open() or shipwright.is_open() or update_card.is_open():
 			return
 		_update_shown = true
 		update_card.ship = player.cls.id
@@ -3104,6 +3226,8 @@ func _stage_menus() -> void:
 		_pause()
 	if _args.has("settings"):
 		_open_settings()
+	if _args.has("wanted-board"):
+		_open_board()
 
 
 ## Into the harbour: your ship at anchor off the home port with every sail
@@ -3697,6 +3821,10 @@ func _start_voyage(sea: String) -> void:
 	# the cutthroats are back round their fires, their chests full again
 	shore.reset_camps()
 	boarding.reset()
+	# a new voyage starts cold: no price on your head yet
+	hunters.reset()
+	if _args.has("wanted"):
+		hunters.add(int(_args.wanted))
 	# the X of a whole map waits on its sand
 	_sync_treasure()
 	# and the Brethren man every fort you haven't taken
@@ -4194,6 +4322,7 @@ func _on_gun_silenced(f: Forts.Fort, g: Forts.Gun, last: bool) -> void:
 	if state != State.VOYAGE:
 		return
 	hud.floater("Silenced!", g.base + Vector3(0.0, 3.0, 0.0), camera, Floaters.Kind.RARE)
+	_add_infamy(4)
 	if last:
 		hud.toast("The guns of %s are silent" % f.name, "Land your crew and storm the fort", 4.2)
 		voyage.note("fort", "Silenced the guns of %s" % f.name, str(f.site.island))
@@ -4207,6 +4336,7 @@ func _on_gun_silenced(f: Forts.Fort, g: Forts.Gun, last: bool) -> void:
 func _take_fort(f: Forts.Fort) -> void:
 	forts.conquer(f)
 	Progress.take_fort(f.id)
+	_add_infamy(30)
 	voyage.note("fort", "Took %s" % f.name, "%s · %d gold tribute an hour" % [f.site.island, Forts.TRIBUTE_HOUR])
 	hud.toast("The garrison throws down its arms", "Their colours are coming down", 2.6)
 	sound.chime()
@@ -4420,6 +4550,12 @@ func _board_over() -> void:
 	var hands: int = [3, 4, 6][_size_of(p)]
 	var foes: int = [4, 6, 8][_size_of(e)]
 	var o := {"hands": hands, "foes": foes, "boss_hp": 115.0, "boss": "Her captain", "hand": "Pirate"}
+	# a named captain fights for her own deck, and keeps a few more blades about her
+	var c := Bounty.captain(e.hunter) if e.hunter != "" else {}
+	if not c.is_empty():
+		o.foes = foes + 1
+		o.boss_hp = 150.0 + int(c.tier) * 30.0
+		o.boss = str(c.epithet)
 	if not shore.board(p, e, o, world):
 		_note_tour("no deck to board on the %s" % e.ship_name)
 		boarding.part()
@@ -4459,6 +4595,10 @@ func _on_struck(e: Ship) -> void:
 	var big := _size_of(e)
 	var at := Vector3(e.pos.x, e.position.y + e.cls.freeboard + 2.5, e.pos.z)
 	var gold: int = [150, 280, 480][big] + randi() % 121
+	# a named captain's strongbox is a fatter one, and her bounty is yours besides
+	var named := Bounty.captain(e.hunter) if e.hunter != "" else {}
+	if not named.is_empty():
+		gold += int(named.tier) * 120
 	Progress.earn(gold)
 	p.gold += gold
 	var tier := mini(3, Loot.roll_tier([0.35, 0.55, 0.8][big], 1))
@@ -4484,11 +4624,17 @@ func _on_struck(e: Ship) -> void:
 		get_tree().create_timer(2.0).timeout.connect(_found_piece.bind(at))
 	get_tree().create_timer(1.7).timeout.connect(_offer_prize.bind(e))
 	_note_tour("the %s struck for %d gold" % [e.ship_name, gold])
+	if not named.is_empty():
+		# her bounty's claimed now: whatever becomes of her hull is plain salvage
+		hunters.gone(e)
+		e.hunter = ""
+		get_tree().create_timer(0.9).timeout.connect(_claim_hunter.bind(named, at))
 
 
-## What she fetches sailed in as a prize.
-static func _prize_money(e: Ship) -> int:
-	return [380, 700, 1250][_size_of(e)]
+## What she fetches sailed in as a prize (the hotter the voyage and the
+## more infamous her taker, the more the Crown pays).
+func _prize_money(e: Ship) -> int:
+	return roundi([380, 700, 1250][_size_of(e)] * hunters.heat_k() * Progress.bounty_bonus())
 
 
 ## Her fate: the card.
@@ -4553,6 +4699,7 @@ func _take_prize(e: Ship) -> void:
 	Progress.earn(money)
 	p.gold += money
 	p.kills += 1
+	_add_infamy(int(Bounty.KILL_INFAMY.get(e.cls.id, 1)))
 	pirates.ais.erase(e)
 	pirates.spawn_timer = maxf(pirates.spawn_timer, 10.0)
 	boarding.send_away(e)
@@ -5832,6 +5979,7 @@ func _unpause() -> void:
 	paused = false
 	pause_screen.close()
 	settings_sheet.close()
+	bounty_board.close()
 	controls.reset()
 	Engine.max_fps = 60 if Settings.mobile else 0
 
@@ -5869,7 +6017,7 @@ func _go_back(os_back: bool) -> void:
 	_back_frame = f
 	if veil.busy:
 		return
-	if update_card.go_back() or settings_sheet.go_back() or vault.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
+	if update_card.go_back() or settings_sheet.go_back() or bounty_board.go_back() or vault.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
 		return
 	if hud.tmap.is_open:
 		_map_view(false)
@@ -5926,7 +6074,10 @@ func _tour_menus() -> void:
 			pause_screen.settings.emit()
 		5:
 			settings_sheet.go_back()
+			# and a look at the Wanted Board on the way
+			pause_screen.board.emit()
 		6:
+			bounty_board.go_back()
 			pause_screen.harbour.emit()
 		7:
 			# a turn at the Shipwright and one in the Treasure Vault first
