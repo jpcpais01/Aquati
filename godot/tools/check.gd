@@ -315,6 +315,77 @@ func _check_survivors() -> void:
 ## magnet, crabs over the side of a mat as a hull comes by and the mat
 ## shouldered aside, crates caught in the flotsam, the letters' words and
 ## the card they unroll on.
+## Photo mode: the camera's pose round trip, the crop windows, every
+## filter's look and the sky put back as it was after a preview.
+func _check_photo() -> void:
+	var c := Camera3D.new()
+	root.add_child(c)
+	c.global_transform = Transform3D(Basis.from_euler(Vector3(-0.5, 0.8, 0.0), EULER_ORDER_YXZ), Vector3(10.0, 30.0, 40.0))
+	c.fov = 50.0
+	var pc := PhotoCam.new()
+	pc.anchor = Vector3(10.0, 0.0, 40.0)
+	pc.begin(c, 0.0)
+	if absf(pc.yaw - 0.8) > 0.01 or absf(pc.pitch + 0.5) > 0.01 or absf(pc.pivot.y) > 0.5:
+		_fail("photo: began at yaw %.2f pitch %.2f pivot %s" % [pc.yaw, pc.pitch, pc.pivot])
+	pc.update(1.0 / 60.0, c)
+	if c.global_position.distance_to(Vector3(10.0, 30.0, 40.0)) > 0.5:
+		_fail("photo: the camera jumped to %s on opening" % [c.global_position])
+	pc.rotate(300.0, 120.0)
+	pc.zoom(2.0)
+	pc.fly = true
+	pc.move(0.5, 1.0, 0.0, 1.0, false)
+	pc.reset()
+	pc.fly = false
+	for i in 240:
+		pc.update(1.0 / 60.0, c)
+	if c.global_position.distance_to(Vector3(10.0, 30.0, 40.0)) > 0.5:
+		_fail("photo: reset left the camera at %s" % [c.global_position])
+	pc.ground = func(_x: float, _z: float) -> float: return 25.0
+	pc.pitch = PhotoCam.PITCH_MAX
+	for i in 120:
+		pc.update(1.0 / 60.0, c)
+	if c.global_position.y < 24.9:
+		_fail("photo: the lens went under the ground (%.1f)" % c.global_position.y)
+	pc.ground = func(_x: float, _z: float) -> float: return 0.0
+	pc.pivot = Vector3(5000.0, 0.0, 0.0)
+	pc.update(1.0 / 60.0, c)
+	if Vector2(pc.pivot.x - pc.anchor.x, pc.pivot.z - pc.anchor.z).length() > pc.range_m + 0.1:
+		_fail("photo: the camera roamed %.0f m from her" % (pc.pivot - pc.anchor).length())
+	var pm := PhotoMode.new()
+	root.add_child(pm)
+	pm.open(c, Vector3.ZERO, 9.0, false)
+	c.queue_free()
+	var vp := Vector2(1920.0, 1080.0)
+	for f in PhotoMode.FRAMES.size():
+		pm.stage("camera", 0, f, false)
+		var r := pm.crop(vp)
+		var a: float = PhotoMode.FRAMES[f][1]
+		if r.position.x < -0.1 or r.position.y < -0.1 or r.end.x > vp.x + 0.1 or r.end.y > vp.y + 0.1 or (a > 0.0 and absf(r.size.x / r.size.y - a) > 0.01):
+			_fail("photo: the %s frame crops to %s" % [PhotoMode.FRAMES[f][0], r])
+	for f in PhotoMode.FILTERS.size():
+		pm.stage("filter", f, 0, true)
+		var l := pm.look()
+		for k: String in ["saturation", "contrast", "fade", "grain", "vignette", "tint", "mono", "mono_amount"]:
+			if not l.has(k):
+				_fail("photo: filter %d's look has no %s" % [f, k])
+	for t: Array in PhotoMode.TABS:
+		pm.stage(t[0], 0, 0, false)
+	pm.close()
+	pm.queue_free()
+	var a := Atmosphere.new()
+	a.set_weather(&"clear", true)
+	a.set_hour(9.0)
+	var snap := a.snapshot()
+	var h := a.hour()
+	for k: StringName in PhotoMode.WEATHERS:
+		a.preview(snap, 22.5, k)
+		a.update(0.0)
+	a.restore(snap)
+	if a.kind != &"clear" or absf(a.hour() - h) > 0.01 or a.hold != snap.hold:
+		_fail("photo: the sky came back %s at %.2f" % [a.kind, a.hour()])
+	print("photo: %d filters, %d frames, %d weathers to preview" % [PhotoMode.FILTERS.size(), PhotoMode.FRAMES.size(), PhotoMode.WEATHERS.size()])
+
+
 func _check_drift(regions: Array[Region]) -> void:
 	var D: GDScript = load("res://src/fx/drift.gd")
 	var dr: Node3D = D.new()
@@ -484,6 +555,7 @@ func _initialize() -> void:
 		_check_convoys(_home_world.regions)
 		_check_fleet(_home_world.regions)
 		_check_drift(_home_world.regions)
+	_check_photo()
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:

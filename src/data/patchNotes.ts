@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T17:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: photo mode',
+        notes: [
+          'Photo mode comes to the Android and Windows game: open it from the pause menu (or press P) to freeze the voyage and take the camera.',
+          'Orbit your ship or fly free, change the hour and the weather, set the focus and depth of field, and pick from eight film looks with vignette and grain.',
+          'Crop frames and a thirds grid help with the framing, and the shutter saves a clean picture to your Pictures folder.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T16:00Z',
     entries: [
       {

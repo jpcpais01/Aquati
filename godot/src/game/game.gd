@@ -349,6 +349,15 @@ var state := State.VOYAGE
 var _keys_told := false
 ## The voyage on hold (Anchored): nothing at sea moves.
 var paused := false
+## Photo mode: the voyage frozen, the HUD gone and a free camera (PhotoMode).
+var photo: PhotoMode
+var _photo_snap := {}
+var _photo_hud := true
+var _photo_attr: CameraAttributesPractical
+var _photo_sky := false
+var _photo_sky_t := 0.0
+var _photo_busy := false
+var _photo_pick := 0
 var harbour: Harbour
 var sea_pick: SeaPick
 var pause_screen: PauseScreen
@@ -1471,6 +1480,8 @@ func _process(delta: float) -> void:
 	# on hold nothing at sea moves; the screens over it carry on
 	if not paused:
 		_tick(minf(delta, 0.1))
+	if photo.active:
+		_photo_frame(minf(delta, 0.1))
 	_frames += 1
 	if _tour:
 		_tour_menus()
@@ -1478,6 +1489,10 @@ func _process(delta: float) -> void:
 		wreck.retry.emit()
 	if _args.has("newship") and _frames == int(_args.newship) and _farewell != null and _farewell.shown:
 		wreck.harbour.emit()
+	if _args.has("photo") and _frames == maxi(1, int(_args.get("frames", 90)) - 50):
+		_stage_photo()
+	if _args.has("photo-shot") and photo.active and _frames == maxi(1, int(_args.get("frames", 90)) - 20):
+		_photo_capture()
 	if _args.has("chart") and _frames == 3:
 		_open_chart()
 		var v := chart.view()
@@ -1656,6 +1671,8 @@ func _tick(real_dt: float) -> void:
 			_call_power()
 		if controls.fleet and not ashore and not held:
 			_cycle_order()
+		if controls.photo and not held:
+			_open_photo(false)
 		if controls.treasure and not held:
 			_map_view(not hud.tmap.is_open)
 		# the view you sail with is the next voyage's
@@ -3378,12 +3395,20 @@ func _build_menus() -> void:
 	add_child(sea_pick)
 	pause_screen = PauseScreen.new()
 	pause_screen.resume.connect(_resume)
+	pause_screen.photo.connect(func() -> void: _open_photo(true))
 	pause_screen.settings.connect(_open_settings)
 	pause_screen.board.connect(_open_board)
 	pause_screen.harbour.connect(_quit_voyage)
 	pause_screen.quit.connect(_quit_game)
 	pause_screen.clicked.connect(sound.click)
 	add_child(pause_screen)
+	photo = PhotoMode.new()
+	photo.closed.connect(_close_photo)
+	photo.shutter.connect(_photo_capture)
+	photo.scene.connect(func(_h: float, _k: StringName) -> void: _photo_sky = true)
+	photo.clicked.connect(sound.click)
+	photo.pick_at = _photo_depth
+	add_child(photo)
 	settings_sheet = SettingsSheet.new()
 	settings_sheet.clicked.connect(sound.click)
 	add_child(settings_sheet)
@@ -6680,11 +6705,198 @@ func _pause() -> void:
 	controls.reset()
 	hud.close_popups()
 	Progress.keep_view(camera.zoom, camera.tilt)
-	pause_screen.open({"ship": player.ship_name, "cls": player.cls.id, "time": voyage.time, "gold": player.gold, "kills": player.kills, "isles": discovered.size()})
+	_pause_card()
 	# nothing moves under the glass: a phone needn't draw it so often
 	if Settings.mobile:
 		Engine.max_fps = 30
 	_note_tour("paused")
+
+
+## The pause screen over the voyage, with the voyage so far.
+func _pause_card() -> void:
+	pause_screen.open({"ship": player.ship_name, "cls": player.cls.id, "time": voyage.time, "gold": player.gold, "kills": player.kills, "isles": discovered.size()})
+
+
+# ------------------------------------------------------------------ photo mode
+
+## --photo [camera|scene|lens|filter]: photo mode open near the end of a shot
+## run on that tab; --photo-look N its filter, --photo-frame N its frame,
+## --photo-grid the thirds, --photo-dof A the lens blur, --photo-hour H and
+## --photo-weather W the sky; --photo-shot fires the shutter.
+func _stage_photo() -> void:
+	_open_photo(false)
+	if not photo.active:
+		return
+	if _args.has("photo-hour") or _args.has("photo-weather"):
+		photo.hour = float(_args.get("photo-hour", photo.hour))
+		photo.weather = StringName(str(_args.get("photo-weather", "")))
+		photo.scene.emit(photo.hour, photo.weather)
+	if _args.has("photo-dof"):
+		photo.dof = float(_args["photo-dof"])
+	var tab := str(_args.photo) if _args.photo is String else "camera"
+	photo.stage(tab, int(_args.get("photo-look", 0)), int(_args.get("photo-frame", 0)), _args.has("photo-grid"))
+
+
+## Freezes the voyage, clears the HUD away and hands the camera to photo
+## mode (from the pause menu, or P at the helm).
+func _open_photo(from_pause: bool) -> void:
+	if photo.active or state != State.VOYAGE or _farewell != null or veil.busy or not player.alive:
+		return
+	if from_pause:
+		pause_screen.close()
+	elif paused:
+		return
+	paused = true
+	controls.reset()
+	hud.close_popups()
+	_photo_hud = hud.visible
+	hud.visible = false
+	Engine.max_fps = 60 if Settings.mobile else 0
+	_photo_snap = atmosphere.snapshot()
+	_photo_sky = false
+	photo.touch = hud.touch_ui()
+	photo.cam.ground = func(x: float, z: float) -> float: return maxf(world.water_height(x, z), world.ground_height(x, z)) + 0.6
+	photo.open(camera, camera.target, atmosphere.hour(), from_pause)
+	_photo_attr = CameraAttributesPractical.new()
+	camera.attributes = _photo_attr
+	_note_tour("photo mode")
+
+
+func _close_photo() -> void:
+	if not photo.active:
+		return
+	photo.close()
+	if not _photo_snap.is_empty():
+		atmosphere.restore(_photo_snap)
+		_relight()
+	_photo_snap = {}
+	env.tonemap_exposure = 0.5
+	camera.attributes = null
+	hud.visible = _photo_hud
+	if photo.from_pause:
+		_pause_card()
+		if Settings.mobile:
+			Engine.max_fps = 30
+	else:
+		_unpause()
+	_note_tour("photo mode closed")
+
+
+## A frame of photo mode over the frozen voyage: the camera, the sea and the
+## shadows round where it looks, the lens, and the sky picked.
+func _photo_frame(dt: float) -> void:
+	var pc := photo.cam
+	pc.update(dt, camera)
+	var at := pc.focus_point()
+	camera.target = Vector3(at.x, 0.0, at.z)
+	ocean.follow(camera.target, minf(pc.shown_dist(), 320.0))
+	sun.directional_shadow_max_distance = clampf(pc.shown_dist() * 3.0, 150.0, 900.0)
+	# auto focus: whatever sits mid-frame, eased
+	_photo_pick += 1
+	if _photo_pick % 6 == 0:
+		var d := _photo_depth(get_viewport().get_visible_rect().size * 0.5)
+		photo.auto_focus = lerpf(photo.auto_focus, d if d > 0.0 else pc.shown_dist(), 0.5)
+	var f := photo.focus if photo.focus > 0.0 else photo.auto_focus
+	var a := photo.aperture()
+	var attr := _photo_attr
+	attr.dof_blur_far_enabled = a > 0.0
+	attr.dof_blur_near_enabled = a > 0.0
+	if a > 0.0:
+		attr.dof_blur_far_distance = f * 1.05 + 0.5
+		attr.dof_blur_far_transition = maxf(1.0, f * lerpf(2.5, 0.35, a))
+		attr.dof_blur_near_distance = maxf(0.1, f * lerpf(0.8, 0.9, a) - 0.5)
+		attr.dof_blur_near_transition = maxf(0.5, f * lerpf(0.6, 0.3, a))
+		attr.dof_blur_amount = 0.04 + a * 0.22
+	env.tonemap_exposure = 0.5 * pow(2.0, photo.exposure)
+	# the sky sliders relight the frozen scene, a few times a second at most
+	_photo_sky_t -= dt
+	if _photo_sky and _photo_sky_t <= 0.0:
+		_photo_sky = false
+		_photo_sky_t = 0.12
+		atmosphere.preview(_photo_snap, photo.hour, photo.weather)
+		_relight()
+
+
+## The sky drawn afresh for the hour and weather as they stand, with no time passing.
+func _relight() -> void:
+	atmosphere.update(0.0)
+	_sky_fx(0.0)
+	atmosphere.apply(sun, env)
+	grade.follow(atmosphere.grade_lo, atmosphere.grade_hi, atmosphere.grade_sat * (1.0 - _desat), atmosphere.contrast, atmosphere.vibrance)
+	_sky_day = atmosphere.day
+	_sky_revision = fmod(_sky_revision + 1.0, 1000.0)
+	sky_mat.set_shader_parameter("revision", _sky_revision)
+
+
+## How far (m, along the view) whatever is under a screen point lies: the
+## sea, an island or a ship; -1 for open sky.
+func _photo_depth(at: Vector2) -> float:
+	var o := camera.project_ray_origin(at)
+	var d := camera.project_ray_normal(at)
+	var fwd := -camera.global_basis.z
+	var best := INF
+	for s in world.ships:
+		if s.removed:
+			continue
+		var c := s.pos + Vector3(0.0, s.cls.length * 0.15, 0.0)
+		var t := (c - o).dot(d)
+		if t > 0.0 and (o + d * t).distance_to(c) < s.cls.length * 0.35:
+			best = minf(best, t)
+	var t := 0.5
+	while t < minf(best, 1500.0):
+		var p := o + d * t
+		if p.y < maxf(world.water_height(p.x, p.z), world.ground_height(p.x, p.z)):
+			best = t
+			break
+		t += maxf(0.5, t * 0.03)
+	if best == INF:
+		return -1.0
+	return best * maxf(0.05, d.dot(fwd))
+
+
+## The shutter: the frame drawn again with nothing over it, cropped to the
+## frame picked and saved as a PNG (in Pictures, or the game's own files).
+func _photo_capture() -> void:
+	if not photo.active or _photo_busy:
+		return
+	_photo_busy = true
+	photo.chrome(false)
+	var meter := fps_meter.visible
+	fps_meter.visible = false
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	photo.chrome(true)
+	fps_meter.visible = meter
+	_photo_busy = false
+	if img == null or img.is_empty():
+		return
+	sound.click()
+	photo.flash()
+	var vp := get_viewport().get_visible_rect().size
+	var r := photo.crop(vp)
+	var k := Vector2(img.get_width() / vp.x, img.get_height() / vp.y)
+	img = img.get_region(Rect2i(roundi(r.position.x * k.x), roundi(r.position.y * k.y), roundi(r.size.x * k.x), roundi(r.size.y * k.y)))
+	img.convert(Image.FORMAT_RGB8)
+	var name := "Shores O' Fortune %s.png" % Time.get_datetime_string_from_system().replace(":", "-").replace("T", " ")
+	var size := "%d × %d" % [img.get_width(), img.get_height()]
+	for dir: String in _photo_dirs():
+		if DirAccess.make_dir_recursive_absolute(dir) == OK and img.save_png(dir.path_join(name)) == OK:
+			var where := "Pictures" if not dir.begins_with("user://") else "the game's files"
+			photo.saved(img, "Photo saved", "%s · %s" % [size, where])
+			_note_tour("photo saved to %s" % dir)
+			return
+	photo.saved(img, "Couldn't save the photo", "No room to write it")
+
+
+## Where photos go: a folder in Pictures, else the game's own files.
+static func _photo_dirs() -> Array[String]:
+	var out: Array[String] = []
+	var pics := OS.get_system_dir(OS.SYSTEM_DIR_PICTURES)
+	if pics != "":
+		out.append(pics.path_join("Shores O' Fortune"))
+	out.append("user://photos")
+	return out
 
 
 ## Resume voyage (not once the voyage is being given up under the veil).
@@ -6737,6 +6949,8 @@ func _go_back(os_back: bool) -> void:
 	_back_frame = f
 	if veil.busy:
 		return
+	if photo.go_back():
+		return
 	if update_card.go_back() or settings_sheet.go_back() or bounty_board.go_back() or vault.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
 		return
 	if hud.tmap.is_open:
@@ -6759,7 +6973,7 @@ func _go_back(os_back: bool) -> void:
 
 ## The smoke test's walk through the menus, a step once the last has
 ## settled: another ship picked and at anchor, Set Sail for Las Brumas;
-## there the voyage paused, Settings opened and closed, and back to the
+## there the voyage paused, photo mode opened and closed, Settings opened and closed, and back to the
 ## harbour; a turn at the Shipwright (_tour_wright); then Set Sail for the
 ## home waters, paused and resumed with the
 ## back button; the sea chart opened off the minimap, a pin dropped on it by
@@ -6791,6 +7005,9 @@ func _tour_menus() -> void:
 				return
 			hud.pause_pressed.emit()
 		4:
+			# a look through photo mode and back to the pause card first
+			pause_screen.photo.emit()
+			_close_photo()
 			pause_screen.settings.emit()
 		5:
 			settings_sheet.go_back()

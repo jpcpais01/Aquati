@@ -197,6 +197,12 @@ FLEET line.
 Drift: `--bottle` sets a message in a bottle bobbing off her bow and
 `--flotsam [driftwood|kelp]` a mat of flotsam with its crabs a little
 further on; the smoke test prints a SMOKE DRIFT line.
+Photo mode: `--photo [camera|scene|lens|filter]` opens it on that tab 50
+frames before a shot ends; `--photo-look N` picks the N-th filter,
+`--photo-frame N` the N-th crop frame, `--photo-grid` the thirds grid,
+`--photo-dof A` the lens blur, `--photo-hour H` and `--photo-weather W` the
+sky, and `--photo-shot` fires the shutter. The smoke test opens and closes it
+from the pause menu.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off
