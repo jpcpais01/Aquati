@@ -296,6 +296,15 @@ shot('hop_up', 2, 0.3, (a) => a.hop(true, 0, false, false));
 shot('hop_sand', 2, 0.6, (a) => a.hop(false, 0.6, false, false));
 shot('hop_wet', 1, 0.7, (a) => a.hop(false, 0.6, true, false));
 shot('hop_hard', 1, 0.6, (a) => a.hop(false, 0.6, false, true));
+// the fight ashore: steel ringing on steel, a blade through the air, a blow
+// landing (and a heavy one), the flintlock, and a camp's war cry of three
+// voices or five
+shot('clash', 3, 1.0, (a) => a.clash(1, 0, 0));
+shot('swish', 3, 0.3, (a) => a.swish(1, 0));
+shot('thwack', 3, 0.3, (a) => a.thwack(1, 0, 0, false));
+shot('thwack_heavy', 2, 0.3, (a) => a.thwack(1, 0, 0, true));
+shot('pistol', 2, 0.6, (a) => a.pistol(1, 0, 0));
+for (const n of [3, 5]) shot(`war_cry${n}`, 2, 1.3, (a) => a.shout(1, 0, 0, false, n));
 
 // ------------------------------------------------------------------ the sea's own sound: the noise its beds are cut from
 jobs.push({ name: 'noise_0', sr: SR, exact: true, render: () => [pink(7.3, SR)] });

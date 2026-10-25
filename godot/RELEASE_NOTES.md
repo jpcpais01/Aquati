@@ -1,4 +1,33 @@
-## Shores O' Fortune for Android and Windows: made for the PC
+## Shores O' Fortune for Android and Windows: cutthroat camps
+
+The twenty-sixth build puts a cutlass in the captain's hand. Most islands
+have a cutthroats' camp on them now, and their chest is yours
+if you can take it.
+
+- **Eighteen camps, nine to each archipelago.** A tent and a bedroll, a
+  fire with a pot on the spit, log benches, crates and barrels, a rack of
+  blades and the Jolly Roger snapping on its pole. You'll see the smoke and
+  the fire's glow from the sea; go ashore and the gang is at their ease,
+  sitting round the fire, warming their hands, leaning on a post.
+- **Come too close and it's "To arms!"** They're up with a war cry and
+  coming at you, and your four hands draw and close in round you. Each
+  fights their own man, stepping in, swinging, sometimes getting the blade
+  across to parry.
+- **Sword fights.** Click (or Strike on a phone) swings the cutlass; chain
+  three for a lunge that knocks a man flat and can't be parried. Blades
+  leave a pale streak through the air, steel rings off steel in a shower
+  of sparks, and a heavy blow freezes the moment for a heartbeat.
+- **The pistol.** Q (or Pistol) fires a ball at the man you're facing, up to
+  eighteen metres off; then it takes seven seconds to ram home a new one.
+- **Every camp has a captain** on the bigger isles: tougher, harder
+  hitting, a bar in gold over his head. Every foe you've hurt shows a bar
+  of their own, and your party's health sits where the ship's panel was.
+- **Rout the camp and the chest is yours**: gold, a chest of plunder,
+  shot for the racks and sometimes a ship part. Go down yourself and the
+  hands drag you back to the boat, a little lighter in the purse. The camps
+  fill up again on every new voyage.
+
+### Also from the last build: made for the PC
 
 The twenty-fifth build makes the Windows game feel at home on a computer.
 

@@ -38,14 +38,14 @@ const TOWN_SHELL_TRIS := 3000
 const HOME_TRIS := 34000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "bell", "blast", "bosun_pipe", "bubbles",
-		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "click", "clunk", "coin", "creak0", "creak1", "creak2",
+		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
-		"mallet", "murmur", "noise", "pour0", "pour1", "purse", "recoil", "sand_step", "scrape0", "scrape1", "shell",
-		"squeeze_arrival", "squeeze_flourish", "steam",
-		"tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
+		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "sand_step", "scrape0", "scrape1", "shell",
+		"squeeze_arrival", "squeeze_flourish", "steam", "swish",
+		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
-		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "water", "wet_step", "whoosh", "wood"]
+		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "war_cry3", "war_cry5", "water", "wet_step", "whoosh", "wood"]
 ## The mix's buses past Master (Sound.build_buses).
 const BUSES := [&"UI", &"Mix", &"SFX", &"Air6k", &"Air2k5", &"Air1k", &"Air450", &"Echo",
 		&"EchoAir6k", &"EchoAir2k5", &"EchoAir1k", &"EchoAir450", &"Amb", &"Bed", &"Surf", &"Wind",
@@ -903,6 +903,7 @@ func _check_world() -> void:
 	_check_helm(w)
 	_check_hazards(w)
 	_check_shore(w)
+	_check_camps(w)
 
 
 ## Ashore: the planting's trunks and boulders and the towns as walls, a
@@ -987,6 +988,131 @@ func _check_shore(w: World) -> void:
 		_fail("shore: %d of 5 steps (%d solids, %d on dry ground, %d town walls for %d ports; beach %s; wade %s; round a trunk %s; posed %s, %.2f m aloft, down at %.1f m/s)" % [
 				steps, g.solid_count, dry, g.towns.size(), ports, "found" if landed else "none", wade, round_, finite, air, came_down])
 	print("shore: %d of 5 steps as expected; %d trunks and boulders, %d town walls, a beach on %s; %.0f ms" % [steps, g.solid_count, g.towns.size(), isl.name, (Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## The cutthroat camps: nine to an archipelago, each built with its gang
+## round the fire; then a landing party set down by the first and the camp
+## fought to a rout (the captain swinging at whoever's nearest, the hands
+## at his back), and its chest thrown open.
+func _check_camps(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new(0.6)
+	sea.waves = Waves.new(0.6)
+	var fx := Particles.new()
+	root.add_child(fx)
+	# (the tree isn't running yet: lay out its buffer by hand)
+	if not fx.is_node_ready():
+		fx._ready()
+	sea.fx = fx
+	var crew: Node3D = load("res://src/ships/crew.gd").new()
+	var g := ShoreGround.new(sea, sea.regions)
+	# (loaded, not named: the shore draws through the crews, which read Settings)
+	var shore_gd: GDScript = load("res://src/shore/shore.gd")
+	var shore: Node3D = shore_gd.new(g, crew, StandardMaterial3D.new(), sea.regions)
+	root.add_child(shore)
+	var steps := 0
+	var want := 0
+	for r in sea.regions:
+		want += r.camps.size()
+	var gangs := 0
+	var bosses := 0
+	var sane := true
+	for c: Variant in shore.camps:
+		gangs += c.gang.size()
+		sane = sane and c.gang.size() >= 3 and c.gang.size() <= 6 and c.chest != null
+		for f: ShoreWalker in c.gang:
+			bosses += 1 if f.max_hp > 100.0 else 0
+	steps += 1 if shore.camps.size() == want and want >= 18 and sane else 0
+	# a landing party set down a stone's throw from the first camp, the gang roused
+	var c0: Variant = shore.camps[0]
+	var cx := float(c0.site.x)
+	var cz := float(c0.site.z)
+	var a := float(c0.site.yaw)
+	var sx := cx + sin(a) * 10.0
+	var sz := cz + cos(a) * 10.0
+	if not g.open(sx, sz):
+		for k in 24:
+			var b := k * TAU / 24.0
+			if g.open(cx + sin(b) * 10.0, cz + cos(b) * 10.0):
+				sx = cx + sin(b) * 10.0
+				sz = cz + cos(b) * 10.0
+				break
+	var ship := Ship.create(ShipClass.named("sloop"), Livery.named("player"), sea)
+	var d := Vector2(cx - sx, cz - sz).normalized()
+	shore.land(ship, {"x": sx - d.x * 3.0, "z": sz - d.y * 3.0, "dx": d.x, "dz": d.y, "sand_x": sx, "sand_z": sz, "island": c0.island}, sea)
+	var steer: Variant = shore_gd.Steer.new()
+	var alarmed := [false]
+	var routed := [false]
+	var plundered := [false]
+	var fell := [false]
+	shore.alarmed.connect(func(_c: Variant) -> void: alarmed[0] = true)
+	shore.camp_routed.connect(func(_c: Variant) -> void: routed[0] = true)
+	shore.plundered.connect(func(_c: Variant) -> void: plundered[0] = true)
+	shore.captain_fell.connect(func() -> void: fell[0] = true)
+	var dt := 1.0 / 30.0
+	var t := 0.0
+	var finite := true
+	var swings := 0
+	while t < 150.0 and not routed[0] and not fell[0]:
+		var cap: ShoreWalker = shore.captain
+		var near: ShoreWalker = null
+		var nd := INF
+		for f: ShoreWalker in c0.gang:
+			var fd := Vector2(f.x - cap.x, f.z - cap.z).length()
+			if f.alive() and not f.is_down() and fd < nd:
+				nd = fd
+				near = f
+		steer.mx = 0.0
+		steer.mz = 0.0
+		steer.strike = false
+		steer.has_aim = near != null
+		if near != null:
+			steer.aim = Vector2(near.x, near.z)
+			if nd > 1.7:
+				steer.mx = (near.x - cap.x) / nd
+				steer.mz = (near.z - cap.z) / nd
+				steer.run = nd > 6.0
+			else:
+				steer.strike = true
+				swings += 1
+			steer.pistol = nd < 12.0 and shore.pistol_load() >= 1.0
+		shore.update(dt, sea, steer, Vector3(cap.x, cap.y, cap.z))
+		sea.time += dt
+		for m: Variant in shore.party:
+			finite = finite and m.walker.xf.origin.is_finite()
+		t += dt
+	steps += 1 if alarmed[0] and routed[0] and not fell[0] and finite else 0
+	# the chest: walk to it and throw it open
+	if routed[0]:
+		var at: Vector3 = c0.layout.chest
+		for k in 600:
+			var cap: ShoreWalker = shore.captain
+			var v := Vector2(at.x - cap.x, at.z - cap.z)
+			if v.length() < 1.6:
+				break
+			steer.mx = v.normalized().x
+			steer.mz = v.normalized().y
+			steer.strike = false
+			steer.pistol = false
+			shore.update(dt, sea, steer, Vector3(cap.x, cap.y, cap.z))
+		var pr: Dictionary = shore.prompt("Sloop")
+		if not pr.is_empty() and str(pr.key) == "chest":
+			shore.interact()
+	steps += 1 if plundered[0] else 0
+	if steps != 3:
+		var down := 0
+		for f: ShoreWalker in c0.gang:
+			down += 1 if not f.alive() else 0
+		_fail("camps: %d of 3 steps (%d camps of %d, gangs sane %s; roused %s, routed %s after %.0f s, %d of %d down, captain %s at %.0f hp, finite %s; plundered %s)" % [
+				steps, shore.camps.size(), want, sane, alarmed[0], routed[0], t, down, c0.gang.size(), "fell" if fell[0] else "standing", shore.captain.hp, finite, plundered[0]])
+	print("camps: %d of 3 steps as expected; %d camps, %d cutthroats (%d bosses); the first routed in %.0f s of %d swings, captain at %.0f hp; %.0f ms" % [
+			steps, shore.camps.size(), gangs, bosses, t, swings, shore.captain.hp, (Time.get_ticks_usec() - t0) / 1000.0])
+	shore.leave()
+	shore.free()
+	crew.free()
+	fx.free()
 
 
 ## The sea's dangers: every maelstrom turning (three at home, one in Las

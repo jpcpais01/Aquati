@@ -140,7 +140,10 @@ metres (60) south of reef I's edge, heading for it.
 Ashore: `--beach I` puts her off a beach of island I of her waters (the
 Go ashore prompt up), `--ashore I` lands the party there at once, and
 `--walk X,Y` holds the stick (screen right, up; `inland` or `inland-run` walks
-or runs up the beach).
+or runs up the beach). `--camp N` lands the party a stone's throw from
+cutthroat camp N (of all eighteen, the home archipelago's first), `--brawl`
+fights it out at the nearest cutthroat, and `--plunder` does that and then
+opens the chest.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

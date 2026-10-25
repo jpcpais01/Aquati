@@ -40,6 +40,9 @@ const LINE := {
 	"hammer": '<path d="M14.5 4.5 19.5 9.5 17 12l-5-5zM12 7 4 15a2 2 0 0 0 0 2.8l.2.2a2 2 0 0 0 2.8 0L15 10"/>',
 	# ashore: a hop up off the ground
 	"jump": '<path d="M12 16V4.5M7 9.5l5-5 5 5M4.5 20h15"/>',
+	# the captain's blades ashore: the cutlass and the flintlock
+	"cutlass": '<path d="M5 19c6-3 11.5-9 14.5-15.5C14 6 8.5 11 6.6 16.4"/><path d="M3.5 15.5l5 5M4.6 20.3l-1.4 1.4"/>',
+	"pistol": '<path d="M3 8.5h16.5V12H11l-1.2 1.4.6 1.6-1.7 4.5H5.4l1.7-6.2L3 12z"/><path d="M10.2 12.4c.6 1.4 1.8 1.7 2.6.8M18 8.5V7"/>',
 	"shot": '<circle cx="9" cy="14" r="5"/><circle cx="16.5" cy="9" r="3.5"/><path d="M7.4 12.2a2 2 0 0 1 2-1.1"/>',
 }
 

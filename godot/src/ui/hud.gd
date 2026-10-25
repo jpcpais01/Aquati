@@ -32,6 +32,9 @@ signal touch_set(on: bool)
 signal helm_cancel
 ## Ashore on touch: the Jump button.
 signal jump_pressed
+## Ashore on touch: the cutlass and the pistol.
+signal strike_pressed
+signal pistol_pressed
 
 var controls: Controls
 
@@ -99,6 +102,13 @@ var _hz: HazardPill
 ## Ashore: the sea's controls (the knots, the sail lever, the guns) stand down for the Jump button.
 var _ashore := false
 var _jump: UiButton
+## Ashore: the landing party's health where the ship's panel was, bars over
+## the cutthroats, the blades on touch, and the keys along the foot once.
+var _party: PartyPanel
+var _foes: FoeBars
+var _blades: ShorePad
+var _hint: PanelContainer
+var _hint_t := 0.0
 var _hz_room := -1.0
 var _toasts: VBoxContainer
 var _toast_box: StyleBoxFlat
@@ -167,6 +177,9 @@ func _ready() -> void:
 	id.add_child(row)
 	_ship_panel.add_child(id)
 	_status.add_child(_ship_panel)
+	_party = PartyPanel.new()
+	_party.visible = false
+	_status.add_child(_party)
 	_chips = HBoxContainer.new()
 	_chips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_chips.add_theme_constant_override("separation", roundi(4.0 * k))
@@ -385,7 +398,23 @@ func _ready() -> void:
 	_jump.add_child(jl)
 	_jump.held.connect(_on_jump_held)
 	_jump.visible = false
+	_blades = ShorePad.new()
+	_blades.strike.connect(func() -> void: strike_pressed.emit())
+	_blades.pistol.connect(func() -> void: pistol_pressed.emit())
+	_blades.visible = false
+	root.add_child(_blades)
 	root.add_child(_jump)
+	_foes = FoeBars.new()
+	root.add_child(_foes)
+	root.move_child(_foes, _bars.get_index() + 1)
+	# the keys ashore, along the foot, until they've had a while to be read
+	var hb := HudStyle.panel(999.0, Vector2(16.0, 7.0))
+	_hint = PanelContainer.new()
+	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint.add_theme_stylebox_override("panel", hb)
+	_hint.add_child(HudStyle.label("WASD walk  ·  Shift run  ·  Space jump  ·  Click cutlass  ·  Q pistol  ·  F act", "inter", 600, 12, HudStyle.INK_2))
+	_hint.visible = false
+	root.add_child(_hint)
 	show_touch(controls != null and controls.touch)
 	if controls:
 		controls.touch_seen.connect(func() -> void: show_touch(true))
@@ -400,7 +429,10 @@ func _layout() -> void:
 	var my := vp.y * 0.03
 	_ship_panel.position = Vector2.ZERO
 	_ship_panel.size = _ship_panel.get_combined_minimum_size()
-	_chips.position = Vector2(0.0, _ship_panel.size.y + 5.0 * HudStyle.K)
+	_party.position = Vector2.ZERO
+	_party.size = _party.get_combined_minimum_size()
+	var head := _party if _ashore else _ship_panel
+	_chips.position = Vector2(0.0, head.size.y + 5.0 * HudStyle.K)
 	_chips.size = _chips.get_combined_minimum_size()
 	_status.position = Vector2(mx, my)
 	# the corner column, centred under the minimap: the strip, then the
@@ -428,7 +460,13 @@ func _layout() -> void:
 	# the helmsman's pill: above the knots on a desktop; on touch, where the knots were
 	_ap.place(Vector2(vp.x * 0.5, vp.y - my - (0.0 if _touch_ui else 66.0 * k)), minf(420.0 * k, vp.x - 2.0 * mx - 24.0 * HudStyle.PX))
 	_pad.position = Vector2(vp.x - mx - _pad.size.x, vp.y - my - _pad.size.y)
-	_jump.position = Vector2(vp.x - mx - _jump.size.x - 18.0 * HudStyle.KT, vp.y - my - _jump.size.y - 10.0 * HudStyle.KT)
+	# ashore: the blades bottom right, the Jump riding over Strike
+	_blades.position = Vector2(vp.x - mx - _blades.size.x, vp.y - my - _blades.size.y)
+	var sc := _blades.strike_centre()
+	_jump.position = Vector2(sc.x - _jump.size.x * 0.5, sc.y - FirePad.MAIN * 0.5 - 12.0 * HudStyle.KT - _jump.size.y)
+	var hs := _hint.get_combined_minimum_size()
+	_hint.size = hs
+	_hint.position = Vector2((vp.x - hs.x) * 0.5, vp.y - my - hs.y)
 	# the shot button rides over Fire, a little clear of it
 	_pie.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotPie.BTN * 0.5)
 	_peek.place(Vector2(mx, my + _chips.position.y + _chips.size.y + 8.0 * HudStyle.K))
@@ -604,12 +642,33 @@ func touch_ui() -> bool:
 
 ## Ashore (`on`) or afloat: the knots, the sail lever, the guns and the
 ## shot stand down while the captain walks, and on touch the Jump comes up.
-func set_ashore(on: bool) -> void:
+func set_ashore(on: bool, isle := "") -> void:
+	_party.set_isle(isle)
 	if on == _ashore:
 		return
 	_ashore = on
+	_ship_panel.visible = not on
+	_party.visible = on
+	if not on:
+		_foes.clear()
+	# the keys show a while each time ashore, then fade
+	_hint_t = 14.0 if on else 0.0
+	_hint.modulate.a = 1.0
 	_apply_mode()
 	_layout()
+
+
+## Ashore, each frame: the party's health, the pistol's load, and bars over the foes in the fight.
+func show_shore(shore: Shore, cam: Camera3D) -> void:
+	var rows := []
+	for m in shore.party:
+		rows.append([m.name, m.walker.hp, m.walker.max_hp, m.walker.is_down()])
+	_party.show_party(rows)
+	var ps := _party.get_combined_minimum_size()
+	if ps != _party.size:
+		_layout()
+	_blades.show_state(shore.pistol_load(), shore.fighting())
+	_foes.show_foes(shore.foes, cam)
 
 
 func _on_jump_held(on: bool) -> void:
@@ -626,6 +685,8 @@ func _apply_mode() -> void:
 	if not on or not sea:
 		_pie.set_open(false)
 	_jump.visible = on and not sea
+	_blades.visible = on and not sea
+	_hint.visible = not on and not sea and _hint_t > 0.0
 	_pill.visible = sea
 	# the lever shows the canvas and the pie the shot, so the pill keeps just the knots
 	_pips.visible = not on
@@ -748,6 +809,12 @@ func _process(dt: float) -> void:
 		_tag.position.y = _pill.position.y - 10.0 * k - _tag.size.y + (1.0 - HudStyle.eased(_tag_e)) * 6.0 * k
 		if _tag_e <= 0.0:
 			_tag.visible = false
+	# the keys ashore fade once they've had a while to be read
+	if _hint.visible:
+		_hint_t -= dt
+		_hint.modulate.a = clampf(_hint_t / 1.2, 0.0, 1.0)
+		if _hint_t <= 0.0:
+			_hint.visible = false
 	# the guns dim under the open shot pie
 	var guns := 1.0 - 0.6 * _pie.openness()
 	if _pad.modulate.a != guns:

@@ -24,6 +24,8 @@ var _hold := 0.0
 var _low := false
 var _t := 0.0
 var _enemy := false
+## The bar's colours while she's whole (TEAL, or a tint()).
+var _hi: Array = TEAL
 var _mat: ShaderMaterial
 ## Flame, torn canvas, thinned crews (enemy bars only), and which show.
 var _marks: Array[TextureRect] = []
@@ -59,6 +61,13 @@ func _init(enemy: bool = false) -> void:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED or what == NOTIFICATION_READY:
 		_mat.set_shader_parameter("size", size)
+
+
+## Its colours while healthy (left, right), and whether it shows plank seams.
+func tint(c: Array, seams := true) -> void:
+	_hi = c
+	_mat.set_shader_parameter("seams", 1.0 if seams else 0.0)
+	_paint(RED if _low and not _enemy else c)
 
 
 func _paint(c: Array) -> void:
@@ -119,7 +128,7 @@ func _process(dt: float) -> void:
 	if low != _low:
 		_low = low
 		if not _enemy:
-			_paint(RED if low else TEAL)
+			_paint(RED if low else _hi)
 	if absf(_shown - was_shown) > 1e-4 or absf(_ghost - was_ghost) > 1e-4 or _low:
 		_push()
 

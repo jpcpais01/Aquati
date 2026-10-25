@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-25T01:00Z',
     entries: [
       {
+        title: 'Cutthroat camps and sword fights',
+        notes: [
+          'Android and Windows: most islands now have a cutthroats\' camp, eighteen in all: a tent, a fire with a pot on the spit, benches, a rack of blades and the Jolly Roger on its pole, its smoke and glow seen from the sea. Go ashore and walk too close and the gang is up with a war cry and coming at you, your four hands drawing and closing in round you.',
+          'The captain fights now: a click (or Strike on a phone) swings the cutlass, three in a row make a lunge that knocks a man flat, and Q (or Pistol) fires a ball that takes seven seconds to reload. Steel rings and sparks on a parry, blades streak through the air and a heavy blow freezes the moment. The bigger camps have a captain of their own, and hurt foes show their health over their heads beside your party\'s panel.',
+          'Rout a camp and its chest is yours: gold, a chest of plunder, shot for the racks and sometimes a ship part. Fall yourself and the hands drag you back to the boat with a little less gold. The camps fill up again on each new voyage.',
+        ],
+      },
+      {
         title: 'Windows: the right size, updates and an Exit button',
         notes: [
           'The Windows game\'s menus and HUD were sized for a phone, so on a monitor everything came out twice too big. They\'re now sized the way the web game sizes them on a computer, for your window and your display scaling, so they look right at 1080p, 1440p and 4K, on ultrawides and in small windows. Settings has a new Interface size (Compact, Normal, Large) too.',
