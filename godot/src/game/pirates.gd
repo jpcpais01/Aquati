@@ -45,6 +45,8 @@ var enabled := true
 ## the mist and the storm), and every one that can be (--ghosts).
 var ghost_odds := 0.05
 var all_ghosts := false
+## Her captain is ashore (or on a prize's deck): a ship at anchor is left be.
+var ashore := false
 
 var _name_idx := randi() % NAMES.size()
 var _ghost_idx := randi() % GHOST_NAMES.size()
@@ -67,8 +69,9 @@ func step(dt: float, player: Ship) -> void:
 	voyage_time += dt
 	for s: Ship in world.ships:
 		var ai: PirateAI = ais.get(s)
-		if ai != null:
-			ai.update(dt, world, player)
+		# (a ship fast in our grapnels has other things on her mind than sailing)
+		if ai != null and not s.lashed:
+			ai.update(dt, world, null if ashore else player)
 		# the crew patches her up between fights
 		if s.team == Ship.Team.PIRATE and s.alive and world.time - s.last_hit > 9.0:
 			s.hp = minf(s.max_hp, s.hp + s.max_hp * 0.006 * dt)
@@ -160,7 +163,7 @@ func find_open_water(cx: float, cz: float, r_min: float, r_max: float) -> Varian
 func _alive_pirates() -> int:
 	var n := 0
 	for s: Ship in world.ships:
-		if s.team == Ship.Team.PIRATE and s.alive:
+		if s.team == Ship.Team.PIRATE and s.alive and not s.prize:
 			n += 1
 	return n
 

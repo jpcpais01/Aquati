@@ -40,6 +40,9 @@ func resolve(world: World) -> void:
 			# a ghost ship, or one crossed over (Haunt), sails clean through other hulls
 			if a.phantom or b.phantom or a.ghost or b.ghost:
 				continue
+			# a prize lashed alongside lies hull to hull by design (Boarding holds the pair)
+			if a.lashed or b.lashed:
+				continue
 			var reach := (a.cls.length + b.cls.length) * 0.5
 			if Vector2(b.pos.x - a.pos.x, b.pos.z - a.pos.z).length_squared() > reach * reach:
 				continue

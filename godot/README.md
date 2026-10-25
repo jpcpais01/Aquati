@@ -164,6 +164,11 @@ voyage (`--kraken-at T` T seconds in, `--kraken-omen S` with an omen S
 seconds long), and again a minute after it has gone.
 Ghost ships: `--ghosts` makes every pirate that can be a ghost one (once the
 yard has her hull), and `--foe-ghost` makes the `--battle` foe a ghost.
+Boarding: `--board CLASS` lays a crippled pirate (`sloop`, `brig` or
+`galleon`; a brig by default) alongside to port and throws the grapnels a
+second in; `--brawl` fights her crew down, and `--prize scuttle` scuttles
+her once she strikes (else she's taken as a prize). `--trace` prints the
+set pieces' milestones as they happen.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

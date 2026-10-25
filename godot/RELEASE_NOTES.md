@@ -1,6 +1,26 @@
-## Shores O' Fortune for Android and Windows: ghost ships
+## Shores O' Fortune for Android and Windows: boarding
 
-The thirty-fifth build brings the web game's ghost ships back from the deep.
+The thirty-sixth build brings boarding from the web game.
+
+- **Grapnels away!** Batter a pirate below two fifths of her hull and come
+  close aboard, and a Board prompt comes up. The grapnels fly across, bite
+  into her rail, and the lines haul her in until the hulls grind together.
+- **Over the side.** Your captain and hands swing across on lines from your
+  rigging and land on her deck, and her crew comes at you with blades out,
+  her captain at their head. The camera turns to look across the deck, and
+  the stick turns with it.
+- **She strikes her colours.** Cut down enough of her crew, or her captain,
+  and the rest throw down their blades and cry quarter. Her flag comes down
+  hand over hand and her strongbox is yours: gold, a chest of goods, shot
+  and sometimes a ship part.
+- **Her fate is yours.** Take her as a prize, and a prize crew sails her
+  off under your colours for prize money. Or scuttle her: fire in her hold,
+  and she goes down for her bounty and her salvage.
+- **Fall back.** If the fight turns, back up to your own rail and cut the
+  lines. If your captain falls, the hands haul you back aboard, a little
+  lighter in the purse.
+
+### Also from the last build: ghost ships
 
 - **A sail out of the mist.** Now and then the next sail on the horizon is
   a ghost ship: rare by day, far likelier at night, in sea mist and in foul
@@ -16,27 +36,3 @@ The thirty-fifth build brings the web game's ghost ships back from the deep.
 - **Lay her to rest.** She never runs. Beat her and she comes apart in a
   column of green light instead of blowing up, for twice the bounty and a
   hold full of cursed gold, with a fine chest always among it.
-
-### Also from the last build: the Kraken
-
-- **Something stirs in the storm.** Now and then a storm brings it. Out in
-  deep, lonely water the sea goes dark and starts to boil, a vast shape
-  glides under your keel, and then its arms burst up all round you.
-- **Read its arms.** An arm rears back before it strikes and a red shimmer
-  on the water shows where it will fall, with a warning over it on screen.
-  Sail out of the line or take the blow. Sometimes an arm coils round your
-  hull and holds her fast: pour shot into it, or crowd on sail and tear
-  free.
-- **Sever its arms, strike the eye.** Your guns lay on its arms like on any
-  ship. Chain shot cleaves them, fire sets them burning, and a beaten arm
-  recoils spurting ink. Beat enough and its head rises with its great gold
-  eyes, the place to aim. Wound it deep and it rages: more arms, faster
-  blows, and a maelstrom turning round it that drags you in.
-- **The fight of the voyage.** A boss bar shows its life and what to do
-  next, the title rises with it, its own battle music builds as it rages,
-  and every pirate in those waters runs for it. No harbour or beach takes
-  you in while it's about.
-- **Its hoard.** Slay it for 1,500 gold, the Beak of the Kraken, a Vial of
-  Kraken Ink and a Kraken's Pearl among chests rising round where it sank,
-  a Kraken's Bloom showpiece rocket, the Kraken Ink skin for your vault,
-  fresh shot and a patched hull.

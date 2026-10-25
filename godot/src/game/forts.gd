@@ -530,7 +530,7 @@ func _pick(g: Gun, f: Fort, player: Ship) -> void:
 			continue
 		if f.ours:
 			# (the dead are no business of a garrison's)
-			if s.team != Ship.Team.PIRATE or s.ghost:
+			if s.team != Ship.Team.PIRATE or s.ghost or s.prize or s.lashed:
 				continue
 		elif s.team != Ship.Team.PLAYER:
 			continue

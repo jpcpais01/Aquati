@@ -46,8 +46,9 @@ func _init() -> void:
 
 
 ## The island they're on, under the panel's heading.
-func set_isle(isle: String) -> void:
+func set_isle(isle: String, head := "LANDING PARTY") -> void:
 	_isle.text = isle
+	_head.text = head
 
 
 ## Each member's [name, hp, max_hp, down], the captain first.

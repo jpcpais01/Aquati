@@ -38,6 +38,8 @@ signal jump_pressed
 signal strike_pressed
 ## Her power called on (an event ship's: the Hollow Jack's Phantom Run).
 signal ability_pressed
+## Her fate picked on the prize card: "prize" or "scuttle".
+signal prize_picked(k: String)
 signal pistol_pressed
 
 var controls: Controls
@@ -115,6 +117,7 @@ var _ap: HelmPill
 var _hz: HazardPill
 ## A fort's bar (and its title card), under the hazard pill.
 var _ft: FortBar
+var _prize: PrizeCard
 ## The Kraken's bar, cards, warnings and grip (its vignette lies low, by the hull's).
 var _kr: KrakenHud
 ## Ashore: the sea's controls (the knots, the sail lever, the guns) stand down for the Jump button.
@@ -376,6 +379,9 @@ func _ready() -> void:
 	_ft = FortBar.new()
 	root.add_child(_ft)
 	root.add_child(_kr)
+	_prize = PrizeCard.new()
+	_prize.picked.connect(func(k: String) -> void: prize_picked.emit(k))
+	root.add_child(_prize)
 
 	# notes across the top: an island discovered
 	_toasts = VBoxContainer.new()
@@ -781,8 +787,10 @@ func _hk() -> float:
 
 ## Ashore (`on`) or afloat: the knots, the sail lever, the guns and the
 ## shot stand down while the captain walks, and on touch the Jump comes up.
-func set_ashore(on: bool, isle := "") -> void:
-	_party.set_isle(isle)
+func set_ashore(on: bool, isle := "", head := "LANDING PARTY") -> void:
+	_party.set_isle(isle, head)
+	if not on:
+		show_prize({})
 	if on == _ashore:
 		return
 	_ashore = on
@@ -1079,8 +1087,22 @@ func close_popups() -> bool:
 	return was
 
 
+## The prize card ({name, haul, prize, scuttle}; {} takes it down).
+func show_prize(v: Dictionary) -> void:
+	if v.is_empty():
+		_prize.close()
+		return
+	_prize.touch = _touch_ui
+	_prize.open(v)
+
+
+func prize_open() -> bool:
+	return _prize.is_open()
+
+
 ## A fresh voyage: a new hull's bar from full, the tally from nothing, the HUD back.
 func reset() -> void:
+	_prize.close()
 	_hull_frac = -1.0
 	for c: _Chip in [_gold, _hold, _kills, _isles]:
 		c.reset()

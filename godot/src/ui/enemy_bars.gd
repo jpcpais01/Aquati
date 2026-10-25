@@ -24,7 +24,7 @@ func show_ships(ships: Array[Ship], player: Ship, cam: Camera3D) -> void:
 	var seen := {}
 	var vp := get_viewport_rect().size
 	for s in ships:
-		if s == player or not s.alive or s.removed or (player != null and s.team == player.team):
+		if s == player or not s.alive or s.removed or s.prize or s.lashed or (player != null and s.team == player.team):
 			continue
 		var top := 0.0
 		for m: Dictionary in s.cls.masts:

@@ -355,6 +355,16 @@ shot('thwack', 3, 0.3, (a) => a.thwack(1, 0, 0, false));
 shot('thwack_heavy', 2, 0.3, (a) => a.thwack(1, 0, 0, true));
 shot('pistol', 2, 0.6, (a) => a.pistol(1, 0, 0));
 for (const n of [3, 5]) shot(`war_cry${n}`, 2, 1.3, (a) => a.shout(1, 0, 0, false, n));
+// boarding: a grapnel whirled and thrown, its prongs biting into her rail,
+// the boom of the two hulls hauled together (the bank's crunch, wood and
+// creaks the game plays alongside) and a boarder's yell as he swings across
+shot('grapple', 2, 1.25, (a) => a.grapple(1, 0, 0));
+shot('hook_bite', 2, 0.45, (a) => a.hookBite(1, 0, 0));
+shot('hull_boom', 1, 0.7, (a) => {
+  a.emit = () => {};
+  a.hullsMeet(1, 0);
+});
+shot('yell', 3, 0.9, (a) => a.shout(1, 0, 0, true, 1));
 
 // ------------------------------------------------------------------ the sea's own sound: the noise its beds are cut from
 jobs.push({ name: 'noise_0', sr: SR, exact: true, render: () => [pink(7.3, SR)] });
