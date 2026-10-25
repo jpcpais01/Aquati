@@ -56,6 +56,12 @@ const CAMP_SHOW := 1500.0
 ## and gives up the chase this far from home (m).
 const CAMP_ALARM := 19.0
 const LEASH := 42.0
+## A fort's garrison stands to when the party comes this close to the plaza's brazier, and chases this far.
+const FORT_ALARM := 31.0
+const FORT_LEASH := 78.0
+## The garrison: soldiers, and their commandant.
+const GARRISON := 5
+const COMMANDANT_HP := 160.0
 const HAND_NAMES := ["Bones", "Patch", "Old Hobb", "Sully", "Barnaby", "Nell", "Red Jack", "Iko", "Dutch", "Mags", "Tam", "Quill", "Rook", "Bess", "Finch", "Salty"]
 ## Each hand's place in the knot: [to the captain's right, ahead] (m).
 const SLOTS := [[-1.5, -1.9], [1.5, -1.9], [-1.0, -3.7], [1.0, -3.7], [-2.3, -0.4], [2.3, -0.4]]
@@ -144,6 +150,11 @@ class Camp:
 	var strike := 0.0
 	var live := false
 	var fire_t := 0.0
+	## A fort's walls, when this is its garrison rather than a camp of
+	## cutthroats: {x, z, yaw, H, T, pad} (the gate on the landward face, -z).
+	var fort := {}
+	## Nobody home: a fort of yours, its old garrison long gone.
+	var empty := false
 
 	func fire() -> Vector3:
 		return layout.fire
@@ -423,6 +434,51 @@ func _build_camp(s: Dictionary, r: Region, parts: Material) -> void:
 	camps.append(c)
 
 
+## A fort's garrison, manned like a camp behind stone walls (the fort itself
+## is built by Forts): `layout` is the fort's (fire, chest, flag_top,
+## flag_drop, seats, posts), `walls` {x, z, yaw, H, T, pad}.
+func add_garrison(site: Dictionary, island: Dictionary, layout: Dictionary, walls: Dictionary, parts: Material) -> Camp:
+	var c := Camp.new()
+	c.index = camps.size()
+	c.site = site
+	c.island = island
+	c.layout = layout
+	c.fort = walls
+	c.holder = Node3D.new()
+	c.holder.name = "Garrison%d" % c.index
+	add_child(c.holder)
+	# the Brethren's colours, big enough to read from the sea
+	c.flag = Node3D.new()
+	c.flag.position = layout.flag_top
+	c.flag.scale = Vector3.ONE * 2.3
+	var fm := MeshInstance3D.new()
+	fm.mesh = _flag_mesh
+	fm.material_override = _flag_mat
+	fm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	fm.extra_cull_margin = 0.4
+	c.flag.add_child(fm)
+	c.holder.add_child(c.flag)
+	c.chest = Node3D.new()
+	c.chest.position = layout.chest
+	c.chest.rotation.y = float(layout.chest_yaw)
+	c.chest.scale = Vector3.ONE * 1.25
+	var body := MeshInstance3D.new()
+	body.mesh = _body_mesh
+	body.material_override = parts
+	c.chest.add_child(body)
+	c.lid = Node3D.new()
+	c.lid.position = Vector3(0.0, ShoreKit.CHEST_H, -ShoreKit.CHEST_D * 0.5)
+	var lm := MeshInstance3D.new()
+	lm.mesh = _lid_mesh
+	lm.material_override = parts
+	c.lid.add_child(lm)
+	c.chest.add_child(c.lid)
+	c.holder.add_child(c.chest)
+	_muster(c)
+	camps.append(c)
+	return c
+
+
 ## A camp's gang: three to five cutthroats, and a big boss on the larger isles.
 func _muster(c: Camp) -> void:
 	var rnd := Mulberry32.new(900 + c.index * 71)
@@ -442,14 +498,17 @@ func _muster(c: Camp) -> void:
 		var idle := ShoreWalker.Idle.WATCH if k == 1 else (ShoreWalker.Idle.LEAN if k == 2 else ShoreWalker.Idle.STAND)
 		c.spots.append({"x": p.x, "z": p.y, "yaw": p.z, "idle": idle, "seat_h": 0.0})
 	var isle_r := float(c.island.get("r", 60.0))
-	var n := 3 + floori(rnd.next() * 2.0) + (1 if isle_r > 85.0 else 0)
+	var fort := not c.fort.is_empty()
+	var n := GARRISON + 1 if fort else 3 + floori(rnd.next() * 2.0) + (1 if isle_r > 85.0 else 0)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 900 + c.index * 71
 	for k in n:
-		var boss := k == 0 and isle_r > 70.0
+		var boss := k == 0 and (fort or isle_r > 70.0)
 		var look := _foe_look(boss, rnd, rng)
-		var hp := BOSS_HP if boss else FOE_HP
-		var w := ShoreWalker.new(ShoreWalker.Team.FOE, look, -1, hp, 1.16 if boss else 0.94 + rnd.next() * 0.16, 1.06 if boss else 0.95 + rnd.next() * 0.1, true)
+		var hp := (COMMANDANT_HP if fort else BOSS_HP) if boss else FOE_HP
+		var w := ShoreWalker.new(ShoreWalker.Team.FOE, look, -1, hp, (1.2 if fort else 1.16) if boss else 0.94 + rnd.next() * 0.16, (1.08 if fort else 1.06) if boss else 0.95 + rnd.next() * 0.1, true)
+		if fort:
+			w.title = "Commandant" if boss else ""
 		c.gang.append(w)
 	_rest_camp(c)
 
@@ -527,7 +586,7 @@ func update(dt: float, world: World, inp: Steer, focus: Vector3) -> void:
 	all.clear()
 	_hostile.clear()
 	for c in camps:
-		var live := Vector2(float(c.site.x) - focus.x, float(c.site.z) - focus.z).length() < CAMP_LIVE
+		var live := not c.empty and Vector2(float(c.site.x) - focus.x, float(c.site.z) - focus.z).length() < CAMP_LIVE
 		if live != c.live:
 			_set_live(c, live)
 		_camp_fx(c, dt, world, focus)
@@ -879,7 +938,14 @@ func _keep_up(w: ShoreWalker, f: Follow, i: int, dt: float, hands: Array[ShoreWa
 		sp = clampf(sp, 0.0, ShoreWalker.RUN * 1.08) * (1.0 - minf(0.45, w.wade * 0.6))
 	var ux := dx / d if d > 1e-3 else 0.0
 	var uz := dz / d if d > 1e-3 else 0.0
-	if marching:
+	# through a fort's gate rather than into its walls
+	var r := via(w.x, w.z, w.x + dx, w.z + dz)
+	var detour := r.x != w.x + dx or r.y != w.z + dz
+	if detour:
+		var rl := maxf(Vector2(r.x - w.x, r.y - w.z).length(), 1e-6)
+		ux = (r.x - w.x) / rl
+		uz = (r.y - w.z) / rl
+	if marching and not detour:
 		# near your place, walk the way the party walks rather than chasing the spot
 		var bl := clampf(1.0 - d / 1.5, 0.0, 1.0) * 0.7
 		ux = lerpf(ux, cap.vx / cap_v, bl)
@@ -998,8 +1064,10 @@ func _duel(w: ShoreWalker, t: ShoreWalker, dt: float, k: int, parry: float) -> v
 	# stand off at a spot round the target of your own, so a gang surrounds rather than stacks
 	var ang := atan2(-dx, -dz) + sin(time * 0.5 + w.seed) * 0.5 + ((k % 3) - 1) * 0.35
 	var want := 1.45
-	var ex := t.x + sin(ang) * want - w.x
-	var ez := t.z + cos(ang) * want - w.z
+	# round a fort's walls to its gate, if they stand between
+	var r := via(w.x, w.z, t.x + sin(ang) * want, t.z + cos(ang) * want)
+	var ex := r.x - w.x
+	var ez := r.y - w.z
 	var ed := Vector2(ex, ez).length()
 	var sp := ShoreWalker.RUN * 0.92 if d > 6.0 else (ShoreWalker.WALK * 1.25 if d > 2.4 else clampf(ed * 2.2, 0.0, 1.6))
 	if ed > 0.15:
@@ -1024,12 +1092,14 @@ func _duel(w: ShoreWalker, t: ShoreWalker, dt: float, k: int, parry: float) -> v
 func _think_camp(c: Camp, dt: float, world: World) -> void:
 	var cap := captain if active else null
 	var f := c.fire()
+	var alarm := FORT_ALARM if not c.fort.is_empty() else CAMP_ALARM
+	var leash := FORT_LEASH if not c.fort.is_empty() else LEASH
 	# the party comes too close: up and at them
 	if not c.alert and not c.routed and cap != null and not defeated:
 		var near := INF
 		for m in party:
 			var w := m.walker
-			near = minf(near, Vector2(w.x - f.x, w.z - f.z).length() - CAMP_ALARM)
+			near = minf(near, Vector2(w.x - f.x, w.z - f.z).length() - alarm)
 			for g in c.gang:
 				if g.alive() and not g.is_down():
 					near = minf(near, Vector2(w.x - g.x, w.z - g.z).length() - 9.0)
@@ -1059,7 +1129,7 @@ func _think_camp(c: Camp, dt: float, world: World) -> void:
 				w.target = best
 			var t := w.target
 			# too far from home and nobody pressing: give up and walk back
-			if t == null or Vector2(t.x - f.x, t.z - f.z).length() > LEASH:
+			if t == null or Vector2(t.x - f.x, t.z - f.z).length() > leash:
 				w.target = null
 				_go_home(w, c, k, dt)
 				continue
@@ -1074,7 +1144,7 @@ func _think_camp(c: Camp, dt: float, world: World) -> void:
 		for w in c.gang:
 			if not w.is_down() and w.target != null:
 				lost = false
-			if not w.is_down() and Vector2(w.x - f.x, w.z - f.z).length() >= 9.0:
+			if not w.is_down() and Vector2(w.x - f.x, w.z - f.z).length() >= (11.0 if not c.fort.is_empty() else 9.0):
 				home = false
 		if lost and (home or cap == null):
 			c.alert = false
@@ -1101,13 +1171,15 @@ func _go_home(w: ShoreWalker, c: Camp, k: int, dt: float) -> void:
 				free.append(o)
 		if not free.is_empty():
 			s = free[randi() % free.size()]
-	var dx := float(s.x) - w.x
-	var dz := float(s.z) - w.z
-	var d := Vector2(dx, dz).length()
+	var r := via(w.x, w.z, float(s.x), float(s.z))
+	var dx := r.x - w.x
+	var dz := r.y - w.z
+	var d := Vector2(float(s.x) - w.x, float(s.z) - w.z).length()
 	if d > 0.35:
 		var sp := minf(ShoreWalker.WALK if c.alert else 1.35, d * 1.5 + 0.3)
-		w.vx += (dx / d * sp - w.vx) * MathX.damp(5.0, dt)
-		w.vz += (dz / d * sp - w.vz) * MathX.damp(5.0, dt)
+		var dl := maxf(Vector2(dx, dz).length(), 1e-6)
+		w.vx += (dx / dl * sp - w.vx) * MathX.damp(5.0, dt)
+		w.vz += (dz / dl * sp - w.vz) * MathX.damp(5.0, dt)
 		w.want_yaw = atan2(dx, dz)
 		w.idle = ShoreWalker.Idle.STAND
 		w.seat_h = 0.0
@@ -1460,7 +1532,7 @@ func _camp_fx(c: Camp, dt: float, world: World, focus: Vector3) -> void:
 		c.flag.rotation.y = atan2(-world.wind.dir_z, world.wind.dir_x)
 		if c.routed and c.strike < 1.0:
 			c.strike = minf(1.0, c.strike + dt * 0.45)
-			c.flag.position.y = (L.flag_top as Vector3).y - c.strike * 4.4
+			c.flag.position.y = (L.flag_top as Vector3).y - c.strike * float(L.get("flag_drop", 4.4))
 			if c.strike >= 1.0:
 				c.flag.visible = false
 	# the lid swings open on its hinge
@@ -1500,6 +1572,10 @@ func prompt(ship_name: String) -> Dictionary:
 		return {"key": "boat", "title": "Row back to the %s" % ship_name, "sub": "The hands climb in and pull for the ship", "ok": true}
 	var c := _chest_near()
 	if c != null:
+		if not c.fort.is_empty():
+			if not c.routed:
+				return {"key": "chest", "title": "The fort's strongbox", "sub": "Beat the garrison to claim it", "ok": false}
+			return {"key": "chest", "title": "Open the fort's strongbox", "sub": "The garrison's pay chest is yours", "ok": true}
 		if not c.routed:
 			return {"key": "chest", "title": "A locked chest", "sub": "Rout the camp to claim it", "ok": false}
 		return {"key": "chest", "title": "Open the cutthroats' chest", "sub": "Their plunder is yours", "ok": true}
@@ -1513,7 +1589,7 @@ func _chest_near() -> Camp:
 		if not c.live or c.opened:
 			continue
 		var at: Vector3 = c.layout.chest
-		if Vector2(at.x - captain.x, at.z - captain.z).length() < 2.4:
+		if Vector2(at.x - captain.x, at.z - captain.z).length() < (2.8 if not c.fort.is_empty() else 2.4):
 			return c
 	return null
 
@@ -1539,3 +1615,90 @@ func interact() -> String:
 			_world.fx.treasure(at + Vector3(0.0, 0.6, 0.0), Color(1.4, 1.1, 0.5), 3)
 		plundered.emit(c)
 	return ""
+
+
+# ---------------------------------------------------------------- forts' walls
+
+## Where to head for, to get from (x, z) to (gx, gz): straight there, or
+## round a fort's walls and through its gate if they stand in the way.
+func via(x: float, z: float, gx: float, gz: float) -> Vector2:
+	for c in camps:
+		var f := c.fort
+		if f.is_empty():
+			continue
+		var H := float(f.H)
+		var reach := H + 40.0
+		if absf(x - float(f.x)) > reach or absf(z - float(f.z)) > reach:
+			continue
+		var a := FortKit.to_fort(f, x, z)
+		var b := FortKit.to_fort(f, gx, gz)
+		var in_a := absf(a.x) < H and absf(a.y) < H
+		var in_b := absf(b.x) < H and absf(b.y) < H
+		if in_a and in_b:
+			return Vector2(gx, gz)
+		var t := b
+		var mouth_in := -H + float(f.T) + 1.4
+		var mouth_out := -H - 2.8
+		var pad := float(f.get("pad", 1.0))
+		if in_a:
+			# in the plaza or the passage: to the gate, then out through it
+			var passage := absf(a.x) < 1.5 and a.y < mouth_in + 0.4
+			t = Vector2(0.0, mouth_out if passage else mouth_in)
+		elif in_b:
+			# outside, bound in: round to the gate's mouth, then in through it
+			var at_gate := absf(a.x) < 1.7 and a.y > mouth_out - 0.9
+			t = Vector2(0.0, mouth_in if at_gate else mouth_out)
+			if not at_gate:
+				t = _round_walls(a, t, H, pad)
+		else:
+			t = _round_walls(a, t, H, pad)
+		if t == b:
+			return Vector2(gx, gz)
+		var wp := FortKit.to_world(f, t.x, t.y)
+		return Vector2(wp.x, wp.z)
+	return Vector2(gx, gz)
+
+
+## From a (outside a fort of half-width H, fort frame) toward t: straight on, or to the corner that gets you round.
+static func _round_walls(a: Vector2, t: Vector2, H: float, pad: float) -> Vector2:
+	var E := H + maxf(0.6, pad * 0.5)
+	if not _cuts(a, t, E):
+		return t
+	var C := H + pad + 2.4
+	var best := t
+	var bd := INF
+	for k: Vector2 in [Vector2(C, C), Vector2(-C, C), Vector2(C, -C), Vector2(-C, -C)]:
+		if _cuts(a, k, E):
+			continue
+		var d := a.distance_to(k) + k.distance_to(t) + (H * 2.0 if _cuts(k, t, E) else 0.0)
+		if d < bd:
+			bd = d
+			best = k
+	return best
+
+
+## Does the segment a→b cut the square |x|, |z| < E? (Liang-Barsky)
+static func _cuts(a: Vector2, b: Vector2, E: float) -> bool:
+	var t0 := 0.0
+	var t1 := 1.0
+	var dx := b.x - a.x
+	var dz := b.y - a.y
+	var p := [-dx, dx, -dz, dz]
+	var q := [a.x + E, E - a.x, a.y + E, E - a.y]
+	for i in 4:
+		var pi_: float = p[i]
+		var qi: float = q[i]
+		if pi_ == 0.0:
+			if qi < 0.0:
+				return false
+			continue
+		var r := qi / pi_
+		if pi_ < 0.0:
+			if r > t1:
+				return false
+			t0 = maxf(t0, r)
+		else:
+			if r < t0:
+				return false
+			t1 = minf(t1, r)
+	return t1 - t0 > 1e-4

@@ -1,6 +1,26 @@
-## Shores O' Fortune for Android and Windows: feast nights
+## Shores O' Fortune for Android and Windows: forts
 
-The thirty-second build brings the web game's feast nights to the trading ports.
+The thirty-third build brings the web game's forts to the islands.
+
+- **Forts on the isles.** Stone forts held by the Brethren stand over the
+  harbours, with sea walls, a keep, a flag on the tower and cannon on the
+  ramparts. Close inside their reach and the guns open on you, arcing balls
+  down from the walls.
+- **Silence the guns.** Your broadsides lay on a fort's guns the way they
+  lay on a ship. Each gun can be knocked out, and every hit chips the
+  stone, brings down parapets and sets fires burning. The fort bar under
+  the top of the screen shows her name, her guns and her garrison.
+- **Storm the fort.** Once her guns are quiet you can land under her walls
+  and fight the garrison up through the gate, led by a tough Commandant.
+  Rout them, strike their flag and the fort is yours, with a strongbox of
+  gold, shot and a good ship part.
+- **Your forts.** A fort you hold flies your colours, its guns fire on
+  pirates who come near, it pays you tribute while you're away (up to eight
+  hours' worth, collected as you sail past), and it mends your hull while
+  you lie off its walls out of the fight. Forts show on the minimap and the
+  sea chart.
+
+### Also from the last build: feast nights
 
 - **Every port keeps a feast.** Each trading port has its own feast, one
   night in three: the Spice Feast, Gold Night, the Night of the Coral
@@ -22,24 +42,3 @@ The thirty-second build brings the web game's feast nights to the trading ports.
   shouldered aside by any hull that sails through them.
 - **The band, and better prices.** The town band plays reels you can hear
   across the water, and on a feast night every merchant pays more.
-
-### Also from the last build: Hallowtide and the Hollow Jack
-
-- **Event ships.** Special ships, each one of a kind, sail in for a season
-  of the year. While an event is on its ships glow in the harbour's picker
-  under an EVENT ribbon; sail one before the season ends and she's yours to
-  keep for good.
-- **The Hollow Jack (Hallowtide, until 8 November).** A haunted galleon
-  captained by a dead man: torn black sails with a burning skull, ghost-fire
-  seeping from her seams and gunports, carved pumpkins grinning along her
-  rails, skulls on her taffrail, green lanterns astern and a skeleton
-  captain on the quarterdeck in his tricorn and coat. Her crew are the
-  drowned, pale and glowing, and her cannons fire orange and green
-  ghost-fire.
-- **Her power: Phantom Run.** Tap the ghost button (G on a computer) and she
-  crosses into the spirit world for seven seconds: she thins to a green
-  mist, her fires go out, no shot, ram or reef can touch her and she runs
-  half as fast again whatever the wind. When she comes back she lets out a
-  **Banshee's Wail**, a ring of dread racing over the water that hurts every
-  enemy ship it reaches (the nearest worst) and cuts down their gun crews.
-  Then the spirits rest for forty seconds before she can call on them again.

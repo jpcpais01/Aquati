@@ -295,6 +295,32 @@ static func pull_ring(ci: CanvasItem, at: Vector2, r: float, dash: float, run: f
 		ci.draw_arc(at, r, a0, a0 + step * 0.5, maxi(3, int(dash / 3.0)), color, width, true)
 
 
+## A fort on a map (the web's fortMark): a little crenellated tower, coral
+## red while the Brethren hold it (sandy once its guns are silent), aqua once it's yours.
+static func fort(ci: CanvasItem, at: Vector2, r: float, ours: bool, quiet := false) -> void:
+	var k := r / 10.0
+	var fill := Color("#5ee3d4") if ours else (Color("#c9a98a") if quiet else Color("#ff8a6a"))
+	var pts := PackedVector2Array([Vector2(-8, 8), Vector2(-8, -4)])
+	for m: Vector2 in [Vector2(-8, -4.6), Vector2(-1.7, 1.7), Vector2(4.6, 8)]:
+		pts.append(Vector2(m.x, -8))
+		pts.append(Vector2(m.y, -8))
+		pts.append(Vector2(m.y, -4))
+	pts.append(Vector2(8, 8))
+	pts.append(Vector2(2.4, 8))
+	# the arched gate
+	for i in range(1, 8):
+		var a := PI * i / 8.0
+		pts.append(Vector2(cos(a) * 2.4, 8.0 - sin(a) * 2.4))
+	pts.append(Vector2(-2.4, 8))
+	for i in pts.size():
+		pts[i] = at + pts[i] * k
+	glow(ci, at, r * 1.1, r * 0.9, Color(94.0 / 255.0, 227.0 / 255.0, 212.0 / 255.0, 0.55) if ours else Color(1.0, 120.0 / 255.0, 80.0 / 255.0, 0.5))
+	ci.draw_colored_polygon(pts, fill)
+	var loop := pts.duplicate()
+	loop.append(pts[0])
+	ci.draw_polyline(loop, Color(20.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0, 0.85), maxf(1.4, 1.6 * k), true)
+
+
 ## A reef (the web's reefMark): the old chartmakers' danger mark, a cross ringed with dots.
 static func reef(ci: CanvasItem, at: Vector2, r: float) -> void:
 	var ink := Color(8.0 / 255.0, 20.0 / 255.0, 28.0 / 255.0, 0.7)

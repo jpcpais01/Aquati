@@ -80,6 +80,10 @@ extends Node3D
 ## whatever the night (its lanterns lit, its folk dancing, its rockets going
 ## up; with --hour 21 for the dark), and --boats N strews N lantern boats
 ## off it.
+## Forts: --fort N puts her off the N-th fort's sea wall (0 .. 4), broadside
+## on, --fort-dist M out; --fort-ours gives it to you (--owed H: its tribute
+## H hours unpaid), --silence silences its guns, --storm lands the party by
+## its gate (--brawl to fight the garrison, --plunder to open its strongbox).
 ## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
@@ -189,6 +193,11 @@ var dock_port: TradePort
 ## Ashore: the islands underfoot, the landing party and their boat.
 var shore_ground: ShoreGround
 var shore: Shore
+## The Brethren's island forts: shore guns to silence, a garrison to beat, a flag to raise.
+var forts: Forts
+## When the forts' tribute was last looked for, and the next hammer-knock under your own walls.
+var _tribute_t := 0.0
+var _haven_t := 0.0
 ## The Phantom Run has been explained this sitting (_say_power_once).
 var _power_told := false
 var _steer := Shore.Steer.new()
@@ -532,6 +541,8 @@ func _load() -> void:
 	_stage_plunder()
 	if _args.has("dock") or _args.has("off"):
 		_stage_dock()
+	if _args.has("fort"):
+		_stage_fort()
 	if _args.has("ashore") or _args.has("beach"):
 		_stage_ashore()
 	elif _args.has("camp"):
@@ -1173,6 +1184,23 @@ func _build_ports(p0: float, p1: float) -> void:
 	shore.captain_fell.connect(_on_captain_fell)
 	shore.stepped.connect(func(k: float, wet: bool, hard: bool) -> void: sound.step(k, wet, hard))
 	shore.hopped.connect(_on_hop)
+	# the forts, and each one's garrison: a camp ashore behind its walls
+	forts = Forts.new(world, shore_ground, world.regions, ports.arts().parts)
+	add_child(forts)
+	world.forts = forts
+	for f in forts.forts:
+		var isl := {}
+		for r in world.regions:
+			for i: Dictionary in r.islands:
+				if str(i.name) == str(f.site.island):
+					isl = i
+		var site := {"x": float(f.site.x), "z": float(f.site.z), "yaw": float(f.site.yaw), "y": float(f.site.y), "island": str(f.site.island)}
+		var walls := {"x": site.x, "z": site.z, "yaw": site.yaw, "H": float(f.style.H), "T": float(f.style.T), "pad": FortKit.corner_pad(f.style)}
+		f.garrison = shore.add_garrison(site, isl, f.layout, walls, ports.arts().parts)
+	forts.open_fire.connect(_on_fort_fire)
+	forts.struck.connect(_on_fort_struck)
+	forts.silenced.connect(_on_gun_silenced)
+	forts.apply(Progress.forts.taken)
 
 
 ## A lot set down in the warehouse of the quay she's tied to: it glints in
@@ -1501,6 +1529,8 @@ func _tick(real_dt: float) -> void:
 		collisions.resolve(world)
 	world.shots.step(dt)
 	pirates.sweep()
+	if dt > 0.0:
+		forts.update(dt, player if sailing else null, camera.target)
 	# the landing party, where you steer the captain
 	if ashore:
 		if not player.alive or _farewell != null:
@@ -1536,6 +1566,8 @@ func _tick(real_dt: float) -> void:
 		if world.time - player.last_hit > 9.0:
 			player.hp = minf(player.max_hp, player.hp + player.max_hp * 0.01 * dt)
 	gunnery.pointer = _pointer_on_sea() if sailing else null
+	# the hostile forts' guns in reach, as marks for hers to lay on
+	gunnery.marks = forts.marks(player, player.gun_range()) if sailing and not ashore and player.alive else ([] as Array[Vector3])
 	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null and not ashore, world.time)
 	if sailing and not ashore:
 		_guns()
@@ -1545,9 +1577,11 @@ func _tick(real_dt: float) -> void:
 		_foe.damage(_foe.max_hp * 4.0, player)
 	if sailing:
 		_prompt(dt)
+		_update_forts(dt)
 	else:
 		market.set_dock({})
 		_prompt_kind = ""
+		hud.show_fort({})
 	controls.consume()
 
 	world.listener = camera.target
@@ -1656,6 +1690,10 @@ func _tick(real_dt: float) -> void:
 	hud.show_bars(world.ships, player, camera)
 	maps.player = player
 	maps.route = helm.route(player.pos)
+	maps.forts.resize(forts.forts.size())
+	for i in forts.forts.size():
+		var f := forts.forts[i]
+		maps.forts[i] = {"x": float(f.site.x), "z": float(f.site.z), "name": f.name, "ours": f.ours, "quiet": not f.ours and f.live_guns() == 0}
 	hud.minimap.tick(real_dt)
 	_sync_card()
 	hud.show_pins(pins, player.pos, camera, world)
@@ -2477,6 +2515,9 @@ func _report(attacker: Ship) -> Dictionary:
 		foe = null
 	elif foe == null:
 		cause = "aground"
+	elif forts.by_gunner(foe) != null:
+		# a fort's guns: no ship's class to tell of
+		cause = "fort"
 	var near := ""
 	var near_d := 520.0
 	for r in regions:
@@ -2492,7 +2533,7 @@ func _report(attacker: Ship) -> Dictionary:
 		"shots": voyage.shots, "hits": voyage.hits, "dealt": roundi(voyage.dealt), "taken": roundi(voyage.taken),
 		"miles": voyage.metres / 1852.0, "cause": cause, "maelstrom": swallowed,
 		"killer": foe.ship_name if foe != null else "",
-		"killer_cls": foe.cls.id if foe != null else "",
+		"killer_cls": foe.cls.id if foe != null and cause != "fort" else "",
 		"where": near,
 		"fathoms": maxf(0.0, (world.water_height(p.pos.x, p.pos.z) - world.ground_height(p.pos.x, p.pos.z)) / 1.8288),
 		"events": voyage.events.duplicate(),
@@ -3486,6 +3527,9 @@ func _start_voyage(sea: String) -> void:
 	discovered.clear()
 	# the cutthroats are back round their fires, their chests full again
 	shore.reset_camps()
+	# and the Brethren man every fort you haven't taken
+	forts.apply(Progress.forts.taken)
+	hud.fort_clear()
 	stock = Ammo.fresh_stock()
 	world.sky.clear()
 	festivals.reset()
@@ -3659,12 +3703,19 @@ func _land_prompt(dt: float) -> void:
 	var isle := str(_landing.island.name)
 	var chased := _fighting() != null
 	var pulled := p.drawn > 0.05
+	# no boat lives long under a fort's guns: silence them, or land out of their reach
+	var guns := _guns_cover()
+	var fort := forts.on_isle(isle)
 	var sub := "The captain and four hands row in"
 	if chased:
 		sub = "Shake off your pursuers first"
 	elif pulled:
 		sub = "Not in the maelstrom's pull"
-	var ok := not chased and not pulled
+	elif guns != null:
+		sub = "The guns of %s cover this shore: silence them first" % guns.name
+	elif fort != null and not fort.ours:
+		sub = "%s holds this isle: storm its gate" % fort.name
+	var ok := not chased and not pulled and guns == null
 	market.set_dock({"name": isle, "title": "Go ashore on %s" % isle, "ok": ok, "why": sub})
 	_prompt_kind = "land"
 	if ok and controls.interact:
@@ -3688,7 +3739,7 @@ func _go_ashore(now := false) -> void:
 	var beach := _landing
 	if beach.is_empty() or state != State.VOYAGE or not player.alive or _farewell != null or veil.busy or shore.active:
 		return
-	if _fighting() != null or player.drawn > 0.05:
+	if _fighting() != null or player.drawn > 0.05 or _guns_cover() != null:
 		return
 	controls.reset()
 	hud.close_popups()
@@ -3803,12 +3854,23 @@ func _control_shore() -> void:
 
 
 ## A camp roused: its cutthroats come running.
-func _on_camp_alarm(_c: Shore.Camp) -> void:
+func _on_camp_alarm(c: Shore.Camp) -> void:
+	if not shore.active:
+		return
+	if not c.fort.is_empty():
+		var f := _fort_of(c)
+		hud.toast("The garrison sallies!", "Soldiers pour out of the gate of %s" % (f.name if f != null else "the fort"), 3.2)
+		sound.wanted(3)
+		return
 	hud.toast("To arms!", "Cutthroats come running from their camp", 2.6)
 
 
 ## The last of a camp's gang down: the chest is theirs to open.
 func _on_camp_routed(c: Shore.Camp) -> void:
+	var f := _fort_of(c)
+	if f != null:
+		_take_fort(f)
+		return
 	hud.toast("Camp routed", "Their chest is yours for the taking", 3.4)
 	sound.chime()
 	voyage.note("camp", "Routed a cutthroat camp", str(c.island.get("name", "")))
@@ -3819,6 +3881,9 @@ func _on_camp_routed(c: Shore.Camp) -> void:
 ## for the racks and maybe a ship part.
 func _on_camp_plundered(c: Shore.Camp) -> void:
 	var at := Vector3(c.chest.global_position.x, c.chest.global_position.y + 1.2, c.chest.global_position.z)
+	if not c.fort.is_empty():
+		_open_strongbox(c, at)
+		return
 	var gold := roundi(120.0 + randf() * 140.0 + c.gang.size() * 15.0)
 	Progress.earn(gold)
 	hud.floater("+%d gold" % gold, at + Vector3(0.0, 0.6, 0.0), camera, Floaters.Kind.GOOD, 10.0)
@@ -3844,6 +3909,187 @@ func _on_camp_plundered(c: Shore.Camp) -> void:
 		hud.toast("Cutthroats' chest", "+%d gold" % gold, 3.0)
 	_chest_part(tier, at, 1.2)
 	_note_tour("plundered camp %d for %d gold" % [c.index, gold])
+
+
+## A fort's pay chest: a garrison's wages, not a cutthroat's pickings.
+func _open_strongbox(c: Shore.Camp, at: Vector3) -> void:
+	var gold := roundi(520.0 + randf() * 300.0)
+	Progress.earn(gold)
+	hud.floater("+%d gold" % gold, at + Vector3(0.0, 0.6, 0.0), camera, Floaters.Kind.GOOD, 10.0)
+	var tier := Loot.roll_tier(1.2, 3)
+	var res := hold.stow(Treasure.roll_contents(tier))
+	var tossed: PackedStringArray = res.tossed
+	if not tossed.is_empty():
+		_nag_hold(tossed.size())
+	_stock_ammo({Ammo.SHELL: 4, Ammo.FIRE: 2, Ammo.CHAIN: 2, Ammo.GRAPE: 3}, at)
+	var kept := Array(res.kept as PackedStringArray)
+	var rarity: String = Treasure.RARITY_NAME[tier]
+	sound.treasure(tier)
+	world.fx.treasure(at, Loot.GLOW[tier], tier)
+	camera.shake(0.12)
+	var names := ", ".join(kept.map(func(id: String) -> String: return Treasure.name_of(id)))
+	voyage.note("chest", "Opened a fort's pay chest", "+%d gold%s" % [gold, (" · " + names) if names != "" else ""])
+	if not kept.is_empty():
+		kept.sort_custom(func(a: String, b: String) -> bool: return Treasure.rarity_of(a) > Treasure.rarity_of(b))
+		var best: String = kept[0]
+		hud.loot_toast(Icons.plunder(best, 48.0), Treasure.rarity_of(best), "The garrison's %s chest" % rarity.to_lower(), Treasure.name_of(best), 3.4)
+	else:
+		hud.toast("%s chest · +%d gold" % [rarity, gold], "And fresh shot for the guns", 3.4)
+	_chest_part(maxi(2, tier), at, 1.2)
+	_note_tour("opened the strongbox of garrison %d for %d gold" % [c.index, gold])
+
+
+# ------------------------------------------------------------------ the forts
+
+## The fort a garrison mans, or null for a cutthroat camp.
+func _fort_of(c: Shore.Camp) -> Forts.Fort:
+	if c == null or c.fort.is_empty():
+		return null
+	for f in forts.forts:
+		if f.garrison == c:
+			return f
+	return null
+
+
+## A hostile fort whose live guns cover the beach she'd land on, or her.
+func _guns_cover() -> Forts.Fort:
+	var f: Forts.Fort = null
+	if not _landing.is_empty():
+		f = forts.covering(float(_landing.x), float(_landing.z))
+	return f if f != null else forts.covering(player.pos.x, player.pos.z)
+
+
+func _on_fort_fire(f: Forts.Fort) -> void:
+	if state != State.VOYAGE:
+		return
+	hud.toast("%s opens fire!" % f.name, "The Brethren's shore guns have your range", 3.4)
+	sound.wanted(2)
+	voyage.note("fort", "Came under the guns of %s" % f.name, str(f.site.island))
+	_note_tour("came under the guns of %s" % f.name)
+
+
+func _on_fort_struck(_f: Forts.Fort, _g: Forts.Gun, dmg: float, at: Vector3, _direct: bool) -> void:
+	if state != State.VOYAGE:
+		return
+	voyage.hits += 1
+	voyage.dealt += dmg
+	hud.floater(str(roundi(dmg)), at, camera)
+
+
+func _on_gun_silenced(f: Forts.Fort, g: Forts.Gun, last: bool) -> void:
+	if state != State.VOYAGE:
+		return
+	hud.floater("Silenced!", g.base + Vector3(0.0, 3.0, 0.0), camera, Floaters.Kind.RARE)
+	if last:
+		hud.toast("The guns of %s are silent" % f.name, "Land your crew and storm the fort", 4.2)
+		voyage.note("fort", "Silenced the guns of %s" % f.name, str(f.site.island))
+		sound.horn()
+	else:
+		hud.toast("Gun silenced", "%d of %d still firing" % [f.live_guns(), f.guns.size()], 2.4)
+	_note_tour("silenced a gun of %s (%d left)" % [f.name, f.live_guns()])
+
+
+## The garrison is beaten: their colours come down, yours go up, and the fort is yours for good.
+func _take_fort(f: Forts.Fort) -> void:
+	forts.conquer(f)
+	Progress.take_fort(f.id)
+	voyage.note("fort", "Took %s" % f.name, "%s · %d gold tribute an hour" % [f.site.island, Forts.TRIBUTE_HOUR])
+	hud.toast("The garrison throws down its arms", "Their colours are coming down", 2.6)
+	sound.chime()
+	_note_tour("took %s" % f.name)
+	# your colours up the staff once theirs are down: the card, a fanfare, a burst of light at the truck
+	get_tree().create_timer(2.6).timeout.connect(func() -> void:
+		if state != State.VOYAGE:
+			return
+		hud.fort_taken(f.name, "Its guns are yours · %d gold tribute an hour · repairs under its walls" % Forts.TRIBUTE_HOUR)
+		sound.bounty()
+		camera.shake(0.12))
+	get_tree().create_timer(6.0).timeout.connect(func() -> void:
+		if state != State.VOYAGE:
+			return
+		var top: Vector3 = f.layout.flag_top
+		for i in 3:
+			world.fx.treasure(top + Vector3(0.0, 0.5, 0.0), Color(0.4, 1.4, 1.3), 3)
+		sound.coin(0.0, 0.6))
+
+
+## The fort bar, tribute paid in as you pass, and carpenters under your own walls.
+func _update_forts(dt: float) -> void:
+	var p := player
+	# your colours over the forts you hold: her own flag
+	if not p.model.flags.is_empty():
+		var fl := p.model.flags[0]
+		if fl.mesh != forts._flag_mesh:
+			forts.set_colours(fl.mesh, fl.material_override if fl.material_override != null else fl.get_active_material(0))
+	var ashore := shore.active
+	var cap := shore.captain if ashore else null
+	var ax := cap.x if cap != null else p.pos.x
+	var az := cap.z if cap != null else p.pos.z
+	var f := forts.nearest(ax, az)
+	if f == null or _farewell != null:
+		hud.show_fort({})
+	else:
+		var guns: Array = f.guns.map(func(g: Forts.Gun) -> bool: return not g.dead)
+		var live := f.live_guns()
+		var gar := -1
+		if f.garrison != null and not f.garrison.routed:
+			gar = 0
+			for w in f.garrison.gang:
+				if not w.is_down():
+					gar += 1
+		var hint := ""
+		var hot := false
+		if f.ours:
+			var owed := Progress.fort_owed(f.id)
+			if f.up < 1.0:
+				hint = "Your colours are going up"
+			elif forts.haven_near(p.pos.x, p.pos.z) != null and p.hp < p.max_hp - 1.0:
+				hint = "Under its walls · carpenters at work"
+			elif owed > 0:
+				hint = "Tribute gathering · %d gold" % owed
+			else:
+				hint = "Safe harbour · its guns cover you"
+		elif live > 0:
+			var near := Vector2(float(f.site.x) - p.pos.x, float(f.site.z) - p.pos.z).length() < Forts.RANGE + 30.0
+			hint = "Silence its guns" if not near or gunnery.combat else "Close in: its walls stand high"
+			hot = near and f.alert
+		elif ashore:
+			hint = "Beat the garrison" if f.garrison != null and f.garrison.alert else "Storm the gate"
+			hot = true
+		else:
+			hint = "Guns silent · land and storm the fort"
+			hot = true
+		hud.show_fort({"name": f.name, "kind": str(f.style.kind), "ours": f.ours, "guns": guns, "garrison": -1 if f.ours else gar, "hint": hint, "hot": hot})
+	# tribute: the garrison rows it out as you pass
+	_tribute_t -= dt
+	if _tribute_t <= 0.0 and not ashore and p.alive:
+		_tribute_t = 1.5
+		for o in forts.forts:
+			if o.up < 1.0 or not forts.collect_range(o, p.pos.x, p.pos.z) or Progress.fort_owed(o.id) < 10:
+				continue
+			var n := Progress.collect_fort(o.id)
+			if n <= 0:
+				continue
+			Progress.earn(n)
+			_stock_ammo({Ammo.SHELL: 1, Ammo.FIRE: 1, Ammo.CHAIN: 1, Ammo.GRAPE: 1}, Vector3(p.pos.x, p.position.y + p.cls.freeboard + 3.0, p.pos.z))
+			hud.toast("+%d gold tribute" % n, "%s sends out its tribute, and fresh shot" % o.name, 3.8)
+			sound.coin()
+			sound.coin(0.18, 0.4)
+			voyage.note("trade", "Collected tribute from %s" % o.name, "+%d gold" % n)
+			hud.floater("+%d gold" % n, Vector3(p.pos.x, p.position.y + p.cls.freeboard + 5.0, p.pos.z), camera, Floaters.Kind.LOOT)
+	# repairs: carpenters out in boats while you lie quiet under your own guns
+	var haven := forts.haven_near(p.pos.x, p.pos.z) if p.alive and _fighting() == null else null
+	if haven != null and world.time - p.last_hit > 6.0:
+		var was := p.hp
+		p.hp = minf(p.max_hp, p.hp + p.max_hp * 0.03 * dt)
+		_haven_t -= dt
+		if was < p.max_hp and _haven_t <= 0.0:
+			# the odd hammer-knock and a few chips of fresh timber off her side
+			_haven_t = 0.7 + randf() * 0.9
+			sound.knock()
+			var side := 1.0 if randf() < 0.5 else -1.0
+			var port := p.port_dir()
+			world.fx.sparkle(Vector3(p.pos.x + port.x * side * p.cls.beam * 0.5, p.position.y + p.cls.freeboard * 0.6, p.pos.z + port.z * side * p.cls.beam * 0.5), 0.6, Color(1.2, 1.0, 0.6))
 
 
 ## The captain cut down ashore: the hands carry him off, some of the purse lost.
@@ -3940,6 +4186,46 @@ func _stage_camp() -> void:
 	camera.snap_to(Vector3(sx, shore.captain.y + 1.0, sz))
 	_brawl = _args.has("brawl") or _args.has("plunder")
 	_plunder = _args.has("plunder")
+
+
+## A set piece at a fort: `--fort N` puts her off fort N's sea wall
+## (`--fort-dist` m out, broadside on), `--fort-ours` gives it to you,
+## `--silence` silences its guns first, and `--storm` lands the party by its
+## gate (with `--brawl`, they fight the garrison).
+func _stage_fort() -> void:
+	var n := clampi(int(str(_args.fort)), 0, forts.forts.size() - 1)
+	var f := forts.forts[n]
+	if _args.has("fort-ours"):
+		Progress.forts.taken[f.id] = Time.get_unix_time_from_system() - float(_args.get("owed", 0.0)) * 3600.0
+		Progress.forts.paid[f.id] = Progress.forts.taken[f.id]
+		forts.apply(Progress.forts.taken)
+	if _args.has("silence"):
+		for g in f.guns:
+			g.hp = 0.0
+			g.dead = true
+			g.dead_t = 9.0
+			forts._pose(g)
+		forts._flush(f)
+		for key: String in ["tower0", "tower1", "roof", "gun0", "gun1"]:
+			forts._knock(f, key, true)
+		for k: String in f.shards:
+			if f.shards[k] != null:
+				(f.shards[k] as Forts.Shards).flush()
+	if _args.has("storm"):
+		_args["camp"] = str(f.garrison.index)
+		return
+	var yaw := float(f.site.yaw)
+	var sea := Vector2(sin(yaw), cos(yaw))
+	var d := float(_args.get("fort-dist", 150.0))
+	var cx := float(f.site.x)
+	var cz := float(f.site.z)
+	while d < 600.0 and world.ground_height(cx + sea.x * d, cz + sea.y * d) > -6.0:
+		d += 4.0
+	player.place(cx + sea.x * d, cz + sea.y * d, yaw + PI * 0.5)
+	player.speed = 0.0
+	player.sail_target = float(_args.get("sail", 0.0))
+	camera.snap_to(player.pos)
+	_note_tour("off %s, %d m out" % [f.name, roundi(d)])
 
 
 ## `--brawl`'s hand on the captain: at the nearest cutthroat on their feet,
@@ -4411,6 +4697,19 @@ func _chart_pick(x: float, z: float, pick: float) -> Dictionary:
 		t.aim = Vector2(aim.x, aim.z)
 		t.port = tp
 		return {"target": t, "pin": null, "color": Color("#ffd77a"), "kicker": "Trading port · feast night" if tp.festive > 0.3 else "Trading port"}
+	for f in forts.forts:
+		var fx := float(f.site.x)
+		var fz := float(f.site.z)
+		if not chart.shows(fx, fz) or Vector2(fx - x, fz - z).length() > pick * 2.0:
+			continue
+		var t := Helmsman.Target.make(&"fort", f.name, fx, fz)
+		# (she sails for the water off its sea wall)
+		var yaw := float(f.site.yaw)
+		var d := 60.0
+		while d < 600.0 and world.ground_height(fx + sin(yaw) * d, fz + cos(yaw) * d) > -6.0:
+			d += 6.0
+		t.aim = Vector2(fx + sin(yaw) * (d + 20.0), fz + cos(yaw) * (d + 20.0))
+		return {"target": t, "pin": null, "color": Color("#9ff3e8") if f.ours else Color("#ffb59a"), "kicker": "Fort · yours" if f.ours else "Fort · the Brethren"}
 	for r in world.regions:
 		for isl: Dictionary in r.islands:
 			var ix := float(isl.x)
@@ -4485,6 +4784,10 @@ func _card_sub(t: Helmsman.Target) -> String:
 
 
 func _card_warn(t: Helmsman.Target) -> String:
+	if t.kind == &"fort":
+		for f in forts.forts:
+			if f.name == t.name and not f.ours and f.live_guns() > 0:
+				return "Her guns will open on you as you close"
 	return "Charting it pays a bounty" if t.kind == &"isle" and t.name == "Uncharted isle" else ""
 
 

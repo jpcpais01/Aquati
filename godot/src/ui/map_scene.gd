@@ -16,6 +16,8 @@ var discovered := {}
 var pins: Waypoints
 ## The helmsman's course from her bow to her goal (x, z), while he has the wheel.
 var route := PackedVector2Array()
+## The island forts, and whose they are: {x, z, name, ours, quiet} each.
+var forts: Array[Dictionary] = []
 
 
 ## The archipelago whose heart lies nearest (x, z), and how far that is.

@@ -23,6 +23,14 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Her power is the Phantom Run: press X (or tap the ghost button) and she crosses into the spirit world for seven seconds, untouchable by shot, ram or reef, her fires out and half as fast again whatever the wind. She comes back with a Banshee\'s Wail that hurts every enemy ship near her and terrifies their gun crews. Then the spirits rest for forty seconds.',
         ],
       },
+      {
+        title: 'Android and Windows: forts',
+        notes: [
+          'Forts come to the Android and Windows game. Stone forts held by the Brethren stand over the harbours with sea walls, a keep and cannon on the ramparts, and their guns open on you as you close.',
+          'Your broadsides lay on a fort\'s guns like they lay on a ship. Knock them out one by one while the stone chips, the parapets fall and fires catch; the fort bar shows her guns and her garrison.',
+          'With her guns silenced, land under the walls, fight the garrison and its Commandant, and strike their flag. The fort is yours: a strongbox of gold, shot and a good ship part, guns that fire on pirates, tribute while you\'re away (up to eight hours) and repairs while you lie off her walls.',
+        ],
+      },
     ],
   },
   {

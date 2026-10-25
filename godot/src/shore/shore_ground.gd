@@ -20,6 +20,9 @@ var world: World
 var towns: Array[Vector3] = []
 ## Discs nobody walks into for a while (x, z, r): the boat on the beach.
 var blocks: Array[Vector3] = []
+## Floors raised over the terrain: a fort's plaza and its ramp
+## ({x, z, r, at: Callable(x, z) -> height, or NAN off it}).
+var lifts: Array[Dictionary] = []
 ## Trunks and boulders (x, z, r) bucketed by CELL.
 var _solids := {}
 var solid_count := 0
@@ -84,11 +87,26 @@ static func _key(gx: int, gz: int) -> int:
 
 
 func height(x: float, z: float) -> float:
+	for l in lifts:
+		if absf(x - float(l.x)) < float(l.r) and absf(z - float(l.z)) < float(l.r):
+			var h: float = (l.at as Callable).call(x, z)
+			if not is_nan(h):
+				return h
 	return world.ground_height(x, z)
+
+
+## On a raised floor (a fort's plaza or ramp)?
+func lifted(x: float, z: float) -> bool:
+	for l in lifts:
+		if absf(x - float(l.x)) < float(l.r) and absf(z - float(l.z)) < float(l.r) and not is_nan((l.at as Callable).call(x, z)):
+			return true
+	return false
 
 
 ## Rise per metre at a point.
 func slope(x: float, z: float) -> float:
+	if not lifts.is_empty() and lifted(x, z):
+		return 0.0
 	return world.ground_gradient(x, z).length()
 
 

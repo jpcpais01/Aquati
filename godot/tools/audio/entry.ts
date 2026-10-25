@@ -255,6 +255,16 @@ const shot = (name: string, n: number, len: number, play: (a: any, v: number) =>
 };
 shot('click', 1, 0.15, (a) => a.click());
 shot('chime', 1, 1.6, (a) => a.chime());
+// the forts: a war horn over drums as the last gun goes quiet, the drum and
+// bell as their guns open (2) or the garrison sallies (3), and the herald's
+// fanfare as your colours go up
+shot('horn', 1, 6.4, (a) => a.horn(), { ogg: true });
+for (const l of [2, 3]) shot(`wanted${l}`, 1, 3.2, (a) => a.wanted(l));
+shot('bounty', 1, 3.6, (a) => {
+  // (the purse pouring over is the game's own sale sound)
+  a.sale = () => {};
+  a.bounty();
+});
 for (let t = 1; t <= 4; t++) shot(`treasure${t}`, 1, 3.0, (a) => a.treasure(t));
 shot('guns_ready', 1, 0.7, (a) => a.gunsReady(0));
 // the Treasure Vault: the chest's rumble as its light climbs each rarity, its

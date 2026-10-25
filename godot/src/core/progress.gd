@@ -62,6 +62,9 @@ var claimed := {}
 ## The firework locker: {kind: rockets} (Fireworks), following the captain
 ## from voyage to voyage.
 var fireworks := {}
+## The Brethren's forts you hold: fort id -> when taken, and when its tribute
+## was last collected (unix seconds), and all the tribute gold ever paid.
+var forts := {"taken": {}, "paid": {}, "tribute": 0}
 ## The one-off tips already given on this device (the fireworks' night tip).
 var tips: Array[String] = []
 ## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
@@ -255,6 +258,34 @@ func next_rocket(from: String) -> String:
 
 
 ## Whether a one-off tip was given before; marks it given.
+## A fort is yours (and its tribute starts gathering now).
+func take_fort(id: String) -> void:
+	var now := Time.get_unix_time_from_system()
+	forts.taken[id] = now
+	forts.paid[id] = now
+	touch()
+
+
+## Gold waiting at a fort of yours.
+func fort_owed(id: String) -> int:
+	if not forts.taken.has(id):
+		return 0
+	var since := float(forts.paid.get(id, forts.taken[id]))
+	# 150 gold an hour, held for you up to eight hours' worth (Forts.TRIBUTE_HOUR, TRIBUTE_CAP)
+	return floori(clampf((Time.get_unix_time_from_system() - since) / 3600.0, 0.0, 8.0) * 150.0)
+
+
+## Collects a fort's tribute: the gold it paid.
+func collect_fort(id: String) -> int:
+	var n := fort_owed(id)
+	if n <= 0:
+		return 0
+	forts.paid[id] = Time.get_unix_time_from_system()
+	forts.tribute = int(forts.tribute) + n
+	touch()
+	return n
+
+
 func tip_seen(id: String) -> bool:
 	if tips.has(id):
 		return true
@@ -487,6 +518,7 @@ func save() -> void:
 		"vault": vault,
 		"claimed": claimed,
 		"fireworks": fireworks,
+		"forts": forts,
 		"tips": tips,
 	}
 	_write(path, JSON.stringify(data, "\t"))
@@ -581,6 +613,15 @@ func _adopt(d: Dictionary) -> void:
 	parts = Parts.sanitize(d.get("parts"))
 	vault = Cosmetics.sanitize(d.get("vault"))
 	fireworks = Fireworks.sanitize(d.get("fireworks"))
+	var fo: Variant = d.get("forts")
+	if fo is Dictionary:
+		for k: String in ["taken", "paid"]:
+			var m: Variant = (fo as Dictionary).get(k)
+			if m is Dictionary:
+				for id: Variant in m:
+					if (m[id] is float or m[id] is int) and is_finite(float(m[id])):
+						forts[k][str(id)] = float(m[id])
+		forts.tribute = maxi(0, int(float((fo as Dictionary).get("tribute", 0))))
 	var tp: Variant = d.get("tips")
 	if tp is Array:
 		for e: Variant in tp:

@@ -299,6 +299,9 @@ func _fly(b: _Ball, t0: float, t1: float) -> float:
 		var p := at(b, t)
 		if _strike_ship(b, p, t):
 			return t
+		# a fort's walls (Forts.strike plays the blow)
+		if world.forts != null and world.forts.strike(p, vel_at(b, t), b.damage, b.owner, b.kind):
+			return t
 		var ground := world.ground_height(p.x, p.z)
 		if ground > 0.0 and p.y < ground:
 			var g := Vector3(p.x, ground + 0.3, p.z)

@@ -219,6 +219,11 @@ class _Marks:
 				var at6: Vector2 = to_map.call(float(rf.x), float(rf.z))
 				if at6.distance_to(c) < h + 14.0 * u:
 					MapMarks.reef(self, at6, 9.0 * u)
+		# the island forts
+		for f: Dictionary in sc.forts:
+			var at7: Vector2 = to_map.call(float(f.x), float(f.z))
+			if at7.distance_to(c) < h + 14.0 * u:
+				MapMarks.fort(self, at7, 11.0 * u, bool(f.ours), bool(f.quiet))
 		# the helmsman's course, flowing on ahead of her
 		if sc.route.size() > 1:
 			var course := PackedVector2Array()

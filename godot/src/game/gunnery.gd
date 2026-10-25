@@ -8,6 +8,10 @@ extends Node3D
 ## the side you fire, and with no foe in it the shot goes where you point.
 ## The web game's Gunnery.
 
+## A mark set out past a target standing high above the sea (a fort's gun,
+## Forts.MARK_REACH): how far past the guns' usual reach it may lie.
+const MARK_REACH := 1.3
+
 ## One side's guns: loaded or not, and what they are laid on.
 class Broadside:
 	## +1 port, -1 starboard.
@@ -17,6 +21,8 @@ class Broadside:
 	var progress := 1.0
 	## The foe these guns are laid on, if one sits inside the fan.
 	var target: Ship
+	## Or a mark that isn't a ship (a fort's gun), laid on at `impact`.
+	var mark := false
 	## Where the balls will fall (led), while aim_dist >= 0.
 	var impact := Vector3.ZERO
 	var aim_dist := -1.0
@@ -38,6 +44,11 @@ var combat := false
 var focus: Ship
 ## The point on the sea under the mouse, or null (touch, or no pointer).
 var pointer: Variant = null
+## Marks on the sea that aren't ships (Forts.marks: where a ball fired flat
+## for that range arcs through a fort's gun), set each frame by the game.
+var marks: Array[Vector3] = []
+## The nearest thing to fight is one of those marks.
+var focus_mark := false
 
 var _glow: MeshInstance3D
 var _glow_mat: ShaderMaterial
@@ -97,8 +108,11 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 		_set_glow(null, dt, world, now)
 		combat = false
 		focus = null
+		focus_mark = false
 		port.target = null
 		starboard.target = null
+		port.mark = false
+		starboard.mark = false
 		return
 	var R := p.gun_range()
 	var r0 := p.cls.beam * 0.5 + 1.5
@@ -135,17 +149,42 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 			score = Vector2(pt.x - s.pos.x, pt.z - s.pos.z).length()
 		if score < float(best[sd][1]):
 			best[sd] = [s, score]
-	combat = focus != null
+	# and the marks that aren't ships: they stand still, so no leading
+	focus_mark = false
+	for m in marks:
+		var raw := Vector2(m.x - p.pos.x, m.z - p.pos.z).length()
+		if raw > R * 1.4:
+			continue
+		if raw < focus_d:
+			focus_d = raw
+			focus = null
+			focus_mark = true
+		var b := _bearing_u(p, m.x, m.z)
+		if absf(b.y) > 1.08 or raw > R * MARK_REACH or raw < r0 + 3.0:
+			continue
+		var sd := int(b.x)
+		var score := raw + absf(b.y) * 60.0
+		if _pointer_side == sd and pointer != null:
+			var pt: Vector3 = pointer
+			score = Vector2(pt.x - m.x, pt.z - m.z).length()
+		if score < float(best[sd][1]):
+			best[sd] = [m, score]
+	combat = focus != null or focus_mark
 
 	for st: Broadside in [port, starboard]:
 		var i := Ship.side_index(st.side)
 		var was := st.ready
 		st.ready = p.reload[i] <= 0.0
 		st.progress = p.readiness(st.side)
-		st.target = best[st.side][0]
+		var pick: Variant = best[st.side][0]
+		st.mark = pick is Vector3
+		st.target = null if st.mark else pick
 		st.hover = _pointer_side == st.side
 		st.aim_dist = -1.0
-		if st.target != null:
+		if st.mark:
+			st.impact = pick
+			st.aim_dist = Vector2(st.impact.x - p.pos.x, st.impact.z - p.pos.z).length()
+		elif st.target != null:
 			_predict(p, st.target)
 			st.impact = _impact
 			st.aim_dist = Vector2(_impact.x - p.pos.x, _impact.z - p.pos.z).length()
@@ -192,8 +231,8 @@ func _set_glow(mark: Ship, dt: float, world: World, now: float) -> void:
 ## The broadside the one-button fire (Space, the big Fire button) should
 ## loose: +1 port, -1 starboard, 0 none.
 func auto_side(p: Ship) -> int:
-	var pt := port.target != null
-	var stt := starboard.target != null
+	var pt := port.target != null or port.mark
+	var stt := starboard.target != null or starboard.mark
 	var pd := port.aim_dist if pt else INF
 	var sd := starboard.aim_dist if stt else INF
 	# a loaded side with a foe in it beats everything
@@ -221,6 +260,8 @@ func fire(p: Ship, side: int) -> bool:
 	var st := side_of(side)
 	if st.target != null:
 		return p.fire(side, st.target, st.impact)
+	if st.mark:
+		return p.fire(side, null, st.impact)
 	if st.hover and st.aim_dist > 0.0:
 		return p.fire(side, null, st.impact)
 	var a := p.heading + side * PI * 0.5

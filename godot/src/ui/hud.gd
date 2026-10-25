@@ -113,6 +113,8 @@ var _lever: SailLever
 var _helm: HelmRing
 var _ap: HelmPill
 var _hz: HazardPill
+## A fort's bar (and its title card), under the hazard pill.
+var _ft: FortBar
 ## Ashore: the sea's controls (the knots, the sail lever, the guns) stand down for the Jump button.
 var _ashore := false
 var _jump: UiButton
@@ -367,6 +369,8 @@ func _ready() -> void:
 	root.add_child(_ap)
 	_hz = HazardPill.new()
 	root.add_child(_hz)
+	_ft = FortBar.new()
+	root.add_child(_ft)
 
 	# notes across the top: an island discovered
 	_toasts = VBoxContainer.new()
@@ -539,8 +543,9 @@ func _layout() -> void:
 	_place_tag()
 	_place_say()
 	_hz.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
-	# the toasts step down under the pill while it's up
-	_hz_room = _hz.size.y + 8.0 * k if _hz.on() else 0.0
+	_ft.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * k if _hz.on() else 0.0)), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
+	# the toasts step down under the pill and the bar while they're up
+	_hz_room = _top_room()
 	_toasts.offset_top = my + _hz_room
 
 
@@ -583,10 +588,45 @@ func show_helm(view: Dictionary, rudder: float, dt: float) -> void:
 ## The sea's dangers: what has her watch's attention (HazardPill.show_view; {} for nothing).
 func show_hazard(view: Dictionary) -> void:
 	_hz.show_view(view)
-	var room := _hz.size.y + 8.0 * HudStyle.K if _hz.on() else 0.0
+	_restack()
+
+
+## A fort in sight: its bar (FortBar.set_view; {} hides it).
+func show_fort(view: Dictionary) -> void:
+	_ft.show_bar(not view.is_empty())
+	if not view.is_empty():
+		_ft.set_view(view)
+	_restack()
+
+
+## A fort is yours: its title card.
+func fort_taken(name_: String, line: String) -> void:
+	_ft.taken(name_, line)
+
+
+func fort_clear() -> void:
+	_ft.clear()
+	_restack()
+
+
+## How far down the top of the screen the pill and the fort's bar reach.
+func _top_room() -> float:
+	var k := HudStyle.K
+	var room := _hz.size.y + 8.0 * k if _hz.on() else 0.0
+	if _ft.on():
+		room += _ft.height() + 8.0 * k
+	return room
+
+
+## The fort's bar under the pill, the toasts under both.
+func _restack() -> void:
+	var room := _top_room()
 	if room != _hz_room:
 		_hz_room = room
-		_toasts.offset_top = get_viewport().get_visible_rect().size.y * 0.03 + room
+		var vp := get_viewport().get_visible_rect().size
+		var my := vp.y * 0.03
+		_ft.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * HudStyle.K if _hz.on() else 0.0)), _ft._most)
+		_toasts.offset_top = my + room
 
 
 ## Whether the helmsman's pill is up.
