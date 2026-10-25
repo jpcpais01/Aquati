@@ -319,6 +319,7 @@ func _fly(b: _Ball, t0: float, t1: float) -> float:
 		var ground := world.ground_height(p.x, p.z)
 		if ground > 0.0 and p.y < ground:
 			var g := Vector3(p.x, ground + 0.3, p.z)
+			world.scared.emit(g, 140.0 if b.kind == Ammo.SHELL else 80.0)
 			if b.kind == Ammo.SHELL:
 				_detonate(b, g, false, null, 0.0)
 			else:

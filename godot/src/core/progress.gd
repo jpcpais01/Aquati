@@ -67,6 +67,8 @@ var fireworks := {}
 var forts := {"taken": {}, "paid": {}, "tribute": 0}
 ## The treasure map in hand (TreasureMaps.state).
 var maps := TreasureMaps.fresh()
+## The island beasts you've seen, by species index (Wildlife), in order of sighting.
+var fauna: Array[int] = []
 ## The one-off tips already given on this device (the fireworks' night tip).
 var tips: Array[String] = []
 ## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
@@ -296,6 +298,15 @@ func tip_seen(id: String) -> bool:
 	return false
 
 
+## Marks a species seen; true the first time.
+func see_fauna(k: int) -> bool:
+	if fauna.has(k):
+		return false
+	fauna.append(k)
+	touch()
+	return true
+
+
 func _rockets_touched() -> void:
 	fireworks_changed.emit()
 	touch()
@@ -522,6 +533,7 @@ func save() -> void:
 		"fireworks": fireworks,
 		"forts": forts,
 		"maps": maps,
+		"fauna": fauna,
 		"tips": tips,
 	}
 	_write(path, JSON.stringify(data, "\t"))
@@ -626,6 +638,11 @@ func _adopt(d: Dictionary) -> void:
 						forts[k][str(id)] = float(m[id])
 		forts.tribute = maxi(0, int(float((fo as Dictionary).get("tribute", 0))))
 	maps = TreasureMaps.sanitize(d.get("maps"))
+	var fa: Variant = d.get("fauna")
+	if fa is Array:
+		for e: Variant in fa:
+			if (e is float or e is int) and int(e) >= 0 and int(e) < 15 and not fauna.has(int(e)):
+				fauna.append(int(e))
 	var tp: Variant = d.get("tips")
 	if tp is Array:
 		for e: Variant in tp:

@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T12:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: island wildlife',
+        notes: [
+          'The isles come alive in the Android and Windows game: goats on the crags, deer and giant tortoises in the meadows, wild boar with their piglets, capuchins, scarlet macaws, iguanas, sea lions and red crabs ashore.',
+          'Flamingos and egrets wade the shallows, pelicans plunge for fish, blue-footed boobies dance on the sea rocks, and blue morphos and hummingbirds work the flowers.',
+          'Each kind lives its own day and calls in its own voice. Walk up on them and they look, then edge away or bolt; a broadside or a pistol shot scatters the whole island. A note counts each new kind you spot, fifteen in all.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T11:00Z',
     entries: [
       {

@@ -19,6 +19,9 @@ signal shook(amount: float)
 signal burned(ship: Ship, attacker: Ship, dealt: float)
 ## A special shot left its mark: "ablaze", "shredded" or "crew".
 signal status(ship: Ship, what: String, attacker: Ship)
+## A bang ashore (a ball into the hillside, a pistol, steel on steel): the
+## island's beasts within `r` take fright (Wildlife.scare).
+signal scared(at: Vector3, r: float)
 
 var waves: Waves
 var wind: Wind

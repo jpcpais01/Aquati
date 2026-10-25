@@ -202,6 +202,8 @@ var shore: Shore
 var forts: Forts
 ## The Kraken: rises (rarely) out of a storm to drag her under (see Kraken).
 var kraken: Kraken
+## The isles' beasts (Wildlife).
+var wildlife: Wildlife
 ## Each storm's one roll of the dice: 0 not yet, 1 rolled and it isn't coming, 2 it's coming.
 var _kr_storm := 0
 ## Seconds until it looks for deep water, once it's coming; till the seas may stir it again.
@@ -287,6 +289,9 @@ var _foe: Ship
 var _sink_at := -1.0
 ## Grapnels, lashing and prizes; what her strongbox gave up; the boarding tip, once.
 var boarding: Boarding
+var _wild_walkers: Array = []
+## Pixels on screen per metre at one metre off (Flora's measure).
+var _px_k := Flora.screen_lines() / (2.0 * tan(deg_to_rad(CameraRig.FOV) * 0.5))
 ## The treasure map in hand (kept between voyages in Progress.maps).
 var tmaps := TreasureMaps.new()
 var _prize_haul := ""
@@ -679,6 +684,7 @@ func _warm_up() -> void:
 		for n: Node in sets[i].call():
 			w.add_child(n)
 			await _loaded_to(0.87 + 0.005 * i)
+	wildlife.warm(camera.global_position - camera.global_basis.z * 40.0)
 	hud.warm()
 	chart_art.build(self)
 	get_tree().create_timer(1.0).timeout.connect(w.queue_free)
@@ -1252,6 +1258,20 @@ func _build_ports(p0: float, p1: float) -> void:
 	add_child(kraken.view)
 	world.kraken = kraken
 	_wire_kraken()
+	# the isles' beasts, kept clear of the towns, the camps and the forts
+	var avoid: Array[Vector3] = shore_ground.towns.duplicate()
+	for c in shore.camps:
+		avoid.append(Vector3(float(c.site.x), float(c.site.z), 10.0))
+	for f in forts.forts:
+		avoid.append(Vector3(float(f.site.x), float(f.site.z), 40.0))
+	wildlife = Wildlife.new(world.regions, floras, avoid, Settings.quality == Settings.Quality.LOW)
+	wildlife.world = world
+	add_child(wildlife)
+	if _args.has("wild"):
+		wildlife.survey_all()
+	wildlife.spotted.connect(func(beast: String, n: int, total: int) -> void:
+		hud.toast("New wildlife · %d of %d kinds seen" % [n, total], beast, 3.6))
+	world.scared.connect(func(at: Vector3, r: float) -> void: wildlife.scare(at.x, at.z, r))
 
 
 ## A lot set down in the warehouse of the quay she's tied to: it glints in
@@ -1507,8 +1527,34 @@ func _process(delta: float) -> void:
 		var built := ports.triangles()
 		print("SMOKE PORT: %d towns (%d triangles close up and %d as shells built); %d whole in view, drawing %d triangles; %s" % [
 				ports.ports.size(), built.x, built.y, drawn.y, drawn.x, "tied up at " + dock_port.title if dock_port != null else "at sea"])
+		_wild_line()
 	if _args.has("shot") and _frames >= int(_args.get("frames", 90)):
+		if _args.has("wild"):
+			_wild_line()
 		_save_shot(str(_args.shot))
+
+
+## --wild-look K: the camera a few body-lengths off the nearest beast of kind K.
+func _wild_look(k: int) -> void:
+	var best: Wildlife.Beast = null
+	var bd := INF
+	for p: Wildlife.Pop in wildlife.pops:
+		for a: Wildlife.Beast in p.beasts:
+			var d := Vector2(a.x - player.pos.x, a.z - player.pos.z).length()
+			if a.k == k and not a.hidden and d < bd:
+				best = a
+				bd = d
+	if best == null:
+		return
+	var size: float = Wildlife.SIZE[k] * best.s
+	var at := Vector3(best.x, best.y + size * 0.4, best.z)
+	camera.look_at_from_position(at + Vector3(1.0, 0.55, 1.2).normalized() * maxf(2.0, size * 5.0), at)
+
+
+func _wild_line() -> void:
+	print("SMOKE WILD: %d beasts settled on %d isles, %d alive about the view, %d drawn, %d thinking this frame; %d kinds seen" % [
+			wildlife.population(), wildlife.pops.filter(func(p: Wildlife.Pop) -> bool: return p.built).size(), wildlife.active.reduce(func(n: int, p: Wildlife.Pop) -> int: return n + p.beasts.size(), 0),
+			wildlife.drawn, wildlife.thought, wildlife.spotted_count()])
 
 
 func _tick(real_dt: float) -> void:
@@ -1682,6 +1728,18 @@ func _tick(real_dt: float) -> void:
 	# every crew afloat, after the camera has moved: they're culled and cut by it
 	crew.close_up = not sailing
 	crew.update(dt, world, camera, camera.target, camera.ground_radius() * 1.5, atmosphere.key_dir)
+	if _args.has("wild-look"):
+		_wild_look(int(_args.get("wild-look", 0)))
+	# the isles' beasts, minding the landing party
+	wildlife.night = atmosphere.night
+	wildlife.storm = atmosphere.storm
+	wildlife.rain = atmosphere.rain
+	_wild_walkers.clear()
+	if shore.active:
+		for m in shore.party:
+			if m.walker.visible:
+				_wild_walkers.append(m.walker)
+	wildlife.update(dt, camera, camera.target, _wild_walkers, _px_k)
 	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
 	ocean.follow(camera.target, camera.distance())

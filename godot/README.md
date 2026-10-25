@@ -173,6 +173,10 @@ Treasure maps: `--map N` hands over N pieces of a map (3, the default: whole,
 its X on an isle of the waters she's in), `--map-open [N]` unrolls it N
 frames before the shot (30), and `--dig` with a whole map lands the party
 beside the X and sets them digging.
+Wildlife: `--wild` surveys and settles every isle's beasts at the start
+(else each isle is settled as the view nears it), and `--wild-look K` holds
+the camera a few lengths off the nearest beast of kind K (0 goat .. 14
+hummingbird); a shot with `--wild` prints a SMOKE WILD line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

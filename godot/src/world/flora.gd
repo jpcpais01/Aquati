@@ -65,6 +65,11 @@ var region: Region
 ## MultiMeshes built, and plants planted.
 var batches := 0
 var plants := 0
+## Every set's [island, kind, variant, first, count], and the placements
+## (16 floats each), kept for the wildlife: the trees it climbs and perches in,
+## the flowers it feeds at.
+var _sets: Array = []
+var _data := PackedFloat32Array()
 
 
 ## Loads world/flora once: every mesh, wound and painted as the web built it.
@@ -133,6 +138,7 @@ func build(p_region: Region) -> void:
 	var dir := Region.ROOT + region.id + "/"
 	var meta: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(dir + "plants.json"))
 	var data := Region.unpack(dir + "plants.bin", int(meta.size)).to_float32_array()
+	_data = data
 	var isles := {}
 	for isl: Dictionary in region.islands:
 		isles[int(isl.id)] = isl
@@ -158,10 +164,26 @@ func build(p_region: Region) -> void:
 		for c: Array in cells:
 			_plant_cell(s, c, data, near[id])
 		plants += int(s.count)
+		_sets.append([id, str(s.kind), int(s.variant), int(cells[0][2]), int(s.count)])
 	# an island's squares show only while its far planting is hidden by being near
 	for id: int in far:
 		var g: Node3D = near[id]
 		g.visibility_parent = NodePath("../Isle_%d_far/%s" % [id, far[id].get_child(0).name])
+
+
+## Every plant of `kind` (palm, tree, flowerBush, wildflower, ...) on island
+## `id`: where it stands (its foot), its scale, its turn about the vertical
+## and which variant it is, as [Vector3, scale, yaw, variant] each.
+func plants_of(id: int, kind: String) -> Array:
+	var out := []
+	for st: Array in _sets:
+		if st[0] != id or st[1] != kind:
+			continue
+		for i in int(st[4]):
+			var o := (int(st[3]) + i) * 16
+			var sc := Vector3(_data[o], _data[o + 4], _data[o + 8]).length()
+			out.append([region.centre + Vector3(_data[o + 3], _data[o + 7], _data[o + 11]), sc, atan2(-_data[o + 8], _data[o]), st[2]])
+	return out
 
 
 ## One square of a set: its levels, each over the distances where it suits.

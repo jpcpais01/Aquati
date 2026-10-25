@@ -1,6 +1,29 @@
-## Shores O' Fortune for Android and Windows: treasure maps
+## Shores O' Fortune for Android and Windows: island wildlife
 
-The thirty-seventh build brings treasure maps and digging from the web game.
+The thirty-eighth build brings the isles' wildlife from the web game.
+
+- **The isles come alive.** Fifteen kinds of beast live on the islands, each
+  where it would: goats on the crags, deer and giant tortoises in the
+  meadows, wild boar along the forest edge with a file of striped piglets
+  behind, capuchins under the trees, scarlet macaws in noisy pairs from
+  crown to crown, iguanas basking on the rocks, sea lions hauled out on the
+  shore and red crabs at the tideline.
+- **And the shallows too.** Flamingo flocks and stalking egrets wade the
+  lagoons, pelicans patrol the surf and plunge for fish, blue-footed boobies
+  dance on the sea rocks, and blue morphos and hummingbirds work the flowers.
+- **Each one minds its own life.** They graze, root, preen, display and
+  call, and settle down to sleep when the sun goes. Walk up on them and they
+  look, then edge away or bolt, each in its own way: a goat bounds up the
+  crag, a deer stots off, the sow bluff-charges before her family flees
+  squealing, the monkeys shriek and go up the nearest tree, the tortoise
+  just pulls its head in.
+- **A bang scatters the island.** A broadside, a pistol shot or a ball
+  thumping into the hillside sends every beast for a long way round running
+  or taking wing.
+- **Spot them all.** The first time you see each kind up close, a note says
+  how many of the fifteen you've found.
+
+### Also from the last build: treasure maps
 
 - **A torn piece of somebody's map.** Sea chests now and then hold a scrap
   of a treasure map (more often the finer the chest), cutthroats always
@@ -18,22 +41,3 @@ The thirty-seventh build brings treasure maps and digging from the web game.
   and they heave the chest out. Inside: hundreds of gold, fine goods and
   fresh shot. Then the next map starts afresh.
 
-### Also from the last build: boarding
-
-- **Grapnels away!** Batter a pirate below two fifths of her hull and come
-  close aboard, and a Board prompt comes up. The grapnels fly across, bite
-  into her rail, and the lines haul her in until the hulls grind together.
-- **Over the side.** Your captain and hands swing across on lines from your
-  rigging and land on her deck, and her crew comes at you with blades out,
-  her captain at their head. The camera turns to look across the deck, and
-  the stick turns with it.
-- **She strikes her colours.** Cut down enough of her crew, or her captain,
-  and the rest throw down their blades and cry quarter. Her flag comes down
-  hand over hand and her strongbox is yours: gold, a chest of goods, shot
-  and sometimes a ship part.
-- **Her fate is yours.** Take her as a prize, and a prize crew sails her
-  off under your colours for prize money. Or scuttle her: fire in her hold,
-  and she goes down for her bounty and her salvage.
-- **Fall back.** If the fight turns, back up to your own rail and cut the
-  lines. If your captain falls, the hands haul you back aboard, a little
-  lighter in the purse.

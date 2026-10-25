@@ -72,6 +72,13 @@ const QUAY_LEVEL := [0.9, 0.3]
 const QUAY_TICK := 0.9
 ## A phrase of the feast-night band: four bars of eighths (s).
 const REEL_LEN := 32 * 0.165
+## The beasts' calls that come in runs, and the gap between one and the next.
+const WILD_GAP := {
+	&"snort": Vector2(0.32, 0.32), &"grunt": Vector2(0.2, 0.3), &"squeal": Vector2(0.42, 0.42),
+	&"chatter": Vector2(0.06, 0.09), &"screech": Vector2(0.5, 0.5), &"squawk": Vector2(0.38, 0.5),
+	&"honk": Vector2(0.18, 0.26), &"croak": Vector2(0.5, 0.5), &"bark": Vector2(0.32, 0.42),
+	&"whistle": Vector2(0.55, 0.55), &"click": Vector2(0.07, 0.09), &"chip": Vector2(0.08, 0.08),
+}
 
 ## The music: the voyage band and the high seas' theme.
 var music: Music
@@ -1115,6 +1122,21 @@ func gull(vol: float, pan: float, notes := 1, delay := 0.0) -> void:
 	if not _live or _muted or vol < 0.01:
 		return
 	_one("gull%d" % clampi(notes, 1, 3), minf(1.0, vol), pan, _now + delay, 1.0, 0.0, false, &"Amb")
+
+
+## One of the island beasts calling (Wildlife): `n` calls of its kind at
+## its own spacing (a chatter quick, a croak slow), `pitch` lifting a
+## youngster's voice. It sounds with the sea, on the ambience.
+func wild(kind: StringName, vol: float, pan: float, n := 1, pitch := 1.0) -> void:
+	if not _live or _muted or vol < 0.01:
+		return
+	var gap: Vector2 = WILD_GAP.get(kind, Vector2.ZERO)
+	var key := "wild_%s" % kind
+	var at := _now + randf() * 0.06
+	var reps := 1 if gap == Vector2.ZERO else clampi(n, 1, 8)
+	for i in reps:
+		_one(key, minf(1.0, vol), pan, at, pitch, 0.0, false, &"Amb")
+		at += randf_range(gap.x, gap.y)
 
 
 ## Coming alongside: the hull nudges the fenders, the lines creak taut and

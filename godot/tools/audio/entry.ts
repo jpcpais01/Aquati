@@ -328,6 +328,17 @@ for (let n = 1; n <= 3; n++)
     a.ctx.createStereoPanner = undefined;
     a.gull(1, 0, n);
   });
+// the island beasts' calls, one of each (the game repeats a chattering or
+// honking call itself, and lifts a youngster's voice)
+for (const [kind, takes, len] of [
+  ['bleat', 3, 1.0], ['kid', 2, 0.7], ['snort', 2, 0.4], ['grunt', 3, 0.3], ['squeal', 2, 0.6],
+  ['chatter', 3, 0.2], ['screech', 2, 0.6], ['squawk', 3, 0.5], ['honk', 3, 0.35], ['croak', 2, 0.6],
+  ['bark', 3, 0.4], ['hiss', 2, 1.0], ['whistle', 2, 0.6], ['click', 2, 0.25], ['chip', 2, 0.15], ['clack', 2, 0.3],
+] as const)
+  shot(`wild_${kind}`, takes, len, (a) => {
+    a.ctx.createStereoPanner = undefined;
+    a.wild(kind, 1, 0, 1, 1);
+  });
 // a feast night's town band: a phrase of each of its four tunes, squeezebox,
 // bodhrán and tambourine (the game thins them out over the water itself)
 for (let i = 0; i < 4; i++)
