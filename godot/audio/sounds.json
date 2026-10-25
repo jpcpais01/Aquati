@@ -849,6 +849,124 @@
     1.01124
    ]
   },
+  "wild_bark": {
+   "ext": "wav",
+   "gain": [
+    0.15605,
+    0.15324,
+    0.1531
+   ]
+  },
+  "wild_bleat": {
+   "ext": "wav",
+   "gain": [
+    0.10033,
+    0.09973,
+    0.10036
+   ]
+  },
+  "wild_chatter": {
+   "ext": "wav",
+   "gain": [
+    0.12218,
+    0.11753,
+    0.12252
+   ]
+  },
+  "wild_chip": {
+   "ext": "wav",
+   "gain": [
+    0.13242,
+    0.13226
+   ]
+  },
+  "wild_clack": {
+   "ext": "wav",
+   "gain": [
+    0.16332,
+    0.15773
+   ]
+  },
+  "wild_click": {
+   "ext": "wav",
+   "gain": [
+    0.03305,
+    0.04422
+   ]
+  },
+  "wild_croak": {
+   "ext": "wav",
+   "gain": [
+    0.10748,
+    0.10753
+   ]
+  },
+  "wild_grunt": {
+   "ext": "wav",
+   "gain": [
+    0.24562,
+    0.25413,
+    0.28247
+   ]
+  },
+  "wild_hiss": {
+   "ext": "wav",
+   "gain": [
+    0.06501,
+    0.06135
+   ]
+  },
+  "wild_honk": {
+   "ext": "wav",
+   "gain": [
+    0.06203,
+    0.06157,
+    0.04978
+   ]
+  },
+  "wild_kid": {
+   "ext": "wav",
+   "gain": [
+    0.09487,
+    0.0962
+   ]
+  },
+  "wild_screech": {
+   "ext": "wav",
+   "gain": [
+    0.08469,
+    0.08372
+   ]
+  },
+  "wild_snort": {
+   "ext": "wav",
+   "gain": [
+    0.10037,
+    0.11105
+   ]
+  },
+  "wild_squawk": {
+   "ext": "wav",
+   "gain": [
+    0.1374,
+    0.13103,
+    0.1327
+   ]
+  },
+  "wild_squeal": {
+   "ext": "wav",
+   "gain": [
+    0.06677,
+    0.06511
+   ]
+  },
+  "wild_whistle": {
+   "ext": "wav",
+   "gain": [
+    0.14865,
+    0.14868
+   ]
+  },
   "wood": {
    "ext": "wav",
    "gain": [

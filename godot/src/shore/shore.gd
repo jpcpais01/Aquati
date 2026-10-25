@@ -1995,6 +1995,9 @@ func _sound(kind: String, at: Vector3, heavy := false, n := 3, k := 1.0) -> void
 		return
 	var h := _world.heard(at)
 	var s := _world.sound
+	var fright: float = {"swish": 10.0, "clash": 22.0, "thwack": 22.0, "pistol": 75.0}.get(kind, 0.0)
+	if fright > 0.0:
+		_world.scared.emit(at, fright)
 	match kind:
 		"swish":
 			s.swish(h.x * k, h.y)

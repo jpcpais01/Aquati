@@ -53,7 +53,9 @@ const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "am
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
-		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "war_cry3", "war_cry5", "water", "wet_step", "whistle", "whoosh", "wood"]
+		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "war_cry3", "war_cry5", "water", "wet_step", "whistle", "whoosh", "wood",
+		"wild_bleat", "wild_kid", "wild_snort", "wild_grunt", "wild_squeal", "wild_chatter", "wild_screech", "wild_squawk",
+		"wild_honk", "wild_croak", "wild_bark", "wild_hiss", "wild_whistle", "wild_click", "wild_chip", "wild_clack"]
 ## The mix's buses past Master (Sound.build_buses).
 const BUSES := [&"UI", &"Mix", &"SFX", &"Air6k", &"Air2k5", &"Air1k", &"Air450", &"Echo",
 		&"EchoAir6k", &"EchoAir2k5", &"EchoAir1k", &"EchoAir450", &"Amb", &"Bed", &"Surf", &"Wind",
@@ -87,6 +89,8 @@ func _initialize() -> void:
 	_check_touch()
 	_check_lightning()
 	_check_floaters()
+	if _home_world != null:
+		_check_wildlife(_home_world.regions)
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:
@@ -920,6 +924,79 @@ func _check_world() -> void:
 	_check_treasure_maps(w)
 	_check_forts(w)
 	_check_kraken(w)
+
+
+## The isles' beasts: every species' three cuts built sound and within their
+## budgets, every isle surveyed and settled (each kind somewhere, none in the
+## towns, none afloat that shouldn't be), and a few seconds of their lives
+## lived with a camera over the busiest isle, nothing coming out NaN.
+func _check_wildlife(regions: Array[Region]) -> void:
+	var t0 := Time.get_ticks_usec()
+	var models: GDScript = load("res://src/fx/wild_models.gd")
+	var meshes: Array = models.all()
+	var budget := [1400, 520, 320]
+	for k in meshes.size():
+		for g in (meshes[k] as Array).size():
+			for lod in 3:
+				var m: ArrayMesh = meshes[k][g][lod]
+				var tris := 0 if m == null or m.get_surface_count() == 0 else m.surface_get_array_len(0) / 3
+				if tris == 0 or tris > budget[lod]:
+					_fail("wildlife: species %d (%d) cut %d has %d triangles (budget %d)" % [k, g, lod, tris, budget[lod]])
+	var floras := []
+	for r in regions:
+		var f: Node3D = load("res://src/world/flora.gd").new()
+		f.build(r)
+		floras.append(f)
+	var w := World.new()
+	w.regions = regions
+	w.waves = Waves.new(0.6)
+	var wl: Node3D = load("res://src/fx/wildlife.gd").new(regions, floras, [] as Array[Vector3], false)
+	wl.world = w
+	root.add_child(wl)
+	wl.survey_all()
+	var names: Array = wl.NAMES
+	var per := {}
+	var busiest: Variant = null
+	for p: Variant in wl.pops:
+		if busiest == null or p.beasts.size() > busiest.beasts.size():
+			busiest = p
+		for a: Variant in p.beasts:
+			per[a.k] = int(per.get(a.k, 0)) + 1
+			if not (is_finite(a.x) and is_finite(a.y) and is_finite(a.z)):
+				_fail("wildlife: a %s settled at NaN" % names[a.k])
+	var line := []
+	for k in names.size():
+		line.append("%s %d" % [names[k], int(per.get(k, 0))])
+		if int(per.get(k, 0)) == 0:
+			_fail("wildlife: no %s anywhere" % names[k])
+	print("wildlife: %d beasts on %d isles (%s), settled in %.0f ms" % [wl.population(), wl.pops.size(), ", ".join(line), (Time.get_ticks_usec() - t0) / 1000.0])
+	# their lives, with the camera over the busiest isle and a walker among them
+	var cam := Camera3D.new()
+	root.add_child(cam)
+	cam.global_position = Vector3(busiest.cx, 60.0, busiest.cz + 90.0)
+	cam.look_at(Vector3(busiest.cx, 0.0, busiest.cz))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var wk := ShoreWalker.new(ShoreWalker.Team.PARTY, CrewLook.make(false, true, false, rng), 0, 120.0)
+	wk.x = busiest.cx
+	wk.z = busiest.cz
+	wk.y = w.ground_height(wk.x, wk.z)
+	wk.vx = 3.6
+	var t1 := Time.get_ticks_usec()
+	for i in 300:
+		wk.x += wk.vx / 60.0
+		if i == 150:
+			wl.scare(busiest.cx, busiest.cz, 80.0)
+		wl.update(1.0 / 60.0, cam, Vector3(busiest.cx, 0.0, busiest.cz), [wk], 600.0)
+	for a: Variant in busiest.beasts:
+		if not (is_finite(a.x) and is_finite(a.y) and is_finite(a.z) and is_finite(a.yaw)):
+			_fail("wildlife: a %s went NaN" % names[a.k])
+			break
+	print("wildlife: 5 s on %s (%d beasts, %d drawn) in %.0f ms" % [busiest.isl.name, busiest.beasts.size(), wl.drawn, (Time.get_ticks_usec() - t1) / 1000.0])
+	cam.free()
+	wl.free()
+	for f in floras:
+		f.free()
 
 
 ## Ashore: the planting's trunks and boulders and the towns as walls, a
