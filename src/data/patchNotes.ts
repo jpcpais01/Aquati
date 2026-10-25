@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T04:00Z',
+    entries: [
+      {
+        title: 'Windows: a smaller, neater HUD',
+        notes: [
+          'On the Windows game the ship\'s card, the bottom bar, the strip under the minimap and its buttons all sit smaller now, and the Ship\'s Hold popup (which was drawn at a phone\'s touch size) shrinks to match. The interface follows your window instead of Windows\' display scaling, so high-resolution screens get the same neat layout, only sharper.',
+          'The speed readout is tidier too: the knots sit right under the number, like a gauge, beside the sail pips.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T01:00Z',
     entries: [
       {
