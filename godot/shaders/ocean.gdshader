@@ -89,6 +89,10 @@ global uniform float sea_glow;
 /// (Game._lamps); lamp_count of them
 uniform vec4 lamps[8];
 uniform int lamp_count = 0;
+/// The fireworks' four brightest bursts (FireworkSky): xyz where (m), w how
+/// bright; their colours
+uniform vec4 fw_lights[4];
+uniform vec3 fw_colors[4];
 
 varying vec3 v_world;
 varying vec3 v_normal;
@@ -774,6 +778,30 @@ void fragment() {
 		}
 		EMISSION += vec3(1.0, 0.62, 0.27) * lamp;
 	}
+	// ---- fireworks: each burst mirrored as a shimmering column under it,
+	// and its light washing the water's body
+	if (fw_lights[0].w + fw_lights[1].w + fw_lights[2].w + fw_lights[3].w > 0.0) {
+		vec3 mirror = vec3(0.0);
+		vec3 wash = vec3(0.0);
+		for (int i = 0; i < 4; i++) {
+			vec4 l = fw_lights[i];
+			if (l.w <= 0.0) {
+				continue;
+			}
+			vec3 d = l.xyz - wpos;
+			float r2 = dot(d, d);
+			vec3 dn = d * inversesqrt(r2 + 1e-4);
+			float s = max(dot(R, dn), 0.0);
+			float s2 = s * s;
+			float s4 = s2 * s2;
+			float s8 = s4 * s4;
+			float s16 = s8 * s8;
+			float s32 = s16 * s16;
+			mirror += fw_colors[i] * l.w * (s32 * s16 * 2.6 + s8 * 0.22) / (1.0 + r2 * 0.00025);
+			wash += fw_colors[i] * (l.w * (max(dot(N, dn), 0.0) * 0.8 + 0.2) / (1.0 + r2 * 0.0011));
+		}
+		EMISSION += (mirror * mix(0.3, 1.0, F) * 0.5 + body_bed * wash * 0.08) * (1.0 - fa * 0.5);
+	}
 	v_body_lit = body_sun * sun_in * 0.45 * keep * cloud;
 	v_bed_lit = body_bed_sun * keep;
 	v_foam_lit = foam_base * 0.42 * fa * cloud;
@@ -816,9 +844,7 @@ void light() {
 		float spec = pow(nh, mix(2600.0, 1400.0, v_gust)) * 4.6 * v_glint + pow(nh, 340.0) * 0.2;
 		spec += pow(nhs, mix(60.0, 26.0, v_gust)) * 0.045;
 		SPECULAR_LIGHT += spec * v_spec * sh * LIGHT_COLOR * 0.55;
-	} else {
-		// lanterns and fires: a warm pool on the water
-		float ndl = max(dot(NORMAL, LIGHT), 0.0);
-		DIFFUSE_LIGHT += ndl * ATTENUATION * LIGHT_COLOR * 0.06;
 	}
+	// (the only lights besides are the fireworks' bursts: the sea takes
+	// those, and the lanterns, in fragment(), as its mirror of them)
 }

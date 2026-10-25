@@ -790,6 +790,32 @@ func cannon(vol: float, pan: float, dist := 0.0, cal := 0.5) -> void:
 		duck(at, 0.25)
 
 
+## Fireworks (the web's firework()): a rocket going up (or a whistling
+## one), a shell breaking overhead (a showpiece's heavier charge), crackle,
+## a willow's hanging hiss or a crossette's split. Bursts arrive late across
+## the water like any far bang.
+func firework(kind: StringName, vol: float, pan: float, dist := 0.0) -> void:
+	match kind:
+		&"launch":
+			_emit("rocket", vol * 0.42, pan, dist, 0.9 + randf() * 0.25, 0.25)
+		&"whistle":
+			_emit("whistle", vol * 0.5, pan, dist, 0.92 + randf() * 0.16, 0.35)
+		&"burst":
+			var at := _emit("fw_boom", vol * 0.7, pan, dist, 0.85 + randf() * 0.3, 0.75)
+			if at >= 0.0 and vol > 0.6:
+				duck(at, 0.2)
+		&"big":
+			var at := _emit("fw_big", vol * 0.85, pan, dist, 0.9 + randf() * 0.1, 0.85)
+			if at >= 0.0:
+				duck(at, 0.35)
+		&"crackle":
+			_emit("fw_crackle", vol * 0.5, pan, dist, 0.9 + randf() * 0.2, 0.55)
+		&"pop":
+			_emit("fw_pop", vol * 0.55, pan, dist, 0.9 + randf() * 0.25, 0.5)
+		&"sizzle":
+			_emit("fw_sizzle", vol * 0.35, pan, dist, 0.9 + randf() * 0.2, 0.4)
+
+
 ## A ship's magazine going up.
 func explosion(vol: float, pan: float, dist := 0.0) -> void:
 	var at := _emit("blast", vol * 0.95, pan, dist, 0.92 + randf() * 0.1, 0.7)
@@ -1154,7 +1180,7 @@ func toll() -> void:
 ## A kind of shot loaded (Ammo order): the ball's knock, lower for heavier loads.
 func ammo_swap(kind: int) -> void:
 	if _voice(0.22):
-		_one("ammo%d" % clampi(kind, 0, 4), 1.0)
+		_one("ammo%d" % clampi(kind, 0, 5), 1.0)
 
 
 ## The Treasure Vault's chest trembling as its light climbs to a rarity (0 .. 3).

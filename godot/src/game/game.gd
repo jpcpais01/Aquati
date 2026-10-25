@@ -71,6 +71,11 @@ extends Node3D
 ## else; --loot N[,TIER] floats N barrels or chests (of a tier, 0..4) round
 ## her, --hold fills the hold with a little of everything, --peek opens its
 ## peek and --pie the touch shot pie (--pie ID: held, a finger on that kind).
+## Fireworks: --rockets ID fills the locker and loads that kind (peony ..
+## fortune), --volley looses rockets off each side the moment it's loaded,
+## --locker opens the firework locker a second before the frame, --pyro
+## scrolls a docked market (--dock K) to the pyrotechnist's stall, and
+## --buy-rocket N buys its N-th rocket just before the frame.
 ## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
@@ -218,6 +223,10 @@ var voyage := Voyage.new()
 var time_scale := 1.0
 ## The magazine: broadsides of each kind of shot aboard (round shot -1, endless).
 var stock := Ammo.fresh_stock()
+## The kind of firework loaded out of the locker (Progress.fireworks), and
+## whether tonight's tip on lighting them has been given.
+var _fw_type := "peony"
+var _fw_tip := false
 ## The ship's hold.
 var hold: Treasure.Hold
 
@@ -432,6 +441,7 @@ func _load() -> void:
 		else:
 			controls.fire_side = side)
 	hud.ammo_picked.connect(func(kind: int) -> void: _pick_ammo(kind))
+	hud.firework_picked.connect(_choose_firework)
 	hud.sky_tapped.connect(_on_sky_tap)
 	hud.jump_pressed.connect(func() -> void: controls.jump = true)
 	hud.strike_pressed.connect(func() -> void: _hud_strike = true)
@@ -848,6 +858,13 @@ func _build_sea() -> void:
 	world.fx.name = "Particles"
 	world.fx.wind = world.wind
 	add_child(world.fx)
+	# built now (and drawn by the warm-up) so the first rocket compiles nothing
+	world.sky = FireworkSky.new()
+	world.sky.name = "Fireworks"
+	add_child(world.sky)
+	world.sky.setup([0.5, 0.8, 1.0][Settings.quality])
+	world.sky.fx = world.fx
+	world.sky.sounded.connect(_on_firework_sound)
 	# (the sea's grid, a worker's while the frames carry on)
 	await _join(WorkerThreadPool.add_task(func() -> void: _boot_grid = Ocean.grid_mesh(), false, "The sea"))
 	ocean = Ocean.new()
@@ -1035,6 +1052,12 @@ func _build_player(id := "", built: ShipModel = null) -> void:
 	hold = Treasure.Hold.new(int(Treasure.HOLD_ROOM.get(player.cls.id, 10)))
 	_hold_nag = 0.0
 	_hauled = 0
+	if _args.has("rockets"):
+		# a set piece's locker: full, with the kind named loaded
+		Progress.fill_rockets()
+		_fw_type = str(_args.rockets) if Fireworks.KINDS.has(str(_args.rockets)) else "peony"
+		player.ammo = Ammo.FIREWORK
+	_sync_fw()
 	if _args.has("ammo"):
 		var k := Ammo.ID.find(str(_args.ammo))
 		if k >= 0:
@@ -1320,6 +1343,14 @@ func _process(delta: float) -> void:
 		_sell("" if str(_args.sell) == "all" else str(_args.sell))
 	if _args.has("wright") and _frames == maxi(1, int(_args.get("frames", 90)) - 40):
 		market.show_wright()
+	if _args.has("pyro") and _frames == maxi(1, int(_args.get("frames", 90)) - 40):
+		market.show_pyro()
+	if _args.has("buy-rocket") and dock_port != null and _frames == maxi(1, int(_args.get("frames", 90)) - 9):
+		var day := floori(Time.get_unix_time_from_system() / 86400.0)
+		var list := Fireworks.stall(dock_port.index + 1, day)
+		_buy_firework(list[clampi(int(_args["buy-rocket"]), 0, list.size() - 1)])
+	if _args.has("locker") and _frames == maxi(1, int(_args.get("frames", 90)) - 30):
+		hud.open_locker()
 	if _args.has("buy") and dock_port != null and _frames == maxi(1, int(_args.get("frames", 90)) - 9):
 		# (swelling on the counter as the frame is saved)
 		_buy_part(str(Parts.port_stock(dock_port.index + 1)[clampi(int(_args.buy), 0, 2)].id))
@@ -1529,6 +1560,11 @@ func _tick(real_dt: float) -> void:
 	ocean.follow(camera.target, camera.distance())
 	ocean.follow_vortices(world.vortices, camera.global_position)
 	_lamps()
+	# the fireworks break where the view will see them, on the world's clock
+	world.sky.view(camera, camera.distance(), camera.tilt_blend(), get_viewport().get_visible_rect().size.y)
+	world.sky.step(dt)
+	if sailing and not ashore:
+		_firework_tip()
 	# the wreckage afloat, on the very swell the ocean draws (and shouldered aside by hulls still moving)
 	RenderingServer.global_shader_parameter_set("sea_clock", fmod(world.time, Debris.CLOCK_WRAP))
 	var pushers: Array[Ship] = []
@@ -1594,6 +1630,7 @@ func _tick(real_dt: float) -> void:
 	hud.show_guns(player, gunnery)
 	hud.show_ability(player.haunt if not shore.active else null)
 	hud.show_ammo(player.ammo, stock)
+	hud.show_fireworks(Progress.fireworks, _fw_type)
 	hud.show_hold(hold)
 	hud.show_bars(world.ships, player, camera)
 	maps.player = player
@@ -1854,6 +1891,10 @@ func _guns() -> void:
 			_fire(hs)
 		else:
 			_fire_auto()
+	if _args.has("volley") and player.ammo == Ammo.FIREWORK:
+		for side in [1, -1]:
+			if player.can_fire(side):
+				_fire(side)
 	if _args.has("autofire"):
 		for st: Gunnery.Broadside in [gunnery.port, gunnery.starboard]:
 			if st.ready and st.target != null:
@@ -1861,9 +1902,13 @@ func _guns() -> void:
 
 
 func _fire(side: int) -> void:
+	_sync_fw()
 	# a special the magazine has run out of: round shot, rather than guns left cold
 	if stock[player.ammo] == 0:
 		_pick_ammo(Ammo.ROUND, true)
+	if player.ammo == Ammo.FIREWORK:
+		_fire_rockets(side)
+		return
 	var shot := player.ammo
 	if not gunnery.fire(player, side):
 		hud.guns_deny(side)
@@ -1882,11 +1927,28 @@ func _fire(side: int) -> void:
 func _pick_ammo(kind: int, quiet := false) -> void:
 	if not player.alive or _farewell != null:
 		return
+	if kind == Ammo.FIREWORK:
+		# 6 again with rockets already loaded: the next kind in the locker
+		if player.ammo == Ammo.FIREWORK and not quiet:
+			var nxt := Progress.next_rocket(_fw_type)
+			if nxt != "":
+				_choose_firework(nxt)
+			return
+		if Progress.rockets(_fw_type) <= 0:
+			var nxt := Progress.next_rocket(_fw_type)
+			if nxt != "":
+				_fw_type = nxt
+		_sync_fw()
 	if stock[kind] == 0:
 		hud.ammo_deny(kind)
 		if not quiet:
-			hud.toast("No %s left" % Ammo.NAME[kind].to_lower(), "Salvage, chests and new isles restock the magazine", 2.8)
+			if kind == Ammo.FIREWORK:
+				hud.toast("The firework locker is empty", "Pyrotechnists in the trading ports sell them, and fine chests hide a few", 3.0)
+			else:
+				hud.toast("No %s left" % Ammo.NAME[kind].to_lower(), "Salvage, chests and new isles restock the magazine", 2.8)
 		return
+	if kind == Ammo.FIREWORK:
+		player.firework = _fw_type
 	var fresh := player.ammo != kind
 	player.ammo = kind
 	if not quiet:
@@ -1925,6 +1987,108 @@ func _stock_ammo(add: Dictionary, at: Vector3) -> void:
 		hud.floater(line, at, camera, Floaters.Kind.AMMO, 22.0)
 
 
+## Fireworks loaded: a rocket off each chosen gun, and one volley out of the
+## locker; at the last of a kind the next is loaded, and with none left at
+## all, round shot.
+func _fire_rockets(side: int) -> void:
+	var id := _fw_type
+	player.firework = id
+	if not player.fire(side):
+		hud.guns_deny(side)
+		return
+	hud.close_fw_picker()
+	Progress.take_rocket(id)
+	if Fireworks.tier(id) == 2:
+		voyage.note("trade", "Lit the %s" % Fireworks.kind(id).name, "A showpiece over the sea")
+	if Progress.rockets(id) > 0:
+		_sync_fw()
+		return
+	var nxt := Progress.next_rocket(id)
+	if nxt != "":
+		_fw_type = nxt
+		player.firework = nxt
+		_sync_fw()
+		hud.toast("That was the last %s" % Fireworks.kind(id).name, "%s loaded" % Fireworks.kind(nxt).name, 2.6)
+	else:
+		_sync_fw()
+		hud.toast("The firework locker is empty", "Round shot loaded · trading ports have a pyrotechnist", 3.2)
+		_pick_ammo(Ammo.ROUND, true)
+
+
+## The rack's count for fireworks is the kind loaded; the HUD's locker and
+## rockets slot follow it.
+func _sync_fw() -> void:
+	stock[Ammo.FIREWORK] = Progress.rockets(_fw_type)
+	if hud != null:
+		hud.show_fireworks(Progress.fireworks, _fw_type)
+
+
+## A kind picked from the locker: loaded at once (in place of shot, if shot was in the guns).
+func _choose_firework(id: String) -> void:
+	if not player.alive or _farewell != null:
+		return
+	if Progress.rockets(id) <= 0:
+		hud.ammo_deny(Ammo.FIREWORK)
+		return
+	var same := player.ammo == Ammo.FIREWORK and _fw_type == id
+	_fw_type = id
+	player.firework = id
+	player.ammo = Ammo.FIREWORK
+	_sync_fw()
+	if not same:
+		sound.ammo_swap(Ammo.FIREWORK)
+		hud.ammo_loaded(Ammo.FIREWORK)
+
+
+## Fireworks found or bought: into the locker, with a "+n" rising off the find
+## and, for a showpiece, a toast of its own. Returns the line it said.
+func _stock_fireworks(add: Dictionary, at: Variant) -> String:
+	var got := Progress.stow_rockets(add)
+	var line := ""
+	var n := 0
+	var show := ""
+	for id: String in Fireworks.ORDER:
+		var k: int = got.get(id, 0)
+		if k <= 0:
+			continue
+		n += k
+		if Fireworks.tier(id) == 2:
+			show = id
+		line += ("" if line.is_empty() else " · ") + "+%d %s" % [k, Fireworks.kind(id).short]
+	if n == 0:
+		return ""
+	if Progress.rockets(_fw_type) <= 0:
+		var nxt := Progress.next_rocket(_fw_type)
+		if nxt != "":
+			_fw_type = nxt
+	_sync_fw()
+	hud.ammo_gain(Ammo.FIREWORK, n)
+	if at != null:
+		hud.floater(line, at, camera, Floaters.Kind.LEGENDARY if show != "" else Floaters.Kind.AMMO, 44.0)
+	if show != "" and state == State.VOYAGE:
+		hud.toast("A showpiece: %s" % Fireworks.kind(show).name, "Pick it from the fireworks in the shot fan" if hud.touch_ui() else "Load fireworks (6) and pick it from the locker", 4.5)
+		sound.treasure(3)
+	return line
+
+
+## The first night at sea with rockets aboard: says how to light them, once.
+func _firework_tip() -> void:
+	if _fw_tip or atmosphere.night < 0.6 or Progress.rockets_total() <= 0 or gunnery.combat or _args.has("shot") or _args.has("smoke"):
+		return
+	_fw_tip = true
+	if Progress.tip_seen("fireworks"):
+		return
+	var how := "Tap the shot button, choose the rocket, then fire a broadside" if hud.touch_ui() else "Press 6 to load fireworks (6 again picks another kind), then fire a broadside"
+	hud.toast("A fine night for fireworks", how, 6.0)
+
+
+## A firework's bang, whistle or crackle, heard from where it went off (a
+## burst high overhead is still as far off as its height).
+func _on_firework_sound(kind: StringName, at: Vector3, power: float) -> void:
+	var h := world.heard(at)
+	sound.firework(kind, minf(1.2, h.x * power), h.y, Vector2(h.z, at.y * 0.8).length())
+
+
 ## Whether the hold has no room for what an item holds (it drifts on, and the
 ## hold says it's full).
 func _refuse(it: Loot.Item) -> bool:
@@ -1944,6 +2108,7 @@ func _haul(it: Loot.Item) -> void:
 	var xz := world.loot.where(it)
 	var at := Vector3(xz.x, 2.0, xz.y)
 	_stock_ammo(Ammo.loot(it.tier), at)
+	_stock_fireworks(Fireworks.loot(it.tier), at)
 	var res := hold.stow(it.goods)
 	var tossed: PackedStringArray = res.tossed
 	if not tossed.is_empty():
@@ -2539,6 +2704,7 @@ func _build_menus() -> void:
 	market.repair.connect(_repair)
 	market.restock.connect(_restock)
 	market.buy_part.connect(_buy_part)
+	market.buy_firework.connect(_buy_firework)
 	market.leave.connect(_cast_off)
 	market.dock.connect(_dock_here)
 	# (the market's buttons knock on the merchant's counter)
@@ -3277,6 +3443,8 @@ func _start_voyage(sea: String) -> void:
 	# the cutthroats are back round their fires, their chests full again
 	shore.reset_camps()
 	stock = Ammo.fresh_stock()
+	world.sky.clear()
+	_sync_fw()
 	hold = Treasure.Hold.new(int(Treasure.HOLD_ROOM.get(p.cls.id, 10)))
 	_hold_nag = 0.0
 	_hauled = 0
@@ -3842,6 +4010,7 @@ func _dock(port: TradePort, now := false) -> void:
 		var b := port.berth(p.cls.beam)
 		p.place(b.x, b.y, b.z)
 		market.open(port.title, port.market, hold, p.gold, world.time)
+		_refresh_pyro()
 		_services()
 		_refresh_parts()
 		_dock_t = 0.0
@@ -3981,6 +4150,40 @@ func _refresh_parts(bought := "") -> void:
 	for pt in Parts.port_stock(dock_port.index + 1):
 		offers.append({"part": pt, "owned": Progress.owns(pt.id)})
 	market.set_parts(offers, Progress.purse, bought)
+
+
+## The pyrotechnist's stall at the quay she's tied to: today's rockets (the
+## same all day for a port), how many of each the locker holds and whether
+## there's room for more.
+func _refresh_pyro(bought := "") -> void:
+	if dock_port == null:
+		return
+	var day := floori(Time.get_unix_time_from_system() / 86400.0)
+	var offers := []
+	for id in Fireworks.stall(dock_port.index + 1, day):
+		offers.append({"id": id, "price": int(Fireworks.kind(id).price), "owned": Progress.rockets(id), "room": Progress.rocket_room(id)})
+	market.set_pyro(offers, bought)
+
+
+## A volley of rockets bought off the pyrotechnist (the web's buyFirework),
+## out of the voyage's gold: a bolt of calico comes aboard and the quay cheers.
+func _buy_firework(id: String) -> void:
+	var port := dock_port
+	if state != State.DOCKED or port == null or not Fireworks.KINDS.has(id):
+		return
+	var price := int(Fireworks.kind(id).price)
+	if price > player.gold or Progress.rocket_room(id) <= 0:
+		return
+	player.gold -= price
+	_stock_fireworks({id: 1}, null)
+	port.unload(PackedStringArray(["calico"]), true)
+	port.cheer(2.0 if Fireworks.tier(id) == 2 else 0.5)
+	sound.purchase(&"shot")
+	_services()
+	_refresh_pyro(id)
+	if Fireworks.tier(id) == 2:
+		voyage.note("trade", "Bought a showpiece: %s" % Fireworks.kind(id).name, "%s · %s gold" % [port.title, MenuKit.num(price)])
+	_note_tour("bought a %s for %d gold" % [id, price])
 
 
 ## A part bought off the shipwright, out of the purse (the web's buyPart):

@@ -82,6 +82,16 @@ func deny(kind: int) -> void:
 	_slots[kind].deny()
 
 
+## A kind's slot (where the firework locker opens from).
+func slot(kind: int) -> Control:
+	return _slots[kind]
+
+
+## The kind of firework chosen: the rockets' slot wears it.
+func set_firework(id: String) -> void:
+	_slots[Ammo.FIREWORK].set_firework(id)
+
+
 func gain(kind: int, n: int) -> void:
 	_slots[kind].gain(n)
 
@@ -133,6 +143,7 @@ class _Slot:
 	var _deny := -1.0
 	var _load := -1.0
 	var _rise := -1.0
+	var _fw := ""
 
 	func _init(k: int) -> void:
 		kind = k
@@ -145,6 +156,8 @@ class _Slot:
 		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		tooltip_text = "%s (%d): %s" % [Ammo.NAME[k], k + 1, Ammo.BLURB[k]]
+		if k == Ammo.FIREWORK:
+			tooltip_text = "%s (%d): rockets in place of shot. Press %d again, or click, to choose which" % [Ammo.NAME[k], k + 1, k + 1]
 		_ball = Control.new()
 		_ball.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_ball.size = Vector2(b, b)
@@ -198,6 +211,13 @@ class _Slot:
 
 	func deny() -> void:
 		_deny = 0.0
+
+	func set_firework(id: String) -> void:
+		if id == _fw:
+			return
+		_fw = id
+		_icon.texture = Icons.firework(id, ShotRack.BALL * 0.88)
+		disc.put(&"ac", Fireworks.color(id))
 
 	func gain(n: int) -> void:
 		_gain.text = "+%d" % n

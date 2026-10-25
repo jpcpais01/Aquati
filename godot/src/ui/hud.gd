@@ -20,6 +20,8 @@ signal pause_pressed
 signal fire_pressed(side: int)
 ## A kind of shot picked off the rack or the pie (Ammo).
 signal ammo_picked(kind: int)
+## A kind of firework picked from the locker (Fireworks.ORDER).
+signal firework_picked(id: String)
 ## The sky badge tapped: its clock (true) or the weather's picture.
 signal sky_tapped(clock: bool)
 ## The minimap was tapped: open the sea chart.
@@ -73,6 +75,11 @@ var _pie: ShotPie
 var _ability: AbilityButton
 ## Whether she has a power to show (Haunt).
 var _has_ability := false
+## The firework locker, over the rockets slot or the shot button.
+var _fw_pick: FireworkPicker
+var _fw := ""
+var _fw_shown := ""
+var _ammo_sel := 0
 ## The loaded shot's name and what it does, over the rack for a moment.
 var _tag: PanelContainer
 var _tag_name: Label
@@ -324,7 +331,14 @@ func _ready() -> void:
 	_rack_sep.draw.connect(func() -> void: _rack_sep.draw_rect(Rect2(_rack_sep.size.x - 1.0, 0.0, 1.0, _rack_sep.size.y), Color(1, 1, 1, 0.08)))
 	console.add_child(_rack_sep)
 	_rack = ShotRack.new()
-	_rack.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
+	_rack.picked.connect(func(kind: int) -> void:
+		# rockets already loaded: the locker opens to choose which kind
+		if kind == Ammo.FIREWORK and _ammo_sel == Ammo.FIREWORK:
+			_fw_pick.opener = _rack.slot(kind)
+			_fw_pick.idles = false
+			_fw_pick.toggle(_rack.slot(kind).get_global_rect())
+		else:
+			ammo_picked.emit(kind))
 	_rack.hovered.connect(_rack_hover)
 	console.add_child(_rack)
 	_pill.add_child(console)
@@ -390,12 +404,22 @@ func _ready() -> void:
 	_pad.fire.connect(func(side: int) -> void: fire_pressed.emit(side))
 	root.add_child(_pad)
 	_pie = ShotPie.new()
-	_pie.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
+	_pie.picked.connect(func(kind: int) -> void:
+		if kind == Ammo.FIREWORK:
+			# on touch the rockets slice opens the locker: tapping a kind loads it
+			_fw_pick.opener = null
+			_fw_pick.idles = true
+			_fw_pick.open_over(Rect2(_pie.global_position - Vector2.ONE * ShotPie.BTN * 0.5, Vector2.ONE * ShotPie.BTN))
+		else:
+			ammo_picked.emit(kind))
 	root.add_child(_pie)
 	_ability = AbilityButton.new()
 	_ability.pressed.connect(func() -> void: ability_pressed.emit())
 	_ability.visible = false
 	root.add_child(_ability)
+	_fw_pick = FireworkPicker.new()
+	_fw_pick.picked.connect(func(id: String) -> void: firework_picked.emit(id))
+	root.add_child(_fw_pick)
 	# ashore on touch: a big round Jump under the right thumb
 	var jd := 76.0 * HudStyle.KT
 	_jump = UiButton.new(Vector2(jd, jd), jd * 0.5, 24.0 * HudStyle.PX)
@@ -454,7 +478,7 @@ func _layout() -> void:
 	# the corner's two buttons a little more
 	var hk := _hk()
 	var hb := hk * (0.86 if hk < 1.0 else 1.0)
-	for c: Control in [_status, minimap, _nav, _pill, _tag]:
+	for c: Control in [_status, minimap, _nav, _pill, _tag, _fw_pick]:
 		c.scale = Vector2(hk, hk)
 	for c: UiButton in [_pause, _zoom]:
 		# (buttons rest at a size round their centre, and squeeze from it)
@@ -739,6 +763,8 @@ func _apply_mode() -> void:
 	_pie.visible = on and sea
 	if not on or not sea:
 		_pie.set_open(false)
+	if not sea:
+		_fw_pick.set_open(false)
 	_jump.visible = on and not sea
 	_blades.visible = on and not sea
 	_hint.visible = not on and not sea and _hint_t > 0.0
@@ -808,8 +834,41 @@ func guns_deny(side: int) -> void:
 
 ## The shot loaded and what's left of each kind (round shot -1, endless).
 func show_ammo(sel: int, stock: PackedInt32Array) -> void:
+	_ammo_sel = sel
 	_rack.show_state(sel, stock)
 	_pie.show_state(sel, stock)
+
+
+## The firework locker ({id: count}) and the kind chosen, which the rockets
+## slot and the shot button wear.
+func show_fireworks(counts: Dictionary, sel: String) -> void:
+	var key := "%s:%s" % [sel, counts]
+	if key == _fw_shown:
+		return
+	_fw_shown = key
+	_fw_pick.show_counts(counts, sel)
+	if sel != _fw:
+		_fw = sel
+		_tag_kind = -1
+	_rack.set_firework(sel)
+	_pie.set_firework(sel)
+
+
+## A set piece's view of the firework locker: open over the rockets slot
+## (or, on touch, the shot button).
+func open_locker() -> void:
+	if _rack.visible:
+		_fw_pick.opener = _rack.slot(Ammo.FIREWORK)
+		_fw_pick.idles = false
+		_fw_pick.open_over(_rack.slot(Ammo.FIREWORK).get_global_rect())
+	else:
+		_fw_pick.opener = null
+		_fw_pick.idles = true
+		_fw_pick.open_over(Rect2(_pie.global_position - Vector2.ONE * ShotPie.BTN * 0.5, Vector2.ONE * ShotPie.BTN))
+
+
+func close_fw_picker() -> void:
+	_fw_pick.set_open(false)
 
 
 ## A kind of shot just loaded: the ball drops in, and (on a desktop) its name
@@ -853,6 +912,11 @@ func _show_tag(kind: int) -> void:
 		_tag_name.add_theme_color_override("font_color", Ammo.COLOR[kind])
 		var line: String = Ammo.BLURB[kind].split(". ")[0]
 		_tag_line.text = line.trim_suffix(".")
+		if kind == Ammo.FIREWORK:
+			# rockets: the kind chosen, and how to choose another
+			_tag_name.text = "Fireworks · %s" % Fireworks.kind(_fw).name
+			_tag_name.add_theme_color_override("font_color", Fireworks.color(_fw))
+			_tag_line.text = "Press 6 again, or click, to choose another kind"
 		_tag.size = _tag.get_combined_minimum_size()
 		_place_tag()
 	_tag.visible = true
@@ -948,9 +1012,10 @@ func warm() -> void:
 ## The back button: the hold's peek or the shot pie, open, folds away
 ## (true if one did).
 func close_popups() -> bool:
-	var was := _peek.visible or _pie.is_open()
+	var was := _peek.visible or _pie.is_open() or _fw_pick.is_open()
 	_peek.set_open(false)
 	_pie.set_open(false)
+	_fw_pick.set_open(false)
 	return was
 
 
@@ -961,6 +1026,7 @@ func reset() -> void:
 		c.reset()
 	_peek.set_open(false)
 	_pie.set_open(false)
+	_fw_pick.set_open(false)
 	fade(true, 0.4)
 
 

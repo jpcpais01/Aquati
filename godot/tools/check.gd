@@ -37,15 +37,15 @@ const TOWN_SHELL_TRIS := 3000
 ## Puerto Marézia's triangles (its quay, buildings, palms and what moves; its folk are the crews').
 const HOME_TRIS := 34000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
-const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "bell", "blast", "bosun_pipe", "bubbles",
+const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "ammo5", "bell", "blast", "bosun_pipe", "bubbles",
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
-		"crunch", "earth", "flames", "foot_step", "founder", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
-		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "sand_step", "scrape0", "scrape1", "shell",
+		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
+		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "rocket", "sand_step", "scrape0", "scrape1", "shell",
 		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
-		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "war_cry3", "war_cry5", "water", "wet_step", "whoosh", "wood"]
+		"vault_burst", "vault_rumble0", "vault_rumble1", "vault_rumble2", "vault_rumble3", "war_cry3", "war_cry5", "water", "wet_step", "whistle", "whoosh", "wood"]
 ## The mix's buses past Master (Sound.build_buses).
 const BUSES := [&"UI", &"Mix", &"SFX", &"Air6k", &"Air2k5", &"Air1k", &"Air450", &"Echo",
 		&"EchoAir6k", &"EchoAir2k5", &"EchoAir1k", &"EchoAir450", &"Amb", &"Bed", &"Surf", &"Wind",
@@ -70,6 +70,7 @@ func _initialize() -> void:
 	_check_progress()
 	_check_parts()
 	_check_cosmetics()
+	_check_fireworks()
 	# the helm's reach is a share of the window, and a strike is aimed by the
 	# lens: those checks wait for the tree to run
 	await process_frame
@@ -2144,6 +2145,128 @@ func _check_locker() -> int:
 	for w in bad:
 		_fail("parts: the locker got %s wrong" % w)
 	return 1 if bad.is_empty() else 0
+
+
+## Fireworks: the shot table has a sixth kind on every line; the
+## pyrotechnists' stalls match the web's to the rocket; the locker hands out
+## its welcome crate once, holds no more than each kind's room, takes a volley
+## at a time, finds the next kind round and survives a save, a load and a
+## damaged file; salvage only holds known kinds; and every kind, launched,
+## climbs, breaks high over the guns with its bangs (and the showpieces' big
+## ones), lights the night and the sea, and leaves the sky quiet again.
+func _check_fireworks() -> void:
+	var t0 := Time.get_ticks_usec()
+	var steps := 0
+	var bad := PackedStringArray()
+	for arr: Array in [Ammo.ID, Ammo.NAME, Ammo.SHORT, Ammo.BLURB, Ammo.GIST, Ammo.COLOR, Ammo.DAMAGE, Ammo.RELOAD, Ammo.SPEED, Ammo.BALLS, Ammo.SPREAD, Ammo.SIZE, Ammo.MAX, Ammo.START]:
+		if arr.size() != Ammo.COUNT:
+			bad.append("a shot table line of %d" % arr.size())
+	if Ammo.ID[Ammo.FIREWORK] != "firework" or Ammo.SPECIALS.has(Ammo.FIREWORK):
+		bad.append("the fireworks' place among the shot")
+	steps += 1 if bad.is_empty() else 0
+	# (the web's pyroStock for the same port and day)
+	var stalls := [[1, 20385, ["chrysanthemum", "peony", "palm", "fish", "ring", "strobe"]],
+			[3, 20386, ["palm", "peony", "willow", "ring", "crackle", "strobe"]],
+			[7, 19999, ["peony", "palm", "chrysanthemum", "crackle", "ring", "saturn", "roger"]],
+			[2, 1, ["willow", "peony", "palm", "fish", "crossette", "strobe"]]]
+	var stall_ok := true
+	for c: Array in stalls:
+		var got := Fireworks.stall(c[0], c[1])
+		if Array(got) != c[2]:
+			stall_ok = false
+			bad.append("port %d's stall on day %d (%s)" % [c[0], c[1], got])
+	steps += 1 if stall_ok else 0
+	# the locker
+	var script: GDScript = load("res://src/core/progress.gd")
+	var file := "user://check-fireworks.json"
+	for f: String in [file, file + ".tmp"]:
+		if FileAccess.file_exists(f):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(f))
+	var a: Node = script.new()
+	a.path = file
+	a._load()
+	var locker_ok: bool = a.fireworks == Fireworks.WELCOME and a.rockets_total() == 8
+	var got: Dictionary = a.stow_rockets({"peony": 40, "kraken": 1, "nonsense": 3})
+	locker_ok = locker_ok and got == {"peony": 27, "kraken": 1} and a.rockets("peony") == 30 and a.rocket_room("peony") == 0
+	locker_ok = locker_ok and a.take_rocket("kraken") and not a.take_rocket("kraken") and a.rockets("kraken") == 0
+	locker_ok = locker_ok and a.next_rocket("willow") == "palm" and a.next_rocket("palm") == "peony"
+	locker_ok = locker_ok and not a.tip_seen("fireworks") and a.tip_seen("fireworks")
+	a.save()
+	var b: Node = script.new()
+	b.path = file
+	b._load()
+	locker_ok = locker_ok and b.fireworks == a.fireworks and b.tips == ["fireworks"]
+	var f2 := FileAccess.open(file, FileAccess.WRITE)
+	f2.store_string(JSON.stringify({"fireworks": {"peony": 99, "willow": -2, "ring": "x", "nope": 4, "roger": 2.0}, "tips": ["a", 3]}))
+	f2.close()
+	var c2: Node = script.new()
+	c2.path = file
+	c2._load()
+	locker_ok = locker_ok and c2.fireworks == {"peony": 30, "roger": 2} and c2.tips == ["a"]
+	var d: Node = script.new()
+	d.path = file
+	d._load()
+	d.fireworks = {}
+	d.save()
+	d._load()
+	# an emptied locker stays empty: the welcome crate comes only once
+	locker_ok = locker_ok and d.fireworks.is_empty()
+	for n: Node in [a, b, c2, d]:
+		n.free()
+	for g: String in [file, file + ".tmp"]:
+		if FileAccess.file_exists(g):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(g))
+	if not locker_ok:
+		bad.append("the locker")
+	steps += 1 if locker_ok else 0
+	var loot_ok := true
+	var found := 0
+	for i in 300:
+		var l := Fireworks.loot(i % 5)
+		for id: String in l:
+			loot_ok = loot_ok and Fireworks.KINDS.has(id) and int(l[id]) > 0
+			found += int(l[id])
+	if not loot_ok or found == 0:
+		bad.append("salvage (%d rockets)" % found)
+	steps += 1 if loot_ok and found > 0 else 0
+	# the sky: every kind off one gun
+	var sky := FireworkSky.new()
+	root.add_child(sky)
+	sky.setup(1.0)
+	var heard := {}
+	var low := 1e9
+	sky.sounded.connect(func(kind: StringName, at: Vector3, _power: float) -> void:
+		heard[kind] = int(heard.get(kind, 0)) + 1
+		if kind == &"burst" or kind == &"big":
+			low = minf(low, at.y))
+	var lit := false
+	var sky_ok := true
+	for i in Fireworks.ORDER.size():
+		sky.launch(Fireworks.ORDER[i], Vector3(i * 30.0, 3.0, 0.0), Vector3.RIGHT, Vector3(0.0, 0.0, 3.0), 0, 1)
+	sky_ok = sky_ok and sky.busy()
+	for i in 30 * 9:
+		sky.step(1.0 / 30.0)
+		for l: OmniLight3D in sky._lamps:
+			lit = lit or (l.visible and l.light_energy > 0.5)
+	var spent := false
+	for i in 30 * 6:
+		sky.step(1.0 / 30.0)
+	spent = not sky.busy() and not sky.visible
+	var stars: int = sky._used
+	for k: StringName in [&"launch", &"whistle", &"burst", &"big", &"crackle", &"pop", &"sizzle"]:
+		if not heard.has(k):
+			sky_ok = false
+			bad.append("no %s heard" % k)
+	sky_ok = sky_ok and int(heard.get(&"big", 0)) == 3 and low > 18.0 and lit and spent and stars > 1500 and stars <= sky._cap
+	sky.free()
+	if not sky_ok:
+		bad.append("the sky (%s; lowest break %.0f m, lit %s, spent %s, %d stars)" % [heard, low, lit, spent, stars])
+	steps += 1 if sky_ok else 0
+	var shape := FireworkSky.roger_shape(1.0)
+	steps += 1 if shape.size() > 150 else 0
+	for w in bad:
+		_fail("fireworks: " + w)
+	print("fireworks: %d of 6 steps as expected; %d stars for a sky of every kind, %d bangs heard, %.0f ms" % [steps, stars, heard.values().reduce(func(x: int, y: int) -> int: return x + y, 0), (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## A class built with each rarity's full set bolted on, and with each part
