@@ -23,6 +23,14 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Her power is the Phantom Run: tap the ghost button (G on a computer) and she crosses into the spirit world for seven seconds, untouchable by shot, ram or reef, her fires out and half as fast again whatever the wind. She comes back with a Banshee\'s Wail, a ring of dread racing over the water that hurts every enemy ship it reaches and cuts down their gun crews. Then the spirits rest for forty seconds.',
         ],
       },
+      {
+        title: 'Android and Windows: feast nights',
+        notes: [
+          'Feast nights come to the Android and Windows game. Every trading port keeps its own feast one night in three, and on the full moon every port in the isles lights up at once for the Full Moon Fair.',
+          'From dusk the quay is strung with paper lanterns that light one after another and swing in the breeze, and the town turns out to dance: a ring dance, swinging couples, a drummer on a barrel and the fiddler playing faster.',
+          'Rockets go up over the harbour through the night in the town\'s favourite shells, with a grand finale at midnight, and little paper lantern boats drift out to sea in a long trail of lights. The band plays across the water, and every merchant pays more.',
+        ],
+      },
     ],
   },
   {

@@ -386,6 +386,30 @@
     1.01124
    ]
   },
+  "reel0": {
+   "ext": "wav",
+   "gain": [
+    1.83713
+   ]
+  },
+  "reel1": {
+   "ext": "wav",
+   "gain": [
+    1.83754
+   ]
+  },
+  "reel2": {
+   "ext": "wav",
+   "gain": [
+    1.84235
+   ]
+  },
+  "reel3": {
+   "ext": "wav",
+   "gain": [
+    1.81862
+   ]
+  },
   "rocket": {
    "ext": "wav",
    "gain": [

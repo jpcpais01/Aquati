@@ -124,7 +124,7 @@ func drawn() -> Vector2i:
 	for t in ports:
 		if t.visible:
 			var whole := t.lively()
-			n.x += t.tris.x if whole else t.tris.y
+			n.x += (t.tris.x + (t.fest_tris if t.dressed() else 0)) if whole else t.tris.y
 			n.y += 1 if whole else 0
 	return n
 

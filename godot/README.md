@@ -150,6 +150,9 @@ Fireworks: `--rockets ID` fills the locker and loads that kind (`peony` ..
 `--locker` opens the firework locker a second before the frame, `--pyro`
 scrolls a docked market (`--dock K`) to the pyrotechnist's stall and
 `--buy-rocket N` buys its N-th rocket just before the frame.
+Feast nights: `--feast K` holds the K-th market town (0 .. 5) at its feast
+whatever the night (lanterns lit, folk dancing, rockets going up; add
+`--hour 21` for the dark), and `--boats N` strews N lantern boats off it.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

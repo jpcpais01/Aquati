@@ -76,6 +76,10 @@ extends Node3D
 ## --locker opens the firework locker a second before the frame, --pyro
 ## scrolls a docked market (--dock K) to the pyrotechnist's stall, and
 ## --buy-rocket N buys its N-th rocket just before the frame.
+## Feast nights: --feast K holds the K-th market (0 .. 5) at its feast
+## whatever the night (its lanterns lit, its folk dancing, its rockets going
+## up; with --hour 21 for the dark), and --boats N strews N lantern boats
+## off it.
 ## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
@@ -128,6 +132,9 @@ var gunnery: Gunnery
 var crew: Crew
 ## The trading ports, and the one she's tied up at (null at sea).
 var ports: TradePorts
+## Feast nights at the trading ports, and the paper-lantern boats they set adrift.
+var festivals: Festivals
+var lanterns: LanternBoats
 ## Puerto Marézia, the home port, where the Shipwright works on her.
 var home: HomePort
 ## The waypoints on the sea chart, raised in the world as pillars of light.
@@ -1132,6 +1139,18 @@ func _build_ports(p0: float, p1: float) -> void:
 	# the harbourmaster rings her in, loud on her own quay
 	ports.bell_rung.connect(func(port: TradePort, _at: Vector3) -> void: sound.bell(2, 0.22 if port == dock_port else 0.08))
 	ports.delivered.connect(_delivered)
+	lanterns = LanternBoats.new()
+	add_child(lanterns)
+	festivals = Festivals.new(ports.ports, world.sky, lanterns, sound)
+	festivals.dusk.connect(_on_feast_dusk)
+	festivals.cheered.connect(func(tp: TradePort) -> void:
+		var h := world.heard(tp.glow_at())
+		sound.cheer(minf(1.0, h.x * 1.3), h.y, h.z, 6)
+		tp.cheer(2.0))
+	if _args.has("feast"):
+		festivals.forced = clampi(int(_args.feast) if str(_args.feast).is_valid_int() else 0, 0, ports.ports.size() - 1)
+		festivals.strew = int(_args.get("boats", 0))
+		festivals.reset()
 	# the home port's quay, built the first time the harbour opens
 	home = HomePort.new()
 	for r in world.regions:
@@ -1495,6 +1514,7 @@ func _tick(real_dt: float) -> void:
 		hud.show_shore(shore, camera)
 	# the towns: hulls kept off their quays, and their folk about their business
 	ports.update(dt, player, camera.global_position, world.ships)
+	festivals.update(dt, real_dt, world, atmosphere.day, atmosphere.moon_phase, camera.global_position, state == State.VOYAGE or state == State.DOCKED)
 	if state == State.DOCKED:
 		dock_port.pin(player)
 		market.tick(real_dt, world.time)
@@ -1572,6 +1592,7 @@ func _tick(real_dt: float) -> void:
 		if s.alive or s.sink_t < 20.0:
 			pushers.append(s)
 	world.debris.update(dt, pushers, ocean, camera.global_position)
+	lanterns.update(dt, world, pushers)
 	# salvage afloat: drawn in and hauled aboard as she sails through it (a
 	# full hold leaves what it can't take bobbing on the swell)
 	var hauling := sailing and player.alive and _farewell == null and not shore.active
@@ -2087,6 +2108,29 @@ func _firework_tip() -> void:
 func _on_firework_sound(kind: StringName, at: Vector3, power: float) -> void:
 	var h := world.heard(at)
 	sound.firework(kind, minf(1.2, h.x * power), h.y, Vector2(h.z, at.y * 0.8).length())
+
+
+## The lanterns going up somewhere tonight: word of it, for the towns in these waters.
+func _on_feast_dusk(towns: Array[TradePort], full: bool) -> void:
+	if state != State.VOYAGE or hud == null or not player.alive:
+		return
+	var here: Region = maps.nearest_region(player.pos.x, player.pos.z)[0]
+	var near: Array[TradePort] = []
+	var names: Array[String] = []
+	for tp in towns:
+		var o := tp.xf.origin
+		if maps.nearest_region(o.x, o.z)[0] == here:
+			near.append(tp)
+			names.append(tp.title)
+	if near.is_empty():
+		return
+	if full:
+		hud.toast(Festival.FULL_MOON.name, Festival.FULL_MOON.line, 4.6)
+	elif near.size() > 1:
+		hud.toast("Feast night at %s" % " and ".join(names), "Lanterns, music and fireworks over the harbours tonight", 4.6)
+	else:
+		var line := str(near[0].feast.line)
+		hud.toast("Feast night at %s" % names[0], "%s: %s%s" % [near[0].feast.name, line.left(1).to_lower(), line.substr(1)], 4.6)
 
 
 ## Whether the hold has no room for what an item holds (it drifts on, and the
@@ -3444,6 +3488,7 @@ func _start_voyage(sea: String) -> void:
 	shore.reset_camps()
 	stock = Ammo.fresh_stock()
 	world.sky.clear()
+	festivals.reset()
 	_sync_fw()
 	hold = Treasure.Hold.new(int(Treasure.HOLD_ROOM.get(p.cls.id, 10)))
 	_hold_nag = 0.0
@@ -4009,6 +4054,7 @@ func _dock(port: TradePort, now := false) -> void:
 		port.set_ship(p)
 		var b := port.berth(p.cls.beam)
 		p.place(b.x, b.y, b.z)
+		market.kicker = "TRADING PORT · FEAST NIGHT" if port.festive > 0.3 else "TRADING PORT"
 		market.open(port.title, port.market, hold, p.gold, world.time)
 		_refresh_pyro()
 		_services()
@@ -4364,7 +4410,7 @@ func _chart_pick(x: float, z: float, pick: float) -> Dictionary:
 		var aim := tp.to_world(Vector3(0.0, 0.0, 48.0))
 		t.aim = Vector2(aim.x, aim.z)
 		t.port = tp
-		return {"target": t, "pin": null, "color": Color("#ffd77a"), "kicker": "Trading port"}
+		return {"target": t, "pin": null, "color": Color("#ffd77a"), "kicker": "Trading port · feast night" if tp.festive > 0.3 else "Trading port"}
 	for r in world.regions:
 		for isl: Dictionary in r.islands:
 			var ix := float(isl.x)
