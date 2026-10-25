@@ -18,7 +18,7 @@ const CELL := 8.0
 var world: World
 ## Towns and the harbour (x, z, r): no wandering through their walls.
 var towns: Array[Vector3] = []
-## Discs nobody walks into on top of the plants (x, z, r): camp furniture, the boat.
+## Discs nobody walks into for a while (x, z, r): the boat on the beach.
 var blocks: Array[Vector3] = []
 ## Trunks and boulders (x, z, r) bucketed by CELL.
 var _solids := {}
@@ -68,6 +68,15 @@ func _plant_solids(r: Region) -> void:
 					_solids[key] = [] as Array[Vector3]
 				(_solids[key] as Array[Vector3]).append(Vector3(px, pz, rad * k))
 				solid_count += 1
+
+
+## A solid disc (x, z, r) for good: a camp's furniture, walked round like a trunk.
+func add_solid(x: float, z: float, r: float) -> void:
+	var key := _key(floori(x / CELL), floori(z / CELL))
+	if not _solids.has(key):
+		_solids[key] = [] as Array[Vector3]
+	(_solids[key] as Array[Vector3]).append(Vector3(x, z, r))
+	solid_count += 1
 
 
 static func _key(gx: int, gz: int) -> int:

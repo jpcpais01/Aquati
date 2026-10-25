@@ -21,6 +21,14 @@ const CUT_END := [0.56, 0.5, 0.66]
 const STEP_IN := [1.7, 1.1, 2.9]
 
 ## Walking and running pace on foot (m/s).
+## The figure's rig, as the crews' sculpt bends it (the web's RIG): the
+## shoulder's and elbow's heights, the shoulder's reach, and the grip.
+const SH_X := 0.215
+const SH_Y := 1.4
+const EL_Y := 1.125
+const GRIP_Y := 0.818
+const RIG_HX := -(SH_X + 0.01) + 0.012
+
 const WALK := 3.0
 const RUN := 5.3
 ## A jump: take-off speed (m/s) and the pull back down (m/s²): about 0.75 m up, 0.7 s aloft.
@@ -139,6 +147,10 @@ var cheer := 0.0
 var shout := 0.0
 var last_hurt := -100.0
 var target: ShoreWalker
+## The blade's tip and middle last frame, for its trail (live while it flies).
+var tip := Vector3.ZERO
+var mid := Vector3.ZERO
+var tip_live := false
 # at ease
 var idle := Idle.STAND
 var idle_t := 0.0
@@ -277,6 +289,62 @@ func get_up(p_hp: float) -> void:
 	down_t = -1.0
 	rise = 1.0
 	hp = maxf(hp, p_hp)
+
+
+## Where along the cutlass's blade (0 the hilt .. 1 the tip) lies, in the
+## world, as the vertex shader bends the arm holding it (the web's bladeAt).
+func blade_at(along: float) -> Vector3:
+	var o := pose
+	var d := 0.04 + along * 0.62
+	var cv := 0.06 * along * along
+	var p := Vector3(RIG_HX, GRIP_Y - 0.5 * d + 0.866 * cv, 0.006 + 0.866 * d + 0.5 * cv)
+	# elbow, shoulder, spine
+	p = _rot_x(p, EL_Y, -o[P_ELBOW_R])
+	p = _rot_xz(p, SH_Y, -o[P_ARM_RX], -o[P_ARM_RZ])
+	p = _spine(p, o[P_SPINE_X], o[P_SPINE_Z], o[P_SPINE_Y])
+	p.y += o[P_ROOT_Y]
+	return xf * p
+
+
+static func _rot_x(p: Vector3, py: float, a: float) -> Vector3:
+	var c := cos(a)
+	var s := sin(a)
+	var y := p.y - py
+	return Vector3(p.x, py + c * y - s * p.z, s * y + c * p.z)
+
+
+static func _rot_xz(p: Vector3, py: float, ax: float, az: float) -> Vector3:
+	var x := p.x + SH_X
+	var y := p.y - py
+	var z := p.z
+	var c := cos(ax)
+	var s := sin(ax)
+	var y1 := c * y - s * z
+	z = s * y + c * z
+	y = y1
+	c = cos(az)
+	s = sin(az)
+	return Vector3(-SH_X + c * x - s * y, py + s * x + c * y, z)
+
+
+static func _spine(p: Vector3, ax: float, az: float, ay: float) -> Vector3:
+	var py := 0.98
+	var x := p.x
+	var y := p.y - py
+	var z := p.z
+	var c := cos(ax)
+	var s := sin(ax)
+	var y1 := c * y - s * z
+	z = s * y + c * z
+	y = y1
+	c = cos(az)
+	s = sin(az)
+	var x1 := c * x - s * y
+	y = s * x + c * y
+	x = x1
+	c = cos(ay)
+	s = sin(ay)
+	return Vector3(c * x + s * z, py + y, -s * x + c * z)
 
 
 ## Clocks the timers on.

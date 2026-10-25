@@ -175,6 +175,8 @@ var dock_port: TradePort
 var shore_ground: ShoreGround
 var shore: Shore
 var _steer := Shore.Steer.new()
+## Afloat: no one's hand on the captain.
+var _idle_steer := Shore.Steer.new()
 ## The beach she could put a boat on now (ShoreGround.landing; checked a few times a second).
 var _landing := {}
 var _land_t := 0.0
@@ -183,8 +185,15 @@ var _prompt_kind := ""
 ## The zoom she had at sea, given back when the boat pulls out again.
 var _sea_zoom := 0.45
 var _shore_tip := false
+## Pulses from the touch Strike and Pistol.
+var _hud_strike := false
+var _hud_pistol := false
 ## A set piece's (or the smoke tour's) hand on the stick ashore.
 var _auto_walk := Vector2.ZERO
+## A set piece's sword arm ashore (`--brawl`): at the nearest cutthroat, and
+## with `--plunder` on to the chest once they're routed.
+var _brawl := false
+var _plunder := false
 var _tour_walk_from := Vector2.ZERO
 var market: MarketPanel
 var collisions := Collisions.new()
@@ -416,6 +425,8 @@ func _load() -> void:
 	hud.ammo_picked.connect(func(kind: int) -> void: _pick_ammo(kind))
 	hud.sky_tapped.connect(_on_sky_tap)
 	hud.jump_pressed.connect(func() -> void: controls.jump = true)
+	hud.strike_pressed.connect(func() -> void: _hud_strike = true)
+	hud.pistol_pressed.connect(func() -> void: _hud_pistol = true)
 	add_child(hud)
 	await _loaded_to(0.72)
 	maps.world = world
@@ -497,6 +508,8 @@ func _load() -> void:
 		_stage_dock()
 	if _args.has("ashore") or _args.has("beach"):
 		_stage_ashore()
+	elif _args.has("camp"):
+		_stage_camp()
 	_tour = _harbour_first() and _args.has("smoke")
 	if _harbour_first():
 		if _args.has("orbit"):
@@ -1090,8 +1103,16 @@ func _build_ports(p0: float, p1: float) -> void:
 	await _loaded_to(p0 + (p1 - p0) * 0.7)
 	# the islands as ground to walk, and the landing party's boat and people
 	shore_ground = ShoreGround.new(world, world.regions)
-	shore = Shore.new(shore_ground, crew, ports.arts().parts)
+	shore = Shore.new(shore_ground, crew, ports.arts().parts, world.regions)
 	add_child(shore)
+	shore.floated.connect(func(text: String, at: Vector3, kind: int) -> void:
+		var k: Floaters.Kind = [Floaters.Kind.GOOD, Floaters.Kind.BAD, Floaters.Kind.LOOT][kind]
+		hud.floater(text, at, camera, k, 6.0 if kind == Shore.FLOAT_LOOT else 0.0))
+	shore.shook.connect(func(a: float) -> void: camera.shake(a))
+	shore.alarmed.connect(_on_camp_alarm)
+	shore.camp_routed.connect(_on_camp_routed)
+	shore.plundered.connect(_on_camp_plundered)
+	shore.captain_fell.connect(_on_captain_fell)
 	shore.stepped.connect(func(k: float, wet: bool, hard: bool) -> void: sound.step(k, wet, hard))
 	shore.hopped.connect(_on_hop)
 
@@ -1412,7 +1433,10 @@ func _tick(real_dt: float) -> void:
 			ashore = false
 		else:
 			_control_shore()
-			shore.update(dt, world, _steer)
+	# (afloat too: the camps in sight keep their fires and their watch)
+	shore.update(dt, world, _steer if ashore else _idle_steer, camera.target)
+	if ashore:
+		hud.show_shore(shore, camera)
 	# the towns: hulls kept off their quays, and their folk about their business
 	ports.update(dt, player, camera.global_position, world.ships)
 	if state == State.DOCKED:
@@ -3198,6 +3222,8 @@ func _start_voyage(sea: String) -> void:
 	p.ammo = Ammo.ROUND
 	voyage = Voyage.new()
 	discovered.clear()
+	# the cutthroats are back round their fires, their chests full again
+	shore.reset_camps()
 	stock = Ammo.fresh_stock()
 	hold = Treasure.Hold.new(int(Treasure.HOLD_ROOM.get(p.cls.id, 10)))
 	_hold_nag = 0.0
@@ -3416,7 +3442,7 @@ func _go_ashore(now := false) -> void:
 		p.speed = 0.0
 		shore.land(p, beach, world)
 		controls.foot = true
-		hud.set_ashore(true)
+		hud.set_ashore(true, isle)
 		_sea_zoom = camera.zoom
 		camera.zoom = 0.32
 		camera.foot = true
@@ -3428,9 +3454,10 @@ func _go_ashore(now := false) -> void:
 		hud.toast("Ashore", "%s: your hands follow your lead" % isle, 3.2)
 		if not _shore_tip:
 			_shore_tip = true
-			var how := "Steer with the stick on the left · push it to the rim to run · Jump to hop" if controls.touch else "WASD or the arrows to walk · Shift runs · Space jumps · F at the boat rows back"
+			var how := "Stick on the left to walk · Strike to swing, Pistol to fire · Jump to hop" if controls.touch else "WASD to walk · Click swings, chain three for a lunge · Q fires your pistol · Space jumps · F at the boat rows back"
 			get_tree().create_timer(3.8).timeout.connect(func() -> void:
-				if shore.active:
+				# (not over a fight's own toasts)
+				if shore.active and not shore.fighting():
 					hud.toast("On foot", how, 6.0))
 		_note_tour("ashore on %s" % isle)
 	if now:
@@ -3475,6 +3502,9 @@ func _shore_act() -> void:
 		return
 	if shore.interact() == "boat":
 		_return_to_ship()
+		return
+	# (a chest opened: plundered says what was in it)
+	_shore_prompt()
 
 
 ## Ashore: up the screen is north (the camera looks north), so the stick and
@@ -3485,8 +3515,82 @@ func _control_shore() -> void:
 	_steer.mz = -w.y
 	_steer.run = controls.run or w.length() > 0.97
 	_steer.jump = controls.jump
+	# the cutlass on a click (or Strike), the pistol on Q / E (or Pistol),
+	# swung and fired toward the pointer where there is one
+	_steer.strike = controls.fire_aim or _hud_strike
+	_steer.pistol = controls.fire_side != 0 or _hud_pistol
+	_hud_strike = false
+	_hud_pistol = false
+	if _brawl:
+		_brawl_steer()
+		return
+	_steer.has_aim = false
+	if controls.pointer_active and not controls.touch and shore.captain != null:
+		var o := camera.project_ray_origin(controls.pointer)
+		var d := camera.project_ray_normal(controls.pointer)
+		var y := shore.captain.y + 1.0
+		if d.y < -0.02:
+			var at := o + d * ((y - o.y) / d.y)
+			_steer.has_aim = true
+			_steer.aim = Vector2(at.x, at.z)
 	if controls.interact:
 		_shore_act()
+
+
+## A camp roused: its cutthroats come running.
+func _on_camp_alarm(_c: Shore.Camp) -> void:
+	hud.toast("To arms!", "Cutthroats come running from their camp", 2.6)
+
+
+## The last of a camp's gang down: the chest is theirs to open.
+func _on_camp_routed(c: Shore.Camp) -> void:
+	hud.toast("Camp routed", "Their chest is yours for the taking", 3.4)
+	sound.chime()
+	voyage.note("camp", "Routed a cutthroat camp", str(c.island.get("name", "")))
+	_note_tour("routed camp %d" % c.index)
+
+
+## The cutthroats' chest thrown open: gold, a chest's worth of plunder, shot
+## for the racks and maybe a ship part.
+func _on_camp_plundered(c: Shore.Camp) -> void:
+	var at := Vector3(c.chest.global_position.x, c.chest.global_position.y + 1.2, c.chest.global_position.z)
+	var gold := roundi(120.0 + randf() * 140.0 + c.gang.size() * 15.0)
+	Progress.earn(gold)
+	hud.floater("+%d gold" % gold, at + Vector3(0.0, 0.6, 0.0), camera, Floaters.Kind.GOOD, 10.0)
+	var tier := Loot.roll_tier(0.5, 2)
+	var res := hold.stow(Treasure.roll_contents(tier))
+	var tossed: PackedStringArray = res.tossed
+	if not tossed.is_empty():
+		_nag_hold(tossed.size())
+	_stock_ammo({Ammo.SHELL: 2, Ammo.FIRE: 1, Ammo.CHAIN: 1, Ammo.GRAPE: 2}, at)
+	var kept := Array(res.kept as PackedStringArray)
+	var rarity: String = Treasure.RARITY_NAME[tier]
+	sound.treasure(tier)
+	world.fx.treasure(at, Loot.GLOW[tier], tier)
+	camera.shake(0.12)
+	var names := ", ".join(kept.map(func(id: String) -> String: return Treasure.name_of(id)))
+	voyage.note("chest", "Plundered a cutthroat camp", "%s chest · +%d gold%s" % [rarity, gold, (" · " + names) if names != "" else ""])
+	if not kept.is_empty():
+		kept.sort_custom(func(a: String, b: String) -> bool: return Treasure.rarity_of(a) > Treasure.rarity_of(b))
+		var best: String = kept[0]
+		var r := Treasure.rarity_of(best)
+		hud.loot_toast(Icons.plunder(best, 48.0), r, "Cutthroats' %s chest" % rarity.to_lower(), Treasure.name_of(best), 3.4)
+	else:
+		hud.toast("Cutthroats' chest", "+%d gold" % gold, 3.0)
+	_chest_part(tier, at, 1.2)
+	_note_tour("plundered camp %d for %d gold" % [c.index, gold])
+
+
+## The captain cut down ashore: the hands carry him off, some of the purse lost.
+func _on_captain_fell() -> void:
+	hud.toast("The captain is down", "The hands drag you back to the boat", 3.0)
+	get_tree().create_timer(2.4).timeout.connect(func() -> void:
+		if not shore.active:
+			return
+		var lost := mini(roundi(Progress.purse * 0.1), 200)
+		if lost > 0 and Progress.spend(lost):
+			hud.toast("-%d gold" % lost, "Lost in the scuffle", 3.0)
+		_return_to_ship("The hands row you back, bruised…"))
 
 
 func _on_hop(up: bool, k: float, wet: bool, hard: bool) -> void:
@@ -3520,6 +3624,98 @@ func _stage_ashore() -> void:
 		else:
 			var d := wa.split(",")
 			_auto_walk = Vector2(float(d[0]), float(d[1]))
+
+
+## A set piece by a cutthroat camp: `--camp N` lands the party on camp N's
+## island and walks them up to a stone's throw short of its fire (in the
+## lee of the tent, unseen); `--brawl` swings at them, `--plunder` too and
+## opens the chest after.
+func _stage_camp() -> void:
+	var n := clampi(int(str(_args.camp)), 0, shore.camps.size() - 1)
+	var c: Shore.Camp = shore.camps[n]
+	var cx := float(c.site.x)
+	var cz := float(c.site.z)
+	# off the camp's own island, then the party set down short of the fire
+	var isl: Dictionary = c.island
+	var dir := Vector2(cx - float(isl.x), cz - float(isl.z)).normalized()
+	var d := 0.0
+	while d < 600.0 and world.ground_height(cx + dir.x * d, cz + dir.y * d) > -6.0:
+		d += 4.0
+	var bx := cx + dir.x * (d + 30.0)
+	var bz := cz + dir.y * (d + 30.0)
+	player.place(bx, bz, atan2(-dir.x, -dir.y))
+	player.speed = 0.0
+	player.sail_target = 0.0
+	camera.snap_to(player.pos)
+	_landing = shore_ground.landing(bx, bz, 80.0 + player.cls.beam)
+	if _landing.is_empty():
+		_landing = {"x": cx + dir.x * d, "z": cz + dir.y * d, "dx": -dir.x, "dz": -dir.y, "sand_x": cx + dir.x * 24.0, "sand_z": cz + dir.y * 24.0, "island": isl}
+	_go_ashore(true)
+	if not shore.active:
+		printerr("no landing by camp %d" % n)
+		return
+	# (south of it where there's ground, so it's up the screen ahead of them)
+	var stand := 22.0
+	var a := 0.0
+	var sx := cx + sin(a) * stand
+	var sz := cz + cos(a) * stand
+	for k in 24:
+		var b := a + (k >> 1) * TAU / 24.0 * (1.0 if k % 2 == 0 else -1.0)
+		if shore_ground.open(cx + sin(b) * stand, cz + cos(b) * stand) and shore_ground.height(cx + sin(b) * stand, cz + cos(b) * stand) > 0.3:
+			sx = cx + sin(b) * stand
+			sz = cz + cos(b) * stand
+			break
+	var face := atan2(cx - sx, cz - sz)
+	for i in shore.party.size():
+		var w := shore.party[i].walker
+		var side := 0.0 if i == 0 else (1.0 if i % 2 == 1 else -1.0)
+		var back := 0.0 if i == 0 else (1.4 if i < 3 else 2.8)
+		w.place(sx - sin(face) * back + cos(face) * side * 1.4, sz - cos(face) * back - sin(face) * side * 1.4, face)
+		w.y = shore_ground.height(w.x, w.z)
+	camera.snap_to(Vector3(sx, shore.captain.y + 1.0, sz))
+	_brawl = _args.has("brawl") or _args.has("plunder")
+	_plunder = _args.has("plunder")
+
+
+## `--brawl`'s hand on the captain: at the nearest cutthroat on their feet,
+## the cutlass when close and the pistol when loaded; once the camp's routed,
+## with `--plunder`, to the chest and open it.
+func _brawl_steer() -> void:
+	var cap := shore.captain
+	_steer.mx = 0.0
+	_steer.mz = 0.0
+	_steer.strike = false
+	_steer.pistol = false
+	_steer.run = false
+	_steer.has_aim = false
+	var near: ShoreWalker = null
+	var nd := INF
+	var home: Shore.Camp = shore.camp_at(cap.x, cap.z, 60.0)
+	if home == null:
+		return
+	for f in home.gang:
+		var fd := Vector2(f.x - cap.x, f.z - cap.z).length()
+		if f.alive() and not f.is_down() and fd < nd:
+			nd = fd
+			near = f
+	if near != null:
+		_steer.has_aim = true
+		_steer.aim = Vector2(near.x, near.z)
+		if nd > 1.7:
+			_steer.mx = (near.x - cap.x) / nd
+			_steer.mz = (near.z - cap.z) / nd
+			_steer.run = nd > 6.0
+		else:
+			_steer.strike = true
+		_steer.pistol = nd < 12.0 and nd > 4.0 and shore.pistol_load() >= 1.0
+	elif _plunder and home.routed and not home.opened:
+		var at: Vector3 = home.layout.chest
+		var v := Vector2(at.x - cap.x, at.z - cap.z)
+		if v.length() > 1.6:
+			_steer.mx = v.normalized().x
+			_steer.mz = v.normalized().y
+		else:
+			_shore_act()
 
 
 ## Where she can lie off island `n`'s beach (of the waters she's in): {x, z,

@@ -86,7 +86,7 @@ class _Button:
 	## The fingers (or the mouse, -1) holding it down.
 	var _down := {}
 
-	func _init(s: int, d: float) -> void:
+	func _init(s: int, d: float, icon_id := "", text := "") -> void:
 		side = s
 		custom_minimum_size = Vector2(d, d)
 		size = custom_minimum_size
@@ -106,11 +106,13 @@ class _Button:
 		col.position = Vector2.ZERO
 		col.size = size
 		var ink := HudStyle.GOLD_INK if main else HudStyle.INK_3
-		var icon_id := "cannon" if main else ("chevL" if s > 0 else "chev")
+		if icon_id == "":
+			icon_id = "cannon" if main else ("chevL" if s > 0 else "chev")
 		_icon = Icons.rect(icon_id, (30.0 if main else 20.0) * HudStyle.KT, ink)
 		_icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		col.add_child(_icon)
-		var text := "FIRE" if main else ("PORT" if s > 0 else "STBD")
+		if text == "":
+			text = "FIRE" if main else ("PORT" if s > 0 else "STBD")
 		var px := (12.0 if main else 9.0) * HudStyle.KT
 		_label = HudStyle.label(text, "inter", 800, roundi(px), ink, roundi(px * (0.2 if main else 0.16)))
 		_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

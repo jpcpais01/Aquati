@@ -896,6 +896,41 @@ func hop(up: bool, k: float, wet: bool, hard: bool) -> void:
 	_one(key, v / 0.284, (randf() - 0.5) * 0.12, 0.0, 0.94 + randf() * 0.12)
 
 
+## Steel on steel: a bright ring of a blade's partials and a hiss of edge.
+func clash(vol: float, pan: float, dist := 0.0) -> void:
+	var v := minf(0.5, vol * 0.42) * exp(-dist / 160.0)
+	if _voice(v):
+		_one("clash", v / 0.42, pan, 0.0, 0.94 + randf() * 0.12)
+
+
+## A blade cutting the air.
+func swish(vol: float, pan: float) -> void:
+	var v := vol * 0.2
+	if v >= 0.01 and _voice(v):
+		_one("swish", v / 0.2, pan, 0.0, 0.9 + randf() * 0.2)
+
+
+## A blow landing on someone: a dull thwack and the breath knocked out of them.
+func thwack(vol: float, pan: float, dist := 0.0, heavy := false) -> void:
+	var v := minf(0.6, vol * (0.55 if heavy else 0.4)) * exp(-dist / 140.0)
+	if _voice(v):
+		_one("thwack_heavy" if heavy else "thwack", v / (0.55 if heavy else 0.4), pan, 0.0, 0.92 + randf() * 0.16)
+
+
+## A flintlock: the pan's hiss, then a sharp crack and its echo off the hills.
+func pistol(vol: float, pan: float, dist := 0.0) -> void:
+	var v := minf(0.75, vol * 0.7) * exp(-dist / 260.0)
+	if _voice(v):
+		_one("pistol", v / 0.7, pan, 0.0, 0.96 + randf() * 0.08, 1.0)
+
+
+## A war cry out of a cutthroat camp, `n` voices raised together.
+func war_cry(vol: float, pan: float, dist := 0.0, n := 3) -> void:
+	var v := minf(0.4, vol * 0.3) * exp(-dist / 200.0)
+	if _voice(v):
+		_one("war_cry%d" % (5 if n > 3 else 3), v / 0.3, pan, 0.0, 0.95 + randf() * 0.1, 1.0)
+
+
 ## A gold doubloon flipped onto the counter: a heavy, warm chink and its bounces.
 func coin(delay := 0.0, vol := 0.5) -> void:
 	_emit("coin", vol, (randf() - 0.5) * 0.3, 0.0, 0.93 + randf() * 0.14, 0.18, delay)
