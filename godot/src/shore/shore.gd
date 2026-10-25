@@ -1924,9 +1924,8 @@ func _hurt(b: ShoreWalker, a: ShoreWalker, dmg: float, world: World, heavy: bool
 		return
 	if b.team == ShoreWalker.Team.FOE:
 		var boss := b.max_hp > FOE_HP
+		# (his spirit slips out of him once he's hit the sand: Spirits)
 		fallen.emit(b, boss)
-		# his spirit slips out of him once he's hit the sand
-		_later.append([time + 0.85, func() -> void: _wisp(Vector3(b.x, b.y, b.z), world, boss)])
 		var camp := _camp_of(b)
 		if camp != null and not camp.routed:
 			var all_down := true
@@ -1976,16 +1975,6 @@ func _dust(at: Vector3, world: World, k: float) -> void:
 	for i in (2 if on_deck else 3) + roundi(k * 2.0):
 		world.fx.emit(at + Vector3((randf() - 0.5) * 0.4, 0.0, (randf() - 0.5) * 0.4), Vector3((randf() - 0.5) * 2.0 * k, 0.4 + randf() * k, (randf() - 0.5) * 2.0 * k),
 				0.7 + randf() * 0.5, 0.3 * k, (0.8 if on_deck else 1.1) * k, c, Color(c, 1.0), 0.3, 2.4, Particles.SMOKE, 0.02)
-
-
-## A cutthroat's spirit leaving him: a pale wisp that curls up off the sand and fades.
-func _wisp(at: Vector3, world: World, boss: bool) -> void:
-	var n := 14 if boss else 9
-	for i in n:
-		var a := i * 0.9
-		var r := 0.15 + randf() * 0.25
-		world.fx.emit(at + Vector3(cos(a) * r, 0.2 + randf() * 0.6, sin(a) * r), Vector3(-sin(a) * 0.4, 1.2 + randf() * 1.4, cos(a) * 0.4),
-				1.2 + randf() * 0.8, 0.22 + randf() * 0.15, 0.6, Color(0.7, 1.6, 1.25, 0.55), Color(0.3, 0.9, 0.7), -0.4, 0.8, Particles.SOFT, 0.15, Vector2.ZERO, 0.0, true)
 
 
 ## A sound out of the fight, where it happens: "swish", "clash", "thwack"

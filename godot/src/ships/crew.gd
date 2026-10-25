@@ -26,6 +26,8 @@ var close_up := false
 var crowds: Array[Callable] = []
 ## Ship -> ShipCrew.
 var _crews := {}
+## A pirate gone under for good (see ShipCrew.soul).
+signal soul(f: Dictionary)
 var _orphans: Array[Sailor] = []
 var _free := PackedInt32Array()
 var _planes: Array[Plane] = []
@@ -103,7 +105,9 @@ func update(dt: float, world: World, camera: Camera3D, focus: Vector3, view_r: f
 	# crews come aboard new ships, and are cast adrift when a ship is gone
 	for s in world.ships:
 		if not s.removed and not _crews.has(s):
-			_crews[s] = ShipCrew.new(s, _take_row, lean)
+			var nc := ShipCrew.new(s, _take_row, lean)
+			nc.soul = func(f: Dictionary) -> void: soul.emit(f)
+			_crews[s] = nc
 	for s: Variant in _crews.keys():
 		if is_instance_valid(s) and not (s as Ship).removed and world.ships.has(s):
 			continue
@@ -159,6 +163,10 @@ func update(dt: float, world: World, camera: Camera3D, focus: Vector3, view_r: f
 		var sl := _orphans[i]
 		if dt > 0.0:
 			CrewBrain.step_loose(sl, dt, world)
+		if ShipCrew.sinking(sl):
+			sl.souled = true
+			soul.emit({"x": sl.wx, "y": world.water_height(sl.wx, sl.wz), "z": sl.wz, "hat": sl.look.hat,
+					"girth": sl.girth, "height": sl.height, "boss": false, "delay": 0.1})
 		if sl.mode == Sailor.Mode.GONE:
 			_release(sl)
 			_orphans.remove_at(i)

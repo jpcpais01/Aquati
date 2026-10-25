@@ -14,6 +14,9 @@ var look: CrewLook
 ## His palette row (CrewView), -1 once released.
 var row := -1
 var mode := Mode.ABOARD
+## A pirate (his ghost rises when he goes under), and whether it has.
+var foe := false
+var souled := false
 ## Called away ashore with the landing party: not on deck, not drawn there.
 var away := false
 var act := Act.STAND

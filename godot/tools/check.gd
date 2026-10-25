@@ -46,7 +46,7 @@ const FORT_TRIS := 26000
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "ammo5", "bell", "blast", "bosun_pipe", "bubbles",
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
-		"mallet", "mirage", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
+		"mallet", "mirage", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell", "spirit",
 		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "wraith", "ghost_wail", "exorcise", "grapple", "hook_bite", "hull_boom", "yell", "dig", "spade_knock", "parchment", "horn", "wanted2", "wanted3", "bounty",
 		"kr_boom", "kr_death", "kr_drone", "kr_drums0", "kr_drums1", "kr_drums2", "kr_flesh", "kr_moan", "kr_omen", "kr_roar0", "kr_roar1", "kr_roar2",
 		"kr_rush", "kr_shriek", "kr_strings",
@@ -482,6 +482,52 @@ func _check_birds(regions: Array[Region]) -> void:
 	stage.queue_free()
 
 
+## The fallen pirates' ghosts: the figure, ghosts rising together finding
+## sky of their own, the sky full at the cap, each freed once his act is
+## over, and a pirate drowning (or a laid ghost ship's crew) giving one up.
+func _check_spirits() -> void:
+	var fx := Particles.new()
+	root.add_child(fx)
+	var sp := Spirits.new()
+	root.add_child(sp)
+	sp.setup(6, fx)
+	var tris := int(Spirits.figure().surface_get_array_index_len(0) / 3)
+	if tris < 1500 or tris > 6000:
+		_fail("spirits: the figure has %d triangles" % tris)
+	var voices := [0]
+	sp.rose.connect(func(_at: Vector3) -> void: voices[0] += 1)
+	var ok := 0
+	for i in 8:
+		if sp.release({"x": 10.0, "y": 0.0, "z": 20.0, "hat": i % 5, "girth": 1.0, "height": 1.0, "delay": 0.1}, 100.0):
+			ok += 1
+	var crowded := 0
+	for a in sp._live:
+		for b in sp._live:
+			if a != b and Vector2(a.x - b.x, a.z - b.z).length() < Spirits.SPACING * 0.5:
+				crowded += 1
+	if ok != 6 or crowded > 0:
+		_fail("spirits: %d of 8 rose into a sky for 6, %d pairs crowding each other" % [ok, crowded])
+	var t := 100.0
+	for i in 60:
+		t += 0.1
+		sp.update(0.1, t)
+	if sp.count() != 0 or voices[0] != 6:
+		_fail("spirits: after their act %d ghosts linger and %d found a voice" % [sp.count(), voices[0]])
+	# a pirate swimming his last, and the crew of a ghost ship laid to rest
+	var sl := Sailor.new(Sailor.Role.HAND, CrewLook.new(), 0, null, RandomNumberGenerator.new())
+	sl.foe = true
+	sl.mode = Sailor.Mode.SWIM
+	sl.fade = 0.7
+	if not ShipCrew.sinking(sl):
+		_fail("spirits: a pirate going under gives up no ghost")
+	sl.foe = false
+	if ShipCrew.sinking(sl):
+		_fail("spirits: one of your own hands gives up a ghost")
+	print("spirits: a figure of %d triangles; %d of 8 rose into a sky for 6, all gone after their act with %d voices" % [tris, ok, voices[0]])
+	sp.queue_free()
+	fx.queue_free()
+
+
 ## Photo mode: the camera's pose round trip, the crop windows, every
 ## filter's look and the sky put back as it was after a preview.
 func _check_photo() -> void:
@@ -724,6 +770,7 @@ func _initialize() -> void:
 		_check_drift(_home_world.regions)
 		_check_birds(_home_world.regions)
 	_check_photo()
+	_check_spirits()
 	if _home_world != null:
 		_check_rare(_home_world)
 	await _check_updates()

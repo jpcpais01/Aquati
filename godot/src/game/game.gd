@@ -211,6 +211,9 @@ var survivors: Survivors
 var drift: Drift
 ## The herring gulls: the flock, the riders on the flotsam, and the carrier.
 var birds: Birds
+## The fallen pirates' ghosts, and when one last found a voice.
+var spirits: Spirits
+var _spirit_sound_t := -100.0
 ## The carrier's errands waiting to be flown (each tells its news when she lands).
 var _gull_news: Array[Callable] = []
 var _gull_cool := 0.0
@@ -620,6 +623,7 @@ func _load() -> void:
 	_stage_drift()
 	_stage_rare()
 	_stage_gull()
+	_stage_spirits()
 	if _args.has("convoy"):
 		_stage_convoy()
 	if not _harbour_first():
@@ -1253,6 +1257,12 @@ func _build_fleet() -> void:
 	birds.setup(isles, (region if region != null else regions[0]).islands, 18 if Settings.quality == Settings.Quality.LOW else 36, world.ground_height)
 	add_child(birds)
 	drift.rider.connect(func(spot: Drift.Spot) -> void: birds.ride(spot))
+	spirits = Spirits.new()
+	spirits.name = "Spirits"
+	spirits.setup(14 if Settings.quality == Settings.Quality.LOW else 28, world.fx)
+	add_child(spirits)
+	spirits.rose.connect(_spirit_voice)
+	crew.soul.connect(_raise_soul)
 	drift.rider_gone.connect(func(spot: Drift.Spot) -> void: birds.unride(spot, world.wind))
 	rare = RareSkies.new()
 	rare.name = "RareSkies"
@@ -1317,6 +1327,9 @@ func _build_ports(p0: float, p1: float) -> void:
 	shore.camp_routed.connect(_on_camp_routed)
 	shore.plundered.connect(_on_camp_plundered)
 	shore.captain_fell.connect(_on_captain_fell)
+	# a cutthroat's spirit slips out of him once he's hit the sand
+	shore.fallen.connect(func(w: ShoreWalker, boss: bool) -> void:
+		_raise_soul({"x": w.x, "y": w.y, "z": w.z, "hat": w.look.hat, "girth": w.girth, "height": w.height, "boss": boss, "delay": 0.85}))
 	shore.stepped.connect(func(k: float, wet: bool, hard: bool) -> void: sound.step(k, wet, hard))
 	shore.hopped.connect(_on_hop)
 	shore.prize_struck.connect(_on_struck)
@@ -1638,6 +1651,7 @@ func _process(delta: float) -> void:
 				convoys.stocked(), (", wanted: " + ", ".join(PackedStringArray(convoys.wanted()))) if not convoys.wanted().is_empty() else ""])
 		print("SMOKE FLEET: %d escorts (%s), order %s; %d on the roster, %d lost" % [escorts.ais.size(), ", ".join(PackedStringArray(_fleet_view().map(func(v: Dictionary) -> String: return "%s %d%% %s" % [v.name, roundi(float(v.hp) * 100.0), v.status]))), escorts.order, Progress.fleet.ships.size(), int(Progress.fleet.lost)])
 		print("SMOKE RARE: ash %.2f (%s restless %.2f, plume %.2f over her), %d embers falling; %d mirages this voyage%s" % [atmosphere.ash, rare.volcano_name(), rare.restless, atmosphere.plume, rare.embers.drawn(), rare.mirages, ", one out there" if rare.mirage.active else ""])
+		print("SMOKE SPIRITS: %d ghosts risen this voyage, %d in the air" % [spirits.raised, spirits.count()])
 		var gc := birds.census()
 		print("SMOKE GULLS: %d in the flock (%d aloft, %d perched, %d afloat, %d trailing a ship), %d riders and carriers out, %d drawn; %d errands waiting, %d letters by gull" % [
 				birds.count().x, gc[0], gc[1], gc[2], gc[3], birds.count().y, birds.drawn, _gull_news.size(), _gull_letters])
@@ -1879,6 +1893,7 @@ func _tick(real_dt: float) -> void:
 	# the gulls go to roost at night and keep out of a gale
 	birds.visible = atmosphere.night < 0.75 and atmosphere.storm < 0.6
 	birds.update(dt, world, camera)
+	spirits.update(dt, world.time)
 	_hunter_mark(sailing and not shore.active and _farewell == null)
 	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
@@ -2863,10 +2878,44 @@ func _stage_drift() -> void:
 		drift.drop_mat(at.x, at.z, k, 2 if _args.has("riders") else -1)
 
 
+# ------------------------------------------------------------------ spirits
+
+## A fallen pirate gives up the ghost (only where someone might see it).
+func _raise_soul(f: Dictionary) -> void:
+	var t := camera.target
+	if Vector2(float(f.x) - t.x, float(f.z) - t.z).length() > maxf(320.0, camera.distance() * 2.2):
+		return
+	spirits.release(f, world.time)
+
+
+## A ghost's "woo-oo" as he comes free: a crew going up together is a little choir, not a wall of sound.
+func _spirit_voice(at: Vector3) -> void:
+	if world.time - _spirit_sound_t < 0.28:
+		return
+	_spirit_sound_t = world.time
+	var h := world.heard(at)
+	sound.spirit(h.x * 0.32, h.y, h.z)
+
+
+## --spirits N: N ghosts rising round her a second into the voyage.
+func _stage_spirits() -> void:
+	if not _args.has("spirits"):
+		return
+	var n := clampi(int(_args.spirits) if str(_args.spirits).is_valid_int() else 4, 1, 28)
+	var p := player
+	for i in n:
+		var a := float(i) / n * TAU + 0.4
+		var at := p.pos + p.port_dir() * (p.cls.beam * 0.5 + 4.0 + (i % 2) * 2.5) * (1.0 if i % 2 == 0 else -1.0) + p.forward() * cos(a) * 6.0
+		spirits.release({"x": at.x, "y": world.water_height(at.x, at.z), "z": at.z, "hat": i % 5, "girth": 0.95 + 0.05 * (i % 3), "height": 1.0,
+				"boss": i == 0, "delay": 1.0 + i * 0.25}, world.time)
+
+
 # ------------------------------------------------------------------ the carrier gull
 
 ## A new voyage: the carrier and the riders called home, nothing to tell yet.
 func _gulls_home() -> void:
+	spirits.clear()
+	spirits.raised = 0
 	birds.recall()
 	_gull_news.clear()
 	_gull_cool = 90.0
@@ -4379,6 +4428,7 @@ func _start_voyage(sea: String) -> void:
 	rare.reset()
 	_stage_rare()
 	_stage_gull()
+	_stage_spirits()
 	if _args.has("wanted"):
 		hunters.add(int(_args.wanted))
 	# the X of a whole map waits on its sand

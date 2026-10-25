@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-25T19:00Z',
     entries: [
       {
+        title: 'Android and Windows: spirits',
+        notes: [
+          'Fallen pirates now leave a little green ghost behind in the Android and Windows game, on the water, on the sand, at a fort or on a boarded deck. Each one keeps his own hat.',
+          'Every ghost does one last thing before he goes: a wave, a tip of the hat, a twirl or a "boo!". Then he floats up into the sky and vanishes in a puff of glowing motes.',
+          'A ghost ship gives up its whole crew of spirits when it sinks.',
+        ],
+      },
+      {
         title: 'Android and Windows: seagulls',
         notes: [
           'Herring gulls come to the Android and Windows game. They wheel over the isles, stand on the rocks, bob on the swell, trail passing ships to perch on the mast tops, and scatter screaming when the guns go off.',
