@@ -24,6 +24,8 @@ var waves: Waves
 var wind: Wind
 var wake: WakeField
 var fx: Particles
+## The night sky's fireworks.
+var sky: FireworkSky
 var shots: Shots
 var debris: Debris
 var loot: Loot

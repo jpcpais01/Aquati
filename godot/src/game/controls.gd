@@ -86,6 +86,7 @@ const _ACTIONS := {
 	"ammo_3": [KEY_3, KEY_KP_3],
 	"ammo_4": [KEY_4, KEY_KP_4],
 	"ammo_5": [KEY_5, KEY_KP_5],
+	"ammo_6": [KEY_6, KEY_KP_6],
 	"confirm": [KEY_ENTER, KEY_KP_ENTER],
 	"interact": [KEY_F],
 	"sea_chart": [KEY_M],

@@ -19,6 +19,8 @@ signal purse_changed(gold: int)
 signal parts_changed
 ## Something came into the vault, or she put on something else.
 signal vault_changed
+## Rockets came into the firework locker, or a volley went up.
+signal fireworks_changed
 
 const PATH := "user://progress.json"
 const LOOKS := "user://looks.json"
@@ -54,6 +56,11 @@ var parts := Parts.fresh()
 ## Your Treasure Vault (Cosmetics.fresh): {owned, equip: {skin, blast, trail},
 ## pity, pulls, daily, unseen}.
 var vault := Cosmetics.fresh()
+## The firework locker: {kind: rockets} (Fireworks), following the captain
+## from voyage to voyage.
+var fireworks := {}
+## The one-off tips already given on this device (the fireworks' night tip).
+var tips: Array[String] = []
 ## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
 var look := ShipLook.fresh()
 var designs := []
@@ -171,6 +178,90 @@ func grant_all_parts() -> bool:
 
 func _parts_touched() -> void:
 	parts_changed.emit()
+	touch()
+
+
+# ------------------------------------------------------------------ the firework locker
+
+## Rockets of a kind in the locker.
+func rockets(id: String) -> int:
+	return int(fireworks.get(id, 0))
+
+
+## Rockets in the locker, every kind.
+func rockets_total() -> int:
+	var n := 0
+	for id: String in fireworks:
+		n += int(fireworks[id])
+	return n
+
+
+## Room left in the locker for a kind.
+func rocket_room(id: String) -> int:
+	return int(Fireworks.kind(id).max) - rockets(id)
+
+
+## Rockets into the locker, what fits of each; returns how many were stowed of each.
+func stow_rockets(add: Dictionary) -> Dictionary:
+	var got := {}
+	for id in Fireworks.ORDER:
+		var n := mini(int(add.get(id, 0)), rocket_room(id))
+		if n <= 0:
+			continue
+		fireworks[id] = rockets(id) + n
+		got[id] = n
+	if not got.is_empty():
+		_rockets_touched()
+	return got
+
+
+## One volley out of the locker; false if there was none of that kind.
+func take_rocket(id: String) -> bool:
+	var n := rockets(id)
+	if n <= 0:
+		return false
+	if n == 1:
+		fireworks.erase(id)
+	else:
+		fireworks[id] = n - 1
+	_rockets_touched()
+	return true
+
+
+## Every kind to the brim (a debug flag's); true if anything was added.
+func fill_rockets() -> bool:
+	var any := false
+	for id in Fireworks.ORDER:
+		if rocket_room(id) > 0:
+			any = true
+		fireworks[id] = int(Fireworks.kind(id).max)
+	if any:
+		_rockets_touched()
+	return any
+
+
+## The next kind after `from` that's in the locker (wrapping round), or "".
+func next_rocket(from: String) -> String:
+	var i := Fireworks.ORDER.find(from)
+	var n := Fireworks.ORDER.size()
+	for k in range(1, n + 1):
+		var id: String = Fireworks.ORDER[(i + k + n) % n]
+		if rockets(id) > 0:
+			return id
+	return ""
+
+
+## Whether a one-off tip was given before; marks it given.
+func tip_seen(id: String) -> bool:
+	if tips.has(id):
+		return true
+	tips.append(id)
+	touch()
+	return false
+
+
+func _rockets_touched() -> void:
+	fireworks_changed.emit()
 	touch()
 
 
@@ -364,6 +455,8 @@ func save() -> void:
 		"records": records,
 		"parts": parts,
 		"vault": vault,
+		"fireworks": fireworks,
+		"tips": tips,
 	}
 	_write(path, JSON.stringify(data, "\t"))
 	if _looks_dirty:
@@ -391,8 +484,10 @@ func _load() -> void:
 	if not d is Dictionary:
 		d = _read(path + ".tmp")
 	var had_vault := false
+	var had_rockets := false
 	if d is Dictionary:
 		had_vault = (d as Dictionary).has("vault")
+		had_rockets = (d as Dictionary).has("fireworks")
 		_adopt(d)
 	elif FileAccess.file_exists(OLD_RECORDS):
 		var old: Variant = _read(OLD_RECORDS)
@@ -408,6 +503,10 @@ func _load() -> void:
 	# the vault opens with a purse to try it with (the web's fresh vault), once
 	if not had_vault:
 		purse += Cosmetics.START_PURSE
+		touch()
+	# and a captain who has never had a firework locker gets the welcome crate
+	if not had_rockets:
+		fireworks = Fireworks.WELCOME.duplicate()
 		touch()
 
 
@@ -445,6 +544,12 @@ func _adopt(d: Dictionary) -> void:
 				pins.append([roundi(float(e[0])), roundi(float(e[1])), clampi(int(e[2]), 0, PINS - 1)])
 	parts = Parts.sanitize(d.get("parts"))
 	vault = Cosmetics.sanitize(d.get("vault"))
+	fireworks = Fireworks.sanitize(d.get("fireworks"))
+	var tp: Variant = d.get("tips")
+	if tp is Array:
+		for e: Variant in tp:
+			if e is String and tips.size() < 32:
+				tips.append(e)
 	var r: Variant = d.get("records")
 	if r is Dictionary:
 		for k: String in records:
