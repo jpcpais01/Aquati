@@ -109,6 +109,9 @@ var prize := false
 var hardy := false
 ## Over the horizon (Convoys): just carried along her course, nothing drawn.
 var dormant := false
+## One of your escorts (Fleet): on your side, but her guns and her end don't
+## shake your view as your own do, and her crews lay a touch less true.
+var escort := false
 var _flare := 0.0
 var _mist_t := 0.0
 
@@ -378,7 +381,7 @@ func _shoot(p: Array) -> void:
 	else:
 		elev = clampf(0.5 * asin(clampf(GRAVITY * dist / (v * v), 0.0, 1.0)), 0.015, 0.47)
 	# pirate gun crews are a little less disciplined than yours
-	var sloppy := 1.0 if mine else 2.4 * float(boost.aim)
+	var sloppy := (1.5 if escort else 1.0) if mine else 2.4 * float(boost.aim)
 	var yaw := atan2(dir.x, dir.z) + (randf() - 0.5) * 0.035 * sloppy
 	var pitch := elev + (randf() - 0.5) * 0.02 * sloppy
 	var spread: float = Ammo.SPREAD[kind]
@@ -404,7 +407,7 @@ func _shoot(p: Array) -> void:
 		world.sound.cannon(h.x * (0.55 if ghost else 1.0), h.y, h.z, clampf((cls.length - 15.0) / 14.0, 0.0, 1.0))
 		if kind == Ammo.WRAITH:
 			world.sound.wraith(h.x, h.y, h.z)
-	world.shook.emit(0.35 if mine else 0.12 * world.loudness(at))
+	world.shook.emit(0.35 if mine and not escort else 0.12 * world.loudness(at))
 
 
 ## A blow to her (a ball, a ram, the ground), at a world point or anywhere
@@ -461,7 +464,7 @@ func die(attacker: Ship) -> void:
 		if world.sound != null:
 			var h := world.heard(pos)
 			world.sound.explosion(h.x, h.y, h.z)
-	world.shook.emit(1.2 if team == Team.PLAYER else 0.5 * world.loudness(pos))
+	world.shook.emit(1.2 if team == Team.PLAYER and not escort else 0.5 * world.loudness(pos))
 	dmg.on_death()
 	world.sunk.emit(self, attacker)
 

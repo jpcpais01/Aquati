@@ -30,6 +30,9 @@ signal buy_part(id: String)
 signal buy_firework(id: String)
 ## One of a lot bought off a merchantman's counter.
 signal buy_ware(id: String)
+## The harbour master's: a ship and her crew signed on, or one of yours paid off.
+signal hire(id: String)
+signal pay_off(id: String)
 signal leave
 ## The prompt tapped while she may come alongside.
 signal dock
@@ -103,6 +106,12 @@ var _wares: Array = []
 var _bare: UiText
 var _wnote: UiText
 var _wp_coin: TextureRect
+## The harbour master's desk: your escorts and the ships for hire.
+var _crew: Control
+var _hrows: Array[_PRow] = []
+var _hands: Array = []
+var _crew_h := 0.0
+var _crew_n: UiText
 var _wp_n: UiText
 var _fade: TextureRect
 var _leave: UiButton
@@ -254,6 +263,7 @@ func close() -> void:
 	_rows.clear()
 	_prows.clear()
 	_frows.clear()
+	_hrows.clear()
 	_offers = []
 	_trader = false
 	_wares = []
@@ -281,6 +291,15 @@ func show_pyro() -> void:
 	_scroll_to(_below.position.y + _pyro.position.y - _band_h - 2.0 * PX)
 
 
+## Scrolls the harbour master's desk up to the top of the card.
+func show_hands() -> void:
+	if _card == null or _hrows.is_empty():
+		return
+	_step(0.0)
+	_fling = 0.0
+	_scroll_to(_below.position.y + _crew.position.y - _band_h - 2.0 * PX)
+
+
 ## Whether the prompt to come alongside is up, and she may.
 func prompt_ok() -> bool:
 	return _prompt.visible and _p_ok
@@ -306,6 +325,8 @@ func set_gold(g: int) -> void:
 	_gold = g
 	_apply_services()
 	_fill_pyro()
+	for i in mini(_hands.size(), _hrows.size()):
+		_hrows[i].set_hand(_hands[i], _gold)
 
 
 ## The pyrotechnist's stall: today's rockets ([{id, price, owned, room}]),
@@ -364,6 +385,16 @@ func set_parts(offers: Array, purse: int, bought := "") -> void:
 	for r in _prows:
 		if r.id == bought:
 			r.t_just = 0.0
+
+
+## The harbour master's desk: your escorts ({id, mine: true, name, cls,
+## master, chip}) to pay off, then the ships for hire ({..., mine: false,
+## price, can}); `full` when the fleet has no room for another.
+func set_hands(list: Array, fleet_n: int) -> void:
+	_hands = list
+	if _card == null:
+		return
+	_build_crew(fleet_n)
 
 
 ## The hold changed under the counter (a lot bought): its rows laid out afresh.
@@ -574,8 +605,19 @@ func _build() -> void:
 	_content.add_child(wright_band)
 	_bands.append(wright_band)
 	_bands.append(pyro_band)
+	# and the harbour master's desk at the foot: your escorts, and ships for hire
+	_crew = Control.new()
+	_crew.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_below.add_child(_crew)
+	_hrows.clear()
+	var crew_band := _band("HARBOUR MASTER")
+	_crew_n = _words("", 700, 9.0, HudStyle.INK_4, 0.12)
+	crew_band.add_child(_crew_n)
+	_content.add_child(crew_band)
+	_bands.append(crew_band)
 	_build_pyro(false)
 	_build_wright(false)
+	_build_crew(-1)
 	_apply_services()
 
 	# the body's foot fades while there's more below
@@ -744,6 +786,52 @@ func _lay_wright() -> void:
 	_wnote.position = Vector2(2.0 * PX, y + 6.0 * PX)
 	_wright_h = _wnote.position.y + _wnote.size.y
 	_wright.visible = not _prows.is_empty() and not _trader
+	if _crew == null:
+		return
+	var ct := top
+	if _wright.visible:
+		ct = _wright.position.y + _wright_h + 10.0 * PX + _band_h + 2.0 * PX
+	_crew.position = Vector2(0.0, ct)
+	var hy := 0.0
+	for r in _hrows:
+		r.y_at = hy
+		hy += r.size.y + 6.0 * PX
+	_crew_h = maxf(0.0, hy - 6.0 * PX)
+	_crew.visible = not _trader and not _hrows.is_empty()
+
+
+## Your escorts and the ships for hire laid on the desk afresh; `fleet_n`
+## how many sail with you (-1: as last told).
+func _build_crew(fleet_n: int) -> void:
+	if _crew == null:
+		return
+	for r in _hrows:
+		_crew.remove_child(r)
+		r.queue_free()
+	_hrows.clear()
+	for i in _hands.size():
+		var o: Dictionary = _hands[i]
+		var r := _PRow.new({"hand": true, "id": o.id, "o": o}, _iw)
+		r.buy_btn.pressed.connect(_on_hand.bind(r, bool(o.mine)))
+		_crew.add_child(r)
+		_hrows.append(r)
+		r.set_hand(o, _gold)
+	if fleet_n >= 0 and _crew_n != null:
+		_crew_n.set_text("%d / %d ESCORTS" % [fleet_n, Fleet.MAX])
+		_crew_n.position = Vector2(_bands[4].size.x - _gx - 6.0 * PX - _crew_n.size.x, 8.0 * PX + 1.0 * PX)
+	for r in _hrows:
+		_step_prow(r, 0.0)
+	_lay_wright()
+
+
+func _on_hand(r: _PRow, mine: bool) -> void:
+	if not r.buy_btn.enabled:
+		return
+	clicked.emit()
+	if mine:
+		pay_off.emit(r.id)
+	else:
+		hire.emit(r.id)
 
 
 func _on_buy(r: _PRow) -> void:
@@ -962,10 +1050,13 @@ func _step(dt: float) -> void:
 		_step_prow(r, dt)
 	for r in _frows:
 		_step_prow(r, dt)
+	for r in _hrows:
+		_step_prow(r, dt)
 	# what's to scroll, the section names pinned, and the fade at the foot
 	var wares := not _prows.is_empty() and not _trader
 	var pyro := not _frows.is_empty() or _trader
-	var content_h := _below.position.y + (_wright.position.y + _wright_h if wares else (_pyro.position.y + _pyro_h - 6.0 * PX if pyro else _yard_y + _svc_h)) + 6.0 * PX
+	var crew := _crew != null and _crew.visible
+	var content_h := _below.position.y + (_crew.position.y + _crew_h if crew else (_wright.position.y + _wright_h if wares else (_pyro.position.y + _pyro_h - 6.0 * PX if pyro else _yard_y + _svc_h))) + 6.0 * PX
 	_scroll_max = maxf(0.0, content_h - _body.size.y)
 	_scroll = clampf(_scroll, 0.0, _scroll_max)
 	_content.position.y = -_scroll
@@ -976,6 +1067,9 @@ func _step(dt: float) -> void:
 	_bands[2].position.y = maxf(_below.position.y + _wright.position.y - _band_h - 2.0 * PX, _scroll)
 	_bands[3].visible = pyro
 	_bands[3].position.y = maxf(_below.position.y + _pyro.position.y - _band_h - 2.0 * PX, _scroll)
+	_bands[4].visible = crew
+	if crew:
+		_bands[4].position.y = maxf(_below.position.y + _crew.position.y - _band_h - 2.0 * PX, _scroll)
 	_fade.visible = _scroll < _scroll_max - 2.0
 	_step_coins(dt)
 	if _bumping:
@@ -1568,6 +1662,9 @@ class _PRow:
 		if part.has("ware"):
 			_init_ware(part)
 			return
+		if part.has("hand"):
+			_init_hand(part.o)
+			return
 		var tier: int = part.tier
 		var rarity: Dictionary = Parts.RARITIES[tier]
 		rc = rarity.css
@@ -1701,6 +1798,49 @@ class _PRow:
 		buy_btn = UiButton.new(Vector2(40.0, 30.0), 12.0 * px, 16.0 * px)
 		buy_btn.squeeze = 0.95
 		add_child(buy_btn)
+
+	## A ship at the harbour master's desk (Fleet): one of yours, her hull
+	## and tally, to pay off; or one for hire, her master's word, and her price.
+	func _init_hand(o: Dictionary) -> void:
+		var px := MarketPanel.PX
+		_fw = true
+		var mine := bool(o.mine)
+		rc = HudStyle.AQUA if mine else HudStyle.GOLD
+		_price = int(o.get("price", 0))
+		MenuKit.flat(self)
+		p("horiz", 1.0).p("hi", 0.0)
+		p("c_top", Color(rc, 0.12)).p("c_mid", Color(1.0, 1.0, 1.0, 0.03)).p("mid", 0.6).p("c_foot", Color(1.0, 1.0, 1.0, 0.03))
+		p("c_border", Color(rc, 0.22))
+		var ico := 44.0 * px
+		_ico = UiBox.new(Vector2(ico, ico), 12.0 * px, 2.0)
+		MenuKit.flat(_ico)
+		_ico.p("border", 0.0).p("hi", 0.0).p("radial", Vector4(0.5, 0.4, 0.781, 0.781)).p("radial_stop", 0.75)
+		_ico.p("c_top", Color(rc, 0.3)).p("c_foot", Color(0.0, 0.0, 0.0, 0.18))
+		add_child(_ico)
+		var art := Icons.rect("hull", 28.0 * px, HudStyle.INK)
+		art.position = Vector2(ico - art.size.x, ico - art.size.y) * 0.5
+		_ico.add_child(art)
+		_name = MarketPanel._words(str(o.name), 700, 14.0, HudStyle.INK)
+		add_child(_name)
+		var f6 := HudStyle.font("inter", 600)
+		var sz := roundi(11.0 * px)
+		_line = UiText.new([[str(ShipClass.named(str(o.cls)).name), f6, sz, rc], [" · Capt. " + str(o.master), f6, sz, HudStyle.INK_3]], 0.0, 1.0)
+		add_child(_line)
+		var chip := MarketPanel._words(str(o.chip), 600, 9.5, HudStyle.INK_3)
+		add_child(chip)
+		_chips.append(chip)
+		buy_btn = UiButton.new(Vector2(40.0, 30.0), 12.0 * px, 16.0 * px)
+		buy_btn.squeeze = 0.95
+		add_child(buy_btn)
+
+	## A ship's button at the desk as things stand.
+	func set_hand(o: Dictionary, gold: int) -> void:
+		if bool(o.mine):
+			_set_buy("Pay off", false, true)
+		elif bool(o.get("full", false)):
+			_set_buy("Fleet full", false, false)
+		else:
+			_set_buy(MenuKit.num(_price), true, bool(o.get("can", gold >= _price)))
 
 	## A lot's row as things stand: how many she has left, and its Buy (No
 	## room while none of your holds can take another).

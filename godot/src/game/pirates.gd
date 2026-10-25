@@ -50,6 +50,10 @@ var all_ghosts := false
 var bounty_k := 1.0
 ## Her captain is ashore (or on a prize's deck): a ship at anchor is left be.
 var ashore := false
+## Your escorts afloat (Fleet), fair game too; and your own ship, who the
+## bounty on a pirate they sink is paid to.
+var escorts: Array[Ship] = []
+var flagship: Ship
 
 var _name_idx := randi() % NAMES.size()
 var _ghost_idx := randi() % GHOST_NAMES.size()
@@ -74,7 +78,7 @@ func step(dt: float, player: Ship) -> void:
 		var ai: PirateAI = ais.get(s)
 		# (a ship fast in our grapnels has other things on her mind than sailing)
 		if ai != null and not s.lashed:
-			ai.update(dt, world, null if ashore else player)
+			ai.update(dt, world, null if ashore else player, [] as Array[Ship] if ashore else escorts)
 		# the crew patches her up between fights
 		if s.team == Ship.Team.PIRATE and s.alive and world.time - s.last_hit > 9.0:
 			s.hp = minf(s.max_hp, s.hp + s.max_hp * 0.006 * dt)
@@ -389,7 +393,9 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 	# a named captain's bounty is the Crown's own (the game claims it)
 	if attacker != null and attacker.team == Ship.Team.PLAYER and ship.hunter == "":
 		var gold := roundi(BOUNTY.get(ship.cls.id, 60) * (2 if ship.ghost else 1) * bounty_k)
-		attacker.gold += gold
+		# an escort's kill is paid to the flagship's purse
+		var payee := flagship if attacker.escort and flagship != null else attacker
+		payee.gold += gold
 		bounty.emit(ship, gold)
 
 
@@ -409,6 +415,7 @@ func clear(keep: Ship) -> void:
 	for s: Ship in world.ships:
 		if s != keep:
 			s.removed = true
+	escorts.clear()
 	sweep()
 	spawn_timer = 8.0
 	voyage_time = 0.0

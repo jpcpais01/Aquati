@@ -45,6 +45,8 @@ signal treasure_pressed
 ## The treasure map put away (its close button, or a tap off it).
 signal treasure_closed
 signal pistol_pressed
+## An order signalled to your escorts off the fleet panel (Fleet.ORDERS).
+signal fleet_order(order: String)
 
 var controls: Controls
 
@@ -66,6 +68,7 @@ var _kills: _Chip
 var _isles: _Chip
 var _peek: HoldPeek
 var _wanted: WantedHud.Meter
+var _fleet: FleetPanel
 var _mark: WantedHud.Mark
 var _banner: WantedHud.Banner
 var _status: Control
@@ -227,6 +230,13 @@ func _ready() -> void:
 	# the voyage's heat, under the tally once your guns have earned some
 	_wanted = WantedHud.Meter.new()
 	_status.add_child(_wanted)
+	# your escorts under that, while you have any
+	_fleet = FleetPanel.new()
+	_fleet.visible = false
+	_fleet.order_picked.connect(func(o: String) -> void:
+		clicked.emit()
+		fleet_order.emit(o))
+	_status.add_child(_fleet)
 	# a tap on the hold peeks inside
 	_peek = HoldPeek.new()
 	_peek.opener = _hold
@@ -1047,6 +1057,18 @@ func _apply_mode() -> void:
 
 
 ## Her power each frame (null: she has none).
+## Your escorts ([{name, hp, status}], none: the panel hidden) and the order flying.
+func show_fleet(list: Array, order: String) -> void:
+	var on := not list.is_empty() and not _ashore
+	_fleet.visible = on
+	if not on:
+		return
+	_fleet.show_fleet(list, order)
+	var k := HudStyle.K
+	_fleet.size = _fleet.get_combined_minimum_size()
+	_fleet.position.y = (_wanted.position.y + _wanted.size.y if _wanted.visible else _chips.position.y + _chips.size.y) + 6.0 * k
+
+
 func show_ability(h: Haunt) -> void:
 	var has := h != null
 	if has != _has_ability:

@@ -53,6 +53,8 @@ var chart := false
 var treasure := false
 ## A pulse: her power called on (G: an event ship's, the Hollow Jack's Phantom Run).
 var ability := false
+## A pulse: the next order signalled to your escorts (O).
+var fleet := false
 ## The mouse over the sea (screen units), while there is one.
 var pointer := Vector2.ZERO
 var pointer_active := false
@@ -96,6 +98,7 @@ const _ACTIONS := {
 	"sea_chart": [KEY_M],
 	"treasure_map": [KEY_T],
 	"ability": [KEY_G],
+	"fleet_order": [KEY_O],
 }
 
 
@@ -138,6 +141,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			treasure = true
 		elif event.is_action("ability"):
 			ability = true
+		elif event.is_action("fleet_order"):
+			fleet = true
 		else:
 			for i in Ammo.COUNT:
 				if event.is_action("ammo_%d" % (i + 1)):
@@ -263,4 +268,5 @@ func consume() -> void:
 	chart = false
 	treasure = false
 	ability = false
+	fleet = false
 	jump = false

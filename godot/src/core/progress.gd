@@ -70,6 +70,9 @@ var maps := TreasureMaps.fresh()
 ## Your name among the Brethren (Bounty.fresh): lifetime infamy, each named
 ## captain's poster and the bounty gold the Crown has paid.
 var bounty := Bounty.fresh()
+## Your escorts (Fleet.fresh): the roster kept between voyages, your
+## standing order and the ships you've lost.
+var fleet := Fleet.fresh()
 ## The island beasts you've seen, by species index (Wildlife), in order of sighting.
 var fauna: Array[int] = []
 ## The one-off tips already given on this device (the fireworks' night tip).
@@ -344,6 +347,43 @@ func wanted_reached(level: int) -> void:
 
 
 ## Marks a species seen; true the first time.
+## A ship signs on (a prize's crew, or one hired): false if the fleet is full.
+func enlist(rec: Dictionary) -> bool:
+	var r := Fleet.clean_rec(rec)
+	if r.is_empty() or fleet.ships.size() >= Fleet.MAX:
+		return false
+	fleet.ships.append(r)
+	touch()
+	return true
+
+
+## A ship leaves the roster: paid off, or (`sunk`) lost with all hands.
+func discharge(id: String, sunk := false) -> void:
+	for i in fleet.ships.size():
+		if str(fleet.ships[i].id) == id:
+			fleet.ships.remove_at(i)
+			if sunk:
+				fleet.lost = int(fleet.lost) + 1
+			touch()
+			return
+
+
+## A ship's hull and tally as she stands now.
+func keep_escort(id: String, hp: float, kills: int) -> void:
+	for r: Dictionary in fleet.ships:
+		if str(r.id) == id:
+			r.hp = clampf(hp, 0.05, 1.0)
+			r.kills = maxi(0, kills)
+			touch()
+			return
+
+
+func set_order(order: String) -> void:
+	if Fleet.ORDERS.has(order) and fleet.order != order:
+		fleet.order = order
+		touch()
+
+
 func see_fauna(k: int) -> bool:
 	if fauna.has(k):
 		return false
@@ -580,6 +620,7 @@ func save() -> void:
 		"maps": maps,
 		"fauna": fauna,
 		"bounty": bounty,
+		"fleet": fleet,
 		"tips": tips,
 	}
 	_write(path, JSON.stringify(data, "\t"))
@@ -685,6 +726,7 @@ func _adopt(d: Dictionary) -> void:
 		forts.tribute = maxi(0, int(float((fo as Dictionary).get("tribute", 0))))
 	maps = TreasureMaps.sanitize(d.get("maps"))
 	bounty = Bounty.sanitize(d.get("bounty"))
+	fleet = Fleet.sanitize(d.get("fleet"))
 	var fa: Variant = d.get("fauna")
 	if fa is Array:
 		for e: Variant in fa:

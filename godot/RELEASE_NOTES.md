@@ -1,24 +1,27 @@
-## Shores O' Fortune for Android and Windows: merchant convoys
+## Shores O' Fortune for Android and Windows: your own fleet
 
-The forty-first build brings the web game's merchant convoys.
+The forty-second build brings the web game's fleet: up to two escorts that
+sail with you.
 
-- **Sail ho.** Out on the high seas between the two archipelagos, the
-  trading houses run their cargoes across in company: a tubby Ronvliet
-  fluyt deep-laden with casks, a slim Aguadouro xebec under striped lateens
-  carrying bullion, and a little tan-sailed Vila Garoa ketch with tea and
-  silk from the mist. Two or three sail together in line, crates, casks and
-  sacks lashed on deck, and they show as gold marks on the minimap and the
-  chart.
-- **Come alongside and hail.** Sail close to one and a prompt offers to
-  hail her (F or a tap). She heaves to beside you and opens her hatches:
-  she buys your hold at her own house's prices, and sells what she
-  carries, now and then a lot going cheap. Buy here and sell dear in port.
-- **Don't fire on them.** A ball (or a ram) into any of them and the whole
-  convoy cracks on sail and runs, and none of them will trade with you.
+- **Sign her on.** When a pirate strikes her colours to your boarders, the
+  prize card has a third choice: her crew turn their coats and she joins
+  you as an escort, under a master of her own and still in her old paint.
+- **Hire at the harbour master's.** Every trading port's market has a
+  HARBOUR MASTER desk at the foot: two ships for hire each day (a sloop,
+  and a brig or a galleon), each with a captain and a word on them, paid
+  from your purse. Your own escorts are listed there too, to pay off.
+- **They keep station.** Escorts sail on your quarters, matching your pace,
+  and fight whatever comes for you. The fleet panel under your tally shows
+  each ship's hull and what she's about, with three signals: Follow, Attack
+  (break formation and engage your target) and Hold (heave to and guard
+  these waters). On a keyboard, O cycles the signal.
+- **They can be lost.** Pirates fire on your escorts too, and a ship that
+  goes down is gone from your fleet. Their hulls carry over from voyage to
+  voyage, and the port's repair mends them with yours. An escort's kill pays
+  its bounty into your purse.
 
-### Also from the last build: shipwreck survivors
+### Also from the last build: merchant convoys
 
-- **Hands in the water.** When a pirate goes down, a few of the crew often
-  cling to the wreckage, waving and shouting as you come near. Throw them a
-  line and they swim for your side and sign on: every hand rescued makes
-  your guns reload a little faster, and every two join your boarding party.
+- **Sail ho.** Out on the high seas the trading houses run their cargoes
+  across in company. Come alongside and hail one to trade, and don't fire
+  on them, or the whole convoy runs.

@@ -216,6 +216,8 @@ var _survivor_tip := false
 var hunters := Hunters.new()
 ## Merchant convoys crossing the high seas, and the one you're alongside trading with.
 var convoys := Convoys.new()
+## Your escorts afloat (Fleet: the roster is Progress.fleet).
+var escorts := Escorts.new()
 var trader: Convoys.Merchant
 var _test_convoy := false
 ## Each storm's one roll of the dice: 0 not yet, 1 rolled and it isn't coming, 2 it's coming.
@@ -508,6 +510,7 @@ func _load() -> void:
 	hud.strike_pressed.connect(func() -> void: _hud_strike = true)
 	hud.pistol_pressed.connect(func() -> void: _hud_pistol = true)
 	hud.prize_picked.connect(_choose_prize)
+	hud.fleet_order.connect(_signal_order)
 	hud.treasure_pressed.connect(func() -> void: _map_view(not hud.tmap.is_open))
 	hud.treasure_closed.connect(func() -> void: _map_view(false))
 	add_child(hud)
@@ -592,6 +595,8 @@ func _load() -> void:
 	_stage_survivors()
 	if _args.has("convoy"):
 		_stage_convoy()
+	if not _harbour_first():
+		_muster_test()
 	if _args.has("bounty-banner"):
 		# a shot of the notices: a hunter's (or with `claimed`, the bounty claimed) over the voyage
 		var c: Dictionary = Bounty.CAPTAINS[4]
@@ -1190,6 +1195,7 @@ func _build_fleet() -> void:
 	pirates.name = "Pirates"
 	add_child(pirates)
 	pirates.setup(world, shipyard, self)
+	escorts.setup(world, self)
 	convoys.setup(world, shipyard, self)
 	convoys.sighted.connect(_sight_convoy)
 	convoys.scattered.connect(_on_scatter)
@@ -1498,6 +1504,8 @@ func _process(delta: float) -> void:
 		market.show_wright()
 	if _args.has("pyro") and _frames == maxi(1, int(_args.get("frames", 90)) - 40):
 		market.show_pyro()
+	if _args.has("hands") and _frames == maxi(1, int(_args.get("frames", 90)) - 40):
+		market.show_hands()
 	if _args.has("buy-rocket") and dock_port != null and _frames == maxi(1, int(_args.get("frames", 90)) - 9):
 		var day := floori(Time.get_unix_time_from_system() / 86400.0)
 		var list := Fireworks.stall(dock_port.index + 1, day)
@@ -1567,6 +1575,7 @@ func _process(delta: float) -> void:
 		print("SMOKE CONVOY: %s; %d merchant hulls on the slipway%s" % [
 				("%d sail bound for %s%s%s" % [cv.fleet.size(), cv.dest.title, ", scattered" if cv.scattered else "", ", alongside the " + trader.ship.ship_name if trader != null else ""]) if cv != null else "none at sea",
 				convoys.stocked(), (", wanted: " + ", ".join(PackedStringArray(convoys.wanted()))) if not convoys.wanted().is_empty() else ""])
+		print("SMOKE FLEET: %d escorts (%s), order %s; %d on the roster, %d lost" % [escorts.ais.size(), ", ".join(PackedStringArray(_fleet_view().map(func(v: Dictionary) -> String: return "%s %d%% %s" % [v.name, roundi(float(v.hp) * 100.0), v.status]))), escorts.order, Progress.fleet.ships.size(), int(Progress.fleet.lost)])
 		print("SMOKE SURVIVORS: %d rafts afloat with %d hands clinging on, %d rescued this voyage, reload x%.3f" % [survivors.rafts.size(), survivors.count(), rescued, float(player.boost.reload)])
 		print("SMOKE BOUNTY: infamy %d this voyage (wanted %d), %d hunters sent, %d claimed, %s; lifetime infamy %d, %d posters up" % [
 				hunters.pts, hunters.level(), hunters.sent, hunters.claimed,
@@ -1637,6 +1646,8 @@ func _tick(real_dt: float) -> void:
 				_open_chart()
 		if controls.ability and not ashore and not held:
 			_call_power()
+		if controls.fleet and not ashore and not held:
+			_cycle_order()
 		if controls.treasure and not held:
 			_map_view(not hud.tmap.is_open)
 		# the view you sail with is the next voyage's
@@ -1667,8 +1678,11 @@ func _tick(real_dt: float) -> void:
 	# harbour a sail or two on the horizon, and the ship picked comes in
 	# the next sail is likelier a ghost in the dark, in mist and in foul weather
 	pirates.ghost_odds = minf(0.42, 0.05 + atmosphere.night * 0.24 + atmosphere.fog * 0.2 + atmosphere.storm * 0.06)
+	pirates.escorts = escorts.ships()
+	pirates.flagship = player
 	pirates.step(dt, player if sailing else null)
 	_sail_convoys(dt, sailing)
+	_update_fleet(dt, sailing)
 	if sailing:
 		_heat(dt)
 		_survivor_cries(dt)
@@ -1871,6 +1885,7 @@ func _tick(real_dt: float) -> void:
 		_hazard_watch(dt)
 	hud.show_guns(player, gunnery)
 	hud.show_ability(player.haunt if not shore.active else null)
+	hud.show_fleet(_fleet_view(), escorts.order)
 	hud.show_ammo(player.ammo, stock)
 	hud.show_fireworks(Progress.fireworks, _fw_type)
 	hud.show_hold(hold)
@@ -2468,6 +2483,9 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 	if ship == player:
 		_begin_farewell(attacker)
 		return
+	if ship.escort:
+		_escort_lost(ship, attacker)
+		return
 	# a sinking buys a breather before the next hunter; a named captain's own is her bounty
 	hunters.cool = maxf(hunters.cool, 2.5)
 	var named := Bounty.captain(ship.hunter) if ship.hunter != "" else {}
@@ -2904,8 +2922,11 @@ func _on_bounty(ship: Ship, gold: int) -> void:
 		hud.toast("+%d gold cursed bounty" % gold, "The %s is laid to rest" % ship.ship_name, 3.6)
 		voyage.note("ghost", "Laid the %s to rest" % ship.ship_name, "Ghost %s · +%d gold" % [ship.cls.name.to_lower(), gold])
 		return
-	hud.toast("+%d gold bounty" % gold, "%s sunk" % ship.ship_name, 3.6)
-	voyage.note("kill", "Sank the %s" % ship.ship_name, "%s · +%d gold" % [ship.cls.name, gold])
+	# (one of your escorts' kills is paid to your purse all the same)
+	var by := ship.last_attacker
+	var mate := by != null and is_instance_valid(by) and by.escort
+	hud.toast("+%d gold bounty" % gold, ("%s sunk by the %s" % [ship.ship_name, by.ship_name]) if mate else "%s sunk" % ship.ship_name, 3.6)
+	voyage.note("kill", ("The %s sank the %s" % [by.ship_name, ship.ship_name]) if mate else "Sank the %s" % ship.ship_name, "%s · +%d gold" % [ship.cls.name, gold])
 	# whatever she had bolted on is yours to pull from the wreck
 	var fit: Dictionary = ship.model.fit
 	if not fit.is_empty():
@@ -3142,6 +3163,9 @@ func _reset_world(id: String) -> void:
 	time_scale = 1.0
 	_desat = 0.0
 	camera.cine_w = 0.0
+	# the fleet's hulls and tallies kept for the next voyage
+	escorts.sync()
+	escorts.clear()
 	pirates.clear(null)
 	world.ships.clear()
 	crew.clear()
@@ -3249,6 +3273,8 @@ func _build_menus() -> void:
 	market.buy_part.connect(_buy_part)
 	market.buy_firework.connect(_buy_firework)
 	market.buy_ware.connect(_buy_ware)
+	market.hire.connect(_hire)
+	market.pay_off.connect(_pay_off)
 	market.leave.connect(_cast_off)
 	market.dock.connect(_dock_here)
 	# (the market's buttons knock on the merchant's counter)
@@ -4040,6 +4066,9 @@ func _start_voyage(sea: String) -> void:
 		var vp := get_viewport().get_visible_rect().size
 		camera.set_view(0.5 if vp.x < vp.y else 0.42, 0.0)
 	pirates.set_sail()
+	# your escorts weigh with you, each on her station
+	escorts.form(p, Progress.fleet.ships, str(Progress.fleet.order))
+	_muster_test()
 	Progress.pick_sea(away.id if away != null else "home")
 	if away != null:
 		_arrive(away)
@@ -4345,7 +4374,7 @@ func _control_shore() -> void:
 	_steer.mx = w.x * ca - w.y * sa
 	_steer.mz = -w.x * sa - w.y * ca
 	if hud.prize_open():
-		# her fate to settle first: 1 or F takes her, 2 scuttles her
+		# her fate to settle first: 1 or F takes her, 2 scuttles her, 3 signs her on
 		_steer.mx = 0.0
 		_steer.mz = 0.0
 		_steer.strike = false
@@ -4355,6 +4384,8 @@ func _control_shore() -> void:
 			_choose_prize("prize")
 		elif controls.ammo_pick == 1:
 			_choose_prize("scuttle")
+		elif controls.ammo_pick == 2 and _can_enlist(shore.prize):
+			_choose_prize("signon")
 		elif _brawl:
 			_choose_prize(str(_args.get("prize", "prize")))
 		return
@@ -4833,7 +4864,10 @@ func _offer_prize(e: Ship) -> void:
 	if not shore.active or shore.prize != e or not is_instance_valid(e):
 		return
 	var bounty: int = Pirates.BOUNTY.get(e.cls.id, 60)
-	hud.show_prize({"name": e.ship_name, "haul": _prize_haul, "prize": "+%d gold prize money" % _prize_money(e), "scuttle": "+%d gold bounty · her salvage" % bounty})
+	var v := {"name": e.ship_name, "haul": _prize_haul, "prize": "+%d gold prize money" % _prize_money(e), "scuttle": "+%d gold bounty · her salvage" % bounty}
+	if _can_enlist(e):
+		v.signon = "Her crew turn their coats and sail with you as an escort (%d / %d)" % [Progress.fleet.ships.size() + 1, Fleet.MAX]
+	hud.show_prize(v)
 	sound.bell(2, 0.2)
 
 
@@ -4841,7 +4875,7 @@ func _choose_prize(k: String) -> void:
 	if not hud.prize_open() or shore.deck == null:
 		return
 	sound.click()
-	_end_boarding("scuttle" if k == "scuttle" else "prize")
+	_end_boarding(k if k in ["scuttle", "signon"] else "prize")
 
 
 ## The captain cut down on her deck: the hands haul him back aboard, some of the purse lost.
@@ -4864,7 +4898,7 @@ func _end_boarding(how: String) -> void:
 	var e := shore.prize
 	var p := player
 	controls.reset()
-	var line: String = {"prize": "A prize crew takes her helm…", "scuttle": "Fire in her hold, and back over the rail…", "retreat": "Cutting the lines…", "repelled": "Hauled back over your own rail…", "sinking": "She's going down: back aboard!"}.get(how, "Back aboard…")
+	var line: String = {"prize": "A prize crew takes her helm…", "signon": "Her crew swear to the articles…", "scuttle": "Fire in her hold, and back over the rail…", "retreat": "Cutting the lines…", "repelled": "Hauled back over your own rail…", "sinking": "She's going down: back aboard!"}.get(how, "Back aboard…")
 	veil.cover(line, func() -> void:
 		if not shore.active:
 			return
@@ -4877,6 +4911,8 @@ func _end_boarding(how: String) -> void:
 			return
 		if how == "prize":
 			_take_prize(e)
+		elif how == "signon":
+			_enlist(e)
 		elif how == "scuttle":
 			_scuttle(e)
 		else:
@@ -5385,11 +5421,14 @@ func _dock(port: TradePort, now := false) -> void:
 		port.set_ship(p)
 		var b := port.berth(p.cls.beam)
 		p.place(b.x, b.y, b.z)
+		# the fleet lies off the quay and waits
+		escorts.anchor(true)
 		market.kicker = "TRADING PORT · FEAST NIGHT" if port.festive > 0.3 else "TRADING PORT"
 		market.open(port.title, port.market, hold, p.gold, world.time)
 		_refresh_pyro()
 		_services()
 		_refresh_parts()
+		_refresh_hands()
 		_dock_t = 0.0
 		camera.port = true
 		_frame_dock(0.0)
@@ -5437,6 +5476,9 @@ func _fit_panel(r: Rect2) -> float:
 ## point) and fill the racks of special shot (9 gold a broadside).
 func _service_costs() -> Dictionary:
 	var hp := maxi(0, ceili(player.max_hp - player.hp))
+	# (and your escorts' hulls with hers)
+	for e in escorts.ships():
+		hp += maxi(0, ceili(e.max_hp - e.hp))
 	var shot_n := 0
 	for k: int in Ammo.SPECIALS:
 		shot_n += maxi(0, int(Ammo.MAX[k]) - stock[k])
@@ -5504,6 +5546,9 @@ func _repair() -> void:
 		return
 	player.gold -= c.repair
 	player.hp = player.max_hp
+	for e in escorts.ships():
+		e.hp = e.max_hp
+	escorts.sync()
 	port.unload(PackedStringArray(["calico", "calico", "cheese"].slice(0, 1 + mini(2, int(c.repair_hp) / 80))), true)
 	sound.purchase(&"repair")
 	_services()
@@ -5661,6 +5706,9 @@ func _undock() -> void:
 	p.anchored = false
 	p.speed = 3.0
 	p.sail_target = 2.0 / 3.0
+	# and the fleet falls in on her as she clears the quay
+	escorts.anchor(false)
+	escorts.restation_now(p)
 	camera.snap_to(p.pos)
 	controls.reset()
 	hud.fade(true, 0.0)
@@ -5713,6 +5761,185 @@ func _dock_here() -> void:
 	var near := ports.nearest(p.pos)
 	if near != null and near.in_reach(p.pos) and _fighting() == null:
 		_dock(near)
+
+
+# ------------------------------------------------------------------ your fleet
+
+## The escorts sail on: each captain picks her fight among the pirates afloat
+## (your own target first on "attack"), and keeps her station otherwise.
+func _update_fleet(dt: float, sailing: bool) -> void:
+	if escorts.ais.is_empty():
+		return
+	var flag := player if player.alive and _farewell == null else null
+	var foes: Array[Ship] = []
+	if sailing:
+		for s in world.ships:
+			if s.team == Ship.Team.PIRATE and s.alive and not s.removed and not s.prize and not s.lashed and not s.phantom and s.presence > 0.5:
+				foes.append(s)
+	var mark := gunnery.focus if gunnery.focus != null and foes.has(gunnery.focus) else null
+	escorts.update(dt, flag, foes, mark, gunnery.marks if sailing else ([] as Array[Vector3]))
+
+
+## The fleet panel's rows: each escort's name, hull and what she's about.
+func _fleet_view() -> Array:
+	var out: Array = []
+	for ai in escorts.ais:
+		out.append({"name": ai.ship.ship_name, "hp": ai.ship.hp / ai.ship.max_hp, "status": ai.status()})
+	return out
+
+
+## An order signalled to the fleet (off the panel, or O for the next one):
+## their captains answer it over their decks.
+func _signal_order(o: String) -> void:
+	if escorts.ais.is_empty() or not Fleet.ORDERS.has(o) or state != State.VOYAGE:
+		return
+	escorts.set_order(o)
+	sound.bell(1, 0.12)
+	var acks: Array = Fleet.ORDER_INFO[o].ack
+	for ai in escorts.ais:
+		var s := ai.ship
+		if s.alive:
+			var top := float(s.cls.masts[0].height) if not s.cls.masts.is_empty() else 10.0
+			hud.floater(str(acks.pick_random()), Vector3(s.pos.x, s.position.y + top * 0.45 + 3.0, s.pos.z), camera, Floaters.Kind.GOOD, 14.0)
+	hud.toast("Signal: %s" % Fleet.ORDER_INFO[o].name, str(Fleet.ORDER_INFO[o].line), 2.6)
+	_note_tour("signalled %s" % o)
+
+
+func _cycle_order() -> void:
+	var i := Fleet.ORDERS.find(escorts.order)
+	_signal_order(Fleet.ORDERS[(i + 1) % Fleet.ORDERS.size()])
+
+
+## One of yours goes down: struck off the roster, mourned on the toast.
+func _escort_lost(ship: Ship, attacker: Ship) -> void:
+	var rec := escorts.on_sunk(ship, player)
+	if rec.is_empty():
+		return
+	var by := (" to the %s" % attacker.ship_name) if attacker != null and is_instance_valid(attacker) and attacker.ship_name != "" else ""
+	hud.toast("The %s is lost" % ship.ship_name, "Capt. %s and all hands went down%s" % [str(rec.master), by], 4.5)
+	voyage.note("kill", "Lost the %s" % ship.ship_name, "%s · Capt. %s" % [ship.cls.name, str(rec.master)])
+	sound.bell(3, 0.3)
+	_note_tour("lost the escort %s" % ship.ship_name)
+
+
+## Whether a struck pirate could sign on: a whole hull (no ghost), and room in the fleet.
+func _can_enlist(e: Ship) -> bool:
+	return e != null and is_instance_valid(e) and e.alive and not e.ghost and not e.cls.is_event() and Progress.fleet.ships.size() < Fleet.MAX
+
+
+## Her crew turn their coats: your colours run up, her hull patched enough
+## to sail, and she falls in on your quarter under a master of her own.
+func _enlist(e: Ship) -> void:
+	var p := player
+	if not _can_enlist(e):
+		_take_prize(e)
+		return
+	var now := Time.get_unix_time_from_system()
+	var rec := Fleet.clean_rec({"id": "prize-%d-%d" % [int(now), randi() % 100000], "cls": e.cls.id, "name": e.ship_name, "master": Fleet.prize_master(),
+			"origin": "prize", "livery": e.livery.id, "hp": maxf(0.4, e.hp / e.max_hp), "kills": 0, "joined": now})
+	if rec.is_empty() or not Progress.enlist(rec):
+		_take_prize(e)
+		return
+	p.kills += 1
+	pirates.ais.erase(e)
+	pirates.spawn_timer = maxf(pirates.spawn_timer, 10.0)
+	boarding.hoist(e, p)
+	e.hp = maxf(e.hp, e.max_hp * 0.4)
+	e.afire = 0.0
+	e.kills = 0
+	e.anchored = false
+	escorts.adopt(e, rec, p)
+	voyage.note("kill", "The %s signed on" % e.ship_name, "%s · Capt. %s" % [e.cls.name, str(rec.master)])
+	hud.toast("The %s joins your fleet" % e.ship_name, "Capt. %s takes station on your quarter" % str(rec.master), 4.0)
+	sound.bell(3, 0.22)
+	_note_tour("the %s signed on" % e.ship_name)
+
+
+## The harbour master's desk: your escorts to pay off and today's ships for hire.
+func _refresh_hands() -> void:
+	var port := dock_port
+	if port == null:
+		market.set_hands([], 0)
+		return
+	var list: Array = []
+	for r: Dictionary in Progress.fleet.ships:
+		var ai: EscortAI = null
+		for a in escorts.ais:
+			if str(a.rec.id) == str(r.id):
+				ai = a
+		var hp: float = ai.ship.hp / ai.ship.max_hp if ai != null else float(r.hp)
+		list.append({"id": r.id, "mine": true, "name": r.name, "cls": r.cls, "master": r.master, "chip": "Hull %d%% · %d sunk · %s" % [roundi(hp * 100.0), int(ai.ship.kills if ai != null else r.kills), "taken as a prize" if r.origin == "prize" else "hired"]})
+	var full: bool = Progress.fleet.ships.size() >= Fleet.MAX
+	for o: Dictionary in Fleet.hire_offers(port.index + 1):
+		if _hired(str(o.id)):
+			continue
+		list.append({"id": o.id, "mine": false, "name": o.name, "cls": o.cls, "master": o.master, "chip": o.trait, "price": o.price, "full": full, "can": Progress.purse >= int(o.price)})
+	market.set_hands(list, Progress.fleet.ships.size())
+
+
+func _hired(id: String) -> bool:
+	for r: Dictionary in Progress.fleet.ships:
+		if str(r.id) == id:
+			return true
+	return false
+
+
+## A ship and her crew signed on at the harbour master's desk, paid from
+## your purse: she casts off and lies off the quay with the others.
+func _hire(id: String) -> void:
+	var port := dock_port
+	if state != State.DOCKED or port == null or Progress.fleet.ships.size() >= Fleet.MAX or _hired(id):
+		return
+	var o: Dictionary = {}
+	for x: Dictionary in Fleet.hire_offers(port.index + 1):
+		if str(x.id) == id:
+			o = x
+	if o.is_empty() or not Progress.spend(int(o.price)):
+		return
+	var now := Time.get_unix_time_from_system()
+	var rec := Fleet.clean_rec({"id": o.id, "cls": o.cls, "name": o.name, "master": o.master, "origin": "hired", "livery": Shipyard.MINE, "hp": 1.0, "kills": 0, "joined": now})
+	Progress.enlist(rec)
+	var ai := escorts.launch(rec, player)
+	ai.ship.anchored = true
+	ai.ship.sail_target = 0.0
+	ai.ship.speed = 0.0
+	sound.purchase(&"repair")
+	sound.bell(2, 0.18)
+	hud.toast("The %s joins your fleet" % o.name, "Capt. %s signs the articles · %d gold" % [o.master, int(o.price)], 3.6)
+	voyage.note("trade", "Hired the %s" % o.name, "%s · Capt. %s · %d gold" % [ShipClass.named(str(o.cls)).name, o.master, int(o.price)])
+	_refresh_parts()
+	_refresh_hands()
+	_note_tour("hired the %s" % o.name)
+
+
+## One of yours paid off at the desk: her crew go ashore with their wages, and she's gone.
+func _pay_off(id: String) -> void:
+	if state != State.DOCKED or dock_port == null or not _hired(id):
+		return
+	var nm := ""
+	for r: Dictionary in Progress.fleet.ships:
+		if str(r.id) == id:
+			nm = str(r.name)
+	escorts.dismiss(id, player)
+	sound.click()
+	hud.toast("The %s is paid off" % nm, "Her crew go ashore with their wages", 3.0)
+	_refresh_hands()
+	_note_tour("paid off the %s" % nm)
+
+
+## --fleet N: N escorts sail with her for the voyage (set pieces and tests:
+## none of them is kept on the roster); --order picks their standing order.
+func _muster_test() -> void:
+	if not _args.has("fleet") or state == State.HARBOUR:
+		return
+	var n := clampi(int(_args.fleet) if str(_args.fleet).is_valid_int() else 2, 1, Fleet.MAX)
+	if _args.has("order") and Fleet.ORDERS.has(str(_args.order)):
+		escorts.order = str(_args.order)
+	var classes := ["brig", "sloop"]
+	for i in range(escorts.ais.size(), n):
+		var rec := Fleet.clean_rec({"id": "test-%d" % i, "cls": classes[i % 2], "name": Fleet.SHIP_NAMES[i], "master": Fleet.MASTERS[i][0],
+				"origin": "prize" if i == 1 else "hired", "livery": Shipyard.LIVERIES[1] if i == 1 else Shipyard.MINE, "hp": 1.0, "kills": 0, "joined": float(i)})
+		escorts.launch(rec, player)
 
 
 # ------------------------------------------------------------------ merchant convoys
