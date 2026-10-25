@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T06:00Z',
+    entries: [
+      {
+        title: 'Hallowtide: the Hollow Jack, the first event ship',
+        notes: [
+          'Android and Windows: event ships are here. Special ships, each one of a kind, sail in for a season of the year and glow in the harbour\'s picker under an EVENT ribbon. Sail one while her season is on and she\'s yours to keep for good.',
+          'The first is the Hollow Jack, for Hallowtide (until 8 November): a haunted galleon with torn black sails and a burning skull, ghost-fire seeping from her seams and gunports, carved pumpkins grinning along her rails, green lanterns astern and a skeleton captain on her quarterdeck. Her crew are the drowned, and her guns fire orange and green ghost-fire.',
+          'Her power is the Phantom Run: tap the ghost button (G on a computer) and she crosses into the spirit world for seven seconds, untouchable by shot, ram or reef, her fires out and half as fast again whatever the wind. She comes back with a Banshee\'s Wail, a ring of dread racing over the water that hurts every enemy ship it reaches and cuts down their gun crews. Then the spirits rest for forty seconds.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T05:00Z',
     entries: [
       {

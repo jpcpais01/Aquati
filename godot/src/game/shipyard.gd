@@ -36,6 +36,10 @@ func _ready() -> void:
 	for id: String in LIVERIES:
 		Livery.named(id)
 	Livery.named(MINE)
+	for id: String in ShipEvents.all_ships():
+		ShipClass.named(id)
+	for id: String in ShipEvents.liveries():
+		Livery.named(id)
 
 
 func _process(delta: float) -> void:
@@ -52,7 +56,7 @@ func _process(delta: float) -> void:
 	# fitted out before it last changed her parts, go
 	for i in range(_stock.size() - 1, -1, -1):
 		var m := _stock[i]
-		if m.livery.id == MINE and not _fits(m, MINE):
+		if m.asked == MINE and not _fits(m, MINE):
 			_stock.remove_at(i)
 			m.free()
 	_idle -= delta
@@ -68,10 +72,11 @@ func _process(delta: float) -> void:
 
 ## What to lay down next: [class, livery], or nothing when the slipway is full.
 func _next() -> Array:
-	if harbour and STOCK.has(want) and count(want, MINE) == 0:
+	var yours := _mine()
+	if harbour and yours.has(want) and count(want, MINE) == 0:
 		return [want, MINE]
 	var mine: Array = []
-	for id: String in STOCK:
+	for id: String in yours:
 		if count(id, MINE) == 0:
 			mine = [id, MINE]
 			break
@@ -81,6 +86,18 @@ func _next() -> Array:
 		if count(id) < int(STOCK[id]):
 			return [id, LIVERIES[randi() % LIVERIES.size()]]
 	return mine
+
+
+## The classes kept ready for you: the ships of the line, and the event
+## ships you can sail (ShipEvents).
+func _mine() -> Array[String]:
+	var out: Array[String] = []
+	for id: String in STOCK:
+		out.append(id)
+	for id in Progress.ships():
+		if not out.has(id):
+			out.append(id)
+	return out
 
 
 func _build(cls: ShipClass, livery: Livery, fit: Dictionary) -> void:
@@ -114,13 +131,14 @@ func take(id: String, livery := "") -> ShipModel:
 
 ## A hull fits a livery wanted (a pirate's for none) unless it was painted
 ## before her colours last changed, or fitted out before her parts last did
-## (the Shipwright).
+## (the Shipwright). An event ship wears her own colours and no refit: she
+## fits the livery she was built for as long as it lasts.
 func _fits(m: ShipModel, livery: String) -> bool:
 	if livery.is_empty():
-		return m.livery.id != MINE
-	if m.livery.id != livery or m.rev != m.livery.rev:
+		return m.asked != MINE
+	if m.asked != livery or m.rev != m.livery.rev:
 		return false
-	return livery != MINE or m.fit_key == Parts.key(Progress.loadout(m.cls.id))
+	return livery != MINE or m.cls.is_event() or m.fit_key == Parts.key(Progress.loadout(m.cls.id))
 
 
 ## Holds new keels for a few seconds.

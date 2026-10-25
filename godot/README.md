@@ -168,7 +168,11 @@ controls, `--sink S` sends your ship down after S seconds, `--voyage` gives
 her a long voyage first (a full farewell card), and `--nopirates` keeps the
 sea clear. `--colours N` dresses her in the N-th famous colours (0 to 7),
 `--colours random` in a surprise (`--seed S`), and `--name NAME` christens
-her. `--phone` plays as a phone would at MEDIUM (`--phone 360` for a
+her. Event ships: `--ship revenant` sails the Hollow Jack (Hallowtide's
+haunted galleon), `--events on|off` holds her season open or shut whatever
+the date, `--phantom N` calls her Phantom Run N frames (40) before the shot
+and `--wail N` calls it early enough that her Banshee's Wail is N frames
+old at the shot. `--phone` plays as a phone would at MEDIUM (`--phone 360` for a
 screen 360 dp across): the lean graphics path, with the plants and crews
 sized for its screen, so a shot's triangle count is the phone's. The header
 of `src/game/game.gd` lists them all.

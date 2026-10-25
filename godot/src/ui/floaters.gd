@@ -8,7 +8,7 @@ extends Control
 ## Each pops in, drifts up slowing, and fades; a small pool of labels,
 ## reused oldest first, each kind a shared look.
 
-enum Kind { GOOD, BAD, BURN, LOOT, RARE, EPIC, LEGENDARY, AMMO, ABLAZE, SHREDDED, CREW }
+enum Kind { GOOD, BAD, BURN, LOOT, RARE, EPIC, LEGENDARY, AMMO, ABLAZE, SHREDDED, CREW, GHOST }
 
 const POOL := 20
 ## By kind: its ink, its size (web px), its glows ([colour, reach (web px)],
@@ -25,6 +25,7 @@ const LOOKS := [
 	[Color("#ffd2a0"), 13.0, [[Color(1.0, 0.431, 0.157, 0.95), 10.0]], true],
 	[Color("#d6efff"), 13.0, [[Color(0.471, 0.784, 1.0, 0.8), 10.0]], true],
 	[Color("#e4d8ff"), 13.0, [[Color(0.667, 0.549, 1.0, 0.85), 10.0]], true],
+	[Color("#d4ffe8"), 14.0, [[Color(0.3, 1.0, 0.62, 0.9), 12.0]], true],
 ]
 ## Each glow is laid as rings of its colour, wider and fainter outward (the
 ## engine draws a text's shadow as a hard outline, not a blur).

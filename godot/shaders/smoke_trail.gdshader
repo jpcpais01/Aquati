@@ -29,14 +29,14 @@ const float LIFE[4] = { 1.9, 1.5, 2.1, 1.9 };
 const vec3 GLOW[4] = { vec3(0.0), vec3(2.0, 1.0, 0.3), vec3(3.4, 1.3, 0.3), vec3(0.0) };
 // Round shot's in each of the vault's trails (Cosmetics.TRAIL_STYLES; the
 // rainbow's glow runs through every colour).
-const vec3 TRAIL_TINT[10] = { vec3(0.95, 0.94, 0.93), vec3(1.1, 1.16, 1.2), vec3(0.32, 0.3, 0.29), vec3(0.72, 0.64, 0.58), vec3(0.9, 1.05, 1.25),
-		vec3(1.15, 1.05, 0.9), vec3(0.75, 1.0, 0.88), vec3(1.0), vec3(0.85, 0.85, 1.05), vec3(0.62, 0.86, 0.76) };
-const float TRAIL_OPACITY[10] = { 0.42, 0.32, 0.55, 0.3, 0.45, 0.32, 0.32, 0.26, 0.26, 0.36 };
-const vec2 TRAIL_WIDTH[10] = { vec2(0.3, 2.1), vec2(0.25, 1.6), vec2(0.38, 2.7), vec2(0.26, 1.7), vec2(0.3, 2.0), vec2(0.34, 1.9),
-		vec2(0.34, 1.9), vec2(0.3, 1.7), vec2(0.26, 1.6), vec2(0.3, 2.2) };
-const float TRAIL_LIFE[10] = { 1.9, 1.2, 2.4, 1.4, 1.7, 1.5, 1.4, 1.4, 1.5, 2.0 };
-const vec3 TRAIL_GLOW[10] = { vec3(0.0), vec3(0.0), vec3(0.0), vec3(2.6, 1.0, 0.25), vec3(0.5, 1.0, 1.6), vec3(3.0, 2.0, 0.6),
-		vec3(0.5, 2.4, 1.3), vec3(1.6), vec3(1.6, 1.4, 2.6), vec3(0.3, 1.6, 0.9) };
+const vec3 TRAIL_TINT[11] = { vec3(0.95, 0.94, 0.93), vec3(1.1, 1.16, 1.2), vec3(0.32, 0.3, 0.29), vec3(0.72, 0.64, 0.58), vec3(0.9, 1.05, 1.25),
+		vec3(1.15, 1.05, 0.9), vec3(0.75, 1.0, 0.88), vec3(1.0), vec3(0.85, 0.85, 1.05), vec3(0.62, 0.86, 0.76), vec3(0.6, 0.5, 0.72) };
+const float TRAIL_OPACITY[11] = { 0.42, 0.32, 0.55, 0.3, 0.45, 0.32, 0.32, 0.26, 0.26, 0.36, 0.34 };
+const vec2 TRAIL_WIDTH[11] = { vec2(0.3, 2.1), vec2(0.25, 1.6), vec2(0.38, 2.7), vec2(0.26, 1.7), vec2(0.3, 2.0), vec2(0.34, 1.9),
+		vec2(0.34, 1.9), vec2(0.3, 1.7), vec2(0.26, 1.6), vec2(0.3, 2.2), vec2(0.32, 2.1) };
+const float TRAIL_LIFE[11] = { 1.9, 1.2, 2.4, 1.4, 1.7, 1.5, 1.4, 1.4, 1.5, 2.0, 1.8 };
+const vec3 TRAIL_GLOW[11] = { vec3(0.0), vec3(0.0), vec3(0.0), vec3(2.6, 1.0, 0.25), vec3(0.5, 1.0, 1.6), vec3(3.0, 2.0, 0.6),
+		vec3(0.5, 2.4, 1.3), vec3(1.6), vec3(1.6, 1.4, 2.6), vec3(0.3, 1.6, 0.9), vec3(2.2, 0.75, 0.08) };
 
 varying float v_across;
 varying float v_age;
@@ -49,7 +49,7 @@ varying vec3 v_world;
 void vertex() {
 	int code = int(INSTANCE_CUSTOM.w + 0.5);
 	int kind = clamp(code % 8, 0, 3);
-	int style = clamp(code / 8, 0, 9);
+	int style = clamp(code / 8, 0, 10);
 	float life = kind == 0 ? TRAIL_LIFE[style] : LIFE[kind];
 	float t_now = now - INSTANCE_CUSTOM.x;
 	float t_head = min(t_now, INSTANCE_CUSTOM.y - INSTANCE_CUSTOM.x);
@@ -90,7 +90,7 @@ void vertex() {
 
 void fragment() {
 	int kind = clamp(int(v_kind + 0.5), 0, 3);
-	int style = clamp(int(v_style + 0.5), 0, 9);
+	int style = clamp(int(v_style + 0.5), 0, 10);
 	float v = v_across;
 	float age = v_age;
 	float across = 1.0 - v * v;

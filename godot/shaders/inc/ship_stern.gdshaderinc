@@ -4,6 +4,9 @@
 #include "res://shaders/inc/atmos.gdshaderinc"
 #include "res://shaders/inc/ship_common.gdshaderinc"
 #include "res://shaders/inc/lit.gdshaderinc"
+#ifdef PHANTOM
+#include "res://shaders/inc/ship_phantom.gdshaderinc"
+#endif
 
 uniform vec3 c_hull : source_color = vec3(0.48, 0.29, 0.16);
 uniform vec3 c_bottom : source_color = vec3(0.7, 0.23, 0.17);
@@ -11,6 +14,9 @@ uniform vec3 c_boot : source_color = vec3(0.96, 0.94, 0.88);
 uniform vec3 c_strake : source_color = vec3(0.12, 0.54, 0.54);
 uniform vec3 c_trim : source_color = vec3(0.89, 0.71, 0.32);
 uniform int rows = 1;
+/// the great cabin's lamplight through its panes, and the glass by day
+uniform vec3 pane_glow = vec3(1.4, 0.5, 0.079);
+uniform vec3 pane_glass : source_color = vec3(1.0, 0.847, 0.541);
 
 varying vec3 v_world;
 #ifdef DAMAGE
@@ -61,9 +67,9 @@ void fragment() {
 			metal = mix(metal, 0.6, in_frame);
 			// mullions
 			float mull = max(1.0 - smoothstep(px, px + af, abs(p.x)), 1.0 - smoothstep(px, px + af, abs(p.y)));
-			vec3 glass = mix(vec3(1.0, 0.847, 0.541), c_trim * 0.6, mull);
+			vec3 glass = mix(pane_glass, c_trim * 0.6, mull);
 			col = mix(col, glass, in_pane);
-			glow += vec3(1.4, 0.5, 0.079) * in_pane * (1.0 - mull);
+			glow += pane_glow * in_pane * (1.0 - mull);
 			metal = mix(metal, 0.0, in_pane);
 		}
 	}
@@ -83,5 +89,8 @@ void fragment() {
 	METALLIC = metal;
 	ROUGHNESS = rough * wet_gloss();
 	EMISSION = glow;
+#ifdef PHANTOM
+	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

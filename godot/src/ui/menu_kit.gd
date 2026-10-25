@@ -34,7 +34,11 @@ static func line_at(t: UiText, x: float, y: float, lh: float) -> void:
 static func ship_art(id: String, h: float, lit: bool) -> TextureRect:
 	var c := ShipClass.named(id)
 	var a: Array
-	if lit:
+	if lit and c.is_event():
+		# an event ship in her own colours: the Hollow Jack violet, her rags ghost-green, her trim pumpkin
+		var e := ShipEvents.event_of(id)
+		a = Art.ship(c, Color("#5b3a7a"), Color(e.glow2, 0.9), Color("#5a4a3c"), {"trim": e.glow, "trim_w": 0.45, "port": Color("#0a0710"), "flag": e.glow2})
+	elif lit:
 		a = Art.ship(c, Color("#1f8a92"), Color("#f7f3ea"), Color("#9a6a3a"), {"trim": HudStyle.GOLD, "trim_w": 0.45, "port": Color("#0a2b38"), "flag": HudStyle.GOLD})
 	else:
 		var ghost := Color(0.941, 0.965, 0.973)

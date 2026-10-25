@@ -214,7 +214,7 @@ func _init(p_ship: Ship, take_row: Callable, lean: bool) -> void:
 	var pirate := ship.team == Ship.Team.PIRATE
 	var gunner := 0
 	for role in roles:
-		var look := CrewLook.make(pirate, role == Sailor.Role.CAPTAIN, role == Sailor.Role.HELM, rng)
+		var look := CrewLook.make(pirate, role == Sailor.Role.CAPTAIN, role == Sailor.Role.HELM, rng, ship.cls.haunt)
 		var row: int = take_row.call(look)
 		if row < 0:
 			break

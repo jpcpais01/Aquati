@@ -6,6 +6,9 @@
 #define LIT_SPECULAR 0.3
 #define LIT_BACKLIGHT
 #include "res://shaders/inc/lit.gdshaderinc"
+#ifdef PHANTOM
+#include "res://shaders/inc/ship_phantom.gdshaderinc"
+#endif
 
 /// the flag as Heraldry draws it: field, pattern, emblem and the hand-painted
 /// layer, its shape cut from the fly in alpha
@@ -61,5 +64,8 @@ void fragment() {
 	ROUGHNESS = 0.8 * wet_gloss();
 	SPECULAR = 0.3;
 	BACKLIGHT = col * 0.3;
+#ifdef PHANTOM
+	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

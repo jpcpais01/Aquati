@@ -28,7 +28,7 @@ const RAKE_GATHER := 0.22
 const SPARK_EVERY := 0.035
 ## The vault trails that shed motes behind round shot (Cosmetics.TRAIL_STYLES):
 ## powder and soot leave only their smoke.
-const MOTES: Array[bool] = [false, true, false, true, true, true, true, true, true, true]
+const MOTES: Array[bool] = [false, true, false, true, true, true, true, true, true, true, true]
 
 var world: World
 ## Balls fired this voyage, by kind (each of a bag of grape counts).
@@ -355,6 +355,9 @@ func _strike_ship(b: _Ball, p: Vector3, t: float) -> bool:
 		if s == b.owner or s.removed or (not s.alive and s.sink_t > 2.0):
 			continue
 		if s.team == Ship.Team.PLAYER and b.owner.team == Ship.Team.PLAYER:
+			continue
+		# a ship crossed into the spirit world (Haunt): the ball flies through her
+		if s.phantom:
 			continue
 		var dx := p.x - s.pos.x
 		var dz := p.z - s.pos.z

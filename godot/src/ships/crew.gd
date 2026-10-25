@@ -146,9 +146,11 @@ func update(dt: float, world: World, camera: Camera3D, focus: Vector3, view_r: f
 				c.skipped = 0
 		if seen == 0:
 			continue
+		# a haunted crew fades from her decks as she crosses over (Haunt)
+		var ghost := s.haunt != null and s.haunt.phantom > 0.5
 		for sl in c.sailors:
 			if sl.mode == Sailor.Mode.ABOARD:
-				if not sl.away:
+				if not sl.away and not ghost:
 					_emit(sl, c.matrix_of(sl), seen == 2)
 			elif sl.mode != Sailor.Mode.GONE:
 				_emit(sl, CrewBrain.loose_xf(sl), false)

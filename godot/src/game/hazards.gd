@@ -234,6 +234,10 @@ func update(dt: float, view: Vector3, storm: float) -> void:
 func _drag(s: Ship, dt: float) -> void:
 	if s.swallowed:
 		return
+	if s.phantom:
+		# no throat can hold a ghost (Haunt): she rises out of it
+		s.drawn = maxf(0.0, s.drawn - dt * 0.35)
+		return
 	var pull := 0.0
 	for m in maelstroms:
 		var v: Vortex = m.v

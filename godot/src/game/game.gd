@@ -57,6 +57,9 @@ extends Node3D
 ## ship down S seconds in (her farewell; --farewell T starts it T seconds
 ## through), --touch shows the touch controls, --nopirates keeps the sea
 ## clear, --voyage puts a long voyage behind her (to see a full farewell).
+## Event ships: --ship revenant sails the Hollow Jack, --events on|off holds
+## the season open or shut, --phantom N calls her Phantom Run N frames (40)
+## before the shot and --wail N has her Banshee's Wail N frames old at it.
 ## A port: --dock K ties her up at the K-th market (0 .. 5) with its market
 ## open (with --hold, goods to sell; --sell ID, or all, sells it just
 ## before the frame; --wright scrolls to the shipwright's counter, and
@@ -179,6 +182,8 @@ var dock_port: TradePort
 ## Ashore: the islands underfoot, the landing party and their boat.
 var shore_ground: ShoreGround
 var shore: Shore
+## The Phantom Run has been explained this sitting (_say_power_once).
+var _power_told := false
 var _steer := Shore.Steer.new()
 ## Afloat: no one's hand on the captain.
 var _idle_steer := Shore.Steer.new()
@@ -356,6 +361,9 @@ class Farewell:
 
 func _ready() -> void:
 	_args = _parse_args()
+	# the event ships' seasons held open (on) or shut (off) whatever the date
+	if _args.has("events"):
+		ShipEvents.force = 0 if str(_args.events) == "off" else 1
 	_parts_flags()
 	_vault_flags()
 	if _args.has("phone"):
@@ -422,6 +430,7 @@ func _load() -> void:
 	hud.map_pressed.connect(func() -> void:
 		sound.click()
 		_open_chart())
+	hud.ability_pressed.connect(_call_power)
 	hud.pause_pressed.connect(func() -> void:
 		sound.click()
 		_pause())
@@ -613,6 +622,8 @@ func _warm_up() -> void:
 	camera.add_child(w)
 	# (one a frame: each one's first draw builds its own shaders)
 	var sets := [ShipDamage.warm_meshes.bind(player.model), world.debris.warm_meshes, world.loot.warm_meshes, ports.warm_meshes, home.warm_meshes]
+	if player.haunt != null:
+		sets.append(Haunt.warm_meshes.bind(player.model))
 	for i in sets.size():
 		for n: Node in sets[i].call():
 			w.add_child(n)
@@ -736,6 +747,11 @@ func _dress_livery() -> void:
 ## Your guns go off in the blast you wear and their round shot flies with
 ## your trail (a set piece in someone else's colours keeps plain powder).
 func _arm(s: Ship) -> void:
+	if s.cls.haunt:
+		# the Hollow Jack fires her own: jack-o'-lantern blasts and pumpkin-ember trails
+		s.blast = Particles.HALLOW
+		s.trail = Particles.HALLOW
+		return
 	var mine := s.model.livery.skinned
 	s.blast = Cosmetics.style_of(Progress.wearing("blast")) if mine else 0
 	s.trail = Cosmetics.style_of(Progress.wearing("trail")) if mine else 0
@@ -1315,6 +1331,13 @@ func _process(delta: float) -> void:
 	# the Guns tab's broadside (or at sea, one to seaward), N frames before the shot (12 by default)
 	if _args.has("test-fire") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args["test-fire"] if str(_args["test-fire"]).is_valid_int() else 12)):
 		_test_fire(true)
+	# her power called on N frames before the shot (40: well over), or with --wail N
+	# frames before her return, so the frame catches the Banshee's Wail going out
+	# (a shot's frames at --fixed-fps 30)
+	if _args.has("phantom") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args.phantom if str(_args.phantom).is_valid_int() else 40)):
+		_call_power()
+	if _args.has("wail") and player.haunt != null and _frames == maxi(1, int(_args.get("frames", 90)) - int(Haunt.SPAN * 30.0) - int(_args.wail if str(_args.wail).is_valid_int() else 6)):
+		_call_power()
 	if _args.has("sell") and _frames == maxi(1, int(_args.get("frames", 90)) - 24):
 		# (the coins are in the air as the frame is saved)
 		_sell("" if str(_args.sell) == "all" else str(_args.sell))
@@ -1417,6 +1440,8 @@ func _tick(real_dt: float) -> void:
 				chart.close()
 			else:
 				_open_chart()
+		if controls.ability and not ashore:
+			_call_power()
 		# the view you sail with is the next voyage's
 		if not ashore:
 			Progress.keep_view(camera.zoom, camera.tilt)
@@ -1603,6 +1628,7 @@ func _tick(real_dt: float) -> void:
 	else:
 		_hazard_watch(dt)
 	hud.show_guns(player, gunnery)
+	hud.show_ability(player.haunt if not shore.active else null)
 	hud.show_ammo(player.ammo, stock)
 	hud.show_fireworks(Progress.fireworks, _fw_type)
 	hud.show_hold(hold)
@@ -2182,6 +2208,24 @@ func _on_burned(ship: Ship, attacker: Ship, dealt: float) -> void:
 		hud.floater(("-%d" if ship == p else "%d") % roundi(dealt), at, camera, Floaters.Kind.BURN)
 
 
+## Her power called on (G, or its button): an event ship's (the Hollow
+## Jack's Phantom Run), while she's sailing and afloat.
+func _call_power() -> void:
+	if player == null or player.haunt == null or state != State.VOYAGE or shore.active or _farewell != null:
+		return
+	if player.haunt.call_up():
+		camera.shake(0.25)
+		_say_power_once()
+
+
+## The first time she crosses over in a sitting, a word on what it does.
+func _say_power_once() -> void:
+	if _power_told:
+		return
+	_power_told = true
+	hud.toast("Phantom Run", "Nothing can touch her now · her Banshee's Wail when she returns", 4.0)
+
+
 ## A special shot left its mark: said over the ship, once for each fresh effect.
 func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
 	var p := player
@@ -2197,6 +2241,12 @@ func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
 			hud.floater("Sails shredded!" if mine else "Sails shredded", at, camera, Floaters.Kind.SHREDDED, 18.0)
 		"crew":
 			hud.floater("Gun crews cut down!" if mine else "Crews cut down", at, camera, Floaters.Kind.CREW, 18.0)
+		"phantom":
+			hud.floater("Phantom Run!", at, camera, Floaters.Kind.GHOST, 18.0)
+		"dread":
+			hud.floater("Dread!", at, camera, Floaters.Kind.GHOST, 18.0)
+		"haunt_ready":
+			hud.floater("The spirits stir", at, camera, Floaters.Kind.GHOST, 18.0)
 
 
 ## The sea took a bite out of a ship (Hazards.struck): said over her, and
@@ -2591,6 +2641,8 @@ func _harbour_first() -> bool:
 func _build_menus() -> void:
 	harbour = Harbour.new()
 	harbour.loadout = Progress.loadout
+	harbour.roster = Progress.ships
+	harbour.kept = func(id: String) -> bool: return Progress.claimed.has(id)
 	harbour.picked.connect(_preview)
 	harbour.sail.connect(_choose_sea)
 	harbour.shipwright.connect(_open_shipwright)

@@ -36,6 +36,12 @@ extends Node3D
 const DARK_WOOD := Color("#3e2a1a")
 const MAST_WOOD := Color("#6a4a2e")
 const IRON_PAINT := Color("#23262b")
+## A haunted ship's lamplight and candle paint (sRGB; GLOW: lit by the shader).
+const GHOST_FIRE := Color("#6dffb4")
+const PUMPKIN_FIRE := Color("#ff9a2a")
+const PUMPKIN := Color("#e0701c")
+const BONE := Color("#d9cfb4")
+const SHROUD := Color("#231a2a")
 const FLAG_ASPECT := 0.62
 ## The close-range detail draws within this distance of the camera (m).
 const FINE_RANGE := 95.0
@@ -100,6 +106,17 @@ var lamps := PackedVector4Array()
 ## The great cabin's windows across the transom (model frame), which wear
 ## halos after dark too.
 var windows := PackedVector3Array()
+## Lights that wear a halo but cast none on the water (the sea mirrors only
+## so many): x, y, z, size, and each one's kind (lamp_halo.gdshader: 0.5 a
+## jack-o'-lantern, 1 ghost-fire).
+var glows := PackedVector4Array()
+var glow_kinds := PackedFloat32Array()
+## The livery she was asked for: an event ship always wears her own, and the
+## shipyard keeps her for the one asked (Shipyard._fits).
+var asked := ""
+## Where a haunted ship's ghost-fire burns (model frame): her lanterns,
+## pumpkins and figure, for Haunt's wisps.
+var haunt_points := PackedVector3Array()
 
 ## {node, tier, fore_aft, pivot, spar (the Spar it hangs from)}.
 var sails: Array[Dictionary] = []
@@ -161,10 +178,13 @@ var _spinners: Array[Dictionary] = []
 static func create(p_cls: ShipClass, p_livery: Livery, p_detail: bool = true, p_fit: Dictionary = {}) -> ShipModel:
 	var m := ShipModel.new()
 	m.cls = p_cls
-	m.livery = p_livery
-	m.rev = p_livery.rev
+	# an event ship wears her own colours, and takes no refit
+	var l := Livery.named(p_cls.livery) if p_cls.livery != "" else p_livery
+	m.asked = p_livery.id
+	m.livery = l
+	m.rev = l.rev
 	m.detail = p_detail
-	m.fit = Parts.clean(p_fit)
+	m.fit = {} if p_cls.is_event() else Parts.clean(p_fit)
 	m.fit_key = Parts.key(m.fit)
 	m._parts = Parts.loadout_parts(m.fit)
 	m.name = "Model"
@@ -185,6 +205,8 @@ func _build() -> void:
 	_build_bow()
 	_build_details()
 	_build_deck_life()
+	if cls.haunt:
+		_build_haunt()
 	_build_parts()
 	_finish()
 
@@ -195,7 +217,10 @@ func _build() -> void:
 ## "stern", "deck", "parts", "rope", "sail", "flag").
 func shared_material(kind: String) -> ShaderMaterial:
 	var key := kind
-	if kind in ["hull", "stern"]:
+	if cls.haunt:
+		# a haunted ship's every material is her own
+		key = "%s|%s|%s" % [kind, cls.id, livery.id]
+	elif kind in ["hull", "stern"]:
 		key = "%s|%s|%s" % [kind, cls.id, livery.id]
 	elif kind in ["sail", "flag"] or (kind == "parts" and livery.skinned):
 		key = "%s|%s" % [kind, livery.id]
@@ -227,7 +252,30 @@ func _new_material(kind: String) -> ShaderMaterial:
 			m.set_shader_parameter("port_count", mini(cls.cannons_per_side, 8))
 		"stern":
 			m.set_shader_parameter("rows", _window_rows())
+	if cls.haunt:
+		_haunt_material(m, kind)
 	return m
+
+
+## A haunted ship's look on her materials: ghost-light seeping from her seams
+## and gunports and shining through her stern windows, drowned grey timber
+## and a weathered deck, rags of canvas smouldering green at their edges and
+## her mark burning.
+func _haunt_material(m: ShaderMaterial, kind: String) -> void:
+	match kind:
+		"hull":
+			m.set_shader_parameter("seam_glow", Vector3(0.14, 0.8, 0.4))
+		"stern":
+			m.set_shader_parameter("pane_glow", Vector3(0.25, 1.45, 0.62))
+			m.set_shader_parameter("pane_glass", Color("#a8ffd6"))
+		"deck":
+			m.set_shader_parameter("c_plank", Color("#6b6159"))
+			m.set_shader_parameter("c_tar", Color("#141110"))
+		"parts":
+			m.set_shader_parameter("wood_tint", Vector3(0.6, 0.6, 0.68))
+		"sail":
+			m.set_shader_parameter("tear_glow", Vector3(0.07, 0.42, 0.2))
+			m.set_shader_parameter("mark_glow", 1.4)
 
 
 ## Sets what a livery paints on a kind of material: the hull's bands, the
@@ -284,7 +332,7 @@ static func restyle(l: Livery) -> void:
 
 ## Rows of windows in the great cabin: one, two under a stern castle, three in a galleon.
 func _window_rows() -> int:
-	return 1 if cls.stern_castle.is_empty() else (3 if cls.id == "galleon" else 2)
+	return 1 if cls.stern_castle.is_empty() else (3 if cls.id == "galleon" or cls.haunt else 2)
 
 
 ## The Shipwright's brush at work on the livery's flag (null: put down).
@@ -1253,12 +1301,17 @@ func _build_bowsprit() -> void:
 ## One sail: a grid in its own plane (tl, tr along the head, bl, br along the
 ## foot; +z is the side it bellies to), UV x across and y up from the foot.
 func _add_sail(parent: Node3D, tl: Vector2, tr: Vector2, bl: Vector2, br: Vector2, billow: float, emblem: bool) -> MeshInstance3D:
-	var nu := 10
-	var nv := 7
+	# a haunted ship's canvas hangs in rags: a finer grid, cells torn out of it
+	var rags := cls.haunt
+	var nu := 14 if rags else 10
+	var nv := 11 if rags else 7
 	var pos := PackedVector3Array()
 	var uv := PackedVector2Array()
 	var uv2 := PackedVector2Array()
 	var nrm := PackedVector3Array()
+	var torn := _rag_cells(nu, nv, emblem, sails.size()) if rags else PackedByteArray()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 911 + sails.size() * 37
 	for j in nv + 1:
 		var v := float(j) / nv
 		var l := tl.lerp(bl, v)
@@ -1269,23 +1322,46 @@ func _add_sail(parent: Node3D, tl: Vector2, tr: Vector2, bl: Vector2, br: Vector
 			# a slight concave roach on the foot, for elegance
 			if j == nv:
 				p.y += sin(u * PI) * 0.12 * billow
+			var ground := emblem and absf(u - 0.5) < 0.32 and v > 0.1 and v < 0.82
+			if rags and j > 0 and i > 0 and i < nu and not ground:
+				# the cloth's torn and stretched: no two rags square
+				var cw := (r.x - l.x) / nu
+				var ch := (tl.y - bl.y) / nv
+				p += Vector2((rng.randf() - 0.5) * 0.5 * cw, (rng.randf() - 0.5) * 0.55 * ch * (0.4 + v))
 			pos.append(Vector3(p.x, p.y, 0))
 			uv.append(Vector2(u, 1.0 - v))
 			uv2.append(Vector2(billow, 1.0 if emblem else 0.0))
 			nrm.append(Vector3.BACK)
 	var idx := PackedInt32Array()
+	# (a rag's vertices: COLOR.r 0 where cloth is torn away beside it, or at
+	# the foot, and ship_sail's ghost-fire smoulders there)
+	var rag_col := PackedColorArray()
+	if rags:
+		rag_col.resize(pos.size())
+		rag_col.fill(Color(1, 1, 1, 1))
 	for j in nv:
 		for i in nu:
 			var a := j * (nu + 1) + i
 			var cc := a + nu + 1
-			# Godot winding (front faces +z)
-			idx.append_array([a, a + 1, cc, a + 1, cc + 1, cc])
+			# Godot winding (front faces +z); a rag loses either half of a cell
+			var halves: Array[PackedInt32Array] = [PackedInt32Array([a, a + 1, cc]), PackedInt32Array([a + 1, cc + 1, cc])]
+			for k in 2:
+				if rags and torn[(j * nu + i) * 2 + k] == 1:
+					for q in halves[k]:
+						rag_col[q] = Color(0, 1, 1, 1)
+					continue
+				idx.append_array(halves[k])
+	if rags:
+		for i in nu + 1:
+			rag_col[nv * (nu + 1) + i] = Color(0, 1, 1, 1)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = pos
 	arrays[Mesh.ARRAY_NORMAL] = nrm
 	arrays[Mesh.ARRAY_TEX_UV] = uv
 	arrays[Mesh.ARRAY_TEX_UV2] = uv2
+	if rags:
+		arrays[Mesh.ARRAY_COLOR] = rag_col
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
@@ -1299,6 +1375,33 @@ func _add_sail(parent: Node3D, tl: Vector2, tr: Vector2, bl: Vector2, br: Vector
 		# the cloth of her refit (ship_sail's part branches), and where in its drift it starts
 		mi.set_instance_shader_parameter("sail_part", Vector2(int(_parts.sails.tier) + 1, _phase))
 	return mi
+
+
+## Which halves of the cells of a haunted sail's (nu x nv) grid are torn
+## away (1, two to a cell): most
+## toward the foot and the leeches, a few holes shot through the middle; the
+## head stays bent to its yard and a mark's ground stays whole.
+func _rag_cells(nu: int, nv: int, emblem: bool, seed_value: int) -> PackedByteArray:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4111 + seed_value * 53
+	var out := PackedByteArray()
+	out.resize(nu * nv * 2)
+	for j in nv:
+		var v := (j + 0.5) / nv
+		for i in nu:
+			var u := (i + 0.5) / nu
+			var side := 1.0 - minf(u, 1.0 - u) * 2.0
+			var chance := smoothstep(0.62, 1.0, v) * 0.62 + smoothstep(0.7, 1.0, side) * smoothstep(0.3, 0.8, v) * 0.3
+			if j >= 2 and j < nv - 2 and absf(u - 0.5) > 0.12:
+				chance = maxf(chance, 0.05)
+			if j < 2 or (emblem and absf(u - 0.5) < 0.3 and v > 0.15 and v < 0.78):
+				chance = 0.0
+			# both halves of a cell go together, mostly, else just the one
+			var gone := rng.randf() < chance
+			var half := rng.randi() % 2
+			out[(j * nu + i) * 2] = 1 if gone and (half == 0 or rng.randf() < 0.6) else 0
+			out[(j * nu + i) * 2 + 1] = 1 if gone and (half == 1 or rng.randf() < 0.6) else 0
+	return out
 
 
 ## A flag hanging from its hoist at the pivot, flying along +x.
@@ -1344,8 +1447,10 @@ func _build_bow() -> void:
 	var wale_col := MeshKit.blend(livery.wale, livery.hull, 0.4)
 	var knee := Figurehead.build_knee(s, cls, head, _core, _core, wale_col, livery.trim, detail)
 	# the figure on the knee: the mermaid, or the one her refit carries
-	var fig := str(_parts.figure.key) if _parts.has("figure") else "mermaid"
-	Figurehead.build_figure(fig, head, {"wood": _core, "iron": _core, "trim": _core, "glow": _core}, livery.trim)
+	var fig := str(_parts.figure.key) if _parts.has("figure") else ("" if cls.haunt else "mermaid")
+	# (a haunted ship's dead captain is carved with the rest of her: _build_haunt)
+	if fig != "":
+		Figurehead.build_figure(fig, head, {"wood": _core, "iron": _core, "trim": _core, "glow": _core}, livery.trim)
 	if fig == "seraph":
 		PartModels.seraph_lights(_part_kit(), head)
 	# gilded trailboards: carved scrolls down each side of the bows, laid on the planking
@@ -1641,14 +1746,252 @@ func _build_details() -> void:
 		var zz := s.z(0.01) - 0.05
 		_core.paint(IRON_PAINT, MeshKit.IRON, 0.03)
 		_core.spar(Vector3(x, ty, zz), Vector3(x, ty + 0.6 * k, zz), 0.05, 0.04, 5)
-		_small.paint(Color(1.0, 0.64, 0.28).linear_to_srgb(), MeshKit.GLOW, 0.0)
-		_small.sphere(Transform3D(Basis.from_scale(Vector3(1, 1.35, 1)), Vector3(x, ty + 0.82 * k, zz)), 0.2 * k, 8, 6)
-		lamps.append(Vector4(x, ty + 0.82 * k, zz, k))
+		if cls.haunt:
+			# ghost-fire in her lanterns (its glow is all its own: the sea has her pumpkins)
+			_small.paint(GHOST_FIRE, MeshKit.GLOW, 0.0)
+			_small.sphere(Transform3D(Basis.from_scale(Vector3(1, 1.35, 1)), Vector3(x, ty + 0.82 * k, zz)), 0.2 * k, 8, 6)
+			glows.append(Vector4(x, ty + 0.82 * k, zz, k * 1.2))
+			glow_kinds.append(1.0)
+			haunt_points.append(Vector3(x, ty + 0.82 * k, zz))
+		else:
+			_small.paint(Color(1.0, 0.64, 0.28).linear_to_srgb(), MeshKit.GLOW, 0.0)
+			_small.sphere(Transform3D(Basis.from_scale(Vector3(1, 1.35, 1)), Vector3(x, ty + 0.82 * k, zz)), 0.2 * k, 8, 6)
+			lamps.append(Vector4(x, ty + 0.82 * k, zz, k))
 		_core.paint(IRON_PAINT, MeshKit.IRON, 0.03)
 		_core.cone(_at(Vector3(x, ty + 1.15 * k, zz)), 0.24 * k, 0.24 * k, 8)
 		_core.spar(Vector3(x, ty + 0.53 * k, zz), Vector3(x, ty + 0.63 * k, zz), 0.12 * k, 0.17 * k, 8)
 		_core.paint(livery.trim, MeshKit.GILT, 0.02)
 		_core.ball(Vector3(x, ty + 1.3 * k, zz), 0.07 * k, 6, 4)
+
+
+# ------------------------------------------------------------------ haunted
+
+## A haunted ship's own furniture: jack-o'-lanterns grinning along her rails
+## and heaped on her quarterdeck and forecastle, skulls on her taffrail, and
+## on the knee of her head her dead captain, a skeleton in a tricorn and a
+## rotted coat, a cutlass raised in one bony hand and a lantern of ghost-fire
+## held out ahead of her in the other.
+func _build_haunt() -> void:
+	var s := shape
+	var c := cls
+	# along the rails, clear of the masts' channels and the castles' steps
+	for t: float in [0.1, 0.36, 0.42, 0.61, 0.89]:
+		var near := false
+		for m: Dictionary in c.masts:
+			if absf(float(m.t) - t) < 0.055:
+				near = true
+		if near:
+			continue
+		var rail_r := 0.09 + c.length * 0.0034
+		for side: float in [1.0, -1.0]:
+			var r := 0.25 + 0.03 * sin(t * 40.0 + side)
+			var at := Vector3(side * (s.half_width_at_y(t, s.top(t)) - 0.065), s.top(t) + 0.03 + rail_r + r * 0.72, s.z(t))
+			_pumpkin(at, r, Vector3(side, 0.0, -0.45).normalized(), t * 13.0 + side)
+	# heaps of them on the quarterdeck, either side of the wheel's wake, and on the forecastle
+	var heaps: Array[Vector3] = [Vector3(c.beam * 0.17, 0.0, 0.065), Vector3(-c.beam * 0.17, 0.0, 0.065), Vector3(c.beam * 0.09, 0.0, 0.875)]
+	for hi in heaps.size():
+		var hp := heaps[hi]
+		var t := hp.z
+		var y := s.deck_y(t)
+		var zz := s.z(t)
+		var face := Vector3(signf(hp.x) * 0.4, 0.0, -1.0 if hi < 2 else 1.0).normalized()
+		_pumpkin(Vector3(hp.x, y + 0.36, zz), 0.44, face, 3.0 + hi)
+		_pumpkin(Vector3(hp.x + signf(hp.x) * 0.55, y + 0.25, zz + 0.25), 0.31, (face + Vector3(signf(hp.x) * 0.5, 0, 0)).normalized(), 5.0 + hi)
+		_pumpkin(Vector3(hp.x - signf(hp.x) * 0.25, y + 0.19, zz + face.z * 0.55), 0.23, face, 7.0 + hi)
+		if hi != 1:
+			# the heaps' candlelight on the water (the sea mirrors so many lamps)
+			lamps.append(Vector4(hp.x, y + 0.5, zz, 1.3))
+	# grinning skulls along her taffrail, between the lanterns
+	var ty := s.top(0.01)
+	var hb := s.half_beam(0.01)
+	for lx: float in [-0.3, 0.3, -0.85, 0.85]:
+		var x := lx * hb
+		var zz := s.z(0.012) + 0.02
+		var at := Vector3(x, ty + 0.2, zz)
+		_skull(Transform3D(Basis(Vector3.UP, PI).scaled(Vector3.ONE * 0.15), at), _core, _small)
+	_dead_captain()
+	_on_spar(0)
+
+
+## A carved pumpkin on a haunted ship, ribbed and squat with a crooked stem,
+## its face cut out and lit from within, turned toward `face` (horizontal).
+func _pumpkin(at: Vector3, r: float, face: Vector3, seed_value: float) -> void:
+	var b := Basis(Vector3.UP, atan2(face.x, face.z))
+	var xf := Transform3D(b, at)
+	var w := 16
+	var h := 8
+	var base := _core.vertex_count()
+	var i0 := _core.indices.size()
+	_core.paint(MeshKit.shade(PUMPKIN, 0.92 + 0.12 * fposmod(seed_value * 3.7, 1.0)), MeshKit.WOOD, 0.04)
+	for j in h + 1:
+		var th := PI * j / h
+		var st := sin(th)
+		var ct := cos(th)
+		if absf(st) < 1e-6:
+			st = 0.0
+			ct = signf(ct)
+		for i in w + 1:
+			var ph := TAU * (i % w) / w
+			var rib := 0.9 + 0.1 * absf(cos(ph * 4.0))
+			# a dimple at the crown where the stem grows
+			var y := ct * 0.8 - (0.16 if j == 0 else 0.0)
+			var d := Vector3(-cos(ph) * st * rib, y, sin(ph) * st * rib)
+			_core.add_vertex(xf * (d * r), b * d.normalized())
+	_core.grid(base, h + 1, w + 1, true)
+	_core.recompute_normals(base, i0)
+	# the stem, curling off the top
+	_core.paint(Color("#4a5226"), MeshKit.WOOD, 0.05)
+	var top := xf * Vector3(0, r * 0.62, 0)
+	var lean := b * Vector3(0.6, 1.0, -0.3).normalized()
+	_core.spar(top, top + lean * r * 0.42, r * 0.11, r * 0.06, 5)
+	# the face: two eyes, a nose and a jagged grin, lit
+	_small.paint(PUMPKIN_FIRE, MeshKit.GLOW, 0.0)
+	var on := func(fx: float, fy: float) -> Vector3:
+		var dz := sqrt(maxf(1.0 - fx * fx - fy * fy, 0.04))
+		var ph := atan2(dz, -fx)
+		var rib := 0.9 + 0.1 * absf(cos(ph * 4.0))
+		return xf * (Vector3(fx * rib, fy * 0.8, dz * rib) * r * 1.03)
+	var n := (b * Vector3.BACK).normalized()
+	for sx: float in [-1.0, 1.0]:
+		_glow_poly([on.call(sx * 0.42, 0.1), on.call(sx * 0.13, 0.1), on.call(sx * 0.28, 0.42)], n)
+	_glow_poly([on.call(-0.08, -0.04), on.call(0.08, -0.04), on.call(0.0, 0.11)], n)
+	var k := 8
+	for q in k:
+		var xa := lerpf(-0.56, 0.56, float(q) / k)
+		var xb := lerpf(-0.56, 0.56, float(q + 1) / k)
+		var ta := -0.2 + 0.3 * xa * xa - (0.09 if q % 2 == 1 else 0.0)
+		var tb := -0.2 + 0.3 * xb * xb - (0.09 if q % 2 == 0 and q + 1 < k else 0.0)
+		var ba := -0.44 + 0.38 * xa * xa
+		var bb := -0.44 + 0.38 * xb * xb
+		_glow_poly([on.call(xa, ba), on.call(xb, bb), on.call(xb, tb), on.call(xa, ta)], n)
+	glows.append(Vector4(at.x, at.y, at.z, r * 3.4))
+	glow_kinds.append(0.5)
+	haunt_points.append(at)
+
+
+## A flat convex polygon of lamplight (counter-clockwise seen along n).
+func _glow_poly(pts: Array, n: Vector3) -> void:
+	var a: Vector3 = pts[0]
+	var b: Vector3 = pts[1]
+	var cc: Vector3 = pts[2]
+	var flip := (b - a).cross(cc - a).dot(n) < 0.0
+	var i0 := -1
+	for p: Vector3 in pts:
+		var i := _small.add_vertex(p, n)
+		if i0 < 0:
+			i0 = i
+	for k in range(1, pts.size() - 1):
+		if flip:
+			_small.tri(i0, i0 + k + 1, i0 + k)
+		else:
+			_small.tri(i0, i0 + k, i0 + k + 1)
+
+
+## A skull in a frame (+z its face, +y up, a unit its cranium's radius): bone,
+## dark sockets with ghost-fire in them, a row of teeth.
+func _skull(xf: Transform3D, kit: MeshKit, glow: MeshKit) -> void:
+	kit.paint(BONE, MeshKit.WOOD, 0.03)
+	kit.sphere(xf * Transform3D(Basis.from_scale(Vector3(0.92, 0.95, 1.05)), Vector3(0, 0.12, 0)), 1.0, 12, 8)
+	kit.rbox(xf * Transform3D(Basis.IDENTITY, Vector3(0, -0.5, 0.32)), Vector3(1.05, 0.6, 0.85), 0.24, 2)
+	kit.paint(Color("#0a0709"), MeshKit.WOOD, 0.0)
+	for sx: float in [-1.0, 1.0]:
+		kit.sphere(xf * Transform3D(Basis.from_scale(Vector3(1.0, 0.85, 0.6)), Vector3(sx * 0.36, -0.02, 0.8)), 0.27, 8, 6)
+	kit.sphere(xf * Transform3D(Basis.from_scale(Vector3(0.7, 1.0, 0.6)), Vector3(0, -0.36, 0.9)), 0.13, 6, 4)
+	kit.box(xf * Transform3D(Basis.IDENTITY, Vector3(0, -0.66, 0.66)), Vector3(0.72, 0.17, 0.3))
+	kit.paint(BONE, MeshKit.WOOD, 0.03)
+	for ti in 6:
+		kit.box(xf * Transform3D(Basis.IDENTITY, Vector3(-0.3 + ti * 0.12, -0.66, 0.79)), Vector3(0.085, 0.15, 0.08))
+	glow.paint(GHOST_FIRE, MeshKit.GLOW, 0.0)
+	for sx: float in [-1.0, 1.0]:
+		glow.ball(xf * Vector3(sx * 0.35, -0.02, 0.86), xf.basis.get_scale().x * 0.11, 6, 4)
+
+
+## The dead captain on the knee of her head (Figurehead's frame: y up from
+## the hips, z out ahead, leaning with the bowsprit).
+func _dead_captain() -> void:
+	var h := head
+	var f := h.place
+	var cloth := SHROUD
+	# his long coat, turned and flattened fore and aft
+	_core.paint(cloth, MeshKit.WOOD, 0.02)
+	_core.lathe(f * Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 0.72)), Vector3.ZERO), PackedVector2Array([
+		Vector2(0.0, -0.66), Vector2(0.21, -0.66), Vector2(0.28, -0.45), Vector2(0.31, -0.15), Vector2(0.26, 0.2),
+		Vector2(0.21, 0.5), Vector2(0.25, 0.68), Vector2(0.22, 0.79), Vector2(0.08, 0.86), Vector2(0.0, 0.88)]), 14)
+	# gilt cuffs of the coat's hem, his sword belt
+	_core.paint(livery.trim, MeshKit.GILT, 0.02)
+	_core.torus(f * Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 0.72)) * Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, -0.6, 0)), 0.235, 0.022, 4, 16)
+	_core.torus(f * Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 0.72)) * Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, 0.08, 0)), 0.29, 0.03, 4, 16)
+	_core.rbox(f * Transform3D(Basis.IDENTITY, Vector3(0, 0.08, 0.215)), Vector3(0.1, 0.09, 0.03), 0.01, 1)
+	# epaulettes
+	for sx: float in [-1.0, 1.0]:
+		_core.sphere(f * Transform3D(Basis.from_scale(Vector3(1.0, 0.45, 1.0)), Vector3(sx * 0.23, 0.74, 0.0)), 0.08, 8, 5)
+	# his ribs bare where the coat has rotted open, a coal of ghost-fire behind them
+	_small.paint(GHOST_FIRE, MeshKit.GLOW, 0.0)
+	_small.ball(f * Vector3(0.04, 0.47, 0.11), 0.055 * h.scale, 7, 5)
+	_core.paint(BONE, MeshKit.WOOD, 0.03)
+	for k in 4:
+		var y := 0.31 + 0.088 * k
+		var br := 0.215 - 0.012 * absf(k - 1.5)
+		_core.torus(f * Transform3D(Basis.from_scale(Vector3(1.0, 1.0, 0.76)) * Basis(Vector3.UP, -0.12 * PI) * Basis(Vector3.RIGHT, PI * 0.5), Vector3(0, y, 0)), br, 0.017, 4, 10, 0.76 * PI)
+	_core.spar(f * Vector3(0, 0.27, 0.16), f * Vector3(0, 0.62, 0.16), 0.02 * h.scale, 0.02 * h.scale, 4)
+	# the skull, levelled to look ahead
+	var hx := f * Transform3D(Basis(Vector3.RIGHT, -h.lean * 0.85).scaled(Vector3.ONE * 0.165), Vector3(0, 1.0, 0.04))
+	_core.paint(BONE, MeshKit.WOOD, 0.03)
+	_core.spar(f * Vector3(0, 0.8, 0.0), hx * Vector3(0, -0.7, 0), 0.05 * h.scale, 0.045 * h.scale, 5)
+	_skull(hx, _core, _small)
+	# his tricorn: a low crown and three cocked flaps piped in gilt
+	var hat := Color("#120e14")
+	_core.paint(hat, MeshKit.WOOD, 0.02)
+	_core.lathe(hx * Transform3D(Basis.IDENTITY, Vector3(0, 0.55, -0.02)), PackedVector2Array([
+		Vector2(0.0, 0.0), Vector2(0.98, 0.0), Vector2(0.92, 0.32), Vector2(0.78, 0.56), Vector2(0.4, 0.66), Vector2(0.0, 0.68)]), 12)
+	for a: float in [PI, PI / 3.0, -PI / 3.0]:
+		var fb := Basis(Vector3.UP, a) * Basis(Vector3.RIGHT, 0.42)
+		var fx := Transform3D(fb, Basis(Vector3.UP, a) * Vector3(0, 0.66, 0.88))
+		_core.paint(hat, MeshKit.WOOD, 0.02)
+		_core.rbox(hx * fx, Vector3(1.75, 0.62, 0.09), 0.04, 1)
+		_small.paint(livery.trim, MeshKit.GILT, 0.02)
+		_small.spar(hx * fx * Vector3(-0.86, 0.3, 0.05), hx * fx * Vector3(0.86, 0.3, 0.05), 0.012 * h.scale, 0.012 * h.scale, 4)
+	# a ghostly plume
+	_small.paint(GHOST_FIRE, MeshKit.GLOW, 0.0)
+	_small.sweep(PackedVector3Array([hx * Vector3(0.55, 0.95, 0.1), hx * Vector3(0.9, 1.45, -0.35), hx * Vector3(0.8, 1.7, -1.0), hx * Vector3(0.5, 1.6, -1.5)]),
+		func(u: float) -> float: return lerpf(0.035, 0.01, u) * h.scale, 5, 10)
+	# his sword arm, a cutlass raised high
+	var shoulder_r := f * Vector3(-0.25, 0.7, 0.0)
+	var elbow_r := f * Vector3(-0.33, 0.5, 0.18)
+	var hand_r := f * Vector3(-0.34, 0.66, 0.4)
+	_core.paint(cloth, MeshKit.WOOD, 0.02)
+	_core.spar(shoulder_r, elbow_r, 0.08 * h.scale, 0.065 * h.scale, 7)
+	_core.paint(BONE, MeshKit.WOOD, 0.03)
+	_core.spar(elbow_r, hand_r, 0.028 * h.scale, 0.024 * h.scale, 5)
+	_core.ball(hand_r, 0.045 * h.scale, 6, 4)
+	var blade := (f.basis * Vector3(-0.05, 1.0, 0.45)).normalized()
+	var bb := Basis(Quaternion(Vector3.UP, blade))
+	var bl := 0.7 * h.scale
+	_core.paint(Color("#b9bfca"), MeshKit.IRON, 0.02)
+	_core.rbox(Transform3D(bb, hand_r + blade * (bl * 0.5 + 0.06 * h.scale)), Vector3(0.075 * h.scale, bl, 0.014 * h.scale), 0.005, 1)
+	_core.paint(livery.trim, MeshKit.GILT, 0.02)
+	_core.torus(Transform3D(bb * Basis(Vector3.RIGHT, PI * 0.5), hand_r + blade * 0.05 * h.scale), 0.06 * h.scale, 0.012 * h.scale, 4, 10, PI)
+	# his lantern arm, held out ahead, the lantern swinging below his hand
+	var shoulder_l := f * Vector3(0.25, 0.7, 0.0)
+	var elbow_l := f * Vector3(0.31, 0.6, 0.27)
+	var hand_l := f * Vector3(0.3, 0.78, 0.55)
+	_core.paint(cloth, MeshKit.WOOD, 0.02)
+	_core.spar(shoulder_l, elbow_l, 0.08 * h.scale, 0.065 * h.scale, 7)
+	_core.paint(BONE, MeshKit.WOOD, 0.03)
+	_core.spar(elbow_l, hand_l, 0.028 * h.scale, 0.024 * h.scale, 5)
+	_core.ball(hand_l, 0.045 * h.scale, 6, 4)
+	var lantern := hand_l + Vector3(0, -0.42, 0)
+	_small.paint(IRON_PAINT, MeshKit.IRON, 0.03)
+	_small.spar(hand_l, lantern + Vector3(0, 0.2, 0), 0.012, 0.012, 4)
+	_core.paint(IRON_PAINT, MeshKit.IRON, 0.03)
+	_core.cone(_at(lantern + Vector3(0, 0.2, 0)), 0.15, 0.13, 8)
+	_core.spar(lantern + Vector3(0, -0.2, 0), lantern + Vector3(0, -0.13, 0), 0.06, 0.12, 8)
+	_small.paint(GHOST_FIRE, MeshKit.GLOW, 0.0)
+	_small.sphere(Transform3D(Basis.from_scale(Vector3(1, 1.3, 1)), lantern), 0.12, 8, 6)
+	glows.append(Vector4(lantern.x, lantern.y, lantern.z, 1.5))
+	glow_kinds.append(1.0)
+	haunt_points.append(lantern)
+	haunt_points.append(hx.origin)
 
 
 ## A ship's boat upside up on skids: a round-bilged shell in the boot-top
@@ -1917,7 +2260,7 @@ func _finish() -> void:
 		fine.visibility_range_end_margin = 8.0
 	if not _ropes.is_empty():
 		_mesh_child(self, _ropes.commit(), shared_material("rope"), false).name = "Rigging"
-	if not lamps.is_empty():
+	if not lamps.is_empty() or not glows.is_empty():
 		var halos := _mesh_child(self, _halo_mesh(), shared_material("halo"), false)
 		halos.name = "Halos"
 		halos.extra_cull_margin = HALO_MARGIN
@@ -1955,12 +2298,17 @@ func _halo_mesh() -> ArrayMesh:
 	var idx := PackedInt32Array()
 	var lights: Array[Vector4] = []
 	var kinds := PackedColorArray()
+	# a haunted ship's lamps are her jack-o'-lanterns, and ghost-fire lights her cabin
+	var lamp_kind := 0.5 if cls.haunt else 0.0
 	for l in lamps:
 		lights.append(l)
-		kinds.append(Color(1.0, 0.0, 0.0))
+		kinds.append(Color(1.0, 0.0, lamp_kind))
 	for w in windows:
 		lights.append(Vector4(w.x, w.y, w.z, WINDOW_HALO))
-		kinds.append(Color(WINDOW_GLOW, 1.0, 0.0))
+		kinds.append(Color(WINDOW_GLOW, 1.0, 1.0 if cls.haunt else 0.0))
+	for i in glows.size():
+		lights.append(glows[i])
+		kinds.append(Color(1.0, 0.0, glow_kinds[i]))
 	for i in lights.size():
 		var l := lights[i]
 		var o := pos.size()

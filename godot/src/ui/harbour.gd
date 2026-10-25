@@ -25,10 +25,16 @@ signal clicked
 
 const SHIPS: Array[String] = ["sloop", "brig", "galleon"]
 ## Each class's silhouette on its tab, as a share of the tallest.
-const ART := {"sloop": 0.7, "brig": 0.86, "galleon": 1.0}
+const ART := {"sloop": 0.7, "brig": 0.86, "galleon": 1.0, "revenant": 1.04}
 const STATS := [["speed", "SPEED"], ["agility", "AGILITY"], ["armour", "ARMOUR"], ["hull", "HULL"], ["firepower", "FIREPOWER"]]
 
 var ship := "sloop"
+## The ships on the picker: the ships of the line, then the event ships you
+## can sail (from `roster`, Progress.ships, as the harbour opens).
+var ships: Array[String] = SHIPS.duplicate()
+var roster := Callable()
+## Whether an event ship is already yours to keep (Progress.claimed).
+var kept := Callable()
 var sound_on := true
 ## Each class's refit ((id) -> its loadout, see Parts): her card shows her
 ## figures with it, the pips it adds in gold.
@@ -81,6 +87,8 @@ func _ready() -> void:
 
 ## Up, with `id` at anchor: everything rises in.
 func open(id: String) -> void:
+	if roster.is_valid():
+		ships.assign(roster.call())
 	ship = id
 	visible = true
 	_t = 0.0
@@ -113,6 +121,7 @@ func set_ship(id: String) -> void:
 		return
 	ship = id
 	_fill_card()
+	_place_dock()
 	_swap = 0.0
 	for tab in _tabs:
 		tab.want = 1.0 if tab.id == ship else 0.0
@@ -220,7 +229,7 @@ func _build() -> void:
 	_vault_dot = _VaultDot.new(9.0 * MenuKit.PX)
 	_vault_dot.position = Vector2(_vault.size.x - 8.0 * MenuKit.PX - _vault_dot.size.x, 6.0 * MenuKit.PX)
 	_vault.add_child(_vault_dot)
-	_vault.position = Vector2(_wright.position.x - 8.0 * u - _vault.size.x, _sail.position.y)
+	_place_dock()
 	_vault.pressed.connect(func() -> void:
 		clicked.emit()
 		vault.emit())
@@ -238,6 +247,18 @@ func _build() -> void:
 	_reveal.add(_wright, MenuKit.RISE, 0.2, 0.9, rise)
 	_reveal.add(_vault, MenuKit.RISE, 0.2, 0.9, rise)
 	_step(0.0)
+
+
+## The bottom row right to left: Set Sail, the Shipwright (not for an event
+## ship: she wears her own colours and takes no refit), the Vault.
+func _place_dock() -> void:
+	if _wright == null or _sail == null:
+		return
+	var u := MenuKit.U
+	var own := ShipClass.named(ship).is_event()
+	_wright.visible = not own
+	var x := _sail.position.x if own else _wright.position.x
+	_vault.position = Vector2(x - 8.0 * u - _vault.size.x, _sail.position.y)
 
 
 ## The crest and the title: "— SHORES O’ —" engraved over FORTUNE in gilt,
@@ -382,7 +403,10 @@ func _fill_card() -> void:
 	var bars := Parts.refit_bars(base, fit)
 	var n_parts := Parts.loadout_parts(fit).size()
 	var w := 250.0 * u
+	var ev := ShipEvents.event_of(ship)
 	var kick := MenuKit.words("THE " + c.title.to_upper(), "inter", 700, 10.5 * t, HudStyle.GOLD, 0.24)
+	if not ev.is_empty():
+		kick = MenuKit.words("%s · THE %s" % [str(ev.name).to_upper(), c.title.to_upper()], "inter", 700, 10.5 * t, ev.glow, 0.24)
 	if n_parts > 0:
 		var r: Array = kick.runs[0]
 		r[0] = str(r[0]) + " · "
@@ -442,26 +466,69 @@ func _fill_card() -> void:
 			_card.add_child(n)
 		_pips.append(pips)
 		y += row_h + 6.0 * u
+	if not ev.is_empty():
+		y = _event_rows(ev, c, w, y)
 	_card_w = w
 	_card.size = Vector2(w, y)
 
 
-## The picker: a tray of three tabs, bottom left.
+## An event ship's card goes on: her power, and how long she's to be had.
+func _event_rows(ev: Dictionary, c: ShipClass, w: float, y: float) -> float:
+	var u := MenuKit.U
+	var t := MenuKit.T
+	y += 4.0 * u
+	var glow: Color = ev.glow
+	var green: Color = ev.glow2
+	var box := UiBox.new(Vector2(w, 10.0), 12.0 * u, 2.0)
+	MenuKit.flat(box)
+	box.p("c_top", Color(0.09, 0.04, 0.12, 0.62)).p("c_foot", Color(0.05, 0.03, 0.07, 0.62)).p("c_border", Color(green, 0.28)).p("hi", 0.0)
+	box.position = Vector2(0.0, y)
+	_card.add_child(box)
+	var head := MenuKit.words("POWER · PHANTOM RUN", "inter", 800, 10.0 * t, green, 0.18)
+	head.position = Vector2(10.0 * u, 7.0 * u)
+	box.add_child(head)
+	var line := Label.new()
+	line.text = "She slips into the spirit world: for %d s no shot, ram or reef can touch her, and she runs before a wind of her own. Coming back, her Banshee's Wail strikes every ship within %d m." % [roundi(Haunt.SPAN), roundi(Haunt.WAIL_R)]
+	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	line.add_theme_font_override("font", HudStyle.font("inter", 500))
+	line.add_theme_font_size_override("font_size", roundi(10.5 * t))
+	line.add_theme_color_override("font_color", HudStyle.INK_2)
+	line.add_theme_constant_override("line_spacing", roundi(-1.0 * u))
+	line.size = Vector2(w - 20.0 * u, 0.0)
+	line.position = Vector2(10.0 * u, head.position.y + head.size.y + 3.0 * u)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(line)
+	var lh := line.get_minimum_size().y
+	box.resize(Vector2(w, line.position.y + lh + 8.0 * u))
+	y += box.size.y + 7.0 * u
+	var yours := kept.is_valid() and bool(kept.call(ship))
+	var on := ShipEvents.is_on(str(ev.id))
+	var note := "Yours to keep" if yours else "Sail her before %s and she's yours to keep" % ShipEvents.last_day(str(ev.id))
+	if yours and on:
+		note += " · %s until %s" % [str(ev.name), ShipEvents.last_day(str(ev.id))]
+	var nt := MenuKit.words(note, "inter", 700, 10.0 * t, glow if not yours else HudStyle.INK_2, 0.06)
+	nt.position = Vector2(0.0, y)
+	_card.add_child(nt)
+	return y + nt.size.y + 4.0 * u
+
+
+## The picker: a tray of a tab per ship (three, and the event ships), bottom left.
 func _build_tabs() -> Control:
 	var u := MenuKit.U
 	var pad := 5.0 * u
 	var gap := 4.0 * u
-	var w := 290.0 * u
-	var tw := (w - pad * 2.0 - gap * 2.0) / 3.0
+	var n := ships.size()
+	var tw := (290.0 * u - pad * 2.0 - gap * 2.0) / 3.0
+	var w := pad * 2.0 + gap * (n - 1) + tw * n
 	var name_h := 10.0 * MenuKit.T * 1.21
 	var th := 4.0 * u + 30.0 * u + MenuKit.PX + name_h + 5.0 * u
 	_tray = UiBox.new(Vector2(w, th + pad * 2.0), 20.0 * u, 60.0 * u)
 	_tray.p("c_top", Color(0.024, 0.086, 0.125, 0.55)).p("c_foot", Color(0.024, 0.086, 0.125, 0.55)).p("c_border", Color(1, 1, 1, 0.08)).p("hi", 0.0)
 	_tray.p("c_shadow", Color(0.0, 0.031, 0.055, 0.3)).p("shadow", Vector2(14.0, 40.0) * MenuKit.PX * 0.74)
-	for i in SHIPS.size():
-		var tab := _Tab.new(SHIPS[i], Vector2(tw, th))
+	for i in n:
+		var tab := _Tab.new(ships[i], Vector2(tw, th))
 		tab.position = Vector2(pad + i * (tw + gap), pad)
-		tab.on = 1.0 if SHIPS[i] == ship else 0.0
+		tab.on = 1.0 if ships[i] == ship else 0.0
 		tab.want = tab.on
 		tab.pressed.connect(func() -> void:
 			if tab.id != ship:
@@ -515,15 +582,19 @@ func _glint_logo() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	var i := SHIPS.find(ship)
+	var i := maxi(0, ships.find(ship))
+	var n := ships.size()
 	var to := ""
 	match event.keycode:
 		KEY_A, KEY_LEFT:
-			to = SHIPS[(i + SHIPS.size() - 1) % SHIPS.size()]
+			to = ships[(i + n - 1) % n]
 		KEY_D, KEY_RIGHT:
-			to = SHIPS[(i + 1) % SHIPS.size()]
-		KEY_1, KEY_2, KEY_3:
-			to = SHIPS[event.keycode - KEY_1]
+			to = ships[(i + 1) % n]
+		KEY_1, KEY_2, KEY_3, KEY_4, KEY_5:
+			var k: int = event.keycode - KEY_1
+			if k >= n:
+				return
+			to = ships[k]
 		KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
 			get_viewport().set_input_as_handled()
 			sail.emit()
@@ -644,6 +715,9 @@ class _Tab:
 	var _art: TextureRect
 	var _art_at := Vector2.ZERO
 	var _name: UiText
+	## An event ship's: her event, and the glow round her tab while it isn't picked.
+	var _event := {}
+	var _aura: UiBox
 
 	func _init(p_id: String, sz: Vector2) -> void:
 		super(sz, 15.0 * MenuKit.U, 2.0)
@@ -678,6 +752,29 @@ class _Tab:
 		_name = MenuKit.words(ShipClass.named(id).name.to_upper(), "inter", 700, 10.0 * MenuKit.T, Color.WHITE, 0.08)
 		_name.position = Vector2((sz.x - _name.size.x) * 0.5, art_box.end.y + MenuKit.PX)
 		add_child(_name)
+		var ev := ShipEvents.event_of(id)
+		if not ev.is_empty():
+			# an event ship's tab glows in its event's colours, and says so
+			_event = ev
+			var glow: Color = ev.glow
+			var green: Color = ev.glow2
+			_lit.p("c_top", Color(glow, 0.36)).p("c_foot", Color(green, 0.1)).p("c_border", Color(glow.lightened(0.4), 0.95))
+			_lit.p("c_shadow", Color(glow, 0.3))
+			_aura = UiBox.new(sz, 15.0 * u, 40.0 * u)
+			_aura.p("c_top", Color(glow, 0.0)).p("c_foot", Color(glow, 0.0)).p("c_border", Color(glow, 0.55)).p("border", 1.0 * MenuKit.PX).p("hi", 0.0)
+			_aura.p("c_shadow", Color(green, 0.16)).p("shadow", Vector2(10.0, 26.0) * u)
+			_aura.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(_aura)
+			move_child(_aura, 0)
+			var tag := MenuKit.words("EVENT", "inter", 800, 7.5 * MenuKit.T, Color("#1a0d02"), 0.16)
+			var tb := UiBox.new(tag.size + Vector2(8.0, 3.0) * u, 99.0, 2.0)
+			MenuKit.flat(tb)
+			tb.p("c_top", glow.lightened(0.15)).p("c_foot", glow).p("c_border", Color(1, 1, 1, 0.0)).p("hi", 0.0)
+			tag.position = Vector2(4.0, 1.5) * u
+			tb.add_child(tag)
+			tb.position = Vector2(sz.x - tb.size.x - 3.0 * u, -tb.size.y * 0.45)
+			tb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			add_child(tb)
 
 	func _draw() -> void:
 		pass
@@ -689,6 +786,10 @@ class _Tab:
 		_art.modulate.a = e
 		_dim_art.modulate.a = 1.0 - e
 		_name.modulate = HudStyle.INK_3.lerp(HudStyle.INK, e)
+		if _aura != null:
+			# the event's glow breathes round her tab till she's picked
+			_aura.modulate.a = (1.0 - e) * (0.55 + 0.45 * sin(t * 2.4))
+			_name.modulate = Color(_event.ink).lerp(HudStyle.INK, e)
 		# the lit ship bobs on the swell
 		var b := (1.0 - cos(t / 3.2 * TAU)) * 0.5 * e
 		_art.position = _art_at + Vector2(0.0, -1.5 * MenuKit.PX * b)

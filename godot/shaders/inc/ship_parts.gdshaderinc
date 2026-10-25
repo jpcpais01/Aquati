@@ -8,12 +8,17 @@
 varying float lit_spec;
 #define LIT_SPECULAR lit_spec
 #include "res://shaders/inc/lit.gdshaderinc"
+#ifdef PHANTOM
+#include "res://shaders/inc/ship_phantom.gdshaderinc"
+#endif
 
 /// lamplight paint is HDR: its colour times this
 uniform float glow_gain = 5.0;
 /// gold leaf that shines a little of its own (a trading port's domes and
 /// bells, the web's gold emissive); none on a ship
 uniform vec3 gilt_glow = vec3(0.0);
+/// what her timber is stained (a haunted ship's: grey, drowned wood)
+uniform vec3 wood_tint = vec3(1.0);
 
 varying vec3 v_world;
 varying vec3 v_obj;
@@ -52,6 +57,7 @@ void fragment() {
 	// a whisper of grain along the timber, so a spar isn't a plastic rod
 	float g = sin(v_obj.y * 9.0 + sin(v_obj.x * 3.0 + v_obj.z * 2.0) * 3.0) * 0.5 + 0.5;
 	col *= 1.0 - wood * 0.06 * g;
+	col *= mix(vec3(1.0), wood_tint, wood);
 	vec3 glow = col * glass * glow_gain;
 	if (glass > 0.0) {
 		// a lamp holds its own brightness through the night (the night grade
@@ -92,5 +98,8 @@ void fragment() {
 	lit_spec = 0.5 * (1.0 - glass);
 	SPECULAR = lit_spec;
 	EMISSION = glow + gilt * gilt_glow;
+#ifdef PHANTOM
+	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

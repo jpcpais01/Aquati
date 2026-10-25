@@ -9,7 +9,9 @@
 //
 // The mesh (ShipModel._halo_mesh): four vertices per light, all at its
 // centre; UV the card's corner (-1..1), UV2.x the light's size and UV2.y its
-// seed, COLOR.r how bright it is and COLOR.g whether it is a window.
+// seed, COLOR.r how bright it is, COLOR.g whether it is a window and COLOR.b its
+// kind: a lantern (0), a jack-o'-lantern (0.5) or ghost-fire (1), which
+// burns a little even by day.
 shader_type spatial;
 render_mode unshaded, blend_premul_alpha, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
@@ -18,6 +20,9 @@ render_mode unshaded, blend_premul_alpha, depth_draw_never, cull_disabled, shado
 /// a lantern's light, and the great cabin's (linear)
 uniform vec3 lantern = vec3(1.0, 0.62, 0.27);
 uniform vec3 window = vec3(1.0, 0.42, 0.08);
+/// a carved pumpkin's candle, and ghost-fire (the Hollow Jack's)
+uniform vec3 pumpkin = vec3(1.0, 0.36, 0.04);
+uniform vec3 ghost = vec3(0.22, 1.0, 0.5);
 
 varying vec2 v_uv;
 varying vec3 v_col;
@@ -28,14 +33,20 @@ void vertex() {
 	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float seed = UV2.y;
 	float breath = 0.93 + 0.07 * sin(TIME * 8.3 + seed * 9.0) * sin(TIME * 5.1 + seed * 4.0);
-	float a = smoothstep(0.05, 0.8, night) * (1.0 - air_fog(w, CAMERA_POSITION_WORLD).a) * breath * COLOR.r;
+	float kind = COLOR.b;
+	float dark = smoothstep(0.05, 0.8, night);
+	if (kind > 0.75) {
+		dark = max(dark, 0.35);
+		breath = 0.8 + 0.2 * sin(TIME * 3.7 + seed * 7.0) * sin(TIME * 2.3 + seed * 3.0);
+	}
+	float a = dark * (1.0 - air_fog(w, CAMERA_POSITION_WORLD).a) * breath * COLOR.r;
 	bool pane = COLOR.g > 0.5;
 	if (pane) {
 		// edge-on, a window hardly shows
 		vec3 out_aft = normalize((MODELVIEW_MATRIX * vec4(0.0, 0.0, -1.0, 0.0)).xyz);
 		a *= smoothstep(0.05, 0.6, dot(out_aft, -c / max(dist, 1e-3)));
 	}
-	v_col = (pane ? window : lantern) * a;
+	v_col = (kind > 0.75 ? ghost : kind > 0.25 ? pumpkin : pane ? window : lantern) * a;
 	v_uv = UV;
 	if (a < 0.004 || dist < 0.3) {
 		// by day (or with the eye in the lamp) the card folds out of sight
