@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-25T18:00Z',
+    hour: '2026-10-25T19:00Z',
     entries: [
       {
         title: 'Android and Windows: seagulls',
@@ -23,6 +23,11 @@ export const PATCH_NOTES: PatchGroup[] = [
           'The carrier gull flies in with a scroll and lands on your rail with news: prize money for sinking pirates, a warning of who the Brethren have sent after you, a rumour of salvage pinned on your chart, or an invitation to a feast in port tonight.',
         ],
       },
+    ],
+  },
+  {
+    hour: '2026-10-25T18:00Z',
+    entries: [
       {
         title: 'Android and Windows: rare skies',
         notes: [
