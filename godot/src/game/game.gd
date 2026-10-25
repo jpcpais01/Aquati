@@ -209,6 +209,17 @@ var wildlife: Wildlife
 var survivors: Survivors
 ## What the open sea carries: messages in bottles, and mats of flotsam with their crabs.
 var drift: Drift
+## The herring gulls: the flock, the riders on the flotsam, and the carrier.
+var birds: Birds
+## The carrier's errands waiting to be flown (each tells its news when she lands).
+var _gull_news: Array[Callable] = []
+var _gull_cool := 0.0
+var _rumour_t := 0.0
+var _feast_t := 0.0
+var _feast_told := ""
+var _prize_kills := 0
+## Letters the carrier brought this voyage.
+var _gull_letters := 0
 ## Ember rain off a restless volcano, its smoking crater, and the mirages of a scorching noon.
 var rare: RareSkies
 var rescued := 0
@@ -608,6 +619,7 @@ func _load() -> void:
 	_stage_survivors()
 	_stage_drift()
 	_stage_rare()
+	_stage_gull()
 	if _args.has("convoy"):
 		_stage_convoy()
 	if not _harbour_first():
@@ -1095,6 +1107,9 @@ func _pick_region(x: float, z: float) -> void:
 	pins.set_region(region)
 	rain.set_region(region)
 	world.region = region
+	# the gulls nest wherever you're bound
+	if birds != null:
+		birds.rehome(region.islands)
 
 
 ## Your ship for a fresh voyage, of class `id` (else the one picked in the
@@ -1229,6 +1244,16 @@ func _build_fleet() -> void:
 	# a crate caught up in the flotsam: a barrel, or in the weed now and then something finer
 	drift.crate.connect(func(x: float, z: float, kelp: bool) -> void: world.loot.place(x, z, 1 if kelp and randf() < 0.4 else 0))
 	add_child(drift)
+	birds = Birds.new()
+	birds.name = "Birds"
+	birds.sound = sound
+	var isles: Array = []
+	for r in regions:
+		isles.append_array(r.islands)
+	birds.setup(isles, (region if region != null else regions[0]).islands, 18 if Settings.quality == Settings.Quality.LOW else 36, world.ground_height)
+	add_child(birds)
+	drift.rider.connect(func(spot: Drift.Spot) -> void: birds.ride(spot))
+	drift.rider_gone.connect(func(spot: Drift.Spot) -> void: birds.unride(spot, world.wind))
 	rare = RareSkies.new()
 	rare.name = "RareSkies"
 	add_child(rare)
@@ -1613,6 +1638,9 @@ func _process(delta: float) -> void:
 				convoys.stocked(), (", wanted: " + ", ".join(PackedStringArray(convoys.wanted()))) if not convoys.wanted().is_empty() else ""])
 		print("SMOKE FLEET: %d escorts (%s), order %s; %d on the roster, %d lost" % [escorts.ais.size(), ", ".join(PackedStringArray(_fleet_view().map(func(v: Dictionary) -> String: return "%s %d%% %s" % [v.name, roundi(float(v.hp) * 100.0), v.status]))), escorts.order, Progress.fleet.ships.size(), int(Progress.fleet.lost)])
 		print("SMOKE RARE: ash %.2f (%s restless %.2f, plume %.2f over her), %d embers falling; %d mirages this voyage%s" % [atmosphere.ash, rare.volcano_name(), rare.restless, atmosphere.plume, rare.embers.drawn(), rare.mirages, ", one out there" if rare.mirage.active else ""])
+		var gc := birds.census()
+		print("SMOKE GULLS: %d in the flock (%d aloft, %d perched, %d afloat, %d trailing a ship), %d riders and carriers out, %d drawn; %d errands waiting, %d letters by gull" % [
+				birds.count().x, gc[0], gc[1], gc[2], gc[3], birds.count().y, birds.drawn, _gull_news.size(), _gull_letters])
 		print("SMOKE DRIFT: %d bottles afloat, %d mats of flotsam (%s) with %d crabs aboard, %d letters opened this voyage" % [drift.count(), drift.mats.size(), ", ".join(PackedStringArray(drift.mats.map(func(m: Drift.Mat) -> String: return "kelp" if drift.shapes[m.shape].kelp else "driftwood"))), drift.crab_count(), _letters])
 		print("SMOKE SURVIVORS: %d rafts afloat with %d hands clinging on, %d rescued this voyage, reload x%.3f" % [survivors.rafts.size(), survivors.count(), rescued, float(player.boost.reload)])
 		print("SMOKE BOUNTY: infamy %d this voyage (wanted %d), %d hunters sent, %d claimed, %s; lifetime infamy %d, %d posters up" % [
@@ -1726,6 +1754,7 @@ func _tick(real_dt: float) -> void:
 	if sailing:
 		_heat(dt)
 		_survivor_cries(dt)
+		_tidings(dt)
 	# (at the home port's quay the harbour's sea waits for her back at anchor)
 	if state == State.HARBOUR and not home.visible:
 		pirates.step_harbour(dt, player.pos, camera)
@@ -1847,6 +1876,9 @@ func _tick(real_dt: float) -> void:
 			if m.walker.visible:
 				_wild_walkers.append(m.walker)
 	wildlife.update(dt, camera, camera.target, _wild_walkers, _px_k)
+	# the gulls go to roost at night and keep out of a gale
+	birds.visible = atmosphere.night < 0.75 and atmosphere.storm < 0.6
+	birds.update(dt, world, camera)
 	_hunter_mark(sailing and not shore.active and _farewell == null)
 	# the wake steps first, so the sea draws the canvas stepped this frame
 	world.wake.step(camera.target.x, camera.target.z, dt)
@@ -2828,7 +2860,158 @@ func _stage_drift() -> void:
 		if _args["flotsam"] is String:
 			k = 1 if str(_args["flotsam"]) == "kelp" else 0
 		var at := p.pos + p.forward() * (p.cls.length * 0.5 + 16.0) + p.port_dir() * 9.0
-		drift.drop_mat(at.x, at.z, k)
+		drift.drop_mat(at.x, at.z, k, 2 if _args.has("riders") else -1)
+
+
+# ------------------------------------------------------------------ the carrier gull
+
+## A new voyage: the carrier and the riders called home, nothing to tell yet.
+func _gulls_home() -> void:
+	birds.recall()
+	_gull_news.clear()
+	_gull_cool = 90.0
+	_rumour_t = 300.0 + randf() * 180.0
+	_feast_t = 0.0
+	_prize_kills = 0
+	_gull_letters = 0
+
+
+## --gull prize|bounty|rumour|feast: the carrier sets out at once with that
+## news (the first she'd have, whatever the clocks say).
+func _stage_gull() -> void:
+	if not _args.has("gull"):
+		return
+	match str(_args.gull):
+		"bounty":
+			if hunters.next.is_empty():
+				hunters.add(Bounty.WANTED_AT[0])
+			_warn_of_hunter()
+		"rumour":
+			_gull_news.append(_rumour)
+		"feast":
+			var towns: Array[String] = [ports.ports[0].title]
+			var f: Dictionary = ports.ports[0].feast
+			_gull_news.append(_feast_letter.bind({"towns": towns, "feast": str(f.name), "line": str(f.line), "full": false}))
+		_:
+			_prize_kills = 2
+			_prize_earned()
+	_gull_cool = 0.0
+
+
+## The carrier's errands, rumours of salvage, and word of a feast tonight.
+func _tidings(dt: float) -> void:
+	var p := player
+	_gull_cool -= dt
+	if not _gull_news.is_empty() and _gull_cool <= 0.0 and p.alive and _farewell == null and not shore.active and not boarding.busy() and not birds.carrying():
+		var port := ports.nearest(p.pos)
+		if birds.carry(p, world.wind, _gull_news[0], Vector2(port.xf.origin.x, port.xf.origin.z) if port != null else null):
+			_gull_news.pop_front()
+			_gull_cool = 45.0
+	# of an afternoon, word of a feast in port tonight
+	_feast_t -= dt
+	if _feast_t <= 0.0:
+		_feast_t = 12.0
+		var hour := atmosphere.day * 24.0
+		# a new day, a new feast to hear of
+		if hour < 12.0:
+			_feast_told = ""
+		var f: Dictionary = festivals.news(atmosphere.day, atmosphere.moon_phase) if hour > 12.5 and hour < 18.0 else {}
+		var key := "%s|%s" % [f.feast, ",".join(f.towns)] if not f.is_empty() else ""
+		if not f.is_empty() and f.when == "tonight" and key != _feast_told:
+			_feast_told = key
+			_gull_news.append(_feast_letter.bind(f))
+	_rumour_t -= dt
+	if _rumour_t <= 0.0:
+		_rumour_t = 420.0 + randf() * 240.0
+		if not _high_seas:
+			_gull_news.append(_rumour)
+
+
+## A letter off the carrier's back, unrolled.
+func _gull_letter(l: Dictionary, life := 11.0) -> void:
+	l.merge({"via": "gull", "kicker": "A gull brings word"})
+	hud.letter.show_letter(l, life)
+	sound.parchment(0.8)
+	_gull_letters += 1
+	_note_tour("gull: %s" % str(l.title))
+
+
+func _feast_letter(f: Dictionary) -> void:
+	var towns: Array = f.towns
+	var l := Tidings.feast_news(towns, str(f.feast), str(f.line), bool(f.full))
+	l.merge({"seal": "gold", "reward": "Every port lights up tonight" if f.full else "Feast night · %s" % ", ".join(PackedStringArray(towns))})
+	_gull_letter(l, 12.0)
+
+
+## Every third pirate sunk, the merchants send prize money by gull.
+func _prize_earned() -> void:
+	_prize_kills += 1
+	if _prize_kills < 3:
+		return
+	var k := _prize_kills
+	_prize_kills = 0
+	var gold := roundi((110.0 + randf() * 60.0) * k * Progress.bounty_bonus())
+	_gull_news.append(func() -> void:
+		var p := player
+		if p == null or not p.alive:
+			return
+		p.gold += gold
+		Progress.earn(gold)
+		sound.coin(0.3)
+		var port := ports.nearest(p.pos)
+		var l := Tidings.prize_news(k, gold, port.title if port != null else "Port Royal")
+		l.merge({"seal": "gold", "reward": "+%s gold" % MenuKit.num(gold)})
+		_gull_letter(l)
+		voyage.note("trade", "Prize money came by gull", "+%d gold" % gold))
+
+
+## Your name climbs the Brethren's list: a friend sends word of who is coming.
+func _warn_of_hunter() -> void:
+	var c: Dictionary = hunters.next
+	if c.is_empty() or _high_seas:
+		return
+	var gold := roundi(int(c.bounty) * Progress.bounty_bonus())
+	_gull_news.append(func() -> void:
+		Progress.hunter_seen(str(c.id))
+		var l := Tidings.bounty_news(c, gold)
+		l.merge({"art": Portrait.texture(c.face, 64.0 * HudStyle.K), "seal": "black", "reward": "%s · %s gold" % [c.epithet, MenuKit.num(gold)]})
+		_gull_letter(l, 12.0))
+	# she should beat the hunter to you
+	_gull_cool = minf(_gull_cool, 4.0)
+
+
+## Salvage washed up off one of the isles: a fine chest in the shallows, and a pin on the chart.
+func _rumour() -> void:
+	var p := player
+	if p == null or not p.alive:
+		return
+	var isles: Array = []
+	for r in regions:
+		for isl: Dictionary in r.islands:
+			var d := Vector2(float(isl.x) - p.pos.x, float(isl.z) - p.pos.z).length()
+			if d > 300.0 and d < 1500.0:
+				isles.append(isl)
+	for k in 12:
+		if isles.is_empty():
+			break
+		var isl: Dictionary = isles.pick_random()
+		var a := randf() * TAU
+		var f := 1.0
+		while f < 1.8:
+			var x := float(isl.x) + cos(a) * float(isl.r) * f
+			var z := float(isl.z) + sin(a) * float(isl.r) * f
+			var h := world.ground_height(x, z)
+			if h > -6.0 and h < -2.0:
+				world.loot.place(x, z, Loot.roll_tier(0.5, 2), true)
+				pins.add(x, z, p.pos)
+				var port := ports.nearest(p.pos)
+				var l := Tidings.rumour_news(str(isl.name), port.title if port != null else "Port Royal")
+				l.merge({"reward": "Pinned on your chart · %s" % isl.name})
+				_gull_letter(l)
+				return
+			if h < -6.0:
+				break
+			f += 0.1
 
 
 # ------------------------------------------------------------------ survivors
@@ -3006,6 +3189,8 @@ func _add_infamy(pts: int) -> void:
 	if lv.y > lv.x:
 		Progress.wanted_reached(lv.y)
 		sound.wanted(lv.y)
+		if lv.y < Bounty.WANTED_AT.size():
+			_warn_of_hunter()
 		hud.toast("Wanted · %d skull%s" % [lv.y, "s" if lv.y > 1 else ""],
 				"The whole Brethren is hunting you" if lv.y >= Bounty.WANTED_AT.size() else "A hunter sets out · pirate bounties +%d%%" % roundi(lv.y * Bounty.HEAT_BONUS * 100.0), 3.6)
 		voyage.note("bounty", "Wanted: %d skull%s" % [lv.y, "s" if lv.y > 1 else ""], "The Brethren put a price on your head")
@@ -3051,6 +3236,7 @@ func _on_bounty(ship: Ship, gold: int) -> void:
 	Progress.earn(gold)
 	sound.coin()
 	_add_infamy(int(Bounty.KILL_INFAMY.get(ship.cls.id, 1)))
+	_prize_earned()
 	if ship.ghost:
 		hud.toast("+%d gold cursed bounty" % gold, "The %s is laid to rest" % ship.ship_name, 3.6)
 		voyage.note("ghost", "Laid the %s to rest" % ship.ship_name, "Ghost %s · +%d gold" % [ship.cls.name.to_lower(), gold])
@@ -3309,6 +3495,7 @@ func _reset_world(id: String) -> void:
 	drift.clear()
 	rare.reset()
 	hud.letter.clear()
+	_gulls_home()
 	discovered.clear()
 	voyage = Voyage.new()
 	_foe = null
@@ -4187,9 +4374,11 @@ func _start_voyage(sea: String) -> void:
 	# a fresh sea: no flotsam yet, no letter open
 	drift.clear()
 	hud.letter.clear()
+	_gulls_home()
 	_stage_drift()
 	rare.reset()
 	_stage_rare()
+	_stage_gull()
 	if _args.has("wanted"):
 		hunters.add(int(_args.wanted))
 	# the X of a whole map waits on its sand

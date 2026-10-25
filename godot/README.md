@@ -208,6 +208,10 @@ already over her if she lies downwind: try `--at 380,-150 --wind 1.5708`),
 `--wx embers` holds the ember rain anywhere, and `--mirage` conjures one dead
 ahead (with `--wx hot`, out on the high seas; it prints MIRAGE). The smoke
 test prints a SMOKE RARE line.
+Gulls: `--gull prize|bounty|rumour|feast` sends the carrier gull out at
+once with that news (it lands on her rail about 18 s later), and
+`--flotsam ... --riders` puts two gulls on the flotsam; the smoke test prints
+a SMOKE GULLS line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

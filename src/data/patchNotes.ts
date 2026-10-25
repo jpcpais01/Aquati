@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-25T18:00Z',
     entries: [
       {
+        title: 'Android and Windows: seagulls',
+        notes: [
+          'Herring gulls come to the Android and Windows game. They wheel over the isles, stand on the rocks, bob on the swell, trail passing ships to perch on the mast tops, and scatter screaming when the guns go off.',
+          'A gull or two often loafs on drifting kelp and driftwood out at sea, taking off as your hull passes.',
+          'The carrier gull flies in with a scroll and lands on your rail with news: prize money for sinking pirates, a warning of who the Brethren have sent after you, a rumour of salvage pinned on your chart, or an invitation to a feast in port tonight.',
+        ],
+      },
+      {
         title: 'Android and Windows: rare skies',
         notes: [
           'Ember rain comes to the Android and Windows game. Now and then Morro Huracão stirs: its plume turns into a dark column, and downwind the sky goes copper while ash and glowing embers drift down round your ship.',

@@ -47,7 +47,7 @@ func is_open() -> bool:
 	return visible and _out < 0.0
 
 
-## Unrolls a letter: {via ("bottle"), kicker, title, body (paragraphs),
+## Unrolls a letter: {via ("bottle" or "gull"), kicker, title, body (paragraphs),
 ## sign, reward, seal ("red", "black", "gold"), art (a Texture2D)}.
 func show_letter(v: Dictionary, life := 11.0) -> void:
 	if visible:
@@ -115,7 +115,7 @@ func _build(v: Dictionary) -> void:
 	var badge := HBoxContainer.new()
 	badge.add_theme_constant_override("separation", roundi(6.0 * K))
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	badge.add_child(Icons.rect("bottle", 17.0 * K, HudStyle.GOLD))
+	badge.add_child(Icons.rect("gull" if v.get("via", "bottle") == "gull" else "bottle", 17.0 * K, HudStyle.GOLD))
 	var kick := HudStyle.label(str(v.get("kicker", "")).to_upper(), "inter", 700, roundi(maxf(7.5, 8.5 * K)), HudStyle.GOLD, roundi(8.5 * K * 0.2))
 	kick.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.7))
 	kick.add_theme_constant_override("shadow_offset_y", 1)

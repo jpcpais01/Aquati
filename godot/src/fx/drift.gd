@@ -12,6 +12,10 @@ extends Node3D
 
 ## A crate has fetched up in a fresh mat (put a barrel or chest there).
 signal crate(x: float, z: float, kelp: bool)
+## A gull should come and stand on `spot` (it moves with its flotsam)...
+signal rider(spot: Spot)
+## ...and that spot's flotsam is gone.
+signal rider_gone(spot: Spot)
 
 const BOTTLE_MAX := 3
 const MAT_MAX := 4
@@ -32,6 +36,13 @@ class Shape:
 	## (kelp: anywhere on the weed).
 	var logs: Array = []
 	var kelp := false
+	## Where a gull can stand (mat-local), the best spot first.
+	var perch: Array[Vector3] = []
+
+
+## A gull's footing on a mat, carried round with it (world space).
+class Spot:
+	var at := Vector3.ZERO
 
 
 class Bottle:
@@ -77,6 +88,7 @@ class Mat:
 	var y := 0.0
 	var crabs: Array[Crab] = []
 	var scared := false
+	var spots: Array[Spot] = []
 
 	func xf() -> Transform3D:
 		return Transform3D(Basis(quat), Vector3(x, y, z))
@@ -152,10 +164,11 @@ func drop_bottle(x: float, z: float) -> void:
 	bottles.append(b)
 
 
-## Sets a mat of flotsam adrift here: `kind` 0 driftwood, 1 kelp (-1 either).
-func drop_mat(x: float, z: float, kind: int = -1) -> void:
+## Sets a mat of flotsam adrift here: `kind` 0 driftwood, 1 kelp (-1 either),
+## with `birds` gulls loafing on it (-1: as chance has it).
+func drop_mat(x: float, z: float, kind: int = -1, birds: int = -1) -> void:
 	if mats.size() >= MAT_MAX:
-		mats.pop_front()
+		_gone(mats.pop_front())
 	var k := kind if kind >= 0 else randi() % 2
 	var m := Mat.new()
 	m.shape = k * 2 + randi() % 2
@@ -178,6 +191,15 @@ func drop_mat(x: float, z: float, kind: int = -1) -> void:
 		c.y = c.ty
 		m.crabs.append(c)
 	mats.append(m)
+	# a gull or two loafing on top
+	if birds < 0:
+		birds = (2 if randf() < 0.3 else 1) if randf() < 0.7 else 0
+	for i in mini(birds, s.perch.size()):
+		var sp := Spot.new()
+		sp.at = m.xf() * s.perch[i]
+		m.spots.append(sp)
+	for sp in m.spots:
+		rider.emit(sp)
 	if randf() < 0.38:
 		# a crate caught up in it (in the weed's heart, or bumping along beside the logs)
 		var a := randf() * TAU
@@ -306,6 +328,7 @@ func update(dt: float, world: World, collector: Variant, radius: float, ships: A
 		if m.age > m.life:
 			m.sink += dt * 0.25
 		if m.sink > 1.4 or (far != null and Vector2(far.x - m.x, far.z - m.z).length() > 900.0):
+			_gone(m)
 			mats.remove_at(i)
 			continue
 		_place(m, world, dt)
@@ -328,6 +351,16 @@ func _place(m: Mat, world: World, dt: float) -> void:
 	var q := Quaternion(Vector3.UP, n) * Quaternion(Vector3.UP, m.yaw)
 	m.quat = m.quat.slerp(q, minf(1.0, dt * 4.0))
 	m.y += (h0 + (0.07 if s.kelp else -0.2) - m.sink - m.y) * minf(1.0, dt * 6.0)
+	if not m.spots.is_empty():
+		var x := m.xf()
+		for i in m.spots.size():
+			m.spots[i].at = x * s.perch[i]
+
+
+func _gone(m: Mat) -> void:
+	for sp in m.spots:
+		rider_gone.emit(sp)
+	m.spots.clear()
 
 
 func _crabs(m: Mat, s: Shape, world: World, dt: float) -> void:
@@ -432,6 +465,8 @@ func _upload(world: World) -> void:
 
 func clear() -> void:
 	bottles.clear()
+	for m in mats:
+		_gone(m)
 	mats.clear()
 	for mm in _mat_mm:
 		mm.visible_instance_count = 0
@@ -519,6 +554,7 @@ static func driftwood(seed_value: int) -> Shape:
 	var wet := _hex(0x4d4a36)
 	var end := _hex(0x6a543c)
 	var n := 3 + rng.randi() % 3
+	var biggest := 0.0
 	for i in n:
 		var length := 3.4 + rng.randf() * 3.6
 		var r := 0.17 + rng.randf() * 0.17
@@ -568,6 +604,11 @@ static func driftwood(seed_value: int) -> Shape:
 		var ty := y + r * 0.85
 		s.logs.append([cx - dx * 0.8, cz - dz * 0.8, cx + dx * 0.8, cz + dz * 0.8, ty])
 		s.radius = maxf(s.radius, Vector2(cx, cz).length() + length * 0.5)
+		if length * r > biggest:
+			biggest = length * r
+			s.perch.push_front(Vector3(cx + dx * 0.25, ty, cz + dz * 0.25))
+		else:
+			s.perch.append(Vector3(cx - dx * 0.3, ty, cz - dz * 0.3))
 		# a snapped-off branch stub or two reaching up out of the water
 		var stubs := int(rng.randf() * 2.6)
 		for k in stubs:
@@ -608,6 +649,7 @@ static func kelp_mat(seed_value: int) -> Shape:
 	var s := Shape.new()
 	s.kelp = true
 	s.radius = 3.4 + rng.randf() * 1.6
+	s.perch = [Vector3(0.3, 0.17, -0.2), Vector3(-0.6, 0.12, 0.5)]
 	var n := 56 + rng.randi() % 16
 	var floats := _hex(0x8a6c28)
 	var lit := Color(minf(1.0, floats.r * 1.3), minf(1.0, floats.g * 1.25), minf(1.0, floats.b * 1.1))

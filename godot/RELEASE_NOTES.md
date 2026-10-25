@@ -1,6 +1,25 @@
-## Shores O' Fortune for Android and Windows: rare skies
+## Shores O' Fortune for Android and Windows: seagulls
 
-The forty-fifth build brings the web game's rarest skies.
+The forty-sixth build brings the herring gulls, and the news they carry.
+
+- **The flock.** Gulls wheel over every isle, ride the gusts and flap in
+  short bursts. They stand on the shore rocks, bob on the swell, and trail
+  passing ships to circle the masts and land on the mast caps, the fighting
+  tops and the jib-boom. When the guns go off they scatter in a screaming
+  cloud. They roost at night and keep out of a gale.
+- **Riders.** A gull or two often loafs on drifting kelp and driftwood out at
+  sea. It wheels off as your hull comes by and settles back once you've
+  passed.
+- **The carrier gull.** Now and then a gull flies in with a scroll on its
+  back, lands on your rail with a long call and drops off its news:
+  - prize money from the merchants for every third pirate you sink;
+  - a warning from the Governor's office when the Brethren send a named
+    captain after you;
+  - a fisherwoman's rumour of a chest washed up in the shallows, pinned on
+    your chart;
+  - an invitation to a feast in port tonight.
+
+### Also from the last build: rare skies
 
 - **Ember rain.** Morro Huracão smokes lazily over the home isles. Every few
   minutes it may stir: the rumble carries across the water, the plume turns
@@ -16,20 +35,3 @@ The forty-fifth build brings the web game's rarest skies.
   breathing and shimmering in the heat. Sail into it and it parts round the
   hull and frays away.
 
-### Also from the last build: photo mode
-
-- **Open it from the pause menu** (or press P at the helm). The voyage
-  freezes, the HUD clears away and the camera is yours.
-- **Camera.** Orbit round your ship, or switch to Fly and roam up to the
-  clouds or down to the waves (drag to look, pinch or scroll to zoom, two
-  fingers to pan; WASD, Q/E and Shift on a keyboard). Field of view, roll,
-  crop frames from 16:9 to 9:16 and cinema, and a thirds grid.
-- **Sky.** Try any hour of the day or night and any weather on the frozen
-  scene, from clear skies to storm or golden glow; it all goes back the way
-  it was when you close photo mode.
-- **Lens.** Depth of field with a focus you set by tapping the scene (or
-  leave it on auto), and exposure.
-- **Filter.** Eight looks (Natural, Vivid, Golden, Lagoon, Moonlit, Faded
-  film, Noir and Old chart) with strength, vignette and grain.
-- **Shutter.** The picture is saved without any of the controls on it, to
-  your Pictures folder under Shores O' Fortune where the system allows it.
