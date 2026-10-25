@@ -983,7 +983,7 @@ func _paint_live(ci: CanvasItem) -> void:
 			MapMarks.words(ci, at - Vector2(0.0, 17.0 * PX), str(rf.name), serif, _px(12.0), Color("#ffc9a6"), 4.0 * PX, ink)
 	# the forts, named (every captain knows where the Brethren's guns are)
 	var detail := _farness() < 0.5
-	var cinzel := HudStyle.font("cinzel", 600)
+	var cinzel := HudStyle.font("cinzel", 700)
 	for f: Dictionary in scene.forts:
 		if not shows(float(f.x), float(f.z)):
 			continue
