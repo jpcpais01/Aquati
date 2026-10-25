@@ -255,6 +255,8 @@ const shot = (name: string, n: number, len: number, play: (a: any, v: number) =>
 };
 shot('click', 1, 0.15, (a) => a.click());
 shot('chime', 1, 1.6, (a) => a.chime());
+// a mirage shimmering up (or fraying away round the hull): a rising run of wavering bells
+shot('mirage', 1, 4.0, (a) => a.mirage());
 // the forts: a war horn over drums as the last gun goes quiet, the drum and
 // bell as their guns open (2) or the garrison sallies (3), and the herald's
 // fanfare as your colours go up

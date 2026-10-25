@@ -25,7 +25,7 @@ const FILTERS := [
 	{"name": "Old chart", "sat": 1.0, "con": 1.08, "fade": 0.2, "grain": 0.035, "vig": 0.4, "tint": Vector3(1, 1, 1), "mono": Vector3(1.12, 0.95, 0.72), "amt": 1.0},
 ]
 const FRAMES := [["Full", 0.0], ["16:9", 16.0 / 9.0], ["3:2", 1.5], ["1:1", 1.0], ["4:5", 0.8], ["9:16", 9.0 / 16.0], ["Cinema", 2.39]]
-const WEATHERS: Array[StringName] = [&"", &"clear", &"fair", &"cloudy", &"mist", &"rain", &"storm", &"calm", &"hot", &"glow"]
+const WEATHERS: Array[StringName] = [&"", &"clear", &"fair", &"cloudy", &"mist", &"rain", &"storm", &"calm", &"hot", &"embers", &"glow"]
 const TABS := [["camera", "Camera"], ["scene", "Sky"], ["lens", "Lens"], ["filter", "Filter"]]
 const U := MenuKit.U
 

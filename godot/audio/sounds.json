@@ -476,6 +476,12 @@
     0.95506
    ]
   },
+  "mirage": {
+   "ext": "wav",
+   "gain": [
+    0.11918
+   ]
+  },
   "murmur": {
    "ext": "wav",
    "gain": [

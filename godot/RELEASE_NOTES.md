@@ -1,6 +1,22 @@
-## Shores O' Fortune for Android and Windows: photo mode
+## Shores O' Fortune for Android and Windows: rare skies
 
-The forty-fourth build brings the web game's photo mode.
+The forty-fifth build brings the web game's rarest skies.
+
+- **Ember rain.** Morro Huracão smokes lazily over the home isles. Every few
+  minutes it may stir: the rumble carries across the water, the plume turns
+  into a dark column of ash bent over by the wind, and the crater spits
+  glowing embers. Downwind of it the sky goes rust and copper, grey ash and
+  glowing embers drift down round your ship, and ash settles on the sea in
+  dull rafts. Rain washes it out of the air. The sky badge shows Ember rain
+  while it falls, and you can pick it there yourself while you're downwind of
+  the volcano.
+- **Mirages.** On a scorching noon out on the high seas the lookout may spot
+  an island where no chart shows one: a dune, three palms and a little domed
+  shrine floating over the water above their own upside-down image,
+  breathing and shimmering in the heat. Sail into it and it parts round the
+  hull and frays away.
+
+### Also from the last build: photo mode
 
 - **Open it from the pause menu** (or press P at the helm). The voyage
   freezes, the HUD clears away and the camera is yours.
@@ -17,17 +33,3 @@ The forty-fourth build brings the web game's photo mode.
   film, Noir and Old chart) with strength, vignette and grain.
 - **Shutter.** The picture is saved without any of the controls on it, to
   your Pictures folder under Shores O' Fortune where the system allows it.
-
-### Also from the last build: messages in bottles
-
-- **Messages in bottles.** Now and then a corked bottle bobs past with the
-  sun glinting on its glass, more often out on the high seas. Sail through
-  it to fish it out, and the letter unrolls at the side of the view: a torn
-  third of a treasure map, a taunt from one of the Brethren's named
-  captains (their poster goes up on the Wanted Board), or somebody's lost
-  letter with gold rolled up in it. Tap the letter to put it away.
-- **Flotsam.** Rafts of sun-bleached driftwood and golden mats of kelp drift
-  downwind far from shore. Crabs ride them, scuttling sideways about the
-  logs and waving their claws, and drop over the side when a hull comes
-  close. Your bows shoulder the flotsam aside, and now and then a crate has
-  fetched up in it.
