@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T14:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: shipwreck survivors',
+        notes: [
+          'Shipwreck survivors come to the Android and Windows game. When a pirate sinks, a few of her crew often cling to the wreckage, waving and shouting as you come near.',
+          'Sail alongside and throw them a line: they swim for your side, climb aboard and sign on. Each hand rescued makes your guns reload faster, and every two join your boarding party.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T13:00Z',
     entries: [
       {
