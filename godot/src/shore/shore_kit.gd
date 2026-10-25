@@ -176,7 +176,7 @@ static func dig_hole() -> ArrayMesh:
 	return b.commit()
 
 
-## The heap of spoil beside the hole: a loose, lumpy mound thrown off the spade.
+## The heap of spoil (damp, fresh-dug sand, a shade darker than the web's so it reads on the grass) beside the hole: a loose, lumpy mound thrown off the spade.
 static func dig_spoil() -> ArrayMesh:
 	var b := TownKit.new(4)
 	var m := b._mark()
@@ -187,7 +187,7 @@ static func dig_spoil() -> ArrayMesh:
 		var r := 1.0 + 0.13 * sin(a * 3.0 + 1.0) + 0.07 * sin(a * 7.0)
 		b.kit.verts[i] = Vector3(v.x * r, v.y * (1.0 + 0.22 * sin(v.x * 7.0 + v.z * 5.0) + 0.12 * sin(v.x * 13.0 - v.z * 11.0)), v.z * r)
 	b.kit.recompute_normals(m.x, m.y)
-	b.paint_from(m.x, func(p: Vector3) -> Color: return TownKit.shade(TownKit.lin("#c9b083"), 0.88 + 0.14 * sin(p.x * 23.0 + p.z * 19.0)), TownKit.WOOD)
+	b.paint_from(m.x, func(p: Vector3) -> Color: return TownKit.shade(TownKit.lin("#a3865a"), 0.88 + 0.14 * sin(p.x * 23.0 + p.z * 19.0)), TownKit.WOOD)
 	return b.commit()
 
 

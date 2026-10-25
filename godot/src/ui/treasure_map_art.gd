@@ -185,6 +185,8 @@ class _Ink:
 	var blot_a: PackedFloat32Array = []
 	var fibres := PackedVector2Array()
 	var specks: Array[Vector4] = []
+	var _paper: Texture2D
+	var _vignette: Texture2D
 
 	func _parchment_plan() -> void:
 		for i in 70:
@@ -204,7 +206,9 @@ class _Ink:
 	func _draw() -> void:
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2(Q, Q))
 		# ---- parchment: warm, blotched, fibrous
-		draw_texture_rect(TreasureMapArt.radial([Color("#f3e4bf"), Color("#f3e4bf"), Color("#e6cf9c"), Color("#b89159")], [0.0, 0.1 / 0.78, 0.6, 1.0], Vector2(0.46, 0.44) / 1.0, 0.78 * 2.0), Rect2(0, 0, S, S), false)
+		# (the textures are kept: a canvas only holds on to what's still alive when it draws)
+		_paper = TreasureMapArt.radial([Color("#f3e4bf"), Color("#f3e4bf"), Color("#e6cf9c"), Color("#b89159")], [0.0, 0.1 / 0.78, 0.6, 1.0], Vector2(0.47, 0.47), 0.78 * 2.0)
+		draw_texture_rect(_paper, Rect2(0, 0, S, S), false)
 		var spot := TreasureMapArt.spot()
 		for i in blots.size():
 			var b := blots[i]
@@ -502,7 +506,7 @@ class _Ink:
 		var f := HudStyle.font("serif-italic", 600)
 		var label := "%d paces" % p
 		var lw := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10).x
-		draw_string(f, at + Vector2(w / 2.0 - lw / 2.0, 16), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(56.0 / 255.0, 32.0 / 255.0, 12.0 / 255.0, 0.85))
+		draw_string(f, at + Vector2(w / 2.0 - lw / 2.0, 18), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(56.0 / 255.0, 32.0 / 255.0, 12.0 / 255.0, 0.85))
 
 	## A furled ribbon with the isle's name on it.
 	func _ribbon(text: String, at: Vector2) -> void:
@@ -560,7 +564,8 @@ class _Ink:
 		draw_line(Vector2(0, fy), Vector2(S, fy + 3), Color(1.0, 248.0 / 255.0, 228.0 / 255.0, 0.3), 1.0, true)
 		draw_line(Vector2(0, fy + 1.4), Vector2(S, fy + 4.4), Color(96.0 / 255.0, 62.0 / 255.0, 26.0 / 255.0, 0.16), 1.0, true)
 		var brown := Color(90.0 / 255.0, 52.0 / 255.0, 16.0 / 255.0)
-		draw_texture_rect(TreasureMapArt.radial([Color(brown, 0.0), Color(brown, 0.0), Color(brown, 0.42)], [0.0, 0.36 / 0.74, 1.0], Vector2(0.5, 0.5), 0.74 * 2.0), Rect2(0, 0, S, S), false)
+		_vignette = TreasureMapArt.radial([Color(brown, 0.0), Color(brown, 0.0), Color(brown, 0.42)], [0.0, 0.36 / 0.74, 1.0], Vector2(0.5, 0.5), 0.74 * 2.0)
+		draw_texture_rect(_vignette, Rect2(0, 0, S, S), false)
 		var edge := TreasureMapArt.edge()
 		var e := Color(78.0 / 255.0, 42.0 / 255.0, 12.0 / 255.0, 0.4)
 		draw_texture_rect(edge, Rect2(0, 0, 26, S), false, e)
@@ -577,43 +582,40 @@ class _Ink:
 
 ## A radial gradient over a square, its centre at `c` (shares), reaching `r`
 ## shares of the side to its last stop.
-static func radial(colors: Array, offsets: Array, c: Vector2, r: float) -> GradientTexture2D:
+static func radial(colors: Array, offsets: Array, c: Vector2, r: float) -> Texture2D:
 	var g := Gradient.new()
 	g.offsets = PackedFloat32Array(offsets)
 	g.colors = PackedColorArray(colors)
-	var t := GradientTexture2D.new()
-	t.gradient = g
-	t.fill = GradientTexture2D.FILL_RADIAL
-	t.fill_from = c
-	t.fill_to = c + Vector2(r * 0.5, 0.0)
-	t.width = 256
-	t.height = 256
-	return t
+	# (drawn into an image here: a gradient texture fills itself in later)
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var rad := r * 0.5
+	for j in n:
+		for i in n:
+			var d := Vector2((i + 0.5) / n - c.x, (j + 0.5) / n - c.y).length() / rad
+			img.set_pixel(i, j, g.sample(clampf(d, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
 
 
-static var _spot: GradientTexture2D
-static var _edge: GradientTexture2D
+static var _spot: Texture2D
+static var _edge: Texture2D
 
 
 ## A soft round blot, white at its heart to clear at its rim (tinted where it's drawn).
-static func spot() -> GradientTexture2D:
+static func spot() -> Texture2D:
 	if _spot == null:
 		_spot = radial([Color.WHITE, Color(1, 1, 1, 0)], [0.0, 1.0], Vector2(0.5, 0.5), 1.0)
-		_spot.width = 64
-		_spot.height = 64
 	return _spot
 
 
 ## Dark along one edge to clear inward (tinted where it's drawn).
-static func edge() -> GradientTexture2D:
+static func edge() -> Texture2D:
 	if _edge == null:
-		var g := Gradient.new()
-		g.offsets = PackedFloat32Array([0.0, 1.0])
-		g.colors = PackedColorArray([Color.WHITE, Color(1, 1, 1, 0)])
-		_edge = GradientTexture2D.new()
-		_edge.gradient = g
-		_edge.width = 32
-		_edge.height = 4
+		var img := Image.create(32, 2, false, Image.FORMAT_RGBA8)
+		for i in 32:
+			for j in 2:
+				img.set_pixel(i, j, Color(1, 1, 1, 1.0 - (i + 0.5) / 32.0))
+		_edge = ImageTexture.create_from_image(img)
 	return _edge
 
 
