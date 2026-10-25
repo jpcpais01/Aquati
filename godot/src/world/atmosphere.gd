@@ -265,6 +265,35 @@ func set_time_mode(m: StringName, now := false) -> void:
 		set_hour(TIMES[m][1])
 
 
+## The sky as it stands, for photo mode to try other hours and weathers on
+## and put back after (snapshot, preview, restore).
+const SNAP := ["day", "time_mode", "kind", "mode", "_locked", "hold", "cover", "rain", "storm", "fog", "heat", "calm", "wind", "wet", "sea", "_state_t", "_state_dur", "_rush"]
+
+
+func snapshot() -> Dictionary:
+	var out := {}
+	for k: String in SNAP:
+		out[k] = get(k)
+	return out
+
+
+func restore(s: Dictionary) -> void:
+	for k: String in s:
+		set(k, s[k])
+
+
+## The sky at hour `h` under weather `k` (&"" as it was), settled in at once;
+## the sea keeps its swell, so every ship stays afloat on it.
+func preview(s: Dictionary, h: float, k: StringName) -> void:
+	restore(s)
+	time_mode = &"auto"
+	set_hour(h)
+	if k != &"":
+		set_weather(k, true)
+		sea = s.sea
+	hold = true
+
+
 ## Turns the weather to a kind; now settles it in at once.
 func set_weather(k: StringName, now := false) -> void:
 	var d: Dictionary = WEATHER[k]

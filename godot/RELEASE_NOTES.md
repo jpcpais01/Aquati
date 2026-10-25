@@ -1,6 +1,24 @@
-## Shores O' Fortune for Android and Windows: messages in bottles
+## Shores O' Fortune for Android and Windows: photo mode
 
-The forty-third build brings the web game's drift: what the open sea carries.
+The forty-fourth build brings the web game's photo mode.
+
+- **Open it from the pause menu** (or press P at the helm). The voyage
+  freezes, the HUD clears away and the camera is yours.
+- **Camera.** Orbit round your ship, or switch to Fly and roam up to the
+  clouds or down to the waves (drag to look, pinch or scroll to zoom, two
+  fingers to pan; WASD, Q/E and Shift on a keyboard). Field of view, roll,
+  crop frames from 16:9 to 9:16 and cinema, and a thirds grid.
+- **Sky.** Try any hour of the day or night and any weather on the frozen
+  scene, from clear skies to storm or golden glow; it all goes back the way
+  it was when you close photo mode.
+- **Lens.** Depth of field with a focus you set by tapping the scene (or
+  leave it on auto), and exposure.
+- **Filter.** Eight looks (Natural, Vivid, Golden, Lagoon, Moonlit, Faded
+  film, Noir and Old chart) with strength, vignette and grain.
+- **Shutter.** The picture is saved without any of the controls on it, to
+  your Pictures folder under Shores O' Fortune where the system allows it.
+
+### Also from the last build: messages in bottles
 
 - **Messages in bottles.** Now and then a corked bottle bobs past with the
   sun glinting on its glass, more often out on the high seas. Sail through
@@ -13,22 +31,3 @@ The forty-third build brings the web game's drift: what the open sea carries.
   logs and waving their claws, and drop over the side when a hull comes
   close. Your bows shoulder the flotsam aside, and now and then a crate has
   fetched up in it.
-
-### Also from the last build: your own fleet
-
-- **Sign her on.** When a pirate strikes her colours to your boarders, the
-  prize card has a third choice: her crew turn their coats and she joins
-  you as an escort, under a master of her own and still in her old paint.
-- **Hire at the harbour master's.** Every trading port's market has a
-  HARBOUR MASTER desk at the foot: two ships for hire each day (a sloop,
-  and a brig or a galleon), each with a captain and a word on them, paid
-  from your purse. Your own escorts are listed there too, to pay off.
-- **They keep station.** Escorts sail on your quarters, matching your pace,
-  and fight whatever comes for you. The fleet panel under your tally shows
-  each ship's hull and what she's about, with three signals: Follow, Attack
-  (break formation and engage your target) and Hold (heave to and guard
-  these waters). On a keyboard, O cycles the signal.
-- **They can be lost.** Pirates fire on your escorts too, and a ship that
-  goes down is gone from your fleet. Their hulls carry over from voyage to
-  voyage, and the port's repair mends them with yours. An escort's kill pays
-  its bounty into your purse.

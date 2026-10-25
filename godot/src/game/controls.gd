@@ -55,6 +55,8 @@ var treasure := false
 var ability := false
 ## A pulse: the next order signalled to your escorts (O).
 var fleet := false
+## A pulse: photo mode opened (P).
+var photo := false
 ## The mouse over the sea (screen units), while there is one.
 var pointer := Vector2.ZERO
 var pointer_active := false
@@ -99,6 +101,7 @@ const _ACTIONS := {
 	"treasure_map": [KEY_T],
 	"ability": [KEY_G],
 	"fleet_order": [KEY_O],
+	"photo_mode": [KEY_P],
 }
 
 
@@ -143,6 +146,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			ability = true
 		elif event.is_action("fleet_order"):
 			fleet = true
+		elif event.is_action("photo_mode"):
+			photo = true
 		else:
 			for i in Ammo.COUNT:
 				if event.is_action("ammo_%d" % (i + 1)):
@@ -269,4 +274,5 @@ func consume() -> void:
 	treasure = false
 	ability = false
 	fleet = false
+	photo = false
 	jump = false

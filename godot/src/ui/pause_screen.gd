@@ -3,13 +3,15 @@ extends CanvasLayer
 ## Anchored: the voyage paused, laid out as the web lays it out on a phone
 ## held sideways. The sea stands still behind frosted glass, shaded from the
 ## left; the menu runs down the left (Resume voyage lit up white like a
-## console's row, Settings, the Wanted Board, and Return to harbour, which asks for a second
+## console's row, Photo mode, Settings, the Wanted Board, and Return to harbour, which asks for a second
 ## press before it gives the voyage up), and on the right "Voyage paused",
 ## her name under her silhouette and the voyage so far in four tiles. Up and
 ## down (or W and S) move along the menu, Enter takes the row lit. On a
 ## computer a last row quits the game, also on a second press.
 
 signal resume
+## Photo mode, over the frozen voyage.
+signal photo
 signal settings
 signal board
 signal harbour
@@ -19,10 +21,10 @@ signal clicked
 
 ## Seconds Return to harbour stays armed for its second press.
 const ARM := 3.2
-const ROWS := [["play", "Resume voyage"], ["sliders", "Settings"], ["skull", "Wanted Board"], ["harbour", "Return to harbour"]]
+const ROWS := [["play", "Resume voyage"], ["camera", "Photo mode"], ["sliders", "Settings"], ["skull", "Wanted Board"], ["harbour", "Return to harbour"]]
 const QUIT_ROW := ["power", "Quit game"]
 ## What a second press is asked for on each warning row.
-const ARMED_LABELS := {3: "Press again to leave this voyage", 4: "Press again to quit the game"}
+const ARMED_LABELS := {4: "Press again to leave this voyage", 5: "Press again to quit the game"}
 
 var _root: Control
 var _back: ShaderMaterial
@@ -144,8 +146,8 @@ func _build() -> void:
 	var list_h := rh * rows.size() + (rows.size() - 1) * 1.0 + 6.0 * u
 	var ly := top + (col_h - list_h) * 0.5
 	for i in rows.size():
-		var warn := i >= 3
-		if i == 3:
+		var warn := i >= 4
+		if i == 4:
 			ly += 6.0 * u
 			var rule := MenuKit.rule(lw - 36.0 * u)
 			rule.position = Vector2(mx + 8.0 * u + 18.0 * u, ly - 6.0 * u)
@@ -244,15 +246,18 @@ func _act(i: int) -> void:
 			resume.emit()
 		1:
 			clicked.emit()
-			settings.emit()
+			photo.emit()
 		2:
 			clicked.emit()
+			settings.emit()
+		3:
+			clicked.emit()
 			board.emit()
-		3, 4:
+		4, 5:
 			clicked.emit()
 			if _armed > 0.0 and _armed_row == i:
 				_disarm()
-				if i == 3:
+				if i == 4:
 					harbour.emit()
 				else:
 					quit.emit()
