@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-25T16:00Z',
+    hour: '2026-10-25T17:00Z',
     entries: [
       {
         title: 'Android and Windows: photo mode',
@@ -23,6 +23,11 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Crop frames and a thirds grid help with the framing, and the shutter saves a clean picture to your Pictures folder.',
         ],
       },
+    ],
+  },
+  {
+    hour: '2026-10-25T16:00Z',
+    entries: [
       {
         title: 'Android and Windows: messages in bottles',
         notes: [
