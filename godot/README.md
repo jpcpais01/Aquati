@@ -212,6 +212,8 @@ Gulls: `--gull prize|bounty|rumour|feast` sends the carrier gull out at
 once with that news (it lands on her rail about 18 s later), and
 `--flotsam ... --riders` puts two gulls on the flotsam; the smoke test prints
 a SMOKE GULLS line.
+Spirits: `--spirits N` raises N ghosts round her (up to 28) a second in,
+one after another; the smoke test prints a SMOKE SPIRITS line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

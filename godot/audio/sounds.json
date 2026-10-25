@@ -606,6 +606,14 @@
     0.67682
    ]
   },
+  "spirit": {
+   "ext": "wav",
+   "gain": [
+    0.43423,
+    0.49704,
+    0.50134
+   ]
+  },
   "squeeze_arrival": {
    "ext": "wav",
    "gain": [

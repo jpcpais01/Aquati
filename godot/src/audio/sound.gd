@@ -1234,6 +1234,15 @@ func chime() -> void:
 		_one("chime", 1.0)
 
 
+## A fallen pirate's ghost slipping free: one small hollow "woo-oo" that
+## swoops up and sighs back down, with a glassy twinkle on top, each take
+## pitched its own, so a crew going up together is a choir of them.
+func spirit(vol: float, pan: float, dist := 0.0) -> void:
+	var v := minf(1.0, vol)
+	if _voice(v):
+		_one("spirit", v, pan, _heard_at(dist), 1.0, 1.0)
+
+
 ## A mirage shimmering up ahead, or fraying away round the hull: a rising run
 ## of wavering bells.
 func mirage() -> void:

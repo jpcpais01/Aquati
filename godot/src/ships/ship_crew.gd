@@ -99,6 +99,9 @@ var _prev_reload := PackedFloat32Array([0.0, 0.0])
 var _last_hit := -100.0
 var _kills := 0
 var _dead_seen := false
+## Told when a pirate goes under for good: his ghost rises (Spirits.release's
+## dictionary: x, y, z, hat, girth, height, boss, delay).
+var soul: Callable
 
 
 ## Her crew comes aboard; `take_row` hands each a palette row for his look
@@ -223,6 +226,7 @@ func _init(p_ship: Ship, take_row: Callable, lean: bool) -> void:
 		if role == Sailor.Role.GUNNER:
 			sl.gun = port_posts[gunner % port_posts.size()]
 			gunner += 1
+		sl.foe = pirate
 		_place(sl)
 		sailors.append(sl)
 
@@ -347,6 +351,14 @@ func update(dt: float, world: World) -> void:
 				sl.cheer = rng.randf_range(2.6, 3.4)
 	if not sh.alive and not _dead_seen:
 		_dead_seen = true
+		# the dead don't abandon ship: a laid ghost's crew are simply gone with
+		# the curse, and their spirits are free to go, one by one
+		if sh.ghost:
+			for sl in sailors:
+				if sl.mode == Sailor.Mode.ABOARD:
+					_to_world(sl)
+					lost(sl, rng.randf_range(0.3, 2.6))
+				sl.mode = Sailor.Mode.GONE
 		for sl in sailors:
 			sl.panic_delay = rng.randf_range(2.4, 3.2) if sl.role == Sailor.Role.HELM else rng.randf_range(0.15, 2.6)
 			sl.flinch = 0.0
@@ -364,6 +376,8 @@ func update(dt: float, world: World) -> void:
 				_think(sl, dt, world)
 		elif sl.mode == Sailor.Mode.AIR or sl.mode == Sailor.Mode.SWIM:
 			CrewBrain.step_loose(sl, dt, world)
+			if sinking(sl):
+				lost(sl, 0.1, world)
 	# keep folk from standing inside each other (the helmsman holds his wheel,
 	# and nobody shifts a man off his barrel)
 	var n := sailors.size()
@@ -1361,11 +1375,29 @@ func _founder(sl: Sailor, dt: float, world: World) -> void:
 	if p.y < world.water_height(p.x, p.z):
 		_to_world(sl)
 		if sl.role == Sailor.Role.CAPTAIN:
+			# he goes down with her
 			sl.mode = Sailor.Mode.GONE
+			lost(sl, 0.6, world)
 		else:
 			sl.mode = Sailor.Mode.SWIM
 			sl.swim_t = 0.0
 			sl.wy = world.water_height(sl.wx, sl.wz)
+
+
+## A pirate gone under for good: his ghost rises from the water above him
+## (or from where he stood).
+func lost(sl: Sailor, delay: float, world: World = null) -> void:
+	if not sl.foe or sl.souled or not soul.is_valid():
+		return
+	sl.souled = true
+	var y := world.water_height(sl.wx, sl.wz) if world != null else sl.wy
+	soul.call({"x": sl.wx, "y": y, "z": sl.wz, "hat": sl.look.hat, "girth": sl.girth, "height": sl.height,
+			"boss": sl.role == Sailor.Role.CAPTAIN, "delay": delay})
+
+
+## A swimmer whose strength has given out, going under for the last time.
+static func sinking(sl: Sailor) -> bool:
+	return sl.foe and not sl.souled and sl.mode == Sailor.Mode.SWIM and sl.fade > 0.6
 
 
 ## Copies his place on deck into the world.

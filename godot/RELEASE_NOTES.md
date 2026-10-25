@@ -1,6 +1,19 @@
-## Shores O' Fortune for Android and Windows: seagulls
+## Shores O' Fortune for Android and Windows: spirits
 
-The forty-sixth build brings the herring gulls, and the news they carry.
+The forty-seventh build lets the fallen pirates take their leave.
+
+- **Little ghosts.** When a pirate goes down with his ship, or falls on the
+  sand, a fort's parade or a boarded deck, a small green spirit slips out of
+  him. He keeps his own hat and his build, pops up with two hollow eyes and a
+  curling tail, bobs a moment and looks your way.
+- **One last act.** Each ghost does one thing before he goes: waves, tips his
+  hat, twirls, or leans in with a "boo!". Then he floats up into the sky and
+  is gone in a puff of glowing motes, with a soft, ghostly voice as he rises.
+- **Captains too.** A pirate captain's ghost is a little bigger, and a ghost
+  ship's whole crew gives up its spirits when the ship sinks.
+- They glow faintly by night and fade into fog and rain like everything else.
+
+### Also from the last build: seagulls
 
 - **The flock.** Gulls wheel over every isle, ride the gusts and flap in
   short bursts. They stand on the shore rocks, bob on the swell, and trail
@@ -18,20 +31,3 @@ The forty-sixth build brings the herring gulls, and the news they carry.
   - a fisherwoman's rumour of a chest washed up in the shallows, pinned on
     your chart;
   - an invitation to a feast in port tonight.
-
-### Also from the last build: rare skies
-
-- **Ember rain.** Morro Huracão smokes lazily over the home isles. Every few
-  minutes it may stir: the rumble carries across the water, the plume turns
-  into a dark column of ash bent over by the wind, and the crater spits
-  glowing embers. Downwind of it the sky goes rust and copper, grey ash and
-  glowing embers drift down round your ship, and ash settles on the sea in
-  dull rafts. Rain washes it out of the air. The sky badge shows Ember rain
-  while it falls, and you can pick it there yourself while you're downwind of
-  the volcano.
-- **Mirages.** On a scorching noon out on the high seas the lookout may spot
-  an island where no chart shows one: a dune, three palms and a little domed
-  shrine floating over the water above their own upside-down image,
-  breathing and shimmering in the heat. Sail into it and it parts round the
-  hull and frays away.
-
