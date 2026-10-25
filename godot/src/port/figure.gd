@@ -335,4 +335,11 @@ static func style_for(role: String, rnd: Mulberry32, spec: Dictionary) -> Dictio
 			st.hat = CrewModel.HAT_STRAW
 			st.hat_color = "#d8c08a"
 			st.flags = CrewModel.F_ROLLED | CrewModel.F_BAREFOOT | CrewModel.F_GARTERS
+		"reveller":
+			# in their feast-day best: bright shirts, a sash, a flower in the hat
+			st.shirt = rnd.pick(["#f3ecdc", spec.awning[0], spec.awning[1], "#e8455a", "#2f8ad8", "#f5c542"])
+			st.hat = rnd.pick([CrewModel.HAT_STRAW, CrewModel.HAT_BANDANA, CrewModel.HAT_NONE, CrewModel.HAT_TRICORN])
+			st.hat_color = rnd.pick(["#e8cf8a", "#c8352b", spec.flag[0], "#2f6b47"])
+			var flags := CrewModel.F_BELT | CrewModel.F_KERCHIEF | (CrewModel.F_VEST if rnd.next() < 0.5 else CrewModel.F_CUFFS)
+			st.flags = flags | (CrewModel.F_PLUME if rnd.next() < 0.3 else 0)
 	return st

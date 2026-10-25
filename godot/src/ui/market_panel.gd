@@ -201,6 +201,10 @@ func set_touch(on: bool) -> void:
 	_on_resize()
 
 
+## The line over the town's name (a feast night says so).
+var kicker := "TRADING PORT"
+
+
 ## The market opens on `title`'s counter: `market`'s prices for `hold`, with
 ## `gold` in the purse, at the sea's clock `t`.
 func open(title: String, market: Treasure.Market, hold: Treasure.Hold, gold: int, t: float) -> void:
@@ -391,7 +395,7 @@ func _build() -> void:
 	# the head: a trading port and its name, and the purse
 	var x0 := 14.0 * PX
 	var y0 := 10.0 * PX
-	var kick := _words("TRADING PORT", 700, 10.0, HudStyle.GOLD, 0.22)
+	var kick := _words(kicker, 700, 10.0, HudStyle.GOLD, 0.22)
 	kick.position = Vector2(x0, y0)
 	_card.add_child(kick)
 	var name_lh := 18.0 * 1.1 * PX

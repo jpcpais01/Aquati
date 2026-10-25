@@ -16,6 +16,8 @@ extends Node3D
 signal delivered(id: String, on: bool, at: Vector3)
 ## The harbourmaster's bell struck, welcoming a ship in (world).
 signal bell_rung(at: Vector3)
+## The fisherman set a lantern boat down on the water, at a point (world).
+signal lantern_set(at: Vector3)
 
 const DECK := 1.8
 const HALF := 28.5
@@ -38,8 +40,16 @@ const NEAR_OUT := 380.0
 const NEAR_IN := 330.0
 const DRAW_END := 1650.0
 
-## Who keeps the town, in the order of `figures`.
-const ROLES: Array[String] = ["merchant", "merchant", "merchant", "porter", "porter", "porter", "porter", "stroller", "stroller", "kid", "harbourmaster", "musician", "fisher"]
+## Who keeps the town, in the order of `figures`: the thirteen who keep it,
+## and six more who only come out on a feast night.
+const ROLES: Array[String] = ["merchant", "merchant", "merchant", "porter", "porter", "porter", "porter", "stroller", "stroller", "kid", "harbourmaster", "musician", "fisher",
+		"reveller", "reveller", "reveller", "reveller", "reveller", "reveller"]
+## The first of the feast-night revellers.
+const REVELS := 13
+const DRUMMER := 17
+const TOASTER := 18
+## Where the feast night's ring dance turns, clear of the berth and the benches.
+const RING := Vector2(-17.0, -3.1)
 const PORTERS := 4
 const KID := 9
 const HARBOURMASTER := 10
@@ -333,8 +343,28 @@ var _smoke_t := 0.0
 var _flag := Node3D.new()
 var _ship_local := Vector3.INF
 var _lamps: Array[Vector4] = []
-## Triangles in the near build and the far shell (for the budget).
+## Triangles in the near build and the far shell (for the budget), and in
+## the feast-night dressing (drawn only on a feast night, close to).
 var tris := Vector2i.ZERO
+var fest_tris := 0
+## The town's own feast (Festival.FEASTS), and how far tonight's has got
+## (0 an ordinary night .. 1 in full swing: Festivals keeps it).
+var feast: Dictionary
+var festive := 0.0
+## The lantern strings, their poles and the drummer's barrel: hidden till a feast.
+var _fest := Node3D.new()
+var _lantern_mat: ShaderMaterial
+## Whether the feast-night crowd is out (true at first, so the first frame puts it away).
+var _revels := true
+var _ring_rot := 0.0
+var _ring_dir := 1.0
+var _ring_t := 0.0
+## Since the last shell broke overhead (negative: one is on its way up).
+var _sky_t := 99.0
+## Since the harbourmaster gave the signal for a rocket.
+var _fuse_t := 99.0
+## Since the fisherman began to set a lantern boat down.
+var _rel_t := 99.0
 
 
 ## Builds the town on its site (a world bake's port: x, z, its seaward
@@ -350,6 +380,7 @@ func setup(p_site: Dictionary, i: int, arts: Arts, world: World, styles: Array[D
 	_world = world
 	name = "TradePort%d" % i
 	market = Treasure.Market.new(spec.taste, spec.tagline, i * 17 + 3)
+	feast = Festival.feast(i)
 	xf = Transform3D(Basis(Vector3.UP, atan2(float(site.nx), float(site.nz))), Vector3(float(site.x), 0.0, float(site.z)))
 	inv = xf.affine_inverse()
 	transform = xf
@@ -365,6 +396,7 @@ func setup(p_site: Dictionary, i: int, arts: Arts, world: World, styles: Array[D
 	figures[KID].size = 0.66
 	figures[FIDDLER].prop = CrewModel.PROP_FIDDLE
 	figures[HARBOURMASTER].prop = CrewModel.PROP_PIPE
+	figures[TOASTER].prop = CrewModel.PROP_MUG
 	_build()
 
 
@@ -419,6 +451,7 @@ func _build() -> void:
 	_flag_build()
 	_palms()
 	_extras()
+	_festoon()
 
 
 func _build_deck(n: TownKit, f: TownKit) -> void:
@@ -1097,6 +1130,83 @@ func _extras() -> void:
 		_porters.append(p)
 
 
+## The feast-night dressing: strings of paper lanterns criss-crossing the
+## quay, from poles along its edge to the houses and down from the
+## lighthouse; pennants on the poles, and an upturned barrel for the drummer.
+func _festoon() -> void:
+	var back := -depth + 0.8
+	var wf := back + 7.0
+	var of := back + 6.2
+	var lf := back + 7.0
+	var Y := DECK
+	var pole_x: Array[float] = [-27.6, -19.8, -12.6, -7.4, 2.4, 6.0, 13.6, 20.2, 27.4]
+	var PZ := -0.85
+	var PH := 4.5
+	var top: Array[Vector3] = []
+	for x in pole_x:
+		top.append(Vector3(x, Y + PH - 0.12, PZ))
+	var bank: bool = spec.signature == "bank"
+	var W1 := Vector3(-21.6, Y + 4.9, wf + 0.25)
+	var W2 := Vector3(-12.4, Y + 4.9, wf + 0.25)
+	var HO := Vector3(-17.0, Y + 6.75, wf + 1.95)
+	var O1 := Vector3(-7.0, Y + 4.5, of + 1.3)
+	var O2 := Vector3(0.6, Y + 4.5, of + 1.3)
+	var L1 := Vector3(12.3, Y + 5.5, lf + 1.75) if bank else Vector3(11.4, Y + 4.8, lf + 0.2)
+	var L2 := Vector3(19.7, Y + 5.5, lf + 1.75) if bank else Vector3(20.6, Y + 4.8, lf + 0.2)
+	# from the lighthouse gallery's rail, fanning down to the quay like a maypole's ribbons
+	var rim := func(to: Vector3) -> Vector3:
+		var d := Vector2(to.x - LIGHTHOUSE.x, to.z - LIGHTHOUSE.y)
+		d = d.normalized() if d.length() > 1e-3 else Vector2(1.0, 0.0)
+		return Vector3(LIGHTHOUSE.x + d.x * 1.45, Y + 8.85, LIGHTHOUSE.y + d.y * 1.45)
+	var pairs: Array = []
+	for i in top.size() - 1:
+		pairs.append([top[i], top[i + 1]])
+	pairs.append_array([[top[0], W1], [top[1], HO], [top[2], W2], [HO, W1], [HO, W2], [top[3], O1], [top[4], O2], [top[5], L1], [top[6], L1], [top[7], L2], [W2, O1], [O2, L1],
+		[rim.call(top[8]), top[8]], [rim.call(top[7]), top[7]], [rim.call(top[6]), top[6]], [rim.call(L2), L2]])
+	var spans: Array = []
+	var rk := RopeKit.new(index + 50)
+	for pr: Array in pairs:
+		var a: Vector3 = pr[0]
+		var b: Vector3 = pr[1]
+		var sag := 0.2 + a.distance_to(b) * 0.045
+		spans.append([a, b, sag])
+		rk.rope(a, b, 0.012, Color("#2a1d14"), sag, 8)
+	var g := Festival.festoon(spans, feast.colors, 7 + index * 13)
+	_lantern_mat = ShaderMaterial.new()
+	_lantern_mat.shader = preload("res://shaders/feast_lanterns.gdshader")
+	var lanterns := MeshInstance3D.new()
+	lanterns.name = "Lanterns"
+	lanterns.mesh = g.mesh
+	lanterns.material_override = _lantern_mat
+	lanterns.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var cords := MeshInstance3D.new()
+	cords.name = "Cords"
+	cords.mesh = rk.commit()
+	cords.material_override = _arts.rope
+	cords.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# poles with pennants in the town's colours, and an upturned barrel for the drummer
+	var b := TownKit.new(41 + index)
+	for i in pole_x.size():
+		var x := pole_x[i]
+		b.cyl(0.06, 0.08, PH, Vector3(x, Y + PH * 0.5, PZ), C_TIMBER_DARK, 6)
+		b.cone(0.09, 0.22, Vector3(x, Y + PH + 0.1, PZ), C_GOLD, 6, TownKit.GILT)
+		var c := TownKit.lin(str(spec.flag[i % 2]))
+		b.quad(Vector3(x + 0.06, Y + PH - 0.12, PZ), Vector3(x + 0.76, Y + PH - 0.32, PZ), Vector3(x + 0.06, Y + PH - 0.52, PZ), Vector3(x + 0.06, Y + PH - 0.52, PZ), c, TownKit.WOOD, true)
+	b.barrel(Transform3D(Basis.IDENTITY, Vector3(-7.6, Y + 0.45, -6.0)), 0.9, 0.36)
+	var dressing := MeshInstance3D.new()
+	dressing.name = "Poles"
+	dressing.mesh = b.commit()
+	dressing.material_override = _arts.parts
+	dressing.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_fest.name = "FeastDressing"
+	_fest.add_child(dressing)
+	_fest.add_child(lanterns)
+	_fest.add_child(cords)
+	_fest.visible = false
+	add_child(_fest)
+	fest_tris = b.triangles() + g.count * Festival.SEG * (Festival.PROFILE.size() - 1) * 2 + spans.size() * 16
+
+
 ## The halos round a town's lanterns and its lighthouse's lamp after dark
 ## (ShipModel's halo cards: four corners at each light).
 static func halo_mesh(lamps: Array[Vector4], mat: Material) -> MeshInstance3D:
@@ -1247,6 +1357,45 @@ func lively() -> bool:
 	return _detail and visible
 
 
+## Whether the feast-night dressing is up (and drawn).
+func dressed() -> bool:
+	return _fest.visible and visible
+
+
+## Whether the feast-night crowd is out (the revellers are only drawn then).
+func reveling() -> bool:
+	return _revels
+
+
+## A feast night's line for the market, or the town's usual one.
+func tagline() -> String:
+	return "%s tonight: the whole town is out, and every merchant pays more." % feast.name if festive > 0.5 else str(spec.tagline)
+
+
+## Where the town's rockets go up from (world): the lighthouse gallery (k
+## even) and the far end of the quay.
+func launch_spot(k: int) -> Vector3:
+	return xf * (Vector3(-27.4, DECK + 0.6, -0.6) if k % 2 else Vector3(LIGHTHOUSE.x, DECK + 9.2, LIGHTHOUSE.y))
+
+
+## The town's middle, a few metres up: where its lantern-light comes from (world).
+func glow_at() -> Vector3:
+	return xf * Vector3(0.0, DECK + 6.0, -3.5)
+
+
+## A rocket going up: the harbourmaster gives the signal and everyone looks
+## up for the break, `delay` s off.
+func rocket(delay: float) -> void:
+	_fuse_t = 0.0
+	_sky_t = minf(_sky_t, -delay)
+
+
+## The fisherman leans down and sets a lantern boat on the water.
+func release() -> void:
+	if _rel_t > 2.2:
+		_rel_t = 0.0
+
+
 # ------------------------------------------------------------------ frame
 
 ## Swaps the whole town for its shell (and back) by the camera's distance;
@@ -1259,6 +1408,7 @@ func lod(cam: Vector3) -> float:
 		_near.visible = want
 		_far.visible = not want
 	visible = d < DRAW_END
+	_fest.visible = _detail and festive > 0.005
 	return d
 
 
@@ -1275,12 +1425,28 @@ func update(dt: float, player: Ship) -> void:
 	var wd := inv.basis * Vector3(_world.wind.dir_x, 0.0, _world.wind.dir_z)
 	_flag.rotation.y = atan2(-wd.z, wd.x)
 	_smoke(dt)
+	_sky_t += dt
+	_fuse_t += dt
+	_lantern_mat.set_shader_parameter("lit", festive * 1.04)
+	_lantern_mat.set_shader_parameter("sway", Vector3(wd.x, wd.z, _world.wind.strength))
+	var revels := festive > 0.3
+	if revels != _revels:
+		_revels = revels
+		# the fisherman puts his rod away for the night
+		_rod.visible = not revels
+		_bobber.visible = not revels
 	if not lively():
 		return
 	for fig in figures:
 		fig.rest()
 	_ship_local = inv * player.pos if player != null else Vector3.INF
 	var cheer := sin(_cheer_t / 2.6 * PI) if _cheer_t < 2.6 else 0.0
+	if festive > 0.5:
+		_update_porters(dt, t, cheer)
+		_feast_folk(dt, t, cheer)
+		_moor()
+		_lines()
+		return
 	_merchants(t, cheer)
 	_update_porters(dt, t, cheer)
 	_strollers(dt, t, cheer)
@@ -1516,6 +1682,237 @@ func _fisher(t: float) -> void:
 	_bobber.position = Vector3(22.8, _world.water_height(bw.x, bw.z) + 0.02 - dip, 6.2)
 
 
+# ------------------------------------------------------------------ feast night
+
+## The town on a feast night: everyone not carrying cargo joins a ring dance,
+## two couples swing each other round, the fiddler and a drummer on a barrel
+## play for them, the merchants clap along, a fellow with a mug toasts the
+## night, the harbourmaster sends the rockets up and the fisherman sets
+## lantern boats on the water. Every face turns up when a shell breaks.
+func _feast_folk(dt: float, t: float, cheer: float) -> void:
+	var f := figures
+	var beat := t * 2.2 # the band's quarter notes, near enough
+	var bounce := absf(sin(beat * PI))
+	var s := _sky_t
+	var up := minf(1.0, s / 0.35) * (1.0 - MathX.smooth(2.6, 4.0, s)) if s > 0.0 and s < 4.0 else 0.0
+	var gaze := func(fig: Figure, k: float) -> void:
+		fig.head_rot.x = minf(fig.head_rot.x, -0.6 * up * k)
+		if up > 0.5:
+			fig.pose[CrewModel.P_JAW] = maxf(fig.pose[CrewModel.P_JAW], 0.5 * up * k) # "ooh"
+	var sing := func(fig: Figure, i: int) -> void:
+		fig.pose[CrewModel.P_SMILE] = 1.0
+		fig.pose[CrewModel.P_JAW] = 0.35 * maxf(0.0, sin(t * 6.5 + i * 1.9))
+
+	# -- the merchants clap along behind their stalls
+	for i in 3:
+		var fig := f[i]
+		_place(fig, STALLS[i], -6.75, 0.0)
+		if cheer > 0.0 and _cheer_level > 0.0:
+			_hurrah(fig, cheer)
+		else:
+			# the hands meet on the beat
+			var apart := absf(sin(beat * PI + i * 0.4))
+			fig.reach(true, 1.35, 0.06 + 0.3 * apart, 1.15)
+			fig.reach(false, 1.35, 0.06 + 0.3 * apart, 1.15)
+			fig.pose[CrewModel.P_HAND_L] = 0.1
+			fig.pose[CrewModel.P_HAND_R] = 0.1
+			fig.hips_rot.z = sin(beat * PI * 0.5 + i) * 0.07
+			fig.hips_pos.y = Figure.HIP + bounce * 0.03
+			sing.call(fig, i)
+		fig.head_rot.y = sin(t * 0.5 + i * 1.7) * 0.5
+		gaze.call(fig, 1.0)
+
+	# -- the ring dance: idle porters, both strollers and the kid, hand in hand
+	var ring: Array = []
+	for p in _porters:
+		if p.stage == &"idle":
+			ring.append([p.fig, p.w])
+	ring.append_array([[f[7], _walkers[0]], [f[KID], _walkers[2]], [f[8], _walkers[1]]])
+	var PERIOD := 9.0
+	var was := fmod(_ring_t, PERIOD)
+	_ring_t += dt
+	var ph := fmod(_ring_t, PERIOD)
+	if ph < was:
+		_ring_dir = -_ring_dir
+	var stamp := ph > PERIOD - 1.4
+	if not stamp:
+		_ring_rot += _ring_dir * 0.6 * dt
+	var n := ring.size()
+	var R := 1.1 + n * 0.17
+	for i in n:
+		var fig: Figure = ring[i][0]
+		var w: Walker = ring[i][1]
+		fig.rest()
+		var kid := fig == f[KID]
+		var a := _ring_rot + float(i) / n * TAU
+		var sx := RING.x + sin(a) * R
+		var sz := RING.y + cos(a) * R
+		if Vector2(sx - w.x, sz - w.z).length() > 0.35:
+			# joining in: hurry to a place in the ring
+			w.path.clear()
+			w.path.append(Vector2(sx, sz))
+			w.step(dt, 3.2 if kid else 2.6)
+			_place(fig, w.x, w.z, w.yaw)
+			fig.walk(w.phase * (1.3 if kid else 1.0), 0.9)
+			fig.pose[CrewModel.P_SMILE] = 1.0
+			continue
+		w.path.clear()
+		w.x = sx
+		w.z = sz
+		w.moving = false
+		w.yaw = atan2(RING.x - sx, RING.y - sz)
+		_place(fig, sx, sz, w.yaw)
+		if stamp:
+			# stamp, stamp, a clap over the head, and round the other way
+			var k := (ph - (PERIOD - 1.4)) / 1.4
+			var apart := absf(sin(k * PI * 3.0))
+			fig.reach(true, 2.7, 0.08 + 0.3 * apart, 0.5)
+			fig.reach(false, 2.7, 0.08 + 0.3 * apart, 0.5)
+			var lift := maxf(0.0, sin(k * PI * 4.0))
+			if i % 2:
+				fig.leg_l = -0.5 * lift
+				fig.pose[CrewModel.P_KNEE_L] = 0.8 * lift
+			else:
+				fig.leg_r = -0.5 * lift
+				fig.pose[CrewModel.P_KNEE_R] = 0.8 * lift
+			fig.pose[CrewModel.P_SMILE] = 1.0
+			fig.pose[CrewModel.P_JAW] = 0.6
+		else:
+			# side-stepping round, hands joined with the neighbours, a hop on every beat
+			fig.walk(beat * PI, 0.5)
+			fig.root_pos.y = DECK + bounce * (0.14 if kid else 0.08)
+			var sw := sin(beat * PI) * 0.12
+			fig.reach(true, 0.25 + sw, 1.15, 0.3)
+			fig.reach(false, 0.25 - sw, 1.15, 0.3)
+			fig.pose[CrewModel.P_HAND_L] = 0.85
+			fig.pose[CrewModel.P_HAND_R] = 0.85
+			sing.call(fig, i)
+		fig.pose[CrewModel.P_BROW] = 0.5
+		if cheer > 0.0:
+			_hurrah(fig, cheer)
+		gaze.call(fig, 0.7)
+
+	# -- two couples swinging each other round
+	for c in 2:
+		var px := 11.8 if c == 0 else 20.6
+		var pz := -3.0 if c == 0 else -3.6
+		var ang := t * 2.1 + sin(t * 0.37 + c) * 1.4 + c * 2.0
+		for j in 2:
+			var fig := f[13 + c * 2 + j]
+			var side := 1.0 if j == 0 else -1.0
+			var x := px + sin(ang) * 0.42 * side
+			var z := pz + cos(ang) * 0.42 * side
+			_place(fig, x, z, atan2(px - x, pz - z), DECK + bounce * 0.06)
+			fig.walk(ang * 2.2 + j * PI, 0.45)
+			# both hands held, leaning back into the spin
+			fig.reach(true, 1.05, 0.2, 0.35)
+			fig.reach(false, 1.05, 0.2, 0.35)
+			fig.pose[CrewModel.P_HAND_L] = 0.85
+			fig.pose[CrewModel.P_HAND_R] = 0.85
+			fig.hips_rot.x = -0.1
+			sing.call(fig, c * 2 + j)
+			if cheer > 0.0:
+				_hurrah(fig, cheer)
+			gaze.call(fig, 0.6)
+
+	# -- the drummer on his barrel, a hand on every beat
+	var dr := f[DRUMMER]
+	_place(dr, -7.6, -6.65, 0.0)
+	var hit := sin(beat * PI)
+	dr.reach(true, 0.7 + 0.5 * maxf(0.0, hit), 0.18, 1.3 - 0.4 * maxf(0.0, hit))
+	dr.reach(false, 0.7 + 0.5 * maxf(0.0, -hit), 0.18, 1.3 - 0.4 * maxf(0.0, -hit))
+	dr.pose[CrewModel.P_HAND_L] = 0.4
+	dr.pose[CrewModel.P_HAND_R] = 0.4
+	dr.hips_pos.y = Figure.HIP + bounce * 0.03
+	dr.hips_rot.x = 0.12
+	dr.head_rot.x = 0.15 + 0.15 * bounce
+	dr.head_rot.z = sin(beat * PI * 0.5) * 0.1
+	sing.call(dr, 17)
+	gaze.call(dr, 0.5)
+
+	# -- a fellow with a mug, toasting the night out over the water
+	var to := f[TOASTER]
+	_place(to, -25.5, -1.3, 0.1)
+	var cyc := fmod(t, 6.5)
+	var raise := sin(cyc / 1.8 * PI) if cyc < 1.8 else 0.0
+	to.reach(false, 1.1 + 1.6 * raise, 0.25, 1.4 - 0.9 * raise)
+	to.reach(true, 0.15, 0.3, 0.3)
+	to.hips_rot.z = sin(t * 1.1) * 0.08 # a little unsteady by now
+	to.pose[CrewModel.P_SMILE] = 1.0
+	to.pose[CrewModel.P_JAW] = 0.6 * raise
+	if cheer > 0.0:
+		_hurrah(to, cheer)
+	gaze.call(to, 1.0)
+
+	# -- the harbourmaster rings you in, then sends the rockets up
+	var hm := f[HARBOURMASTER]
+	_place(hm, 15.0, -1.5, 0.15)
+	if ship != null and _bell_t < 4.5:
+		hm.root_yaw = 1.2
+		var pull := maxf(0.0, sin(_bell_t * 5.5))
+		hm.reach(false, 2.1 - pull * 0.6, 0.1, 0.6 + pull * 0.6)
+		hm.pose[CrewModel.P_HAND_R] = 1.0
+		_bell.rotation.x = sin(_bell_t * 5.5) * 0.7 * (1.0 - _bell_t / 4.5)
+		if floori(_bell_t * 5.5 / PI) != floori((_bell_t - dt) * 5.5 / PI):
+			bell_rung.emit(xf * BELL)
+	else:
+		_bell.rotation.x *= 1.0 - MathX.damp(3.0, dt)
+		if _fuse_t < 1.6:
+			# "light her!": an arm flung up at the sky
+			var k := sin(minf(1.0, _fuse_t / 1.6) * PI)
+			hm.reach(false, 1.6 + 1.3 * k, 0.15, 0.1)
+			hm.pose[CrewModel.P_JAW] = 0.7 * k
+		else:
+			# tapping a foot, pipe going, a hand beating time
+			hm.reach(false, 1.0 + 0.25 * bounce, 0.25, 1.6)
+			hm.leg_r = -0.15 * bounce
+		hm.reach(true, -0.2, 0.75, 1.8)
+		hm.pose[CrewModel.P_SMILE] = 1.0
+		hm.head_rot.y = sin(t * 0.4) * 0.4
+		gaze.call(hm, 1.0)
+
+	# -- the fiddler, faster now, bouncing on his barrel
+	var fd := f[FIDDLER]
+	_place(fd, -9.5, -6.4, 0.25)
+	fd.sit(0.85)
+	fd.hips_pos.y += bounce * 0.03
+	var bow := sin(t * 11.0 * 0.5)
+	fd.reach(true, 1.15, -0.55, 1.95)
+	fd.reach(false, 0.85, 0.45 + 0.14 * bow, 1.1 + 0.5 * bow)
+	fd.head_rot = Vector3(0.15, 0.35, 0.1 * bow)
+	fd.leg_r = -1.35 + 0.22 * maxf(0.0, sin(beat * PI * 2.0))
+	fd.pose[CrewModel.P_SMILE] = 1.0
+
+	# -- the fisherman sets lantern boats down off the end
+	var fi := f[FISHER]
+	_place(fi, 22.2, 0.32, 0.1, DECK + 0.02)
+	fi.hips_pos.y = 0.12
+	fi.leg_l = -0.25 + sin(t * 1.3) * 0.25
+	fi.leg_r = -0.25 + sin(t * 1.3 + 2.2) * 0.25
+	fi.pose[CrewModel.P_KNEE_L] = 0.3
+	fi.pose[CrewModel.P_KNEE_R] = 0.3
+	var rel_was := _rel_t
+	_rel_t += dt
+	if _rel_t < 1.8:
+		# reaching down to the water with the little boat in both hands
+		var k := sin(_rel_t / 1.8 * PI)
+		fi.hips_rot.x = 0.55 * k
+		fi.reach(true, 0.55 + 0.4 * k, 0.12, 0.25)
+		fi.reach(false, 0.55 + 0.4 * k, 0.12, 0.25)
+		fi.pose[CrewModel.P_HAND_L] = 0.6
+		fi.pose[CrewModel.P_HAND_R] = 0.6
+		fi.head_rot.x = 0.35 * k
+		if rel_was < 0.9 and _rel_t >= 0.9:
+			lantern_set.emit(xf * Vector3(22.25, 0.0, 1.25))
+	else:
+		# watching them go
+		fi.reach(true, 0.4, 0.3, 0.3)
+		fi.reach(false, 0.4, 0.3, 0.3)
+		fi.head_rot.x = 0.1
+		fi.pose[CrewModel.P_SMILE] = 1.0
+		gaze.call(fi, 1.0)
+
+
 func _send_home(p: Porter) -> void:
 	p.job = {}
 	_hold(p, "")
@@ -1725,8 +2122,9 @@ func _lines() -> void:
 			var a := m * Vector3(sh.half_beam(tt) * 0.8, sh.top(tt) + 0.2, sh.z(tt))
 			var b := Vector3(_nearest_bollard(pr[1]), DECK + 0.6, -0.35)
 			rk.rope(a, b, 0.035, Color("#4a3626"), a.distance_to(b) * 0.06)
-	var tip := _rod.transform * Vector3(0.0, 3.2, 0.0)
-	rk.rope(tip, _bobber.position + Vector3(0.0, 0.08, 0.0), 0.006, Color("#f3ecdc"), 0.4)
+	if _rod.visible:
+		var tip := _rod.transform * Vector3(0.0, 3.2, 0.0)
+		rk.rope(tip, _bobber.position + Vector3(0.0, 0.08, 0.0), 0.006, Color("#f3ecdc"), 0.4)
 	rk.commit(_rope_mesh)
 
 
@@ -1755,7 +2153,9 @@ func _smoke(dt: float) -> void:
 ## The townsfolk drawn this frame: each one's placement (world), pose row,
 ## hat, held prop and kit, through `emit` (Crew.emit_figure's shape).
 func draw_folk(emit: Callable) -> void:
-	for fig in figures:
-		if fig.palette < 0:
+	for i in figures.size():
+		var fig := figures[i]
+		# the revellers only come out on a feast night
+		if fig.palette < 0 or (i >= REVELS and not _revels):
 			continue
 		emit.call(xf * fig.body_xf(), fig.write(), fig.look.hat, fig.prop, fig.kit)

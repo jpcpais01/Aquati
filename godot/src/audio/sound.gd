@@ -70,6 +70,8 @@ const OPEN := 20000.0
 const QUAY := ["lap", "murmur"]
 const QUAY_LEVEL := [0.9, 0.3]
 const QUAY_TICK := 0.9
+## A phrase of the feast-night band: four bars of eighths (s).
+const REEL_LEN := 32 * 0.165
 
 ## The music: the voyage band and the high seas' theme.
 var music: Music
@@ -1024,6 +1026,14 @@ func bell(n := 2, vol := 0.22) -> void:
 func _squeezebox(key: String, vol: float, delay := 0.0) -> void:
 	if _voice(vol):
 		_one(key, 1.0, 0.0, _now + delay, 1.0, 1.0)
+
+
+## A phrase of the town band on a feast night (the web's festivalTune): tune
+## `i` of its four, heard from `dist` m off, thinning out over the water.
+## Returns how long the phrase lasts (s), so the next follows on the beat.
+func festival_tune(i: int, vol: float, pan: float, dist: float) -> float:
+	_emit("reel%d" % posmod(i, 4), vol, pan * 0.8, dist, 1.0, 0.25 + minf(0.5, dist / 300.0))
+	return REEL_LEN
 
 
 ## Voices raised together: the quay's cheer, `n` of them (4 or 6), `dist` m off.

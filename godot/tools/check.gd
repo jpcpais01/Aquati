@@ -34,13 +34,15 @@ const REGIONS := ["home", "brumas"]
 ## A town's triangles close up and as its shell, at most.
 const TOWN_TRIS := 26000
 const TOWN_SHELL_TRIS := 3000
+## A town's feast-night dressing (its lanterns, their cords and poles), drawn only on a feast night.
+const FEAST_TRIS := 10000
 ## Puerto Marézia's triangles (its quay, buildings, palms and what moves; its folk are the crews').
 const HOME_TRIS := 34000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "ammo5", "bell", "blast", "bosun_pipe", "bubbles",
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
-		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "rocket", "sand_step", "scrape0", "scrape1", "shell",
+		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
 		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
@@ -899,6 +901,7 @@ func _check_world() -> void:
 		_fail("world: the spawn point is aground (%.1f m)" % w.ground_height(spawn.x, spawn.y))
 	print("world: %d archipelagos, %d plants in %d batches, loaded in %.0f ms" % [regions.size(), plants, batches, (Time.get_ticks_usec() - t0) / 1000.0])
 	_check_ports(w)
+	_check_festivals(w)
 	_home_world = w
 	_check_maps(w)
 	_check_helm(w)
@@ -1367,6 +1370,9 @@ func _check_ports(w: World) -> void:
 		if tris.x <= 0 or tris.x > TOWN_TRIS or tris.y <= 0 or tris.y > TOWN_SHELL_TRIS:
 			built = false
 			_fail("ports: %s built %d triangles close up and %d as a shell (budgets %d, %d)" % [port.title, tris.x, tris.y, TOWN_TRIS, TOWN_SHELL_TRIS])
+		if port.fest_tris <= 0 or port.fest_tris > FEAST_TRIS:
+			built = false
+			_fail("ports: %s's feast-night dressing has %d triangles (budget %d)" % [port.title, port.fest_tris, FEAST_TRIS])
 		if bottom < galleon.draft + 1.0:
 			built = false
 			_fail("ports: a galleon at %s's quay has %.1f m under her keel" % [port.title, bottom - galleon.draft])
@@ -2234,11 +2240,12 @@ func _check_fireworks() -> void:
 	root.add_child(sky)
 	sky.setup(1.0)
 	var heard := {}
-	var low := 1e9
+	# (the lowest break kept in a dictionary: a lambda's own copy of a local wouldn't come back out)
+	var lowest := {"y": 1e9}
 	sky.sounded.connect(func(kind: StringName, at: Vector3, _power: float) -> void:
 		heard[kind] = int(heard.get(kind, 0)) + 1
 		if kind == &"burst" or kind == &"big":
-			low = minf(low, at.y))
+			lowest.y = minf(lowest.y, at.y))
 	var lit := false
 	var sky_ok := true
 	for i in Fireworks.ORDER.size():
@@ -2253,6 +2260,7 @@ func _check_fireworks() -> void:
 		sky.step(1.0 / 30.0)
 	spent = not sky.busy() and not sky.visible
 	var stars: int = sky._used
+	var low: float = lowest.y
 	for k: StringName in [&"launch", &"whistle", &"burst", &"big", &"crackle", &"pop", &"sizzle"]:
 		if not heard.has(k):
 			sky_ok = false
@@ -2267,6 +2275,171 @@ func _check_fireworks() -> void:
 	for w in bad:
 		_fail("fireworks: " + w)
 	print("fireworks: %d of 6 steps as expected; %d stars for a sky of every kind, %d bangs heard, %.0f ms" % [steps, stars, heard.values().reduce(func(x: int, y: int) -> int: return x + y, 0), (Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## Stands in for Sound in the feast-night check: counts the band's phrases.
+class _Band extends Node:
+	var tunes := 0
+	func festival_tune(_i: int, vol: float, _pan: float, _dist: float) -> float:
+		tunes += 1 if vol > 0.0 else 0
+		return Sound.REEL_LEN
+
+
+## Feast nights (Festival, Festivals, LanternBoats): the calendar as the
+## web's, a town's lantern strings, a whole feast night off one town (dusk,
+## the lanterns lit, the market's bonus, rockets, lantern boats, the band,
+## the midnight finale and its cheers, put out by dawn, the news of the next
+## one), and the boats drifting out and guttering away.
+func _check_festivals(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	# (loaded, not named: the towns' scripts read Settings, which a script this one names compiles before)
+	var town: GDScript = load("res://src/port/trade_port.gd")
+	var figure: GDScript = load("res://src/port/figure.gd")
+	var runner: GDScript = load("res://src/game/festivals.gd")
+	var steps := 0
+	var bad := PackedStringArray()
+	# the calendar (the web's feastPorts, feastLevel and moonIsFull)
+	var cal := Array(Festival.feast_ports(0, 6, false)) == [0, 3] and Array(Festival.feast_ports(1, 6, false)) == [2, 5] \
+			and Array(Festival.feast_ports(2, 6, false)) == [1, 4] and Festival.feast_ports(5, 6, true).size() == 6
+	cal = cal and Festival.level(12.0) == 0.0 and Festival.level(21.0) == 1.0 and absf(Festival.level(19.4) - 0.5) < 1e-4 \
+			and Festival.level(3.0) == 1.0 and absf(Festival.level(4.1) - 0.5) < 1e-4 and Festival.level(11.0) == 0.0
+	cal = cal and Festival.moon_is_full(0.5, 0.0) and Festival.moon_is_full(0.45, 0.5) and not Festival.moon_is_full(0.3, 0.0) and not Festival.moon_is_full(0.5, 0.5)
+	cal = cal and Festival.FEASTS.size() == town.SPECS.size()
+	if not cal:
+		bad.append("the calendar")
+	steps += 1 if cal else 0
+	# a town's lantern strings
+	var site: Dictionary = {}
+	for r in w.regions:
+		for p: Dictionary in r.ports:
+			if not p.home and site.is_empty():
+				site = p
+	var rnd := Mulberry32.new(1000)
+	var styles: Array[Dictionary] = []
+	for role: String in town.ROLES:
+		styles.append(figure.style_for(role, rnd, town.SPECS[0]))
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new()
+	sea.waves = Waves.new(0.6)
+	var port: Node3D = town.new()
+	port.setup(site, 0, town.Arts.new(), sea, styles)
+	root.add_child(port)
+	var lm := port.find_child("Lanterns", true, false) as MeshInstance3D
+	var strings_ok: bool = lm != null and lm.mesh != null and port.figures.size() == 19
+	var lanterns := 0
+	if strings_ok:
+		var arr := lm.mesh.surface_get_arrays(0)
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var uv2: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV2]
+		var cols: PackedColorArray = arr[Mesh.ARRAY_COLOR]
+		lanterns = verts.size() / ((Festival.SEG + 1) * Festival.PROFILE.size())
+		var paper: Array[Color] = []
+		for h: String in port.feast.colors:
+			paper.append(Color(h).srgb_to_linear())
+		# (a mesh keeps its colours in 8 bits a channel)
+		var of_paper := func(c: Color) -> bool:
+			for q in paper:
+				if absf(q.r - c.r) < 0.01 and absf(q.g - c.g) < 0.01 and absf(q.b - c.b) < 0.01:
+					return true
+			return false
+		var odd := PackedStringArray()
+		for i in verts.size():
+			if not verts[i].is_finite() or uv2[i].y < 0.0 or uv2[i].y > 0.97 or uv2[i].x < town.DECK + 2.0:
+				odd.append("lantern %d at %s, its turn %.2f" % [i / ((Festival.SEG + 1) * Festival.PROFILE.size()), verts[i], uv2[i].y])
+			if not of_paper.call(cols[i]):
+				odd.append("paper %s" % cols[i])
+		if not odd.is_empty():
+			strings_ok = false
+			bad.append("%d odd lantern vertices (%s)" % [odd.size(), odd[0]])
+	strings_ok = strings_ok and lanterns > 80
+	if not strings_ok:
+		bad.append("the lantern strings (%d lanterns)" % lanterns)
+	steps += 1 if strings_ok else 0
+	# a feast night off the town, from late afternoon to the morning after
+	var sky := FireworkSky.new()
+	root.add_child(sky)
+	sky.setup(1.0)
+	var boats := LanternBoats.new()
+	root.add_child(boats)
+	var band := _Band.new()
+	root.add_child(band)
+	var fest: RefCounted = runner.new([port], sky, boats, band)
+	# (counted in a dictionary: a lambda's own copy of a local wouldn't come back out)
+	var n := {"dusk": 0, "cheer": 0, "rocket": 0}
+	fest.dusk.connect(func(_t: Array, _f: bool) -> void: n.dusk += 1)
+	fest.cheered.connect(func(_p: Node3D) -> void: n.cheer += 1)
+	sky.sounded.connect(func(kind: StringName, _at: Vector3, _pw: float) -> void:
+		if kind == &"launch" or kind == &"whistle":
+			n.rocket += 1)
+	var cam: Vector3 = port.to_world(Vector3(0.0, 30.0, 120.0))
+	sea.listener = cam
+	var day := 16.0 / 24.0
+	var dt := 0.5
+	var peak := 0.0
+	var bonus := 1.0
+	var most_boats := 0
+	var finale_seen := false
+	# 16:00 .. 07:00 the next morning, an hour every 120 s
+	for i in 3600:
+		sea.time += dt
+		day = fposmod(day + dt / (24.0 * 120.0), 1.0)
+		fest.update(dt, dt, sea, day, 0.1, cam, true)
+		# (in halves: a bang more than half a second late is let go unheard)
+		sky.step(dt * 0.5)
+		sky.step(dt * 0.5)
+		boats.update(dt, sea, [] as Array[Ship])
+		peak = maxf(peak, float(port.festive))
+		bonus = maxf(bonus, port.market.bonus)
+		most_boats = maxi(most_boats, boats.count())
+		finale_seen = finale_seen or fest.queued() > 0
+	var hour := day * 24.0
+	var dusks: int = n.dusk
+	var cheers: int = n.cheer
+	var rockets: int = n.rocket
+	var tunes := band.tunes
+	var night_ok := dusks == 1 and peak > 0.99 and bonus == 1.15 and rockets > 20 and most_boats > 5 and tunes > 10 and finale_seen and cheers == 2
+	night_ok = night_ok and port.festive == 0.0 and port.market.bonus == 1.0 and hour > 6.5 and hour < 8.0
+	if not night_ok:
+		bad.append("the night (%d dusks, festive %.2f, bonus %.2f, %d rockets, %d boats, %d phrases, finale %s, %d cheers, out by %.1f h: %.2f)" % [dusks, peak, bonus, rockets, most_boats, tunes, finale_seen, cheers, hour, port.festive])
+	steps += 1 if night_ok else 0
+	# the next feast's news: the count moved on at noon, night 1's towns are 2 and 5 (only one town here)
+	for i in 1440:
+		sea.time += dt
+		day = fposmod(day + dt / (24.0 * 120.0), 1.0)
+		fest.update(dt, dt, sea, day, 0.1, cam, true)
+	var news: Dictionary = fest.news(day, 0.1)
+	var news_ok: bool = fest.night == 1 and news.is_empty() and not fest.keeps(port)
+	fest.forced = 0
+	fest.reset()
+	fest.update(0.0, 0.0, sea, 14.0 / 24.0, 0.1, cam, true)
+	news = fest.news(14.0 / 24.0, 0.1)
+	news_ok = news_ok and fest.keeps(port) and port.festive == 1.0 and news.get("towns", []) == [port.title] and news.get("when", "") == "tonight"
+	if not news_ok:
+		bad.append("the news (night %d, %s)" % [fest.night, news])
+	steps += 1 if news_ok else 0
+	# the boats: out from the quay on the tide, and every one guttered out in a few minutes
+	boats.clear()
+	var o: Vector3 = port.to_world(Vector3(0.0, 0.0, 1.2))
+	for i in 6:
+		boats.launch(o.x, o.z, float(site.nx), float(site.nz), Color.ORANGE)
+	for i in 120:
+		boats.update(0.5, sea, [] as Array[Ship])
+	var out := 0.0
+	for b in boats.boats:
+		out += ((Vector2(b.x, b.z) - Vector2(o.x, o.z)).dot(Vector2(float(site.nx), float(site.nz)))) / boats.boats.size()
+	var drift_ok := boats.count() == 6 and out > 5.0
+	for i in 60:
+		boats.update(5.0, sea, [] as Array[Ship])
+	drift_ok = drift_ok and boats.count() == 0
+	if not drift_ok:
+		bad.append("the boats (%.1f m out)" % out)
+	steps += 1 if drift_ok else 0
+	for nd: Node in [port, sky, boats, band]:
+		nd.free()
+	for b2 in bad:
+		_fail("festivals: " + b2)
+	print("festivals: %d of 5 steps as expected; %d lanterns on a town, %d rockets and %d phrases of the band on a feast night, %.0f ms" % [steps, lanterns, rockets, tunes, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## A class built with each rarity's full set bolted on, and with each part

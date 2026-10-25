@@ -297,6 +297,13 @@ for (let n = 1; n <= 3; n++)
     a.ctx.createStereoPanner = undefined;
     a.gull(1, 0, n);
   });
+// a feast night's town band: a phrase of each of its four tunes, squeezebox,
+// bodhrán and tambourine (the game thins them out over the water itself)
+for (let i = 0; i < 4; i++)
+  shot(`reel${i}`, 1, 6.2, (a) => {
+    a.ctx.createStereoPanner = undefined;
+    a.festivalTune(i, 1, 0, 0);
+  });
 
 // ashore: a footfall in dry sand, in the wet (the walk's middle pace), on
 // planks or stone, and a jump's push-off and landings (in sand, in the
