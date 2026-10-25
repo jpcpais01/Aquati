@@ -1098,6 +1098,13 @@ func _check_camps(w: World) -> void:
 			steer.pistol = false
 			shore.update(dt, sea, steer, Vector3(cap.x, cap.y, cap.z))
 		var pr: Dictionary = shore.prompt("Sloop")
+		if pr.is_empty() or str(pr.key) != "chest":
+			# (wedged on a crate or the tent: the chest is the point here, not the path)
+			var fire := Vector2(cx, cz)
+			var off := (fire - Vector2(at.x, at.z)).normalized() * 1.3
+			shore.captain.place(at.x + off.x, at.z + off.y, 0.0)
+			shore.update(dt, sea, shore_gd.Steer.new(), Vector3(at.x, at.y, at.z))
+			pr = shore.prompt("Sloop")
 		if not pr.is_empty() and str(pr.key) == "chest":
 			shore.interact()
 	steps += 1 if plundered[0] else 0
@@ -1105,8 +1112,8 @@ func _check_camps(w: World) -> void:
 		var down := 0
 		for f: ShoreWalker in c0.gang:
 			down += 1 if not f.alive() else 0
-		_fail("camps: %d of 3 steps (%d camps of %d, gangs sane %s; roused %s, routed %s after %.0f s, %d of %d down, captain %s at %.0f hp, finite %s; plundered %s)" % [
-				steps, shore.camps.size(), want, sane, alarmed[0], routed[0], t, down, c0.gang.size(), "fell" if fell[0] else "standing", shore.captain.hp, finite, plundered[0]])
+		_fail("camps: %d of 3 steps (%d camps of %d, gangs sane %s; roused %s, routed %s after %.0f s, %d of %d down, captain %s at %.0f hp, finite %s; plundered %s, chest prompt %s)" % [
+				steps, shore.camps.size(), want, sane, alarmed[0], routed[0], t, down, c0.gang.size(), "fell" if fell[0] else "standing", shore.captain.hp, finite, plundered[0], shore.prompt("Sloop")])
 	print("camps: %d of 3 steps as expected; %d camps, %d cutthroats (%d bosses); the first routed in %.0f s of %d swings, captain at %.0f hp; %.0f ms" % [
 			steps, shore.camps.size(), gangs, bosses, t, swings, shore.captain.hp, (Time.get_ticks_usec() - t0) / 1000.0])
 	shore.leave()
