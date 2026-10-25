@@ -12,7 +12,9 @@ extends RefCounted
 ## clouds gather first, then the rain, and the sea takes longest of all to
 ## build and to settle. Now and then something rarer comes round: a mirror
 ## calm (mostly at dawn), and out on the high seas a very hot noon; and a
-## night in a sea-spark bloom can be held as the glowing seas. The wind
+## night in a sea-spark bloom can be held as the glowing seas. Downwind of a
+## restless volcano the air fills with ash and embers (ash_to, an overlay on
+## whatever weather is about). The wind
 ## wanders about its prevailing heading, swinging harder with each change of
 ## weather. By night the stars wheel overhead and the moon keeps its phase.
 
@@ -44,11 +46,14 @@ const WEATHER := {
 		"next": [[&"clear", 0.45], [&"fair", 0.4], [&"mist", 0.15]], "arrive": ["Mirror calm", "The wind dies away and the sea turns to glass"]},
 	&"hot": {"name": "Very hot", "cover": 0.03, "rain": 0.0, "storm": 0.0, "fog": 0.12, "wind": 0.5, "dur": Vector2(150.0, 230.0),
 		"next": [[&"clear", 0.6], [&"fair", 0.4]], "arrive": ["Very hot", "The sun blazes down from a white-hot sky"]},
+	# picked by hand; out at sea it comes from a volcano's plume instead (ash_to)
+	&"embers": {"name": "Ember rain", "cover": 0.5, "rain": 0.0, "storm": 0.0, "fog": 0.16, "wind": 0.85, "dur": Vector2(120.0, 200.0),
+		"next": [[&"cloudy", 0.5], [&"fair", 0.5]], "arrive": ["Ember rain", "Warm ash and glowing embers drift down on the wind"]},
 	&"glow": {"name": "Glowing seas", "cover": 0.12, "rain": 0.0, "storm": 0.0, "fog": 0.04, "wind": 0.45, "dur": Vector2(150.0, 240.0),
 		"next": [[&"clear", 0.6], [&"fair", 0.4]], "arrive": ["Glowing seas", "The night sea lights up blue wherever it is stirred"]},
 }
 ## The weathers in the order the sky badge steps through them.
-const KINDS: Array[StringName] = [&"clear", &"fair", &"cloudy", &"mist", &"rain", &"storm", &"calm", &"hot", &"glow"]
+const KINDS: Array[StringName] = [&"clear", &"fair", &"cloudy", &"mist", &"rain", &"storm", &"calm", &"hot", &"embers", &"glow"]
 ## The hours the clock can be held at: a name and the hour.
 const TIMES := {
 	&"dawn": ["Dawn", 6.3],
@@ -115,6 +120,14 @@ var fog := 0.0
 var heat := 0.0
 ## 0 .. 1 a mirror calm: the swell all but gone, the sea a looking glass.
 var calm := 0.0
+## 0 .. 1 ash and embers in the air, the sky gone red; and the ash a
+## restless volcano's plume throws over the ship (RareSkies hands it in).
+var ash := 0.0
+var ash_to := 0.0
+## How thick the plume would lie where the ship sails if the volcano were
+## erupting (RareSkies), and which volcano: the ember rain picked by hand keeps to it.
+var plume := 0.0
+var volcano_name := "the volcano"
 ## Wind strength, 0 calm .. 1 a stiff breeze (a storm blows harder).
 var wind := 0.72
 ## Rain-soaked decks and rocks, lagging the rain and drying slowly.
@@ -267,7 +280,7 @@ func set_time_mode(m: StringName, now := false) -> void:
 
 ## The sky as it stands, for photo mode to try other hours and weathers on
 ## and put back after (snapshot, preview, restore).
-const SNAP := ["day", "time_mode", "kind", "mode", "_locked", "hold", "cover", "rain", "storm", "fog", "heat", "calm", "wind", "wet", "sea", "_state_t", "_state_dur", "_rush"]
+const SNAP := ["day", "time_mode", "kind", "mode", "_locked", "hold", "cover", "rain", "storm", "fog", "heat", "calm", "ash", "wind", "wet", "sea", "_state_t", "_state_dur", "_rush"]
 
 
 func snapshot() -> Dictionary:
@@ -310,6 +323,7 @@ func set_weather(k: StringName, now := false) -> void:
 		sea = _sea_target()
 		calm = 1.0 if k == &"calm" else 0.0
 		heat = 1.0 if k == &"hot" else 0.0
+		ash = 1.0 if k == &"embers" else 0.0
 
 
 ## Picks the weather by hand (&"auto" hands it back to nature) and blends to
@@ -345,6 +359,9 @@ func needs(m: StringName, keep := false) -> String:
 			return "Only out on the high seas, at noon (11:00 to 14:00), far from any island."
 		if h < 11.0 or h >= (14.5 if keep else 14.0):
 			return "Only at noon (11:00 to 14:00). Tap the clock to set it to Noon."
+	elif m == &"embers":
+		if plume < (0.15 if keep else 0.3):
+			return "Only downwind of %s, where its ash and embers drift over the sea." % volcano_name
 	elif m == &"glow":
 		if bloom < (0.12 if keep else 0.3):
 			return "Only in the glowing stretches of the high seas, at night. Two lie on the crossing to Las Brumas."
@@ -353,9 +370,12 @@ func needs(m: StringName, keep := false) -> String:
 	return ""
 
 
-## The sky badge's picture of the weather, by day or by night.
+## The sky badge's picture of the weather, by day or by night (ember rain
+## wherever the plume's ash lies thick, whatever the weather under it).
 func icon() -> String:
 	var dark := sun_dir.y < -0.03
+	if ash > 0.45:
+		return "embers"
 	match kind:
 		&"storm":
 			return "storm"
@@ -493,6 +513,8 @@ func update(dt: float) -> void:
 	sea = _ease(sea, _sea_target(), 32.0, t)
 	calm = _ease(calm, 1.0 if kind == &"calm" else 0.0, 20.0, t)
 	heat = _ease(heat, 1.0 if kind == &"hot" else 0.0, 22.0, t)
+	# rain washes the ash out of the air
+	ash = _ease(ash, maxf(1.0 if kind == &"embers" else 0.0, ash_to) * (1.0 - 0.7 * rain), 9.0, t)
 	var wet_to := minf(1.0, rain * 1.8)
 	# soaked in moments, dried out slowly
 	wet = _ease(wet, wet_to, 7.0 if wet_to > wet else 75.0, t)
@@ -539,6 +561,9 @@ func update(dt: float) -> void:
 		# a thin moon lights the sea less (never so little the night can't be sailed)
 		var I := 0.62 * moon_vis * clouded * (0.72 + 0.28 * moon_lit)
 		key_color = Vector3(0.55, 0.68, 1.0) * I
+	# through a pall of ash the light comes dim and coppery
+	if ash > 0.001:
+		key_color *= Vector3(1.0 - 0.3 * ash, 1.0 - 0.5 * ash, 1.0 - 0.66 * ash)
 
 	# ---- the night sky: the stars keep pace with the sun, so the same stars
 	# rise at the same hour every night; the moon's lit limb faces the sun
@@ -573,25 +598,36 @@ func update(dt: float) -> void:
 		horizon = horizon.lerp(Vector3(1.02, 0.97, 0.86) * L, k * 0.6)
 		fog_color = fog_color.lerp(Vector3(0.97, 0.94, 0.86) * L, k * 0.55)
 		zenith *= Vector3(1.0 - 0.12 * k, 1.0 - 0.02 * k, 1.0 + 0.06 * k)
+	# ash: the sky goes rust and smoulder, and after dark the pall glows a dull red from below
+	if ash > 0.001:
+		var a := ash * 0.8
+		var lz := sky_l * 0.41
+		var glow := night * 0.06
+		horizon = horizon.lerp(Vector3(sky_l * 1.5 + glow, sky_l * 0.7 + glow * 0.28, sky_l * 0.42 + glow * 0.1), a)
+		fog_color = fog_color.lerp(Vector3(sky_l * 1.3 + glow * 0.8, sky_l * 0.68 + glow * 0.2, sky_l * 0.48 + glow * 0.08), a)
+		zenith = zenith.lerp(Vector3(lz * 1.05 + glow * 0.4, lz * 0.6 + glow * 0.1, lz * 0.52), a * 0.85)
 	# mist glows with whatever light there is, a soft pearl of the hour's colour
 	if fog > 0.01:
 		fog_color = fog_color.lerp(horizon.lerp(Vector3.ONE * _lum(horizon), 0.45) * 1.05, fog * 0.5)
 	# clear air is clear, the far islands keeping their colour the way they do
 	# in the tropics; not by night, when the haze keeps far lamps from blooming
-	var clear_air := 1.0 + 0.38 * (1.0 - fog) * (1.0 - rain) * (1.0 - MathX.smooth(0.5, 1.0, cover) * 0.6) * (1.0 - night)
-	fog_range = Vector2(380.0 * (1.0 - 0.55 * fog), 1500.0 * (1.0 - 0.5 * fog)) * clear_air
+	var fog_amt := maxf(fog, ash * 0.3)
+	var clear_air := 1.0 + 0.38 * (1.0 - fog_amt) * (1.0 - rain) * (1.0 - MathX.smooth(0.5, 1.0, cover) * 0.6) * (1.0 - night)
+	fog_range = Vector2(380.0 * (1.0 - 0.55 * fog_amt), 1500.0 * (1.0 - 0.5 * fog_amt)) * clear_air
 	# Low weather on the sea. Sea mist lies in shallow banks with clear water
 	# between them, drifting slowly; rain hangs in tall curtains that sweep by
 	# on the wind, a storm's darker, denser and quicker still; a grey deck
-	# leaves a little murk under it, a hot noon a thin shimmering haze.
+	# leaves a little murk under it, a hot noon a thin shimmering haze, and
+	# ash hangs in drifting smoky banks.
 	var mist_k := MathX.smooth(0.4, 0.9, fog) * (1.0 - rain)
 	var low_k := 0.1 * MathX.smooth(0.45, 1.0, cover)
 	var heat_k := heat * 0.25
-	var vsum := mist_k + rain + low_k + heat_k + 1e-4
+	var ash_k := ash * 0.6
+	var vsum := mist_k + rain + low_k + ash_k + heat_k + 1e-4
 	veil = Vector4(
-		mist_k * 0.012 + rain * 0.0026 + storm * 0.0012 + low_k * 0.004 + heat_k * 0.0016,
-		(mist_k * 15.0 + rain * 58.0 + low_k * 40.0 + heat_k * 9.0) / vsum,
-		0.4 + 0.58 * mist_k / vsum,
+		mist_k * 0.012 + rain * 0.0026 + storm * 0.0012 + low_k * 0.004 + ash_k * 0.0022 + heat_k * 0.0016,
+		(mist_k * 15.0 + rain * 58.0 + low_k * 40.0 + ash_k * 50.0 + heat_k * 9.0) / vsum,
+		0.4 + 0.58 * (mist_k + ash_k * 0.6) / vsum,
 		1.2 + wind * 2.5 + storm * 7.0)
 	# the deck: a clear day keeps about a tenth of the sky, fair weather a
 	# quarter, a cloudy one two thirds, and a storm closes it completely; fair
@@ -613,7 +649,7 @@ func update(dt: float) -> void:
 	var haze_k := 1.0 - 0.85 * cover
 	if sy > -0.03:
 		var g := MathX.smooth(0.0, 0.3, sy)
-		haze = Vector3(1.0, 0.55 + 0.25 * g, 0.25 + 0.3 * g) * (sun_vis * haze_k * (1.0 + 0.9 * heat))
+		haze = Vector3(1.0, 0.55 + 0.25 * g - 0.25 * ash, 0.25 + 0.3 * g - 0.2 * ash) * (sun_vis * haze_k * (1.0 + 0.9 * heat))
 	else:
 		haze = Vector3(0.3, 0.38, 0.55) * (0.3 * moon_vis * haze_k * (0.35 + 0.65 * moon_lit))
 	# the sea-spark blooms glow on dark nights, brightest when the glowing seas are held
@@ -649,6 +685,9 @@ func _update_look(sy: float, sun_vis: float) -> void:
 	lo = lo.lerp(Vector3(1.0, 0.99, 0.98), heat * 0.5)
 	sat -= heat * 0.05
 	sat += calm * 0.04
+	# ash: smouldering copper light, plum-brown shade
+	lo = lo.lerp(Vector3(0.98, 0.9, 0.93), ash * 0.7)
+	hi = hi.lerp(Vector3(1.15, 0.95, 0.78), ash * 0.75)
 	grade_lo = lo
 	grade_hi = hi
 	grade_sat = sat
@@ -657,7 +696,7 @@ func _update_look(sy: float, sun_vis: float) -> void:
 	var soft := fog * (1.0 - rain)
 	contrast = 0.24 + 0.05 * golden - 0.1 * grey - 0.1 * soft - 0.07 * night - 0.06 * heat
 	vibrance = 0.3 + 0.1 * golden - 0.16 * grey - 0.1 * soft - 0.12 * night - 0.1 * heat
-	vignette = 0.55 + storm * 0.4 + rain * 0.12 + fog * 0.1
+	vignette = 0.55 + storm * 0.4 + rain * 0.12 + fog * 0.1 + ash * 0.14
 
 
 ## Pushes the air into the shader globals, the key light and the environment.
@@ -680,6 +719,7 @@ func apply(sun: DirectionalLight3D, env: Environment) -> void:
 	rs.global_shader_parameter_set("moon", Vector4(moon_dir.x, moon_dir.y, moon_dir.z, moon_show))
 	rs.global_shader_parameter_set("moon_light", Vector4(moon_sun.x, moon_sun.y, moon_sun.z, moon_lit))
 	rs.global_shader_parameter_set("sea_glow", sea_glow)
+	rs.global_shader_parameter_set("sky_ash", ash)
 	if sun:
 		# Godot hands a light's colour x energy x PI to the shaders, three.js
 		# the colour itself: an energy of I / PI keeps every lit surface as bright

@@ -209,6 +209,8 @@ var wildlife: Wildlife
 var survivors: Survivors
 ## What the open sea carries: messages in bottles, and mats of flotsam with their crabs.
 var drift: Drift
+## Ember rain off a restless volcano, its smoking crater, and the mirages of a scorching noon.
+var rare: RareSkies
 var rescued := 0
 var _rescuable: Survivors.Raft
 var _rescue_t := 0.0
@@ -605,6 +607,7 @@ func _load() -> void:
 	_stage_plunder()
 	_stage_survivors()
 	_stage_drift()
+	_stage_rare()
 	if _args.has("convoy"):
 		_stage_convoy()
 	if not _harbour_first():
@@ -1226,6 +1229,17 @@ func _build_fleet() -> void:
 	# a crate caught up in the flotsam: a barrel, or in the weed now and then something finer
 	drift.crate.connect(func(x: float, z: float, kelp: bool) -> void: world.loot.place(x, z, 1 if kelp and randf() < 0.4 else 0))
 	add_child(drift)
+	rare = RareSkies.new()
+	rare.name = "RareSkies"
+	add_child(rare)
+	rare.setup(regions, world.fx, Settings.quality)
+	rare.ground = world.ground_height
+	atmosphere.volcano_name = rare.volcano_name()
+	rare.toast.connect(func(k: String, t: String, life: float) -> void:
+		if state == State.VOYAGE:
+			hud.toast(k, t, life))
+	rare.rumble.connect(func(vol: float, d: float) -> void: sound.thunder(vol, 0.0, d))
+	rare.shimmer.connect(sound.mirage)
 
 
 ## The trading ports' towns along their quays, their folk drawn with the crews.
@@ -1598,6 +1612,7 @@ func _process(delta: float) -> void:
 				("%d sail bound for %s%s%s" % [cv.fleet.size(), cv.dest.title, ", scattered" if cv.scattered else "", ", alongside the " + trader.ship.ship_name if trader != null else ""]) if cv != null else "none at sea",
 				convoys.stocked(), (", wanted: " + ", ".join(PackedStringArray(convoys.wanted()))) if not convoys.wanted().is_empty() else ""])
 		print("SMOKE FLEET: %d escorts (%s), order %s; %d on the roster, %d lost" % [escorts.ais.size(), ", ".join(PackedStringArray(_fleet_view().map(func(v: Dictionary) -> String: return "%s %d%% %s" % [v.name, roundi(float(v.hp) * 100.0), v.status]))), escorts.order, Progress.fleet.ships.size(), int(Progress.fleet.lost)])
+		print("SMOKE RARE: ash %.2f (%s restless %.2f, plume %.2f over her), %d embers falling; %d mirages this voyage%s" % [atmosphere.ash, rare.volcano_name(), rare.restless, atmosphere.plume, rare.embers.drawn(), rare.mirages, ", one out there" if rare.mirage.active else ""])
 		print("SMOKE DRIFT: %d bottles afloat, %d mats of flotsam (%s) with %d crabs aboard, %d letters opened this voyage" % [drift.count(), drift.mats.size(), ", ".join(PackedStringArray(drift.mats.map(func(m: Drift.Mat) -> String: return "kelp" if drift.shapes[m.shape].kelp else "driftwood"))), drift.crab_count(), _letters])
 		print("SMOKE SURVIVORS: %d rafts afloat with %d hands clinging on, %d rescued this voyage, reload x%.3f" % [survivors.rafts.size(), survivors.count(), rescued, float(player.boost.reload)])
 		print("SMOKE BOUNTY: infamy %d this voyage (wanted %d), %d hunters sent, %d claimed, %s; lifetime infamy %d, %d posters up" % [
@@ -1869,7 +1884,8 @@ func _tick(real_dt: float) -> void:
 	if reached != null:
 		_reached(reached)
 
-	# the weather round the view, its sound, then the light
+	# ash off the volcano, mirages in the heat; then the weather round the view, its sound, then the light
+	rare.update(dt, atmosphere, world, player if player.alive and _farewell == null else null, hauling and state == State.VOYAGE, camera.target, camera.distance())
 	_sky_fx(dt)
 	_sound()
 	atmosphere.apply(sun, env)
@@ -2787,6 +2803,19 @@ func _open_bottle(b: Drift.Bottle) -> void:
 	_note_tour("bottle: a lost letter, +%d gold" % g)
 
 
+## --erupt: the volcano restless from the start, its ash already pouring
+## downwind; --mirage: one shimmering up dead ahead of her.
+func _stage_rare() -> void:
+	if _args.has("erupt"):
+		rare.erupt()
+		var w := world.wind
+		atmosphere.ash_to = rare.plume_at(player.pos.x, player.pos.z, w.dir_x, w.dir_z)
+		atmosphere.ash = atmosphere.ash_to * (1.0 - 0.7 * atmosphere.rain)
+	if _args.has("mirage"):
+		var ok := rare.conjure(player, camera.distance())
+		print("MIRAGE %s" % (("%.0f m off her bow" % Vector2(rare.mirage.x - player.pos.x, rare.mirage.z - player.pos.z).length()) if ok else "refused: land in the way"))
+
+
 ## --bottle: a message in a bottle bobbing off her bow; --flotsam [driftwood|kelp]:
 ## a mat of flotsam with its crabs a little further on.
 func _stage_drift() -> void:
@@ -3278,6 +3307,7 @@ func _reset_world(id: String) -> void:
 	world.debris.clear()
 	world.loot.clear()
 	drift.clear()
+	rare.reset()
 	hud.letter.clear()
 	discovered.clear()
 	voyage = Voyage.new()
@@ -4158,6 +4188,8 @@ func _start_voyage(sea: String) -> void:
 	drift.clear()
 	hud.letter.clear()
 	_stage_drift()
+	rare.reset()
+	_stage_rare()
 	if _args.has("wanted"):
 		hunters.add(int(_args.wanted))
 	# the X of a whole map waits on its sand

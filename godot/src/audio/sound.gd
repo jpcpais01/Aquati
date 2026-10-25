@@ -1234,6 +1234,13 @@ func chime() -> void:
 		_one("chime", 1.0)
 
 
+## A mirage shimmering up ahead, or fraying away round the hull: a rising run
+## of wavering bells.
+func mirage() -> void:
+	if _voice(0.2):
+		_one("mirage", 1.0)
+
+
 ## A fort's last gun goes quiet: a war horn blown over the water, two long
 ## wavering blasts over a slow pair of war drums.
 func horn() -> void:

@@ -46,7 +46,7 @@ const FORT_TRIS := 26000
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "ammo5", "bell", "blast", "bosun_pipe", "bubbles",
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
-		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
+		"mallet", "mirage", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
 		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "wraith", "ghost_wail", "exorcise", "grapple", "hook_bite", "hull_boom", "yell", "dig", "spade_knock", "parchment", "horn", "wanted2", "wanted3", "bounty",
 		"kr_boom", "kr_death", "kr_drone", "kr_drums0", "kr_drums1", "kr_drums2", "kr_flesh", "kr_moan", "kr_omen", "kr_roar0", "kr_roar1", "kr_roar2",
 		"kr_rush", "kr_shriek", "kr_strings",
@@ -315,6 +315,89 @@ func _check_survivors() -> void:
 ## magnet, crabs over the side of a mat as a hull comes by and the mat
 ## shouldered aside, crates caught in the flotsam, the letters' words and
 ## the card they unroll on.
+## The rare skies: the plume lies downwind of the volcano and not upwind, a
+## restless spell fills the air there with ash that rains embers and that a
+## shower washes out, and a mirage shimmers up ahead on a hot noon, keeps
+## off real land, parts round the hull and frays away.
+func _check_rare(w: World) -> void:
+	if w.wind == null:
+		w.wind = Wind.new()
+	var rs := RareSkies.new()
+	root.add_child(rs)
+	var fx := Particles.new()
+	fx.wind = w.wind
+	root.add_child(fx)
+	rs.setup(w.regions, fx, 1)
+	rs.ground = w.ground_height
+	if rs.volcanoes.is_empty():
+		_fail("rare: no volcano among the isles")
+		return
+	var v: Array = rs.volcanoes[0]
+	var vx: float = v[1]
+	var vz: float = v[2]
+	var down := rs.plume_at(vx + 600.0, vz, 1.0, 0.0)
+	var up := rs.plume_at(vx - 600.0, vz, 1.0, 0.0)
+	var flank := rs.plume_at(vx, vz + float(v[3]) * 0.5, 0.0, 1.0)
+	if down < 0.5 or up > 0.05 or flank < 0.4:
+		_fail("rare: the plume lies %.2f downwind, %.2f upwind and %.2f on the flank" % [down, up, flank])
+	var mesh_tris := [int((rs.mirage.mesh as ArrayMesh).surface_get_array_len(0) / 3)]
+	if mesh_tris[0] < 500 or mesh_tris[0] > 6000:
+		_fail("rare: the mirage has %d triangles" % mesh_tris[0])
+	# a restless spell, downwind of it
+	var a := Atmosphere.new()
+	a.set_weather(&"clear", true)
+	w.wind.dir_x = 1.0
+	w.wind.dir_z = 0.0
+	var ship := Ship.new()
+	ship.pos = Vector3(vx + 500.0, 0.0, vz)
+	rs.erupt()
+	for i in 600:
+		rs.update(0.1, a, w, ship, true, ship.pos, 80.0)
+		a.update(0.1)
+	var ash := a.ash
+	var falling := rs.embers.drawn()
+	if ash < 0.5 or falling < 100 or a.icon() != "embers" or a.needs(&"embers") != "":
+		_fail("rare: downwind of a restless volcano the ash is %.2f with %d embers falling (%s, %s)" % [ash, falling, a.icon(), a.needs(&"embers")])
+	a.set_weather(&"rain", true)
+	for i in 300:
+		rs.update(0.1, a, w, ship, true, ship.pos, 80.0)
+		a.update(0.1)
+	if a.ash > ash * 0.65:
+		_fail("rare: the rain left the ash at %.2f" % a.ash)
+	ship.pos = Vector3(vx - 1500.0, 0.0, vz)
+	if a.needs(&"embers") == "" and rs.plume_at(ship.pos.x, ship.pos.z, 1.0, 0.0) < 0.1:
+		rs.update(0.1, a, w, ship, true, ship.pos, 80.0)
+		if a.needs(&"embers") == "":
+			_fail("rare: ember rain can be picked upwind of the volcano")
+	# a mirage on a hot noon, out at sea
+	a.set_weather(&"hot", true)
+	var at := Vector3.ZERO
+	var placed := false
+	for tries in 40:
+		ship.pos = Vector3(vx + 1500.0 + tries * 37.0, 0.0, vz - 900.0 + tries * 53.0)
+		ship.heading = tries * 0.7
+		if rs.conjure(ship, 80.0):
+			placed = true
+			at = Vector3(rs.mirage.x, 0.0, rs.mirage.z)
+			break
+	if not placed:
+		_fail("rare: no mirage would shimmer up anywhere")
+	else:
+		if w.ground_height(at.x, at.z) > -4.0:
+			_fail("rare: a mirage over land at %s" % at)
+		var entered := [false]
+		rs.mirage.entered.connect(func() -> void: entered[0] = true)
+		var dir := Vector3(at.x - ship.pos.x, 0.0, at.z - ship.pos.z).normalized()
+		for i in 600:
+			ship.pos += dir * 1.4
+			rs.update(0.1, a, w, ship, true, ship.pos, 80.0)
+		if not entered[0] or rs.mirage.active:
+			_fail("rare: sailing through the mirage it %s and is %s" % ["parted" if entered[0] else "never parted", "still there" if rs.mirage.active else "gone"])
+	print("rare: %s's plume %.2f downwind, %.2f upwind; ash %.2f with %d embers falling; mirage of %d triangles, %d conjured" % [v[0], down, up, ash, falling, mesh_tris[0], rs.mirages])
+	rs.queue_free()
+	fx.queue_free()
+
+
 ## Photo mode: the camera's pose round trip, the crop windows, every
 ## filter's look and the sky put back as it was after a preview.
 func _check_photo() -> void:
@@ -556,6 +639,8 @@ func _initialize() -> void:
 		_check_fleet(_home_world.regions)
 		_check_drift(_home_world.regions)
 	_check_photo()
+	if _home_world != null:
+		_check_rare(_home_world)
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:

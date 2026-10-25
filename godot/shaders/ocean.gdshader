@@ -89,6 +89,8 @@ uniform vec4 region = vec4(0.0);
 uniform vec4 glow_centres = vec4(0.0, 0.0, 6600.0, -2800.0);
 /// how brightly the sea-spark blooms glow tonight (Atmosphere.sea_glow)
 global uniform float sea_glow;
+/// ash and embers in the air (0..1): its scum settles on the sea
+global uniform float sky_ash;
 /// the lanterns near the view, lit after dark: xyz where (m), w how bright
 /// (Game._lamps); lamp_count of them
 uniform vec4 lamps[8];
@@ -565,6 +567,14 @@ void fragment() {
 	body_bed *= hot;
 	body_bed_sun *= hot;
 	body_sun *= hot;
+	// ash settling on the water: a dull grey scum in drifting rafts
+	if (sky_ash > 0.001) {
+		float scum = smoothstep(0.35, 0.8, mac2.b * 0.7 + texture(noise_tex, p * 0.021 - pdrift * 0.05).r * 0.5) * sky_ash * 0.35;
+		vec3 soot = vec3(0.07, 0.065, 0.06);
+		body_bed = mix(body_bed * (1.0 - 0.25 * sky_ash), soot, scum);
+		body_bed_sun = mix(body_bed_sun * (1.0 - 0.25 * sky_ash), soot, scum);
+		body_sun = mix(body_sun * (1.0 - 0.25 * sky_ash), soot, scum);
+	}
 	// under a grey sky the sea loses its blue and turns pewter
 	float pewter = cover * cover * 0.4;
 	body_bed = mix(body_bed, vec3(dot(body_bed, vec3(0.2126, 0.7152, 0.0722))) * vec3(0.85, 1.0, 1.05), pewter);

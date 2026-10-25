@@ -153,6 +153,10 @@ sea_glow={
 "type": "float",
 "value": 0.0
 }
+sky_ash={
+"type": "float",
+"value": 0.0
+}
 surf={
 "type": "vec4",
 "value": Vector4(0.35, 0.32, 0.0, 0.0)

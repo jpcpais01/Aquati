@@ -203,6 +203,11 @@ frames before a shot ends; `--photo-look N` picks the N-th filter,
 `--photo-dof A` the lens blur, `--photo-hour H` and `--photo-weather W` the
 sky, and `--photo-shot` fires the shutter. The smoke test opens and closes it
 from the pause menu.
+Rare skies: `--erupt` sets the volcano restless from the start (its ash
+already over her if she lies downwind: try `--at 380,-150 --wind 1.5708`),
+`--wx embers` holds the ember rain anywhere, and `--mirage` conjures one dead
+ahead (with `--wx hot`, out on the high seas; it prints MIRAGE). The smoke
+test prints a SMOKE RARE line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off
