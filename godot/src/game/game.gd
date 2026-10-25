@@ -4320,9 +4320,9 @@ func _on_hulls_meet(at: Vector3) -> void:
 	if e == null or s == null:
 		return
 	var f := Vector3(sin(s.heading), 0.0, cos(s.heading))
-	for i in 4:
-		var k := (i - 1.5) / 1.5 * s.cls.length * 0.3
-		world.fx.splash(Vector3(at.x + f.x * k, 0.2, at.z + f.z * k), 0.9)
+	for i in 3:
+		var k := (i - 1.0) * s.cls.length * 0.3
+		world.fx.splash(Vector3(at.x + f.x * k, 0.2, at.z + f.z * k), 0.45)
 
 
 ## Lashed alongside: the boarders swing across onto her deck.
