@@ -66,6 +66,48 @@ var _errors := 0
 var _home_world: World
 
 
+## Survivors: how many of a sunk ship's hands make it (and how they share
+## out the wreckage), and the wreckage built; then a raft spawned, a line
+## thrown to a ship alongside, and every hand swimming over and climbing aboard.
+func _check_survivors() -> void:
+	var S: GDScript = load("res://src/game/survivors.gd")
+	for cls in ["sloop", "brig", "galleon"]:
+		var lo: int = {"sloop": 1, "brig": 2, "galleon": 3}[cls]
+		for i in 40:
+			var g: Array = S.of_class(cls)
+			var n: int = g.reduce(func(a: int, b: int) -> int: return a + b, 0)
+			if n < lo or n > lo + 1 or g.size() != (2 if n > 3 else 1) or g.any(func(k: int) -> bool: return k < 1 or k > 4):
+				_fail("survivors: a %s gave %s" % [cls, g])
+				break
+	var crew: Node3D = load("res://src/ships/crew.gd").new()
+	root.add_child(crew)
+	var sv: Node3D = S.new(crew)
+	root.add_child(sv)
+	var w := World.new()
+	w.waves = Waves.new(0.6)
+	w.wind = Wind.new(0.6)
+	var ship := Ship.create(ShipClass.named("brig"), Livery.named("player"), w)
+	sv.spawn(ship.pos.x + 9.0, ship.pos.z, 3, "Test")
+	var got := [0, -1]
+	sv.aboard.connect(func(_r: Variant, left: int) -> void:
+		got[0] += 1
+		got[1] = left)
+	var r: Variant = sv.reachable(ship)
+	if r == null:
+		_fail("survivors: a raft 9 m off her side is out of a line's reach")
+	else:
+		sv.rescue(r, ship)
+		for f in 900:
+			sv.update(1.0 / 30.0, w, ship.pos)
+		if got[0] != 3 or got[1] != 0 or sv.count() != 0:
+			_fail("survivors: %d of 3 hands came aboard (%d left)" % [got[0], sv.count()])
+	print("survivors: %d of 3 hands hauled aboard off a raft" % got[0])
+	sv.clear()
+	sv.queue_free()
+	crew.queue_free()
+	ship.queue_free()
+
+
 ## Bounties: the wanted levels and the hunters they earn, the ledger made
 ## whole from junk, the Brethren's picks, every captain's colours and
 ## portrait, and the Wanted Board built over a ledger with each kind of notice.
@@ -156,6 +198,7 @@ func _initialize() -> void:
 	if _home_world != null:
 		_check_wildlife(_home_world.regions)
 	_check_bounty()
+	_check_survivors()
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:

@@ -204,6 +204,14 @@ var forts: Forts
 var kraken: Kraken
 ## The isles' beasts (Wildlife).
 var wildlife: Wildlife
+## Pirates' hands clinging to the wreckage of their ship (Survivors), and
+## how many you've hauled aboard this voyage.
+var survivors: Survivors
+var rescued := 0
+var _rescuable: Survivors.Raft
+var _rescue_t := 0.0
+var _cry_t := 0.0
+var _survivor_tip := false
 ## The voyage's heat: your infamy, the wanted level and the named captains it sends (Hunters).
 var hunters := Hunters.new()
 ## Each storm's one roll of the dice: 0 not yet, 1 rolled and it isn't coming, 2 it's coming.
@@ -577,6 +585,7 @@ func _load() -> void:
 	if _args.has("voyage"):
 		_stage_voyage()
 	_stage_plunder()
+	_stage_survivors()
 	if _args.has("bounty-banner"):
 		# a shot of the notices: a hunter's (or with `claimed`, the bounty claimed) over the voyage
 		var c: Dictionary = Bounty.CAPTAINS[4]
@@ -1183,6 +1192,9 @@ func _build_fleet() -> void:
 	crew.name = "Crew"
 	crew.visible = not _args.has("nocrew")
 	add_child(crew)
+	survivors = Survivors.new(crew)
+	survivors.aboard.connect(_hand_aboard)
+	add_child(survivors)
 
 
 ## The trading ports' towns along their quays, their folk drawn with the crews.
@@ -1542,6 +1554,7 @@ func _process(delta: float) -> void:
 		print("SMOKE PORT: %d towns (%d triangles close up and %d as shells built); %d whole in view, drawing %d triangles; %s" % [
 				ports.ports.size(), built.x, built.y, drawn.y, drawn.x, "tied up at " + dock_port.title if dock_port != null else "at sea"])
 		_wild_line()
+		print("SMOKE SURVIVORS: %d rafts afloat with %d hands clinging on, %d rescued this voyage, reload x%.3f" % [survivors.rafts.size(), survivors.count(), rescued, float(player.boost.reload)])
 		print("SMOKE BOUNTY: infamy %d this voyage (wanted %d), %d hunters sent, %d claimed, %s; lifetime infamy %d, %d posters up" % [
 				hunters.pts, hunters.level(), hunters.sent, hunters.claimed,
 				("%s %d m off" % [hunters.ships[hunters.near].epithet, roundi(hunters.near_d)]) if hunters.ships.has(hunters.near) else "none at sea",
@@ -1644,6 +1657,7 @@ func _tick(real_dt: float) -> void:
 	pirates.step(dt, player if sailing else null)
 	if sailing:
 		_heat(dt)
+		_survivor_cries(dt)
 	# (at the home port's quay the harbour's sea waits for her back at anchor)
 	if state == State.HARBOUR and not home.visible:
 		pirates.step_harbour(dt, player.pos, camera)
@@ -1747,6 +1761,7 @@ func _tick(real_dt: float) -> void:
 		camera.update_rig(real_dt, focus.pos, focus.vel if sailing else Vector3.ZERO, world.time)
 	# every crew afloat, after the camera has moved: they're culled and cut by it
 	crew.close_up = not sailing
+	survivors.update(dt, world, camera.target)
 	crew.update(dt, world, camera, camera.target, camera.ground_radius() * 1.5, atmosphere.key_dir)
 	if _args.has("wild-look"):
 		_wild_look(int(_args.get("wild-look", 0)))
@@ -2437,6 +2452,7 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 	var named := Bounty.captain(ship.hunter) if ship.hunter != "" else {}
 	if not named.is_empty():
 		_hunter_down(ship, attacker, named)
+	_cast_adrift(ship)
 	# what she carried comes up out of the wreck: the bigger the hull, the more
 	# and the finer, and a galleon always gives up a fine chest; a ghost's hold
 	# is full of the cursed gold she went down with
@@ -2637,6 +2653,144 @@ func _screen_heading(h: float) -> float:
 		return NAN
 	var d := camera.unproject_position(b) - camera.unproject_position(a)
 	return atan2(d.x, -d.y)
+
+
+# ------------------------------------------------------------------ survivors
+
+## Some of a sunk pirate's hands make it to the wreckage.
+func _cast_adrift(ship: Ship) -> void:
+	var p := player
+	if ship.ghost or ship.prize or ship.team != Ship.Team.PIRATE or state != State.VOYAGE or randf() > 0.8:
+		return
+	if Vector2(ship.pos.x - p.pos.x, ship.pos.z - p.pos.z).length() > 650.0:
+		return
+	var groups := Survivors.of_class(ship.cls.id)
+	var x := ship.pos.x
+	var z := ship.pos.z
+	var from := ship.ship_name
+	get_tree().create_timer(4.5).timeout.connect(func() -> void:
+		if state != State.VOYAGE:
+			return
+		for i in groups.size():
+			var a := randf() * TAU
+			var r := 5.0 + i * 7.0 + randf() * 4.0
+			survivors.spawn(x + cos(a) * r, z + sin(a) * r, groups[i], from)
+		_note_tour("%d survivors of the %s in the water" % [groups.reduce(func(n: int, g: int) -> int: return n + g, 0), from])
+		if rescued == 0 and not _survivor_tip:
+			_survivor_tip = true
+			hud.toast("Survivors in the water", "Sail alongside the wreckage and throw them a line: they'll sign on with your crew", 4.6))
+
+
+## --survivors [N]: N of a pirate's hands (3) cling to wreckage off her port
+## beam (--rescue throws them a line as soon as she's in reach).
+func _stage_survivors() -> void:
+	if not _args.has("survivors"):
+		return
+	var p := player
+	var n := 3 if _args["survivors"] is bool else int(_args["survivors"])
+	var side := p.port_dir() * (p.cls.beam * 0.5 + 7.0) + p.forward() * 4.0
+	survivors.spawn(p.pos.x + side.x, p.pos.z + side.z, n, "Black Gull")
+
+
+## Alongside a raft of survivors: the pill to throw them a line (F or a tap).
+func _rescue_prompt(dt: float) -> bool:
+	var p := player
+	_rescue_t -= dt
+	if _rescue_t <= 0.0:
+		_rescue_t = 0.25
+		_rescuable = survivors.reachable(p) if p.alive else null
+	var r := _rescuable
+	if r == null or r.hands.is_empty():
+		return false
+	var n := r.hands.size()
+	market.set_dock({"name": r.from, "title": "Throw them a line", "ok": true,
+			"why": "%s off the %s %s to the wreckage" % ["A sailor" if n == 1 else "%d sailors" % n, r.from, "clings" if n == 1 else "cling"]})
+	_prompt_kind = "rescue"
+	if controls.interact or _args.has("rescue"):
+		_throw_line()
+	return true
+
+
+func _throw_line() -> void:
+	var r := _rescuable
+	var p := player
+	if r == null or state != State.VOYAGE or not p.alive:
+		return
+	survivors.rescue(r, p)
+	_rescuable = null
+	market.set_dock({})
+	_prompt_kind = ""
+	var at := Vector3(r.x, 1.0, r.z)
+	var h := world.heard(at)
+	sound.cheer(h.x, h.y, h.z, 3)
+	sound.splash(h.x * 0.3, h.y, h.z)
+	hud.floater("Line away!", at + Vector3(0.0, 1.0, 0.0), camera, Floaters.Kind.CREW)
+	_note_tour("threw a line to the %s's survivors" % r.from)
+
+
+## Their cries across the water, while a raft waits within earshot.
+func _survivor_cries(dt: float) -> void:
+	_cry_t -= dt
+	if _cry_t > 0.0:
+		return
+	_cry_t = 2.4 + randf() * 2.6
+	var n := survivors.nearest(player.pos.x, player.pos.z)
+	if not n.is_empty() and float(n[1]) < 140.0:
+		var r: Survivors.Raft = n[0]
+		var h := world.heard(Vector3(r.x, 1.0, r.z))
+		sound.yell(h.x, h.y, h.z)
+
+
+## One more over the rail: the gun crews grow, and the last of them tells you what they know.
+func _hand_aboard(r: Survivors.Raft, left: int) -> void:
+	var p := player
+	if state != State.VOYAGE or not p.alive:
+		return
+	const MAX := 8
+	rescued += 1
+	p.boost.reload = 1.0 - 0.025 * mini(rescued, MAX)
+	var at := Vector3(p.pos.x, p.position.y + p.cls.freeboard + 2.0, p.pos.z)
+	hud.floater("Works their passage" if rescued > MAX else "+1 hand", at, camera, Floaters.Kind.CREW)
+	if left > 0:
+		return
+	var n := r.crew
+	var h := world.heard(at)
+	sound.cheer(h.x, h.y, h.z, 4)
+	var pct := roundi(2.5 * mini(rescued, MAX))
+	var party := " · +%d in a boarding party" % mini(3, rescued / 2) if rescued >= 2 else ""
+	hud.toast("%s hauled aboard" % ("A survivor" if n == 1 else "%d survivors" % n), _survivor_thanks(r.from, n), 4.6)
+	var tally := rescued
+	get_tree().create_timer(2.6).timeout.connect(func() -> void:
+		if state == State.VOYAGE:
+			hud.toast("%d %s rescued this voyage" % [tally, "hand" if tally == 1 else "hands"], "The crew is full: they work their passage" if tally > MAX else "The guns reload %d%% faster%s" % [pct, party], 3.8))
+	voyage.note("fleet", "Rescued %s of the %s" % ["a survivor" if n == 1 else "%d survivors" % n, r.from], "They signed on with the crew")
+	_note_tour("%d survivors of the %s aboard (%d this voyage)" % [n, r.from, rescued])
+	if rescued > MAX:
+		var gold := 60 * n
+		p.gold += gold
+		Progress.earn(gold)
+	# a grateful bosun has something to show for it
+	if randf() < 0.35:
+		get_tree().create_timer(5.4).timeout.connect(func() -> void:
+			if state != State.VOYAGE:
+				return
+			if not tmaps.complete():
+				hud.toast("The bosun pulls something from his boot", "A torn piece of his captain's treasure map", 3.6)
+				_found_piece(null)
+			else:
+				var g := 120 + randi() % 121
+				player.gold += g
+				Progress.earn(g)
+				sound.coin()
+				hud.toast("+%d gold" % g, "The %s's purser kept her purse dry" % r.from, 3.4))
+
+
+static func _survivor_thanks(from: String, n: int) -> String:
+	if n == 1:
+		return ["The %s's cabin boy, dripping and grinning. He swears he was never really a pirate." % from,
+				"A gunner off the %s. She says your gun crews need work, and she means to fix that." % from].pick_random()
+	return ["%d of the %s's crew, soaked and grateful. They'll haul and fight for you now." % [n, from],
+			"%d hands off the %s. They say your ship is a sight better than their old one." % [n, from]].pick_random()
 
 
 ## The voyage's heat each frame: the Crown's rate on pirate bounties, the
@@ -3823,6 +3977,12 @@ func _start_voyage(sea: String) -> void:
 	boarding.reset()
 	# a new voyage starts cold: no price on your head yet
 	hunters.reset()
+	# and with no one fished out of the sea
+	survivors.clear()
+	rescued = 0
+	_rescuable = null
+	p.boost.reload = 1.0
+	_stage_survivors()
 	if _args.has("wanted"):
 		hunters.add(int(_args.wanted))
 	# the X of a whole map waits on its sand
@@ -3976,7 +4136,7 @@ func _dock_prompt(dt: float) -> void:
 		if near != null and near.in_reach(p.pos):
 			port = near
 	if port == null:
-		if not _board_prompt():
+		if not _board_prompt() and not _rescue_prompt(dt):
 			_land_prompt(dt)
 		return
 	_prompt_kind = "dock"
@@ -4547,7 +4707,8 @@ func _board_over() -> void:
 		_note_tour("the lines cut: %s" % ("she's gone" if e == null else "not at sea"))
 		boarding.part()
 		return
-	var hands: int = [3, 4, 6][_size_of(p)]
+	# the survivors you fished out of the sea are first over her rail
+	var hands: int = [3, 4, 6][_size_of(p)] + mini(3, rescued / 2)
 	var foes: int = [4, 6, 8][_size_of(e)]
 	var o := {"hands": hands, "foes": foes, "boss_hp": 115.0, "boss": "Her captain", "hand": "Pirate"}
 	# a named captain fights for her own deck, and keeps a few more blades about her
@@ -5484,6 +5645,9 @@ func _dock_here() -> void:
 		return
 	if _prompt_kind == "land":
 		_go_ashore()
+		return
+	if _prompt_kind == "rescue":
+		_throw_line()
 		return
 	if _prompt_kind == "board":
 		var e := _board_target()
