@@ -58,8 +58,9 @@ static func _pick(a: Array, rng: RandomNumberGenerator) -> Variant:
 
 
 ## A new face for a crew: a pirate's or one of yours, the captain (in his
-## coat) or the helmsman (never on a peg leg) or anyone else.
-static func make(pirate: bool, captain: bool, helm: bool, rng: RandomNumberGenerator) -> CrewLook:
+## coat) or the helmsman (never on a peg leg) or anyone else; `haunt`, one
+## of a haunted ship's drowned crew.
+static func make(pirate: bool, captain: bool, helm: bool, rng: RandomNumberGenerator, haunt := false) -> CrewLook:
 	var t: Dictionary = PIRATE if pirate else PLAYER
 	var shirts: Array = t.shirts
 	var skin := _col(_pick(SKIN, rng))
@@ -173,6 +174,8 @@ static func make(pirate: bool, captain: bool, helm: bool, rng: RandomNumberGener
 			f |= CrewModel.F_PARROT
 		if f & CrewModel.F_LONGHAIR:
 			f &= ~CrewModel.F_PONYTAIL
+	if haunt:
+		_drowned(s, captain, rng)
 	var look := CrewLook.new()
 	look.slots = s
 	look.hat = hat_kind
@@ -180,3 +183,43 @@ static func make(pirate: bool, captain: bool, helm: bool, rng: RandomNumberGener
 	look.smoker = rng.randf() < 0.35
 	look.drinker = rng.randf() < 0.5
 	return look
+
+
+## A haunted ship's hands (the Hollow Jack's): the pallid, faintly glowing
+## green of the drowned, white hair, rotted rags of black, violet and bone,
+## an orange sash, and eyes lit with ghost-fire; her captain in a violet coat.
+static func _drowned(s: PackedColorArray, captain: bool, rng: RandomNumberGenerator) -> void:
+	var skin := _col(_pick(["#a9cdb8", "#b7d6c2", "#9fc2b4"], rng), 0.35)
+	var rag := _col(_pick(["#2a2530", "#3b3346", "#4a4038", "#5b5560", "#1f1b22"], rng))
+	var legs := _col(_pick(["#1d1a22", "#2c2830", "#3a3328"], rng))
+	var bare := s[CrewModel.TINT_SKIN]
+	for k: int in [CrewModel.TINT_SKIN, CrewModel.TINT_SLEEVE, CrewModel.TINT_FOREARM, CrewModel.TINT_SHIN]:
+		if s[k] == bare:
+			s[k] = skin
+	if not captain:
+		s[CrewModel.TINT_SHIRT] = rag
+		if s[CrewModel.TINT_SLEEVE] != skin:
+			s[CrewModel.TINT_SLEEVE] = rag
+		if s[CrewModel.TINT_FOREARM] != skin:
+			s[CrewModel.TINT_FOREARM] = rag
+		s[CrewModel.TINT_COAT] = rag
+		s[CrewModel.TINT_TROUSERS] = legs
+		if s[CrewModel.TINT_SHIN] != skin:
+			s[CrewModel.TINT_SHIN] = legs
+		s[CrewModel.TINT_VEST] = _col(_pick(["#2d2a33", "#3b1f4f", "#4a3a5a"], rng))
+		s[CrewModel.TINT_HAT] = _col(_pick(["#1d1a1a", "#3b1f4f", "#2a2530"], rng))
+	else:
+		var coat := _col("#3b1f4f")
+		for k: int in [CrewModel.TINT_COAT, CrewModel.TINT_SHIRT, CrewModel.TINT_SLEEVE, CrewModel.TINT_FOREARM]:
+			s[k] = coat
+		s[CrewModel.TINT_TRIM] = _col("#e08a2a")
+		s[CrewModel.TINT_PLUME] = _col("#8dffc4", 1.2)
+	s[CrewModel.TINT_SASH] = _col("#e07a1c")
+	s[CrewModel.TINT_HAIR] = _col(_pick(["#e8e8e0", "#cfd2cc", "#b8bdb6"], rng))
+	s[CrewModel.TINT_PUPIL] = _col("#7dffc0", 4.0)
+	s[CrewModel.TINT_WHITE] = _col("#0c1210")
+	s[CrewModel.TINT_MOUTH] = _col("#101413")
+	s[CrewModel.TINT_TONGUE] = _col("#2a3a33")
+	s[CrewModel.TINT_PARROT] = _col("#dfe6e0")
+	s[CrewModel.TINT_WING] = _col("#9aa39d")
+	s[CrewModel.TINT_GLOW] = _col("#6dffb4", 6.0)

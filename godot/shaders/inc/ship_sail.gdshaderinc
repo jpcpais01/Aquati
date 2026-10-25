@@ -23,6 +23,11 @@ uniform int sail_pattern = 0;
 /// half-width either side of its middle
 uniform bool mark_on = false;
 uniform sampler2D mark_tex : filter_linear_mipmap, repeat_disable, hint_default_black;
+/// a haunted ship's canvas (ShipModel: the Hollow Jack's): ghost-fire
+/// smouldering along the torn edges (the mesh's COLOR.r falls to 0 at a rag),
+/// and her mark burning in its own colour
+uniform vec3 tear_glow = vec3(0.0);
+uniform float mark_glow = 0.0;
 
 /// how full the canvas draws (wind on the sail x how much is set)
 instance uniform float sail_fill = 1.0;
@@ -274,6 +279,14 @@ void fragment() {
 	NORMAL = bump(NORMAL, VERTEX, h * 0.02 * fade);
 
 	EMISSION = pc_emis;
+	if (mark_glow > 0.0 || tear_glow.g > 0.0) {
+		float rag = 1.0 - COLOR.r;
+		float lick = 0.6 + 0.4 * sin(TIME * 2.3 + UV.x * 11.0 + UV.y * 7.0 + sail_phase) * sin(TIME * 1.7 - UV.y * 5.0);
+		float dusk = 0.18 + night * 0.4;
+		EMISSION += tear_glow * rag * rag * rag * rag * lick * dusk;
+		EMISSION += c_emblem * ink * mark_glow * (0.75 + 0.25 * sin(TIME * 1.4 + sail_phase)) * dusk;
+		col = mix(col, col * 0.4, rag * rag * 0.7);
+	}
 #ifdef SKIN
 	EMISSION = skin_light(EMISSION + skin_glow, 1.25);
 #endif

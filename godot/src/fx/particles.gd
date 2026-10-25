@@ -33,6 +33,10 @@ const CONFETTI := 6
 const DRAGON := 7
 const THUNDER := 8
 const WRAITH := 9
+## The Hollow Jack's own (an event ship's: no vault item): a jack-o'-lantern's
+## orange flash, green ghost-fire licking through it, pumpkin embers and
+## violet smoke; and the same in her trail.
+const HALLOW := 10
 ## The carnival salute's paper.
 const CONFETTI_COLOURS: Array[Color] = [Color(1.5, 0.35, 0.75), Color(1.5, 1.2, 0.2), Color(0.25, 1.2, 1.5), Color(0.6, 1.4, 0.3),
 		Color(1.5, 0.6, 0.15), Color(0.9, 0.45, 1.5), Color(1.6, 1.6, 1.6)]
@@ -227,6 +231,15 @@ func muzzle(pos: Vector3, dir: Vector3, carry: Vector3, style := POWDER) -> void
 				emit(pos, Vector3(dir.x * sp + randf_range(-1.6, 1.6) + carry.x, randf_range(-0.3, 1.6), dir.z * sp + randf_range(-1.6, 1.6) + carry.z),
 						randf_range(0.3, 0.6), randf_range(0.5, 0.9), randf_range(1.6, 2.6), Color(1.6, 7.5, 4.2), Color(0.1, 1.2, 0.55), -2.4, 3.0, SOFT, 0.001, Vector2.ZERO, randf_range(-2.0, 2.0), true)
 			_smoke(pos, dir, carry, Color(0.74, 1.08, 0.94), 7, 4, 0, 0.75)
+		HALLOW:
+			_flash(pos, 3.2, Color(10.0, 4.2, 0.6), Color(3.0, 0.7, 0.05))
+			_sparks(pos, dir, carry, 6, Color(8.0, 3.4, 0.5), Color(2.2, 0.4, 0.02))
+			for i in 12:
+				var sp := randf_range(7.0, 17.0)
+				emit(pos, Vector3(dir.x * sp + randf_range(-1.8, 1.8) + carry.x, randf_range(-0.3, 1.8), dir.z * sp + randf_range(-1.8, 1.8) + carry.z),
+						randf_range(0.35, 0.65), randf_range(0.5, 0.9), randf_range(1.6, 2.6), Color(1.4, 6.8, 3.6), Color(0.1, 1.1, 0.5), -2.8, 3.0, SOFT, 0.001, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+			_embers(pos, dir, carry, 14, 0.9)
+			_smoke(pos, dir, carry, Color(0.62, 0.5, 0.74), 8, 4, 2, 1.05)
 		_:
 			_flash(pos, 2.6, Color(9.0, 6.0, 2.6), Color(4.0, 1.4, 0.3))
 			_sparks(pos, dir, carry, 5, Color(6.0, 3.2, 1.0), Color(2.0, 0.5, 0.1))
@@ -266,6 +279,15 @@ func trail_mote(pos: Vector3, vel: Vector3, style: int, now: float) -> void:
 				var h := Color.from_hsv(fposmod(now * 0.7 + randf_range(-0.25, 0.25), 1.0), 1.0, 1.0)
 				emit(pos + j.call(0.24), Vector3(randf_range(-0.8, 0.8), randf_range(-0.3, 0.9), randf_range(-0.8, 0.8)), randf_range(0.7, 1.3), randf_range(0.14, 0.24), 0.03,
 						Color(h.r * 5.0, h.g * 5.0, h.b * 5.0), h, 1.0, 0.0, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+		10:
+			# pumpkin embers and will-o'-wisps, turn about
+			if randf() < 0.5:
+				emit(pos + j.call(0.1), Vector3(randf_range(-0.7, 0.7), randf_range(-0.4, 1.0), randf_range(-0.7, 0.7)), randf_range(0.5, 0.9), randf_range(0.14, 0.24), 0.04,
+						Color(7.5, 2.8, 0.35), Color(2.0, 0.3, 0.02), 3.0, 0.6, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+			elif randf() < 0.7:
+				var ph := now * 5.0
+				emit(pos + Vector3(sin(ph) * 0.22, cos(ph * 1.3) * 0.22, randf_range(-0.14, 0.14)), Vector3(randf_range(-0.4, 0.4), randf_range(0.3, 1.0), randf_range(-0.4, 0.4)),
+						randf_range(0.6, 1.0), randf_range(0.12, 0.2), 0.03, Color(1.4, 5.0, 2.8), Color(0.15, 1.1, 0.55), 0.0, 0.0, SPARK, 0.02, Vector2.ZERO, 0.0, true)
 		8:
 			var c := Color(6.0, 6.0, 7.5) if randf() < 0.5 else Color(4.5, 3.2, 8.0)
 			emit(pos + j.call(0.16), Vector3(randf_range(-0.3, 0.3) - vel.x * 0.02, randf_range(-0.4, 0.2), randf_range(-0.3, 0.3) - vel.z * 0.02), randf_range(1.3, 2.2), randf_range(0.2, 0.34), 0.06,

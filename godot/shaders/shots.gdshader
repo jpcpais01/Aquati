@@ -35,11 +35,11 @@ const vec3 IRON[5] = { vec3(0.05, 0.05, 0.055), vec3(0.075, 0.062, 0.052), vec3(
 // Round shot's streak in each of the vault's trails (Cosmetics.TRAIL_STYLES):
 // its tint, its look (0 the pale air-wake, 1 a glowing ribbon, 2 every colour
 // at once), how many seconds of flight it trails and its width (m).
-const vec3 TRAIL_TINT[10] = { vec3(0.0), vec3(0.0), vec3(0.0), vec3(2.6, 1.0, 0.25), vec3(0.9, 1.8, 2.6), vec3(3.0, 2.0, 0.6),
-		vec3(0.6, 2.6, 1.4), vec3(1.0), vec3(2.2, 2.0, 3.2), vec3(0.5, 2.4, 1.3) };
-const float TRAIL_LOOK[10] = { 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0 };
-const float TRAIL_TIME[10] = { 0.075, 0.075, 0.075, 0.1, 0.12, 0.17, 0.13, 0.2, 0.16, 0.075 };
-const float TRAIL_WIDTH[10] = { 0.42, 0.42, 0.42, 0.44, 0.44, 0.62, 0.5, 0.58, 0.5, 0.4 };
+const vec3 TRAIL_TINT[11] = { vec3(0.0), vec3(0.0), vec3(0.0), vec3(2.6, 1.0, 0.25), vec3(0.9, 1.8, 2.6), vec3(3.0, 2.0, 0.6),
+		vec3(0.6, 2.6, 1.4), vec3(1.0), vec3(2.2, 2.0, 3.2), vec3(0.5, 2.4, 1.3), vec3(3.0, 1.05, 0.12) };
+const float TRAIL_LOOK[11] = { 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 2.0, 1.0, 1.0, 1.0 };
+const float TRAIL_TIME[11] = { 0.075, 0.075, 0.075, 0.1, 0.12, 0.17, 0.13, 0.2, 0.16, 0.075, 0.15 };
+const float TRAIL_WIDTH[11] = { 0.42, 0.42, 0.42, 0.44, 0.44, 0.62, 0.5, 0.58, 0.5, 0.4, 0.5 };
 /// The chain between chain shot's halves: dark iron, and its width (m).
 const vec3 LINK_IRON = vec3(0.045, 0.045, 0.05);
 const float LINK_WIDTH = 0.07;
@@ -67,7 +67,7 @@ void vertex() {
 	float stop = INSTANCE_CUSTOM.y - INSTANCE_CUSTOM.x;
 	int code = int(INSTANCE_CUSTOM.w + 0.5);
 	int kind = clamp(code % 8, 0, 4);
-	int style = clamp(code / 8, 0, 9);
+	int style = clamp(code / 8, 0, 10);
 	float part = VERTEX.z;
 	// the second half-ball and the chain are chain shot's alone
 	if (t < 0.0 || t >= stop || (part > 1.5 && kind != 3)) {
@@ -128,7 +128,7 @@ void fragment() {
 	vec4 fog = air_fog(v_world, CAMERA_POSITION_WORLD);
 	float f = fog.a * 0.85;
 	int kind = clamp(int(v_kind + 0.5), 0, 4);
-	int style = clamp(int(v_style + 0.5), 0, 9);
+	int style = clamp(int(v_style + 0.5), 0, 10);
 	float look = kind == 0 ? TRAIL_LOOK[style] : STREAK_GLOW[kind];
 	float across = 1.0 - v_uv.y * v_uv.y;
 	if (v_part > 2.5) {

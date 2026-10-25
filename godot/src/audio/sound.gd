@@ -1132,6 +1132,25 @@ func guns_ready(pan: float) -> void:
 		_one("guns_ready", 1.0, pan)
 
 
+## The Hollow Jack crossing into the spirit world (her Phantom Run), heard
+## from where she is: a breath drawn backwards and a sinking choir.
+func phantom(vol: float, pan: float, dist := 0.0) -> void:
+	_emit("phantom", vol, pan, dist, 0.97 + randf() * 0.06, 0.8)
+
+
+## Her Banshee's Wail as she comes back: a boom, then the keening.
+func wail(vol: float, pan: float, dist := 0.0) -> void:
+	var at := _emit("wail", vol, pan, dist, 0.96 + randf() * 0.08, 0.9)
+	if at >= 0.0:
+		duck(at, 0.6 if dist < 40.0 else 0.3)
+
+
+## A drowned bell: her Phantom Run is hers to call on again.
+func toll() -> void:
+	if _voice(0.3):
+		_one("toll", 1.0, 0.0, 0.0, 1.0, 0.6)
+
+
 ## A kind of shot loaded (Ammo order): the ball's knock, lower for heavier loads.
 func ammo_swap(kind: int) -> void:
 	if _voice(0.22):

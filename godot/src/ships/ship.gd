@@ -81,6 +81,10 @@ var afire_by: Ship
 var torn := 0.0
 ## Seconds her gun crews stay thinned (grape shot).
 var crew_hit := 0.0
+## Her power, an event ship's (Haunt: the Hollow Jack's Phantom Run), or null.
+var haunt: Haunt
+## Crossed into the spirit world (Haunt): nothing can touch her.
+var phantom := false
 
 ## Where she floats (y unused) and how she moves over the ground.
 var pos := Vector3.ZERO
@@ -153,6 +157,8 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 	s._rng.seed = 977 * _count
 	s._galley_t = s._rng.randf()
 	s.add_child(s.model)
+	if c.ability == "phantom":
+		s.haunt = Haunt.new(s)
 	s.gun_fired_at.resize(s.model.muzzles.size())
 	s.gun_fired_at.fill(-100.0)
 	s.dmg = ShipDamage.new(s)
@@ -343,7 +349,7 @@ func _shoot(p: Array) -> void:
 ## along her side; `hull` false for one that misses her timbers. Returns the
 ## damage done, after her armour.
 func damage(amount: float, attacker: Ship, at: Variant = null, hull: bool = true, cause: String = "shot") -> float:
-	if not alive:
+	if not alive or phantom:
 		return 0.0
 	var d := amount * (1.0 - cls.armor) * randf_range(0.85, 1.15)
 	hp -= d
@@ -390,7 +396,7 @@ func die(attacker: Ship) -> void:
 ## Fire shot struck home: she burns the longer for every ball. True if she
 ## has only just caught.
 func ignite(by: Ship) -> bool:
-	if not alive:
+	if not alive or phantom:
 		return false
 	var fresh := afire <= 0.0
 	afire = minf(Ammo.BURN_MAX, maxf(0.0, afire) + Ammo.BURN_PER_HIT)
@@ -403,7 +409,7 @@ func ignite(by: Ship) -> bool:
 
 ## Chain shot tore through her canvas. True if her sails were whole a moment ago.
 func shred(by: Ship) -> bool:
-	if not alive:
+	if not alive or phantom:
 		return false
 	var fresh := torn <= 0.0
 	torn = Ammo.TORN_TIME
@@ -415,7 +421,7 @@ func shred(by: Ship) -> bool:
 
 ## Grape shot swept her deck. True if her gun crews were at full strength.
 func rake(by: Ship) -> bool:
-	if not alive:
+	if not alive or phantom:
 		return false
 	var fresh := crew_hit <= 0.0
 	crew_hit = Ammo.CREW_TIME
@@ -472,6 +478,8 @@ func step(dt: float) -> void:
 	torn = maxf(0.0, torn - dt)
 	if afire > 0.0:
 		_burn(dt)
+	if haunt != null:
+		haunt.update(dt)
 
 	var fwd := forward()
 	var fx := fwd.x
@@ -492,10 +500,13 @@ func step(dt: float) -> void:
 		# canvas (chain shot) draws far less wind until it's mended
 		var torn_k := 1.0 - Ammo.TORN_SLOW * minf(1.0, torn / 3.0)
 		var target := c.max_speed * sail_level * wf * hp_f * dmg.speed_factor() * torn_k
+		if phantom:
+			# a ghost runs before a wind of her own
+			target = maxf(target, c.max_speed * maxf(sail_level, 0.5)) * Haunt.SPEED
 		var rate := c.accel if target > speed else c.accel * 1.4
 		speed += (target - speed) * MathX.damp(rate, dt)
 		var steer := clampf(0.28 + 0.9 * (speed / c.max_speed), 0.28, 1.1)
-		var target_ang := rudder * c.turn_rate * steer
+		var target_ang := rudder * c.turn_rate * steer * (Haunt.TURN if phantom else 1.0)
 		ang_vel += (target_ang - ang_vel) * MathX.damp(2.6 / sqrt(c.mass), dt)
 		speed *= 1.0 - absf(ang_vel) * 0.08 * dt
 	else:

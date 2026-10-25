@@ -26,7 +26,7 @@ extends SceneTree
 ## Prints CHECK OK.
 
 ## Classes the port has built so far, and their triangle budgets (all layers).
-const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000}
+const SHIPS := {"sloop": 60000, "brig": 82000, "galleon": 106000, "revenant": 112000}
 ## How far over her budget a class may go with a full set of parts bolted on.
 const PARTS_OVER := 1.3
 ## The archipelagos the bake writes.
@@ -41,7 +41,7 @@ const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "am
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
 		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "sand_step", "scrape0", "scrape1", "shell",
-		"squeeze_arrival", "squeeze_flourish", "steam", "swish",
+		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
@@ -253,9 +253,9 @@ func _check_ship(id: String, budget: int) -> void:
 			_fail("%s/%s: %.1f%% of faces point against their normals" % [id, mi.name, share * 100.0])
 	# every lantern and cabin window wears its halo after dark
 	var halos := model.get_node_or_null("Halos") as MeshInstance3D
-	var lights := model.lamps.size() + model.windows.size()
-	if model.lamps.is_empty() or model.windows.size() % 4 != 0 or halos == null or halos.mesh.surface_get_array_len(0) != lights * 4:
-		_fail("%s: %d lanterns and %d cabin windows, and their halos don't match" % [id, model.lamps.size(), model.windows.size()])
+	var lights := model.lamps.size() + model.windows.size() + model.glows.size()
+	if model.lamps.is_empty() or model.windows.size() % 4 != 0 or model.glows.size() != model.glow_kinds.size() or halos == null or halos.mesh.surface_get_array_len(0) != lights * 4:
+		_fail("%s: %d lanterns, %d cabin windows and %d glows, and their halos don't match" % [id, model.lamps.size(), model.windows.size(), model.glows.size()])
 	print("%s: %d triangles, built in %.0f ms" % [id, total, ms])
 	if total > budget:
 		_fail("%s: %d triangles is over its budget of %d" % [id, total, budget])
@@ -902,6 +902,7 @@ func _check_world() -> void:
 	_check_maps(w)
 	_check_helm(w)
 	_check_hazards(w)
+	_check_haunt(w)
 	_check_shore(w)
 	_check_camps(w)
 
@@ -1175,6 +1176,68 @@ func _check_hazards(w: World) -> void:
 		_fail("hazards: only %d of 4 steps as expected (%s; shape %s, flow %s, shoal %s)" % [steps, names, shape, flow, shoal])
 		return
 	print("hazards: 4 of 4 steps as expected; %s, %d reefs, a galleon warned of %s %.0f m ahead (%.1f m of water), checked in %.0f ms" % [", ".join(names), hz.reefs.size(), rf.name, shoal.x, shoal.y, (Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## The event ships: Hallowtide's season on the calendar (wrapping nothing,
+## its last day in), and the Hollow Jack's Phantom Run: nothing touches her
+## while she's over, a brig at her side takes the Banshee's Wail when she's
+## back (worse than one farther off, her gun crews cut down), and the power
+## sleeps till its rest is out.
+func _check_haunt(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var steps := 0
+	var day := func(m: int, d: int) -> int: return Time.get_unix_time_from_datetime_dict({"year": 2026, "month": m, "day": d, "hour": 12})
+	var was := ShipEvents.force
+	ShipEvents.force = -1
+	steps += 1 if ShipEvents.ship_on("revenant", day.call(10, 31)) and ShipEvents.ship_on("revenant", day.call(11, 8)) \
+			and not ShipEvents.ship_on("revenant", day.call(11, 9)) and not ShipEvents.ship_on("revenant", day.call(7, 1)) \
+			and not ShipEvents.ship_on("sloop", day.call(10, 31)) and ShipEvents.last_day("hallowtide") == "8 Nov" else 0
+	ShipEvents.force = was
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new(0.6)
+	sea.waves = Waves.new(0.6)
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	sea.fx = fx
+	var jack := Ship.create(ShipClass.named("revenant"), Livery.named("player"), sea)
+	var near := Ship.create(ShipClass.named("brig"), Livery.named("player"), sea, Ship.Team.PIRATE)
+	var far := Ship.create(ShipClass.named("brig"), Livery.named("player"), sea, Ship.Team.PIRATE)
+	for s: Ship in [jack, near, far]:
+		root.add_child(s)
+		sea.ships.append(s)
+	jack.pos = Vector3(0.0, 0.0, 0.0)
+	near.pos = Vector3(25.0, 0.0, 0.0)
+	far.pos = Vector3(0.0, 0.0, 66.0)
+	far.crew_hit = 1.0
+	var h := jack.haunt
+	var called := h != null and h.call_up()
+	var hp := jack.hp
+	var untouched := called and jack.phantom and jack.damage(500.0, near) == 0.0 and not jack.ignite(near) and jack.hp == hp
+	for i in 30:
+		h.update(1.0 / 30.0)
+	untouched = untouched and h.phantom > 0.95 and jack.phantom
+	steps += 1 if untouched else 0
+	var hp_near := near.hp
+	var hp_far := far.hp
+	for i in int((Haunt.SPAN + Haunt.WAIL_T) * 30.0) + 10:
+		h.update(1.0 / 30.0)
+	var hurt_near := hp_near - near.hp
+	var hurt_far := hp_far - far.hp
+	steps += 1 if not jack.phantom and h.phantom == 0.0 and hurt_near > hurt_far and hurt_far > 0.0 and near.crew_hit > 0.0 else 0
+	var resting := h.state == Haunt.RESTING and not h.call_up() and h.ready01() < 0.1
+	for i in int(Haunt.REST * 10.0) + 2:
+		h.update(0.1)
+	steps += 1 if resting and h.state == Haunt.READY and h.can_call() else 0
+	for s: Ship in [jack, near, far]:
+		s.free()
+	fx.free()
+	if steps != 4:
+		_fail("haunt: only %d of 4 steps as expected (called %s, untouched %s, wail %.0f near / %.0f far, resting %s)" % [steps, called, untouched, hurt_near, hurt_far, resting])
+		return
+	print("haunt: 4 of 4 steps as expected; the wail took %.0f off a brig alongside and %.0f off one %.0f m off, checked in %.0f ms" % [hurt_near, hurt_far, 66.0, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## The helmsman's waters (SeaNav), laid out for a sloop and a galleon: a
@@ -2088,6 +2151,14 @@ func _check_locker() -> int:
 ## at its barrel's end, and the mythic set's pieces turning (1 if all's well).
 func _check_fitted(id: String, budget: int) -> int:
 	var cls := ShipClass.named(id)
+	if cls.is_event():
+		# an event ship is her own: no refit goes on her, whatever's asked
+		var ev := ShipModel.create(cls, Livery.named("player"), true, {"hull": "hull-mythic"})
+		var bare := ev.fit.is_empty() and ev.livery.id == cls.livery and ev.asked == "player"
+		ev.free()
+		if not bare:
+			_fail("parts: the %s took a refit, or not her own colours" % id)
+		return 1 if bare else 0
 	var base := ShipModel.create(cls, Livery.named("player"))
 	var guns := base.muzzles.size()
 	base.free()

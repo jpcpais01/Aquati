@@ -49,6 +49,8 @@ var skip := false
 var interact := false
 ## A pulse: the sea chart opened or closed (M).
 var chart := false
+## A pulse: her power called on (G: an event ship's, the Hollow Jack's Phantom Run).
+var ability := false
 ## The mouse over the sea (screen units), while there is one.
 var pointer := Vector2.ZERO
 var pointer_active := false
@@ -89,6 +91,7 @@ const _ACTIONS := {
 	"confirm": [KEY_ENTER, KEY_KP_ENTER],
 	"interact": [KEY_F],
 	"sea_chart": [KEY_M],
+	"ability": [KEY_G],
 }
 
 
@@ -127,6 +130,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			interact = true
 		elif event.is_action("sea_chart"):
 			chart = true
+		elif event.is_action("ability"):
+			ability = true
 		else:
 			for i in Ammo.COUNT:
 				if event.is_action("ammo_%d" % (i + 1)):
@@ -250,4 +255,5 @@ func consume() -> void:
 	skip = false
 	interact = false
 	chart = false
+	ability = false
 	jump = false

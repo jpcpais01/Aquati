@@ -34,6 +34,8 @@ signal helm_cancel
 signal jump_pressed
 ## Ashore on touch: the cutlass and the pistol.
 signal strike_pressed
+## Her power called on (an event ship's: the Hollow Jack's Phantom Run).
+signal ability_pressed
 signal pistol_pressed
 
 var controls: Controls
@@ -68,6 +70,9 @@ var _pips: _SailPips
 var _rack: ShotRack
 var _rack_sep: Control
 var _pie: ShotPie
+var _ability: AbilityButton
+## Whether she has a power to show (Haunt).
+var _has_ability := false
 ## The loaded shot's name and what it does, over the rack for a moment.
 var _tag: PanelContainer
 var _tag_name: Label
@@ -387,6 +392,10 @@ func _ready() -> void:
 	_pie = ShotPie.new()
 	_pie.picked.connect(func(kind: int) -> void: ammo_picked.emit(kind))
 	root.add_child(_pie)
+	_ability = AbilityButton.new()
+	_ability.pressed.connect(func() -> void: ability_pressed.emit())
+	_ability.visible = false
+	root.add_child(_ability)
 	# ashore on touch: a big round Jump under the right thumb
 	var jd := 76.0 * HudStyle.KT
 	_jump = UiButton.new(Vector2(jd, jd), jd * 0.5, 24.0 * HudStyle.PX)
@@ -490,6 +499,18 @@ func _layout() -> void:
 	_hint.position = Vector2((vp.x - hs.x) * 0.5, vp.y - my - hs.y)
 	# the shot button rides over Fire, a little clear of it
 	_pie.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotPie.BTN * 0.5)
+	# her power: on touch over Port, under the right thumb; on a computer beside the knots
+	var am := AbilityButton.MARGIN
+	if _touch_ui:
+		_ability.scale = Vector2.ONE
+		var port_top := _pad.position.y + _pad.size.y - FirePad.LIFT - FirePad.SIDE
+		_ability.position = Vector2(_pad.position.x + FirePad.SIDE * 0.5 - _ability.size.x * 0.5, port_top - 14.0 * HudStyle.KT - AbilityButton.D - am)
+	else:
+		var ak := 0.62 * hk
+		_ability.scale = Vector2(ak, ak)
+		_ability.position = Vector2(_pill.position.x + ps.x * hk + 14.0 * k - am * ak, _pill.position.y + ps.y * hk * 0.5 - _ability.size.y * ak * 0.5)
+	_ability.pivot_offset = Vector2.ZERO
+	_ability.show_key(not _touch_ui)
 	_peek.place(Vector2(mx, my + (_chips.position.y + _chips.size.y) * hk + 8.0 * HudStyle.K))
 	_place_tag()
 	_place_say()
@@ -722,10 +743,23 @@ func _apply_mode() -> void:
 	_blades.visible = on and not sea
 	_hint.visible = not on and not sea and _hint_t > 0.0
 	_pill.visible = sea
+	_ability.visible = sea and _has_ability
 	# the lever shows the canvas and the pie the shot, so the pill keeps just the knots
 	_pips.visible = not on
 	_rack.visible = not on
 	_rack_sep.visible = not on
+
+
+## Her power each frame (null: she has none).
+func show_ability(h: Haunt) -> void:
+	var has := h != null
+	if has != _has_ability:
+		_has_ability = has
+		_apply_mode()
+	if not has:
+		return
+	var left := clampf((Haunt.SPAN - h.t) / Haunt.SPAN, 0.0, 1.0) if h.state == Haunt.PHANTOM else 0.0
+	_ability.show_state(h.ready01(), 1.0 if h.state == Haunt.PHANTOM else 0.0, left)
 
 
 ## Her hull and the tally: a blow shakes the panel and flushes its edge coral.

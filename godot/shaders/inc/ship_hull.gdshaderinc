@@ -21,6 +21,9 @@ uniform float length_m = 15.0;
 /// gunports: u, v, half width (u), half height (v)
 uniform vec4 ports[8];
 uniform int port_count = 0;
+/// ghost-light seeping from her seams above the waterline and out of her
+/// gunports (a haunted ship's; none on any other)
+uniform vec3 seam_glow = vec3(0.0);
 
 varying vec3 v_world;
 #ifdef DAMAGE
@@ -89,6 +92,7 @@ void fragment() {
 	float relief = -seam * 0.6 - butt * 0.4;
 	// clear of every port and its frame (a skin keeps off them)
 	float clear = 1.0;
+	float recess = 0.0;
 	for (int i = 0; i < 8; i++) {
 		if (i >= port_count) {
 			break;
@@ -102,6 +106,7 @@ void fragment() {
 			if (d.x < pt.z && d.y < pt.w) {
 				col = vec3(0.006, 0.004, 0.003);
 				relief = -1.0;
+				recess = 1.0 - smoothstep(0.4, 1.0, max(d.x / pt.z, d.y / pt.w));
 			} else {
 				col = c_trim * 0.85;
 				metal = 0.6;
@@ -135,6 +140,13 @@ void fragment() {
 		EMISSION = skin_light(se * mask * (0.55 + night * 0.9), 1.25);
 	}
 #endif
+	if (seam_glow.g > 0.0) {
+		// it breathes, slow swells running along her, stronger after dark
+		float swell = 0.45 + 0.55 * pow(0.5 + 0.5 * sin(TIME * 1.2 - s * 0.35 + v * 3.0), 2.0);
+		float above = smoothstep(0.3, 0.42, v) * (1.0 - band(v, 0.935, 1.01));
+		float lines = (seam * 0.75 + butt) * above * (1.0 - smoothstep(0.002, 0.008, fwidth(rv) / 26.0));
+		EMISSION += seam_glow * (lines * swell * swell * (0.08 + night * 0.6) + recess * (0.9 + 0.6 * swell));
+	}
 #ifdef DAMAGE
 	bool drop;
 	EMISSION += hull_damage(v_obj, FRONT_FACING, true, col, rough, metal, drop);

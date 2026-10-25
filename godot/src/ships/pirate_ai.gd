@@ -197,7 +197,8 @@ func update(dt: float, world: World, player: Ship) -> void:
 	s.rudder = clampf(MathX.angle_delta(s.heading, _avoid(world, _desired, not is_nan(esc))) * 2.2, -1.0, 1.0)
 
 	# gunnery: a broadside the moment you bear
-	if target != null and mode != Mode.PATROL and dist < reach * 1.05:
+	# (a ghost can't be shot at: they hold their fire till she's back)
+	if target != null and not target.phantom and mode != Mode.PATROL and dist < reach * 1.05:
 		var rel := MathX.angle_delta(s.heading, atan2(dx, dz))
 		var arc := 0.32 + aggression * 0.1
 		_aim_delay -= dt

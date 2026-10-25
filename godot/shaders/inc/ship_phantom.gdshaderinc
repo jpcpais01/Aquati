@@ -19,7 +19,7 @@ void phantom_apply(vec2 frag, vec3 n, vec3 view, vec3 w, inout vec3 albedo, inou
 		+ 0.22 * (fract(sin(dot(floor(w * 1.6), vec3(12.9898, 78.233, 37.719))) * 43758.5453) - 0.5);
 	float p = clamp(phantom, 0.0, 1.0);
 	// how much of her a crossed-over ghost keeps: the rims, a breath of the faces
-	float ghost = 0.16 + 0.62 * fres * fres + 0.08 * sin(TIME * 3.1 + w.y * 2.3);
+	float ghost = 0.22 + 0.62 * fres * fres + 0.08 * sin(TIME * 3.1 + w.y * 2.3);
 	float gone = smoothstep(field - 0.06, field + 0.06, p * 1.12);
 	float keep = mix(1.0, ghost, gone);
 	int ix = int(mod(frag.x, 4.0));
@@ -29,7 +29,7 @@ void phantom_apply(vec2 frag, vec3 n, vec3 view, vec3 w, inout vec3 albedo, inou
 	}
 	// the burning front of the crossing
 	float front = (1.0 - smoothstep(0.0, 0.07, abs(p * 1.12 - field))) * step(0.02, p) * step(p, 0.98);
-	albedo = mix(albedo, albedo * 0.18 + vec3(0.01, 0.03, 0.025), gone);
+	albedo = mix(albedo, albedo * 0.3 + phantom_tint * 0.06, gone);
 	emis = mix(emis, emis * 0.6, gone)
-		+ phantom_tint * (gone * (0.1 + fres * fres * 1.25) * (0.85 + 0.15 * sin(TIME * 7.0 + w.y * 3.0)) + front * 2.2);
+		+ phantom_tint * (gone * (0.2 + fres * fres * 1.2) * (0.85 + 0.15 * sin(TIME * 7.0 + w.y * 3.0)) + front * 2.2);
 }

@@ -66,11 +66,17 @@ func start(p_look: Dictionary) -> void:
 	var list: Array[Livery] = [_livery]
 	for id: String in Shipyard.LIVERIES:
 		list.append(Livery.named(id))
+	# (and the event ships', which always wear their own)
+	for id: String in ShipEvents.liveries():
+		list.append(Livery.named(id))
 	Livery.bake_start(list)
 
 
 ## Her name, as the HUD and the farewell call her.
 func name_for(cls: ShipClass) -> String:
+	# an event ship sails under her own name
+	if cls.is_event():
+		return cls.title
 	var n := str(look.name).strip_edges()
 	return n if n != "" else cls.title
 
