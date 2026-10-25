@@ -34,6 +34,8 @@ var _aim_delay := 0.0
 var _rng := RandomNumberGenerator.new()
 ## A set piece's choice of shot for her every broadside (Ammo, -1 her own).
 var force_ammo := -1
+## Something every captain runs from (the Kraken's body, x and z), or null.
+var fear: Variant = null
 
 
 func _init(p_ship: Ship, difficulty: float) -> void:
@@ -117,6 +119,15 @@ func update(dt: float, world: World, player: Ship) -> void:
 	var dist := Vector2(dx, dz).length()
 	var hp_f := s.hp / s.max_hp
 	var reach := s.cls.muzzle_speed * s.cls.muzzle_speed / Ship.GRAVITY * 0.55
+	if fear != null:
+		var dread: Vector3 = fear
+		if Vector2(dread.x - s.pos.x, dread.z - s.pos.z).length() < 520.0:
+			# every hand to the braces: away from it, guns forgotten
+			mode = Mode.FLEE
+			_desired = atan2(s.pos.x - dread.x, s.pos.z - dread.z) + sin(world.time * 0.3 + _side_bias) * 0.25
+			s.sail_target = 1.0
+			s.rudder = clampf(MathX.angle_delta(s.heading, _avoid(world, _desired, true)) * 2.2, -1.0, 1.0)
+			return
 
 	if _think <= 0.0:
 		_think = 0.4 + _rng.randf() * 0.3

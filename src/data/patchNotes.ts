@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T08:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: the Kraken',
+        notes: [
+          'The Kraken comes to the Android and Windows game. Now and then a storm brings it: out in deep, lonely water the sea goes dark and boils, a vast shape glides under your keel, and its arms burst up all round you.',
+          'An arm rears before it strikes, and a red shimmer on the water and a warning on screen show where it will fall: sail out of the line or take the blow. If one coils round your hull, shoot it loose or crowd on sail and tear free. Sever its arms and its head rises: strike the eye. Wound it deep and it rages, with a maelstrom turning round it.',
+          'A boss bar, its own battle music and a title card as it rises. Slay it for 1,500 gold, the Beak of the Kraken, Kraken Ink and a Kraken\'s Pearl among the chests that rise from the deep, a Kraken\'s Bloom showpiece rocket and the Kraken Ink skin.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T07:00Z',
     entries: [
       {

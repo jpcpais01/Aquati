@@ -159,6 +159,9 @@ Brumas), broadside on, `--fort-dist M` out; `--fort-ours` gives it to you
 (`--owed H`: its tribute H hours unpaid), `--silence` silences its guns, and
 `--storm` lands the party by its gate (`--brawl` fights the garrison,
 `--plunder` then opens its strongbox).
+The Kraken: `--kraken` brews a storm and sends it a few seconds into the
+voyage (`--kraken-at T` T seconds in, `--kraken-omen S` with an omen S
+seconds long), and again a minute after it has gone.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

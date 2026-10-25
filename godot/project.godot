@@ -81,6 +81,14 @@ vortex_3={
 "type": "vec4",
 "value": Vector4(0.0, 0.0, 1.0, 0.0)
 }
+kraken={
+"type": "vec4",
+"value": Vector4(0.0, 0.0, 1.0, 0.0)
+}
+kraken_ink={
+"type": "float",
+"value": 0.0
+}
 sun_dir={
 "type": "vec3",
 "value": Vector3(0.35, 0.8, 0.48)

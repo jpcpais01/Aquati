@@ -1045,6 +1045,8 @@ func _cause_runs(r: Dictionary, base: Font, name_font: Font, sz: int, c_base: Co
 		parts = [["Swallowed by ", false], [str(r.maelstrom), true]]
 	elif cause == "aground":
 		parts = [["Holed on the reef", false]]
+	elif cause == "kraken":
+		parts = [["Dragged under by ", false], ["the Kraken", true]]
 	elif cause == "fort":
 		parts = [["Sunk by the guns of ", false], [killer, true]]
 	elif killer == "":
@@ -1069,10 +1071,11 @@ func _epitaph(r: Dictionary) -> Array:
 		return [["She ran aground %s %s." % [where, at], f, sz, HudStyle.INK_2]]
 	if str(r.get("maelstrom", "")) != "":
 		return [["She was drawn down the maelstrom's throat %s." % at, f, sz, HudStyle.INK_2]]
+	var how := "was pulled into the deep" if str(r.cause) == "kraken" else "went down"
 	if fm >= 3:
-		return [["She went down %s %s, and lies in " % [where, at], f, sz, HudStyle.INK_2],
+		return [["She %s %s %s, and lies in " % [how, where, at], f, sz, HudStyle.INK_2],
 				["%d fathoms" % fm, _font("inter", 700, 0.0, 13.0 * u), sz, HudStyle.AQUA], [".", f, sz, HudStyle.INK_2]]
-	return [["She went down %s %s." % [where, at], f, sz, HudStyle.INK_2]]
+	return [["She %s %s %s." % [how, where, at], f, sz, HudStyle.INK_2]]
 
 
 ## The parting words: the most fitting line for how the voyage went, a little at random.
@@ -1099,6 +1102,10 @@ func _quip(r: Dictionary) -> String:
 		fits.assign(["Round and round and down. The sea keeps what it takes.",
 				"Sail with the wind, the old hands say. Out, never across.",
 				"The whirlpool turns on without you, patient as ever."])
+	if str(r.cause) == "kraken":
+		fits.assign(["The old sailors were right. Something lives down there.",
+				"Eight arms, one ship. The sums were never in your favour.",
+				"The Kraken sleeps again, and your ship sleeps with it."])
 	if str(r.killer_cls) == "galleon" and cls == "sloop":
 		fits.append("A sloop against a galleon. Brave. Briefly.")
 	if str(r.killer_cls) == "sloop" and cls == "galleon":

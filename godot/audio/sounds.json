@@ -333,6 +333,96 @@
     1.01124
    ]
   },
+  "kr_boom": {
+   "ext": "wav",
+   "gain": [
+    0.95729
+   ]
+  },
+  "kr_death": {
+   "ext": "ogg",
+   "gain": [
+    1.08201
+   ]
+  },
+  "kr_drone": {
+   "ext": "ogg",
+   "gain": [
+    0.75359
+   ]
+  },
+  "kr_drums0": {
+   "ext": "ogg",
+   "gain": [
+    0.79257
+   ]
+  },
+  "kr_drums1": {
+   "ext": "ogg",
+   "gain": [
+    0.79099
+   ]
+  },
+  "kr_drums2": {
+   "ext": "ogg",
+   "gain": [
+    0.80322
+   ]
+  },
+  "kr_flesh": {
+   "ext": "wav",
+   "gain": [
+    0.44801
+   ]
+  },
+  "kr_moan": {
+   "ext": "wav",
+   "gain": [
+    0.29662
+   ]
+  },
+  "kr_omen": {
+   "ext": "ogg",
+   "gain": [
+    1.14262
+   ]
+  },
+  "kr_roar0": {
+   "ext": "ogg",
+   "gain": [
+    1.0868
+   ]
+  },
+  "kr_roar1": {
+   "ext": "ogg",
+   "gain": [
+    1.10915
+   ]
+  },
+  "kr_roar2": {
+   "ext": "ogg",
+   "gain": [
+    1.12353
+   ]
+  },
+  "kr_rush": {
+   "ext": "wav",
+   "gain": [
+    1.14255
+   ]
+  },
+  "kr_shriek": {
+   "ext": "wav",
+   "gain": [
+    0.33429
+   ]
+  },
+  "kr_strings": {
+   "ext": "ogg",
+   "gain": [
+    0.09949
+   ]
+  },
   "lap": {
    "ext": "wav",
    "gain": [

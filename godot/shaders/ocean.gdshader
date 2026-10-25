@@ -53,6 +53,10 @@ instance uniform float funnel = 0.0;
 
 /// x breaker height (m), y swash run-up (m), z storm, w the surf clock (s)
 global uniform vec4 surf;
+/// the Kraken's water: xy over its body (x, z), z how far it reaches (m), w how hard it turns (0 none)
+global uniform vec4 kraken;
+/// its ink spreading over the sea (0..1)
+global uniform float kraken_ink;
 
 uniform vec4 wave_a[8];
 uniform vec4 wave_b[8];
@@ -711,6 +715,28 @@ void fragment() {
 			body_bed = mix(body_bed, body_bed * vec3(0.25, 0.5, 0.42), (1.0 - smoothstep(0.05, 0.3, u)) * 0.5 * min(mk, 1.0));
 		}
 	}
+	// the Kraken's maelstrom: the sea over it goes dark and begins to turn,
+	// foam winding in along a log spiral, faster toward the eye of it, and
+	// its ink spreading violet-black over the water
+	float kr_spiral = 0.0;
+	if (kraken.w > 0.001) {
+		vec2 kq = p - kraken.xy;
+		float kd = length(kq);
+		float kr = kd / kraken.z;
+		float kr_in = (1.0 - smoothstep(0.25, 1.25, kr)) * kraken.w;
+		if (kr_in > 0.001) {
+			float ka = atan(kq.y, kq.x);
+			float k_arm = sin(ka * 3.0 + log(kd + 2.0) * 9.0 - TIME * (1.2 + 2.0 * kraken.w) - 4.0 / (kr + 0.3));
+			vec4 kn = texture(noise_tex, p * 0.045 + vec2(TIME * 0.02, -TIME * 0.015));
+			kr_spiral = smoothstep(0.35, 0.95, k_arm + (kn.g - 0.5) * 0.9) * kr_in * smoothstep(0.05, 0.3, kr);
+			body_bed *= 1.0 - kr_in * 0.6;
+			body_sun *= 1.0 - kr_in * 0.6;
+			float ink = clamp(kraken_ink * kr_in * 1.4, 0.0, 0.8);
+			body_bed = mix(body_bed, vec3(0.025, 0.004, 0.04) * light_tint, ink);
+			body_sun *= 1.0 - ink;
+			foam += foam_cut(fv, clamp(kr_spiral, 0.0, 0.95), fp) * 0.9;
+		}
+	}
 	foam = clamp(foam, 0.0, 1.0);
 	float fa = foam * 0.9;
 	vec3 foam_base = vec3(0.96, 0.98, 1.0);
@@ -730,7 +756,7 @@ void fragment() {
 
 	// ---- bioluminescence: on dark nights churned water glows blue-green
 	if (night > 0.05) {
-		float churn = wake_foam * 0.9 * bubbles + surf_foam * 0.5 + reef_foam * 0.4 + mael_foam * 0.5
+		float churn = wake_foam * 0.9 * bubbles + surf_foam * 0.5 + reef_foam * 0.4 + mael_foam * 0.5 + kr_spiral * 0.45
 				+ (crest_foam * 0.18 * cap_break + spume * 0.08 + caps * 0.12) * (1.0 - 0.5 * storm);
 		float spark = 0.55 + 0.9 * smoothstep(0.35, 0.9, texture(noise_tex, p * 0.37 + vec2(TIME * 0.05, -TIME * 0.04)).b);
 		vec3 glow = vec3(0.02, 0.42, 0.62) * churn * spark * night * 0.4;

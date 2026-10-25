@@ -38,6 +38,8 @@ const TOWN_SHELL_TRIS := 3000
 const FEAST_TRIS := 10000
 ## Puerto Marézia's triangles (its quay, buildings, palms and what moves; its folk are the crews').
 const HOME_TRIS := 34000
+## The Kraken's body: eight arms and its head.
+const KRAKEN_TRIS := 45000
 ## Each fort's stonework, whole and wrecked (the web's fort is about as much).
 const FORT_TRIS := 26000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
@@ -46,6 +48,8 @@ const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "am
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
 		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
 		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "horn", "wanted2", "wanted3", "bounty",
+		"kr_boom", "kr_death", "kr_drone", "kr_drums0", "kr_drums1", "kr_drums2", "kr_flesh", "kr_moan", "kr_omen", "kr_roar0", "kr_roar1", "kr_roar2",
+		"kr_rush", "kr_shriek", "kr_strings",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
@@ -912,6 +916,7 @@ func _check_world() -> void:
 	_check_shore(w)
 	_check_camps(w)
 	_check_forts(w)
+	_check_kraken(w)
 
 
 ## Ashore: the planting's trunks and boulders and the towns as walls, a
@@ -1244,6 +1249,128 @@ func _check_forts(w: World) -> void:
 			steps, names, tris, fired, hits[0], t, shells, (Time.get_ticks_usec() - t0) / 1000.0])
 	forts.free()
 	shots.free()
+	fx.free()
+	ship.free()
+	sea.wake.free()
+
+
+## The Kraken: its body within budget; summoned, the omen passes and the arms
+## burst up round her, rear (warned on the HUD) and strike her; a ball through
+## an arm wounds it (the player's), shot enough an arm is severed, and slain it
+## gives up its hoard and sinks for good.
+func _check_kraken(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new(0.6)
+	sea.waves = Waves.new(0.6)
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	sea.fx = fx
+	sea.wake = WakeField.new()
+	for arr: String in ["_sx", "_sz", "_sr", "_ss", "_sk"]:
+		var a: Variant = sea.wake.get(arr)
+		a.resize(WakeField.MAX_STAMPS)
+		sea.wake.set(arr, a)
+	# deep, lonely water: the first spot on a ring round home with the floor far down all about
+	var at := Vector3.ZERO
+	for i in 64:
+		var ang := float(i) / 64.0 * TAU
+		var x := sin(ang) * 1400.0
+		var z := cos(ang) * 1400.0
+		var deep := sea.ground_height(x, z) < -20.0
+		for j in 8:
+			var b := float(j) / 8.0 * TAU
+			deep = deep and sea.ground_height(x + sin(b) * 120.0, z + cos(b) * 120.0) < -16.0
+		if deep:
+			at = Vector3(x, 0.0, z)
+			break
+	var k: RefCounted = load("res://src/game/kraken.gd").new(sea)
+	var steps := 0
+	var tris: int = k.view.triangles()
+	steps += 1 if tris > 10000 and tris <= KRAKEN_TRIS else 0
+	var ship := Ship.create(ShipClass.named("sloop"), Livery.named("player"), sea)
+	ship.pos = at
+	ship.heading = 0.4
+	ship.transform = Transform3D(Basis(Vector3.UP, ship.heading), ship.pos)
+	sea.ships.append(ship)
+	var got := {"rose": false, "hits": 0, "warned": 0, "marks": 0, "hurt": 0.0, "beaten": 0, "won": false, "gone": false}
+	k.rose.connect(func() -> void: got.rose = true)
+	k.player_hit.connect(func(_d: float, _a: Vector3, _k: String) -> void: got.hits += 1)
+	k.hurt.connect(func(d: float, _a: Vector3, _c: bool, _p: int, mine: bool) -> void:
+		if mine:
+			got.hurt += d)
+	k.arm_beaten.connect(func(_a: Vector3) -> void: got.beaten += 1)
+	k.defeated.connect(func(_a: Vector3) -> void: got.won = true)
+	k.gone.connect(func(slain: bool) -> void: got.gone = slain)
+	k.summon(ship, 4.0)
+	var dt := 1.0 / 30.0
+	var t := 0.0
+	while t < 8.0 and not got.rose:
+		k.update(dt, ship)
+		sea.time += dt
+		t += dt
+	steps += 1 if got.rose and k.fighting() and k.max_hp == Kraken.BODY_HP * 0.72 else 0
+	# she holds still: it rears, is warned of, and lands its blows (her hull mended between)
+	t = 0.0
+	while t < 50.0 and (got.hits < 2 or got.warned == 0):
+		k.update(dt, ship)
+		sea.time += dt
+		t += dt
+		ship.hp = ship.max_hp
+		ship.alive = true
+		got.warned = maxi(got.warned, k.warnings().size())
+		got.marks = maxi(got.marks, k.marks().size())
+	steps += 1 if got.hits >= 2 and got.warned > 0 and got.marks >= 3 else 0
+	# a ball through a standing arm, sideways across its middle: taken, and told as hers
+	var struck := false
+	for a: Variant in k.arms:
+		if a.crown or a.out < 0.6 or a.state == Kraken.DOWN or a.state == Kraken.SINK or a.state == Kraken.RECOIL:
+			continue
+		var m := int(Kraken.SPINE * 0.5) * 3
+		var pt := Vector3(a.pts[m], a.pts[m + 1], a.pts[m + 2])
+		struck = k.strike(pt + Vector3(6.0, 0.0, 0.0), pt - Vector3(6.0, 0.0, 0.0), 30.0, ship, Ammo.ROUND)
+		break
+	for i in 10:
+		k.update(dt, ship)
+	steps += 1 if struck and got.hurt > 0.0 else 0
+	# chain shot, again and again into one arm: severed
+	t = 0.0
+	while t < 20.0 and got.beaten == 0:
+		for a: Variant in k.arms:
+			if a.crown or a.out < 0.6 or a.state == Kraken.DOWN or a.state == Kraken.SINK or a.state == Kraken.RECOIL:
+				continue
+			var m := int(Kraken.SPINE * 0.5) * 3
+			var pt := Vector3(a.pts[m], a.pts[m + 1], a.pts[m + 2])
+			k.strike(pt + Vector3(0.0, 0.0, 6.0), pt - Vector3(0.0, 0.0, 6.0), 40.0, ship, Ammo.CHAIN)
+			break
+		k.update(dt, ship)
+		ship.hp = ship.max_hp
+		t += dt
+	steps += 1 if got.beaten > 0 else 0
+	# brought to the brink, one more blast: it dies, its hoard rises, it sinks away
+	k.hp = 1.0
+	t = 0.0
+	while t < 14.0 and not got.gone:
+		if k.fighting():
+			k.blast(Vector3(k.body.x, 0.0, k.body.z), 60.0, 50.0, ship)
+			for a: Variant in k.arms:
+				if a.state != Kraken.DOWN:
+					var m := int(Kraken.SPINE * 0.5) * 3
+					var pt := Vector3(a.pts[m], a.pts[m + 1], a.pts[m + 2])
+					k.strike(pt + Vector3(6.0, 0.0, 0.0), pt - Vector3(6.0, 0.0, 0.0), 40.0, ship, Ammo.ROUND)
+		k.update(dt, ship)
+		ship.hp = ship.max_hp
+		t += dt
+	steps += 1 if got.won and got.gone and not k.active() and ship.held == 0.0 else 0
+	if steps != 6:
+		_fail("kraken: %d of 6 steps (%d triangles; rose %s, %d blows on her, %d warned, %d marks; struck %s, %.0f dealt; %d severed; won %s, gone %s, active %s)" % [
+				steps, tris, got.rose, got.hits, got.warned, got.marks, struck, got.hurt, got.beaten, got.won, got.gone, k.active()])
+	print("kraken: %d of 6 steps as expected; %d triangles, %d blows on her, %.0f dealt, %d severed; %.0f ms" % [
+			steps, tris, got.hits, got.hurt, got.beaten, (Time.get_ticks_usec() - t0) / 1000.0])
+	k.view.free()
 	fx.free()
 	ship.free()
 	sea.wake.free()

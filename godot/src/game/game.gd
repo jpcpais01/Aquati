@@ -84,6 +84,9 @@ extends Node3D
 ## on, --fort-dist M out; --fort-ours gives it to you (--owed H: its tribute
 ## H hours unpaid), --silence silences its guns, --storm lands the party by
 ## its gate (--brawl to fight the garrison, --plunder to open its strongbox).
+## The Kraken: --kraken brews a storm and sends it a few seconds into the
+## voyage (and again a minute after it's gone); --kraken-at T sends it T s
+## in, --kraken-omen S shortens its omen to S s.
 ## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
@@ -195,6 +198,19 @@ var shore_ground: ShoreGround
 var shore: Shore
 ## The Brethren's island forts: shore guns to silence, a garrison to beat, a flag to raise.
 var forts: Forts
+## The Kraken: rises (rarely) out of a storm to drag her under (see Kraken).
+var kraken: Kraken
+## Each storm's one roll of the dice: 0 not yet, 1 rolled and it isn't coming, 2 it's coming.
+var _kr_storm := 0
+## Seconds until it looks for deep water, once it's coming; till the seas may stir it again.
+var _kr_wait := 0.0
+var _kr_cool := 0.0
+## The moment it breaks the surface plays out slowly.
+var _kr_slow := 0.0
+## When it last struck her (a wreck within 20 s of it is its doing).
+var _kr_hit_t := -99.0
+## Where this voyage set out (it never comes close to home).
+var _kr_from := Vector3.ZERO
 ## When the forts' tribute was last looked for, and the next hammer-knock under your own walls.
 var _tribute_t := 0.0
 var _haven_t := 0.0
@@ -1201,6 +1217,11 @@ func _build_ports(p0: float, p1: float) -> void:
 	forts.struck.connect(_on_fort_struck)
 	forts.silenced.connect(_on_gun_silenced)
 	forts.apply(Progress.forts.taken)
+	# the Kraken lies built and hidden from the start, so the warm-up compiles it
+	kraken = Kraken.new(world)
+	add_child(kraken.view)
+	world.kraken = kraken
+	_wire_kraken()
 
 
 ## A lot set down in the warehouse of the quay she's tied to: it glints in
@@ -1531,6 +1552,7 @@ func _tick(real_dt: float) -> void:
 	pirates.sweep()
 	if dt > 0.0:
 		forts.update(dt, player if sailing else null, camera.target)
+	_update_kraken(dt, real_dt, sailing)
 	# the landing party, where you steer the captain
 	if ashore:
 		if not player.alive or _farewell != null:
@@ -1568,6 +1590,9 @@ func _tick(real_dt: float) -> void:
 	gunnery.pointer = _pointer_on_sea() if sailing else null
 	# the hostile forts' guns in reach, as marks for hers to lay on
 	gunnery.marks = forts.marks(player, player.gun_range()) if sailing and not ashore and player.alive else ([] as Array[Vector3])
+	# and the Kraken's arms and eye, like any ship
+	if sailing and not ashore and player.alive and kraken.fighting():
+		gunnery.marks.append_array(kraken.marks())
 	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null and not ashore, world.time)
 	if sailing and not ashore:
 		_guns()
@@ -1831,7 +1856,8 @@ func _sound() -> void:
 	sound.set_weather(a.rain, a.storm, a.wind)
 	var roar := hazards.roar()
 	sound.set_maelstrom(roar.x, roar.y, roar.z)
-	sound.voyage_music(state == State.VOYAGE and player.alive and _farewell == null and not _high_seas and a.storm < 0.45, a.night)
+	# (the Kraken has music of its own)
+	sound.voyage_music(state == State.VOYAGE and player.alive and _farewell == null and not _high_seas and not kraken.active() and a.storm < 0.45, a.night)
 
 
 ## A weather picked by hand lasts only as long as its time and place allow
@@ -2508,7 +2534,11 @@ func _report(attacker: Ship) -> Dictionary:
 		foe = p.last_attacker
 	var cause := p.last_cause
 	var swallowed := ""
-	if p.last_cause == "maelstrom" and world.time - p.last_hit < 20.0:
+	if kraken.active() and world.time - _kr_hit_t < 20.0:
+		# dragged under, whoever else was shooting
+		cause = "kraken"
+		foe = null
+	elif p.last_cause == "maelstrom" and world.time - p.last_hit < 20.0:
 		# the sea took her, whoever was shooting
 		var st := hazards.state_of(p, 1.5)
 		swallowed = str(st.m.name) if not st.is_empty() else "the maelstrom"
@@ -2679,6 +2709,7 @@ func _quit_voyage() -> void:
 func _reset_world(id: String) -> void:
 	sound.submerge(false)
 	sound.high_seas(false)
+	_kraken_off()
 	_let_go()
 	wreck.end()
 	_farewell = null
@@ -2945,6 +2976,7 @@ func _stage_menus() -> void:
 func _enter_harbour(menu := true) -> void:
 	state = State.HARBOUR
 	paused = false
+	_kraken_off()
 	_picked_ship = ""
 	shipyard.harbour = true
 	shipyard.want = ""
@@ -3530,6 +3562,8 @@ func _start_voyage(sea: String) -> void:
 	# and the Brethren man every fort you haven't taken
 	forts.apply(Progress.forts.taken)
 	hud.fort_clear()
+	_kraken_off()
+	_kr_from = p.pos
 	stock = Ammo.fresh_stock()
 	world.sky.clear()
 	festivals.reset()
@@ -3674,10 +3708,13 @@ func _dock_prompt(dt: float) -> void:
 		_land_prompt(dt)
 		return
 	_prompt_kind = "dock"
-	var chased := _fighting() != null
+	var beast := kraken.fighting()
+	var chased := _fighting() != null or beast
 	var n := hold.count()
 	var why := "Repairs and fresh shot"
-	if chased:
+	if beast:
+		why = "No harbour opens to a ship the Kraken hunts"
+	elif chased:
 		why = "Shake off your pursuers to dock"
 	elif n > 0:
 		why = "Sell %d %s · repairs · shot" % [n, "good" if n == 1 else "goods"]
@@ -3707,7 +3744,10 @@ func _land_prompt(dt: float) -> void:
 	var guns := _guns_cover()
 	var fort := forts.on_isle(isle)
 	var sub := "The captain and four hands row in"
-	if chased:
+	var beast := kraken.active()
+	if beast:
+		sub = "Not with the Kraken in these waters"
+	elif chased:
 		sub = "Shake off your pursuers first"
 	elif pulled:
 		sub = "Not in the maelstrom's pull"
@@ -3715,7 +3755,7 @@ func _land_prompt(dt: float) -> void:
 		sub = "The guns of %s cover this shore: silence them first" % guns.name
 	elif fort != null and not fort.ours:
 		sub = "%s holds this isle: storm its gate" % fort.name
-	var ok := not chased and not pulled and guns == null
+	var ok := not chased and not pulled and guns == null and not beast
 	market.set_dock({"name": isle, "title": "Go ashore on %s" % isle, "ok": ok, "why": sub})
 	_prompt_kind = "land"
 	if ok and controls.interact:
@@ -3739,7 +3779,7 @@ func _go_ashore(now := false) -> void:
 	var beach := _landing
 	if beach.is_empty() or state != State.VOYAGE or not player.alive or _farewell != null or veil.busy or shore.active:
 		return
-	if _fighting() != null or player.drawn > 0.05 or _guns_cover() != null:
+	if _fighting() != null or player.drawn > 0.05 or _guns_cover() != null or kraken.active():
 		return
 	controls.reset()
 	hud.close_popups()
@@ -4026,7 +4066,7 @@ func _update_forts(dt: float) -> void:
 	var ax := cap.x if cap != null else p.pos.x
 	var az := cap.z if cap != null else p.pos.z
 	var f := forts.nearest(ax, az)
-	if f == null or _farewell != null:
+	if f == null or _farewell != null or kraken.fighting():
 		hud.show_fort({})
 	else:
 		var guns: Array = f.guns.map(func(g: Forts.Gun) -> bool: return not g.dead)
@@ -4667,6 +4707,227 @@ func _chart_tap(x: float, z: float, pick: float) -> void:
 	sound.knock()
 	_note_tour("pin dropped")
 	_select_on_chart(_pin_target(pin))
+
+
+# ------------------------------------------------------------------ the Kraken
+
+func _wire_kraken() -> void:
+	var k := kraken
+	k.hurt.connect(func(dmg: float, at: Vector3, crit: bool, part: int, mine: bool) -> void:
+		if not mine or state != State.VOYAGE:
+			return
+		voyage.hits += 1
+		voyage.dealt += dmg
+		var eye := part == Kraken.Part.EYE
+		hud.floater(("%d!" if eye else "%d") % roundi(dmg), at, camera, Floaters.Kind.EPIC if eye or crit else Floaters.Kind.GOOD))
+	k.player_hit.connect(func(dmg: float, at: Vector3, kind: String) -> void:
+		var p := player
+		if not p.alive or state != State.VOYAGE:
+			return
+		_kr_hit_t = world.time
+		var dealt := p.damage(dmg, null, at, true, "kraken")
+		voyage.taken += dealt
+		if dealt >= 1.0:
+			hud.floater("-%d" % roundi(dealt), at, camera, Floaters.Kind.BAD)
+		camera.shake(0.75 if kind == "slam" else 0.14))
+	k.rose.connect(func() -> void:
+		hud.kraken_bar(true)
+		hud.kraken().rise()
+		sound.kraken_music(true, 0)
+		# the moment it breaks the surface plays out slowly
+		_kr_slow = 1.8
+		camera.shake(0.5)
+		_note_tour("the Kraken rose"))
+	k.staged.connect(func(n: int) -> void:
+		sound.kraken_music(true, n)
+		hud.toast("The Kraken", "It thrashes in fury" if n == 1 else "The sea begins to turn", 3.4)
+		camera.shake(0.5))
+	k.head_moved.connect(func(up: bool) -> void:
+		if up:
+			hud.toast("Its head breaks the surface", "Strike the eye!", 2.6))
+	k.gripped.connect(func(on: bool, freed: bool) -> void:
+		if on:
+			camera.shake(0.6)
+		elif freed and player.alive:
+			hud.toast("Torn free", "The arm lets her go", 2.4))
+	k.arm_beaten.connect(func(at: Vector3) -> void:
+		hud.floater("Arm severed!", at, camera, Floaters.Kind.RARE, 14.0)
+		camera.shake(0.3))
+	k.defeated.connect(_slain_kraken)
+	k.gone.connect(func(slain: bool) -> void:
+		hud.kraken_bar(false)
+		sound.kraken_music(false)
+		atmosphere.hold = false
+		# a slain beast leaves the seas quiet for longer
+		_kr_cool = 900.0 if slain else 480.0
+		for ai: PirateAI in pirates.ais.values():
+			ai.fear = null
+		if not slain and player.alive and state == State.VOYAGE:
+			hud.toast("The Kraken", "It sinks back into the deep", 3.6))
+
+
+## Summons it on her now (the omen first); false if it can't come.
+func summon_kraken(omen := 9.0) -> bool:
+	var p := player
+	if not p.alive or state != State.VOYAGE or kraken.active():
+		return false
+	_kr_storm = 1
+	kraken.summon(p, omen)
+	sound.kraken_omen()
+	hud.toast("The sea grows dark", "Something vast stirs beneath the hull", 4.4)
+	_note_tour("the Kraken stirs")
+	return true
+
+
+## Everything of it gone at once (a new voyage, the harbour, a wreck's reset).
+func _kraken_off() -> void:
+	if kraken == null:
+		return
+	if kraken.active():
+		kraken.reset()
+		sound.kraken_music(false)
+		atmosphere.hold = false
+		for ai: PirateAI in pirates.ais.values():
+			ai.fear = null
+	hud.kraken().clear()
+	hud.kraken_bar(false)
+	_kr_storm = 0
+	_kr_slow = 0.0
+
+
+func _update_kraken(dt: float, real_dt: float, sailing: bool) -> void:
+	var k := kraken
+	var p := player
+	var playing := sailing and p.alive and _farewell == null
+	if dt > 0.0:
+		_kr_cool -= dt
+	var kh := hud.kraken()
+	if not k.active():
+		if playing and dt > 0.0 and not shore.active:
+			_watch_for_kraken(dt, p)
+		return
+	k.rain = atmosphere.rain
+	k.update(dt, p if playing else null)
+	if not k.active():
+		return
+	# every pirate in these waters runs for it
+	var dread: Variant = k.body if k.phase == Kraken.Phase.OMEN or k.phase == Kraken.Phase.FIGHT else null
+	for ai: PirateAI in pirates.ais.values():
+		ai.fear = dread
+	# the storm won't blow over while it fights
+	atmosphere.hold = k.fighting()
+	if _kr_slow > 0.0 and _farewell == null:
+		_kr_slow = maxf(0.0, _kr_slow - real_dt)
+		time_scale = lerpf(1.0, 0.42, MathX.smooth(0.0, 0.5, _kr_slow))
+	if not k.fighting() or not playing:
+		kh.set_grab(-1.0)
+		kh.warnings(PackedVector2Array())
+		return
+	kh.set_hp(k.hp / k.max_hp, k.stage)
+	var grip := k.grip()
+	kh.set_grab(grip)
+	var hint := "Sever its arms"
+	if grip >= 0.0:
+		hint = "Break its grip"
+	elif k.head_up():
+		hint = "Strike the eye!"
+	elif k.stage == 2:
+		hint = "Fight the maelstrom · sever its arms"
+	kh.set_hint(hint, grip >= 0.0 or k.head_up())
+	var pts := PackedVector2Array()
+	var vp := get_viewport().get_visible_rect().size
+	for w in k.warnings():
+		if pts.size() >= KrakenHud.WARN or camera.is_position_behind(w):
+			continue
+		var at := camera.unproject_position(w)
+		if at.x < 0.0 or at.y < 0.0 or at.x > vp.x or at.y > vp.y:
+			continue
+		pts.append(at)
+	kh.warnings(pts)
+
+
+## Each storm gets one roll of the dice; if it comes, it waits for deep, lonely water.
+func _watch_for_kraken(dt: float, p: Ship) -> void:
+	if _args.has("kraken") and _kr_cool <= 0.0 and voyage.time > float(_args.get("kraken-at", 7.0)):
+		atmosphere.set_weather(&"storm", true)
+		summon_kraken(float(_args.get("kraken-omen", 9.0)))
+		_kr_cool = 60.0
+		return
+	var a := atmosphere
+	if a.kind != &"storm":
+		_kr_storm = 0
+		return
+	if _kr_storm == 0 and a.storm > 0.55:
+		_kr_storm = 2 if _kr_cool <= 0.0 and voyage.time > 150.0 and randf() < 0.5 else 1
+		_kr_wait = 8.0 + randf() * 40.0
+	if _kr_storm != 2:
+		return
+	_kr_wait -= dt
+	if _kr_wait <= 0.0 and _kraken_waters(p):
+		summon_kraken()
+
+
+## Deep water all round, and well clear of any harbour (and never the high seas).
+func _kraken_waters(p: Ship) -> bool:
+	if _high_seas:
+		return false
+	var x := p.pos.x
+	var z := p.pos.z
+	if Vector2(x - _kr_from.x, z - _kr_from.z).length() < 600.0:
+		return false
+	var near := ports.nearest(p.pos)
+	if near != null and Vector2(near.xf.origin.x - x, near.xf.origin.z - z).length() < 520.0:
+		return false
+	if world.ground_height(x, z) > -14.0:
+		return false
+	for i in 8:
+		var ang := float(i) / 8.0 * TAU
+		if world.ground_height(x + sin(ang) * 70.0, z + cos(ang) * 70.0) > -12.0:
+			return false
+	return true
+
+
+## It's dead: the bounty, the trophies and its hoard rising round where it sank.
+func _slain_kraken(at: Vector3) -> void:
+	var p := player
+	hud.kraken_bar(false)
+	sound.kraken_music(false)
+	if not p.alive or state != State.VOYAGE:
+		return
+	var x := at.x
+	var z := at.z
+	# a legendary chest with the beak, epics with its ink, and a ring of rares
+	world.loot.float_goods(x, z, PackedStringArray(["krakenBeak", "krakenPearl", Treasure.roll_good(4)]), 4)
+	world.loot.float_goods(x + 7.0, z - 5.0, PackedStringArray(["krakenInk", Treasure.roll_good(3), Treasure.roll_good(2)]), 3)
+	world.loot.float_goods(x - 6.0, z + 6.0, PackedStringArray([Treasure.roll_good(3), Treasure.roll_good(3), Treasure.roll_good(2)]), 3)
+	for i in 5:
+		var ang := float(i) / 5.0 * TAU + randf() * 0.5
+		world.loot.float_goods(x + sin(ang) * 15.0, z + cos(ang) * 15.0, Treasure.roll_contents(2), 2)
+	var bounty := 1500
+	p.gold += bounty
+	p.kills += 1
+	Progress.earn(bounty)
+	var skin := Progress.award("skin:kraken")
+	p.hp = minf(p.max_hp, p.hp + p.max_hp * 0.35)
+	_stock_ammo({Ammo.SHELL: 3, Ammo.FIRE: 3, Ammo.CHAIN: 3, Ammo.GRAPE: 3}, Vector3(p.pos.x, p.position.y + 6.0, p.pos.z))
+	# and in its ink-black hoard, a showpiece made in its own likeness
+	_stock_fireworks({"kraken": 1}, null)
+	voyage.note("kill", "Slew the Kraken", "+%d gold · its hoard rose from the deep" % bounty)
+	var isz := 48.0
+	var rewards: Array = [
+		{"tex": null, "label": "+%s gold bounty" % MenuKit.num(bounty), "rarity": -1},
+		{"tex": Icons.plunder("krakenBeak", isz), "label": Treasure.name_of("krakenBeak"), "rarity": 4},
+		{"tex": Icons.plunder("krakenInk", isz), "label": Treasure.name_of("krakenInk"), "rarity": 3},
+		{"tex": Icons.firework("kraken", isz), "label": "%s showpiece" % Fireworks.kind("kraken").name, "rarity": 4},
+	]
+	if not skin.is_empty():
+		rewards.append({"skin": true, "label": "Kraken Ink skin unlocked" if skin.fresh else "Kraken Ink skin · +%s gold" % MenuKit.num(int(skin.refund)), "rarity": 3})
+	hud.kraken().victory(rewards)
+	sound.treasure(4)
+	sound.coin()
+	world.fx.treasure(Vector3(x, world.water_height(x, z), z), Loot.GLOW[4], 4)
+	camera.shake(0.4)
+	_note_tour("slew the Kraken")
 
 
 # ------------------------------------------------------------------ the helmsman

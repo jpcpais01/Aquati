@@ -265,6 +265,19 @@ shot('bounty', 1, 3.6, (a) => {
   a.sale = () => {};
   a.bounty();
 });
+// the Kraken: its roar as it rages (0..2), its death (the howl, the shriek and
+// the brass of a victory), the omen's swelling drone and heartbeat, the low
+// rush of it breaking the surface, the boom of an arm slamming down, a ball
+// into its flesh, its moan and its shriek (the bank's water, blast and whoosh
+// the game plays alongside)
+for (let r = 0; r < 3; r++) shot(`kr_roar${r}`, 1, 3.4, (a) => a.krakenRoar(1, 0, 0, 0, r), { ogg: true });
+shot('kr_death', 1, 11.5, (a) => a.krakenDeath(1, 0, 0), { ogg: true });
+shot('kr_omen', 1, 10.6, (a) => a.krakenOmen(9), { ogg: true });
+shot('kr_rush', 1, 2.3, (a) => a.krakenRise(1, 0, 0, 1));
+shot('kr_boom', 1, 1.4, (a) => a.krakenSlam(1, 0, 0));
+shot('kr_flesh', 1, 0.25, (a) => a.krakenFlesh(1, 0, 0));
+shot('kr_moan', 1, 1.7, (a) => a.krakenHurt(1, 0, 0, false));
+shot('kr_shriek', 1, 1.2, (a) => a.krakenHurt(1, 0, 0, true));
 for (let t = 1; t <= 4; t++) shot(`treasure${t}`, 1, 3.0, (a) => a.treasure(t));
 shot('guns_ready', 1, 0.7, (a) => a.gunsReady(0));
 // the Treasure Vault: the chest's rumble as its light climbs each rarity, its
@@ -337,6 +350,62 @@ for (const n of [3, 5]) shot(`war_cry${n}`, 2, 1.3, (a) => a.shout(1, 0, 0, fals
 
 // ------------------------------------------------------------------ the sea's own sound: the noise its beds are cut from
 jobs.push({ name: 'noise_0', sr: SR, exact: true, render: () => [pink(7.3, SR)] });
+
+// ------------------------------------------------------------------ the Kraken's battle music, in parts the game layers
+// (the web plays it live: a drone, tremolo strings louder with each stage, and
+// war drums that thicken as it rages). The drone and the strings repeat every
+// 100 s (every one of their frequencies whole in that), the drums every bar
+// of 5 s; each is cut from the middle of a longer take, its end blended into
+// its start so the loop has no seam.
+const KR_SR = 16000;
+async function krakenPart(part: 'drone' | 'strings' | 'drums', stage: number): Promise<Float32Array[]> {
+  const loop = part === 'drums' ? 5 : 100;
+  const from = part === 'drums' ? 10.4 : 4;
+  const len = from + loop + 1;
+  const oc = new OfflineAudioContext(1, Math.ceil(len * KR_SR), KR_SR);
+  const a: any = new Audio();
+  const bus = oc.createGain();
+  bus.connect(oc.destination);
+  a.ctx = oc;
+  a.master = bus;
+  a.noise = noiseBuffer(oc);
+  a.muted = false;
+  let tick: (() => void) | null = null;
+  const real = window.setInterval;
+  (window as any).setInterval = (fn: () => void) => {
+    tick = fn;
+    return 0;
+  };
+  a.krakenMusic(true, stage);
+  (window as any).setInterval = real;
+  const b = a.boss;
+  // b.nodes: the drone's LFO and four saws, then the strings' tremolo and their saws
+  if (part !== 'drone') for (let i = 1; i <= 4; i++) b.nodes[i].disconnect();
+  if (part !== 'strings') b.strings.gain.value = 0;
+  if (part === 'drums' && tick) {
+    let now = 0;
+    Object.defineProperty(oc, 'currentTime', { get: () => now, configurable: true });
+    now = len;
+    (tick as () => void)();
+  }
+  const d = (await oc.startRendering()).getChannelData(0);
+  const n = Math.round(loop * KR_SR);
+  const a0 = Math.round(from * KR_SR);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = d[a0 + i];
+  if (part !== 'drums') {
+    // the last half second fades into what led into the start
+    const f = Math.round(0.5 * KR_SR);
+    for (let i = 0; i < f; i++) {
+      const w = i / f;
+      out[n - f + i] = out[n - f + i] * (1 - w) + d[a0 - f + i] * w;
+    }
+  }
+  return [out];
+}
+jobs.push({ name: 'kr_drone_0', sr: KR_SR, ogg: true, exact: true, render: () => krakenPart('drone', 0) });
+jobs.push({ name: 'kr_strings_0', sr: KR_SR, ogg: true, exact: true, render: () => krakenPart('strings', 0) });
+for (let s = 0; s < 3; s++) jobs.push({ name: `kr_drums${s}_0`, sr: KR_SR, ogg: true, exact: true, render: () => krakenPart('drums', s) });
 
 // ------------------------------------------------------------------ music
 SONGS.forEach((s, i) => {

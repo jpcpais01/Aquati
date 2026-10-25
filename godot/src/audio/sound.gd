@@ -1326,6 +1326,85 @@ func harbour(on: bool) -> void:
 		music.harbour(on)
 
 
+# ---------------------------------------------------------------- the Kraken
+# The web's kraken* voices: its own parts rendered from them (kr_*), the
+# bank's water, blast and whoosh played alongside as the web plays them.
+
+## When something `dist` m off is heard, `delay` s from now, on the mix's clock.
+func _heard_at(dist: float, delay := 0.0) -> float:
+	return _now + delay + minf(dist / SPEED_OF_SOUND, 1.1)
+
+
+## Its roar: a vast, wet bellow, deeper and wilder as it rages (stage 0..2).
+func kraken_roar(vol: float, pan: float, dist := 0.0, stage := 0, delay := 0.0) -> void:
+	if _voice(vol):
+		_one("kr_roar%d" % clampi(stage, 0, 2), minf(1.2, vol), pan, _heard_at(dist, delay), 1.0, 0.55)
+		duck(_heard_at(dist, delay), 0.4)
+
+
+## An arm whipping down across the sea: a crack of water and a deep, rolling boom.
+func kraken_slam(vol: float, pan: float, dist := 0.0) -> void:
+	var v := maxf(vol, 0.35)
+	var at := _emit("blast", v * 0.7, pan, dist, 0.48 + randf() * 0.06, 0.8)
+	_emit("water", v * 0.95, pan, dist, 0.5 + randf() * 0.1, 0.6)
+	_emit("water", v * 0.7, pan * 0.6, dist, 0.72, 0.5, 0.06)
+	if _voice(v):
+		_one("kr_boom", minf(1.2, v), pan, _heard_at(dist), 1.0, 0.55)
+	if at >= 0.0:
+		duck(at, 0.6 if dist < 60.0 else 0.3)
+
+
+## Something vast breaking the surface: a heavy rush of water over a low rumble.
+func kraken_rise(vol: float, pan: float, dist := 0.0, size := 1.0) -> void:
+	var v := maxf(vol, 0.3) * size
+	_emit("water", v * 0.8, pan, dist, 0.42 / size, 0.6)
+	_emit("water", v * 0.55, pan, dist, 0.6 / size, 0.5, 0.12)
+	if _voice(v):
+		_one("kr_rush", minf(1.2, v), pan, _heard_at(dist), 1.0, 0.55)
+
+
+## An arm rearing or lashing through the air: a heavy, slow swoosh.
+func kraken_whip(vol: float, pan: float, dist := 0.0, k := 1.0) -> void:
+	_emit("whoosh", maxf(vol, 0.3) * 0.7 * k, pan, dist, 0.38 + randf() * 0.08, 0.3, 0.0, -pan)
+
+
+## Shot into its flesh: a wet, meaty slap.
+func kraken_flesh(vol: float, pan: float, dist := 0.0) -> void:
+	_emit("water", vol * 0.45, pan, dist, 1.5 + randf() * 0.3, 0.3)
+	if _voice(vol):
+		_one("kr_flesh", vol, pan, _heard_at(dist))
+
+
+## Pain: a low moan from a beaten arm, or a piercing shriek when it's shot in the eye.
+func kraken_hurt(vol: float, pan: float, dist := 0.0, shriek := false) -> void:
+	if _voice(vol):
+		_one("kr_shriek" if shriek else "kr_moan", minf(1.2, maxf(vol, 0.35)), pan, _heard_at(dist), 1.0, 0.55)
+
+
+## Its death: a long, falling howl and a shriek, then the brass of a victory swelling over the sea.
+func kraken_death(vol: float, pan: float, dist := 0.0) -> void:
+	if _live and not _muted:
+		_one("kr_death", minf(1.2, vol), pan, _heard_at(dist), 1.0, 0.55)
+		duck(_heard_at(dist), 0.4)
+
+
+## The omen: the sea's sounds sink under a swelling drone and a slow, huge heartbeat, with bubbles rising.
+func kraken_omen() -> void:
+	if _live and not _muted:
+		_one("kr_omen", 1.0, 0.0, 0.0, 1.0, 0.3)
+
+
+## Its battle music on (raised to `stage` 0..2 as it rages) or off.
+func kraken_music(on: bool, stage := 0) -> void:
+	if not _live:
+		return
+	var parts := []
+	for key: String in ["kr_drone", "kr_strings", "kr_drums0", "kr_drums1", "kr_drums2"]:
+		var k := _take(key)
+		parts.append([_takes[key][k] if k >= 0 else null, float(_gains[key][k]) if k >= 0 else 1.0])
+	music.boss(on and _music_on and not _muted, stage, parts)
+
+
 ## What the mix is doing, for the smoke test.
 func stats() -> String:
 	return "%d takes of %d sounds loaded, %d played (%d dropped), %d voices out, %d peals of thunder, the sea %s%s; %s" % [

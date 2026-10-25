@@ -294,11 +294,16 @@ static func _jit(r: float) -> Vector3:
 func _fly(b: _Ball, t0: float, t1: float) -> float:
 	var span := (t1 - t0) * b.v0.length()
 	var n := clampi(ceili(span / 0.7), 1, 16)
+	var prev := at(b, t0)
 	for k in n:
 		var t := lerpf(t0, t1, float(k + 1) / n)
 		var p := at(b, t)
 		if _strike_ship(b, p, t):
 			return t
+		# the Kraken's arms and eye (Kraken.strike plays the blow)
+		if world.kraken != null and world.kraken.strike(prev, p, b.damage, b.owner, b.kind):
+			return t
+		prev = p
 		# a fort's walls (Forts.strike plays the blow)
 		if world.forts != null and world.forts.strike(p, vel_at(b, t), b.damage, b.owner, b.kind):
 			return t
@@ -533,6 +538,8 @@ func _detonate(b: _Ball, at: Vector3, water: bool, direct: Ship, dealt: float) -
 	world.shook.emit(0.45 * h.x * h.x)
 	var base := b.damage / float(Ammo.DAMAGE[Ammo.SHELL])
 	var R := Ammo.BLAST_RADIUS
+	if world.kraken != null:
+		world.kraken.blast(at, R, base * Ammo.BLAST_DAMAGE, b.owner)
 	for s: Ship in world.ships:
 		if s == b.owner or not s.alive or s.removed or s.team == b.owner.team:
 			continue
