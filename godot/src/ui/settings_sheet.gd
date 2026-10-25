@@ -35,6 +35,7 @@ const GROUPS := [
 
 ## On a computer: the window's switch, the keys, and the way out.
 const DESKTOP_GRAPHICS := ["switch", "fullscreen", "Full screen", "Or a window you can size as you like (F11 or Alt+Enter switches too)"]
+const DESKTOP_INTERFACE := ["seg", "ui_size", "Interface size", "The menus and the HUD, for your screen", [[0.86, "Compact"], [1.0, "Normal"], [1.16, "Large"]]]
 const KEYS := [
 	["keys", "", "At the helm", "A / D or the arrows steer · W / S set more or less sail · Shift runs ashore · Space jumps"],
 	["keys", "", "The guns", "Q / E fire port / starboard · Space fires the side that bears · click the sea to aim · 1 to 5 load a shot, R the next"],
@@ -159,6 +160,7 @@ func _build() -> void:
 		game_rows.append(["update", "", "Game updates", _update_line()])
 	if Settings.desktop:
 		(groups[1][1] as Array).append(DESKTOP_GRAPHICS)
+		(groups[2][1] as Array).push_front(DESKTOP_INTERFACE)
 		groups.append(["KEYS", KEYS])
 		game_rows.append(["quit", "", "Quit to desktop", "Everything you've won is kept"])
 	if not game_rows.is_empty():
@@ -357,6 +359,10 @@ func _toggle(key: String) -> void:
 
 func _choose(key: String, v: float) -> void:
 	clicked.emit()
+	if key == "ui_size":
+		# the canvas resizes, and the sheet is rebuilt at the new size
+		Settings.set_ui_size(v)
+		return
 	Settings.set(key, v)
 	_apply(true)
 

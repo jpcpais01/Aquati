@@ -22,6 +22,7 @@ const LINE := {
 	"sound_off": '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
 	"play": '<path d="M8 5.5v13l10.5-6.5z"/>',
 	"pause": '<path d="M9 5.5v13M15 5.5v13"/>',
+	"power": '<path d="M12 3.5v8"/><path d="M7 6.6a7.5 7.5 0 1 0 10 0"/>',
 	"harbour": '<path d="M3 20h18M5 20V10l7-5 7 5v10M9.5 20v-5h5v5"/>',
 	"close": '<path d="M6 6l12 12M18 6 6 18"/>',
 	# a new build to download, and the tick of one that's current

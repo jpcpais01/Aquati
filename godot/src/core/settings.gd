@@ -32,6 +32,9 @@ var desktop := false
 ## The window fills the screen (the desktop game's default; F11 or
 ## Alt+Enter switches, as does Settings).
 var fullscreen := true
+## The interface's size on a computer (the web's HUD size: compact 0.86,
+## normal 1, large 1.16).
+var ui_size := 1.0
 ## A run told to play as a phone (--phone): the short side of the screen it
 ## pretends to have, in dp; 0 reads the real screen.
 var phone_lines := 0.0
@@ -60,12 +63,54 @@ func _ready() -> void:
 		weather = _cfg.get_value("sky", "weather", weather)
 		time = _cfg.get_value("sky", "time", time)
 		fullscreen = _cfg.get_value("display", "fullscreen", fullscreen)
+		ui_size = clampf(float(_cfg.get_value("display", "ui_size", ui_size)), 0.7, 1.4)
 	apply()
+	fit_ui()
 	# only an exported game takes the whole screen on its own: a run from the
 	# editor binary (the checks, the shots) keeps the window it was given
 	if desktop and OS.has_feature("template"):
 		apply_window()
 	get_window().size_changed.connect(_on_window_resized)
+
+
+## The menus and the HUD are drawn in units made for a phone held sideways
+## (720 tall), which on a computer's screen made everything twice the size
+## the web game draws it. On a computer the canvas is sized the web's way
+## instead: a CSS pixel is a screen pixel at the display's own scaling, the
+## HUD at the web's --hs for the window (smaller in small windows), times
+## the Interface size picked in Settings. A huge screen at 100% still gets a
+## readable interface (at most 1700 units tall), and a small window never
+## less room than the phone layouts were made for.
+func fit_ui() -> void:
+	var w := get_window()
+	if w == null:
+		return
+	var f := 1.0
+	var px := Vector2(w.size)
+	if desktop and DisplayServer.get_name() != "headless" and px.x > 0.0 and px.y > 0.0:
+		var screen := w.current_screen
+		var dpi := clampf(maxf(DisplayServer.screen_get_scale(screen), DisplayServer.screen_get_dpi(screen) / 96.0), 1.0, 4.0)
+		var css := px / dpi
+		var hs := 1.0
+		if css.y <= 420.0:
+			hs = 0.74
+		elif css.x <= 600.0 or css.y <= 540.0:
+			hs = 0.8
+		elif css.x <= 1000.0 or css.y <= 680.0:
+			hs = 0.9
+		# screen pixels to a canvas unit (a unit is 1/K of a CSS pixel at --k)
+		var s := maxf(hs * dpi / HudStyle.K, px.y / 1700.0) * ui_size
+		s = minf(s, minf(px.y / 720.0, px.x / 1100.0))
+		f = s / minf(px.x / 1280.0, px.y / 720.0)
+	if absf(w.content_scale_factor - f) > 1e-4:
+		w.content_scale_factor = f
+
+
+func set_ui_size(v: float) -> void:
+	ui_size = clampf(v, 0.7, 1.4)
+	save()
+	fit_ui()
+	changed.emit()
 
 
 ## Play as a phone `lines` dp across its short side would, at its default
@@ -77,6 +122,7 @@ func pretend_phone(lines: float) -> void:
 	quality = Quality.MEDIUM
 	phone_lines = clampf(lines, 320.0, 720.0)
 	apply()
+	fit_ui()
 
 
 ## The window as `fullscreen` says: the whole screen (borderless, so
@@ -120,6 +166,7 @@ func _input(event: InputEvent) -> void:
 ## The window was put into or out of full screen some other way (the
 ## system's own keys or title bar): the switch follows.
 func _on_window_resized() -> void:
+	fit_ui()
 	if not desktop or not OS.has_feature("template"):
 		return
 	var w := get_window()
@@ -149,6 +196,7 @@ func save() -> void:
 	_cfg.set_value("sky", "weather", weather)
 	_cfg.set_value("sky", "time", time)
 	_cfg.set_value("display", "fullscreen", fullscreen)
+	_cfg.set_value("display", "ui_size", ui_size)
 	_cfg.save(PATH)
 
 

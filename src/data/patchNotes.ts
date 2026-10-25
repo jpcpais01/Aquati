@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T01:00Z',
+    entries: [
+      {
+        title: 'Windows: the right size, updates and an Exit button',
+        notes: [
+          'The Windows game\'s menus and HUD were sized for a phone, so on a monitor everything came out twice too big. They\'re now sized the way the web game sizes them on a computer, for your window and your display scaling, so they look right at 1080p, 1440p and 4K, on ultrawides and in small windows. Settings has a new Interface size (Compact, Normal, Large) too.',
+          'The Windows game now updates itself. When a new build is out, the harbour\'s card shows what\'s new, Update downloads it in the game with your ship sailing a gilt progress bar, and Restart & update swaps it in and reopens on the new build with all your progress. There\'s also an Exit game button by Settings in the harbour and a Quit game row in the pause menu.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-24T14:00Z',
     entries: [
       {

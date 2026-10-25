@@ -20,7 +20,7 @@ signal closed
 const CHECKING_LINES := ["Asking GitHub for the newest build", "Reading the harbour master's list"]
 
 var updater: Updater
-## This build's own notes (RELEASE_NOTES.md, shipped in the APK), for when
+## This build's own notes (RELEASE_NOTES.md, shipped in the game), for when
 ## it is the newest.
 var own_notes := ""
 ## Your ship's class, riding the swell under the seal.
@@ -433,15 +433,11 @@ func _build_foot(w: float) -> Control:
 			Updater.OFFER:
 				btns.append(later.call("Later"))
 				var size := int(updater.latest.size)
-				_gold_btn = MenuKit.gold("download", ("DOWNLOAD" if updater.desktop else "UPDATE") + ("  ·  " + _mb(size) if size > 0 else ""), bh, 22.0 * u, 14.5 * t, 19.0 * u)
+				_gold_btn = MenuKit.gold("download", "UPDATE" + ("  ·  " + _mb(size) if size > 0 else ""), bh, 22.0 * u, 14.5 * t, 19.0 * u)
 				_gold_btn.pressed.connect(func() -> void:
 					clicked.emit()
 					updater.download())
-				if updater.desktop:
-					# the browser fetches the new .exe; the saves are the user's, not the file's
-					line = "It downloads in your browser. Close this one, run the new one, and everything you've won is there."
-				else:
-					line = "Everything you've won stays aboard."
+				line = "Everything you've won stays aboard."
 			Updater.DOWNLOADING, Updater.VERIFYING:
 				var cancel := MenuKit.pill("", "Cancel", bh, 18.0 * u, 14.0 * t, 700, ghost, HudStyle.INK, 0.02)
 				cancel.pressed.connect(func() -> void:
@@ -450,11 +446,22 @@ func _build_foot(w: float) -> Control:
 				btns.append(cancel)
 			Updater.READY, Updater.INSTALLING:
 				btns.append(later.call("Later"))
-				_gold_btn = MenuKit.gold("anchor", "INSTALL NOW" if st == Updater.READY else "INSTALL", bh, 22.0 * u, 14.5 * t, 19.0 * u)
+				var go := ("RESTART & UPDATE" if st == Updater.READY else "RESTARTING") if updater.desktop else ("INSTALL NOW" if st == Updater.READY else "INSTALL")
+				_gold_btn = MenuKit.gold("anchor", go, bh, 22.0 * u, 14.5 * t, 19.0 * u)
 				_gold_btn.pressed.connect(func() -> void:
 					clicked.emit()
 					updater.install())
-				if st == Updater.READY:
+				if updater.desktop:
+					# Windows: the game swaps its own .exe and comes back on the new build
+					if updater.error != "":
+						line = updater.error
+						line_c = HudStyle.GOLD_HI
+					elif st == Updater.READY:
+						line = "Downloaded and checked. The game reopens on the new build."
+					else:
+						line = "Swapping in the new build and setting sail again…"
+						line_c = HudStyle.INK_2
+				elif st == Updater.READY:
 					line = "Downloaded and checked. Android asks you to confirm the install."
 				elif updater.error != "":
 					line = updater.error
