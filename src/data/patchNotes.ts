@@ -13,7 +13,7 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
-    hour: '2026-10-25T17:00Z',
+    hour: '2026-10-25T18:00Z',
     entries: [
       {
         title: 'Android and Windows: rare skies',
@@ -23,6 +23,11 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Ember rain can also be picked on the sky badge, and previewed in photo mode, while you are downwind of the volcano.',
         ],
       },
+    ],
+  },
+  {
+    hour: '2026-10-25T17:00Z',
+    entries: [
       {
         title: 'Android and Windows: photo mode',
         notes: [
