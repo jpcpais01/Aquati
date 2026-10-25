@@ -567,9 +567,10 @@ void fragment() {
 	body_bed *= hot;
 	body_bed_sun *= hot;
 	body_sun *= hot;
-	// ash settling on the water: a dull grey scum in drifting rafts
+	// ash settling on the water: a dull grey scum in drifting rafts (fainter
+	// than the web's: on a phone's flatter sea its rafts read as blotches)
 	if (sky_ash > 0.001) {
-		float scum = smoothstep(0.35, 0.8, mac2.b * 0.7 + texture(noise_tex, p * 0.021 - pdrift * 0.05).r * 0.5) * sky_ash * 0.35;
+		float scum = smoothstep(0.45, 0.95, mac2.b * 0.7 + texture(noise_tex, p * 0.021 - pdrift * 0.05).r * 0.5) * sky_ash * 0.2;
 		vec3 soot = vec3(0.07, 0.065, 0.06);
 		body_bed = mix(body_bed * (1.0 - 0.25 * sky_ash), soot, scum);
 		body_bed_sun = mix(body_bed_sun * (1.0 - 0.25 * sky_ash), soot, scum);
