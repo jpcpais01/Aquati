@@ -16,6 +16,12 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-25T04:00Z',
     entries: [
       {
+        title: 'A view to fit your ship',
+        notes: [
+          'The farthest zoom now depends on your ship, straight down or leaned over: a galleon sees as far as ever, a brigantine stops 10% nearer and a sloop 20% nearer, so a small ship never shrinks to a speck. On the web game and on Android and Windows.',
+        ],
+      },
+      {
         title: 'Windows: a smaller, neater HUD',
         notes: [
           'On the Windows game the ship\'s card, the bottom bar, the strip under the minimap and its buttons all sit smaller now, and the Ship\'s Hold popup (which was drawn at a phone\'s touch size) shrinks to match. The interface follows your window instead of Windows\' display scaling, so high-resolution screens get the same neat layout, only sharper.',

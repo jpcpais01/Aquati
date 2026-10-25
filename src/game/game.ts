@@ -6941,7 +6941,10 @@ export class Game {
       ph.autoFocus += (af - ph.autoFocus) * Math.min(1, realDt * 8);
       // the captain stands at the helm in the shot, even seen from their own eyes
       if (this.captain.ship) this.captain.pilot.hidden = false;
-    } else this.rig.update(realDt, fpos, fvel, w.time, (this.state === 'playing' || this.state === 'paused') && !walker ? this.battleFoe() : null);
+    } else {
+      if (this.player) this.rig.farScale = this.player.cls.id === 'sloop' ? 0.8 : this.player.cls.id === 'brig' ? 0.9 : 1;
+      this.rig.update(realDt, fpos, fvel, w.time, (this.state === 'playing' || this.state === 'paused') && !walker ? this.battleFoe() : null);
+    }
     const eb = this.rig.eyeBlend;
     if (eb > 0) {
       // hear the sea from where you stand, panned to where you face
