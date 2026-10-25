@@ -190,8 +190,20 @@ func _ensure_wound_mats() -> void:
 ## look, and casts no shadow.
 func ghostly() -> void:
 	_ensure_wound_mats()
-	for node in ship.model.find_children("*", "GeometryInstance3D", true, false):
-		(node as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var model := ship.model
+	# her yards and their lines too, which a living ship's wounds leave be
+	var shared := {}
+	for kind: String in DMG_SHADERS:
+		shared[model.shared_material(kind)] = kind
+	for node in model.find_children("*", "GeometryInstance3D", true, false):
+		var gi := node as GeometryInstance3D
+		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if gi.material_override != null and shared.has(gi.material_override):
+			gi.material_override = _wound_mats[shared[gi.material_override]]
+	# her lanterns burn cold: no warm halos round them
+	var halos := model.get_node_or_null("Halos") as Node3D
+	if halos != null:
+		halos.visible = false
 
 
 ## A ghost's presence and the flare where she was struck, to her materials.

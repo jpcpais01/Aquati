@@ -1616,6 +1616,7 @@ func _tick(real_dt: float) -> void:
 	controls.consume()
 
 	world.listener = camera.target
+	world.night = atmosphere.night
 	world.listener_zoom = camera.distance()
 	if _farewell != null:
 		_farewell_step(real_dt)
@@ -1808,7 +1809,8 @@ func _lamps() -> void:
 		var t := camera.target
 		var reach := camera.ground_radius() + 50.0
 		for s in world.ships:
-			if s.alive and s.visible and s.model.visible and Vector2(s.pos.x - t.x, s.pos.z - t.z).length() < reach:
+			# (a ghost's lanterns burn cold, and light no warm pool on the sea)
+			if s.alive and not s.ghost and s.visible and s.model.visible and Vector2(s.pos.x - t.x, s.pos.z - t.z).length() < reach:
 				var xf := s.model.global_transform
 				for l in s.model.lamps:
 					var at := xf * Vector3(l.x, l.y, l.z)

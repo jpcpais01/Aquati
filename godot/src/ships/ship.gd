@@ -928,6 +928,8 @@ func _haunt(dt: float) -> void:
 	var B := cls.beam
 	var f := forward()
 	var pd := Vector3(f.z, 0.0, -f.x)
+	# (thinner after dark, when the moon and the lanterns would make a bank of it)
+	var mist_a := 0.2 * pr * (1.0 - 0.75 * world.night)
 	while _mist_t > 1.0:
 		_mist_t -= 1.0
 		var u := (_rng.randf() - 0.55) * L
@@ -938,7 +940,7 @@ func _haunt(dt: float) -> void:
 			var wy := world.water_height(x, z)
 			world.fx.emit(Vector3(x, wy + 0.3 + _rng.randf() * 0.6, z),
 					Vector3(vel.x * 0.25 + pd.x * side * 0.6, 0.15 + _rng.randf() * 0.25, vel.z * 0.25 + pd.z * side * 0.6),
-					3.0 + _rng.randf() * 2.0, 1.6 + _rng.randf(), 6.0 + _rng.randf() * 4.0, Color(0.62, 0.82, 0.74, 0.2 * pr), Color(0.78, 0.9, 0.86),
+					3.0 + _rng.randf() * 2.0, 1.6 + _rng.randf(), 6.0 + _rng.randf() * 4.0, Color(0.62, 0.82, 0.74, mist_a), Color(0.78, 0.9, 0.86),
 					-0.04, 0.5, Particles.SMOKE, 0.35, Vector2.ZERO, (_rng.randf() - 0.5) * 0.3)
 		else:
 			# will-o'-wisps lifting off the rails
