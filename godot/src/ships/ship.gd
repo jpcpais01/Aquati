@@ -102,6 +102,9 @@ var sail_target := 0.5
 var sail_level := 0.5
 ## A shove from another hull, bleeding off against the keel.
 var drift := Vector2.ZERO
+## Held fast (0..1): the Kraken's coils round her hull. She can barely make
+## way or answer the helm, and she loses what way she had fast.
+var held := 0.0
 var anchored := false
 ## How hard her keel grinds on coral (0 clear .. 1 hard aground).
 var scrape := 0.0
@@ -525,10 +528,11 @@ func step(dt: float) -> void:
 		if phantom:
 			# a ghost runs before a wind of her own
 			target = maxf(target, c.max_speed * maxf(sail_level, 0.5)) * Haunt.SPEED
-		var rate := c.accel if target > speed else c.accel * 1.4
+		target *= 1.0 - held * 0.92
+		var rate := c.accel if target > speed else c.accel * (1.4 + held * 3.0)
 		speed += (target - speed) * MathX.damp(rate, dt)
 		var steer := clampf(0.28 + 0.9 * (speed / c.max_speed), 0.28, 1.1)
-		var target_ang := rudder * c.turn_rate * steer * (Haunt.TURN if phantom else 1.0)
+		var target_ang := rudder * c.turn_rate * steer * (Haunt.TURN if phantom else 1.0) * (1.0 - held * 0.8)
 		ang_vel += (target_ang - ang_vel) * MathX.damp(2.6 / sqrt(c.mass), dt)
 		speed *= 1.0 - absf(ang_vel) * 0.08 * dt
 	else:

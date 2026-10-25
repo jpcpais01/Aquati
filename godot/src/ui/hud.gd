@@ -115,6 +115,8 @@ var _ap: HelmPill
 var _hz: HazardPill
 ## A fort's bar (and its title card), under the hazard pill.
 var _ft: FortBar
+## The Kraken's bar, cards, warnings and grip (its vignette lies low, by the hull's).
+var _kr: KrakenHud
 ## Ashore: the sea's controls (the knots, the sail lever, the guns) stand down for the Jump button.
 var _ashore := false
 var _jump: UiButton
@@ -147,6 +149,8 @@ func _ready() -> void:
 	_vig_mat.shader = preload("res://shaders/vignette.gdshader")
 	_vignette.material = _vig_mat
 	root.add_child(_vignette)
+	_kr = KrakenHud.new()
+	root.add_child(_kr.vig)
 
 	# who she is and how her hull holds up, and the tally under her
 	_status = Control.new()
@@ -371,6 +375,7 @@ func _ready() -> void:
 	root.add_child(_hz)
 	_ft = FortBar.new()
 	root.add_child(_ft)
+	root.add_child(_kr)
 
 	# notes across the top: an island discovered
 	_toasts = VBoxContainer.new()
@@ -544,6 +549,7 @@ func _layout() -> void:
 	_place_say()
 	_hz.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
 	_ft.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * k if _hz.on() else 0.0)), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
+	_kr.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * k if _hz.on() else 0.0)), minf(460.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
 	# the toasts step down under the pill and the bar while they're up
 	_hz_room = _top_room()
 	_toasts.offset_top = my + _hz_room
@@ -609,12 +615,25 @@ func fort_clear() -> void:
 	_restack()
 
 
+## The Kraken: its HUD (KrakenHud) for the game to drive.
+func kraken() -> KrakenHud:
+	return _kr
+
+
+## The Kraken's bar up or down (the toasts step out of its way).
+func kraken_bar(on: bool) -> void:
+	_kr.show_bar(on)
+	_restack()
+
+
 ## How far down the top of the screen the pill and the fort's bar reach.
 func _top_room() -> float:
 	var k := HudStyle.K
 	var room := _hz.size.y + 8.0 * k if _hz.on() else 0.0
 	if _ft.on():
 		room += _ft.height() + 8.0 * k
+	if _kr.on():
+		room += _kr.height() + 8.0 * k
 	return room
 
 
@@ -626,6 +645,7 @@ func _restack() -> void:
 		var vp := get_viewport().get_visible_rect().size
 		var my := vp.y * 0.03
 		_ft.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * HudStyle.K if _hz.on() else 0.0)), _ft._most)
+		_kr.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * HudStyle.K if _hz.on() else 0.0) + (_ft.height() + 8.0 * HudStyle.K if _ft.on() else 0.0)), _kr._most)
 		_toasts.offset_top = my + room
 
 
@@ -1067,6 +1087,8 @@ func reset() -> void:
 	_peek.set_open(false)
 	_pie.set_open(false)
 	_fw_pick.set_open(false)
+	_kr.clear()
+	_restack()
 	fade(true, 0.4)
 
 

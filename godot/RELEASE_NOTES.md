@@ -1,6 +1,30 @@
-## Shores O' Fortune for Android and Windows: forts
+## Shores O' Fortune for Android and Windows: the Kraken
 
-The thirty-third build brings the web game's forts to the islands.
+The thirty-fourth build brings the web game's Kraken up out of the deep.
+
+- **Something stirs in the storm.** Now and then a storm brings it. Out in
+  deep, lonely water the sea goes dark and starts to boil, a vast shape
+  glides under your keel, and then its arms burst up all round you.
+- **Read its arms.** An arm rears back before it strikes and a red shimmer
+  on the water shows where it will fall, with a warning over it on screen.
+  Sail out of the line or take the blow. Sometimes an arm coils round your
+  hull and holds her fast: pour shot into it, or crowd on sail and tear
+  free.
+- **Sever its arms, strike the eye.** Your guns lay on its arms like on any
+  ship. Chain shot cleaves them, fire sets them burning, and a beaten arm
+  recoils spurting ink. Beat enough and its head rises with its great gold
+  eyes, the place to aim. Wound it deep and it rages: more arms, faster
+  blows, and a maelstrom turning round it that drags you in.
+- **The fight of the voyage.** A boss bar shows its life and what to do
+  next, the title rises with it, its own battle music builds as it rages,
+  and every pirate in those waters runs for it. No harbour or beach takes
+  you in while it's about.
+- **Its hoard.** Slay it for 1,500 gold, the Beak of the Kraken, a Vial of
+  Kraken Ink and a Kraken's Pearl among chests rising round where it sank,
+  a Kraken's Bloom showpiece rocket, the Kraken Ink skin for your vault,
+  fresh shot and a patched hull.
+
+### Also from the last build: forts
 
 - **Forts on the isles.** Stone forts held by the Brethren stand over the
   harbours, with sea walls, a keep, a flag on the tower and cannon on the
@@ -19,26 +43,3 @@ The thirty-third build brings the web game's forts to the islands.
   hours' worth, collected as you sail past), and it mends your hull while
   you lie off its walls out of the fight. Forts show on the minimap and the
   sea chart.
-
-### Also from the last build: feast nights
-
-- **Every port keeps a feast.** Each trading port has its own feast, one
-  night in three: the Spice Feast, Gold Night, the Night of the Coral
-  Saints, the Rum Harvest, the Drizzle Lanterns and the Jade Moon. On the
-  full moon every port in the isles lights up at once for the Full Moon
-  Fair, and word of it reaches you at dusk.
-- **Lanterns and dancing.** From dusk the quay is strung with paper
-  lanterns in the town's colours, lit one after another as the lamplighter
-  works down the quay and swinging in the breeze. The town turns out in its
-  feast-day best: a ring dance, couples swinging each other round, a
-  drummer on a barrel, the fiddler playing faster, a fellow toasting the
-  night with his mug.
-- **Fireworks over the harbour.** Through the middle of the night the
-  harbourmaster sends rockets up from the lighthouse in the town's favourite
-  shells, with a grand finale on the stroke of midnight and the whole quay
-  roaring.
-- **Lantern boats.** Little paper boats with candles burning in them are
-  set down on the water and drift out to sea in a long trail of lights,
-  shouldered aside by any hull that sails through them.
-- **The band, and better prices.** The town band plays reels you can hear
-  across the water, and on a feast night every merchant pays more.

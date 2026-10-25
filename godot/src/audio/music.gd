@@ -37,6 +37,8 @@ var paused := false:
 		if _sea != null:
 			_sea.stream_paused = v
 			_port.stream_paused = v
+			for b in _boss:
+				b.stream_paused = v
 
 var _theme := {}
 var _now := 0.0
@@ -66,6 +68,16 @@ var _port: AudioStreamPlayer
 var _port_on := false
 var _port_g := 0.0
 var _port_loading := false
+## The Kraken's battle music (the web's krakenMusic): the drone, the tremolo
+## strings and the war drums, each a loop baked from the web's live voices.
+var _boss: Array[AudioStreamPlayer] = []
+## Each part's level as baked: drone, strings, then the drums of each stage.
+var _boss_gain := PackedFloat32Array([1.0, 1.0, 1.0])
+var _boss_on := false
+var _boss_g := 0.0
+var _boss_stage := 0
+var _boss_strings := 1.0
+var _boss_off := 0.0
 
 
 func _ready() -> void:
@@ -81,6 +93,11 @@ func _ready() -> void:
 	_port = AudioStreamPlayer.new()
 	_port.bus = &"Music"
 	add_child(_port)
+	for i in 3:
+		var b := AudioStreamPlayer.new()
+		b.bus = &"Music"
+		add_child(b)
+		_boss.append(b)
 
 
 ## The tracks in the manifest (sounds.json's "music"): the songs, the
@@ -184,6 +201,8 @@ func _process(dt: float) -> void:
 					_next_at = _now + 30.0
 	_step_sea(dt)
 	_step_port(dt)
+	if _boss_on or _boss[0].playing:
+		_step_boss(dt)
 
 
 func _play(k: int, stream: AudioStream) -> void:
@@ -290,8 +309,79 @@ func _step_port(dt: float) -> void:
 	_port.volume_db = linear_to_db(maxf(float(_harbour.gain) * _port_g, 1e-6))
 
 
+## The Kraken's music on (in over 2.5 s), raised to `stage` (0..2: the
+## strings swell and the drums thicken), or off (dying away over a few
+## seconds). `parts` are [stream, gain] for the drone, the strings and the
+## drums of each stage, looping.
+func boss(on: bool, stage: int, parts: Array) -> void:
+	_boss_stage = clampi(stage, 0, 2)
+	if on and not _boss_on:
+		if parts.size() < 5 or parts.any(func(e: Array) -> bool: return e[0] == null):
+			return
+		_boss_on = true
+		_boss_g = 0.0
+		_boss_off = 0.0
+		_boss_strings = 1.0 + _boss_stage
+		for i in 2:
+			var st: AudioStream = parts[i][0]
+			_loop(st)
+			_boss[i].stream = st
+			_boss_gain[i] = parts[i][1]
+			_boss[i].play()
+		_drums(parts)
+		_boss[2].play()
+		for b in _boss:
+			b.stream_paused = paused
+	elif on:
+		_drums(parts)
+	elif _boss_on:
+		_boss_on = false
+		_boss_off = 0.0
+
+
+func _drums(parts: Array) -> void:
+	var e: Array = parts[2 + _boss_stage]
+	var st: AudioStream = e[0]
+	_boss_gain[2] = e[1]
+	if _boss[2].stream == st:
+		return
+	_loop(st)
+	# the next stage's drums take up the bar where the last left off
+	var at := _boss[2].get_playback_position() if _boss[2].playing else 0.0
+	_boss[2].stream = st
+	if _boss_on and _boss[0].playing:
+		_boss[2].play(at)
+
+
+static func _loop(st: AudioStream) -> void:
+	if st is AudioStreamOggVorbis:
+		(st as AudioStreamOggVorbis).loop = true
+
+
+func _step_boss(dt: float) -> void:
+	if _boss_on:
+		_boss_g = minf(1.0, _boss_g + dt / 2.5)
+	else:
+		_boss_g *= exp(-dt / 0.9)
+		_boss_off += dt
+		if _boss_off > 4.0:
+			for b in _boss:
+				b.stop()
+				b.stream = null
+			_boss_g = 0.0
+			return
+	_boss_strings += ((1.0 + _boss_stage) - _boss_strings) * MathX.damp(1.0 / 1.5, dt)
+	# the web plays it on its own bus at the music's level and a quarter more
+	var lv := 1.25 * _boss_g
+	_boss[0].volume_db = linear_to_db(maxf(lv * _boss_gain[0], 1e-6))
+	_boss[1].volume_db = linear_to_db(maxf(lv * _boss_gain[1] * _boss_strings, 1e-6))
+	_boss[2].volume_db = linear_to_db(maxf(lv * _boss_gain[2], 1e-6))
+
+
 ## What is playing, for the smoke test.
 func state() -> String:
+	if _boss_on:
+		return "the Kraken's music at stage %d" % _boss_stage
 	if _port.playing and _port_on:
 		return "the harbour's theme playing"
 	if _port_on:

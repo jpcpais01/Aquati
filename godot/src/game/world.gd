@@ -48,6 +48,8 @@ var hazards: Hazards
 ## The Brethren's island forts (their walls stop shot; a Forts, untyped
 ## here so the world's script doesn't reach the shore's).
 var forts: Node3D
+## The Kraken (a Kraken, untyped for the same reason; null until the game makes it).
+var kraken: Variant = null
 
 
 func water_height(x: float, z: float) -> float:
