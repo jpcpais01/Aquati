@@ -57,6 +57,15 @@ const DEFS := {
 		"trim": "#d4b26a", "sail": "#d8cdb8", "sail_seam": "#bfb39a", "emblem": "skull", "emblem_color": "#2a2224",
 		"flag": "#1a1414", "flag2": "#e9e1d2",
 	},
+	# the Hollow Jack's (ShipClass "revenant"): planking gone the grey-plum of
+	# driftwood, a strake of deep violet, a boot-top of bleached bone, trim in
+	# old pumpkin gold, ash-black canvas bearing a ghost-green skull, and a
+	# black flag in tatters
+	"hallow": {
+		"hull": "#2c2429", "bottom": "#141014", "boot": "#cbbd9c", "strake": "#3a2252", "wale": "#0d0a0c",
+		"trim": "#c48a2c", "sail": "#3b3a3e", "sail_seam": "#27262a", "emblem": "skull", "emblem_color": "#a6ffd4",
+		"flag": "#0e0c10", "flag2": "#b0ffd8",
+	},
 }
 ## The player's flag is drawn this wide (the Shipwright shows it close), everyone else's as the web draws them.
 const FLAG_PX := 1024

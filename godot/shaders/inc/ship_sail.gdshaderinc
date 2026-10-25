@@ -7,6 +7,9 @@
 #define LIT_SPECULAR 0.35
 #define LIT_BACKLIGHT
 #include "res://shaders/inc/lit.gdshaderinc"
+#ifdef PHANTOM
+#include "res://shaders/inc/ship_phantom.gdshaderinc"
+#endif
 
 uniform vec3 c_sail : source_color = vec3(0.957, 0.918, 0.831);
 uniform vec3 c_seam : source_color = vec3(0.851, 0.788, 0.659);
@@ -287,5 +290,8 @@ void fragment() {
 	SPECULAR = 0.35;
 	// sunlight glows through the canvas from behind
 	BACKLIGHT = col * 0.32;
+#ifdef PHANTOM
+	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

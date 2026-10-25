@@ -54,6 +54,9 @@ var parts := Parts.fresh()
 ## Your Treasure Vault (Cosmetics.fresh): {owned, equip: {skin, blast, trail},
 ## pity, pulls, daily, unseen}.
 var vault := Cosmetics.fresh()
+## The event ships you've claimed, yours to sail for good (ShipEvents):
+## class id -> when (unix seconds).
+var claimed := {}
 ## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
 var look := ShipLook.fresh()
 var designs := []
@@ -285,9 +288,36 @@ func charted(id: String) -> bool:
 
 
 func pick_ship(id: String) -> void:
-	if SHIPS.has(id) and id != ship:
+	if sailable(id) and id != ship:
 		ship = id
+		claim(id)
 		touch()
+
+
+## Whether a ship can be picked: one of the line, an event ship you've
+## claimed, or one whose event is on.
+func sailable(id: String) -> bool:
+	return SHIPS.has(id) or claimed.has(id) or ShipEvents.ship_on(id)
+
+
+## The harbour's picker: the ships of the line, then the event ships you
+## can sail.
+func ships() -> Array[String]:
+	var out := SHIPS.duplicate()
+	for id in ShipEvents.all_ships():
+		if sailable(id):
+			out.append(id)
+	return out
+
+
+## An event ship picked while her event is on is yours to keep: true the
+## first time.
+func claim(id: String) -> bool:
+	if claimed.has(id) or not ShipEvents.ship_on(id):
+		return false
+	claimed[id] = int(Time.get_unix_time_from_system())
+	touch()
+	return true
 
 
 func pick_sea(id: String) -> void:
@@ -364,6 +394,7 @@ func save() -> void:
 		"records": records,
 		"parts": parts,
 		"vault": vault,
+		"claimed": claimed,
 	}
 	_write(path, JSON.stringify(data, "\t"))
 	if _looks_dirty:
@@ -424,7 +455,12 @@ func _read(file: String) -> Variant:
 
 ## Takes what a save holds, field by field, ignoring anything malformed.
 func _adopt(d: Dictionary) -> void:
-	if SHIPS.has(str(d.get("ship", ""))):
+	var cl: Variant = d.get("claimed")
+	if cl is Dictionary:
+		for k: String in cl:
+			if ShipEvents.all_ships().has(k):
+				claimed[k] = int(cl[k])
+	if sailable(str(d.get("ship", ""))):
 		ship = str(d.ship)
 	if SEAS.has(str(d.get("start_sea", ""))):
 		start_sea = str(d.start_sea)

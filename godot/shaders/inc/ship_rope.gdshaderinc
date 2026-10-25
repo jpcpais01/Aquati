@@ -5,6 +5,9 @@
 #include "res://shaders/inc/ship_common.gdshaderinc"
 #define LIT_SPECULAR 0.3
 #include "res://shaders/inc/lit.gdshaderinc"
+#ifdef PHANTOM
+#include "res://shaders/inc/ship_phantom.gdshaderinc"
+#endif
 
 varying vec3 v_world;
 varying vec3 v_side;
@@ -47,5 +50,8 @@ void fragment() {
 	ROUGHNESS = 0.88 * wet_gloss();
 	SPECULAR = 0.3;
 	ALPHA = v_cover;
+#ifdef PHANTOM
+	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

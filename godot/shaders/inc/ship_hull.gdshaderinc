@@ -7,6 +7,9 @@
 #include "res://shaders/inc/ship_common.gdshaderinc"
 #define LIT_CLEARCOAT
 #include "res://shaders/inc/lit.gdshaderinc"
+#ifdef PHANTOM
+#include "res://shaders/inc/ship_phantom.gdshaderinc"
+#endif
 
 uniform vec3 c_hull : source_color = vec3(0.48, 0.29, 0.16);
 uniform vec3 c_bottom : source_color = vec3(0.7, 0.23, 0.17);
@@ -150,5 +153,8 @@ void fragment() {
 	// the seams and port frames stand in relief (a bump from screen-space
 	// derivatives: no tangents needed, and it fades with the seams far off)
 	NORMAL = bump(NORMAL, VERTEX, relief * 0.012);
+#ifdef PHANTOM
+	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

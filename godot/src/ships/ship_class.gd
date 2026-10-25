@@ -45,6 +45,14 @@ var mass := 1.0
 ## How she compares, 0..1 each (the harbour's bars): speed, agility, armour,
 ## hull and firepower.
 var stats := {}
+## An event ship's (ShipEvents): the event she belongs to ("" for the three
+## ships of the line), the livery she always wears (her own: the Shipwright
+## doesn't repaint her), whether she's built haunted (ShipModel._build_haunt)
+## and the power she's given (Haunt: "phantom").
+var event := ""
+var livery := ""
+var haunt := false
+var ability := ""
 
 const DEFS := {
 	"sloop": {
@@ -89,6 +97,28 @@ const DEFS := {
 		"damage": 26.0, "muzzle_speed": 62.0, "mass": 2.6,
 		"stats": {"speed": 0.42, "agility": 0.3, "armour": 0.95, "hull": 1.0, "firepower": 1.0},
 	},
+	# Hallowtide's event ship: a cursed galleon, broad as a barn and swaybacked
+	# as a crescent moon, her castles towering like a haunted manor, sides
+	# pinched in hard at the rail. Faster than her bulk has any right to be
+	# (the dead don't wait on the wind), and once in a while she slips across
+	# into the spirit world (Haunt).
+	"revenant": {
+		"name": "Revenant", "title": "Hollow Jack",
+		"blurb": "A cursed galleon crewed by the drowned, lit by jack-o'-lanterns and ghost-fire. Once in a while she slips into the spirit world, where no shot can touch her.",
+		"event": "hallowtide", "livery": "hallow", "haunt": true, "ability": "phantom",
+		"length": 26.0, "beam": 9.2, "draft": 2.4, "freeboard": 2.2, "bulwark": 0.95, "transom": 0.86,
+		"sheer_bow": 1.9, "sheer_stern": 1.25, "tumblehome": 0.21,
+		"stern_castle": {"t": 0.29, "h": 2.5}, "fore_castle": {"t": 0.83, "h": 1.4},
+		"masts": [
+			{"t": 0.21, "height": 18.5, "rig": "lateen", "tiers": 1, "span": 1.05},
+			{"t": 0.5, "height": 25.0, "rig": "square", "tiers": 3, "top": true},
+			{"t": 0.73, "height": 21.5, "rig": "square", "tiers": 2, "top": true},
+		],
+		"bowsprit": 7.5, "jib": true, "cannons_per_side": 6, "cannon_span": Vector2(0.31, 0.8), "chasers": 2,
+		"hp": 680.0, "armor": 0.36, "max_speed": 12.4, "accel": 0.36, "turn_rate": 0.56, "reload": 3.1,
+		"damage": 29.0, "muzzle_speed": 63.0, "mass": 2.1,
+		"stats": {"speed": 0.7, "agility": 0.52, "armour": 0.85, "hull": 0.9, "firepower": 0.85},
+	},
 }
 
 static var _cache := {}
@@ -118,6 +148,11 @@ func copy() -> ShipClass:
 		if int(p.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE:
 			c.set(p.name, get(p.name))
 	return c
+
+
+## One of the event ships (ShipEvents), not of the line.
+func is_event() -> bool:
+	return event != ""
 
 
 ## Gun positions along the hull, 0 stern .. 1 bow.
