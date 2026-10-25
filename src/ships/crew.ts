@@ -535,7 +535,8 @@ class ShipCrew implements DeckPlan {
     for (const role of roles) {
       const row = alloc();
       if (row < 0) break;
-      const look = makeLook(ship.team, role, ship.ghost);
+      // a haunted ship sails with a crew of the drowned
+      const look = makeLook(ship.team, role, ship.ghost || !!ship.cls.haunt);
       writeLook(row, look);
       const zone = role === 'helm' || role === 'captain' ? this.helmZone : this.main;
       const sl = new Sailor(role, look, row, zone);
@@ -2347,8 +2348,10 @@ export class CrewSystem {
       if (!seen) continue;
       // a phantom's crew only takes shape once she has
       if (s.ghost && s.presence < 0.6) continue;
+      // on her Phantom Run the Hollow Jack's crew fade from her decks
+      const over = !!s.power && s.power.phantom > 0.5;
       for (const sl of c.sailors) {
-        if (sl.mode === 'gone' || sl.mode === 'ashore') continue;
+        if (sl.mode === 'gone' || sl.mode === 'ashore' || (over && sl.mode === 'aboard')) continue;
         if (c.pilot?.hidden && sl.role === 'captain' && sl.mode === 'aboard') continue;
         if (sl.mode === 'aboard') c.matrixOf(sl, m);
         else looseMatrix(sl, m);

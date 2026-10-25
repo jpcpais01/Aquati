@@ -30,7 +30,8 @@ export interface Shot {
 
 /** A lasting effect a special shot left on a ship. */
 /** dread: wraith-fire terrified her crews; phased: a ball passed through a ghost; unburnt / fleshless: a ghost shrugged off fire / grape. */
-export type ShipStatus = 'ablaze' | 'shredded' | 'crew' | 'dread' | 'phased' | 'unburnt' | 'fleshless';
+/** phantom / spirits: the Hollow Jack crossed over into the spirit world / her power is ready again. */
+export type ShipStatus = 'ablaze' | 'shredded' | 'crew' | 'dread' | 'phased' | 'unburnt' | 'fleshless' | 'phantom' | 'spirits';
 
 /** Everything a ship / projectile needs to know about its surroundings. */
 export class World {

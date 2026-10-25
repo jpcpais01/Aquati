@@ -18,6 +18,7 @@ export interface Controls {
   treasure: boolean; // pulse: the treasure map (T)
   photo: boolean; // pulse: photo mode (P)
   fleet: boolean; // pulse: the next fleet order (G)
+  ability: boolean; // pulse: an event ship's power (X)
   // captain's view
   walkX: number; // -1 left .. +1 right
   walkY: number; // -1 back .. +1 forward
@@ -49,6 +50,7 @@ export class Input {
     treasure: false,
     photo: false,
     fleet: false,
+    ability: false,
     walkX: 0,
     walkY: 0,
     run: false,
@@ -120,6 +122,7 @@ export class Input {
       if (k === 'm') this.state.map = true;
       if (k === 't') this.state.treasure = true;
       if (k === 'g') this.state.fleet = true;
+      if (k === 'x') this.state.ability = true;
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.keys.clear());
@@ -478,6 +481,7 @@ export class Input {
     this.state.treasure = false;
     this.state.photo = false;
     this.state.fleet = false;
+    this.state.ability = false;
     this.state.view = false;
     this.state.helm = false;
     this.state.jump = false;

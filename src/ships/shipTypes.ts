@@ -2,7 +2,7 @@ import type { BackingId, EmblemId, FlagDesign } from './heraldry';
 import type { SailPattern } from './look';
 import type { Loadout } from './parts';
 
-export type ShipClassId = 'sloop' | 'brig' | 'galleon';
+export type ShipClassId = 'sloop' | 'brig' | 'galleon' | 'revenant';
 
 export interface MastDef {
   t: number; // 0 stern .. 1 bow
@@ -52,6 +52,14 @@ export interface ShipClass {
   mass: number; // buoyancy response (higher = calmer)
   // menu stat bars 0..1
   stats: { speed: number; agility: number; armour: number; hull: number; firepower: number };
+  /** An event ship's season (see shipEvents.ts): she sails in only while it's on, and is kept once sailed. */
+  event?: string;
+  /** The colours she always wears (an event ship's own; no refit, no player paint). */
+  livery?: string;
+  /** Haunted: torn glowing rags, pumpkins on her rails, ghost-fire in her seams, a dead man at her head. */
+  haunt?: boolean;
+  /** Her power, called from the HUD (see haunt.ts). */
+  ability?: 'phantom';
 }
 
 export const SHIP_CLASSES: Record<ShipClassId, ShipClass> = {
@@ -158,7 +166,56 @@ export const SHIP_CLASSES: Record<ShipClassId, ShipClass> = {
     mass: 2.6,
     stats: { speed: 0.42, agility: 0.3, armour: 0.95, hull: 1, firepower: 1 },
   },
+  // Hallowtide's event ship: a cursed galleon, broad as a barn and swaybacked
+  // as a crescent moon, her castles towering like a haunted manor, sides
+  // pinched in hard at the rail. Faster than her bulk has any right to be
+  // (the dead don't wait on the wind), and once in a while she slips across
+  // into the spirit world (haunt.ts).
+  revenant: {
+    id: 'revenant',
+    name: 'Revenant',
+    title: 'Hollow Jack',
+    blurb: "A cursed galleon crewed by the drowned, lit by jack-o'-lanterns and ghost-fire. Once in a while she slips into the spirit world, where no shot can touch her.",
+    event: 'hallowtide',
+    livery: 'hallow',
+    haunt: true,
+    ability: 'phantom',
+    length: 26,
+    beam: 9.2,
+    draft: 2.4,
+    freeboard: 2.2,
+    bulwark: 0.95,
+    transom: 0.86,
+    sheerBow: 1.9,
+    sheerStern: 1.25,
+    tumblehome: 0.21,
+    sternCastle: { t: 0.29, h: 2.5 },
+    foreCastle: { t: 0.83, h: 1.4 },
+    masts: [
+      { t: 0.21, height: 18.5, rig: 'lateen', tiers: 1, span: 1.05 },
+      { t: 0.5, height: 25, rig: 'square', tiers: 3, top: true },
+      { t: 0.73, height: 21.5, rig: 'square', tiers: 2, top: true },
+    ],
+    bowsprit: 7.5,
+    jib: true,
+    cannonsPerSide: 6,
+    cannonSpan: [0.31, 0.8],
+    chasers: 2,
+    hp: 680,
+    armor: 0.36,
+    maxSpeed: 12.4,
+    accel: 0.36,
+    turnRate: 0.56,
+    reload: 3.1,
+    damage: 29,
+    muzzleSpeed: 63,
+    mass: 2.1,
+    stats: { speed: 0.7, agility: 0.52, armour: 0.85, hull: 0.9, firepower: 0.85 },
+  },
 };
+
+/** The ships of the line, always in the harbour (the event ships come and go: shipEvents.ts). */
+export const LINE_SHIPS: ShipClassId[] = ['sloop', 'brig', 'galleon'];
 
 export interface Livery {
   id: string;
@@ -188,6 +245,8 @@ export interface Livery {
   skin?: string;
   /** A phantom: her materials take the spectral ghost look (see ghostGlsl). */
   ghost?: boolean;
+  /** Haunted (the Hollow Jack): rags for sails, ghost-light in her seams and windows. */
+  haunt?: boolean;
   /** Upgrade parts the ship is built with. */
   parts?: Loadout;
 }
@@ -240,6 +299,27 @@ export const PIRATE_LIVERIES: Livery[] = [
     flag2: '#e9e1d2',
   },
 ];
+
+/** Hallowtide's Hollow Jack: tarred black timber, violet strakes, old gold, and a ghost-green skull on her rags. */
+export const HALLOW_LIVERY: Livery = {
+  id: 'hallow',
+  hull: '#2c2429',
+  bottom: '#141014',
+  boot: '#cbbd9c',
+  strake: '#3a2252',
+  wale: '#0d0a0c',
+  trim: '#c48a2c',
+  sail: '#3b3a3e',
+  sailSeam: '#27262a',
+  emblem: 'skull',
+  emblemColor: '#a6ffd4',
+  flag: '#0e0c10',
+  flag2: '#b0ffd8',
+  haunt: true,
+};
+
+/** The colours an event ship always wears, by id. */
+export const EVENT_LIVERIES: Record<string, Livery> = { hallow: HALLOW_LIVERY };
 
 /** The drowned and the damned: weathered grey timber and rotten canvas, lit from within. */
 export const GHOST_LIVERY: Livery = {

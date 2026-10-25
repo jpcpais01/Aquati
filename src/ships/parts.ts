@@ -196,7 +196,7 @@ export function chestPart(tier: number, luck: number, rnd = Math.random): PartTi
 
 /** The rarity of a part an enemy ship carries into battle (null: the standard fit). */
 export function pirateFit(cls: ShipClassId, rnd = Math.random): Loadout {
-  const n = { sloop: 0.05, brig: 0.14, galleon: 0.3 }[cls];
+  const n = { sloop: 0.05, brig: 0.14, galleon: 0.3, revenant: 0 }[cls];
   const out: Loadout = {};
   if (rnd() > n) return out;
   const r = rnd();

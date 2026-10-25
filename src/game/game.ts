@@ -49,7 +49,8 @@ import { Pack, PirateAI } from '../ships/ai';
 import { CrewSystem } from '../ships/crew';
 import { loadFigureheads } from '../ships/figureheads';
 import { ShipModel } from '../ships/shipModel';
-import { GHOST_LIVERY, Livery, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { EVENT_LIVERIES, GHOST_LIVERY, LINE_SHIPS, Livery, PIRATE_LIVERIES, SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { claim, harbourShips } from '../ships/shipEvents';
 import { hullKey, loadDesigns, loadLook, lookToLivery, saveLook, ShipLook } from '../ships/look';
 import { onPaintReady, preloadPaint } from '../ships/heraldry';
 import { UI } from '../ui/ui';
@@ -81,6 +82,8 @@ import { Kraken } from './kraken';
 import { BRUMAS_NAMES, Hazards, NAMES as MAELSTROM_NAMES } from './hazards';
 import { vortexDepth } from '../world/vortex';
 import { HazardHud, HazardView } from '../ui/hazard';
+import { AbilityButton } from '../ui/abilityButton';
+import { Haunt } from '../ships/haunt';
 import type { HazardMark } from '../ui/chart';
 import { KrakenHud, KrakenReward } from '../ui/kraken';
 import { CameraRig } from './cameraRig';
@@ -502,6 +505,8 @@ export class Game {
   // the sea's own dangers: maelstroms and open-sea reefs; see game/hazards.ts
   private hazards!: Hazards;
   private hzHud!: HazardHud;
+  /** The HUD button for an event ship's power (the Hollow Jack's Phantom Run). */
+  private abilityBtn!: AbilityButton;
   private hzMarks: HazardMark[] = [];
   /** Which ones you've come upon this voyage (each is named the first time). */
   private hzSeen = new Set<string>();
@@ -942,6 +947,8 @@ export class Game {
     };
     this.world.onHazard = (ship, kind, dmg, at) => this.onHazard(ship as Ship, kind, dmg, at);
     this.hzHud = new HazardHud(document.getElementById('hud')!);
+    this.abilityBtn = new AbilityButton(document.getElementById('hud')!);
+    this.abilityBtn.onPress = () => this.callPower();
     this.hzMarks = [
       ...this.hazards.maelstroms.map((m): HazardMark => ({ kind: 'vortex', name: m.name, x: m.x, z: m.z, r: m.vortex.r, dir: m.vortex.dir })),
       ...this.hazards.reefs.map((r): HazardMark => ({ kind: 'reef', name: r.name, x: r.x, z: r.z, r: r.r, dir: 1 })),
@@ -1114,8 +1121,10 @@ export class Game {
     // pirate paint only: the player's own ship is in the scene and gets the warm-up draw below.
     // One paint a frame: each is painted, then pushed to the GPU, without starving the page
     // (and the merchant houses' hulls, so a convoy never paints a texture mid-voyage)
-    const paints = (Object.keys(SHIP_CLASSES) as ShipClassId[]).flatMap((id) => [...PIRATE_LIVERIES, HUNTER_HULL, GHOST_LIVERY].map((liv) => [SHIP_CLASSES[id], liv] as const));
+    const paints = LINE_SHIPS.flatMap((id) => [...PIRATE_LIVERIES, HUNTER_HULL, GHOST_LIVERY].map((liv) => [SHIP_CLASSES[id], liv] as const));
     for (const k of MERCHANT_KINDS) paints.push([k.cls, k.livery]);
+    // the event ships' own colours (one of them may be the player's at any moment)
+    for (const id of harbourShips()) if (SHIP_CLASSES[id].livery) paints.push([SHIP_CLASSES[id], EVENT_LIVERIES[SHIP_CLASSES[id].livery!]]);
     for (let i = 0; i < paints.length; i++) {
       const [cls, liv] = paints[i];
       for (const t of ShipModel.textures(cls, liv, this.quality.physicalHull ? 1 : 0)) this.renderer.initTexture(t);
@@ -1300,6 +1309,9 @@ export class Game {
     };
     // peaceful seas: a blow from our side is how every quarrel starts, and a grudge is held against a captain's whole side
     Ship.onStruck = (s, by) => this.quarrel(s, by);
+    // the Hollow Jack's Banshee's Wail finds every ship afloat, and lands its blow like a broadside
+    Haunt.ships = () => this.ships;
+    Haunt.onWail = (o, by, dealt) => this.onHit(o, by, dealt, _a.set(o.pos.x, o.root.position.y + o.cls.freeboard + 2, o.pos.z));
     setSideOf((s) => this.coop.ownerOf(s));
     this.audio.setMuted(!ui.settings.sound);
     ui.onSettings(ui.settings);
@@ -1660,6 +1672,12 @@ export class Game {
   /** Dresses your ship (at the berth, in the menu or at sea) in what the vault says is equipped. */
   private applyCosmetics(s: Ship | null = this.player ?? this.preview) {
     if (!s || s.team !== 'player') return;
+    if (s.cls.haunt) {
+      // the Hollow Jack fires her own hallow-fire, whatever the vault holds
+      s.cannonFx.blast = 'hallow';
+      s.cannonFx.trail = 'hallow';
+      return;
+    }
     const eq = this.vaultStore.equipped;
     s.model.setSkin(skinItem(eq.skin));
     s.cannonFx.blast = fxItem(eq.blast)?.style ?? 'powder';
@@ -1777,7 +1795,8 @@ export class Game {
   }
 
   private openShipwright() {
-    if (this.state !== 'menu' || this.swBusy) return;
+    // an event ship comes as she is: no refit, no repaint
+    if (this.state !== 'menu' || this.swBusy || SHIP_CLASSES[this.ui.selected].event) return;
     this.veil.innerHTML = `<span>Rowing to ${this.port.name}…</span>`;
     void this.fade(() => {
       this.state = 'port';
@@ -2573,8 +2592,8 @@ export class Game {
     }
     const named = e.hunter ? CAPTAIN.get(e.hunter) : undefined;
     // survivors you fished out of the sea are first over her rail
-    const hands = ({ sloop: 3, brig: 4, galleon: 6 }[p.cls.id] ?? 4) + Math.min(3, Math.floor(this.rescued / 2));
-    const foes = ({ sloop: 4, brig: 6, galleon: 8 }[e.cls.id] ?? 5) + (named ? 1 : 0);
+    const hands = ({ sloop: 3, brig: 4, galleon: 6, revenant: 6 }[p.cls.id] ?? 4) + Math.min(3, Math.floor(this.rescued / 2));
+    const foes = ({ sloop: 4, brig: 6, galleon: 8, revenant: 8 }[e.cls.id] ?? 5) + (named ? 1 : 0);
     const ok = this.shore.board(p, e, {
       hands, foes,
       bossHp: named ? 150 + named.tier * 30 : 115,
@@ -2611,10 +2630,10 @@ export class Game {
     if (!p || this.state !== 'playing') return;
     const named = e.hunter ? CAPTAIN.get(e.hunter) : undefined;
     const id = e.cls.id;
-    const gold = ({ sloop: 150, brig: 280, galleon: 480 }[id] ?? 200) + Math.round(Math.random() * 120) + (named ? named.tier * 120 : 0);
+    const gold = ({ sloop: 150, brig: 280, galleon: 480, revenant: 480 }[id] ?? 200) + Math.round(Math.random() * 120) + (named ? named.tier * 120 : 0);
     p.gold += gold;
     this.vaultStore.earn(gold);
-    const tier = rollTier({ sloop: 0.35, brig: 0.55, galleon: 0.8 }[id] ?? 0.4, named ? 4 : 3);
+    const tier = rollTier({ sloop: 0.35, brig: 0.55, galleon: 0.8, revenant: 0.8 }[id] ?? 0.4, named ? 4 : 3);
     const goods = [...rollContents(tier), ...rollContents(rollTier(0.4, 2))];
     const res = this.stowFleet(goods);
     if (res.tossed.length || res.across.length) this.nagHold(res.tossed.length, res.across);
@@ -2662,7 +2681,7 @@ export class Game {
 
   private prizeMoney(e: Ship) {
     const heat = 1 + wantedLevel(this.heat.pts) * HEAT_BONUS;
-    return Math.round(({ sloop: 380, brig: 700, galleon: 1250 }[e.cls.id] ?? 500) * heat * this.bounty.bonus);
+    return Math.round(({ sloop: 380, brig: 700, galleon: 1250, revenant: 1250 }[e.cls.id] ?? 500) * heat * this.bounty.bonus);
   }
 
   private choosePrize(k: 'prize' | 'scuttle' | 'fleet') {
@@ -3399,7 +3418,10 @@ export class Game {
   }
 
   /** Your colours, with this ship's refit. */
-  private playerLivery(id: ShipClassId) {
+  private playerLivery(id: ShipClassId): Livery {
+    // an event ship always wears her own colours, and takes no refit
+    const own = SHIP_CLASSES[id].livery;
+    if (own) return EVENT_LIVERIES[own];
     return { ...lookToLivery(this.look), parts: this.partStore.loadout(id) };
   }
 
@@ -3407,7 +3429,7 @@ export class Game {
     // her refit is built into the model and into her figures
     const s = new Ship(refit(SHIP_CLASSES[id], livery.parts), livery, team, this.quality.physicalHull ? 1 : 0, model);
     if (team === 'player') {
-      s.name = this.look.name.trim() || s.cls.title;
+      s.name = s.cls.event ? s.cls.title : this.look.name.trim() || s.cls.title;
       this.applyCosmetics(s);
     }
     else {
@@ -3751,6 +3773,24 @@ export class Game {
     this.mooreFleet();
     // the forts you hold fly her colours
     this.forts.setColours(s);
+    // an event ship's ghost materials, on specks under her for a few frames, so her first Phantom Run doesn't hitch
+    if (s.power) {
+      const warm = s.power.warm();
+      s.root.add(warm);
+      let n = 0;
+      const tick = () => (++n < 5 ? requestAnimationFrame(tick) : warm.removeFromParent());
+      requestAnimationFrame(tick);
+    }
+  }
+
+  /** The player's ship calls on her power (the Hollow Jack's Phantom Run). */
+  private callPower() {
+    const p = this.player;
+    if (!p?.power || !p.alive || this.state !== 'playing' || this.shore.active) return;
+    if (p.power.call(this.world)) {
+      this.rig.shake(0.2);
+      this.pipeline.flash(0.08);
+    }
   }
 
   private findOpenWater(cx: number, cz: number, rMin: number, rMax: number): THREE.Vector3 {
@@ -3816,7 +3856,7 @@ export class Game {
   }
 
   /** How many ready hulls of each class the shipyard keeps on the slipway. */
-  private static readonly STOCK: Record<ShipClassId, number> = { sloop: 3, brig: 3, galleon: 1 };
+  private static readonly STOCK: Record<ShipClassId, number> = { sloop: 3, brig: 3, galleon: 1, revenant: 0 };
 
   private runShipyard() {
     // the yard's slices are a few milliseconds each: not in the seconds a ship is going down
@@ -4102,6 +4142,9 @@ export class Game {
     this.hold.capacity = HOLD_ROOM[p.cls.id] ?? 12;
     this.hold.clear();
     p.ammo = 'round';
+    // an event ship sailed in her season is yours to keep; her power starts ready
+    p.power?.reset();
+    if (p.cls.event) claim(p.cls.id);
     this.rescued = 0;
     p.boost.reload = 1;
     this.gullCool = 90;
@@ -4152,6 +4195,7 @@ export class Game {
     } else if (away) this.arrive(away, p);
     else
     this.ui.toast('Weigh anchor', fleet.length ? `The ${p.name} sets sail with ${fleet.join(' and ')}` : `The ${p.name} sets sail`, 3);
+    if (p.power) this.ui.toast('Phantom Run', `${this.input.isTouch ? 'Tap the ghost' : 'Press X'} to cross over: nothing can touch her, and she returns with a Banshee's Wail`, 6);
     if (this.vaultStore.gift('fleet-10k', 10000)) this.ui.toast('A gift from the Crown', '10,000 gold added to your purse', 6);
   }
 
@@ -4720,6 +4764,8 @@ export class Game {
       phased: 'Passed clean through',
       unburnt: 'The dead don\'t burn',
       fleshless: 'No flesh to cut',
+      phantom: 'Phantom Run!',
+      spirits: 'The spirits stir',
     }[st];
     if (ok) this.ui.floater(text, x, y - 18, st);
   }
@@ -4737,8 +4783,8 @@ export class Game {
     // the Crown pays more the more the Brethren hate you, and more again for your infamy;
     // a ghost's hold is full of the cursed gold she went down with
     const heat = 1 + wantedLevel(this.heat.pts) * HEAT_BONUS;
-    const bounty = Math.round({ sloop: 60, brig: 110, galleon: 220 }[ship.cls.id] * heat * this.bounty.bonus * (ship.ghost ? 2 : 1));
-    const luck = { sloop: 0, brig: 0.3, galleon: 0.6 }[ship.cls.id] + (ship.ghost ? 0.35 : 0);
+    const bounty = Math.round({ sloop: 60, brig: 110, galleon: 220, revenant: 220 }[ship.cls.id] * heat * this.bounty.bonus * (ship.ghost ? 2 : 1));
+    const luck = { sloop: 0, brig: 0.3, galleon: 0.6, revenant: 0.6 }[ship.cls.id] + (ship.ghost ? 0.35 : 0);
     this.loot.drop(ship.pos.x, ship.pos.z, 3 + Math.floor(ship.cls.length / 8) + (ship.ghost ? 2 : 0), luck, ship.cls.id === 'galleon' || ship.ghost);
     // your escorts' kills are yours: the Crown pays the flagship
     const escort = this.escorts.get(attacker);
@@ -6626,6 +6672,7 @@ export class Game {
     if (st.ammoPick >= 0) this.selectAmmo(AMMO_ORDER[st.ammoPick]);
     if (st.ammoNext) this.cycleAmmo();
     if (st.fleet) this.cycleOrder();
+    if (st.ability) this.callPower();
     if (st.firePort) this.tryFire('port');
     if (st.fireStarboard) this.tryFire('starboard');
     if (st.fireAuto) {
@@ -6869,10 +6916,12 @@ export class Game {
       this.updateForts(p, dt);
       this.updateHazards(p, dt);
       this.updatePeace(p);
+      this.abilityBtn.update(p.alive && !this.shore.active && !this.photo.active ? p.power : null);
       // rammed or holed on a reef: no cannonball to report it
       if (!p.alive) this.onPlayerSunk('hull');
       this.audio.setSailing(clamp(p.speed / 14, 0, 1));
     } else {
+      this.abilityBtn.update(null);
       this.loot.update(dt, w, null, 0);
       this.drift.update(dt, w, null, 0, this.ships, { ship: null, highSeas: this.onHighSeas });
     }

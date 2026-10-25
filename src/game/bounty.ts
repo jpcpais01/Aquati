@@ -229,7 +229,7 @@ export function hunterLivery(c: NamedCaptain): Livery {
 // ------------------------------------------------------------------ the voyage's heat
 
 /** Infamy a sinking earns, by class. */
-export const KILL_INFAMY: Record<ShipClassId, number> = { sloop: 1, brig: 2, galleon: 3 };
+export const KILL_INFAMY: Record<ShipClassId, number> = { sloop: 1, brig: 2, galleon: 3, revenant: 3 };
 /** Voyage infamy at which each wanted level (1..5) is reached. */
 export const WANTED_AT = [3, 8, 15, 24, 35];
 /** Past five skulls, another hunter sets out every this many points. */

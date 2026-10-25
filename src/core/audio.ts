@@ -848,6 +848,146 @@ export class Audio {
 
 
   /**
+   * The Hollow Jack crossing into the spirit world: a cold rush of air sucked
+   * up into silence and a hollow chord of voices swelling out of it, bent
+   * flat as she goes. Synthesised.
+   */
+  phantom(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(1, vol * 0.85), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime + Math.min(dist / SPEED_OF_SOUND, 1.1);
+    const send = ctx.createGain();
+    send.gain.value = 1.2;
+    out.connect(send).connect(this.reverbIn);
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(3200, t);
+    bp.frequency.exponentialRampToValueAtTime(220, t + 0.9);
+    bp.Q.value = 1.4;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.linearRampToValueAtTime(0.5, t + 0.12);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 1.1);
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t);
+    n.stop(t + 1.2);
+    // the voices: a hollow minor chord, each one sliding flat
+    for (const [semi, d] of [[0, 0.15], [3, 0.22], [7, 0.3], [12, 0.4]] as const) {
+      const f = 196 * Math.pow(2, semi / 12);
+      const o = ctx.createOscillator();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(f * 1.03, t + d);
+      o.frequency.exponentialRampToValueAtTime(f * 0.9, t + d + 2.2);
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 4.5 + Math.random();
+      const lg = ctx.createGain();
+      lg.gain.value = f * 0.012;
+      lfo.connect(lg).connect(o.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t + d);
+      g.gain.linearRampToValueAtTime(0.1, t + d + 0.35);
+      g.gain.exponentialRampToValueAtTime(0.001, t + d + 2.4);
+      o.connect(g).connect(out);
+      o.start(t + d);
+      lfo.start(t + d);
+      o.stop(t + d + 2.5);
+      lfo.stop(t + d + 2.5);
+    }
+  }
+
+  /**
+   * The Banshee's Wail: a keening voice that leaps up and slides down a long
+   * octave, a second one a fifth over it, a howl of wind under both, and a
+   * deep thud as the ring goes out. Synthesised.
+   */
+  wail(vol: number, pan: number, dist = 0) {
+    const v = this.voice(Math.min(1, vol), pan);
+    if (!v) return;
+    const [ctx, out] = v;
+    const t = ctx.currentTime + Math.min(dist / SPEED_OF_SOUND, 1.1);
+    const send = ctx.createGain();
+    send.gain.value = 1.3;
+    out.connect(send).connect(this.reverbIn);
+    for (const [mul, gain, type] of [[1, 0.2, 'sawtooth'], [1.5, 0.1, 'triangle'], [2, 0.05, 'sine']] as const) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      const f = 520 * mul;
+      o.frequency.setValueAtTime(f * 0.7, t);
+      o.frequency.exponentialRampToValueAtTime(f * 1.25, t + 0.25);
+      o.frequency.exponentialRampToValueAtTime(f * 0.5, t + 1.9);
+      const lfo = ctx.createOscillator();
+      lfo.frequency.setValueAtTime(5.5, t);
+      lfo.frequency.linearRampToValueAtTime(8, t + 1.8);
+      const lg = ctx.createGain();
+      lg.gain.value = f * 0.03;
+      lfo.connect(lg).connect(o.frequency);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2600;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(gain, t + 0.12);
+      g.gain.setValueAtTime(gain, t + 0.9);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 2.1);
+      o.connect(lp).connect(g).connect(out);
+      o.start(t);
+      lfo.start(t);
+      o.stop(t + 2.2);
+      lfo.stop(t + 2.2);
+    }
+    const n = ctx.createBufferSource();
+    n.buffer = this.noise;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(600, t);
+    bp.frequency.exponentialRampToValueAtTime(1400, t + 0.4);
+    bp.frequency.exponentialRampToValueAtTime(300, t + 2);
+    bp.Q.value = 2;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.linearRampToValueAtTime(0.3, t + 0.1);
+    ng.gain.exponentialRampToValueAtTime(0.001, t + 2.1);
+    n.connect(bp).connect(ng).connect(out);
+    n.start(t);
+    n.stop(t + 2.2);
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(90, t);
+    o.frequency.exponentialRampToValueAtTime(38, t + 0.5);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+    o.connect(g).connect(out);
+    o.start(t);
+    o.stop(t + 0.7);
+  }
+
+  /** The Hollow Jack's power is hers to call again: one deep, cracked bell, far off. */
+  toll() {
+    const v = this.voice(0.26, 0);
+    if (!v) return;
+    const [ctx, out] = v;
+    out.connect(this.reverbIn);
+    const t = ctx.currentTime;
+    for (const [fr, a] of [[110, 1], [220.6, 0.55], [264, 0.35], [331, 0.3], [445, 0.16], [598, 0.1]] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = fr;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.45 * a, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 3.4 - a);
+      o.connect(g).connect(out);
+      o.start(t);
+      o.stop(t + 3.5);
+    }
+  }
+
+
+  /**
    * A herring gull calling, synthesised on the spot: each note a nasal, raspy
    * "kyow" that leaps up then falls away; several in a row make the laughing call.
    */

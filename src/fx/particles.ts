@@ -298,6 +298,7 @@ const STREAKS: Record<string, [number, number, number, number, number, number]> 
   comet: [3.0, 2.0, 0.6, 1, 0.17, 0.62],
   ghost: [0.6, 2.6, 1.4, 1, 0.13, 0.5],
   wraith: [0.5, 2.4, 1.3, 1, 0.075, 0.4],
+  hallow: [3.0, 1.05, 0.12, 1, 0.15, 0.5],
   rainbow: [1, 1, 1, 2, 0.2, 0.58],
   starfall: [2.2, 2.0, 3.2, 1, 0.16, 0.5],
   // shot types
@@ -652,6 +653,22 @@ export class Particles {
           }, true);
         }
         this.smoke(pos, dir, carry, { tint: [0.74, 1.08, 0.94], jet: 7, bank: 4, wisps: 0, alpha: 0.75 });
+        break;
+      }
+      case 'hallow': {
+        // the Hollow Jack's guns: a jack-o'-lantern flash, green ghost-fire
+        // tongues licking out of the port, embers, and violet smoke
+        this.flash(pos, 3.0, [10, 4.2, 0.9], [3, 0.7, 0.05]);
+        this.sparks(pos, dir, carry, 8, [8, 3.4, 0.6], [2.4, 0.5, 0.05], 2);
+        for (let i = 0; i < 14; i++) {
+          const sp = rand(7, 17);
+          this.emit({
+            x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rand(-1.6, 1.6) + carry.x, vy: rand(-0.2, 1.8), vz: dir.z * sp + rand(-1.6, 1.6) + carry.z,
+            life: rand(0.3, 0.55), size: rand(0.5, 0.85), sizeEnd: rand(1.5, 2.4), color: [1.4, 7, 3.8], colorEnd: [0.08, 1.0, 0.45], drag: 3, grav: -2.6, spin: rand(-2, 2), kind: 0, fadeIn: 0.001,
+          }, true);
+        }
+        this.embers(pos, dir, carry, 10, 1);
+        this.smoke(pos, dir, carry, { tint: [0.78, 0.66, 0.98], jet: 7, bank: 4, wisps: 2, alpha: 0.85 });
         break;
       }
       default:

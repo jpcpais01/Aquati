@@ -12,6 +12,7 @@ const PIRATE_AMMO: Record<ShipClassId, [AmmoId, number][]> = {
   sloop: [['chain', 0.18], ['grape', 0.16]],
   brig: [['chain', 0.12], ['fire', 0.12], ['grape', 0.1]],
   galleon: [['shell', 0.2], ['fire', 0.1], ['grape', 0.14]],
+  revenant: [['fire', 0.15], ['grape', 0.15]],
 };
 
 // Pirate captains: patrol between open-water waypoints, hunt the player when
@@ -278,7 +279,7 @@ export class PirateAI {
     s.rudder = clamp(angleDelta(s.heading, steerTo) * 2.2, -1, 1);
 
     // gunnery
-    if (target && this.mode !== 'patrol' && !this.scared && dist < range * 1.05) {
+    if (target && !target.phantom && this.mode !== 'patrol' && !this.scared && dist < range * 1.05) {
       const rel = angleDelta(s.heading, Math.atan2(dx, dz));
       const arc = 0.32 + this.aggression * 0.1;
       this.aimDelay -= dt;

@@ -22,6 +22,8 @@ import { cleanFleet, FLEET_KEY, FleetState, mergeFleet, readFleet } from '../gam
 import { cleanForts, FORTS_KEY, FortSave, mergeForts, readForts } from '../game/forts';
 import { ChartSave, CHARTS_KEY, cleanCharts, mergeCharts, readCharts } from '../game/charts';
 import { cleanFireworks, FireworkCounts, FIREWORKS_KEY, mergeFireworks, readFireworks } from '../game/fireworks';
+import { CLAIMED_KEY, cleanClaimed, mergeClaimed, readClaimed } from '../ships/shipEvents';
+import type { ShipClassId } from '../ships/shipTypes';
 
 type Json = Record<string, unknown>;
 
@@ -53,6 +55,8 @@ export interface Profile {
   charts: ChartSave | null;
   /** Rockets in the firework locker, by kind. */
   fireworks: FireworkCounts | null;
+  /** The event ships you've claimed, yours to sail for good. */
+  claimed?: ShipClassId[] | null;
   /**
    * When the captain last reset the world (ms since 1970, 0 for never). The
    * world's progress (infamy, maps, prizes, forts) from before a reset never
@@ -143,6 +147,7 @@ export function readLocal(): Profile {
     forts: readForts(),
     charts: readCharts(),
     fireworks: readFireworks(),
+    claimed: readClaimed(),
     world,
   };
 }
@@ -167,6 +172,7 @@ export function writeLocal(p: Profile) {
     setOrRemove(FORTS_KEY, p.forts ? JSON.stringify(p.forts) : null);
     setOrRemove(CHARTS_KEY, p.charts ? JSON.stringify(p.charts) : null);
     setOrRemove(FIREWORKS_KEY, p.fireworks ? JSON.stringify(p.fireworks) : null);
+    setOrRemove(CLAIMED_KEY, p.claimed?.length ? JSON.stringify(p.claimed) : null);
     setOrRemove(WORLD_KEY, p.world ? String(p.world) : null);
     const stale: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
@@ -180,7 +186,7 @@ export function writeLocal(p: Profile) {
   }
 }
 
-export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null, forts: null, charts: null, fireworks: null, world: 0 });
+export const emptyProfile = (): Profile => ({ vault: null, parts: null, look: null, designs: [], records: null, gifts: {}, ship: null, bounty: null, maps: null, fleet: null, forts: null, charts: null, fireworks: null, claimed: null, world: 0 });
 
 /** Back to a brand-new guest: what a sign-out leaves behind. */
 export function resetLocal() {
@@ -399,6 +405,7 @@ export function merge(base: Profile | null, local: Profile, remote: Profile): Pr
     forts: pick ? pick.forts : mergeForts(B.forts ?? null, local.forts ?? null, remote.forts ?? null),
     charts: pick ? pick.charts ?? null : mergeCharts(local.charts ?? null, remote.charts ?? null),
     fireworks: mergeFireworks(base ? B.fireworks ?? null : null, local.fireworks ?? null, remote.fireworks ?? null),
+    claimed: mergeClaimed(local.claimed ?? null, remote.claimed ?? null),
     world: Math.max(lw, rw),
   };
 }
@@ -408,7 +415,7 @@ export type Part = Exclude<keyof Profile, 'gifts'>;
 /** Which parts differ, so the game reloads only what it must. */
 export function changedParts(a: Profile, b: Profile): Set<Part> {
   const out = new Set<Part>();
-  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet', 'forts', 'charts', 'fireworks', 'world'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
+  for (const k of ['vault', 'parts', 'look', 'designs', 'records', 'ship', 'bounty', 'maps', 'fleet', 'forts', 'charts', 'fireworks', 'claimed', 'world'] as const) if (!same(a[k] ?? null, b[k] ?? null)) out.add(k);
   return out;
 }
 
@@ -433,6 +440,7 @@ export function parseProfile(raw: unknown): Profile | null {
       forts: cleanForts(p.forts),
       charts: cleanCharts(p.charts),
       fireworks: cleanFireworks(p.fireworks),
+      claimed: cleanClaimed(p.claimed),
       world: stamp(p.world),
     };
   } catch {

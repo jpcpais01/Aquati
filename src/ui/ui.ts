@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { PATCH_NOTES } from '../data/patchNotes';
 import { startLoadScenes } from './loadScenes';
 import { SHIP_CLASSES, ShipClassId } from '../ships/shipTypes';
+import { claimed, eventOf, eventOn, harbourShips, lastDay, sailable } from '../ships/shipEvents';
+import { SPAN } from '../ships/haunt';
 import { Ship } from '../ships/ship';
 import { RARITY } from '../game/loot';
 import { HOLD_ROOM } from '../game/treasure';
@@ -32,7 +34,7 @@ export const SHIP_KEY = 'aquati.ship';
 function savedShip(): ShipClassId {
   try {
     const id = localStorage.getItem(SHIP_KEY);
-    if (id && id in SHIP_CLASSES) return id as ShipClassId;
+    if (id && id in SHIP_CLASSES && sailable(id as ShipClassId)) return id as ShipClassId;
   } catch {
     /* private mode: start on the brigantine */
   }
@@ -557,7 +559,7 @@ export class UI {
   /** Menu shortcuts: arrows / A D / 1 2 3 pick a ship, Enter sets sail. */
   private onMenuKey(e: KeyboardEvent) {
     if (this.menu.classList.contains('hidden') || this.overlayOpen() || e.repeat) return;
-    const ids = Object.keys(SHIP_CLASSES) as ShipClassId[];
+    const ids = harbourShips();
     const i = ids.indexOf(this.selected);
     const k = e.key.toLowerCase();
     if (document.activeElement?.closest('.menu-tools, .dock-actions, .sea-mode') && (k === 'enter' || k === ' ')) return;
@@ -653,14 +655,25 @@ export class UI {
   private buildShipPicker() {
     const host = $('ship-tabs');
     host.innerHTML = '';
-    (Object.keys(SHIP_CLASSES) as ShipClassId[]).forEach((id, i) => {
+    harbourShips().forEach((id, i) => {
       const c = SHIP_CLASSES[id];
       const tab = document.createElement('button');
       tab.className = 'ship-tab';
       tab.dataset.id = id;
       tab.setAttribute('role', 'tab');
       tab.style.setProperty('--art', `${[0.7, 0.86, 1][i] ?? 1}`);
-      tab.innerHTML = `<span class="art">${shipSilhouette(c)}</span><span class="tab-name">${c.name}</span><kbd class="kd">${i + 1}</kbd>`;
+      const ev = eventOf(id);
+      if (ev) {
+        // an event ship: a wide tab of her own under the line, glowing in her season's colours
+        tab.classList.add('ev');
+        tab.style.setProperty('--ev', ev.glow);
+        tab.style.setProperty('--ev2', ev.glow2);
+        tab.style.setProperty('--ev-ink', ev.ink);
+        tab.innerHTML =
+          `<span class="art">${shipSilhouette(c)}</span>` +
+          `<span class="ev-txt"><small>${ev.name}</small><span class="tab-name">${c.title}</span></span>` +
+          `<em class="ev-tag">Event</em><kbd class="kd">${i + 1}</kbd>`;
+      } else tab.innerHTML = `<span class="art">${shipSilhouette(c)}</span><span class="tab-name">${c.name}</span><kbd class="kd">${i + 1}</kbd>`;
       tab.addEventListener('click', () => this.select(id));
       host.appendChild(tab);
     });
@@ -717,7 +730,7 @@ export class UI {
       const n0 = Math.max(1, Math.round(was * 10));
       return Array.from({ length: 10 }, (_, k) => `<i class="${k < n ? 'on' : ''}${k < n && k >= n0 ? ' up' : ''}" style="--k:${k}"></i>`).join('');
     };
-    const ids = Object.keys(SHIP_CLASSES);
+    const ids = harbourShips();
     $('dock-count').textContent = `${String(ids.indexOf(this.selected) + 1).padStart(2, '0')} / ${String(ids.length).padStart(2, '0')}`;
     const detail = $('ship-detail');
     detail.innerHTML = `
@@ -725,7 +738,7 @@ export class UI {
         <div><small>The ${c.title}${nParts ? ` · <em class="refit-tag">${nParts} part${nParts > 1 ? 's' : ''} fitted</em>` : ''}</small><h3>${c.name}</h3></div>
         <div class="facts"><span><b>${c.cannonsPerSide * 2}</b>guns</span><span><b>${c.hp}</b>hull</span><span><b>${c.reload.toFixed(1)}s</b>reload</span><span><b>${HOLD_ROOM[c.id] ?? 12}</b>hold</span></div>
       </div>
-      <p class="blurb">${c.blurb}</p>
+      <p class="blurb">${c.blurb}</p>${this.eventCard(base.id)}
       <div class="stats">${STAT_LABELS.map(
         ([k, label]) => `<div class="stat" title="${label}">${icon(STAT_ICONS[k])}<span>${label}</span><div class="pips">${pips(bars[k as keyof typeof bars], base.stats[k as keyof typeof base.stats])}</div></div>`,
       ).join('')}</div>`;
@@ -734,6 +747,23 @@ export class UI {
       void detail.offsetWidth;
       detail.classList.add('swap');
     }
+  }
+
+  /** An event ship's power and season, under her blurb (empty for a ship of the line). */
+  private eventCard(id: ShipClassId) {
+    const ev = eventOf(id);
+    this.menu.classList.toggle('event-ship', !!ev);
+    if (!ev) return '';
+    const c = SHIP_CLASSES[id];
+    const mine = claimed(id);
+    const on = eventOn(ev.id);
+    const when = mine ? (on ? `Yours to keep · ${ev.name} until ${lastDay(ev.id)}` : 'Yours to keep') : `Sail her before ${lastDay(ev.id)} and she's yours to keep`;
+    const power = c.ability === 'phantom'
+      ? `<b>Phantom Run</b><span>She crosses into the spirit world for ${SPAN} seconds: no shot, ram or reef can touch her and she runs half as fast again. She returns with a Banshee's Wail that hurts every foe near her and terrifies their gun crews.</span>`
+      : '';
+    return `<div class="ev-card" style="--ev:${ev.glow};--ev2:${ev.glow2};--ev-ink:${ev.ink}">` +
+      `<div class="ev-power"><i class="ev-ico"></i><div><small>Power${document.body.classList.contains('is-touch') ? '' : ' · <kbd class="kd">X</kbd>'}</small>${power}</div></div>` +
+      `<div class="ev-when">${when}</div></div>`;
   }
 
   /**

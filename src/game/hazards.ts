@@ -280,12 +280,14 @@ export class Hazards implements HazardSense {
       if (s.removed) continue;
       const spin = this.flowAt(s.pos.x, s.pos.z, _v);
       // a phantom slips half the sea's grip; a heavy hull answers the swing slowly
-      const grip = s.ghost ? 0.5 : 1;
+      const grip = s.ghost ? 0.5 : s.phantom ? 0.15 : 1;
       s.current.set(_v.x * grip, _v.y * grip);
       // dragged down, she whirls faster and faster with the water
       s.spin = ((spin * grip * 0.75) / Math.sqrt(s.cls.mass)) * (1 + s.drawn * 1.8);
-      if (!s.ghost) this.drag(s, dt, world);
-      if (s.alive && !s.ghost) this.wring(s, dt, world);
+      // on her Phantom Run the throat lets go of her
+      if (s.phantom) s.drawn = Math.max(0, s.drawn - dt * 0.5);
+      else if (!s.ghost) this.drag(s, dt, world);
+      if (s.alive && !s.ghost && !s.phantom) this.wring(s, dt, world);
     }
     // salvage swept round and down: the throat swallows what it reaches
     for (let i = loot.length - 1; i >= 0; i--) {

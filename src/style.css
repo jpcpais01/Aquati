@@ -4107,7 +4107,9 @@ body[data-hud='large'] #hud {
 .floater.dread,
 .floater.phased,
 .floater.unburnt,
-.floater.fleshless {
+.floater.fleshless,
+.floater.phantom,
+.floater.spirits {
   font-size: 13px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -4139,6 +4141,17 @@ body[data-hud='large'] #hud {
 
 .floater.phased {
   font-style: italic;
+}
+
+/* the Hollow Jack's power: her Phantom Run, and the spirits stirring again */
+.floater.phantom,
+.floater.spirits {
+  color: #d8ffee;
+  text-shadow: 0 0 12px rgba(60, 255, 170, 0.95), 0 0 26px rgba(255, 140, 40, 0.5), 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.floater.phantom {
+  font-size: 17px;
 }
 
 .floater.ammo {
@@ -5954,5 +5967,418 @@ body[data-hud='large'] #hud {
   .fw-grid.show .fw-opt .fw-art {
     width: 34px;
     height: 34px;
+  }
+}
+
+/* ------------------------------------------------------------------ event ship power (Phantom Run) */
+
+.ability {
+  position: absolute;
+  right: var(--mr);
+  bottom: var(--mb);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  width: calc(66px * var(--k));
+  height: calc(66px * var(--k));
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 160, 70, 0.32);
+  background: radial-gradient(circle at 50% 38%, rgba(70, 40, 60, 0.85), rgba(10, 8, 16, 0.92) 72%);
+  box-shadow: var(--hi), 0 10px 26px rgba(0, 6, 10, 0.34);
+  color: #b9a7a0;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transition: transform 0.1s, color 0.25s;
+}
+
+.ability.hidden {
+  display: none;
+}
+
+.ability:active {
+  transform: scale(0.94);
+}
+
+.ability .ab-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(#d88a3a calc(var(--rl, 1) * 360deg), rgba(255, 255, 255, 0.08) 0);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+}
+
+.ability .ab-ico {
+  display: grid;
+  width: calc(28px * var(--k));
+  height: calc(28px * var(--k));
+}
+
+.ability svg {
+  width: 100%;
+  height: 100%;
+}
+
+.ability .ab-body {
+  fill: currentColor;
+  opacity: 0.85;
+}
+
+.ability .ab-eye {
+  fill: #120d16;
+}
+
+.ability small {
+  font: 800 max(7.5px, calc(8.5px * var(--k))) var(--sans);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ability .kd {
+  position: absolute;
+  top: calc(-6px * var(--k));
+  right: calc(-6px * var(--k));
+}
+
+.ability.ready {
+  color: #ffd29a;
+  border-color: rgba(255, 150, 50, 0.7);
+  animation: ab-breathe 2.4s ease-in-out infinite;
+}
+
+.ability.ready .ab-ring {
+  background: #ff9a35;
+  box-shadow: 0 0 14px rgba(255, 140, 40, 0.7);
+}
+
+.ability.ready .ab-body {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px rgba(255, 150, 50, 0.85));
+}
+
+.ability.ready .ab-eye {
+  fill: #ff7a12;
+}
+
+.ability.over {
+  color: #b8ffe0;
+  border-color: rgba(140, 255, 200, 0.75);
+  background: radial-gradient(circle at 50% 38%, rgba(40, 110, 85, 0.85), rgba(6, 18, 16, 0.92) 72%);
+  box-shadow: 0 0 22px rgba(110, 255, 190, 0.55), 0 10px 26px rgba(0, 6, 10, 0.34);
+}
+
+.ability.over .ab-ring {
+  background: conic-gradient(#8dffc4 calc(var(--rl, 1) * 360deg), rgba(255, 255, 255, 0.06) 0);
+}
+
+.ability.over .ab-body {
+  opacity: 0.75;
+  filter: drop-shadow(0 0 6px rgba(140, 255, 200, 0.95));
+}
+
+.ability.over .ab-eye {
+  fill: #c9fff0;
+}
+
+.ability.woke {
+  animation: ab-woke 0.9s var(--ease), ab-breathe 2.4s 0.9s ease-in-out infinite;
+}
+
+@keyframes ab-breathe {
+  50% {
+    box-shadow: var(--hi), 0 0 24px rgba(255, 140, 40, 0.55), 0 10px 26px rgba(0, 6, 10, 0.34);
+  }
+}
+
+@keyframes ab-woke {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.16);
+    box-shadow: 0 0 34px rgba(255, 150, 50, 0.95);
+  }
+}
+
+#hud.fpv .ability,
+#hud.ashore .ability {
+  display: none;
+}
+
+/* touch: above Port, clear of the shot button over Fire */
+.is-touch .ability {
+  /* the fire pad is Port 60 + 10 + Fire 84 + 10 + Stbd 60 wide: line up with Port's left edge */
+  right: calc(var(--mr) + 168px * var(--kt));
+  bottom: calc(var(--mb) + 100px * var(--kt));
+  width: calc(56px * var(--kt));
+  height: calc(56px * var(--kt));
+}
+
+.is-touch .ability .ab-ico {
+  width: calc(24px * var(--kt));
+  height: calc(24px * var(--kt));
+}
+
+.is-touch .ability .kd {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ event ships in the harbour */
+
+/* her own wide tab under the line, glowing in her season's colours */
+.ship-tab.ev {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: calc(10px * var(--u));
+  padding: calc(6px * var(--u)) calc(12px * var(--u)) calc(6px * var(--u)) calc(8px * var(--u));
+  background:
+    radial-gradient(ellipse 60% 140% at 18% 100%, color-mix(in srgb, var(--ev) 26%, transparent), transparent 70%),
+    radial-gradient(ellipse 50% 120% at 90% 0%, color-mix(in srgb, var(--ev2) 14%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(30, 18, 34, 0.6), rgba(10, 6, 14, 0.5));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ev) 42%, transparent);
+}
+
+.ship-tab.ev .art {
+  flex: 0 0 34%;
+  height: calc(44px * var(--u));
+}
+
+.ship-tab.ev .art::after {
+  background: no-repeat center/100% 100%
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 6' preserveAspectRatio='none'%3E%3Cpath d='M0 3q5-3 10 0t10 0 10 0 10 0 10 0 10 0' fill='none' stroke='%238dffc4' stroke-width='1.2' opacity='.55'/%3E%3C/svg%3E");
+}
+
+.ship-tab.ev .ship-art {
+  height: calc(calc(44px * var(--u)) * var(--art, 1));
+}
+
+.ev-txt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.ev-txt small {
+  font: 800 calc(9.5px * var(--t)) var(--sans);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ev-ink);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--ev) 70%, transparent);
+}
+
+.ship-tab.ev .tab-name {
+  margin-top: 1px;
+  font: 700 calc(15px * var(--t)) var(--serif);
+  letter-spacing: 0.08em;
+  color: #e9ddd0;
+}
+
+.ev-tag {
+  position: absolute;
+  top: calc(7px * var(--u));
+  right: calc(9px * var(--u));
+  padding: 1px calc(7px * var(--u));
+  border-radius: 999px;
+  font: 800 calc(8.5px * var(--t)) var(--sans);
+  font-style: normal;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #1a0d05;
+  background: linear-gradient(180deg, #ffd08a, var(--ev));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--ev) 70%, transparent);
+}
+
+/* her silhouette in her own colours: a dark hull, grey rags, ghost-fire trim */
+.ship-tab.ev .h {
+  fill: rgba(120, 90, 140, 0.45);
+}
+
+.ship-tab.ev .s {
+  fill: rgba(160, 155, 170, 0.32);
+}
+
+.ship-tab.ev.sel {
+  transform: translateY(calc(-2px * var(--u)));
+  background:
+    radial-gradient(ellipse 60% 140% at 18% 100%, color-mix(in srgb, var(--ev) 42%, transparent), transparent 70%),
+    radial-gradient(ellipse 50% 120% at 90% 0%, color-mix(in srgb, var(--ev2) 24%, transparent), transparent 70%),
+    linear-gradient(180deg, rgba(40, 22, 44, 0.7), rgba(12, 6, 16, 0.6));
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ev) 85%, #fff), 0 0 calc(26px * var(--u)) color-mix(in srgb, var(--ev) 40%, transparent), 0 0 calc(40px * var(--u)) color-mix(in srgb, var(--ev2) 16%, transparent);
+  animation: ev-aura 3.2s ease-in-out infinite;
+}
+
+.ship-tab.ev.sel .tab-name {
+  color: #fff3e2;
+}
+
+.ship-tab.ev.sel .h {
+  fill: #3e2a4c;
+}
+
+.ship-tab.ev.sel .s {
+  fill: #5d5966;
+  stroke: var(--ev2);
+  stroke-width: 0.35;
+}
+
+.ship-tab.ev.sel .m,
+.ship-tab.ev.sel .y {
+  stroke: #6b5a52;
+}
+
+.ship-tab.ev.sel .w,
+.ship-tab.ev.sel .f {
+  stroke: var(--ev);
+  fill: var(--ev);
+}
+
+.ship-tab.ev.sel .w {
+  fill: none;
+}
+
+@keyframes ev-aura {
+  50% {
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ev) 85%, #fff), 0 0 calc(34px * var(--u)) color-mix(in srgb, var(--ev) 55%, transparent), 0 0 calc(52px * var(--u)) color-mix(in srgb, var(--ev2) 26%, transparent);
+  }
+}
+
+/* her card: the power she carries, and how long her season runs */
+.ev-card {
+  margin-top: calc(10px * var(--u));
+  padding: calc(9px * var(--u)) calc(12px * var(--u));
+  border-radius: calc(14px * var(--u));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ev) 15%, transparent), rgba(10, 6, 16, 0.45) 70%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ev) 38%, transparent);
+}
+
+.ev-power {
+  display: flex;
+  align-items: flex-start;
+  gap: calc(10px * var(--u));
+}
+
+.ev-ico {
+  flex: 0 0 auto;
+  width: calc(28px * var(--u));
+  height: calc(28px * var(--u));
+  border-radius: 50%;
+  background:
+    no-repeat center/62%
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffd29a' d='M12 2.6c-4.3 0-7.2 3.2-7.2 7.6v10.6l2.4-1.8 2.4 1.8 2.4-1.8 2.4 1.8 2.4-1.8 2.4 1.8V10.2c0-4.4-2.9-7.6-7.2-7.6z'/%3E%3Cpath fill='%23ff7a12' d='M9.1 8.6c.9 0 1.6.9 1.6 2s-.7 2-1.6 2-1.6-.9-1.6-2 .7-2 1.6-2zm5.8 0c.9 0 1.6.9 1.6 2s-.7 2-1.6 2-1.6-.9-1.6-2 .7-2 1.6-2z'/%3E%3C/svg%3E"),
+    radial-gradient(circle at 50% 40%, rgba(70, 40, 60, 0.9), rgba(10, 8, 16, 0.95) 72%);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ev) 60%, transparent), 0 0 14px color-mix(in srgb, var(--ev) 45%, transparent);
+}
+
+.ev-power small {
+  display: block;
+  font: 800 calc(9px * var(--t)) var(--sans);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.ev-power small {
+  white-space: nowrap;
+}
+
+.ev-power small .kd {
+  display: inline-block;
+  min-width: 0;
+  margin: 0 0 0 2px;
+  padding: 0 calc(4px * var(--u));
+  font-size: calc(8.5px * var(--t));
+  line-height: 1.35;
+  vertical-align: 1px;
+}
+
+.ev-power b {
+  white-space: nowrap;
+}
+
+.ev-power b {
+  display: block;
+  font: 700 calc(14px * var(--t)) var(--sans);
+  color: var(--ev-ink);
+}
+
+.ev-power span {
+  display: block;
+  margin-top: 2px;
+  font-size: calc(12px * var(--t));
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.ev-when {
+  margin-top: calc(7px * var(--u));
+  font: 700 calc(10px * var(--t)) var(--sans);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ev2);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--ev2) 45%, transparent);
+}
+
+/* an event ship comes as she is: no refit, no repaint */
+#menu.event-ship #btn-shipwright {
+  display: none;
+}
+
+#menu.event-ship .dock-row {
+  grid-template-columns: 1fr;
+}
+
+/* squat screens: the power's name only */
+@media (max-height: 780px), (max-width: 760px) {
+  .ev-power span {
+    display: none;
+  }
+
+  .ev-power {
+    align-items: center;
+  }
+
+  .ev-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: calc(8px * var(--u));
+    padding: calc(6px * var(--u)) calc(10px * var(--u));
+  }
+
+  .ev-when {
+    flex: 0 1 52%;
+    margin-top: 0;
+    text-align: right;
+    font-size: calc(9px * var(--t));
+  }
+
+  .ev-ico {
+    width: calc(24px * var(--u));
+    height: calc(24px * var(--u));
+  }
+}
+
+@media (max-height: 780px) and (min-width: 761px) {
+  .ship-tab.ev {
+    padding-top: calc(2px * var(--u));
+    padding-bottom: calc(2px * var(--u));
+  }
+
+  .ship-tab.ev .art {
+    height: calc(32px * var(--u));
+  }
+
+  .ship-tab.ev .ship-art {
+    height: calc(calc(32px * var(--u)) * var(--art, 1));
+  }
+
+  /* her power card takes the place of the figures row */
+  #menu.event-ship .facts {
+    display: none;
   }
 }

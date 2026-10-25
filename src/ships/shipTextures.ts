@@ -106,7 +106,13 @@ export function hullTexture(livery: Livery, ports: { u: number; v: number; w: nu
 }
 
 /** The painted planking and a matching relief map: caulked seams, butt joints, treenails and recessed ports. */
-export function hullTextures(livery: Livery, ports: { u: number; v: number; w: number; h: number }[], lengthM: number, seed = 1): { map: THREE.CanvasTexture; normal: THREE.Texture } {
+export function hullTextures(
+  livery: Livery,
+  ports: { u: number; v: number; w: number; h: number }[],
+  lengthM: number,
+  seed = 1,
+  haunt = false,
+): { map: THREE.CanvasTexture; normal: THREE.Texture; glow?: THREE.CanvasTexture } {
   const W = 1024;
   const H = 512;
   const [c, g] = canvas(W, H);
@@ -115,6 +121,14 @@ export function hullTextures(livery: Livery, ports: { u: number; v: number; w: n
   const vy = (v: number) => H - v * H; // canvas y for texture v
   hg.fillStyle = grey(0.55);
   hg.fillRect(0, 0, W, H);
+  // a haunted hull's ghost-light: it seeps out of her seams and butt joints
+  // above the waterline (none in the wale, the gilding or her bottom) and
+  // pours out of her gunports
+  const [gc, gg] = haunt ? canvas(W, H) : [null, null];
+  if (gg) {
+    gg.fillStyle = '#000';
+    gg.fillRect(0, 0, W, H);
+  }
   // base planking
   g.fillStyle = livery.hull;
   g.fillRect(0, 0, W, H);
@@ -149,6 +163,10 @@ export function hullTextures(livery: Livery, ports: { u: number; v: number; w: n
       hg.globalAlpha = 1;
       g.fillStyle = shade(livery.hull, 0.55);
       g.fillRect(x, y0, 2, ph); // butt joint
+      if (gg) {
+        gg.fillStyle = `rgba(255,255,255,${0.18 + rnd() * 0.3})`;
+        gg.fillRect(x, y0, 2, ph);
+      }
       hg.fillStyle = grey(0.18);
       hg.fillRect(x, y0, 2, ph);
       // treenails at each butt
@@ -161,6 +179,13 @@ export function hullTextures(livery: Livery, ports: { u: number; v: number; w: n
     }
     g.fillStyle = shade(livery.hull, 0.5);
     g.fillRect(0, y0, W, 1.5); // seam
+    if (gg) {
+      // brighter in patches, as if the light behind her timbers comes and goes
+      for (let x = 0; x < W; x += 64) {
+        gg.fillStyle = `rgba(255,255,255,${rnd() < 0.45 ? 0.02 : 0.08 + rnd() * 0.22})`;
+        gg.fillRect(x, y0 - 0.5, 64, 2);
+      }
+    }
     hg.fillStyle = grey(0.12);
     hg.fillRect(0, y0 - 0.5, W, 2.5);
   }
@@ -207,6 +232,24 @@ export function hullTextures(livery: Livery, ports: { u: number; v: number; w: n
     hg.fillStyle = grey(0.08);
     hg.fillRect(x - pw / 2, y - ph / 2, pw, ph);
   }
+  if (gg && gc) {
+    // the glow keeps off the bottom, the wale and the rail's gilding
+    gg.fillStyle = '#000';
+    gg.fillRect(0, vy(0.42), W, H - vy(0.42));
+    gg.fillRect(0, vy(0.72), W, vy(0.655) - vy(0.72));
+    gg.fillRect(0, 0, W, vy(0.935));
+    for (const p of ports) {
+      const x = p.u * W;
+      const y = vy(p.v);
+      const pw = p.w * W;
+      const ph = p.h * H;
+      const pg = gg.createRadialGradient(x, y, 0, x, y, Math.max(pw, ph) * 0.7);
+      pg.addColorStop(0, 'rgba(255,255,255,1)');
+      pg.addColorStop(1, 'rgba(255,255,255,0.35)');
+      gg.fillStyle = pg;
+      gg.fillRect(x - pw / 2, y - ph / 2, pw, ph);
+    }
+  }
   // soft grime near the waterline
   const grad = g.createLinearGradient(0, vy(0.42), 0, vy(0.3));
   grad.addColorStop(0, 'rgba(0,0,0,0)');
@@ -237,7 +280,7 @@ export function hullTextures(livery: Livery, ports: { u: number; v: number; w: n
     const ph = p.h * H;
     mg.fillRect(p.u * W - pw / 2 - 6, vy(p.v) - ph / 2 - 6, pw + 12, ph + 12);
   }
-  return { map: toTex(c), normal: heightToNormalMasked(hc, mc, 3.2) };
+  return { map: toTex(c), normal: heightToNormalMasked(hc, mc, 3.2), glow: gc ? toTex(gc) : undefined };
 }
 
 export function deckTexture(seed = 3): THREE.CanvasTexture {
@@ -486,11 +529,106 @@ export function sailTexture(livery: Livery, emblem: boolean, seed = 5, target?: 
   g.strokeStyle = shade(livery.sailSeam, 0.8);
   g.lineWidth = 8;
   g.strokeRect(4, 4, S - 8, S - 8);
+  if (livery.haunt) rags(c, g, S, rnd, !!mark, mark?.color ?? livery.emblemColor);
   if (target) {
     target.needsUpdate = true;
     return target;
   }
   return toTex(c);
+}
+
+/**
+ * A haunted ship's sails are rags: the foot hangs in tatters, the leeches are
+ * torn in, holes are burnt through the cloth (never through the emblem), and
+ * every torn edge is singed dark and smoulders with ghost-fire. The holes are
+ * cut out of the canvas's alpha (the sail material tests it); the fire and the
+ * emblem are drawn again in a glow map hung on the texture (userData.glow).
+ */
+function rags(c: HTMLCanvasElement, g: CanvasRenderingContext2D, S: number, rnd: () => number, emblem: boolean, ink: string) {
+  const [ec, eg] = canvas(S, S);
+  eg.fillStyle = '#000';
+  eg.fillRect(0, 0, S, S);
+  const cuts: Path2D[] = [];
+  const ragged = (pts: [number, number][]) => {
+    const p = new Path2D();
+    p.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) p.lineTo(pts[i][0], pts[i][1]);
+    p.closePath();
+    cuts.push(p);
+  };
+  // the foot in tatters: long tongues of cloth between ragged bites
+  for (let x = -S * 0.02; x < S; ) {
+    const w = S * (0.06 + rnd() * 0.1);
+    const deep = S * (0.07 + rnd() * 0.22) * (rnd() < 0.25 ? 1.7 : 1);
+    const pts: [number, number][] = [[x, S + 4]];
+    const n = 4 + Math.floor(rnd() * 3);
+    for (let k = 1; k < n; k++) {
+      const f = k / n;
+      pts.push([x + w * f + (rnd() - 0.5) * w * 0.3, S - deep * Math.sin(f * Math.PI) * (0.6 + rnd() * 0.5)]);
+    }
+    pts.push([x + w, S + 4]);
+    ragged(pts);
+    x += w + S * (0.02 + rnd() * 0.06);
+  }
+  // the leeches torn in, low down
+  for (const side of [0, 1]) {
+    for (let i = 0; i < 2; i++) {
+      const y = S * (0.45 + rnd() * 0.4);
+      const h = S * (0.05 + rnd() * 0.08);
+      const d = S * (0.05 + rnd() * 0.1);
+      const x0 = side ? S + 4 : -4;
+      const sx = side ? -1 : 1;
+      ragged([[x0, y - h], [x0 + sx * d * (0.5 + rnd() * 0.5), y - h * 0.3], [x0 + sx * d, y + (rnd() - 0.5) * h], [x0 + sx * d * 0.4, y + h * 0.6], [x0, y + h]]);
+    }
+  }
+  // shot and rot: holes through the cloth, clear of the emblem
+  for (let i = 0, tries = 0; i < 5 && tries < 40; tries++) {
+    const x = S * (0.1 + rnd() * 0.8);
+    const y = S * (0.15 + rnd() * 0.6);
+    if (emblem && Math.hypot(x - S / 2, y - S / 2) < S * 0.33) continue;
+    const r = S * (0.025 + rnd() * 0.05);
+    const pts: [number, number][] = [];
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2;
+      const rr = r * (0.55 + rnd() * 0.75);
+      pts.push([x + Math.cos(a) * rr, y + Math.sin(a) * rr * 1.2]);
+    }
+    ragged(pts);
+    i++;
+  }
+  // singed edges, ghost-fire licking along them, then the holes themselves
+  g.save();
+  g.lineJoin = 'round';
+  g.strokeStyle = '#141015';
+  g.lineWidth = 14;
+  for (const p of cuts) g.stroke(p);
+  eg.lineJoin = 'round';
+  eg.strokeStyle = 'rgba(80,255,170,0.55)';
+  eg.lineWidth = 14;
+  for (const p of cuts) eg.stroke(p);
+  eg.strokeStyle = 'rgba(190,255,225,0.9)';
+  eg.lineWidth = 5;
+  for (const p of cuts) eg.stroke(p);
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = '#000';
+  for (const p of cuts) g.fill(p);
+  g.restore();
+  eg.fillStyle = '#000';
+  for (const p of cuts) eg.fill(p);
+  // the emblem burns with ghost-light too
+  if (emblem) {
+    eg.globalCompositeOperation = 'lighter';
+    drawEmblem(eg, S / 2, S * 0.5, S * 0.56, 'skull', 'bones', ink);
+  }
+  (c as HTMLCanvasElement & { aqGlow?: HTMLCanvasElement }).aqGlow = ec;
+}
+
+/** The glow map a haunted sail texture carries (see rags), as a texture of its own. */
+export function ragGlow(map: THREE.Texture): THREE.CanvasTexture | null {
+  const c = map.image as HTMLCanvasElement & { aqGlow?: HTMLCanvasElement };
+  if (!c?.aqGlow) return null;
+  if (!map.userData.glow) map.userData.glow = toTex(c.aqGlow);
+  return map.userData.glow as THREE.CanvasTexture;
 }
 
 let sailNormalTex: THREE.CanvasTexture | null = null;
