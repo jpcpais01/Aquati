@@ -20,7 +20,7 @@ export const PATCH_NOTES: PatchGroup[] = [
         notes: [
           'Ember rain comes to the Android and Windows game. Now and then Morro Huracão stirs: its plume turns into a dark column, and downwind the sky goes copper while ash and glowing embers drift down round your ship.',
           'On a scorching noon out on the high seas, a mirage may shimmer up ahead: an island with palms and a little shrine floating over its own reflection. It frays away when you sail into it.',
-          'Ember rain can also be picked on the sky badge, and previewed in photo mode, while you are downwind of the volcano.',
+          'Ember rain can be picked on the sky badge while you are downwind of the volcano, and tried out anywhere in photo mode.',
         ],
       },
     ],
