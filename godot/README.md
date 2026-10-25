@@ -21,10 +21,11 @@ harbour and at the foot of the pause menu (and in Settings).
 
 The menus and HUD are laid out in units made for a phone held sideways (720
 tall). On a computer `Settings.fit_ui()` sets the window's
-`content_scale_factor` so they come out at the web game's desktop size: a CSS
-pixel per screen pixel at the display's scaling, the web's `--hs` for small
-windows, the canvas at most 1700 units tall on big screens at 100%, never
-less room than 1100x720, times Settings' Interface size. The
+`content_scale_factor` so they come out at the web game's desktop size at
+1080p (a CSS pixel a screen pixel, the web's `--hs` for small windows) and in
+proportion to the window above that, ignoring Windows' display scaling,
+never less room than 1100x720, times Settings' Interface size. The HUD then
+sits at 0.9 of that (`Hud._hk()`), the hold's peek in step with it. The
 saves live in `%APPDATA%\Godot\app_userdata\Shores O' Fortune`, so every new
 `.exe` carries on where the last left off. It's unsigned, so SmartScreen asks
 once (More info, Run anyway).

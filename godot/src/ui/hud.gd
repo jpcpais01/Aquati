@@ -60,6 +60,8 @@ var _bars: EnemyBars
 var _floaters: Floaters
 var _pad: FirePad
 var _touch_ui := false
+## The speed's figure and unit, stacked on a desktop, side by side on touch.
+var _speed_box: BoxContainer
 var _pill: PanelContainer
 var _pill_box: StyleBoxFlat
 var _pips: _SailPips
@@ -294,7 +296,9 @@ func _ready() -> void:
 	helm.alignment = BoxContainer.ALIGNMENT_CENTER
 	_pips = _SailPips.new()
 	helm.add_child(_pips)
-	var sp := HBoxContainer.new()
+	# the speed: on a desktop the figure over its unit, like a gauge's
+	# readout; on touch the figure and a small "kn" side by side
+	var sp := BoxContainer.new()
 	sp.add_theme_constant_override("separation", 5)
 	_speed = HudStyle.label("0", "inter", 800, 25, HudStyle.INK, -1)
 	_speed.custom_minimum_size = Vector2(32, 0)
@@ -302,6 +306,7 @@ func _ready() -> void:
 	_kn = HudStyle.label("KNOTS", "inter", 700, 9, HudStyle.INK_3, 2)
 	_kn.size_flags_vertical = Control.SIZE_SHRINK_END
 	_kn.custom_minimum_size = Vector2(0, 22)
+	_speed_box = sp
 	sp.add_child(_speed)
 	sp.add_child(_kn)
 	helm.add_child(sp)
@@ -434,24 +439,40 @@ func _layout() -> void:
 	var head := _party if _ashore else _ship_panel
 	_chips.position = Vector2(0.0, head.size.y + 5.0 * HudStyle.K)
 	_chips.size = _chips.get_combined_minimum_size()
+	# a computer's HUD sits smaller than a phone's (the sea is the star, and
+	# a mouse needs no thumb-sized targets): the status card, the corner
+	# column and the console are scaled down from their top-left corners,
+	# the corner's two buttons a little more
+	var hk := _hk()
+	var hb := hk * (0.86 if hk < 1.0 else 1.0)
+	for c: Control in [_status, minimap, _nav, _pill, _tag]:
+		c.scale = Vector2(hk, hk)
+	for c: UiButton in [_pause, _zoom]:
+		# (buttons rest at a size round their centre, and squeeze from it)
+		c.set_rest(hb)
+	# the hold's peek is drawn at a phone's touch size: on a desktop it comes
+	# down to the status card's scale
+	var hp := hk * (HudStyle.K / HudStyle.PX) if hk < 1.0 else 1.0
+	_peek.scale = Vector2(hp, hp)
 	_status.position = Vector2(mx, my)
 	# the corner column, centred under the minimap: the strip, then the
 	# buttons (three to a row in the web's, so as wide as three)
 	var k := HudStyle.K
-	var b := _pause.size.x
-	var col_w := 3.0 * b + 16.0 * k
+	var b := _pause.size.x * hb
+	var col_w := 3.0 * _pause.size.x * hk + 16.0 * k * hk
 	var cx := vp.x - mx - col_w * 0.5
-	minimap.position = Vector2(cx - Minimap.SIZE * 0.5, my)
+	minimap.position = Vector2(cx - Minimap.SIZE * hk * 0.5, my)
 	var ns := _nav.get_combined_minimum_size()
 	_nav.size = ns
-	_nav.position = Vector2(roundf(cx - ns.x * 0.5), my + Minimap.SIZE + 9.0 * k)
-	var by := _nav.position.y + ns.y + 7.0 * k
-	var gap := 8.0 * k
-	_pause.position = Vector2(cx - gap * 0.5 - b, by)
-	_zoom.position = Vector2(cx + gap * 0.5, by)
+	_nav.position = Vector2(roundf(cx - ns.x * hk * 0.5), my + (Minimap.SIZE + 9.0 * k) * hk)
+	var by := _nav.position.y + (ns.y + 7.0 * k) * hk
+	var gap := 8.0 * k * hk
+	var inset := _pause.size * (1.0 - hb) * 0.5
+	_pause.position = Vector2(cx - gap * 0.5 - b, by) - inset
+	_zoom.position = Vector2(cx + gap * 0.5, by) - inset
 	var ps := _pill.get_combined_minimum_size()
 	_pill.size = ps
-	_pill.position = Vector2((vp.x - ps.x) * 0.5, vp.y - my - ps.y)
+	_pill.position = Vector2((vp.x - ps.x * hk) * 0.5, vp.y - my - ps.y * hk)
 	if _touch_ui:
 		# the knots ride on top of the sail lever, so the foot of the screen
 		# between the thumbs is free (for the prompt to come alongside)
@@ -469,7 +490,7 @@ func _layout() -> void:
 	_hint.position = Vector2((vp.x - hs.x) * 0.5, vp.y - my - hs.y)
 	# the shot button rides over Fire, a little clear of it
 	_pie.position = _pad.position + Vector2(FirePad.SIDE + FirePad.GAP + FirePad.MAIN * 0.5, _pad.size.y - FirePad.MAIN - 12.0 * HudStyle.KT - ShotPie.BTN * 0.5)
-	_peek.place(Vector2(mx, my + _chips.position.y + _chips.size.y + 8.0 * HudStyle.K))
+	_peek.place(Vector2(mx, my + (_chips.position.y + _chips.size.y) * hk + 8.0 * HudStyle.K))
 	_place_tag()
 	_place_say()
 	_hz.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
@@ -602,7 +623,7 @@ func _place_say() -> void:
 		return
 	_say.size = _say.get_combined_minimum_size()
 	var slide := (1.0 - HudStyle.eased(_say_e)) * 8.0 * HudStyle.PX
-	_say.position = Vector2(_nav.position.x - 8.0 * HudStyle.K - _say.size.x + slide, _nav.position.y + (_nav.size.y - _say.size.y) * 0.5)
+	_say.position = Vector2(_nav.position.x - 8.0 * HudStyle.K - _say.size.x + slide, _nav.position.y + (_nav.size.y * _hk() - _say.size.y) * 0.5)
 
 
 ## A soft ring ripples off the wind's arrow as the wind comes round.
@@ -627,8 +648,15 @@ func show_touch(on: bool) -> void:
 	_kn.text = "kn" if on else "KNOTS"
 	_kn.add_theme_font_override("font", HudStyle.font("inter", 700, roundi(kn_px * 0.04) if on else 2))
 	_kn.add_theme_font_size_override("font_size", kn_px if on else 9)
-	_kn.custom_minimum_size = Vector2(0.0, 23.0 if on else 22.0)
-	(_kn.get_parent() as HBoxContainer).add_theme_constant_override("separation", roundi(2.0 * HudStyle.PX) if on else 5)
+	_kn.custom_minimum_size = Vector2(0.0, 23.0 if on else 0.0)
+	_speed_box.vertical = not on
+	_speed_box.alignment = BoxContainer.ALIGNMENT_BEGIN if on else BoxContainer.ALIGNMENT_CENTER
+	_speed_box.add_theme_constant_override("separation", roundi(2.0 * HudStyle.PX) if on else -5)
+	_speed.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if on else HORIZONTAL_ALIGNMENT_CENTER
+	_speed.custom_minimum_size = Vector2(32.0 if on else 44.0, 0.0)
+	_kn.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if on else HORIZONTAL_ALIGNMENT_CENTER
+	_kn.size_flags_vertical = Control.SIZE_SHRINK_END if on else Control.SIZE_SHRINK_CENTER
+	_kn.size_flags_horizontal = Control.SIZE_FILL if on else Control.SIZE_SHRINK_CENTER
 	if on:
 		_tag_left = 0.0
 		_tag_hover = false
@@ -638,6 +666,12 @@ func show_touch(on: bool) -> void:
 
 func touch_ui() -> bool:
 	return _touch_ui
+
+
+## How much smaller than a phone's the HUD sits: a desktop with keys and a
+## mouse takes it at 0.9.
+func _hk() -> float:
+	return 0.9 if Settings.desktop and not _touch_ui else 1.0
 
 
 ## Ashore (`on`) or afloat: the knots, the sail lever, the guns and the
@@ -794,7 +828,8 @@ func _place_tag() -> void:
 	# over the console's right end
 	var k := HudStyle.K
 	_tag.size = _tag.get_combined_minimum_size()
-	_tag.position = Vector2(_pill.position.x + _pill.size.x - 8.0 * k - _tag.size.x, _pill.position.y - 10.0 * k - _tag.size.y)
+	var hk := _hk()
+	_tag.position = Vector2(_pill.position.x + (_pill.size.x - 8.0 * k - _tag.size.x) * hk, _pill.position.y - (10.0 * k + _tag.size.y) * hk)
 
 
 func _process(dt: float) -> void:
@@ -806,7 +841,7 @@ func _process(dt: float) -> void:
 		_tag_e = move_toward(_tag_e, want, dt / 0.2)
 		_tag.modulate.a = _tag_e
 		var k := HudStyle.K
-		_tag.position.y = _pill.position.y - 10.0 * k - _tag.size.y + (1.0 - HudStyle.eased(_tag_e)) * 6.0 * k
+		_tag.position.y = _pill.position.y - (10.0 * k + _tag.size.y) * _hk() + (1.0 - HudStyle.eased(_tag_e)) * 6.0 * k
 		if _tag_e <= 0.0:
 			_tag.visible = false
 	# the keys ashore fade once they've had a while to be read

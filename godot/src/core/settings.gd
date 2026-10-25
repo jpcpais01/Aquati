@@ -76,11 +76,12 @@ func _ready() -> void:
 ## The menus and the HUD are drawn in units made for a phone held sideways
 ## (720 tall), which on a computer's screen made everything twice the size
 ## the web game draws it. On a computer the canvas is sized the web's way
-## instead: a CSS pixel is a screen pixel at the display's own scaling, the
-## HUD at the web's --hs for the window (smaller in small windows), times
-## the Interface size picked in Settings. A huge screen at 100% still gets a
-## readable interface (at most 1700 units tall), and a small window never
-## less room than the phone layouts were made for.
+## instead, a CSS pixel a screen pixel at 1080p (the web's --hs for small
+## windows), and kept in proportion to the window above that, so a 1440p or
+## 4K screen sees the same layout, only sharper (Windows' display scaling is
+## left out: it made the interface huge on high-DPI screens). Times the
+## Interface size picked in Settings; a small window never gets less room
+## than the phone layouts were made for.
 func fit_ui() -> void:
 	var w := get_window()
 	if w == null:
@@ -88,18 +89,16 @@ func fit_ui() -> void:
 	var f := 1.0
 	var px := Vector2(w.size)
 	if desktop and DisplayServer.get_name() != "headless" and px.x > 0.0 and px.y > 0.0:
-		var screen := w.current_screen
-		var dpi := clampf(maxf(DisplayServer.screen_get_scale(screen), DisplayServer.screen_get_dpi(screen) / 96.0), 1.0, 4.0)
-		var css := px / dpi
 		var hs := 1.0
-		if css.y <= 420.0:
+		if px.y <= 420.0:
 			hs = 0.74
-		elif css.x <= 600.0 or css.y <= 540.0:
+		elif px.x <= 600.0 or px.y <= 540.0:
 			hs = 0.8
-		elif css.x <= 1000.0 or css.y <= 680.0:
+		elif px.x <= 1000.0 or px.y <= 680.0:
 			hs = 0.9
-		# screen pixels to a canvas unit (a unit is 1/K of a CSS pixel at --k)
-		var s := maxf(hs * dpi / HudStyle.K, px.y / 1700.0) * ui_size
+		# canvas units tall: a unit is 1/K of a CSS pixel at --k
+		var tall := clampf(px.y * HudStyle.K / hs, 720.0, 1080.0 * HudStyle.K) / ui_size
+		var s := px.y / tall
 		s = minf(s, minf(px.y / 720.0, px.x / 1100.0))
 		f = s / minf(px.x / 1280.0, px.y / 720.0)
 	if absf(w.content_scale_factor - f) > 1e-4:
