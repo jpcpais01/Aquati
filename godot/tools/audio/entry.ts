@@ -13,6 +13,7 @@ import {
   cannonBlast,
   chainRip,
   coinPour,
+  crackleHail,
   creak,
   crowdMurmur,
   earthImpact,
@@ -27,10 +28,14 @@ import {
   magazineBlast,
   mallet,
   purseDrop,
+  rocketLaunch,
+  shellBoom,
   shellBurst,
   shotWhoosh,
+  splitPops,
   steamHiss,
   waterImpact,
+  willowSizzle,
   woodImpact,
 } from '../../../src/core/sfx';
 import { renderThunder } from '../../../src/core/thunder';
@@ -228,6 +233,13 @@ bank('purse', 2, (v) => purseDrop(SR, 1801 + v));
 for (let c = 0; c < 3; c++) bank(`creak${c}`, 1, () => creak(SR, 1901 + c, c < 2));
 bank('mallet', 2, (v) => mallet(SR, 2001 + v));
 bank('clunk', 2, (v) => ironClunk(SR, 2101 + v));
+// fireworks: rockets (two plain, one whistling), bursts (two shells, then a
+// showpiece's heavier charge), crackle, a willow's hanging hiss, a crossette's split
+for (let v = 0; v < 3; v++) jobs.push({ name: v < 2 ? `rocket_${v}` : 'whistle_0', sr: SR, render: () => [rocketLaunch(SR, 2401 + v, v === 2)] });
+for (let v = 0; v < 3; v++) jobs.push({ name: v < 2 ? `fw_boom_${v}` : 'fw_big_0', sr: SR, render: () => [shellBoom(SR, 2501 + v, v === 2)] });
+for (let v = 0; v < 2; v++) jobs.push({ name: `fw_crackle_${v}`, sr: SR, render: () => [crackleHail(SR, 2601 + v)] });
+jobs.push({ name: 'fw_sizzle_0', sr: SR, render: () => [willowSizzle(SR, 2701)] });
+jobs.push({ name: 'fw_pop_0', sr: SR, render: () => [splitPops(SR, 2801)] });
 jobs.push({ name: 'lap_0', sr: SR, exact: true, render: () => [harbourLap(SR, 2201)] });
 jobs.push({ name: 'murmur_0', sr: SR, exact: true, render: () => [crowdMurmur(SR, 2301)] });
 
@@ -256,7 +268,7 @@ shot('card_flip', 1, 0.3, (a) => {
   a.treasure = () => {};
   a.cardFlip(0);
 });
-for (let k = 0; k < 5; k++) shot(`ammo${k}`, 1, 0.22, (a) => a.ammoSwap(k));
+for (let k = 0; k < 6; k++) shot(`ammo${k}`, 1, 0.22, (a) => a.ammoSwap(k));
 shot('founder', 1, 12.5, (a) => a.founder(), { sr: 16000, ogg: true });
 shot('groan', 3, 3.8, (a) => a.groan(), { sr: 16000, ogg: true });
 // a pocket of air of three sizes (small, as a hull settles; large, as she goes)

@@ -2,17 +2,18 @@ class_name Ammo
 ## Shot types. Every gun on a ship loads the same kind for a broadside, and
 ## each kind trades something for something: round shot is the honest
 ## all-rounder you never run out of; the specials are powerful, carried in
-## short supply and topped up from salvage. The web game's ammo.ts (its
-## fireworks come with the night skies).
+## short supply and topped up from salvage. The web game's ammo.ts. Fireworks
+## are no weapon at all: a rocket off each chosen gun, out of the locker that
+## follows the captain between voyages (Fireworks, Progress.fireworks).
 
-enum { ROUND, SHELL, FIRE, CHAIN, GRAPE }
-const COUNT := 5
+enum { ROUND, SHELL, FIRE, CHAIN, GRAPE, FIREWORK }
+const COUNT := 6
 const SPECIALS := [SHELL, FIRE, CHAIN, GRAPE]
 
-const ID := ["round", "shell", "fire", "chain", "grape"]
-const NAME := ["Round shot", "Explosive shell", "Fire shot", "Chain shot", "Grape shot"]
+const ID := ["round", "shell", "fire", "chain", "grape", "firework"]
+const NAME := ["Round shot", "Explosive shell", "Fire shot", "Chain shot", "Grape shot", "Fireworks"]
 ## One word for the rack.
-const SHORT := ["Round", "Shell", "Fire", "Chain", "Grape"]
+const SHORT := ["Round", "Shell", "Fire", "Chain", "Grape", "Fireworks"]
 ## What it does, the first sentence of it for the tag that shows when it's loaded.
 const BLURB := [
 	"Solid iron. Reliable, long reach, and the magazine never runs dry.",
@@ -20,24 +21,26 @@ const BLURB := [
 	"Red-hot iron. Sets the target ablaze, burning her down until the fire dies.",
 	"Two half-balls on a chain that scythe through the rigging. Shreds sails and slows the target to a crawl. Shorter reach.",
 	"A bag of musket balls that sprays the deck. Brutal up close, cuts down gun crews so they reload slowly. Short reach, quick to load.",
+	"Rockets for the night sky. No use in a fight, but a sight to see over the water.",
 ]
 ## What it's good for, in a few words (the touch shot pie's title).
-const GIST := ["Long reach, and it never runs out", "Bursts on impact", "Sets her ablaze", "Shreds her sails", "Cuts down her gun crews"]
+const GIST := ["Long reach, and it never runs out", "Bursts on impact", "Sets her ablaze", "Shreds her sails", "Cuts down her gun crews", "Lights up the night"]
 ## Its colour on the HUD.
-const COLOR := [Color("#d9e2e6"), Color("#ffb347"), Color("#ff6a3d"), Color("#9fd8ff"), Color("#c9b3ff")]
+const COLOR := [Color("#d9e2e6"), Color("#ffb347"), Color("#ff6a3d"), Color("#9fd8ff"), Color("#c9b3ff"), Color("#ff8ad8")]
 ## Hull damage per ball, reload time and muzzle velocity (each times the
 ## ship's own; reach goes with the square of the velocity), balls per gun,
 ## their scatter (rad) and size (times a round shot).
-const DAMAGE := [1.0, 0.55, 0.6, 0.35, 0.17]
-const RELOAD := [1.0, 1.4, 1.25, 1.2, 0.8]
-const SPEED := [1.0, 0.9, 0.95, 0.85, 0.72]
-const BALLS := [1, 1, 1, 1, 6]
-const SPREAD := [0.0, 0.0, 0.0, 0.0, 0.075]
-const SIZE := [1.0, 1.12, 1.0, 0.8, 0.42]
+const DAMAGE := [1.0, 0.55, 0.6, 0.35, 0.17, 0.0]
+const RELOAD := [1.0, 1.4, 1.25, 1.2, 0.8, 0.65]
+const SPEED := [1.0, 0.9, 0.95, 0.85, 0.72, 1.0]
+const BALLS := [1, 1, 1, 1, 6, 0]
+const SPREAD := [0.0, 0.0, 0.0, 0.0, 0.075, 0.0]
+const SIZE := [1.0, 1.12, 1.0, 0.8, 0.42, 1.0]
 ## Most broadsides' worth you can carry, and aboard when a voyage begins
-## (round shot never runs out).
-const MAX := [-1, 12, 12, 12, 12]
-const START := [-1, 3, 3, 3, 4]
+## (round shot never runs out; the fireworks' slot counts the kind loaded
+## out of the locker).
+const MAX := [-1, 12, 12, 12, 12, 30]
+const START := [-1, 3, 3, 3, 4, 0]
 
 ## Explosive shell: the burst's reach (m) and its blow at the centre (times the gun's).
 const BLAST_RADIUS := 7.5

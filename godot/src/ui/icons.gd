@@ -169,6 +169,11 @@ static func plunder(id: String, size: float, shot := false) -> Texture2D:
 	return svg(("shot:" if shot else "loot:") + id, inner, Vector2(size, size), Rect2(0, 0, 40, 40))
 
 
+## A kind of firework's portrait (Fireworks.ORDER), `size` HUD units across.
+static func firework(id: String, size: float) -> Texture2D:
+	return svg("fw:" + id, _art("fireworks").get(id, ""), Vector2(size, size), Rect2(0, 0, 40, 40))
+
+
 ## A ship part's portrait (Parts), or a slot's standard fit ("standard:" +
 ## its slot), `size` HUD units across.
 static func part(id: String, size: float) -> Texture2D:

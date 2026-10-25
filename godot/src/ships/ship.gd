@@ -70,6 +70,8 @@ var last_cause := "shot"
 var burning := 0.0
 ## The shot her guns load for the next broadside (Ammo.ROUND ..).
 var ammo := Ammo.ROUND
+## With fireworks loaded, which kind goes up (Fireworks.ORDER).
+var firework := "peony"
 ## The look of her guns going off and of her round shot's trail
 ## (Cosmetics.BLAST_STYLES / TRAIL_STYLES: your vault's, plain powder for anyone else).
 var blast := 0
@@ -260,12 +262,24 @@ func fire(side: int, target: Ship = null, point: Variant = null) -> bool:
 			ms.append(i)
 	# from the middle outward, for a rolling thunder
 	ms.sort_custom(func(a: int, b: int) -> bool: return absf((model.muzzles[a].pos as Vector3).z) < absf((model.muzzles[b].pos as Vector3).z))
-	for k in ms.size():
-		_pending.append([world.time + k * 0.085 + randf() * 0.05, ms[k], target, point, ammo])
+	if ammo == Ammo.FIREWORK:
+		# rockets: a showpiece goes up off the middle gun with a white salute
+		# either side; anything else, up to four guns spread along the side,
+		# one after another
+		var show := Fireworks.tier(firework) == 2
+		var n := mini(3 if show else 4, ms.size())
+		var along := ms.duplicate()
+		along.sort_custom(func(a: int, b: int) -> bool: return (model.muzzles[a].pos as Vector3).z < (model.muzzles[b].pos as Vector3).z)
+		for k in n:
+			var gun: int = ms[k] if show else along[mini(along.size() - 1, floori((k + 0.5) * along.size() / n))]
+			_pending.append([world.time + (k * 0.4 if show else k * 0.22 + randf() * 0.06), gun, null, null, ammo, firework, k, n])
+	else:
+		for k in ms.size():
+			_pending.append([world.time + k * 0.085 + randf() * 0.05, ms[k], target, point, ammo])
 	var si := side_index(side)
 	reload[si] = cls.reload * float(Ammo.RELOAD[ammo])
 	reload_full[si] = reload[si]
-	_roll_kick += side * 0.05 * (cls.cannons_per_side / 5.0) / cls.mass
+	_roll_kick += side * 0.05 * (cls.cannons_per_side / 5.0) / cls.mass * (0.2 if ammo == Ammo.FIREWORK else 1.0)
 	return true
 
 
@@ -278,6 +292,14 @@ func _shoot(p: Array) -> void:
 	var kind: int = p[4]
 	var at := transform * (m.pos as Vector3)
 	var dir := Basis(Vector3.UP, heading) * (m.dir as Vector3)
+	if kind == Ammo.FIREWORK:
+		dir = Vector3(dir.x, 0.0, dir.z).normalized()
+		if world.sky != null:
+			world.sky.launch(str(p[5]), at, dir, vel, int(p[6]), int(p[7]))
+		world.fx.shot_muzzle(at, dir, vel, kind)
+		if team == Team.PLAYER:
+			world.shook.emit(0.08)
+		return
 	var v := muzzle_speed(kind) * randf_range(0.97, 1.03)
 	var mine := team == Team.PLAYER
 	var dist := 60.0

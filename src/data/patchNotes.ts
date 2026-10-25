@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T05:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: fireworks',
+        notes: [
+          'Fireworks come to the Android and Windows game. Load them as a sixth kind of shot (key 6, or the rocket slice of the shot fan) and a broadside sends rockets up off your guns: peonies, chrysanthemums, weeping willows, palms, halo rings, crossettes, strobes, dragon\'s eggs, a shoal of fish and Saturn, plus the three rare showpieces, Kraken\'s Bloom, the Jolly Roger and Fortune\'s Finale.',
+          'Each burst lights the sails, decks and islands round it, shimmers on the sea underneath and leaves smoke hanging in the sky, with its own bangs, whistles and crackles.',
+          'Rockets live in a firework locker that follows you between voyages: choose the kind from it (6 again, or a click on the rocket slot), buy more from the pyrotechnist at any trading port, and find them in fine chests. Every captain starts with a small welcome crate.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T04:00Z',
     entries: [
       {

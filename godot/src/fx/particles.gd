@@ -382,6 +382,18 @@ func shot_muzzle(pos: Vector3, dir: Vector3, carry: Vector3, kind: int) -> void:
 			_embers(pos, dir, carry, 18, 1.1)
 		Ammo.CHAIN:
 			_sparks(pos, dir, carry, 5, Color(6.0, 6.0, 6.5), Color(1.6, 1.6, 2.0), SPARK)
+		Ammo.FIREWORK:
+			# a rocket's fuse catching: a fizzing fountain of sparks up the line of flight and a puff of pale smoke
+			var ux := dir.x * 0.34
+			var uz := dir.z * 0.34
+			for i in 16:
+				var sp := randf_range(5.0, 16.0)
+				emit(pos + Vector3(0.0, 0.3, 0.0), Vector3((ux + randf_range(-0.25, 0.25)) * sp + carry.x, randf_range(0.6, 0.94) * sp, (uz + randf_range(-0.25, 0.25)) * sp + carry.z),
+						randf_range(0.25, 0.6), randf_range(0.12, 0.22), 0.03, Color(8.0, 5.6, 2.2, 1.0), Color(3.0, 0.9, 0.3), 9.0, 2.5, SPARK, 0.001, Vector2.ZERO, 0.0, true)
+			_flash(pos, 1.4, Color(8.0, 6.0, 4.0), Color(3.0, 1.4, 1.6))
+			for i in 4:
+				emit(pos + Vector3(randf_range(-0.4, 0.4), randf_range(0.0, 0.8), randf_range(-0.4, 0.4)), Vector3(ux * 4.0 + carry.x * 0.8 + randf_range(-0.5, 0.5), randf_range(1.5, 3.5), uz * 4.0 + carry.z * 0.8 + randf_range(-0.5, 0.5)),
+						randf_range(2.2, 3.4), randf_range(0.8, 1.2), randf_range(3.5, 5.0), Color(0.95, 0.93, 0.92, 0.4), Color(0.95, 0.93, 0.92), -0.25, 1.4, SMOKE, 0.05, Vector2.ZERO, randf_range(-0.4, 0.4))
 		Ammo.GRAPE:
 			for i in 14:
 				var sp := randf_range(14.0, 30.0)

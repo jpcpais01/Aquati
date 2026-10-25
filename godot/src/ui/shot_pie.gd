@@ -3,8 +3,9 @@ extends Control
 ## The shot on a touch screen: a round button riding over the big Fire,
 ## wearing the shot that's loaded (and, for a special, how many broadsides
 ## of it are left). Hold it, or push off it, and a pie of eight slices opens
-## round it: the five kinds of shot across its top half, each with what's
-## left of it, and below them three empty racks for the kinds still to come.
+## round it: the five kinds of shot and the rockets across its top half, each
+## with what's left of it, and below them two empty racks. The rockets'
+## slice opens the firework locker (FireworkPicker) to choose which kind.
 ## Slide onto a slice and let go to ram its shot home, or back to the middle
 ## to think better of it; let go without sliding and the pie stays open for
 ## a tap, as a quick tap opens it too. A touch anywhere else or a few idle
@@ -24,7 +25,7 @@ const POP := 6.0 * HudStyle.KT
 const SLICES := 8
 ## The slice each kind of shot sits in, clockwise from the top: round shot
 ## due left round to grape due right, the arc a thumb sweeps easiest.
-const SLOT := [6, 7, 0, 1, 2]
+const SLOT := [6, 7, 0, 1, 2, 3]
 ## Seconds a still press takes to open the pie, and how far (HUD units) a
 ## finger may stray before it's a push that opens it at once.
 const HOLD := 0.22
@@ -173,6 +174,12 @@ func show_held(kind: int) -> void:
 	_hot = SLOT[kind]
 	_visited = true
 	_dirty = true
+
+
+## The kind of firework chosen: the rockets' slice and the button wear it.
+func set_firework(id: String) -> void:
+	_btn.set_firework(id)
+	_slots[Ammo.FIREWORK].set_firework(id)
 
 
 ## None of that shot left.
@@ -425,6 +432,8 @@ class _Button:
 	var _count: Badge
 	var _gain: Label
 	var _kind := -1
+	var _fw := "peony"
+	var _n := 0
 	var _focus_e := 0.0
 	var _press := -1.0
 	var _load := -1.0
@@ -458,11 +467,21 @@ class _Button:
 		_gain = ShotPie.rise_label()
 		add_child(_gain)
 
+	func set_firework(id: String) -> void:
+		if id == _fw:
+			return
+		_fw = id
+		if _kind == Ammo.FIREWORK:
+			_kind = -1
+			show_shot(Ammo.FIREWORK, _n)
+
 	func show_shot(kind: int, n: int) -> void:
-		var ac: Color = Ammo.COLOR[kind]
+		_n = n
+		var fw := kind == Ammo.FIREWORK
+		var ac: Color = Fireworks.color(_fw) if fw else Ammo.COLOR[kind]
 		if kind != _kind:
 			_kind = kind
-			_icon.texture = Icons.plunder(Ammo.ID[kind], size.x * 0.74, true)
+			_icon.texture = Icons.firework(_fw, size.x * 0.74) if fw else Icons.plunder(Ammo.ID[kind], size.x * 0.74, true)
 			_disc.put(&"ac", ac)
 			_disc.put(&"c_edge", Color(ac, 0.45))
 			_count.set_colors(ac, Color("#06141e"))
@@ -632,6 +651,9 @@ class _Slot:
 		_count = Badge.new(Color(0.016, 0.063, 0.094, 0.92), HudStyle.INK, 9.0 * kt, 3.0 * kt, 16.0 * kt, Color(1, 1, 1, 0.14), 99, 1.55)
 		_body.add_child(_count)
 		_count.pin(Vector2(d + 6.0 * kt, -6.0 * kt), Vector2(1.0, 0.0))
+
+	func set_firework(id: String) -> void:
+		_icon.texture = Icons.firework(id, ICON)
 
 	func show_state(on: bool, n: int) -> void:
 		_on = on
