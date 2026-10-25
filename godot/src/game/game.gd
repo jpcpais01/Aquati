@@ -1377,7 +1377,6 @@ func _tick(real_dt: float) -> void:
 	if not sailing:
 		pass
 	elif _farewell == null:
-		camera.far_scale = CameraRig.far_for(player.cls.id)
 		if controls.zoom != 0.0:
 			camera.zoom_by(controls.zoom, world.time)
 		if controls.view_next and not ashore:

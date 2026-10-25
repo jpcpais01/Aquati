@@ -1,10 +1,10 @@
-## Shores O' Fortune for Android and Windows: a view to fit your ship
+## Shores O' Fortune for Android and Windows: a closer farthest zoom
 
-The twenty-eighth build sets the farthest zoom by the ship you sail.
+The twenty-ninth build brings the farthest zoom in.
 
-- **Smaller ships, closer view.** Zoomed all the way out (straight down or
-  leaned over), a galleon sees as far as ever, a brigantine stops 10% nearer
-  and a sloop 20%, so a small ship never shrinks to a speck in a big sea.
+- **10% closer, every ship.** Zoomed all the way out (straight down or
+  leaned over), the camera now stops 10% nearer, whatever you sail. This
+  replaces the last build's per-ship limits.
 
 ### Also from the last build
 
