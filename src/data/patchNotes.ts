@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-25T17:00Z',
     entries: [
       {
+        title: 'Android and Windows: rare skies',
+        notes: [
+          'Ember rain comes to the Android and Windows game. Now and then Morro Huracão stirs: its plume turns into a dark column, and downwind the sky goes copper while ash and glowing embers drift down round your ship.',
+          'On a scorching noon out on the high seas, a mirage may shimmer up ahead: an island with palms and a little shrine floating over its own reflection. It frays away when you sail into it.',
+          'Ember rain can also be picked on the sky badge, and previewed in photo mode, while you are downwind of the volcano.',
+        ],
+      },
+      {
         title: 'Android and Windows: photo mode',
         notes: [
           'Photo mode comes to the Android and Windows game: open it from the pause menu (or press P) to freeze the voyage and take the camera.',
