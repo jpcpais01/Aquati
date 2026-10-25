@@ -1048,6 +1048,39 @@ func cheer(vol: float, pan: float, dist := 0.0, n := 6) -> void:
 		_one("cheer%d" % (6 if n > 4 else 4), v / 0.3, pan, 0.0, 1.0, 1.0)
 
 
+## A grappling hook whirled and let fly: the rope hums round, then hisses out over the water.
+func grapple(vol: float, pan: float, dist := 0.0) -> void:
+	var v := minf(0.35, vol * 0.3) * exp(-dist / 150.0)
+	if _voice(v):
+		_one("grapple", v / 0.3, pan, _heard_at(dist), 0.95 + randf() * 0.1, 0.15)
+
+
+## Iron prongs biting into a rail: a hard clank, a splintering knock and the line snapping taut.
+func hook_bite(vol: float, pan: float, dist := 0.0) -> void:
+	var v := minf(0.45, vol * 0.4) * exp(-dist / 160.0)
+	if _voice(v):
+		_one("hook_bite", v / 0.4, pan, _heard_at(dist), 0.92 + randf() * 0.16, 0.2)
+
+
+## Two hulls hauled together: a deep wooden boom, then the timbers grinding
+## and groaning against each other.
+func hulls_meet(vol: float, pan: float) -> void:
+	_emit("crunch", vol * 0.45, pan, 6.0, 0.7, 0.5)
+	_emit("wood", vol * 0.8, pan, 4.0, 0.6, 0.5, 0.02)
+	_emit("creak0", vol * 0.45, pan - 0.2, 5.0, 0.75, 0.4, 0.3)
+	_emit("creak2", vol * 0.38, pan + 0.2, 5.0, 0.68, 0.4, 0.85)
+	var v := minf(0.6, vol * 0.5)
+	if _voice(v):
+		_one("hull_boom", v / 0.5, pan, 0.0, 1.0, 0.3)
+
+
+## A boarder's yell as he swings across on a line.
+func yell(vol: float, pan: float, dist := 0.0) -> void:
+	var v := minf(0.4, vol * 0.3) * exp(-dist / 200.0)
+	if _voice(v):
+		_one("yell", v / 0.3, pan, _heard_at(dist), 0.9 + randf() * 0.25, 1.0)
+
+
 ## The bosun's call: a shrill pipe swooping up, trilling and falling away: "all hands, cast off!".
 func bosun_pipe() -> void:
 	if _voice(0.09):

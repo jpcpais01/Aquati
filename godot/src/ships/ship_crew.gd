@@ -310,7 +310,7 @@ func update(dt: float, world: World) -> void:
 	enemy = null
 	enemy_dist = 1e9
 	for o in world.ships:
-		if o == sh or not o.alive or o.removed or o.team == sh.team:
+		if o == sh or not o.alive or o.removed or o.team == sh.team or o.prize or sh.prize:
 			continue
 		var d := Vector2(o.pos.x - sh.pos.x, o.pos.z - sh.pos.z).length()
 		if d < enemy_dist:
@@ -393,12 +393,16 @@ func update(dt: float, world: World) -> void:
 
 # ------------------------------------------------------------------ the landing party
 
-## The captain and up to `n` hands called away from the deck to go ashore
-## (the web's muster): they leave the deck, and come back with welcome_back.
-func muster(n: int) -> Array[Sailor]:
+## The captain and up to `n` hands (the helmsman too, with `helm`) called
+## away from the deck, to go ashore or to meet boarders (the web's muster):
+## they leave the deck, and come back with welcome_back.
+func muster(n: int, helm := false) -> Array[Sailor]:
 	var out: Array[Sailor] = []
 	var hands: Array[Sailor] = []
-	for role: Sailor.Role in [Sailor.Role.CAPTAIN, Sailor.Role.HAND, Sailor.Role.GUNNER]:
+	var roles: Array[Sailor.Role] = [Sailor.Role.CAPTAIN, Sailor.Role.HAND, Sailor.Role.GUNNER]
+	if helm:
+		roles.append(Sailor.Role.HELM)
+	for role: Sailor.Role in roles:
 		for sl in sailors:
 			if sl.role != role or sl.mode != Sailor.Mode.ABOARD or sl.away:
 				continue

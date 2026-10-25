@@ -145,6 +145,10 @@ var rise := 0.0
 var aim := 0.0
 var cheer := 0.0
 var shout := 0.0
+## Swinging across on a boarding line (0..1, how much of the hanging pose).
+var hang := 0.0
+## Struck: on their knees, hands up (0 fighting on .. 1 all the way down).
+var yielded := 0.0
 var last_hurt := -100.0
 var target: ShoreWalker
 ## The blade's tip and middle last frame, for its trail (live while it flies).
@@ -205,12 +209,12 @@ func airborne() -> bool:
 
 ## Can act: standing, not reeling.
 func ready() -> bool:
-	return not is_down() and stagger <= 0.0 and rise <= 0.0
+	return not is_down() and stagger <= 0.0 and rise <= 0.0 and yielded <= 0.0 and hang <= 0.3
 
 
 ## Fair game for a blade: on their feet and still fighting.
 func standing() -> bool:
-	return alive() and not is_down()
+	return alive() and not is_down() and yielded <= 0.0
 
 
 ## Springs up off the ground; false if already aloft.
@@ -365,6 +369,8 @@ func tick(dt: float) -> void:
 	stagger = maxf(0.0, stagger - dt)
 	flinch = maxf(0.0, flinch - dt)
 	cheer = maxf(0.0, cheer - dt)
+	if yielded > 0.0:
+		yielded = minf(1.0, yielded + dt * 1.6)
 	shout = maxf(0.0, shout - dt)
 	if down_t >= 0.0:
 		down_t += dt
@@ -487,7 +493,15 @@ func animate(dt: float, time: float, run: float) -> void:
 			o[P_KNEE_R] += kn
 			o[P_ROOT_Y] -= 0.38 * (1.0 - cos(th)) + 0.42 * (1.0 - cos(kn - th))
 			o[P_SPINE_X] += th * 0.6
+	if hang > 0.0:
+		_hang_pose(o, tt)
+	if yielded > 0.0 and not down:
+		_yield_pose(o, tt)
 	_face(o, tt, moving)
+	if hang > 0.3:
+		# a roar on the way across
+		o[P_JAW] = 0.75
+		o[P_BROW] = -0.8
 	# cuts snap, blows jolt, strides keep their snap; everything else eases
 	var rate := 55.0 if cut_t >= 0.0 else (34.0 if flinch > 0.0 or parry > 0.0 else (9.0 if down else (26.0 if stepping else 13.0)))
 	var k := MathX.damp(rate, dt)
@@ -499,7 +513,9 @@ func animate(dt: float, time: float, run: float) -> void:
 		body[i] += (B[i] - body[i]) * k
 	if dig_now:
 		prop = CrewModel.PROP_SPADE
-	elif armed or cheer > 0.0:
+	elif yielded > 0.3:
+		prop = CrewModel.PROP_NONE
+	elif armed or cheer > 0.0 or hang > 0.0:
 		prop = CrewModel.PROP_CUTLASS
 	else:
 		prop = CrewModel.PROP_NONE
@@ -523,6 +539,30 @@ func _leap_pose(o: PackedFloat32Array) -> void:
 		o[P_ELBOW_R] = lerpf(o[P_ELBOW_R], 0.5, 0.85)
 	o[P_SPINE_X] = lerpf(o[P_SPINE_X], 0.12 - 0.08 * up, 0.85)
 	o[P_JAW] = maxf(o[P_JAW], 0.15)
+
+
+## Swinging on a line: the left fist high on the rope, blade out, knees tucked to clear the rails.
+func _hang_pose(o: PackedFloat32Array, tt: float) -> void:
+	var w := minf(1.0, hang)
+	var keys := [[P_ARM_LX, 2.95], [P_ARM_LZ, -0.12], [P_ELBOW_L, 0.18], [P_HAND_L, 1.0],
+			[P_ARM_RX, 1.05 + 0.15 * sin(tt * 9.0)], [P_ARM_RZ, 0.85], [P_ELBOW_R, 0.55], [P_HAND_R, 1.0],
+			[P_LEG_LX, 1.05], [P_KNEE_L, 1.45], [P_LEG_RX, 0.6], [P_KNEE_R, 0.95],
+			[P_SPINE_X, -0.16], [P_SPINE_Y, 0.2], [P_HEAD_X, -0.12], [P_ROOT_Y, 0.0]]
+	for k: Array in keys:
+		o[k[0]] = lerpf(o[k[0]], k[1], w)
+
+
+## On their knees, hands raised, head down: they've struck their colours.
+func _yield_pose(o: PackedFloat32Array, tt: float) -> void:
+	var w := yielded * yielded * (3.0 - 2.0 * yielded)
+	var shake := sin(tt * 13.0) * 0.03
+	var keys := [[P_ARM_LX, 2.45 + shake], [P_ARM_LZ, -0.22], [P_ELBOW_L, 1.05], [P_HAND_L, 0.05],
+			[P_ARM_RX, 2.45 - shake], [P_ARM_RZ, -0.22], [P_ELBOW_R, 1.05], [P_HAND_R, 0.05],
+			[P_LEG_LX, 0.04], [P_KNEE_L, 1.62], [P_LEG_RX, -0.02], [P_KNEE_R, 1.66], [P_ROOT_Y, -0.43],
+			[P_SPINE_X, 0.16], [P_SPINE_Y, 0.0], [P_HEAD_X, 0.3], [P_HEAD_Y, 0.25 * sin(seed)],
+			[P_BROW, 0.75], [P_SMILE, -0.7], [P_JAW, 0.1]]
+	for k: Array in keys:
+		o[k[0]] = lerpf(o[k[0]], k[1], w)
 
 
 ## The stride: each leg keyed through heel strike, taking the weight, passing

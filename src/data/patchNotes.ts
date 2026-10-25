@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T10:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: boarding',
+        notes: [
+          'Boarding comes to the Android and Windows game. Batter a pirate below two fifths of her hull and come close aboard: the grapnels fly across, bite into her rail and haul her in until the hulls grind together.',
+          'Your captain and hands swing across on lines and land on her deck, where her crew and her captain come at you with blades out. Cut down enough of them and she strikes her colours: her strongbox is yours.',
+          'Then her fate: take her as a prize for prize money, and she sails off under your colours, or scuttle her for her bounty and salvage. If the fight turns, fall back to your own rail and cut the lines.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T09:00Z',
     entries: [
       {

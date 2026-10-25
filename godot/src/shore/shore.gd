@@ -16,6 +16,15 @@ extends Node3D
 ## row, the last a lunge), parries are steel on steel, the pistol has one
 ## ball and a slow reload. Rout the camp and its plunder chest is yours.
 ## Everyone is drawn by the crews' instanced sailor (Crew.crowds).
+##
+## The same blades serve at sea. Board a crippled pirate (Boarding) and the
+## captain and hands swing across on lines to fight her crew for her rolling
+## deck: walkers keep world x/z as they do ashore, and her deck (her crew's
+## ShipCrew plan) keeps them between her rails and round her masts and guns,
+## then carries them onto her planks, so they heave, pitch and roll with her
+## and stand up against the roll as her own crew do. Cut down her captain
+## and enough of his men and the rest throw down their blades and go to
+## their knees.
 
 ## A step, and the captain's jumps (for the game's sound and shake).
 signal stepped(k: float, wet: bool, hard: bool)
@@ -32,6 +41,10 @@ signal plundered(camp: Camp)
 signal captain_fell
 ## A foe is cut down for good.
 signal fallen(w: ShoreWalker, boss: bool)
+## A boarded ship's crew is beaten: the survivors throw down their blades.
+signal prize_struck(prize: Ship)
+## A boarder lands on her deck.
+signal landed(w: ShoreWalker, captain: bool)
 
 const FLOAT_HIT := 0
 const FLOAT_BAD := 1
@@ -62,6 +75,9 @@ const FORT_LEASH := 78.0
 ## The garrison: soldiers, and their commandant.
 const GARRISON := 5
 const COMMANDANT_HP := 160.0
+## A boarder's flight across on a line (s), and how high the leap carries over the rails.
+const SWING_T := 1.15
+const SWING_UP := 1.35
 const HAND_NAMES := ["Bones", "Patch", "Old Hobb", "Sully", "Barnaby", "Nell", "Red Jack", "Iko", "Dutch", "Mags", "Tam", "Quill", "Rook", "Bess", "Finch", "Salty"]
 ## Each hand's place in the knot: [to the captain's right, ahead] (m).
 const SLOTS := [[-1.5, -1.9], [1.5, -1.9], [-1.0, -3.7], [1.0, -3.7], [-2.3, -0.4], [2.3, -0.4]]
@@ -123,6 +139,22 @@ class Follow:
 	func _init(i: int) -> void:
 		var s: Array = SLOTS[i]
 		slot = Vector2(float(s[0]) + (randf() - 0.5) * 0.5, float(s[1]) + (randf() - 0.5) * 0.8)
+
+
+## A boarder on the way across: perched on your rail, then out over the gap on a line.
+class Swing:
+	## Seconds before he leaps, and into the flight.
+	var delay := 0.0
+	var t := 0.0
+	## Where he leaps from: t along the boarders' own rail, its sign the side.
+	var from_t := 0.0
+	## Where he lands on her deck (her own frame).
+	var lx := 0.0
+	var lz := 0.0
+	## The rigging the line hangs from (set at the leap), and his fist on it.
+	var pivot := Vector3.ZERO
+	var hand := Vector3.ZERO
+	var y := 0.0
 
 
 ## A camp of cutthroats in a glade a short walk in from the beach.
@@ -192,6 +224,23 @@ var _all: Array[ShoreWalker] = []
 var _hostile: Array[ShoreWalker] = []
 ## Things to do a moment from now: [shore time, Callable].
 var _later: Array = []
+## The deck being fought over (her crew's plan of it) and the ship it
+## belongs to (null ashore); her crew, fighting for it; how many of them
+## turned out (for their nerve), and whether they've struck.
+var deck: ShipCrew
+var prize: Ship
+var crew_foes: Array[ShoreWalker] = []
+var struck := false
+## Which of her sides the boarders' ship lies against (+1 port).
+var board_side := 1
+var _crew_at := 0
+## Fore and aft ends of her open deck (her own z), inside the bulkheads.
+var _z0 := 0.0
+var _z1 := 0.0
+## Boarders on their way across (ShoreWalker -> Swing), and those in the air this frame.
+var _swings := {}
+var _air := {}
+var _feet: Array[ShoreWalker] = []
 var _boat: MeshInstance3D
 var _boat_blocks: Array[Vector3] = []
 var _crew: Crew
@@ -338,6 +387,7 @@ func leave() -> void:
 	_boat_blocks.clear()
 	_boat.visible = false
 	landing = {}
+	_end_boarding()
 	# camps that gave chase settle back down round their fires
 	for c in camps:
 		if c.routed or not c.alert:
@@ -375,6 +425,9 @@ func _draw(emit: Callable) -> void:
 			var w := m.walker
 			if w.visible and not w.hidden and w.palette >= 0:
 				emit.call(w.xf, w.write(), w.look.hat, w.prop, w.kit)
+	for w in crew_foes:
+		if w.visible and w.palette >= 0:
+			emit.call(w.xf, w.write(), w.look.hat, w.prop, w.kit)
 	for c in camps:
 		if not c.live:
 			continue
@@ -563,6 +616,374 @@ func _set_live(c: Camp, on: bool) -> void:
 			w.visible = false
 
 
+# ---------------------------------------------------------------- boarding
+
+## Over the side and onto `p_prize`: the captain and `o.hands` of `p_ship`'s
+## crew perch on her rail and swing across one after another, while `o.foes`
+## of the prize's crew (her captain first, `o.boss_hp` strong, called
+## `o.boss`, the rest `o.hand`) wait for them on her deck, blades out. The
+## rest of her people have bolted below. False if she has no crew to meet them.
+func board(p_ship: Ship, p_prize: Ship, o: Dictionary, world: World) -> bool:
+	var plan := _crew.of(p_prize)
+	if plan == null:
+		return false
+	leave()
+	_world = world
+	deck = plan
+	prize = p_prize
+	ship = p_ship
+	active = true
+	defeated = false
+	struck = false
+	pistol_t = 0.0
+	_combo = 0
+	_calm_t = 0.0
+	var m := plan.main
+	_z0 = plan.shape.z(m.t0) + 0.25
+	_z1 = plan.shape.z(m.t1) - 0.25
+	# which of her sides lies against ours, and which of ours against hers
+	board_side = 1 if _local(ship.pos.x, ship.pos.z).x >= 0.0 else -1
+	var our_side := 1 if (prize.pos.x - ship.pos.x) * cos(ship.heading) - (prize.pos.z - ship.pos.z) * sin(ship.heading) >= 0.0 else -1
+	_raise_party(int(o.hands))
+	# spread along her near rail, the captain mid-deck and the hands fanned out fore and aft of him
+	var n := party.size()
+	var z0 := plan.shape.z(m.t0) + 1.2
+	var z1 := plan.shape.z(m.t1) - 1.2
+	var slots: Array[float] = []
+	for i in n:
+		slots.append(lerpf(z0, z1, (i + 0.5) / n if n > 1 else 0.5))
+	var zm := (z0 + z1) * 0.5
+	slots.sort_custom(func(a: float, b: float) -> bool: return absf(a - zm) < absf(b - zm))
+	var L := ship.cls.length
+	for i in n:
+		var w := party[i].walker
+		var sw := Swing.new()
+		sw.lz = slots[i] + (randf() - 0.5) * 0.5
+		var t := clampf(plan.t_of(sw.lz), m.t0, m.t1)
+		sw.lx = board_side * (m.half_width(t) - 1.6 - randf() * 0.7)
+		# straight across from our own rail
+		var at := _world_of(sw.lx, sw.lz)
+		var ox := at.x - ship.pos.x
+		var oz := at.y - ship.pos.z
+		var from_t := clampf((ox * sin(ship.heading) + oz * cos(ship.heading)) / L + 0.5, 0.2, 0.8)
+		sw.from_t = from_t * our_side
+		sw.delay = 0.35 if i == 0 else 0.1 + i * 0.22 + randf() * 0.12
+		_swings[w] = sw
+		w.visible = true
+		w.armed = true
+		w.hang = 0.5
+		w.idle = ShoreWalker.Idle.STAND
+		var r := Boarding.rail_point(ship, from_t, our_side, 0.2)
+		w.place(r.x, r.z, atan2(at.x - r.x, at.y - r.z))
+		sw.y = r.y
+		w.y = r.y
+	_march = ship.heading
+	_still_t = 0.0
+	# her crew: those who stand and fight, the captain at their head
+	var theirs := plan.muster(99, true)
+	crew_foes.clear()
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	for k in int(o.foes):
+		var sl: Sailor = theirs[k] if k < theirs.size() else null
+		var boss := sl.role == Sailor.Role.CAPTAIN if sl != null else (k == 0 and theirs.is_empty())
+		var hp := float(o.boss_hp) if boss else FOE_HP
+		var w: ShoreWalker
+		var l: Vector2
+		var yaw: float
+		if sl != null:
+			w = ShoreWalker.new(ShoreWalker.Team.FOE, sl.look, sl.row, hp, sl.girth * (1.08 if boss else 1.0), sl.height * (1.04 if boss else 1.0))
+			l = Vector2(sl.x, clampf(sl.z, z0 - 0.8, z1 + 0.8))
+			yaw = sl.yaw
+		else:
+			# short-handed (every palette row taken): someone fresh from below
+			var look := CrewLook.make(true, boss, false, rng)
+			var row := _crew.take_row(look.slots)
+			if row < 0:
+				break
+			w = ShoreWalker.new(ShoreWalker.Team.FOE, look, row, hp, 1.08 if boss else 1.0, 1.04 if boss else 1.0, true)
+			l = plan.free_spot(m)
+			yaw = rng.randf_range(-PI, PI)
+		w.title = str(o.boss) if boss else str(o.hand)
+		l = _keep(l, BODY + 0.1)
+		var wp := _world_of(l.x, l.y)
+		w.place(wp.x, wp.y, yaw + prize.heading)
+		w.visible = true
+		w.armed = true
+		w.shout = 0.6 + randf() * 0.8
+		w.idle_t = randf() * 0.6
+		crew_foes.append(w)
+	_crew_at = crew_foes.size()
+	return true
+
+
+## Lets go of a boarded deck: her fighters go back to being her crew (or
+## stay below, as a prize's do).
+func _end_boarding(crew_back := true) -> void:
+	if deck == null:
+		return
+	for w in crew_foes:
+		if w.owns_row:
+			_crew.free_row(w.palette)
+	crew_foes.clear()
+	_swings.clear()
+	_air.clear()
+	if crew_back and prize != null and is_instance_valid(prize):
+		deck.welcome_back()
+	deck = null
+	prize = null
+	struck = false
+
+
+## Off the deck of a prize sent away with a prize crew: her own people stay battened below.
+func leave_as_prize() -> void:
+	_end_boarding(false)
+	leave()
+
+
+## The boarders' flights across: perched, then out over the gap, then onto her planks.
+func _update_swings(dt: float, world: World) -> void:
+	if deck == null or ship == null:
+		_swings.clear()
+		return
+	for w: ShoreWalker in _swings.keys():
+		var sw: Swing = _swings[w]
+		sw.t += dt
+		var rail := Boarding.rail_point(ship, absf(sw.from_t), 1 if sw.from_t >= 0.0 else -1, 0.2)
+		var to := _world_of(sw.lx, sw.lz)
+		var to_y := deck_height(to.x, to.y)
+		var u := (sw.t - sw.delay) / SWING_T
+		if u < 0.0:
+			# crouched on the rail, a hand on the line, waiting his turn
+			w.x = rail.x
+			w.z = rail.z
+			sw.y = rail.y
+			w.hang = 0.55
+			w.want_yaw = atan2(to.x - w.x, to.y - w.z)
+			w.turn(dt, 8.0)
+			sw.pivot = Vector3((rail.x + to.x) * 0.5, maxf(rail.y, to_y) + 7.0, (rail.z + to.y) * 0.5)
+			_air[w] = true
+			continue
+		if u < 1.0:
+			if sw.t - dt < sw.delay:
+				# the leap: a yell and a creak of the line taking the weight
+				w.shout = 0.7
+				if world.sound != null:
+					var h := world.heard(rail)
+					world.sound.swish(h.x * 0.9, h.y)
+					if w == captain or randf() < 0.5:
+						world.sound.yell(h.x * 0.5, h.y, h.z)
+			var e := u * u * (3.0 - 2.0 * u)
+			w.x = lerpf(rail.x, to.x, e)
+			w.z = lerpf(rail.z, to.y, e)
+			sw.y = lerpf(rail.y, to_y, e) + SWING_UP * sin(PI * minf(1.0, u * 1.08))
+			w.hang = 1.0
+			w.want_yaw = atan2(to.x - rail.x, to.y - rail.z)
+			w.turn(dt, 10.0)
+			sw.hand = Vector3(w.x + sin(w.yaw) * 0.12, sw.y + 2.05 * w.height, w.z + cos(w.yaw) * 0.12)
+			_air[w] = true
+			continue
+		# down on her planks with a thump, carried a step on by the swing
+		_swings.erase(w)
+		w.place(to.x, to.y, w.yaw)
+		w.kx = sin(w.yaw) * 2.2
+		w.kz = cos(w.yaw) * 2.2
+		w.y = to_y
+		_dust(Vector3(to.x, to_y + 0.1, to.y), world, 0.9)
+		landed.emit(w, w == captain)
+	# the hanging pose lets go as they find their feet
+	for mb in party:
+		var w := mb.walker
+		if not _air.has(w) and w.hang > 0.0:
+			w.hang = maxf(0.0, w.hang - dt * 3.5)
+
+
+## The lines the boarders swing on, from the rigging overhead to each fist
+## (for Boarding to draw): [from, to, slack] each.
+func swing_lines() -> Array:
+	var out := []
+	for w: ShoreWalker in _swings.keys():
+		var sw: Swing = _swings[w]
+		if sw.t < sw.delay:
+			# a line held ready, hanging slack from the yard
+			sw.hand = Vector3(w.x + sin(w.yaw) * 0.25, sw.y + 1.55 * w.height, w.z + cos(w.yaw) * 0.25)
+			out.append([sw.pivot, sw.hand, 0.4])
+		else:
+			out.append([sw.pivot, sw.hand, 0.0])
+	return out
+
+
+## Her crew fights for her deck: blades out to meet the boarders, every man for the nearest.
+func _think_deck(dt: float) -> void:
+	var fighters: Array[ShoreWalker] = []
+	for mb in party:
+		if not mb.walker.is_down() and not _air.has(mb.walker):
+			fighters.append(mb.walker)
+	var cap := captain
+	for k in crew_foes.size():
+		var w := crew_foes[k]
+		if w.is_down():
+			continue
+		if w.yielded > 0.0 or struck:
+			w.vx *= 1.0 - MathX.damp(10.0, dt)
+			w.vz *= 1.0 - MathX.damp(10.0, dt)
+			continue
+		w.armed = true
+		if fighters.is_empty() or defeated:
+			# the boarders are still coming: face the rail they'll come over
+			w.vx *= 1.0 - MathX.damp(6.0, dt)
+			w.vz *= 1.0 - MathX.damp(6.0, dt)
+			var r := _world_of(board_side * 3.0, _local(w.x, w.z).y)
+			w.want_yaw = atan2(r.x - w.x, r.y - w.z)
+			w.turn(dt, 6.0)
+			continue
+		if w.target == null or not w.target.standing() or _air.has(w.target) or randf() < dt * 0.15:
+			var best: ShoreWalker = null
+			var bd := INF
+			for p in fighters:
+				var taken := 0
+				for o in crew_foes:
+					if o != w and o.target == p:
+						taken += 1
+				var d := Vector2(p.x - w.x, p.z - w.z).length() + taken * 2.5 - (2.0 if p == cap else 0.0)
+				if d < bd:
+					bd = d
+					best = p
+			w.target = best
+		if w.target != null:
+			_duel(w, w.target, dt, k, 0.38 if w.max_hp > FOE_HP else 0.22)
+
+
+## Her crew's nerve: with her captain down and most of them cut down too, the rest throw in.
+func _morale(world: World) -> void:
+	if struck or prize == null:
+		return
+	var up := 0
+	var boss: ShoreWalker = null
+	for w in crew_foes:
+		if w.standing():
+			up += 1
+		if w.max_hp > FOE_HP and boss == null:
+			boss = w
+	var headless := boss == null or boss.is_down()
+	if up > 0 and not (headless and up <= maxi(1, roundi(_crew_at * 0.34))):
+		return
+	struck = true
+	var cry := 0
+	for w in crew_foes:
+		w.target = null
+		if w.is_down():
+			continue
+		w.armed = false
+		w.cut_t = -1.0
+		w.parry = 0.0
+		w.yielded = 0.01
+		w.shout = 0.0
+		# "Quarter! Quarter!"
+		if cry < 2:
+			cry += 1
+			var at := w
+			_later.append([time + 0.15 + cry * 0.45, func() -> void: floated.emit("Quarter!", Vector3(at.x, at.y + 2.3, at.z), FLOAT_LOOT)])
+	for mb in party:
+		var w := mb.walker
+		w.target = null
+		if not w.is_down() and w != captain:
+			w.cheer = 2.6 + randf() * 0.6
+	if world.sound != null:
+		world.sound.cheer(0.85, 0.0, 0.0, 5)
+	prize_struck.emit(prize)
+
+
+## The captain has backed up against the rail our own ship lies alongside.
+func _at_own_rail() -> bool:
+	var cap := captain
+	if deck == null or cap == null:
+		return false
+	var l := _local(cap.x, cap.z)
+	var t := clampf(deck.t_of(l.y), deck.main.t0, deck.main.t1)
+	return l.x * board_side > deck.main.half_width(t) - 0.95
+
+
+# ---------------------------------------------------------------- her deck
+
+## World (x, z) into her own frame (her heading and position only): (x across to port, z ahead).
+func _local(x: float, z: float) -> Vector2:
+	var s := prize
+	var dx := x - s.pos.x
+	var dz := z - s.pos.z
+	var sh := sin(s.heading)
+	var ch := cos(s.heading)
+	return Vector2(dx * ch - dz * sh, dx * sh + dz * ch)
+
+
+## ...and back out to the world's (x, z).
+func _world_of(lx: float, lz: float) -> Vector2:
+	var s := prize
+	var sh := sin(s.heading)
+	var ch := cos(s.heading)
+	return Vector2(s.pos.x + lx * ch + lz * sh, s.pos.z - lx * sh + lz * ch)
+
+
+## The world height of her planks under (x, z).
+func deck_height(x: float, z: float) -> float:
+	var l := _local(x, z)
+	return (prize.transform * Vector3(l.x, deck.deck_y(deck.main, l.x, l.y), l.y)).y
+
+
+## Half the deck's width at her own z, less a body's girth.
+func _room(lz: float, r: float) -> float:
+	var t := clampf(deck.t_of(lz), deck.main.t0, deck.main.t1)
+	return maxf(0.2, deck.main.half_width(t) - r - 0.08)
+
+
+## A point of her own frame clamped onto the open deck, clear of masts, guns and hatches.
+func _keep(l: Vector2, r: float) -> Vector2:
+	for k in 2:
+		for o in deck.obstacles:
+			var dx := l.x - o.x
+			var dz := l.y - o.y
+			var d := Vector2(dx, dz).length()
+			var mn := o.z + r
+			if d >= mn:
+				continue
+			if d < 1e-4:
+				l.x += mn
+				continue
+			l = Vector2(o.x + dx / d * mn, o.y + dz / d * mn)
+		l.y = clampf(l.y, _z0 + r, _z1 - r)
+		var w := _room(l.y, r)
+		l.x = clampf(l.x, -w, w)
+	return l
+
+
+## Walks (x, z) by (dx, dz) over her deck, kept clear of everything on it.
+func _deck_step(x: float, z: float, dx: float, dz: float, r: float) -> Vector2:
+	var l := _keep(_local(x + dx, z + dz), r)
+	return _world_of(l.x, l.y)
+
+
+## Is a world point on her planks (with some slack)?
+func holds(x: float, z: float, slack := 0.0) -> bool:
+	if deck == null:
+		return false
+	var l := _local(x, z)
+	return l.y > _z0 - slack and l.y < _z1 + slack and absf(l.x) < _room(l.y, 0.0) + slack
+
+
+## Carries a walker posed flat (at its plank height in her frame) onto the
+## rolling deck: into her frame, stood upright about its feet against the
+## roll, then out through her transform. Also sets its world height, for
+## blood and dust.
+func _ride(w: ShoreWalker) -> void:
+	var s := prize
+	var l := _local(w.x, w.z)
+	var foot := Vector3(l.x, deck.deck_y(deck.main, l.x, l.y), l.y)
+	var flat := Transform3D(Basis(Vector3.UP, s.heading), Vector3(s.pos.x, 0.0, s.pos.z)).affine_inverse()
+	var up := Transform3D(Basis(deck.upright), foot) * Transform3D(Basis.IDENTITY, -foot)
+	w.xf = s.transform * up * flat * w.xf
+	w.y = (s.transform * foot).y
+
+
 # ---------------------------------------------------------------- per frame
 
 ## A frame ashore (or of the camps, seen from the sea): `focus` is where the
@@ -586,12 +1007,15 @@ func update(dt: float, world: World, inp: Steer, focus: Vector3) -> void:
 	all.clear()
 	_hostile.clear()
 	for c in camps:
-		var live := not c.empty and Vector2(float(c.site.x) - focus.x, float(c.site.z) - focus.z).length() < CAMP_LIVE
+		# (a fight on a ship's deck is no place to walk an island's cutthroats: they'd be walked on her planks)
+		var live := deck == null and not c.empty and Vector2(float(c.site.x) - focus.x, float(c.site.z) - focus.z).length() < CAMP_LIVE
 		if live != c.live:
 			_set_live(c, live)
 		_camp_fx(c, dt, world, focus)
 		if live:
 			all.append_array(c.gang)
+	# a boarded ship's crew, and everyone the party may fight
+	all.append_array(crew_foes)
 	_hostile.append_array(all)
 	var cap := captain if active else null
 	if cap != null:
@@ -601,14 +1025,28 @@ func update(dt: float, world: World, inp: Steer, focus: Vector3) -> void:
 		return
 	for w in all:
 		w.tick(dt)
+	# boarders still on their way across stay out of the scrum till they land
+	_air.clear()
+	if not _swings.is_empty():
+		_update_swings(dt, world)
+	var feet := all
+	if not _air.is_empty():
+		feet = _feet
+		feet.clear()
+		for w in all:
+			if not _air.has(w):
+				feet.append(w)
 	if cap != null:
-		_steer_captain(dt, inp, world)
+		if not _air.has(cap):
+			_steer_captain(dt, inp, world)
 		_think_party(dt)
 	for c in camps:
 		if c.live:
 			_think_camp(c, dt, world)
-	_move(all, dt)
-	_resolve(all, world)
+	if deck != null:
+		_think_deck(dt)
+	_move(feet, dt)
+	_resolve(feet, world)
 	for w in all:
 		var run := clampf((w.stride - ShoreWalker.WALK) / (ShoreWalker.RUN - ShoreWalker.WALK), 0.0, 1.0)
 		w.animate(dt, world.time, run)
@@ -628,6 +1066,9 @@ func _gather() -> void:
 		for w in c.gang:
 			if w.alive() and Vector2(w.x - captain.x, w.z - captain.z).length() < 40.0:
 				foes.append(w)
+	for w in crew_foes:
+		if w.alive() and w.yielded <= 0.0:
+			foes.append(w)
 
 
 func fighting() -> bool:
@@ -651,7 +1092,7 @@ func _steer_captain(dt: float, inp: Steer, world: World) -> void:
 	# a jump: not mid-cut, not with the pistol up, not from deep water
 	var hop := inp.jump and not cap.airborne() and cap.ready() and not cap.cutting() and cap.aim <= 0.0 and cap.wade < 0.5
 	if hop and cap.jump():
-		hopped.emit(true, 0.0, cap.wade > 0.08, false)
+		hopped.emit(true, 0.0, cap.wade > 0.08, deck != null)
 	var fight := fighting()
 	var top := ShoreWalker.RUN if inp.run and not cap.cutting() else ShoreWalker.WALK
 	var wade := 1.0 - minf(0.5, cap.wade * 0.65)
@@ -826,7 +1267,7 @@ func _think_party(dt: float) -> void:
 		_swap_sides(dt)
 	for i in hands.size():
 		var w := hands[i]
-		if w.is_down():
+		if w.is_down() or _air.has(w):
 			continue
 		# pick a fight
 		if fight:
@@ -1248,12 +1689,12 @@ func _move(all: Array[ShoreWalker], dt: float) -> void:
 			continue
 		var px := w.x
 		var pz := w.z
-		var to := ground.step(w.x, w.z, mx * dt, mz * dt, BODY)
+		var to := _deck_step(w.x, w.z, mx * dt, mz * dt, BODY) if deck != null else ground.step(w.x, w.z, mx * dt, mz * dt, BODY)
 		w.x = to.x
 		w.z = to.y
 		var moved := Vector2(w.x - px, w.z - pz).length() / maxf(dt, 1e-4)
 		w.stride += ((0.0 if w.is_down() else moved) - w.stride) * MathX.damp(12.0, dt)
-		w.wade = maxf(0.0, -ground.height(w.x, w.z))
+		w.wade = 0.0 if deck != null else maxf(0.0, -ground.height(w.x, w.z))
 		# no footfalls in mid-air
 		if w.stride < 0.08 or w.airborne():
 			continue
@@ -1266,11 +1707,21 @@ func _move(all: Array[ShoreWalker], dt: float) -> void:
 			w.phase -= PI * 2000.0
 
 
-## Poses a walker onto the ground under its feet.
+## Poses a walker onto whatever is under its feet (or in the air on a line).
 func _stand(w: ShoreWalker, dt: float, world: World) -> void:
-	var g := ground.height(w.x, w.z)
+	if _air.has(w):
+		w.place3((_swings[w] as Swing).y)
+		return
+	var g: float
+	if deck != null:
+		var l := _local(w.x, w.z)
+		g = deck.deck_y(deck.main, l.x, l.y)
+	else:
+		g = ground.height(w.x, w.z)
 	var hit := w.fly(dt, g)
 	w.place3(g)
+	if deck != null:
+		_ride(w)
 	if hit > 0.0:
 		_touch_down(w, hit, world)
 
@@ -1280,7 +1731,9 @@ func _touch_down(w: ShoreWalker, hit: float, world: World) -> void:
 	var k := clampf((hit - 2.0) / 4.0, 0.0, 1.0)
 	var wet := w.wade > 0.08
 	if w == captain:
-		hopped.emit(false, k, wet, false)
+		hopped.emit(false, k, wet, deck != null)
+	if deck != null:
+		return
 	var y := world.water_height(w.x, w.z) if wet else w.y + 0.05
 	var n := 10 if wet else 7
 	var fx := world.fx
@@ -1298,7 +1751,9 @@ func _touch_down(w: ShoreWalker, hit: float, world: World) -> void:
 func _footfall(w: ShoreWalker) -> void:
 	var wet := w.wade > 0.08
 	if w == captain:
-		stepped.emit(clampf(w.stride / ShoreWalker.RUN, 0.3, 1.0), wet, false)
+		stepped.emit(clampf(w.stride / ShoreWalker.RUN, 0.3, 1.0), wet, deck != null)
+	if deck != null:
+		return
 	var fx := _world.fx
 	if wet:
 		if randf() < 0.7:
@@ -1447,6 +1902,8 @@ func _hurt(b: ShoreWalker, a: ShoreWalker, dmg: float, world: World, heavy: bool
 					all_down = false
 			if all_down:
 				_rout(camp)
+		if crew_foes.has(b):
+			_morale(world)
 
 
 func _camp_of(w: ShoreWalker) -> Camp:
@@ -1479,10 +1936,13 @@ func _sparks(at: Vector3, world: World, n: int) -> void:
 	world.fx.emit(at, Vector3.ZERO, 0.08, 0.5, 0.9, Color(6.0, 5.0, 3.0, 1.0), Color(2.0, 1.0, 0.3), 0.0, 0.0, Particles.SOFT, 0.001, Vector2.ZERO, 0.0, true)
 
 
+## Sand ashore; on a deck, a puff of old caulk and grime off the planks.
 func _dust(at: Vector3, world: World, k: float) -> void:
-	for i in 3 + roundi(k * 2.0):
+	var on_deck := deck != null
+	var c := Color(0.78, 0.74, 0.68, 0.3) if on_deck else Color(0.98, 0.9, 0.74, 0.42)
+	for i in (2 if on_deck else 3) + roundi(k * 2.0):
 		world.fx.emit(at + Vector3((randf() - 0.5) * 0.4, 0.0, (randf() - 0.5) * 0.4), Vector3((randf() - 0.5) * 2.0 * k, 0.4 + randf() * k, (randf() - 0.5) * 2.0 * k),
-				0.7 + randf() * 0.5, 0.3 * k, 1.1 * k, Color(0.98, 0.9, 0.74, 0.42), Color(0.98, 0.9, 0.74), 0.3, 2.4, Particles.SMOKE, 0.02)
+				0.7 + randf() * 0.5, 0.3 * k, (0.8 if on_deck else 1.1) * k, c, Color(c, 1.0), 0.3, 2.4, Particles.SMOKE, 0.02)
 
 
 ## A cutthroat's spirit leaving him: a pale wisp that curls up off the sand and fades.
@@ -1564,6 +2024,11 @@ func prompt(ship_name: String) -> Dictionary:
 	if not active or captain == null or captain.is_down() or defeated:
 		return {}
 	var cap := captain
+	if deck != null:
+		# back over your own rail while the fight goes against you
+		if struck or not _swings.is_empty() or not _at_own_rail():
+			return {}
+		return {"key": "retreat", "title": "Fall back to the %s" % ship_name, "sub": "Cut the lines and leave her be", "ok": true}
 	var b := _boat.position
 	if Vector2(cap.x - b.x, cap.z - b.z).length() < 4.2:
 		for f in foes:
@@ -1600,7 +2065,7 @@ func interact() -> String:
 	var p := prompt("")
 	if p.is_empty() or not bool(p.ok):
 		return ""
-	if p.key == "boat":
+	if p.key == "boat" or p.key == "retreat":
 		return "boat"
 	var c := _chest_near()
 	if c != null and c.routed and not c.opened:
@@ -1622,6 +2087,8 @@ func interact() -> String:
 ## Where to head for, to get from (x, z) to (gx, gz): straight there, or
 ## round a fort's walls and through its gate if they stand in the way.
 func via(x: float, z: float, gx: float, gz: float) -> Vector2:
+	if deck != null:
+		return Vector2(gx, gz)
 	for c in camps:
 		var f := c.fort
 		if f.is_empty():

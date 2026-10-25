@@ -12,6 +12,8 @@ extends Camera3D
 ## Cinematic tilt at its fullest (radians above the horizon), and close in.
 const CINE_PITCH := 0.74
 const CINE_PITCH_NEAR := 0.6
+## Looking across a boarded deck (radians above the horizon).
+const DECK_PITCH := 0.98
 ## How long a zoom must rest against its stop before a fresh push leans it over.
 const TILT_GATE := 0.2
 const NEAR_DIST := 70.0
@@ -60,9 +62,17 @@ var port := false
 ## Ashore: a close, lower third-person frame over the captain's shoulder (the
 ## web's foot view), eased in and out; north stays up.
 var foot := false
+## On foot on a ship's deck (a boarding fight): the camera swings round
+## abeam, out over the open water on her far side, looking across her deck
+## toward your own ship, so her masts stand as thin poles in the frame and
+## her tops and yards ride above the line of sight instead of across it.
+## `deck_yaw` is that bearing (0 = the usual view, from the south).
+var deck := false
+var deck_yaw := 0.0
 ## Ground height under the camera ashore, so it never dips into a hillside.
 var ground := Callable()
 var _ft := 0.0
+var _dk := 0.0
 var shot_pos := Vector3.ZERO
 var shot_look := Vector3.ZERO
 var shot_fov := 38.0
@@ -167,6 +177,13 @@ func foot_blend() -> float:
 ## Cut straight to (or away from) the frame ashore, behind the veil.
 func snap_foot() -> void:
 	_ft = 1.0 if foot else 0.0
+	_dk = 1.0 if deck else 0.0
+
+
+## Which way the follow camera looks (0 = north): on a boarded deck, across her toward your ship.
+func azimuth() -> float:
+	var k := _dk * _dk * (3.0 - 2.0 * _dk)
+	return wrapf(deck_yaw, -PI, PI) * k * foot_blend()
 
 
 ## How far the camera hangs from what it follows (drives shadow reach, sound
@@ -179,7 +196,9 @@ func distance() -> float:
 
 func _follow_distance() -> float:
 	var z := _zoom_smooth * _zoom_smooth * 0.6 + _zoom_smooth * 0.4
-	return lerpf(lerpf(NEAR_DIST, FAR_DIST, z), lerpf(13.0, 46.0, z), foot_blend())
+	var on_foot := lerpf(13.0, 46.0, z)
+	var k := _dk * _dk * (3.0 - 2.0 * _dk)
+	return lerpf(lerpf(NEAR_DIST, FAR_DIST, z), lerpf(on_foot, on_foot * 1.15 + 3.0, k), foot_blend())
 
 
 ## Visible half-extent of the sea round the focus.
@@ -273,6 +292,7 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 	# a slow, weighty swing, like a crane shot settling
 	_tilt_smooth += (tilt - _tilt_smooth) * MathX.damp(2.2, dt)
 	_ft = clampf(_ft + (dt if foot else -dt) / 0.9, 0.0, 1.0)
+	_dk = clampf(_dk + (dt if deck else -dt) / 1.1, 0.0, 1.0)
 	var fb := foot_blend()
 
 	var ahead := Vector3(vel.x, 0.0, vel.z) * lerpf(lerpf(1.4, 3.0, _zoom_smooth), 0.45, fb)
@@ -281,10 +301,13 @@ func update_rig(dt: float, follow: Vector3, vel: Vector3, time: float) -> void:
 
 	# camera due south of the focus, looking north and down
 	# (ashore it sits lower, more over the shoulder than overhead)
-	var pitch := lerpf(lerpf(lerpf(0.91, 1.1, _zoom_smooth), lerpf(CINE_PITCH_NEAR, CINE_PITCH, _zoom_smooth), tilt_blend()), lerpf(0.62, 0.98, _zoom_smooth), fb)
+	var dkb := _dk * _dk * (3.0 - 2.0 * _dk)
+	var pitch := lerpf(lerpf(lerpf(0.91, 1.1, _zoom_smooth), lerpf(CINE_PITCH_NEAR, CINE_PITCH, _zoom_smooth), tilt_blend()), lerpf(lerpf(0.62, 0.98, _zoom_smooth), DECK_PITCH, dkb), fb)
 	_pitch = pitch
 	var dist := _follow_distance()
-	var pos := _focus + Vector3(0.0, sin(pitch) * dist, cos(pitch) * dist)
+	var az := azimuth()
+	var flat := cos(pitch) * dist
+	var pos := _focus + Vector3(sin(az) * flat, sin(pitch) * dist, cos(az) * flat)
 	if fb > 0.0 and ground.is_valid():
 		pos.y = maxf(pos.y, float(ground.call(pos.x, pos.z)) + 2.2)
 	var look := _focus

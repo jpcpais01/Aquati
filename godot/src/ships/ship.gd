@@ -96,6 +96,10 @@ var phantom := false
 ## 1 there): she fades in from wherever she rises.
 var ghost := false
 var presence := 1.0
+## Held fast in your grapnels while your boarders fight for her deck
+## (Boarding), and taken: sailing off under a prize crew, nobody's foe.
+var lashed := false
+var prize := false
 var _flare := 0.0
 var _mist_t := 0.0
 

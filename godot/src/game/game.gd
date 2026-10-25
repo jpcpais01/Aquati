@@ -285,6 +285,10 @@ var _desat := 0.0
 ## The set piece's foe (--battle), and when to send your ship down (--sink).
 var _foe: Ship
 var _sink_at := -1.0
+## Grapnels, lashing and prizes; what her strongbox gave up; the boarding tip, once.
+var boarding: Boarding
+var _prize_haul := ""
+var _board_tip := false
 var _foe_sink_at := -1.0
 ## Seconds until the hold may say again that it's full; salvage hauled this voyage.
 var _hold_nag := 0.0
@@ -480,6 +484,7 @@ func _load() -> void:
 	hud.jump_pressed.connect(func() -> void: controls.jump = true)
 	hud.strike_pressed.connect(func() -> void: _hud_strike = true)
 	hud.pistol_pressed.connect(func() -> void: _hud_pistol = true)
+	hud.prize_picked.connect(_choose_prize)
 	add_child(hud)
 	await _loaded_to(0.72)
 	maps.world = world
@@ -563,6 +568,8 @@ func _load() -> void:
 		_stage_dock()
 	if _args.has("fort"):
 		_stage_fort()
+	if _args.has("board"):
+		_stage_board()
 	if _args.has("ashore") or _args.has("beach"):
 		_stage_ashore()
 	elif _args.has("camp"):
@@ -1204,6 +1211,17 @@ func _build_ports(p0: float, p1: float) -> void:
 	shore.captain_fell.connect(_on_captain_fell)
 	shore.stepped.connect(func(k: float, wet: bool, hard: bool) -> void: sound.step(k, wet, hard))
 	shore.hopped.connect(_on_hop)
+	shore.prize_struck.connect(_on_struck)
+	shore.landed.connect(_on_landed)
+	# grapnels across to a crippled pirate, and the lines that lash her alongside
+	boarding = Boarding.new(ports.arts().parts)
+	add_child(boarding)
+	boarding.thrown.connect(func(at: Vector3) -> void:
+		var h := world.heard(at)
+		sound.grapple(h.x, h.y, h.z))
+	boarding.bit.connect(_on_hook_bit)
+	boarding.met.connect(_on_hulls_meet)
+	boarding.lashed.connect(_board_over)
 	# the forts, and each one's garrison: a camp ashore behind its walls
 	forts = Forts.new(world, shore_ground, world.regions, ports.arts().parts)
 	add_child(forts)
@@ -1492,9 +1510,12 @@ func _tick(real_dt: float) -> void:
 	if helm.state != Helmsman.State.IDLE and (not sailing or not player.alive or _farewell != null):
 		helm.disengage()
 	var ashore := shore.active
+	# lashed to a prize, the helm and the guns rest too
+	var held := boarding.busy()
+	pirates.ashore = ashore
 	if player.alive and sailing:
 		voyage.time += dt
-		if ashore:
+		if ashore or held:
 			player.rudder = 0.0
 		else:
 			_helm(dt)
@@ -1505,14 +1526,14 @@ func _tick(real_dt: float) -> void:
 	elif _farewell == null:
 		if controls.zoom != 0.0:
 			camera.zoom_by(controls.zoom, world.time)
-		if controls.view_next and not ashore:
+		if controls.view_next and not ashore and not held:
 			camera.next_view()
-		if controls.chart and not ashore:
+		if controls.chart and not ashore and not held:
 			if chart.is_open():
 				chart.close()
 			else:
 				_open_chart()
-		if controls.ability and not ashore:
+		if controls.ability and not ashore and not held:
 			_call_power()
 		# the view you sail with is the next voyage's
 		if not ashore:
@@ -1550,6 +1571,7 @@ func _tick(real_dt: float) -> void:
 	home.prepare(real_dt)
 	# the maelstroms take hold of every hull in their reach before she sails
 	hazards.update(dt, camera.target, atmosphere.storm)
+	boarding.pin(dt)
 	for s in world.ships:
 		s.step(dt)
 	if dt > 0.0:
@@ -1564,12 +1586,17 @@ func _tick(real_dt: float) -> void:
 		if not player.alive or _farewell != null:
 			_leave_shore()
 			ashore = false
+		elif shore.deck != null and (shore.prize == null or not shore.prize.alive):
+			# she's going down under the boarders' feet
+			_end_boarding("sinking")
+			_control_shore()
 		else:
 			_control_shore()
 	# (afloat too: the camps in sight keep their fires and their watch)
 	shore.update(dt, world, _steer if ashore else _idle_steer, camera.target)
 	if ashore:
 		hud.show_shore(shore, camera)
+	boarding.update(dt, world, shore.swing_lines() if shore.deck != null else [], player)
 	# the towns: hulls kept off their quays, and their folk about their business
 	ports.update(dt, player, camera.global_position, world.ships)
 	festivals.update(dt, real_dt, world, atmosphere.day, atmosphere.moon_phase, camera.global_position, state == State.VOYAGE or state == State.DOCKED)
@@ -1599,8 +1626,8 @@ func _tick(real_dt: float) -> void:
 	# and the Kraken's arms and eye, like any ship
 	if sailing and not ashore and player.alive and kraken.fighting():
 		gunnery.marks.append_array(kraken.marks())
-	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null and not ashore, world.time)
-	if sailing and not ashore:
+	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null and not ashore and not held, world.time)
+	if sailing and not ashore and not held:
 		_guns()
 	if _sink_at >= 0.0 and sailing and player.alive and voyage.time >= _sink_at:
 		player.damage(player.max_hp * 4.0, _foe)
@@ -2776,7 +2803,7 @@ func _reset_world(id: String) -> void:
 func _harbour_first() -> bool:
 	if _args.has("menu") or _args.has("seapick") or _args.has("shipwright") or _args.has("vault-open") or (_args.has("settings") and not _args.has("pause")):
 		return true
-	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause", "dock", "off"]:
+	for k: String in ["shot", "battle", "sink", "voyage", "at", "eye", "pause", "dock", "off", "board"]:
 		if _args.has(k):
 			return false
 	return true
@@ -3590,6 +3617,7 @@ func _start_voyage(sea: String) -> void:
 	discovered.clear()
 	# the cutthroats are back round their fires, their chests full again
 	shore.reset_camps()
+	boarding.reset()
 	# and the Brethren man every fort you haven't taken
 	forts.apply(Progress.forts.taken)
 	hud.fort_clear()
@@ -3724,6 +3752,9 @@ func _arrive(r: Region) -> void:
 func _prompt(dt: float) -> void:
 	if shore.active:
 		_shore_prompt()
+	elif boarding.busy():
+		market.set_dock({})
+		_prompt_kind = ""
 	else:
 		_dock_prompt(dt)
 
@@ -3736,7 +3767,8 @@ func _dock_prompt(dt: float) -> void:
 		if near != null and near.in_reach(p.pos):
 			port = near
 	if port == null:
-		_land_prompt(dt)
+		if not _board_prompt():
+			_land_prompt(dt)
 		return
 	_prompt_kind = "dock"
 	var beast := kraken.fighting()
@@ -3870,10 +3902,15 @@ func _return_to_ship(why := "") -> void:
 
 
 ## Everyone aboard: the HUD, the controls and the camera go back to sailing.
-func _leave_shore() -> void:
+func _leave_shore(as_prize := false) -> void:
 	if not shore.active:
 		return
-	shore.leave()
+	if as_prize:
+		shore.leave_as_prize()
+	else:
+		shore.leave()
+	camera.deck = false
+	boarding.part()
 	controls.foot = false
 	hud.set_ashore(false)
 	market.set_dock({})
@@ -3887,8 +3924,12 @@ func _leave_shore() -> void:
 func _shore_act() -> void:
 	if not shore.active or veil.busy:
 		return
+	var on_deck := shore.deck != null
 	if shore.interact() == "boat":
-		_return_to_ship()
+		if on_deck:
+			_end_boarding("retreat")
+		else:
+			_return_to_ship()
 		return
 	# (a chest opened: plundered says what was in it)
 	_shore_prompt()
@@ -3898,8 +3939,26 @@ func _shore_act() -> void:
 ## the keys walk the captain the way they point; Space jumps, F acts.
 func _control_shore() -> void:
 	var w := controls.walk if _auto_walk == Vector2.ZERO else _auto_walk
-	_steer.mx = w.x
-	_steer.mz = -w.y
+	# (on a deck the camera looks along the way across, and the stick turns with it)
+	var az := camera.azimuth()
+	var ca := cos(az)
+	var sa := sin(az)
+	_steer.mx = w.x * ca - w.y * sa
+	_steer.mz = -w.x * sa - w.y * ca
+	if hud.prize_open():
+		# her fate to settle first: 1 or F takes her, 2 scuttles her
+		_steer.mx = 0.0
+		_steer.mz = 0.0
+		_steer.strike = false
+		_steer.pistol = false
+		_steer.jump = false
+		if controls.ammo_pick == 0 or controls.interact:
+			_choose_prize("prize")
+		elif controls.ammo_pick == 1:
+			_choose_prize("scuttle")
+		elif _brawl:
+			_choose_prize(str(_args.get("prize", "prize")))
+		return
 	_steer.run = controls.run or w.length() > 0.97
 	_steer.jump = controls.jump
 	# the cutlass on a click (or Strike), the pistol on Q / E (or Pistol),
@@ -4165,6 +4224,9 @@ func _update_forts(dt: float) -> void:
 
 ## The captain cut down ashore: the hands carry him off, some of the purse lost.
 func _on_captain_fell() -> void:
+	if shore.deck != null:
+		_on_repelled()
+		return
 	hud.toast("The captain is down", "The hands drag you back to the boat", 3.0)
 	get_tree().create_timer(2.4).timeout.connect(func() -> void:
 		if not shore.active:
@@ -4179,6 +4241,276 @@ func _on_hop(up: bool, k: float, wet: bool, hard: bool) -> void:
 	sound.hop(up, k, wet, hard)
 	if not up and k > 0.5:
 		camera.shake(0.04 * k)
+
+
+# ------------------------------------------------------------------ boarding
+
+## Her size as 0, 1, 2 (sloop, brig, galleon): how many fight for her and what she's worth.
+static func _size_of(s: Ship) -> int:
+	return int({"sloop": 0, "brig": 1, "galleon": 2}.get(s.cls.id, 1))
+
+
+## A pirate close aboard and crippled enough to board (her hull under 40%,
+## rail to rail within a few strides): no ghost, and none already taken.
+func _board_target() -> Ship:
+	var p := player
+	if not p.alive or _farewell != null or kraken.active() or boarding.busy() or shore.active:
+		return null
+	var best: Ship = null
+	var bd := INF
+	for ai: PirateAI in pirates.ais.values():
+		var s := ai.ship
+		if not s.alive or s.removed or s.ghost or s.prize or s.lashed or s.hp > s.max_hp * 0.4:
+			continue
+		var d := Vector2(s.pos.x - p.pos.x, s.pos.z - p.pos.z).length() - (p.cls.beam + s.cls.beam) * 0.5
+		if d < 16.0 + minf(p.cls.length, s.cls.length) * 0.35 and d < bd:
+			bd = d
+			best = s
+	return best
+
+
+## Close aboard a crippled pirate: the pill to throw the grapnels (F or a tap).
+func _board_prompt() -> bool:
+	var e := _board_target()
+	if e == null:
+		return false
+	var ok := crew.of(player) != null and crew.of(e) != null and not player.drawn > 0.05
+	var why := "Grapnels across · her crew will fight for her deck" if ok else "Not in the maelstrom's pull"
+	market.set_dock({"name": e.ship_name, "title": "Board the %s" % e.ship_name, "ok": ok, "why": why})
+	_prompt_kind = "board"
+	if ok and controls.interact:
+		_start_boarding(e)
+	return true
+
+
+## The grapnels fly: she's hauled in alongside, and then it's over the rail.
+func _start_boarding(e: Ship) -> void:
+	var ours := crew.of(player)
+	var hers := crew.of(e)
+	if ours == null or hers == null or veil.busy or boarding.busy() or shore.active:
+		return
+	controls.reset()
+	hud.close_popups()
+	market.set_dock({})
+	_prompt_kind = ""
+	if chart.is_open():
+		chart.close()
+	helm.disengage()
+	boarding.begin(player, e, ours, hers)
+	var h := world.heard(e.pos)
+	sound.war_cry(h.x * 0.8, h.y, h.z)
+	sound.bosun_pipe()
+	hud.toast("Grapnels away!", "Hauling the %s alongside" % e.ship_name, 2.6)
+	_note_tour("grapnels on the %s" % e.ship_name)
+
+
+func _on_hook_bit(at: Vector3) -> void:
+	var h := world.heard(at)
+	sound.hook_bite(h.x, h.y, h.z)
+	world.debris.splinters(at, Vector3.UP, Vector3.ZERO, [Color("#8a6a45"), Color("#c9a77a"), Color("#5e4630")] as Array[Color], 3)
+
+
+## Hull grinds on hull: a boom, a shudder and the sea squeezed up between them.
+func _on_hulls_meet(at: Vector3) -> void:
+	var h := world.heard(at)
+	sound.hulls_meet(0.9 * h.x, h.y)
+	camera.shake(0.3)
+	var e := boarding.prize
+	var s := boarding.ship
+	if e == null or s == null:
+		return
+	var f := Vector3(sin(s.heading), 0.0, cos(s.heading))
+	for i in 4:
+		var k := (i - 1.5) / 1.5 * s.cls.length * 0.3
+		world.fx.splash(Vector3(at.x + f.x * k, 0.2, at.z + f.z * k), 0.9)
+
+
+## Lashed alongside: the boarders swing across onto her deck.
+func _board_over() -> void:
+	var e := boarding.prize
+	var p := player
+	if e == null or state != State.VOYAGE or not p.alive or _farewell != null:
+		_note_tour("the lines cut: %s" % ("she's gone" if e == null else "not at sea"))
+		boarding.part()
+		return
+	var hands: int = [3, 4, 6][_size_of(p)]
+	var foes: int = [4, 6, 8][_size_of(e)]
+	var o := {"hands": hands, "foes": foes, "boss_hp": 115.0, "boss": "Her captain", "hand": "Pirate"}
+	if not shore.board(p, e, o, world):
+		_note_tour("no deck to board on the %s" % e.ship_name)
+		boarding.part()
+		return
+	controls.reset()
+	controls.foot = true
+	hud.set_ashore(true, e.ship_name, "BOARDING PARTY")
+	_sea_zoom = camera.zoom
+	camera.zoom = 0.3
+	camera.foot = true
+	camera.deck = true
+	camera.deck_yaw = atan2(e.pos.x - p.pos.x, e.pos.z - p.pos.z)
+	camera.snap_foot()
+	var cap := shore.captain
+	camera.snap_to(Vector3(cap.x, cap.y + 1.0, cap.z))
+	voyage.note("kill", "Boarded the %s" % e.ship_name, e.cls.name)
+	hud.toast("Over the side!", "Take her deck: cut down her crew till she strikes", 3.0)
+	if not _board_tip:
+		_board_tip = true
+		var how := "Fight her crew down, and her captain: they'll strike. Back at your own rail you can fall back" if controls.touch else "Cut down her crew and her captain and she strikes · F at your own rail falls back"
+		get_tree().create_timer(3.6).timeout.connect(func() -> void:
+			if shore.active and shore.deck != null and not shore.struck:
+				hud.toast("Boarding", how, 6.0))
+	_note_tour("boarded the %s" % e.ship_name)
+
+
+## A boarder (or the captain) lands on her planks.
+func _on_landed(_w: ShoreWalker, captain: bool) -> void:
+	sound.step(1.0, false, true)
+	if captain:
+		camera.shake(0.08)
+
+
+## Her crew throws down their blades: her strongbox is yours, and then her fate.
+func _on_struck(e: Ship) -> void:
+	var p := player
+	var big := _size_of(e)
+	var at := Vector3(e.pos.x, e.position.y + e.cls.freeboard + 2.5, e.pos.z)
+	var gold: int = [150, 280, 480][big] + randi() % 121
+	Progress.earn(gold)
+	p.gold += gold
+	var tier := mini(3, Loot.roll_tier([0.35, 0.55, 0.8][big], 1))
+	var goods := Treasure.roll_contents(tier)
+	goods.append_array(Treasure.roll_contents(maxi(1, tier - 1)))
+	var res := hold.stow(goods)
+	var tossed: PackedStringArray = res.tossed
+	if not tossed.is_empty():
+		_nag_hold(tossed.size())
+	_stock_ammo({Ammo.SHELL: 2, Ammo.FIRE: 1, Ammo.CHAIN: 2, Ammo.GRAPE: 3}, at)
+	var kept := Array(res.kept as PackedStringArray)
+	kept.sort_custom(func(a: String, b: String) -> bool: return Treasure.rarity_of(a) > Treasure.rarity_of(b))
+	var names := ", ".join(kept.slice(0, 3).map(func(id: String) -> String: return Treasure.name_of(id)))
+	_prize_haul = "Her strongbox: +%d gold%s" % [gold, (" · " + names) if names != "" else ""]
+	hud.floater("+%d gold" % gold, at, camera, Floaters.Kind.GOOD, 10.0)
+	sound.treasure(tier)
+	world.fx.treasure(at, Loot.GLOW[tier], tier)
+	hud.toast("The %s strikes her colours!" % e.ship_name, "Her strongbox is yours", 3.0)
+	boarding.strike(e)
+	voyage.note("chest", "The %s struck her colours" % e.ship_name, "%s chest · +%d gold%s" % [Treasure.RARITY_NAME[tier], gold, (" · " + names) if names != "" else ""])
+	_chest_part(tier, at, 1.2)
+	get_tree().create_timer(1.7).timeout.connect(_offer_prize.bind(e))
+	_note_tour("the %s struck for %d gold" % [e.ship_name, gold])
+
+
+## What she fetches sailed in as a prize.
+static func _prize_money(e: Ship) -> int:
+	return [380, 700, 1250][_size_of(e)]
+
+
+## Her fate: the card.
+func _offer_prize(e: Ship) -> void:
+	if not shore.active or shore.prize != e or not is_instance_valid(e):
+		return
+	var bounty: int = Pirates.BOUNTY.get(e.cls.id, 60)
+	hud.show_prize({"name": e.ship_name, "haul": _prize_haul, "prize": "+%d gold prize money" % _prize_money(e), "scuttle": "+%d gold bounty · her salvage" % bounty})
+	sound.bell(2, 0.2)
+
+
+func _choose_prize(k: String) -> void:
+	if not hud.prize_open() or shore.deck == null:
+		return
+	sound.click()
+	_end_boarding("scuttle" if k == "scuttle" else "prize")
+
+
+## The captain cut down on her deck: the hands haul him back aboard, some of the purse lost.
+func _on_repelled() -> void:
+	hud.toast("The captain is down", "Your hands haul you back over the rail", 3.0)
+	get_tree().create_timer(2.4).timeout.connect(func() -> void:
+		if not shore.active or shore.deck == null:
+			return
+		var lost := mini(roundi(Progress.purse * 0.1), 200)
+		if lost > 0 and Progress.spend(lost):
+			hud.toast("-%d gold" % lost, "Lost in the melee", 3.0)
+		_end_boarding("repelled"))
+
+
+## Back over our own rail and the lines cut: a prize sails off under a prize
+## crew, a scuttled hull burns and goes down, and one left be patches herself up.
+func _end_boarding(how: String) -> void:
+	if not shore.active or shore.deck == null or veil.busy:
+		return
+	var e := shore.prize
+	var p := player
+	controls.reset()
+	var line: String = {"prize": "A prize crew takes her helm…", "scuttle": "Fire in her hold, and back over the rail…", "retreat": "Cutting the lines…", "repelled": "Hauled back over your own rail…", "sinking": "She's going down: back aboard!"}.get(how, "Back aboard…")
+	veil.cover(line, func() -> void:
+		if not shore.active:
+			return
+		_leave_shore(how == "prize")
+		p.anchored = false
+		_set_sails(1.0 / 3.0)
+		camera.snap_to(p.pos)
+		_note_tour("boarding over: %s" % how)
+		if e == null or not is_instance_valid(e) or not e.alive or not p.alive:
+			return
+		if how == "prize":
+			_take_prize(e)
+		elif how == "scuttle":
+			_scuttle(e)
+		else:
+			e.hp = minf(e.max_hp, e.hp + e.max_hp * 0.1))
+
+
+## She's yours: prize money, and off she goes over the horizon.
+func _take_prize(e: Ship) -> void:
+	var p := player
+	var money := _prize_money(e)
+	Progress.earn(money)
+	p.gold += money
+	p.kills += 1
+	pirates.ais.erase(e)
+	pirates.spawn_timer = maxf(pirates.spawn_timer, 10.0)
+	boarding.send_away(e)
+	boarding.hoist(e, p)
+	voyage.note("kill", "Took the %s as a prize" % e.ship_name, "%s · +%d gold prize money" % [e.cls.name, money])
+	hud.toast("+%d gold prize money" % money, "The %s sails for port under a prize crew" % e.ship_name, 3.6)
+	sound.coin()
+	sound.bell(3, 0.22)
+	var fit: Dictionary = e.model.fit
+	if not fit.is_empty():
+		get_tree().create_timer(1.4).timeout.connect(_find_part.bind(str(fit.values()[0]), "Taken with the prize", e.pos))
+
+
+## Fire in her hold: she burns and goes down (her bounty and salvage as any sinking's).
+func _scuttle(e: Ship) -> void:
+	var p := player
+	e.afire = 8.0
+	e.afire_by = p
+	e.damage(e.hp + 1e4, p, e.pos, true, "shot", true)
+	camera.shake(0.45)
+
+
+## A boarding set piece: `--board CLASS` lays a crippled pirate (a brig by
+## default) alongside to port and throws the grapnels; with `--brawl` the
+## captain fights her crew, and `--prize scuttle` picks her fate.
+func _stage_board() -> void:
+	var p := player
+	var id := str(_args.board)
+	if not id in ["sloop", "brig", "galleon"]:
+		id = "brig"
+	var port := p.port_dir()
+	var off := 24.0 + p.cls.beam
+	var ai := pirates.launch(id, p.pos.x + port.x * off, p.pos.z + port.z * off, p.heading, 0, true)
+	_foe = ai.ship
+	_foe.hp = _foe.max_hp * 0.3
+	_foe.sail_target = 0.0
+	_foe.sail_level = 0.0
+	_foe.speed = 0.0
+	p.speed = 0.0
+	p.sail_target = 0.0
+	_brawl = _args.has("brawl")
+	get_tree().create_timer(1.2).timeout.connect(func() -> void:
+		if _foe != null and _foe.alive and not boarding.busy():
+			_start_boarding(_foe))
 
 
 ## A set piece ashore: `--beach` puts her off a beach (I: the island of her
@@ -4312,12 +4644,13 @@ func _brawl_steer() -> void:
 	_steer.has_aim = false
 	var near: ShoreWalker = null
 	var nd := INF
-	var home: Shore.Camp = shore.camp_at(cap.x, cap.z, 60.0)
-	if home == null:
+	# (on a boarded deck, her crew)
+	var home: Shore.Camp = null if shore.deck != null else shore.camp_at(cap.x, cap.z, 60.0)
+	if home == null and shore.deck == null:
 		return
-	for f in home.gang:
+	for f in (home.gang if home != null else shore.crew_foes):
 		var fd := Vector2(f.x - cap.x, f.z - cap.z).length()
-		if f.alive() and not f.is_down() and fd < nd:
+		if f.alive() and not f.is_down() and f.yielded <= 0.0 and fd < nd:
 			nd = fd
 			near = f
 	if near != null:
@@ -4330,7 +4663,7 @@ func _brawl_steer() -> void:
 		else:
 			_steer.strike = true
 		_steer.pistol = nd < 12.0 and nd > 4.0 and shore.pistol_load() >= 1.0
-	elif _plunder and home.routed and not home.opened:
+	elif _plunder and home != null and home.routed and not home.opened:
 		var at: Vector3 = home.layout.chest
 		var v := Vector2(at.x - cap.x, at.z - cap.z)
 		if v.length() > 1.6:
@@ -4701,6 +5034,14 @@ func _dock_here() -> void:
 		return
 	if _prompt_kind == "land":
 		_go_ashore()
+		return
+	if _prompt_kind == "board":
+		var e := _board_target()
+		if e != null:
+			_start_boarding(e)
+		return
+	if _prompt_kind == "retreat":
+		_shore_act()
 		return
 	var near := ports.nearest(p.pos)
 	if near != null and near.in_reach(p.pos) and _fighting() == null:
@@ -5628,6 +5969,8 @@ func _tour_tap(w: Vector2) -> void:
 
 ## A step of the smoke test's tour of the menus, for SMOKE MENU (and the frame it came on).
 func _note_tour(what: String) -> void:
+	if _args.has("trace"):
+		print("[%d] %s" % [_frames, what])
 	if _tour:
 		_tour_log.append("%s @%d" % [what, _frames])
 

@@ -129,7 +129,7 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 	focus = null
 	var focus_d := R * 1.3
 	for s: Ship in world.ships:
-		if s == p or not s.alive or s.removed or s.team == p.team:
+		if s == p or not s.alive or s.removed or s.team == p.team or s.prize or s.lashed:
 			continue
 		var raw := Vector2(s.pos.x - p.pos.x, s.pos.z - p.pos.z).length()
 		if raw > R * 1.4:

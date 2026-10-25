@@ -47,7 +47,7 @@ const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "am
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
 		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
-		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "wraith", "ghost_wail", "exorcise", "horn", "wanted2", "wanted3", "bounty",
+		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "wraith", "ghost_wail", "exorcise", "grapple", "hook_bite", "hull_boom", "yell", "horn", "wanted2", "wanted3", "bounty",
 		"kr_boom", "kr_death", "kr_drone", "kr_drums0", "kr_drums1", "kr_drums2", "kr_flesh", "kr_moan", "kr_omen", "kr_roar0", "kr_roar1", "kr_roar2",
 		"kr_rush", "kr_shriek", "kr_strings",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
@@ -916,6 +916,7 @@ func _check_world() -> void:
 	_check_ghosts(w)
 	_check_shore(w)
 	_check_camps(w)
+	_check_boarding(w)
 	_check_forts(w)
 	_check_kraken(w)
 
@@ -1134,6 +1135,158 @@ func _check_camps(w: World) -> void:
 	shore.free()
 	crew.free()
 	fx.free()
+
+
+## Boarding: the grapnels thrown and a crippled brig hauled in alongside, the
+## hulls lashed rail to rail; the party swung across onto her deck and her
+## crew fought down till she strikes; then the lines cut and she sails off a prize.
+func _check_boarding(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new(0.6)
+	sea.waves = Waves.new(0.6)
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	sea.fx = fx
+	var crew: Node3D = load("res://src/ships/crew.gd").new()
+	var g := ShoreGround.new(sea, sea.regions)
+	var shore_gd: GDScript = load("res://src/shore/shore.gd")
+	var shore: Node3D = shore_gd.new(g, crew, StandardMaterial3D.new(), sea.regions)
+	root.add_child(shore)
+	var steps := 0
+	# open water a little off the spawn, the brig on our port beam
+	var spawn: Vector2 = load("res://src/game/game.gd").SPAWN
+	var at := spawn
+	for k in 40:
+		if sea.ground_height(at.x, at.y) < -25.0 and sea.ground_height(at.x + 40.0, at.y) < -25.0:
+			break
+		at += Vector2(37.0, -23.0)
+	var ours := Ship.create(ShipClass.named("brig"), Livery.named("player"), sea)
+	var hers := Ship.create(ShipClass.named("brig"), Livery.named("pirate-crimson"), sea, Ship.Team.PIRATE)
+	var h := 0.3
+	ours.place(at.x, at.y, h)
+	hers.place(at.x + cos(h) * 24.0, at.y - sin(h) * 24.0, h + 0.4)
+	hers.hp = hers.max_hp * 0.3
+	sea.ships.append(ours)
+	sea.ships.append(hers)
+	root.add_child(ours)
+	root.add_child(hers)
+	var crews: Dictionary = crew.get("_crews")
+	var take := Callable(crew, "_take_row")
+	var co := ShipCrew.new(ours, take, false)
+	var ch := ShipCrew.new(hers, take, false)
+	crews[ours] = co
+	crews[hers] = ch
+	var b := Boarding.new(StandardMaterial3D.new())
+	root.add_child(b)
+	var flags := {"thrown": 0, "bit": 0, "met": false, "lashed": false, "struck": false, "fell": false}
+	b.thrown.connect(func(_a: Vector3) -> void: flags.thrown += 1)
+	b.bit.connect(func(_a: Vector3) -> void: flags.bit += 1)
+	b.met.connect(func(_a: Vector3) -> void: flags.met = true)
+	b.lashed.connect(func() -> void: flags.lashed = true)
+	shore.prize_struck.connect(func(_s: Ship) -> void: flags.struck = true)
+	shore.captain_fell.connect(func() -> void: flags.fell = true)
+	var dt := 1.0 / 30.0
+	var t := 0.0
+	b.begin(ours, hers, co, ch)
+	while t < 8.0 and not flags.lashed:
+		b.pin(dt)
+		# (out of the running tree: their frames set by hand where the step would)
+		for sh: Ship in [ours, hers]:
+			sh.transform = Transform3D(Basis.from_euler(Vector3(0.0, sh.heading, 0.0)), Vector3(sh.pos.x, 0.0, sh.pos.z))
+		b.update(dt, sea, [], ours)
+		sea.time += dt
+		t += dt
+	var lash_t := t
+	var gap := Vector2(hers.pos.x - ours.pos.x, hers.pos.z - ours.pos.z).length()
+	var snug := absf(gap - (ours.cls.beam + hers.cls.beam) * 0.5 - 0.3) < 1.5 and absf(MathX.angle_delta(ours.heading, hers.heading)) < 0.2
+	if flags.lashed and snug and flags.thrown >= 3 and flags.bit == flags.thrown and hers.lashed:
+		steps += 1
+	else:
+		_fail("boarding: lashed %s in %.1f s, %d thrown, %d bit, %.1f m apart" % [flags.lashed, t, flags.thrown, flags.bit, gap])
+	# over the side: four hands and the captain against six of hers
+	if shore.board(ours, hers, {"hands": 4, "foes": 6, "boss_hp": 115.0, "boss": "Her captain", "hand": "Pirate"}, sea) and shore.crew_foes.size() == 6 and shore.party.size() >= 4:
+		steps += 1
+	else:
+		_fail("boarding: %d boarders against %d of her crew" % [shore.party.size(), shore.crew_foes.size()])
+	var steer: Variant = shore_gd.Steer.new()
+	var finite := true
+	var swings := 0
+	var off_deck := 0.0
+	t = 0.0
+	while t < 150.0 and not flags.struck and not flags.fell:
+		var cap: ShoreWalker = shore.captain
+		var near: ShoreWalker = null
+		var nd := INF
+		for f: ShoreWalker in shore.crew_foes:
+			var fd := Vector2(f.x - cap.x, f.z - cap.z).length()
+			if f.alive() and not f.is_down() and f.yielded <= 0.0 and fd < nd:
+				nd = fd
+				near = f
+		steer.mx = 0.0
+		steer.mz = 0.0
+		steer.strike = false
+		steer.pistol = false
+		steer.has_aim = near != null
+		if near != null:
+			steer.aim = Vector2(near.x, near.z)
+			if nd > 1.7:
+				steer.mx = (near.x - cap.x) / nd
+				steer.mz = (near.z - cap.z) / nd
+				steer.run = nd > 6.0
+			else:
+				steer.strike = true
+				swings += 1
+			steer.pistol = nd < 12.0 and nd > 4.0 and shore.pistol_load() >= 1.0
+		b.pin(dt)
+		# (out of the running tree: their frames set by hand where the step would)
+		for sh: Ship in [ours, hers]:
+			sh.transform = Transform3D(Basis.from_euler(Vector3(0.0, sh.heading, 0.0)), Vector3(sh.pos.x, 0.0, sh.pos.z))
+		shore.update(dt, sea, steer, Vector3(cap.x, cap.y, cap.z))
+		b.update(dt, sea, shore.swing_lines(), ours)
+		sea.time += dt
+		for m: Variant in shore.party:
+			var mw: ShoreWalker = m.walker
+			finite = finite and mw.xf.origin.is_finite()
+		if t > 4.0 and not cap.is_down():
+			off_deck = maxf(off_deck, absf(cap.y - shore.deck_height(cap.x, cap.z)))
+		t += dt
+	var standing := 0
+	for m: Variant in shore.party:
+		standing += 0 if (m.walker as ShoreWalker).is_down() else 1
+	if flags.struck and not flags.fell and finite and off_deck < 0.8:
+		steps += 1
+	else:
+		_fail("boarding: after %.0f s struck %s, the captain fell %s, finite %s, %.2f m off her planks" % [t, flags.struck, flags.fell, finite, off_deck])
+	var fight_t := t
+	var boarders := shore.party.size()
+	# her colours down, the boarders back aboard, the lines cut: off she goes a prize
+	b.strike(hers)
+	shore.leave_as_prize()
+	b.part()
+	b.send_away(hers)
+	t = 0.0
+	while t < 3.0:
+		b.pin(dt)
+		# (out of the running tree: their frames set by hand where the step would)
+		for sh: Ship in [ours, hers]:
+			sh.transform = Transform3D(Basis.from_euler(Vector3(0.0, sh.heading, 0.0)), Vector3(sh.pos.x, 0.0, sh.pos.z))
+		b.update(dt, sea, [], ours)
+		sea.time += dt
+		t += dt
+	if not b.busy() and not hers.lashed and hers.prize and not ours.anchored and not shore.active and shore.get("deck") == null:
+		steps += 1
+	else:
+		_fail("boarding: after parting busy %s, lashed %s, prize %s, anchored %s, ashore %s" % [b.busy(), hers.lashed, hers.prize, ours.anchored, shore.active])
+	print("boarding: %d of 4 steps as expected; lashed in %.1f s by %d grapnels, her deck taken in %.0f s of %d swings, %d of %d boarders standing; %d ms" % [steps, lash_t, flags.thrown, fight_t, swings, standing, boarders, (Time.get_ticks_usec() - t0) / 1000])
+	shore.queue_free()
+	b.queue_free()
+	fx.queue_free()
+	ours.queue_free()
+	hers.queue_free()
 
 
 ## The forts: five of them (three at home, two in Las Brumas), each in
