@@ -82,7 +82,7 @@ export class ShipCollisions {
       for (let j = i + 1; j < ships.length; j++) {
         const b = ships[j];
         if (b.removed || (!b.alive && b.sinkT > 3)) continue;
-        if (a.ghost || b.ghost) continue; // phantoms sail clean through other hulls
+        if (a.ghost || b.ghost || a.phantom || b.phantom) continue; // phantoms sail clean through other hulls
         const reach = (a.cls.length + b.cls.length) * 0.5;
         const dx = b.pos.x - a.pos.x;
         const dz = b.pos.z - a.pos.z;

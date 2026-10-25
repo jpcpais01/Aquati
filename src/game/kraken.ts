@@ -303,7 +303,7 @@ export class Kraken {
     this.prey = prey;
     this.phase = 'omen';
     this.t = 0;
-    const f = { sloop: 0.72, brig: 1, galleon: 1.32 }[prey.cls.id] ?? 1;
+    const f = { sloop: 0.72, brig: 1, galleon: 1.32, revenant: 1.25 }[prey.cls.id] ?? 1;
     this.maxHp = this.hp = BODY_HP * f;
     for (const a of this.arms) a.maxHp = a.hp = ARM_HP * f;
     // it comes from ahead and passes right under her keel

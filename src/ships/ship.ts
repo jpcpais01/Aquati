@@ -8,6 +8,7 @@ import { BowWave } from '../fx/bowWave';
 import { ShipModel } from './shipModel';
 import { ShipDamage, WRECK_LIFE } from './shipDamage';
 import { Livery, ShipClass } from './shipTypes';
+import { Haunt, SPEED as PHANTOM_SPEED, TURN as PHANTOM_TURN } from './haunt';
 import { HIGH_SEAS_R, nearestRegion, seaEdge } from '../world/regions';
 
 const _back = { x: 0, z: 0 };
@@ -239,6 +240,10 @@ export class Ship {
   presence = 1;
   private flare = 0;
   private mistT = 0;
+  /** An event ship's power (the Hollow Jack's Phantom Run), or null. */
+  readonly power: Haunt | null;
+  /** Crossed over on her Phantom Run: no shot, ram, reef, fire or curse can touch her. */
+  phantom = false;
 
   /** `model` may be one built ahead of time (see ShipModel's deferred build). */
   constructor(readonly cls: ShipClass, readonly livery: Livery, public team: Team, quality = 1, model?: ShipModel) {
@@ -252,6 +257,7 @@ export class Ship {
     this.name = cls.title;
     this.gunFiredAt = this.model.muzzles.map(() => -100);
     this.reloadFull = { port: cls.reload, starboard: cls.reload };
+    this.power = cls.ability === 'phantom' ? new Haunt(this) : null;
   }
 
   /** Muzzle velocity with the loaded shot (lighter and lumpier shot flies slower and falls shorter). */
@@ -261,7 +267,7 @@ export class Ship {
 
   /** Fire shot struck home: she burns for longer with each ball. Returns true if she just caught. */
   ignite(by: Ship | null): boolean {
-    if (!this.alive || this.ghost || !this.effect(by, 'fire')) return false;
+    if (!this.alive || this.ghost || this.phantom || !this.effect(by, 'fire')) return false;
     const fresh = this.afire <= 0;
     this.afire = Math.min(EFFECT.burnMax, Math.max(0, this.afire) + EFFECT.burnPerHit);
     if (by) this.afireBy = by;
@@ -271,7 +277,7 @@ export class Ship {
 
   /** Chain shot tore through the canvas. Returns true if her sails were whole a moment ago. */
   shred(by: Ship | null = null): boolean {
-    if (!this.alive || !this.effect(by, 'chain')) return false;
+    if (!this.alive || this.phantom || !this.effect(by, 'chain')) return false;
     const fresh = this.torn <= 0;
     this.torn = EFFECT.tornTime;
     this.struck(by);
@@ -280,7 +286,7 @@ export class Ship {
 
   /** Grape shot swept the deck. Returns true if her crews were at full strength. */
   rake(by: Ship | null = null): boolean {
-    if (!this.alive || this.ghost || !this.effect(by, 'grape')) return false;
+    if (!this.alive || this.ghost || this.phantom || !this.effect(by, 'grape')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = EFFECT.crewTime;
     this.struck(by);
@@ -289,7 +295,7 @@ export class Ship {
 
   /** Wraith-fire struck her: the crews shrink from their guns. Returns true if they were steady a moment ago. */
   terrify(by: Ship | null = null): boolean {
-    if (!this.alive || this.ghost || !this.effect(by, 'dread')) return false;
+    if (!this.alive || this.ghost || this.phantom || !this.effect(by, 'dread')) return false;
     const fresh = this.crewHit <= 0;
     this.crewHit = Math.max(this.crewHit, EFFECT.dreadTime);
     this.struck(by);
@@ -465,7 +471,7 @@ export class Ship {
 
   /** `at` is the world impact point; `hull` false for shots that only hit the rig; `pierce` ignores armour (wraith-fire). */
   damage(amount: number, attacker: Ship | null, world: World, at: THREE.Vector3 | null = null, hull = true, pierce = false) {
-    if (!this.alive) return 0;
+    if (!this.alive || this.phantom) return 0;
     const dmg = amount * (pierce ? 1 : 1 - this.cls.armor) * (0.85 + Math.random() * 0.3);
     // a phantom flares green where she is struck
     if (this.ghost) this.flare = Math.min(1, this.flare + 0.45);
@@ -582,11 +588,14 @@ export class Ship {
       // along on any heading, half again as fast, so the crossing stays a few calm minutes
       const open = smoothstep(HIGH_SEAS_R - 150, HIGH_SEAS_R + 450, nearestRegion(this.pos.x, this.pos.z).dist);
       if (open > 0) wf = Math.max(wf, 0.82 * open) * (1 + 0.5 * open);
-      const target = c.maxSpeed * this.boost.speed * this.sailLevel * wf * hpF * (1 - this.held * 0.92);
+      let target = c.maxSpeed * this.boost.speed * this.sailLevel * wf * hpF * (1 - this.held * 0.92);
+      // on her Phantom Run she flies half as fast again, whatever the wind
+      const ph = this.power ? this.power.phantom : 0;
+      if (ph > 0) target = lerp(target, Math.max(target, c.maxSpeed * this.boost.speed * Math.max(this.sailLevel, 0.5)) * PHANTOM_SPEED, ph);
       const rate = target > this.speed ? c.accel : c.accel * (1.4 + this.held * 3);
       this.speed += (target - this.speed) * damp(rate, dt);
       const steer = clamp(0.28 + 0.9 * (this.speed / c.maxSpeed), 0.28, 1.1);
-      const targetAng = this.rudder * c.turnRate * steer * (1 - this.held * 0.8);
+      const targetAng = this.rudder * c.turnRate * steer * (1 - this.held * 0.8) * (1 + (PHANTOM_TURN - 1) * ph);
       this.angVel += (targetAng - this.angVel) * damp(2.6 / Math.sqrt(c.mass), dt);
       this.speed *= 1 - Math.abs(this.angVel) * 0.08 * dt;
     } else {
@@ -626,7 +635,7 @@ export class Ship {
       // hull floats over it untouched)
       const reef = h < 0 ? world.terrain.reefAt(px, pz) : 0;
       if (reef > 0.3) {
-        if (!this.ghost) {
+        if (!this.ghost && !this.phantom) {
           const k = clamp((h + c.draft * 0.95) / 0.9, 0, 1) * smoothstep(0.3, 0.6, reef);
           if (k > grind) {
             grind = k;
@@ -854,6 +863,7 @@ export class Ship {
     // a lazy wisp from the galley stovepipe, carried off downwind
     const pipe = this.model.chimney;
     if (this.ghost) this.haunt(dt, world);
+    if (this.power) this.power.update(dt, world);
     else if (pipe && this.alive) {
       this.galleyT += dt * 2.2;
       while (this.galleyT > 1) {

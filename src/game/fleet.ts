@@ -28,7 +28,7 @@ export const ORDER_INFO: Record<Order, { name: string; short: string; line: stri
 };
 
 /** What a harbour master asks to sign a ship and her crew on (from your purse). */
-export const HIRE_PRICE: Record<ShipClassId, number> = { sloop: 2500, brig: 6000, galleon: 14000 };
+export const HIRE_PRICE: Record<ShipClassId, number> = { sloop: 2500, brig: 6000, galleon: 14000, revenant: 14000 };
 
 export interface EscortRec {
   id: string;

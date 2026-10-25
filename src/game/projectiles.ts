@@ -367,6 +367,8 @@ export class Projectiles {
 
   /** Whether this ball passes clean through `s` (a phantom): rolled once per ball and ship. */
   private phases(b: Ball, s: Ship) {
+    // on her Phantom Run every ball goes clean through
+    if (s.phantom) return true;
     if (!s.ghost || !s.alive) return false;
     if (b.ghostId !== s.id) {
       b.ghostId = s.id;

@@ -10,7 +10,8 @@ import { loadoutParts, type Part, type PartSlot } from './parts';
 import { buildHullPart, buildSailPart, GLOW, gunBarrel, METAL, type MastInfo, type PartKit, type Spinner } from './partModels';
 import { ball, colorize, hexL, lathe, rbox, spar, spiral, squareRing, surfaceMatrix, sweep, tube } from './geo';
 import { bowHead, buildFigure, buildKnee, type BowHead } from './figureheads';
-import { deckTextures, FLAG_ASPECT, flagTexture, hullTextures, sailNormalTexture, sailTexture, sternTexture } from './shipTextures';
+import { deckTextures, FLAG_ASPECT, flagTexture, hullTextures, ragGlow, sailNormalTexture, sailTexture, sternTexture } from './shipTextures';
+import { buildHaunt, GHOST_FIRE } from './hauntModel';
 import { lampMaterial } from '../render/lamps';
 
 // Fully procedural ships: a lofted hull with real sheer, tumblehome, bilge
@@ -382,6 +383,10 @@ const FINE_OFF = 17;
  * below which each level shows. Each stays under a pixel on screen, so the
  * swap can't be seen; from the farthest zoom every ship is on the distant cut.
  */
+/** A haunted ship's windows: lit green from within. */
+const GHOST_WINDOW = new THREE.Color(0.7, 3.4, 1.8);
+const RAG = { value: 1 };
+
 const LOD_NEAR = { job: { error: 0.02, prune: true, permissive: true } as LodJob, below: 40 };
 const LOD_FAR = { job: { error: 0.055, prune: true, permissive: true } as LodJob, below: 15 };
 const LOD_DISTANT = { job: { error: 0.11, prune: true, permissive: true } as LodJob, below: 7.5 };
@@ -459,6 +464,8 @@ export class ShipModel {
   readonly deckPoints: THREE.Vector3[] = [];
   /** Deck furniture the crew walk round (root space, x/z centre and radius). */
   readonly deckProps: { x: number; z: number; r: number }[] = [];
+  /** A haunted ship's ghost-fire (pumpkins, her captain's lantern and skull), for the wisps off her (hull-root space). */
+  readonly hauntPoints: THREE.Vector3[] = [];
   /** Mouth of the galley stovepipe, for its wisp of smoke. */
   chimney: THREE.Vector3 | null = null;
   readonly stairs: Stair[];
@@ -560,6 +567,11 @@ export class ShipModel {
     yield;
     this.buildDeckLife();
     yield;
+    if (this.cls.haunt) {
+      const k = { shape: this.shape, cls: this.cls, head: this.head, trim: hexL(this.livery.trim), wood: this.woodParts, smallWood: this.smallWood, trimParts: this.trimParts, iron: this.ironParts, glow: this.glowParts };
+      this.hauntPoints.push(...buildHaunt(k));
+      yield;
+    }
     if (this.cls.cargo) this.buildCargo(this.cls.cargo);
     yield;
     this.buildParts();
@@ -632,7 +644,8 @@ export class ShipModel {
       const y = this.cannonY(t);
       return { u: t, v: s.texV(t, y), w: 0.62 / L, h: s.texV(t, y + 0.31) - s.texV(t, y - 0.31) };
     });
-    const hullTex = hullTextures(this.livery, ports, L, this.cls.length * 7);
+    const haunt = !!this.livery.haunt;
+    const hullTex = hullTextures(this.livery, ports, L, this.cls.length * 7, haunt);
     const hullMap = hullTex.map;
     hullMap.anisotropy = 8;
     const hullParams = { map: hullMap, normalMap: hullTex.normal, normalScale: new THREE.Vector2(0.9, 0.9), roughness: 0.48, metalness: 0, envMapIntensity: 1.0 };
@@ -640,21 +653,27 @@ export class ShipModel {
       quality > 0
         ? new THREE.MeshPhysicalMaterial({ ...hullParams, clearcoat: 0.55, clearcoatRoughness: 0.28 })
         : new THREE.MeshStandardMaterial(hullParams);
+    if (hullTex.glow) {
+      // ghost-light seeping from her seams and pouring out of her gunports
+      hull.emissiveMap = hullTex.glow;
+      hull.emissive = new THREE.Color(0.2, 1.25, 0.62);
+    }
     const su = this.owned ? this.skinUniforms : NO_SKIN;
     // a phantom's every surface takes the ghost look (and needs a presence uniform even uncloned)
     const ghost = !!this.livery.ghost;
     const gx: Record<string, THREE.IUniform> = ghost ? { uGhost: GHOST_IDLE } : {};
     patchMaterial(hull, { clouds: true, caustics: true, skin: 1, ghost }, { ...su, ...gx });
-    const sternRows = this.cls.sternCastle ? (this.cls.id === 'galleon' ? 3 : 2) : 1;
+    const sternRows = this.cls.sternCastle ? (this.cls.id === 'galleon' || this.cls.haunt ? 3 : 2) : 1;
     const st = sternTexture(this.livery, sternRows);
     const stern = patchMaterial(
-      new THREE.MeshStandardMaterial({ map: st.map, emissiveMap: st.emissive, emissive: ghost ? new THREE.Color(0.35, 1.6, 0.9) : new THREE.Color(1, 0.75, 0.4), emissiveIntensity: 1.4, roughness: 0.5 }),
+      new THREE.MeshStandardMaterial({ map: st.map, emissiveMap: st.emissive, emissive: ghost || haunt ? new THREE.Color(0.35, 1.6, 0.9) : new THREE.Color(1, 0.75, 0.4), emissiveIntensity: 1.4, roughness: 0.5 }),
       { clouds: true, ghost },
       gx,
     );
     if (!sharedDeck) sharedDeck = deckTextures();
-    const deck = patchMaterial(new THREE.MeshStandardMaterial({ map: sharedDeck.map, normalMap: sharedDeck.normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78 }), { clouds: true, ghost }, gx);
-    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2, ghost }, { ...su, ...gx });
+    const deck = patchMaterial(new THREE.MeshStandardMaterial({ color: haunt ? 0x8a817a : 0xffffff, map: sharedDeck.map, normalMap: sharedDeck.normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78 }), { clouds: true, ghost }, gx);
+    // a haunted ship's timbers are grey and dead
+    const wood = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, color: haunt ? 0x9a9aad : 0xffffff, roughness: 0.66 }), { clouds: true, caustics: true, skin: 2, ghost }, { ...su, ...gx });
     // metal and gilt carry their colour in the vertex paint, so bronze, gold and blued steel share one material
     const iron = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.75, envMapIntensity: 1.3 }), { clouds: true, ghost }, gx);
     const trim = patchMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.8, envMapIntensity: 1.4 }), { clouds: true, ghost }, gx);
@@ -684,7 +703,15 @@ export class ShipModel {
   private makeSailMaterial(map: THREE.Texture) {
     const m = new THREE.MeshStandardMaterial({ map, normalMap: sailNormalTexture(), normalScale: new THREE.Vector2(0.45, 0.45), side: THREE.DoubleSide, roughness: 0.92, envMapIntensity: 0.9 });
     const ghost = !!this.livery.ghost;
-    return patchMaterial(m, { sail: true, clouds: true, skin: 3, ghost }, { ...this.sailUniforms, ...this.skinUniforms, ...(ghost ? { uGhost: GHOST_IDLE } : {}) });
+    const glow = this.livery.haunt ? ragGlow(map) : null;
+    if (glow) {
+      // rags: the holes are cut out of the cloth, the torn edges and the emblem smoulder with ghost-fire
+      m.alphaTest = 0.5;
+      m.emissiveMap = glow;
+      m.emissive = new THREE.Color(0.5, 0.75, 0.62);
+    }
+    // (rags compile a program of their own: the alpha test is part of it)
+    return patchMaterial(m, { sail: true, clouds: true, skin: 3, ghost }, { ...this.sailUniforms, ...this.skinUniforms, ...(ghost ? { uGhost: GHOST_IDLE } : {}), ...(glow ? { uRag: RAG } : {}) });
   }
 
   // ---------------------------------------------------------------- hull
@@ -1895,7 +1922,8 @@ export class ShipModel {
     this.figureReach = head.P(1.45, 0.8).z;
     const waleCol = hexL(this.livery.wale).lerp(hexL(this.livery.hull), 0.4);
     const knee = buildKnee(s, c, head, this.woodParts, this.trimParts, waleCol, this.detail);
-    buildFigure(this.partKit(), this.parts.figure, head);
+    // a haunted ship carries her dead captain there instead (hauntModel)
+    if (!this.cls.haunt) buildFigure(this.partKit(), this.parts.figure, head);
     // gilded trailboards: carved scrolls down each side of the bows, laid on the planking
     const onBow = (y: number, zz: number, side: number) => {
       const t = clamp(zz / L + 0.5, 0, 1);
@@ -2311,7 +2339,8 @@ export class ShipModel {
       const lamp = new THREE.SphereGeometry(0.2 * k, 8, 6);
       lamp.scale(1, 1.35, 1);
       lamp.translate(x, ty + 0.82 * k, z);
-      this.glowParts.push(lamp);
+      // a haunted ship's lanterns burn with ghost-fire
+      this.glowParts.push(this.cls.haunt ? colorize(lamp, GHOST_FIRE, 0) : lamp);
       const capg = new THREE.ConeGeometry(0.24 * k, 0.24 * k, 8);
       capg.translate(x, ty + 1.15 * k, z);
       this.ironParts.push(capg);
@@ -2682,7 +2711,7 @@ export class ShipModel {
     paint(this.trimParts, trimCol, 0.02);
     paint(this.smallTrim, trimCol, 0.02);
     paint(this.fineTrim, trimCol, 0.02);
-    paint(this.glowParts, GLOW.window, 0);
+    paint(this.glowParts, this.cls.haunt ? GHOST_WINDOW : GLOW.window, 0);
     for (const sp of this.spinnerSpecs) {
       const mesh = new THREE.Mesh(sp.geo, sp.mat === 'glow' ? this.mats.glow : this.mats.iron);
       mesh.position.copy(sp.pos);
