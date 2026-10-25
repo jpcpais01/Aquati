@@ -43,6 +43,9 @@ const LINE := {
 	# the captain's blades ashore: the cutlass and the flintlock
 	"cutlass": '<path d="M5 19c6-3 11.5-9 14.5-15.5C14 6 8.5 11 6.6 16.4"/><path d="M3.5 15.5l5 5M4.6 20.3l-1.4 1.4"/>',
 	"pistol": '<path d="M3 8.5h16.5V12H11l-1.2 1.4.6 1.6-1.7 4.5H5.4l1.7-6.2L3 12z"/><path d="M10.2 12.4c.6 1.4 1.8 1.7 2.6.8M18 8.5V7"/>',
+	# the treasure map's chip and the dig gauge
+	"scroll": '<path d="M7 4h11a2 2 0 0 1 2 2v1h-4M7 4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7M7 4a2 2 0 0 1 2 2v12M11 9h4M11 12.5h4M11 16h2.5"/>',
+	"spade": '<path d="M8.5 3.5h7M12 3.5v10"/><path d="M8.5 13.5h7v2.8a3.5 3.5 0 0 1-7 0z"/>',
 	"shot": '<circle cx="9" cy="14" r="5"/><circle cx="16.5" cy="9" r="3.5"/><path d="M7.4 12.2a2 2 0 0 1 2-1.1"/>',
 }
 

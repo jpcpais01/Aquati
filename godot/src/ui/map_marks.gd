@@ -321,6 +321,17 @@ static func fort(ci: CanvasItem, at: Vector2, r: float, ours: bool, quiet := fal
 	ci.draw_polyline(loop, Color(20.0 / 255.0, 10.0 / 255.0, 4.0 / 255.0, 0.85), maxf(1.4, 1.6 * k), true)
 
 
+## A treasure map's X (the web's xMark), in red ink with a dark outline.
+static func x_mark(ci: CanvasItem, at: Vector2, r: float) -> void:
+	for wc: Array in [[r * 0.75, Color(20.0 / 255.0, 8.0 / 255.0, 4.0 / 255.0, 0.7)], [r * 0.42, Color("#e8432f")]]:
+		var w: float = wc[0]
+		ci.draw_line(at + Vector2(-r, -r), at + Vector2(r, r), wc[1], w, true)
+		ci.draw_line(at + Vector2(r, -r), at + Vector2(-r, r), wc[1], w, true)
+		# (round caps)
+		for q: Vector2 in [Vector2(-r, -r), Vector2(r, r), Vector2(r, -r), Vector2(-r, r)]:
+			ci.draw_circle(at + q, w * 0.5, wc[1], true, -1.0, true)
+
+
 ## A reef (the web's reefMark): the old chartmakers' danger mark, a cross ringed with dots.
 static func reef(ci: CanvasItem, at: Vector2, r: float) -> void:
 	var ink := Color(8.0 / 255.0, 20.0 / 255.0, 28.0 / 255.0, 0.7)

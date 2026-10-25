@@ -40,6 +40,10 @@ signal strike_pressed
 signal ability_pressed
 ## Her fate picked on the prize card: "prize" or "scuttle".
 signal prize_picked(k: String)
+## The treasure map's chip tapped.
+signal treasure_pressed
+## The treasure map put away (its close button, or a tap off it).
+signal treasure_closed
 signal pistol_pressed
 
 var controls: Controls
@@ -118,6 +122,10 @@ var _hz: HazardPill
 ## A fort's bar (and its title card), under the hazard pill.
 var _ft: FortBar
 var _prize: PrizeCard
+## The treasure map: its chip, the dig gauge, the map itself over everything.
+var map_chip: MapChip
+var dig: DigGauge
+var tmap: TreasureMapScreen
 ## The Kraken's bar, cards, warnings and grip (its vignette lies low, by the hull's).
 var _kr: KrakenHud
 ## Ashore: the sea's controls (the knots, the sail lever, the guns) stand down for the Jump button.
@@ -382,6 +390,16 @@ func _ready() -> void:
 	_prize = PrizeCard.new()
 	_prize.picked.connect(func(k: String) -> void: prize_picked.emit(k))
 	root.add_child(_prize)
+	map_chip = MapChip.new()
+	map_chip.set_host(root)
+	map_chip.pressed.connect(func() -> void:
+		clicked.emit()
+		treasure_pressed.emit())
+	map_chip.resized.connect(_place_map)
+	map_chip.visibility_changed.connect(_place_map)
+	root.add_child(map_chip)
+	dig = DigGauge.new()
+	root.add_child(dig)
 
 	# notes across the top: an island discovered
 	_toasts = VBoxContainer.new()
@@ -468,6 +486,10 @@ func _ready() -> void:
 	_hint.add_child(HudStyle.label("WASD walk  ·  Shift run  ·  Space jump  ·  Click cutlass  ·  Q pistol  ·  F act", "inter", 600, 12, HudStyle.INK_2))
 	_hint.visible = false
 	root.add_child(_hint)
+	# the treasure map unrolls over all of it
+	tmap = TreasureMapScreen.new()
+	tmap.closed.connect(func() -> void: treasure_closed.emit())
+	root.add_child(tmap)
 	show_touch(controls != null and controls.touch)
 	if controls:
 		controls.touch_seen.connect(func() -> void: show_touch(true))
@@ -556,9 +578,173 @@ func _layout() -> void:
 	_hz.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
 	_ft.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * k if _hz.on() else 0.0)), minf(560.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
 	_kr.place(Vector2(vp.x * 0.5, my + 2.0 * HudStyle.PX + (_hz.size.y + 6.0 * k if _hz.on() else 0.0)), minf(460.0 * k, vp.x - 2.0 * mx - 2.0 * (Minimap.SIZE + 16.0 * k)))
+	_place_map()
 	# the toasts step down under the pill and the bar while they're up
 	_hz_room = _top_room()
 	_toasts.offset_top = my + _hz_room
+
+
+## The treasure map's chip: on a computer beside the knots (alone in the
+## middle ashore), on touch over the knots under the left thumb; the dig
+## gauge low in the middle, over the prompt's place.
+func _place_map() -> void:
+	if map_chip == null:
+		return
+	var vp := get_viewport().get_visible_rect().size
+	var mx := vp.x * 0.03
+	var my := vp.y * 0.03
+	var k := HudStyle.K
+	var hk := _hk()
+	map_chip.set_touch(_touch_ui)
+	map_chip.scale = Vector2.ONE * hk
+	map_chip.rest = hk
+	var cs := map_chip.size * hk
+	if _touch_ui:
+		var top := _pill.position.y if not _ashore else vp.y - my - SailLever.TH
+		map_chip.position = Vector2(mx, top - 8.0 * k - cs.y)
+	elif _ashore:
+		map_chip.position = Vector2((vp.x - cs.x) * 0.5, vp.y - my - cs.y)
+	else:
+		var ps := _pill.size * hk
+		map_chip.position = Vector2(_pill.position.x - 10.0 * k - cs.x, _pill.position.y + (ps.y - cs.y) * 0.5)
+	map_chip.pivot_offset = Vector2.ZERO
+	var lift := maxf(44.0 * HudStyle.PX, 52.0 * k) if _touch_ui else 104.0 * k
+	dig.position = Vector2((vp.x - dig.size.x) * 0.5, vp.y - my - lift - dig.size.y)
+	dig.pivot_offset = dig.size * 0.5
+	# ashore on a computer the keys' hint stands over the chip
+	if _ashore and not _touch_ui and map_chip.visible:
+		_hint.position.y = map_chip.position.y - 8.0 * k - _hint.size.y
+
+
+## The buried chest's haul, under the toasts: a little open chest, the isle,
+## the gold counting up as it lands and what else it held (`items`: [art, rarity] each).
+func treasure_toast(isle: String, gold: int, items: Array) -> void:
+	var k := HudStyle.K
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var box := _toast_box.duplicate() as StyleBoxFlat
+	box.set_corner_radius_all(roundi(18.0 * k))
+	box.content_margin_left = 10.0 * k
+	box.content_margin_right = 16.0 * k
+	box.content_margin_top = 7.0 * k
+	box.content_margin_bottom = 7.0 * k
+	box.border_color = Color(0.957, 0.78, 0.396, 0.7)
+	box.bg_color = Color(48.0 / 255.0, 32.0 / 255.0, 14.0 / 255.0, 0.94)
+	box.shadow_color = Color(1.0, 190.0 / 255.0, 70.0 / 255.0, 0.3)
+	box.shadow_size = 18
+	box.shadow_offset = Vector2.ZERO
+	panel.add_theme_stylebox_override("panel", box)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", roundi(10.0 * k))
+	var chest := TextureRect.new()
+	chest.texture = Icons.svg("haul-chest", _CHEST, Vector2(40.0, 34.0) * k, Rect2(0, 0, 40, 34))
+	chest.custom_minimum_size = Vector2(40.0, 34.0) * k
+	chest.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	chest.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(chest)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	col.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(HudStyle.label("BURIED TREASURE", "inter", 700, 9, HudStyle.GOLD, 2))
+	col.add_child(HudStyle.label(isle, "cinzel", 700, 15, HudStyle.INK, 1))
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", roundi(5.0 * k))
+	var coin := TextureRect.new()
+	coin.texture = Icons.texture("coin", 16.0 * k)
+	coin.custom_minimum_size = Vector2(16.0, 16.0) * k
+	coin.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	line.add_child(coin)
+	var count := HudStyle.label("+0", "inter", 800, roundi(maxf(10.0 * HudStyle.PX, 12.5 * k)), HudStyle.GOLD_HI)
+	count.add_theme_font_override("font", HudStyle.tnum(HudStyle.font("inter", 800)))
+	count.custom_minimum_size.x = 50.0 * k
+	line.add_child(count)
+	var n := 0
+	for it: Array in items.slice(0, 4):
+		var r := TextureRect.new()
+		r.texture = it[0]
+		r.custom_minimum_size = Vector2(22.0, 22.0) * k
+		r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		r.pivot_offset = Vector2(11.0, 11.0) * k
+		r.scale = Vector2.ZERO
+		line.add_child(r)
+		var tw := r.create_tween()
+		tw.tween_property(r, "scale", Vector2.ONE, 0.5).set_delay(0.5 + n * 0.15).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		n += 1
+	col.add_child(line)
+	row.add_child(col)
+	panel.add_child(row)
+	_card(panel, 5.6)
+	# the gold counts up as it lands
+	var t := count.create_tween()
+	t.tween_method(func(v: float) -> void: count.text = "+%d" % roundi(gold * (1.0 - pow(1.0 - v, 3.0))), 0.0, 1.0, 1.3).set_delay(0.35)
+
+
+## Doubloons arcing from a point on the screen (the hole) into the purse.
+func coin_shower(from: Vector2, landed: Callable) -> void:
+	var to := _gold.get_global_rect().position + Vector2(_gold.size.y * 0.5, _gold.size.y * 0.5) * _hk()
+	var root := get_node("Root") as Control
+	for k in 14:
+		var c := _Coin.new()
+		c.texture = Icons.texture("coin", 20.0)
+		c.from = from + Vector2((randf() - 0.5) * 30.0, (randf() - 0.5) * 16.0) * HudStyle.PX
+		c.up = c.from + Vector2((randf() - 0.5) * 180.0, -70.0 - randf() * 90.0) * HudStyle.PX
+		c.to = to
+		c.life = 0.9 + randf() * 0.25
+		c.wait = 0.12 + k * 0.055
+		if k % 3 == 0:
+			c.landed.connect(landed)
+		if k == 13:
+			c.landed.connect(_gold.bump)
+		root.add_child(c)
+
+
+## A doubloon in flight, spinning about its upright as it goes.
+class _Coin:
+	extends Control
+	signal landed
+	var texture: Texture2D
+	var from := Vector2.ZERO
+	var up := Vector2.ZERO
+	var to := Vector2.ZERO
+	var life := 1.0
+	var wait := 0.0
+	var _t := 0.0
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		top_level = true
+
+	func _process(dt: float) -> void:
+		_t += dt
+		if _t >= wait + life:
+			landed.emit()
+			queue_free()
+			return
+		queue_redraw()
+
+	func _draw() -> void:
+		var u := (_t - wait) / life
+		if u < 0.0:
+			return
+		var e := u * u * (3.0 - 2.0 * u)
+		var at: Vector2
+		var s: float
+		var a := 1.0
+		if e < 0.38:
+			var k := e / 0.38
+			at = from.lerp(up, k)
+			s = lerpf(0.3, 1.6, k)
+			a = minf(1.0, k * 2.0)
+		else:
+			var k := (e - 0.38) / 0.62
+			at = up.lerp(to, k)
+			s = lerpf(1.6, 0.8, k)
+		var w := 13.0 * HudStyle.PX * s
+		var spin := absf(cos(u * 6.0 * PI))
+		draw_texture_rect(texture, Rect2(at - Vector2(w * spin, w) * 0.5, Vector2(w * maxf(0.08, spin), w)), false, Color(1, 1, 1, a))
+
+
+const _CHEST := '<defs><linearGradient id="thw" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a5683a"/><stop offset="1" stop-color="#5e3418"/></linearGradient><radialGradient id="thg" cx=".5" cy=".7" r=".6"><stop offset="0" stop-color="#fff3c0"/><stop offset=".55" stop-color="#f4c765"/><stop offset="1" stop-color="#b9821f"/></radialGradient></defs><path d="M6 9.5 9 2.5h22l3 7z" fill="url(#thw)" stroke="#2b1607" stroke-width="1.2"/><ellipse cx="20" cy="13" rx="14" ry="5" fill="url(#thg)"/><circle cx="14" cy="11.5" r="2" fill="#ffe9a0"/><circle cx="24" cy="10.8" r="2.2" fill="#ffe08a"/><circle cx="19" cy="9.8" r="1.8" fill="#fff3c0"/><path d="M5 13h30v16.5a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" fill="url(#thw)" stroke="#2b1607" stroke-width="1.2"/><path d="M5 18.5h30M12 13v18.5M28 13v18.5" stroke="#e6b450" stroke-width="1.6"/><rect x="17.5" y="17" width="5" height="6" rx="1" fill="#f4c765" stroke="#2b1607" stroke-width=".8"/>'
 
 
 ## A round glass button with a line icon (the web's .icon-btn in the corner).
@@ -1103,6 +1289,8 @@ func prize_open() -> bool:
 ## A fresh voyage: a new hull's bar from full, the tally from nothing, the HUD back.
 func reset() -> void:
 	_prize.close()
+	tmap.close()
+	dig.show_dig({})
 	_hull_frac = -1.0
 	for c: _Chip in [_gold, _hold, _kills, _isles]:
 		c.reset()
@@ -1497,6 +1685,13 @@ class _Chip:
 		_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(_label)
 		add_child(row)
+
+	## A little jump as coins land in it.
+	func bump() -> void:
+		pivot_offset = size * 0.5
+		scale = Vector2.ONE * 1.18
+		var tw := create_tween()
+		tw.tween_property(self, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 	func reset() -> void:
 		_value = -1

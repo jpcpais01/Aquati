@@ -993,6 +993,10 @@ func _paint_live(ci: CanvasItem) -> void:
 		MapMarks.fort(ci, at, (9.0 if detail else 5.0) * PX, bool(f.ours), bool(f.quiet))
 		if detail:
 			MapMarks.words(ci, at - Vector2(0.0, 18.0 * PX), str(f.name), cinzel, _px(12.0), Color("#9ff3e8") if f.ours else Color("#ffb59a"), 4.0 * PX, Color(8.0 / 255.0, 30.0 / 255.0, 40.0 / 255.0, 0.8))
+	if not scene.treasure.is_empty() and shows(float(scene.treasure.x), float(scene.treasure.z)):
+		var at := to_canvas(float(scene.treasure.x), float(scene.treasure.z))
+		MapMarks.x_mark(ci, at, 10.0 * PX)
+		MapMarks.words(ci, at - Vector2(0.0, 20.0 * PX), "X marks the spot", HudStyle.font("serif-italic", 600), _px(13.0), Color("#ffb59f"), 4.0 * PX, Color(8.0 / 255.0, 30.0 / 255.0, 40.0 / 255.0, 0.8))
 	if scene.route.size() > 1:
 		var course := PackedVector2Array()
 		course.resize(scene.route.size())

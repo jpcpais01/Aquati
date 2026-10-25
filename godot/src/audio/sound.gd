@@ -1081,6 +1081,27 @@ func yell(vol: float, pan: float, dist := 0.0) -> void:
 		_one("yell", v / 0.3, pan, _heard_at(dist), 0.9 + randf() * 0.25, 1.0)
 
 
+## A spade biting into sand: a crunching scrape, then the hiss of the spadeful thrown aside.
+func dig(vol: float, pan: float, dist := 0.0) -> void:
+	var v := minf(0.4, vol * 0.3) * exp(-dist / 120.0)
+	if _voice(v):
+		_one("dig", v / 0.3, pan, _heard_at(dist), 0.94 + randf() * 0.12, 0.2)
+
+
+## The spade strikes something under the sand: a hollow wooden knock with an iron ring to it.
+func spade_knock(vol: float, pan: float) -> void:
+	var v := minf(0.6, vol * 0.55)
+	if _voice(v):
+		_one("spade_knock", v / 0.55, pan, 0.0, 1.0, 0.3)
+
+
+## Old parchment unrolled (or rolled away): a dry, crackling rustle.
+func parchment(vol := 1.0) -> void:
+	var v := 0.32 * vol
+	if _voice(v):
+		_one("parchment", v / 0.32, 0.0, 0.0, 0.95 + randf() * 0.1, 0.2)
+
+
 ## The bosun's call: a shrill pipe swooping up, trilling and falling away: "all hands, cast off!".
 func bosun_pipe() -> void:
 	if _voice(0.09):

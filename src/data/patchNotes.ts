@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T11:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: treasure maps',
+        notes: [
+          'Treasure maps come to the Android and Windows game. Torn pieces turn up in sea chests, in cutthroat camps and on boarded ships, and tumble into a new map chip by your speed.',
+          'Press T or tap the chip to unroll the map: an island inked on old parchment, the pieces you hold laid together, and a line of the riddle for each. Once it is whole the X goes on the minimap and the chart, and the chip points the way.',
+          'Go ashore at the crossed sticks and the landing party digs until a spade strikes wood, then heaves out a chest of gold, fine goods and fresh shot.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T10:00Z',
     entries: [
       {

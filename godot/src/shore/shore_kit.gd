@@ -136,6 +136,61 @@ static func chest_lid() -> ArrayMesh:
 	return b.commit()
 
 
+# ------------------------------------------------------------------ buried treasure
+
+## What marks a treasure map's X on the ground (the web's buildDigMarks): two
+## driftwood sticks crossed on the sand and a little cairn of stones a stride
+## off. Local space, the X at the origin.
+static func dig_marks(seed_value: int) -> ArrayMesh:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var b := TownKit.new(seed_value)
+	var drift := TownKit.lin("#9c8466")
+	for a: float in [PI * 0.25, -PI * 0.25]:
+		var len := 1.5 + rng.randf() * 0.2
+		var s := Vector3(sin(a), 0.0, cos(a)) * len * 0.5
+		b.beam(Vector3(-s.x, 0.05, -s.z), Vector3(s.x, 0.09, s.z), 0.045, func(p: Vector3) -> Color: return TownKit.shade(drift, 0.85 + 0.25 * absf(sin(p.x * 13.0 + p.z * 11.0))))
+	# the cairn
+	var y := 0.0
+	for i in 5:
+		var r := 0.26 - i * 0.04 + rng.randf() * 0.03
+		var m := b._mark()
+		b.kit.sphere(Transform3D(Basis(Vector3.UP, rng.randf() * 3.0).scaled(Vector3(1.1, 0.7, 1.0)), Vector3(1.55 + (rng.randf() - 0.5) * 0.08, y + r * 0.6, 0.35 + (rng.randf() - 0.5) * 0.08)), r, 5, 3)
+		b.facet(m.x, m.y)
+		b.paint_from(m.x, TownKit.shade(TownKit.lin("#8d8a84"), 0.75 + rng.randf() * 0.4), TownKit.WOOD)
+		y += r * 1.15
+	return b.commit()
+
+
+## The hole as it's dug (the web's holeGeometry): dark damp sand at the
+## bottom, a lip of dry sand thrown up round it. It grows by scale.
+static func dig_hole() -> ArrayMesh:
+	var b := TownKit.new(3)
+	var prof := PackedVector2Array([Vector2(0.0, -0.42), Vector2(0.35, -0.4), Vector2(0.62, -0.25), Vector2(0.8, -0.02), Vector2(0.95, 0.1), Vector2(1.15, 0.06), Vector2(1.35, 0.0)])
+	var dry := TownKit.lin("#d8c49a")
+	var wet := TownKit.lin("#5a4630")
+	b.lathe(prof, Transform3D.IDENTITY, func(p: Vector3) -> Color:
+		var r := Vector2(p.x, p.z).length()
+		var c := wet.lerp(dry, clampf((r - 0.35) / 0.5, 0.0, 1.0)) if r < 0.8 else dry
+		return TownKit.shade(c, 0.9 + 0.1 * sin(p.x * 17.0 + p.z * 13.0)), 18)
+	return b.commit()
+
+
+## The heap of spoil beside the hole: a loose, lumpy mound thrown off the spade.
+static func dig_spoil() -> ArrayMesh:
+	var b := TownKit.new(4)
+	var m := b._mark()
+	b.kit.sphere(Transform3D(Basis.from_scale(Vector3(1.4, 0.36, 1.0)), Vector3.ZERO), 0.75, 14, 7, 0.0, TAU, 0.0, PI * 0.5)
+	for i in range(m.x, b.kit.verts.size()):
+		var v := b.kit.verts[i]
+		var a := atan2(v.z, v.x)
+		var r := 1.0 + 0.13 * sin(a * 3.0 + 1.0) + 0.07 * sin(a * 7.0)
+		b.kit.verts[i] = Vector3(v.x * r, v.y * (1.0 + 0.22 * sin(v.x * 7.0 + v.z * 5.0) + 0.12 * sin(v.x * 13.0 - v.z * 11.0)), v.z * r)
+	b.kit.recompute_normals(m.x, m.y)
+	b.paint_from(m.x, func(p: Vector3) -> Color: return TownKit.shade(TownKit.lin("#c9b083"), 0.88 + 0.14 * sin(p.x * 23.0 + p.z * 19.0)), TownKit.WOOD)
+	return b.commit()
+
+
 # ------------------------------------------------------------------ camps
 
 ## A camp of cutthroats in a glade (the web's buildCamp), laid down in world

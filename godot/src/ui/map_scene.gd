@@ -18,6 +18,8 @@ var pins: Waypoints
 var route := PackedVector2Array()
 ## The island forts, and whose they are: {x, z, name, ours, quiet} each.
 var forts: Array[Dictionary] = []
+## A whole treasure map's X ({isle, x, z}), or {} while it's still in pieces.
+var treasure := {}
 
 
 ## The archipelago whose heart lies nearest (x, z), and how far that is.

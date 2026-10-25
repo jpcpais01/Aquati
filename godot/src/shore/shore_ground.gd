@@ -194,6 +194,58 @@ func step(x: float, z: float, dx: float, dz: float, r: float) -> Vector2:
 	return Vector2(nx, nz)
 
 
+## Where a treasure map's X falls, from its seed (the web's digSite): a flat,
+## open spot well inland of a beach (14..60 m from the sea, straight out from
+## the island's middle, and a landing off it) on one of `isles` (big enough to
+## hide a chest), clear of `avoid` (discs: x, z, r) by 30 m. {} if none fits;
+## else {island, x, z}.
+func dig_site(seed_value: int, isles: Array, avoid: Array[Vector3]) -> Dictionary:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var pool := []
+	for i: Dictionary in isles:
+		if float(i.r) > 40.0:
+			pool.append(i)
+	for n in 8:
+		if pool.is_empty():
+			break
+		var isl: Dictionary = pool.pop_at(rng.randi() % pool.size())
+		var ix := float(isl.x)
+		var iz := float(isl.z)
+		var ir := float(isl.r)
+		for k in 60:
+			var a := rng.randf() * TAU
+			var f := 0.6 + rng.randf() * 0.2 if str(isl.kind) == "atoll" else 0.3 + rng.randf() * 0.6
+			var x := ix + cos(a) * ir * f * float(isl.get("stretch", 1.0))
+			var z := iz + sin(a) * ir * f
+			var h := world.ground_height(x, z)
+			if h < 0.9 or h > 9.0 or slope(x, z) > 0.4 or not open(x, z, 2.0):
+				continue
+			var clear := true
+			for c in avoid:
+				if Vector2(c.x - x, c.y - z).length() < c.z + 30.0:
+					clear = false
+					break
+			if not clear or solid_near(x, z, 2.2):
+				continue
+			# a beach within a short walk, straight out to sea
+			var o := Vector2(x - ix, z - iz)
+			o = o / maxf(o.length(), 1.0)
+			var sea := -1.0
+			var d := 2.0
+			while d < 70.0:
+				if world.ground_height(x + o.x * d, z + o.y * d) < -0.5:
+					sea = d
+					break
+				d += 2.0
+			if sea < 14.0 or sea > 60.0:
+				continue
+			if landing(x + o.x * (sea + 40.0), z + o.y * (sea + 40.0), 85.0).is_empty():
+				continue
+			return {"island": isl, "x": x, "z": z}
+	return {}
+
+
 ## The nearest beach a boat can be pulled up on from a ship at (x, z): clean
 ## water all the way in, a gentle beach, then land you can walk on. {} when
 ## there's none; else {island, x, z, dx, dz, sand_x, sand_z}: the keel

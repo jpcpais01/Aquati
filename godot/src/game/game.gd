@@ -287,6 +287,8 @@ var _foe: Ship
 var _sink_at := -1.0
 ## Grapnels, lashing and prizes; what her strongbox gave up; the boarding tip, once.
 var boarding: Boarding
+## The treasure map in hand (kept between voyages in Progress.maps).
+var tmaps := TreasureMaps.new()
 var _prize_haul := ""
 var _board_tip := false
 var _foe_sink_at := -1.0
@@ -485,6 +487,8 @@ func _load() -> void:
 	hud.strike_pressed.connect(func() -> void: _hud_strike = true)
 	hud.pistol_pressed.connect(func() -> void: _hud_pistol = true)
 	hud.prize_picked.connect(_choose_prize)
+	hud.treasure_pressed.connect(func() -> void: _map_view(not hud.tmap.is_open))
+	hud.treasure_closed.connect(func() -> void: _map_view(false))
 	add_child(hud)
 	await _loaded_to(0.72)
 	maps.world = world
@@ -570,6 +574,8 @@ func _load() -> void:
 		_stage_fort()
 	if _args.has("board"):
 		_stage_board()
+	if _args.has("map"):
+		_stage_map()
 	if _args.has("ashore") or _args.has("beach"):
 		_stage_ashore()
 	elif _args.has("camp"):
@@ -1213,6 +1219,8 @@ func _build_ports(p0: float, p1: float) -> void:
 	shore.hopped.connect(_on_hop)
 	shore.prize_struck.connect(_on_struck)
 	shore.landed.connect(_on_landed)
+	shore.unearthed.connect(_on_unearthed)
+	tmaps.state = Progress.maps.duplicate(true)
 	# grapnels across to a crippled pirate, and the lines that lash her alongside
 	boarding = Boarding.new(ports.arts().parts)
 	add_child(boarding)
@@ -1444,6 +1452,10 @@ func _process(delta: float) -> void:
 	if _args.has("buy") and dock_port != null and _frames == maxi(1, int(_args.get("frames", 90)) - 9):
 		# (swelling on the counter as the frame is saved)
 		_buy_part(str(Parts.port_stock(dock_port.index + 1)[clampi(int(_args.buy), 0, 2)].id))
+	if _args.has("dig") and _frames == 4:
+		_shore_act()
+	if _args.has("map-open") and _frames == maxi(1, int(_args.get("frames", 90)) - int(_args["map-open"] if str(_args["map-open"]).is_valid_int() else 30)):
+		_map_view(true)
 	if _args.has("find") and _frames == maxi(1, int(_args.get("frames", 90)) - 60):
 		_find_part(str(_args.find), "In the treasure chest", player.pos)
 	if _args.has("smoke") and _frames == int(_args.get("smoke-at", 300)):
@@ -1535,6 +1547,8 @@ func _tick(real_dt: float) -> void:
 				_open_chart()
 		if controls.ability and not ashore and not held:
 			_call_power()
+		if controls.treasure and not held:
+			_map_view(not hud.tmap.is_open)
 		# the view you sail with is the next voyage's
 		if not ashore:
 			Progress.keep_view(camera.zoom, camera.tilt)
@@ -1725,6 +1739,8 @@ func _tick(real_dt: float) -> void:
 	# the chart is for sailing: it goes when she ties up, goes down or heads home
 	if chart.is_open() and (not sailing or _farewell != null or not player.alive):
 		chart.close()
+	if hud.tmap.is_open and (not sailing or _farewell != null or not player.alive):
+		_map_view(false)
 	# the helmsman's pill while he has the wheel (the prompt to come alongside steps up over it)
 	hud.show_helm(helm.view(player) if sailing else {}, player.rudder, real_dt)
 	market.set_pill(hud.helm_height())
@@ -1756,6 +1772,7 @@ func _tick(real_dt: float) -> void:
 	hud.minimap.tick(real_dt)
 	_sync_card()
 	hud.show_pins(pins, player.pos, camera, world)
+	_show_treasure()
 	if player.alive and (not _args.has("shot") or _args.has("discover")):
 		_chart(player.pos)
 
@@ -2271,6 +2288,10 @@ func _haul(it: Loot.Item) -> void:
 		sound.coin()
 		return
 	var rarity: String = Treasure.RARITY_NAME[it.tier]
+	# now and then a chest holds a torn piece of a treasure map (more often the finer the chest)
+	var fresh := 2.0 if int(tmaps.state.dug) == 0 and tmaps.count() == 0 else 1.0
+	if not tmaps.complete() and randf() < [0.0, 0.1, 0.25, 0.45, 0.7][it.tier] * fresh:
+		get_tree().create_timer(0.9).timeout.connect(_found_piece.bind(at))
 	if it.tier >= 2:
 		voyage.note("chest", "%s chest" % rarity, ", ".join(kept.map(func(id: String) -> String: return Treasure.name_of(id))))
 	var kinds := [Floaters.Kind.LOOT, Floaters.Kind.LOOT, Floaters.Kind.RARE, Floaters.Kind.EPIC, Floaters.Kind.LEGENDARY]
@@ -3618,6 +3639,8 @@ func _start_voyage(sea: String) -> void:
 	# the cutthroats are back round their fires, their chests full again
 	shore.reset_camps()
 	boarding.reset()
+	# the X of a whole map waits on its sand
+	_sync_treasure()
 	# and the Brethren man every fort you haven't taken
 	forts.apply(Progress.forts.taken)
 	hud.fort_clear()
@@ -4038,6 +4061,8 @@ func _on_camp_plundered(c: Shore.Camp) -> void:
 	else:
 		hud.toast("Cutthroats' chest", "+%d gold" % gold, 3.0)
 	_chest_part(tier, at, 1.2)
+	# cutthroats always carry a scrap of somebody's map
+	get_tree().create_timer(1.4).timeout.connect(_found_piece.bind(at))
 	_note_tour("plundered camp %d for %d gold" % [c.index, gold])
 
 
@@ -4066,6 +4091,7 @@ func _open_strongbox(c: Shore.Camp, at: Vector3) -> void:
 	else:
 		hud.toast("%s chest · +%d gold" % [rarity, gold], "And fresh shot for the guns", 3.4)
 	_chest_part(maxi(2, tier), at, 1.2)
+	get_tree().create_timer(1.4).timeout.connect(_found_piece.bind(at))
 	_note_tour("opened the strongbox of garrison %d for %d gold" % [c.index, gold])
 
 
@@ -4396,6 +4422,8 @@ func _on_struck(e: Ship) -> void:
 	boarding.strike(e)
 	voyage.note("chest", "The %s struck her colours" % e.ship_name, "%s chest · +%d gold%s" % [Treasure.RARITY_NAME[tier], gold, (" · " + names) if names != "" else ""])
 	_chest_part(tier, at, 1.2)
+	if randf() < 0.3:
+		get_tree().create_timer(2.0).timeout.connect(_found_piece.bind(at))
 	get_tree().create_timer(1.7).timeout.connect(_offer_prize.bind(e))
 	_note_tour("the %s struck for %d gold" % [e.ship_name, gold])
 
@@ -4538,6 +4566,223 @@ func _stage_ashore() -> void:
 		else:
 			var d := wa.split(",")
 			_auto_walk = Vector2(float(d[0]), float(d[1]))
+
+
+# ------------------------------------------------------------------ treasure maps
+
+## Where a new map's X falls, from its seed: among the isles of whichever
+## archipelago she's in (never the home port's own), clear of the towns, the
+## camps and the forts. {isle, x, z}, or {} where none fits.
+func _dig_target(seed_value: int) -> Dictionary:
+	var here: Region = maps.nearest_region(player.pos.x, player.pos.z)[0]
+	var home_isle := str(home.site.island) if home != null and not home.site.is_empty() else ""
+	var isles := []
+	for isl: Dictionary in here.islands:
+		if str(isl.name) != home_isle:
+			isles.append(isl)
+	var avoid: Array[Vector3] = shore_ground.towns.duplicate()
+	for c in shore.camps:
+		avoid.append(Vector3(float(c.site.x), float(c.site.z), 10.0))
+	for f in forts.forts:
+		avoid.append(Vector3(float(f.site.x), float(f.site.z), 40.0))
+	var t := shore_ground.dig_site(seed_value, isles, avoid)
+	if t.is_empty():
+		return {}
+	return {"isle": str(t.island.name), "x": float(t.x), "z": float(t.z)}
+
+
+## A torn piece of map (found at `at` in the world, or null): one more third,
+## and the whole map once there are three.
+func _found_piece(at: Variant) -> void:
+	if state != State.VOYAGE or player == null:
+		return
+	var i := tmaps.add_piece(_dig_target)
+	if i < 0:
+		return
+	_save_maps()
+	var n := tmaps.count()
+	var sp: Variant = null
+	if at != null and not camera.is_position_behind(at):
+		hud.floater("Treasure map piece!", at, camera, Floaters.Kind.RARE, 30.0)
+		sp = camera.unproject_position(at) - Vector2(0.0, 10.0 * HudStyle.PX)
+	hud.map_chip.fly_piece(i, sp)
+	var how := "tap the map chip" if hud.touch_ui() else "press T"
+	if n < 3:
+		hud.toast("Treasure map · %d of 3 pieces" % n, "Torn and stained: %s to look" % how, 3.6)
+		sound.chime()
+	else:
+		var t := tmaps.target()
+		hud.toast("The map is whole!", "X marks the spot on %s" % t.isle, 5.5)
+		sound.treasure(3)
+		voyage.note("chest", "Pieced together a treasure map", str(t.isle))
+		_sync_treasure()
+	_note_tour("treasure map piece, %d of 3" % n)
+
+
+## The map as it stands, kept for the next voyage.
+func _save_maps() -> void:
+	Progress.maps = tmaps.state.duplicate(true)
+	Progress.touch()
+
+
+## The X on the sand matches the map in hand.
+func _sync_treasure() -> void:
+	shore.set_treasure(tmaps.target())
+
+
+## Where the captain is: ashore on his feet, else aboard.
+func _here() -> Vector3:
+	if shore.active and shore.captain != null:
+		return Vector3(shore.captain.x, shore.captain.y, shore.captain.z)
+	return player.pos
+
+
+## The isle the map's X is on: by name, or (should the charts have renamed
+## it) the one under the X; {} before the first piece.
+func _map_island() -> Dictionary:
+	var m := tmaps.state
+	if int(m.pieces) == 0 and str(m.isle) == "":
+		return {}
+	var best := {}
+	var bd := INF
+	for r in world.regions:
+		for isl: Dictionary in r.islands:
+			if str(isl.name) == str(m.isle):
+				return isl
+			var d := Vector2(float(isl.x) - float(m.x), float(isl.z) - float(m.z)).length() / maxf(1.0, float(isl.r))
+			if d < bd:
+				bd = d
+				best = isl
+	return best
+
+
+## Open water off the shore nearest a spot on land, for the helmsman to make for.
+func _offshore(x: float, z: float) -> Vector2:
+	var isl := _map_island()
+	var dir := Vector2(x - float(isl.get("x", x - 1.0)), z - float(isl.get("z", z))).normalized()
+	if dir == Vector2.ZERO:
+		dir = Vector2.RIGHT
+	var d := 0.0
+	while d < 900.0 and world.ground_height(x + dir.x * d, z + dir.y * d) > -6.0:
+		d += 6.0
+	return Vector2(x + dir.x * (d + 20.0), z + dir.y * (d + 20.0))
+
+
+## Unrolls the map over the HUD (the world sails on beneath, as with the chart), or puts it away.
+func _map_view(on: bool) -> void:
+	if on == hud.tmap.is_open:
+		return
+	if on and (state != State.VOYAGE or _farewell != null or not player.alive):
+		return
+	if on:
+		if chart.is_open():
+			chart.close()
+		var m := tmaps.state
+		var from := _here()
+		hud.tmap.open(m, _map_island(), world.ground_height, Vector2(from.x, from.z))
+		# (a piece looked at once doesn't swoop in again)
+		if int(m.seen) != int(m.pieces):
+			m.seen = int(m.pieces)
+			_save_maps()
+		sound.parchment()
+		_note_tour("treasure map unrolled")
+	else:
+		hud.tmap.close()
+		sound.parchment(0.6)
+
+
+## The chip, the X on the maps and the dig gauge, each frame.
+func _show_treasure() -> void:
+	var tx := tmaps.target()
+	maps.treasure = tx
+	var X: Variant = null
+	if not tx.is_empty():
+		X = Vector3(float(tx.x), maxf(0.0, world.ground_height(float(tx.x), float(tx.z))), float(tx.z))
+	hud.map_chip.show_map(tmaps.state, _here(), X, camera)
+	hud.dig.show_dig(shore.dig_view() if shore.active else {})
+
+
+## The chest is out of the ground: a hoard, and the map spent.
+func _on_unearthed(at: Vector3) -> void:
+	var p := player
+	var gold := 450 + roundi(randf() * 450.0)
+	Progress.earn(gold)
+	p.gold += gold
+	var tier := Loot.roll_tier(0.9, 3)
+	var goods := Treasure.roll_contents(tier)
+	goods.append_array(Treasure.roll_contents(Loot.roll_tier(0.6, 2)))
+	var res := hold.stow(goods)
+	var tossed: PackedStringArray = res.tossed
+	if not tossed.is_empty():
+		_nag_hold(tossed.size())
+	_stock_ammo({Ammo.SHELL: 3, Ammo.FIRE: 2, Ammo.CHAIN: 2, Ammo.GRAPE: 3}, at)
+	var kept := Array(res.kept as PackedStringArray)
+	kept.sort_custom(func(a: String, b: String) -> bool:
+		var ra := Treasure.rarity_of(a)
+		var rb := Treasure.rarity_of(b)
+		return ra > rb or (ra == rb and Treasure.price_of(a) > Treasure.price_of(b)))
+	var isle := str(_map_island().get("name", tmaps.state.isle))
+	var names := ", ".join(kept.map(func(id: String) -> String: return Treasure.name_of(id)))
+	voyage.note("chest", "Dug up buried treasure on %s" % isle, "+%d gold%s" % [gold, (" · " + names) if names != "" else ""])
+	var kinds := [Floaters.Kind.LOOT, Floaters.Kind.LOOT, Floaters.Kind.RARE, Floaters.Kind.EPIC, Floaters.Kind.LEGENDARY]
+	hud.floater("+%d gold" % gold, at, camera, kinds[tier])
+	sound.treasure(tier)
+	camera.shake(0.2)
+	var items := []
+	for id: String in kept.slice(0, 4):
+		items.append([Icons.plunder(id, 22.0 * HudStyle.K), Treasure.rarity_of(id)])
+	hud.treasure_toast(isle, gold, items)
+	if not camera.is_position_behind(at):
+		hud.coin_shower(camera.unproject_position(at), func() -> void: sound.coin(0.0, 0.35))
+	tmaps.consume()
+	_save_maps()
+	_sync_treasure()
+	_note_tour("dug up the treasure on %s for %d gold" % [isle, gold])
+
+
+## A set piece with a treasure map: `--map N` hands over N of its pieces (3,
+## the default: whole, its X on an isle of these waters); `--dig` lands the
+## party beside the X and sets them digging; `--map-open` unrolls it.
+func _stage_map() -> void:
+	tmaps.state = TreasureMaps.fresh()
+	var arg := str(_args.map)
+	var n := clampi(int(arg) if arg.is_valid_int() else 3, 0, 3)
+	for i in n:
+		tmaps.add_piece(_dig_target)
+	_sync_treasure()
+	_note_tour("map staged, %d of 3 pieces%s" % [tmaps.count(), (" on " + str(tmaps.state.isle)) if n > 0 else ""])
+	if not _args.has("dig") or not tmaps.complete():
+		return
+	var tx := tmaps.target()
+	var x := float(tx.x)
+	var z := float(tx.z)
+	var isl := _map_island()
+	var dir := Vector2(x - float(isl.x), z - float(isl.z)).normalized()
+	var d := 0.0
+	while d < 900.0 and world.ground_height(x + dir.x * d, z + dir.y * d) > -6.0:
+		d += 4.0
+	var bx := x + dir.x * (d + 30.0)
+	var bz := z + dir.y * (d + 30.0)
+	player.place(bx, bz, atan2(-dir.x, -dir.y))
+	player.speed = 0.0
+	player.sail_target = 0.0
+	camera.snap_to(player.pos)
+	_landing = shore_ground.landing(bx, bz, 80.0 + player.cls.beam)
+	if _landing.is_empty():
+		_landing = {"x": x + dir.x * d, "z": z + dir.y * d, "dx": -dir.x, "dz": -dir.y, "sand_x": x + dir.x * 24.0, "sand_z": z + dir.y * 24.0, "island": isl}
+	_go_ashore(true)
+	if not shore.active:
+		printerr("no landing by the X on %s" % tx.isle)
+		return
+	# the party round the X, the captain at its seaward side
+	var face := atan2(-dir.x, -dir.y)
+	for i in shore.party.size():
+		var w := shore.party[i].walker
+		var a := face + PI + (i - 1) * 0.9
+		var r := 1.3 if i == 0 else 2.4
+		w.place(x + sin(a) * r, z + cos(a) * r, atan2(x - (x + sin(a) * r), z - (z + cos(a) * r)))
+		w.y = shore_ground.height(w.x, w.z)
+	camera.snap_to(Vector3(x, shore.captain.y + 1.0, z))
 
 
 ## A set piece by a cutthroat camp: `--camp N` lands the party on camp N's
@@ -5321,6 +5566,11 @@ func _chart_pick(x: float, z: float, pick: float) -> Dictionary:
 		pin = pins.near(x, z + pick * 1.1, pick * 1.2)
 	if pin != null:
 		return _pin_target(pin)
+	var tx := tmaps.target()
+	if not tx.is_empty() and Vector2(float(tx.x) - x, float(tx.z) - z).length() < pick * 1.8:
+		var tt := Helmsman.Target.make(&"treasure", "X marks the spot", float(tx.x), float(tx.z))
+		tt.aim = _offshore(float(tx.x), float(tx.z))
+		return {"target": tt, "pin": null, "color": Color("#ff8f78"), "kicker": "Treasure · %s" % tx.isle}
 	for tp in ports.ports:
 		var at := MapScene.port_at(tp)
 		if not chart.shows(at.x, at.y) or Vector2(at.x - x, at.y - z).length() > pick * 2.0:
@@ -5478,6 +5728,8 @@ func _pilot_arrived(t: Helmsman.Target) -> void:
 	var sub := "Lying off the shore"
 	if t.kind == &"port":
 		sub = "Tap the prompt to come alongside" if hud.touch_ui() else "Press F to come alongside"
+	elif t.kind == &"treasure":
+		sub = "Go ashore and dig"
 	hud.toast("Arrived · %s" % t.name, sub, 3.4)
 
 
@@ -5560,6 +5812,9 @@ func _go_back(os_back: bool) -> void:
 	if veil.busy:
 		return
 	if update_card.go_back() or settings_sheet.go_back() or vault.go_back() or sea_pick.go_back() or pause_screen.go_back() or chart.go_back() or shipwright.go_back():
+		return
+	if hud.tmap.is_open:
+		_map_view(false)
 		return
 	if _farewell != null:
 		if _farewell.shown:
