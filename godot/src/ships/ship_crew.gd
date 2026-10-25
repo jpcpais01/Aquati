@@ -214,7 +214,7 @@ func _init(p_ship: Ship, take_row: Callable, lean: bool) -> void:
 	var pirate := ship.team == Ship.Team.PIRATE
 	var gunner := 0
 	for role in roles:
-		var look := CrewLook.make(pirate, role == Sailor.Role.CAPTAIN, role == Sailor.Role.HELM, rng, ship.cls.haunt)
+		var look := CrewLook.make(pirate, role == Sailor.Role.CAPTAIN, role == Sailor.Role.HELM, rng, ship.cls.haunt or ship.ghost)
 		var row: int = take_row.call(look)
 		if row < 0:
 			break
@@ -528,6 +528,10 @@ func _think(sl: Sailor, dt: float, world: World) -> void:
 	var prop := CrewModel.PROP_NONE
 
 	if not sh.alive:
+		# the dead don't abandon ship: a laid ghost's crew stand to the last and
+		# are simply gone with the curse
+		if sh.ghost:
+			return
 		_founder(sl, dt, world)
 		return
 

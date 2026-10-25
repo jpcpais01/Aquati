@@ -11,6 +11,9 @@ varying float lit_spec;
 #ifdef PHANTOM
 #include "res://shaders/inc/ship_phantom.gdshaderinc"
 #endif
+#ifdef GHOST
+#include "res://shaders/inc/ship_ghost.gdshaderinc"
+#endif
 
 /// lamplight paint is HDR: its colour times this
 uniform float glow_gain = 5.0;
@@ -100,6 +103,9 @@ void fragment() {
 	EMISSION = glow + gilt * gilt_glow;
 #ifdef PHANTOM
 	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
+#ifdef GHOST
+	ghost_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, MODEL_MATRIX, 0.235, 1.0, ALBEDO, EMISSION);
 #endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

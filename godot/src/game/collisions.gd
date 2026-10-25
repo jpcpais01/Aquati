@@ -37,8 +37,8 @@ func resolve(world: World) -> void:
 			var b := ships[j]
 			if b.removed or (not b.alive and b.sink_t > 3.0):
 				continue
-			# a ghost (Haunt) passes through
-			if a.phantom or b.phantom:
+			# a ghost ship, or one crossed over (Haunt), sails clean through other hulls
+			if a.phantom or b.phantom or a.ghost or b.ghost:
 				continue
 			var reach := (a.cls.length + b.cls.length) * 0.5
 			if Vector2(b.pos.x - a.pos.x, b.pos.z - a.pos.z).length_squared() > reach * reach:

@@ -347,6 +347,101 @@ func flame(pos: Vector3, intensity: float = 1.0) -> void:
 				randf_range(2.5, 4.5), 1.3 * intensity, randf_range(5.0, 8.0) * intensity, Color(0.22, 0.2, 0.19, 0.55), Color(0.45, 0.44, 0.43), -0.3, 0.35, SMOKE, 0.2)
 
 
+# ------------------------------------------------------------------ ghosts
+
+## A ghost ship burning: cold green spirit-fire and no smoke, only a pale vapour.
+func spirit_flame(pos: Vector3, intensity: float = 1.0) -> void:
+	emit(pos + Vector3(randf_range(-0.5, 0.5), randf_range(0.0, 0.4), randf_range(-0.5, 0.5)), Vector3(randf_range(-0.4, 0.4), randf_range(2.4, 5.0), randf_range(-0.4, 0.4)),
+			randf_range(0.5, 0.9), randf_range(0.9, 1.5) * intensity, 0.25, Color(1.2, 6.0, 3.4), Color(0.1, 1.2, 0.6), 0.0, 0.0, SOFT, 0.05, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+	if randf() < 0.35:
+		emit(pos + Vector3(randf_range(-0.4, 0.4), 1.2, randf_range(-0.4, 0.4)), Vector3(randf_range(-0.3, 0.3), randf_range(1.5, 3.0), randf_range(-0.3, 0.3)),
+				randf_range(2.0, 3.5), 1.1 * intensity, randf_range(4.0, 6.0) * intensity, Color(0.6, 0.82, 0.74, 0.25), Color(0.78, 0.9, 0.86), -0.3, 0.35, SMOKE, 0.2,
+				Vector2.ZERO, randf_range(-0.5, 0.5))
+
+
+## Wraith-fire striking a hull: a burst of cold green flame and spectral
+## motes, no splinters (`normal` the way her side faces, or none).
+func wraith_hit(pos: Vector3, normal: Vector3) -> void:
+	var nx := normal.x
+	var nz := normal.z
+	_flash(pos, 4.2, Color(2.0, 9.0, 5.4), Color(0.2, 1.8, 0.9), 0.22, 7.0 / 4.2)
+	for i in 14:
+		emit(pos + Vector3(randf_range(-0.5, 0.5), randf_range(-0.2, 0.4), randf_range(-0.5, 0.5)),
+				Vector3(nx * randf_range(1.0, 4.0) + randf_range(-1.5, 1.5), randf_range(2.0, 5.5), nz * randf_range(1.0, 4.0) + randf_range(-1.5, 1.5)),
+				randf_range(0.5, 0.9), randf_range(0.7, 1.3), 0.25, Color(1.4, 6.5, 3.6), Color(0.1, 1.3, 0.6), -1.0, 1.0, SOFT, 0.02, Vector2.ZERO, randf_range(-2.0, 2.0), true)
+	for i in 18:
+		emit(pos, Vector3(nx * randf_range(2.0, 7.0) + randf_range(-5.0, 5.0), randf_range(1.0, 7.0), nz * randf_range(2.0, 7.0) + randf_range(-5.0, 5.0)),
+				randf_range(0.9, 1.7), randf_range(0.14, 0.26), 0.03, Color(1.5, 5.5, 3.2), Color(0.12, 1.1, 0.55), -0.6, 1.4, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+	for i in 3:
+		emit(pos + Vector3(randf_range(-0.6, 0.6), randf_range(0.0, 1.0), randf_range(-0.6, 0.6)), Vector3(randf_range(-0.8, 0.8), randf_range(0.6, 1.6), randf_range(-0.8, 0.8)),
+				randf_range(2.0, 3.2), 1.2, randf_range(4.0, 6.0), Color(0.6, 0.84, 0.75, 0.32), Color(0.8, 0.92, 0.88), -0.25, 0.6, SMOKE, 0.08, Vector2.ZERO, randf_range(-0.4, 0.4))
+
+
+## Wraith-fire into the sea: a green-lit spout and motes that drift up off the water.
+func wraith_splash(pos: Vector3) -> void:
+	splash(pos, 0.75)
+	_flash(pos + Vector3(0.0, 0.4, 0.0), 3.0, Color(1.2, 5.5, 3.2), Color(0.1, 1.0, 0.5), 0.3, 5.5 / 3.0)
+	for i in 10:
+		var a := randf() * TAU
+		var r := randf_range(0.5, 2.2)
+		emit(pos + Vector3(cos(a) * r, 0.2, sin(a) * r), Vector3(cos(a) * 0.6, randf_range(0.8, 2.4), sin(a) * 0.6),
+				randf_range(1.2, 2.2), randf_range(0.14, 0.24), 0.03, Color(1.4, 5.0, 3.0), Color(0.1, 1.0, 0.5), -0.2, 0.8, SPARK, 0.05, Vector2.ZERO, 0.0, true)
+
+
+## A ball struck a ghost ship: no wood to splinter, only a ripple of green
+## light and a puff of ectoplasm.
+func ecto_hit(pos: Vector3, normal: Vector3) -> void:
+	_flash(pos, 2.6, Color(1.6, 6.5, 4.0), Color(0.2, 1.4, 0.8), 0.18, 4.4 / 2.6)
+	for i in 12:
+		var sp := randf_range(1.5, 5.0)
+		emit(pos, Vector3(normal.x * sp + randf_range(-1.5, 1.5), randf_range(0.5, 3.5), normal.z * sp + randf_range(-1.5, 1.5)),
+				randf_range(0.6, 1.2), randf_range(0.12, 0.22), 0.03, Color(1.4, 5.5, 3.2), Color(0.1, 1.1, 0.55), -0.4, 1.6, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+	var puff := Color(0.62, 0.86, 0.76, 0.35)
+	emit(pos, Vector3(normal.x * 1.2, 0.6, normal.z * 1.2), 2.2, 1.0, 4.0, puff, puff, -0.2, 0.8, SMOKE, 0.05)
+
+
+## A ball passing clean through a phantom: a shiver of light along its path.
+func phase_shimmer(pos: Vector3, vel: Vector3) -> void:
+	var d := vel / maxf(vel.length(), 1.0)
+	for i in 10:
+		emit(pos + d * randf_range(-1.6, 1.6), Vector3(randf_range(-0.8, 0.8), randf_range(0.3, 1.4), randf_range(-0.8, 0.8)),
+				randf_range(0.5, 1.0), randf_range(0.16, 0.3), 0.03, Color(2.2, 6.5, 4.6), Color(0.2, 1.2, 0.8), 0.0, 1.2, SPARK, 0.01, Vector2.ZERO, 0.0, true)
+	_flash(pos, 1.8, Color(1.0, 3.5, 2.4), Color(0.1, 0.6, 0.4), 0.25, 2.0)
+
+
+## A ghost ship laid to rest: a column of green light, a ring of spirits
+## racing out over the water, a shroud of mist.
+func exorcism(pos: Vector3, length: float) -> void:
+	var s := 0.6 + length / 40.0
+	_flash(pos + Vector3(0.0, 1.0, 0.0), 10.0 * s, Color(2.4, 9.0, 5.5), Color(0.2, 1.4, 0.7), 0.6, 2.0)
+	# souls set free: motes spiralling up into the sky
+	for i in 70:
+		var a := i * 0.61
+		var r := randf_range(0.3, 1.0) * length * 0.4
+		emit(pos + Vector3(cos(a) * r * 0.35, randf_range(0.0, 3.0), sin(a) * r), Vector3(-sin(a) * 1.4, randf_range(4.0, 13.0), cos(a) * 1.4),
+				randf_range(1.6, 3.0), randf_range(0.25, 0.5), 0.05, Color(2.0, 7.0, 4.4), Color(0.6, 1.6, 1.2), -0.5, 0.5, SPARK, 0.02, Vector2.ZERO, 0.0, true)
+	# a ring of light skimming out across the sea
+	for i in 40:
+		var a := i / 40.0 * TAU
+		emit(pos + Vector3(0.0, -1.2, 0.0), Vector3(cos(a) * 18.0 * s, 0.0, sin(a) * 18.0 * s),
+				0.9, 1.4, 3.2, Color(1.0, 4.6, 2.8), Color(0.1, 0.8, 0.45), 0.0, 2.2, SOFT, 0.001, Vector2.ZERO, 0.0, true)
+	# the shroud she dissolves into
+	for i in 18:
+		emit(pos + Vector3(randf_range(-0.5, 0.5) * length * 0.5, randf_range(0.0, 4.0), randf_range(-0.5, 0.5) * length * 0.5),
+				Vector3(randf_range(-1.4, 1.4), randf_range(0.4, 1.8), randf_range(-1.4, 1.4)),
+				randf_range(4.0, 6.5), 3.0 * s, randf_range(10.0, 16.0) * s, Color(0.6, 0.84, 0.75, 0.32), Color(0.82, 0.92, 0.88), -0.15, 0.6, SMOKE, 0.3,
+				Vector2.ZERO, randf_range(-0.3, 0.3))
+
+
+## A ghost ship materialising: mist welling up out of the sea where she will be.
+func ghost_rise(pos: Vector3, length: float) -> void:
+	for i in 22:
+		emit(pos + Vector3(randf_range(-0.5, 0.5) * length, randf_range(0.0, 2.0), randf_range(-0.5, 0.5) * length),
+				Vector3(randf_range(-0.8, 0.8), randf_range(0.3, 1.2), randf_range(-0.8, 0.8)),
+				randf_range(4.0, 6.0), 3.0, randf_range(9.0, 14.0), Color(0.6, 0.82, 0.74, 0.3), Color(0.8, 0.9, 0.86), -0.08, 0.5, SMOKE, 0.6,
+				Vector2.ZERO, randf_range(-0.3, 0.3))
+
+
 ## A twinkle of gold (a breach boarded over, a coin found), or of a
 ## rarity's colour (`tint`, linear) over plunder afloat.
 func sparkle(pos: Vector3, scale: float = 1.0, tint: Variant = null) -> void:

@@ -47,7 +47,7 @@ const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "am
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
 		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
-		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "horn", "wanted2", "wanted3", "bounty",
+		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "wraith", "ghost_wail", "exorcise", "horn", "wanted2", "wanted3", "bounty",
 		"kr_boom", "kr_death", "kr_drone", "kr_drums0", "kr_drums1", "kr_drums2", "kr_flesh", "kr_moan", "kr_omen", "kr_roar0", "kr_roar1", "kr_roar2",
 		"kr_rush", "kr_shriek", "kr_strings",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
@@ -913,6 +913,7 @@ func _check_world() -> void:
 	_check_helm(w)
 	_check_hazards(w)
 	_check_haunt(w)
+	_check_ghosts(w)
 	_check_shore(w)
 	_check_camps(w)
 	_check_forts(w)
@@ -1491,6 +1492,74 @@ func _check_haunt(w: World) -> void:
 		_fail("haunt: only %d of 4 steps as expected (called %s, untouched %s, wail %.0f near / %.0f far, resting %s)" % [steps, called, untouched, hurt_near, hurt_far, resting])
 		return
 	print("haunt: 4 of 4 steps as expected; the wail took %.0f off a brig alongside and %.0f off one %.0f m off, checked in %.0f ms" % [hurt_near, hurt_far, 66.0, (Time.get_ticks_usec() - t0) / 1000.0])
+
+
+## Ghost ships: one wears the ghost shaders from the moment she's launched
+## and casts no shadow; fire, grape and wraith-fire's dread can't touch her;
+## her wraith-fire pierces a living ship's armour and unmans her gun crews;
+## about a quarter of the balls that reach her pass clean through (rolled once
+## a ship); her captain loads nothing but wraith-fire; and she's laid to rest
+## in a burst of ghost-light without breaking up.
+func _check_ghosts(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var steps := 0
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new(0.6)
+	sea.waves = Waves.new(0.6)
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	sea.fx = fx
+	var liv := Livery.named("ghost")
+	var ghost := Ship.create(ShipClass.named("brig"), liv, sea, Ship.Team.PIRATE)
+	var living := Ship.create(ShipClass.named("brig"), Livery.named("player"), sea)
+	for s: Ship in [ghost, living]:
+		root.add_child(s)
+		sea.ships.append(s)
+	living.pos = Vector3(40.0, 0.0, 0.0)
+	var hull := ghost.model.get_node_or_null("Hull") as MeshInstance3D
+	var dressed := liv.ghost and ghost.ghost and not living.ghost and hull != null and hull.material_override is ShaderMaterial \
+			and (hull.material_override as ShaderMaterial).shader == ShipDamage.GHOST_SHADERS["hull"] \
+			and hull.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	steps += 1 if dressed else 0
+	var immune := not ghost.ignite(living) and not ghost.rake(living) and not ghost.terrify(living) and ghost.crew_hit == 0.0 and ghost.afire == 0.0
+	steps += 1 if immune else 0
+	var pierced := living.damage(100.0, ghost, null, false, "shot", true)
+	var dread := living.terrify(ghost) and living.crew_hit >= Ammo.DREAD_TIME and pierced >= 84.9 and Ammo.ID[Ammo.WRAITH] == "wraith" \
+			and not Ammo.SPECIALS.has(Ammo.WRAITH) and int(Ammo.MAX[Ammo.WRAITH]) == 0
+	steps += 1 if dread else 0
+	var shots := Shots.new()
+	shots.world = sea
+	var through := 0
+	var steady := true
+	for i in 800:
+		var b := Shots._Ball.new()
+		var p := shots._phases(b, ghost)
+		steady = steady and shots._phases(b, ghost) == p and not shots._phases(b, living)
+		through += 1 if p else 0
+	var share := through / 800.0
+	steps += 1 if steady and absf(share - Ammo.PHASE) < 0.06 else 0
+	var ai := PirateAI.new(ghost, 0.0)
+	var brig_ai := PirateAI.new(living, 0.0)
+	var wraith := ai._pick_ammo(100.0, living) == Ammo.WRAITH
+	for i in 40:
+		wraith = wraith and brig_ai._pick_ammo(100.0, ghost) != Ammo.WRAITH
+	steps += 1 if wraith else 0
+	ghost.die(living)
+	ghost.dmg.set_ghost(0.4, 0.5)
+	var laid := not ghost.alive and living.kills == 1 and is_equal_approx(ghost.dmg.ghost.x, 0.4) \
+			and is_equal_approx(float(((hull.material_override as ShaderMaterial).get_shader_parameter("ghost") as Vector4).y), 0.5)
+	steps += 1 if laid else 0
+	shots.free()
+	for s: Ship in [ghost, living]:
+		s.free()
+	fx.free()
+	if steps != 6:
+		_fail("ghosts: only %d of 6 steps as expected (dressed %s, immune %s, dread %s at %.0f, %.0f%% passed through, wraith %s, laid %s)" % [steps, dressed, immune, dread, pierced, share * 100.0, wraith, laid])
+		return
+	print("ghosts: 6 of 6 steps as expected; wraith-fire did %.0f of 100 through a brig's armour, %.0f%% of balls passed through her, checked in %.0f ms" % [pierced, share * 100.0, (Time.get_ticks_usec() - t0) / 1000.0])
 
 
 ## The helmsman's waters (SeaNav), laid out for a sloop and a galleon: a
@@ -2414,7 +2483,7 @@ func _check_fireworks() -> void:
 	var steps := 0
 	var bad := PackedStringArray()
 	for arr: Array in [Ammo.ID, Ammo.NAME, Ammo.SHORT, Ammo.BLURB, Ammo.GIST, Ammo.COLOR, Ammo.DAMAGE, Ammo.RELOAD, Ammo.SPEED, Ammo.BALLS, Ammo.SPREAD, Ammo.SIZE, Ammo.MAX, Ammo.START]:
-		if arr.size() != Ammo.COUNT:
+		if arr.size() != Ammo.KINDS:
 			bad.append("a shot table line of %d" % arr.size())
 	if Ammo.ID[Ammo.FIREWORK] != "firework" or Ammo.SPECIALS.has(Ammo.FIREWORK):
 		bad.append("the fireworks' place among the shot")

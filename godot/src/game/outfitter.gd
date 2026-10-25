@@ -66,6 +66,7 @@ func start(p_look: Dictionary) -> void:
 	var list: Array[Livery] = [_livery]
 	for id: String in Shipyard.LIVERIES:
 		list.append(Livery.named(id))
+	list.append(Livery.named(Shipyard.GHOST))
 	# (and the event ships', which always wear their own)
 	for id: String in ShipEvents.liveries():
 		list.append(Livery.named(id))

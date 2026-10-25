@@ -87,6 +87,8 @@ extends Node3D
 ## The Kraken: --kraken brews a storm and sends it a few seconds into the
 ## voyage (and again a minute after it's gone); --kraken-at T sends it T s
 ## in, --kraken-omen S shortens its omen to S s.
+## Ghost ships: --ghosts makes every pirate that can be a ghost one (once the
+## yard has her hull), and --foe-ghost the set piece's foe (--battle) a ghost.
 ## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
 ## frame (+z her bow, +x her port side), looking at her deck amidships or at
 ## --look X,Y,Z (it stays put once she's going down); --nocrew leaves every
@@ -543,6 +545,8 @@ func _load() -> void:
 		sound.guns_ready(sin(player.heading + side * PI * 0.5) * 0.6)
 		hud.guns_ready(side))
 	pirates.bounty.connect(_on_bounty)
+	pirates.risen.connect(_on_ghost_risen)
+	pirates.all_ghosts = _args.has("ghosts")
 	if _args.has("touch"):
 		hud.show_touch(true)
 	if _args.has("shot"):
@@ -655,7 +659,7 @@ func _warm_up() -> void:
 	w.transform = Transform3D(Basis.from_scale(Vector3.ONE * 1e-4), Vector3(0.0, 0.0, -40.0))
 	camera.add_child(w)
 	# (one a frame: each one's first draw builds its own shaders)
-	var sets := [ShipDamage.warm_meshes.bind(player.model), world.debris.warm_meshes, world.loot.warm_meshes, ports.warm_meshes, home.warm_meshes]
+	var sets := [ShipDamage.warm_meshes.bind(player.model), ShipDamage.warm_meshes.bind(player.model, true), world.debris.warm_meshes, world.loot.warm_meshes, ports.warm_meshes, home.warm_meshes]
 	if player.haunt != null:
 		sets.append(Haunt.warm_meshes.bind(player.model))
 	for i in sets.size():
@@ -1247,7 +1251,7 @@ func _stage_battle(id: String) -> void:
 		at = Vector2(float(f[0]), float(f[1]))
 		if f.size() > 2:
 			h = float(f[2])
-	var ai := pirates.launch(id, at.x, at.y, h, 0, true)
+	var ai := pirates.launch(id, at.x, at.y, h, 0, true, _args.has("foe-ghost"))
 	ai.mode = PirateAI.Mode.ENGAGE
 	_foe = ai.ship
 	# she has a grievance already
@@ -1536,6 +1540,8 @@ func _tick(real_dt: float) -> void:
 	# the ships: the pirate captains decide, every hull sails, hulls that touch
 	# shove and stave each other in, and the shot in the air flies; in the
 	# harbour a sail or two on the horizon, and the ship picked comes in
+	# the next sail is likelier a ghost in the dark, in mist and in foul weather
+	pirates.ghost_odds = minf(0.42, 0.05 + atmosphere.night * 0.24 + atmosphere.fog * 0.2 + atmosphere.storm * 0.06)
 	pirates.step(dt, player if sailing else null)
 	# (at the home port's quay the harbour's sea waits for her back at anchor)
 	if state == State.HARBOUR and not home.visible:
@@ -2298,9 +2304,10 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 		_begin_farewell(attacker)
 		return
 	# what she carried comes up out of the wreck: the bigger the hull, the more
-	# and the finer, and a galleon always gives up a fine chest
-	var luck: float = {"sloop": 0.0, "brig": 0.3, "galleon": 0.6}.get(ship.cls.id, 0.0)
-	world.loot.drop(ship.pos.x, ship.pos.z, 3 + int(ship.cls.length / 8.0), luck, ship.cls.id == "galleon")
+	# and the finer, and a galleon always gives up a fine chest; a ghost's hold
+	# is full of the cursed gold she went down with
+	var luck: float = {"sloop": 0.0, "brig": 0.3, "galleon": 0.6}.get(ship.cls.id, 0.0) + (0.35 if ship.ghost else 0.0)
+	world.loot.drop(ship.pos.x, ship.pos.z, 3 + int(ship.cls.length / 8.0) + (2 if ship.ghost else 0), luck, ship.cls.id == "galleon" or ship.ghost)
 
 
 ## A bite of the flames burning a ship (fire shot): the damage ticks up off
@@ -2352,7 +2359,13 @@ func _on_status(ship: Ship, what: String, attacker: Ship) -> void:
 		"phantom":
 			hud.floater("Phantom Run!", at, camera, Floaters.Kind.GHOST, 18.0)
 		"dread":
-			hud.floater("Dread!", at, camera, Floaters.Kind.GHOST, 18.0)
+			hud.floater("The crew are terrified!" if mine else "Terrified", at, camera, Floaters.Kind.GHOST, 18.0)
+		"phased":
+			hud.floater("Passed clean through", at, camera, Floaters.Kind.GHOST, 18.0)
+		"unburnt":
+			hud.floater("The dead don't burn", at, camera, Floaters.Kind.GHOST, 18.0)
+		"fleshless":
+			hud.floater("No flesh to cut", at, camera, Floaters.Kind.GHOST, 18.0)
 		"haunt_ready":
 			hud.floater("The spirits stir", at, camera, Floaters.Kind.GHOST, 18.0)
 
@@ -2490,13 +2503,29 @@ func _screen_heading(h: float) -> float:
 
 func _on_bounty(ship: Ship, gold: int) -> void:
 	Progress.earn(gold)
-	hud.toast("+%d gold bounty" % gold, "%s sunk" % ship.ship_name, 3.6)
 	sound.coin()
+	if ship.ghost:
+		hud.toast("+%d gold cursed bounty" % gold, "The %s is laid to rest" % ship.ship_name, 3.6)
+		voyage.note("ghost", "Laid the %s to rest" % ship.ship_name, "Ghost %s · +%d gold" % [ship.cls.name.to_lower(), gold])
+		return
+	hud.toast("+%d gold bounty" % gold, "%s sunk" % ship.ship_name, 3.6)
 	voyage.note("kill", "Sank the %s" % ship.ship_name, "%s · +%d gold" % [ship.cls.name, gold])
 	# whatever she had bolted on is yours to pull from the wreck
 	var fit: Dictionary = ship.model.fit
 	if not fit.is_empty():
 		get_tree().create_timer(1.4).timeout.connect(_find_part.bind(str(fit.values()[0]), "Salvaged from the wreck", ship.pos))
+
+
+## A ghost takes shape out of the sea mist, and if she is near enough, you hear her.
+func _on_ghost_risen(s: Ship) -> void:
+	var p := player
+	if state != State.VOYAGE or p == null or not p.alive:
+		return
+	var d := Vector2(s.pos.x - p.pos.x, s.pos.z - p.pos.z).length()
+	sound.ghost_wail(0.42 * maxf(0.35, 1.0 - d / 900.0), world.heard(s.pos).y)
+	var where := "mist" if atmosphere.fog > 0.35 else ("dark" if atmosphere.night > 0.5 else "haze")
+	hud.toast("A ghost ship", "The %s drifts out of the %s" % [s.ship_name, where], 4.2)
+	voyage.note("ghost", "Sighted the %s" % s.ship_name, "A ghost ship")
 
 
 ## She's going down: the blow lands in slow motion, the HUD steps aside and

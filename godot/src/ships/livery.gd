@@ -34,6 +34,9 @@ var flag_design := {}
 ## A skin is only uniforms on the livery's materials: no hull is rebuilt.
 var skinned := false
 var skin := {}
+## A ghost ship's ("ghost"): she sails as a phantom (Ship.ghost) and wears
+## the ghost shaders (ship_ghost.gdshaderinc).
+var ghost := false
 ## Bumped whenever her paintwork changes: hulls built before it are stale
 ## (the shipyard builds a fresh one, see Shipyard._fits).
 var rev := 0
@@ -66,6 +69,13 @@ const DEFS := {
 		"trim": "#c48a2c", "sail": "#3b3a3e", "sail_seam": "#27262a", "emblem": "skull", "emblem_color": "#a6ffd4",
 		"flag": "#0e0c10", "flag2": "#b0ffd8",
 	},
+	# a ship the sea gave back: drowned grey-green planking, bone-pale trim
+	# and canvas gone the grey of old sailcloth, a black flag and a pale skull
+	"ghost": {
+		"hull": "#4c5552", "bottom": "#2c3533", "boot": "#9fb5ac", "strake": "#33413d", "wale": "#151b1a",
+		"trim": "#8fa89c", "sail": "#a9b8ae", "sail_seam": "#7f8f86", "emblem": "skull", "emblem_color": "#d8fff0",
+		"flag": "#0d1413", "flag2": "#c8f5e2",
+	},
 }
 ## The player's flag is drawn this wide (the Shipwright shows it close), everyone else's as the web draws them.
 const FLAG_PX := 1024
@@ -83,6 +93,7 @@ static func named(livery_id: String) -> Livery:
 	var l := Livery.new()
 	l.id = livery_id
 	l.skinned = livery_id == "player"
+	l.ghost = livery_id == "ghost"
 	var d: Dictionary = DEFS[livery_id]
 	for key: String in d:
 		var v: String = d[key]

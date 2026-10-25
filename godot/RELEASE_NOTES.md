@@ -1,6 +1,23 @@
-## Shores O' Fortune for Android and Windows: the Kraken
+## Shores O' Fortune for Android and Windows: ghost ships
 
-The thirty-fourth build brings the web game's Kraken up out of the deep.
+The thirty-fifth build brings the web game's ghost ships back from the deep.
+
+- **A sail out of the mist.** Now and then the next sail on the horizon is
+  a ghost ship: rare by day, far likelier at night, in sea mist and in foul
+  weather, and only ever one at a time. She takes shape out of the mist
+  from the trucks down, to a far-off choir.
+- **The dead don't sink like the living.** A ghost's hull is ashen green and
+  half see-through, with rot drifting across her planks and rags of canvas
+  burning at the edges. She sails on a wind of her own, floats over reefs,
+  slips half a maelstrom's grip and passes through other hulls. About one
+  ball in four goes clean through her, and fire and grape do nothing.
+- **Wraith-fire.** Her guns spit cold green ghost-fire that goes through
+  armour like mist and unmans your gun crews, so they load slowly.
+- **Lay her to rest.** She never runs. Beat her and she comes apart in a
+  column of green light instead of blowing up, for twice the bounty and a
+  hold full of cursed gold, with a fine chest always among it.
+
+### Also from the last build: the Kraken
 
 - **Something stirs in the storm.** Now and then a storm brings it. Out in
   deep, lonely water the sea goes dark and starts to boil, a vast shape
@@ -23,23 +40,3 @@ The thirty-fourth build brings the web game's Kraken up out of the deep.
   Kraken Ink and a Kraken's Pearl among chests rising round where it sank,
   a Kraken's Bloom showpiece rocket, the Kraken Ink skin for your vault,
   fresh shot and a patched hull.
-
-### Also from the last build: forts
-
-- **Forts on the isles.** Stone forts held by the Brethren stand over the
-  harbours, with sea walls, a keep, a flag on the tower and cannon on the
-  ramparts. Close inside their reach and the guns open on you, arcing balls
-  down from the walls.
-- **Silence the guns.** Your broadsides lay on a fort's guns the way they
-  lay on a ship. Each gun can be knocked out, and every hit chips the
-  stone, brings down parapets and sets fires burning. The fort bar under
-  the top of the screen shows her name, her guns and her garrison.
-- **Storm the fort.** Once her guns are quiet you can land under her walls
-  and fight the garrison up through the gate, led by a tough Commandant.
-  Rout them, strike their flag and the fort is yours, with a strongbox of
-  gold, shot and a good ship part.
-- **Your forts.** A fort you hold flies your colours, its guns fire on
-  pirates who come near, it pays you tribute while you're away (up to eight
-  hours' worth, collected as you sail past), and it mends your hull while
-  you lie off its walls out of the fight. Forts show on the minimap and the
-  sea chart.

@@ -5,7 +5,8 @@ extends RefCounted
 ## pack has seen you), jockeys for a broadside at her own best range keeping
 ## you abeam on whichever side is loaded, keeps off the shallows and clear of
 ## other hulls, and runs for it when her hull is in tatters. Wingmen of a
-## flotilla keep station on their flagship. The web game's PirateAI.
+## flotilla keep station on their flagship. A ghost ship never runs, sights
+## you from further off and fires nothing but wraith-fire. The web game's PirateAI.
 
 enum Mode { PATROL, ENGAGE, FLEE }
 
@@ -138,9 +139,9 @@ func update(dt: float, world: World, player: Ship) -> void:
 		# the pack answers a sighting by any of its ships
 		if pk != null and target != null and world.time - pk.alert_t < 20.0 and dist < 560.0:
 			provoked = true
-		if target != null and hp_f < 0.22 and mode != Mode.FLEE and _rng.randf() < 0.5:
+		if target != null and hp_f < 0.22 and not s.ghost and mode != Mode.FLEE and _rng.randf() < 0.5:
 			mode = Mode.FLEE
-		elif target != null and (dist < 230.0 or provoked) and mode != Mode.FLEE:
+		elif target != null and (dist < (300.0 if s.ghost else 230.0) or provoked) and mode != Mode.FLEE:
 			mode = Mode.ENGAGE
 		elif mode == Mode.ENGAGE and (target == null or dist > 340.0):
 			mode = Mode.PATROL
@@ -227,6 +228,9 @@ func update(dt: float, world: World, player: Ship) -> void:
 func _pick_ammo(dist: float, target: Ship) -> int:
 	if force_ammo >= 0:
 		return force_ammo
+	# a phantom's guns only ever spit ghost-fire
+	if ship.ghost:
+		return Ammo.WRAITH
 	var r := _rng.randf()
 	for pick: Array in Ammo.PIRATE.get(ship.cls.id, []):
 		var kind: int = pick[0]

@@ -9,6 +9,9 @@
 #ifdef PHANTOM
 #include "res://shaders/inc/ship_phantom.gdshaderinc"
 #endif
+#ifdef GHOST
+#include "res://shaders/inc/ship_ghost.gdshaderinc"
+#endif
 
 /// the flag as Heraldry draws it: field, pattern, emblem and the hand-painted
 /// layer, its shape cut from the fly in alpha
@@ -66,6 +69,9 @@ void fragment() {
 	BACKLIGHT = col * 0.3;
 #ifdef PHANTOM
 	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
+#ifdef GHOST
+	ghost_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, MODEL_MATRIX, 0.36, 0.82, ALBEDO, EMISSION);
 #endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }
