@@ -128,6 +128,8 @@ var _hz: HazardPill
 ## A fort's bar (and its title card), under the hazard pill.
 var _ft: FortBar
 var _prize: PrizeCard
+## A letter come aboard (a message in a bottle), unrolled at the side of the view.
+var letter: LetterCard
 ## The treasure map: its chip, the dig gauge, the map itself over everything.
 var map_chip: MapChip
 var dig: DigGauge
@@ -406,6 +408,8 @@ func _ready() -> void:
 	_prize = PrizeCard.new()
 	_prize.picked.connect(func(k: String) -> void: prize_picked.emit(k))
 	root.add_child(_prize)
+	letter = LetterCard.new()
+	root.add_child(letter)
 	# a named captain on your trail: her mark at the screen's edge, her banner when she sets out
 	_mark = WantedHud.Mark.new()
 	_mark.visible = false

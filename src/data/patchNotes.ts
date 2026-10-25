@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T16:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: messages in bottles',
+        notes: [
+          'Messages in bottles come to the Android and Windows game. Sail through one to read the letter inside: a piece of a treasure map, a taunt from a named pirate captain, or a lost letter with gold in it.',
+          'Rafts of driftwood and mats of kelp drift on the open sea, with crabs riding them that drop over the side when you sail close. Sometimes a crate is caught up in them.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T15:00Z',
     entries: [
       {

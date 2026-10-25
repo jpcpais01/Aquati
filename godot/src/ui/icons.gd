@@ -37,6 +37,9 @@ const LINE := {
 	"firepower": '<circle cx="9" cy="14" r="5.5"/><path d="M13 10l3.5-3.5M17 4.5l.8-1.5M19.5 7l1.5-.8M18.5 5.5l2-2"/>',
 	# the trading port: Cast off, and the chandlery's repairs and fresh shot
 	"flag": '<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>',
+	# a message in a bottle, and the carrier gull
+	"bottle": '<path d="M10 2.5h4M10.4 2.5v3.8c0 .8-.5 1.4-1.2 2-1.2 1-2.2 2.3-2.2 4.6v6.6A2 2 0 0 0 9 21.5h6a2 2 0 0 0 2-2v-6.6c0-2.3-1-3.6-2.2-4.6-.7-.6-1.2-1.2-1.2-2V2.5"/><path d="M9.5 12.5h5v5h-5z"/>',
+	"gull": '<path d="M2 10.5c3.2-1.6 6.6-1.2 10 2.2 3.4-3.4 6.8-3.8 10-2.2"/><path d="M12 12.7c-.3 2-1.5 3.6-3.2 4.6M12 12.7c.3 2 1.5 3.6 3.2 4.6"/>',
 	"hammer": '<path d="M14.5 4.5 19.5 9.5 17 12l-5-5zM12 7 4 15a2 2 0 0 0 0 2.8l.2.2a2 2 0 0 0 2.8 0L15 10"/>',
 	# ashore: a hop up off the ground
 	"jump": '<path d="M12 16V4.5M7 9.5l5-5 5 5M4.5 20h15"/>',

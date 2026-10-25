@@ -194,6 +194,9 @@ as a prize; none kept on the roster) and `--order follow|attack|hold` sets
 their standing order (O cycles it in play), `--hands` scrolls a docked market
 to the harbour master's desk; the smoke test prints a SMOKE
 FLEET line.
+Drift: `--bottle` sets a message in a bottle bobbing off her bow and
+`--flotsam [driftwood|kelp]` a mat of flotsam with its crabs a little
+further on; the smoke test prints a SMOKE DRIFT line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off
