@@ -6727,14 +6727,14 @@ func _stage_photo() -> void:
 	_open_photo(false)
 	if not photo.active:
 		return
-	var tab := str(_args.photo) if _args.photo is String else "camera"
-	photo.stage(tab, int(_args.get("photo-look", 0)), int(_args.get("photo-frame", 0)), _args.has("photo-grid"))
-	if _args.has("photo-dof"):
-		photo.dof = float(_args["photo-dof"])
 	if _args.has("photo-hour") or _args.has("photo-weather"):
 		photo.hour = float(_args.get("photo-hour", photo.hour))
 		photo.weather = StringName(str(_args.get("photo-weather", "")))
 		photo.scene.emit(photo.hour, photo.weather)
+	var tab := str(_args.photo) if _args.photo is String else "camera"
+	photo.stage(tab, int(_args.get("photo-look", 0)), int(_args.get("photo-frame", 0)), _args.has("photo-grid"))
+	if _args.has("photo-dof"):
+		photo.dof = float(_args["photo-dof"])
 
 
 ## Freezes the voyage, clears the HUD away and hands the camera to photo
