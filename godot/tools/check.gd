@@ -398,6 +398,90 @@ func _check_rare(w: World) -> void:
 	fx.queue_free()
 
 
+## The gulls: the sculpt's size, a flock that keeps out of the land and
+## the sea, perches on the rocks, a scare that puts them all up, a rider that
+## stands on its drifting flotsam and leaves with it, and the carrier who
+## lands on the rail and tells her news.
+func _check_birds(regions: Array[Region]) -> void:
+	var tris := [int(Birds.gull_mesh().surface_get_array_index_len(0) / 3), int(Birds.scroll_mesh().surface_get_array_index_len(0) / 3)]
+	if tris[0] < 250 or tris[0] > 600 or tris[1] < 20 or tris[1] > 150:
+		_fail("birds: the gull has %d triangles and its scroll %d" % tris)
+	var w := World.new()
+	w.waves = Waves.new(0.6)
+	w.wind = Wind.new(0.6)
+	w.regions = regions
+	w.region = regions[0]
+	var b := Birds.new()
+	root.add_child(b)
+	var isles: Array = []
+	for r in regions:
+		isles.append_array(r.islands)
+	b.setup(isles, regions[0].islands, 24, w.ground_height)
+	var low := 0
+	var perched := 0
+	for i in 900:
+		b.update(0.1, w, null)
+		if i % 30 == 29:
+			for g in b._gulls:
+				if g.mode == Birds.Mode.SOAR and g.pos.y < maxf(w.ground_height(g.pos.x, g.pos.z), -0.5):
+					low += 1
+	var c := b.census()
+	perched = c[1] + c[2]
+	if low > 3 or perched == 0 or b.count() != Vector2i(24, 0):
+		_fail("birds: after 90 s %d soaring gulls were in the ground or the sea, %d were down (%s)" % [low, perched, c])
+	# the guns go off over the first isle
+	var isl: Dictionary = regions[0].islands[0]
+	b.scare(Vector3(float(isl.x), 0.0, float(isl.z)), 5000.0, w)
+	var fled := 0
+	for g in b._gulls:
+		fled += 1 if g.mode == Birds.Mode.FLEE else 0
+	if fled < 10:
+		_fail("birds: only %d of 24 took fright at the guns" % fled)
+	# a rider on a mat of flotsam, out at sea
+	var spot := Drift.Spot.new()
+	var sea := regions[0].centre + Vector3(1800.0, 0.0, 0.0)
+	spot.at = Vector3(sea.x, 0.1, sea.z)
+	if not b.ride(spot):
+		_fail("birds: no rider would come to the flotsam")
+	for i in 50:
+		spot.at.x += 0.03
+		b.update(0.1, w, null)
+	var rider: Birds.Gull = null
+	for g in b._gulls:
+		if g.kind == Birds.Kind.RIDER and g.mode != Birds.Mode.OFF:
+			rider = g
+	if rider == null or rider.pos.distance_to(spot.at) > 1.0:
+		_fail("birds: the rider isn't standing on its flotsam")
+	b.unride(spot, w.wind)
+	for i in 250:
+		b.update(0.1, w, null)
+	if b.count().y != 0:
+		_fail("birds: the rider stayed after its flotsam was gone")
+	# the carrier, to a ship lying still at sea
+	var stage := Node3D.new()
+	root.add_child(stage)
+	var p := Ship.create(ShipClass.named("brig"), Livery.named("player"), w)
+	stage.add_child(p)
+	w.ships.append(p)
+	p.place(sea.x + 100.0, sea.z, 0.0)
+	var told := [0]
+	if not b.carry(p, w.wind, func() -> void: told[0] += 1):
+		_fail("birds: the carrier wouldn't fly")
+	var landed := -1.0
+	for i in 600:
+		b.update(0.1, w, null)
+		if told[0] > 0 and landed < 0.0:
+			landed = i * 0.1
+			var rail := b._carrier.pos - p.global_transform.origin
+			if b._carrier.mode != Birds.Mode.PERCH or rail.length() > p.cls.length:
+				_fail("birds: the carrier told her news %.1f m off the ship, %s" % [rail.length(), Birds.Mode.keys()[b._carrier.mode]])
+	if told[0] != 1 or b.carrying():
+		_fail("birds: the carrier told her news %d times and is %s" % [told[0], "still out" if b.carrying() else "home"])
+	print("birds: a gull of %d triangles (its scroll %d); %d of 24 down after 90 s, %d fled the guns; a rider on the flotsam; the carrier landed in %.1f s" % [tris[0], tris[1], perched, fled, landed])
+	b.queue_free()
+	stage.queue_free()
+
+
 ## Photo mode: the camera's pose round trip, the crop windows, every
 ## filter's look and the sky put back as it was after a preview.
 func _check_photo() -> void:
@@ -638,6 +722,7 @@ func _initialize() -> void:
 		_check_convoys(_home_world.regions)
 		_check_fleet(_home_world.regions)
 		_check_drift(_home_world.regions)
+		_check_birds(_home_world.regions)
 	_check_photo()
 	if _home_world != null:
 		_check_rare(_home_world)

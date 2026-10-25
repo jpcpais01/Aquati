@@ -1,6 +1,6 @@
 class_name Tidings
 ## What comes aboard in writing (the web game's game/tidings.ts): the
-## letters found in bottles. Only the words live here, as {title, body
+## letters found in bottles and the news the carrier gull brings. Only the words live here, as {title, body
 ## (paragraphs), sign}; the game pays out what they promise.
 
 const CASTAWAYS := ["Josiah Penhallow, late of the Merry Wren", "Old Bess Tamsin, bosun", "Capt. Amaro Quintela", "Wm. Hobb, ship’s cook", "A. de Vries, purser of the Zeemeeuw", "Tom Ruddle, who should have stayed a farmer"]
@@ -63,3 +63,56 @@ static func lost_letter(port: String, isle: String) -> Dictionary:
 			"sign": "A castaway (now rescued, I hope)", "gold": 120, "seal": "red"},
 	]
 	return kinds.pick_random()
+
+
+# ------------------------------------------------------------------ the carrier gull
+
+## Prize money for clearing the sea lanes, sent by the Crown's agent in port.
+static func prize_news(kills: int, gold: int, port: String) -> Dictionary:
+	return {
+		"title": "Prize money, Captain!",
+		"body": [
+			"The merchants of %s have heard of the %d pirate %s you sent to the bottom. The sea lanes are safer for it, and they would like you to have this purse of %s gold." % [port, kills, "ship" if kills == 1 else "ships", MenuKit.num(gold)],
+			["Do try not to spend it all in one tavern.", "The fishwives have taken to toasting your name. It is very loud.", "The harbourmaster says to keep it up."].pick_random(),
+		],
+		"sign": "The Crown’s prize agent at %s" % port,
+	}
+
+
+## The Brethren have put a named captain (Bounty.CAPTAINS) on your trail.
+static func bounty_news(c: Dictionary, gold: int) -> Dictionary:
+	return {
+		"title": "Wanted: dead or sunk!",
+		"body": [
+			"The Brethren have sent %s after you, in the %s. The Crown will pay %s gold to whoever sends her to the bottom." % [c.epithet, c.ship, MenuKit.num(gold)],
+			"%s Keep a weather eye open." % c.trait,
+		],
+		"sign": "A friend in the Governor’s office",
+	}
+
+
+## A rumour of salvage washed up off an island: there's a pin on the chart for it.
+static func rumour_news(isle: String, port: String) -> Dictionary:
+	return {
+		"title": "A word in your ear,",
+		"body": [
+			"Fishermen out of %s swear they saw a chest wash up in the shallows off %s. They were too frightened of the cutthroats to go and fetch it." % [port, isle],
+			"I have marked the spot on your chart. A share for the gull would be appreciated.",
+		],
+		"sign": "Old Nan at the fish market",
+	}
+
+
+## A feast in port tonight: the harbourmaster's invitation.
+static func feast_news(towns: Array, feast: String, line: String, full: bool) -> Dictionary:
+	var where := "every port in the isles" if towns.size() > 2 else " and ".join(PackedStringArray(towns))
+	return {
+		"title": "%s tonight!" % feast if full else "%s at %s tonight!" % [feast, where],
+		"body": [
+			"%s." % line,
+			["Lanterns at dusk, a band on the quay and fireworks over the harbour after dark. Captains welcome; cannons stay outside.",
+				"Come in by nightfall, Captain: there will be dancing on the quay, lantern boats on the water and rockets over the harbour.",
+				"The taverns are rolling out the barrels already. Moor up before the lanterns are lit and the first drink is on the house."].pick_random(),
+		],
+		"sign": "The harbourmasters of the isles" if full else "The harbourmaster of %s" % towns[0],
+	}
