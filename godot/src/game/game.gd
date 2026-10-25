@@ -6731,10 +6731,10 @@ func _stage_photo() -> void:
 		photo.hour = float(_args.get("photo-hour", photo.hour))
 		photo.weather = StringName(str(_args.get("photo-weather", "")))
 		photo.scene.emit(photo.hour, photo.weather)
-	var tab := str(_args.photo) if _args.photo is String else "camera"
-	photo.stage(tab, int(_args.get("photo-look", 0)), int(_args.get("photo-frame", 0)), _args.has("photo-grid"))
 	if _args.has("photo-dof"):
 		photo.dof = float(_args["photo-dof"])
+	var tab := str(_args.photo) if _args.photo is String else "camera"
+	photo.stage(tab, int(_args.get("photo-look", 0)), int(_args.get("photo-frame", 0)), _args.has("photo-grid"))
 
 
 ## Freezes the voyage, clears the HUD away and hands the camera to photo
@@ -6861,10 +6861,13 @@ func _photo_capture() -> void:
 		return
 	_photo_busy = true
 	photo.chrome(false)
+	var meter := fps_meter.visible
+	fps_meter.visible = false
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	var img := get_viewport().get_texture().get_image()
 	photo.chrome(true)
+	fps_meter.visible = meter
 	_photo_busy = false
 	if img == null or img.is_empty():
 		return
