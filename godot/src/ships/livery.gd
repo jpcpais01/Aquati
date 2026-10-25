@@ -90,6 +90,9 @@ static var _bake_list: Array[Livery] = []
 static func named(livery_id: String) -> Livery:
 	if _cache.has(livery_id):
 		return _cache[livery_id]
+	# a named captain's own colours (Bounty)
+	if livery_id.begins_with("hunter:"):
+		return Bounty.livery(livery_id.trim_prefix("hunter:"))
 	var l := Livery.new()
 	l.id = livery_id
 	l.skinned = livery_id == "player"

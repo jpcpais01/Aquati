@@ -66,6 +66,70 @@ var _errors := 0
 var _home_world: World
 
 
+## Bounties: the wanted levels and the hunters they earn, the ledger made
+## whole from junk, the Brethren's picks, every captain's colours and
+## portrait, and the Wanted Board built over a ledger with each kind of notice.
+func _check_bounty() -> void:
+	var B: GDScript = load("res://src/game/bounty.gd")
+	var levels := []
+	for pts in [0, 2, 3, 7, 8, 15, 24, 34, 35, 48, 49, 63]:
+		levels.append([B.wanted_level(pts), B.hunters_earned(pts)])
+	if str(levels) != "[[0, 0], [0, 0], [1, 1], [1, 1], [2, 2], [3, 3], [4, 4], [4, 4], [5, 5], [5, 5], [5, 6], [5, 7]]":
+		_fail("bounty: wanted levels %s" % [levels])
+	if not is_equal_approx(B.wanted_progress(5), 0.4) or B.wanted_progress(99) != 1.0:
+		_fail("bounty: wanted progress %.3f %.3f" % [B.wanted_progress(5), B.wanted_progress(99)])
+	if B.repute_rank(0) != 0 or B.repute_rank(40) != 2 or B.repute_rank(5000) != B.REPUTE.size() - 1 or not is_equal_approx(B.bonus(100), 1.15):
+		_fail("bounty: repute ranks wrong")
+	var junk: Dictionary = B.sanitize({"infamy": -4, "claimed": "x", "best": 9, "sunk": {"nobody": 3, B.CAPTAINS[0].id: 2}, "seen": [B.CAPTAINS[1].id, 7, "nobody", B.CAPTAINS[1].id]})
+	if junk.infamy != 0 or junk.claimed != 0 or junk.best != 5 or junk.sunk.size() != 1 or (junk.seen as Array).size() != 1:
+		_fail("bounty: sanitize gave %s" % [junk])
+	var tiers := {}
+	for c: Dictionary in B.CAPTAINS:
+		tiers[int(c.tier)] = int(tiers.get(int(c.tier), 0)) + 1
+		if ShipClass.named(str(c.cls)) == null:
+			_fail("bounty: %s sails an unknown class %s" % [c.id, c.cls])
+		var lv: Livery = B.livery(str(c.id))
+		if lv == null or lv != Livery.named("hunter:" + str(c.id)):
+			_fail("bounty: %s has no colours" % c.id)
+		for unknown in [false, true]:
+			var tex: Texture2D = load("res://src/ui/portrait.gd").texture(c.face, 96.0, unknown)
+			if tex == null or tex.get_width() < 32:
+				_fail("bounty: %s's portrait didn't draw" % c.id)
+	for t in range(1, 6):
+		if not tiers.has(t):
+			_fail("bounty: no captain of tier %d" % t)
+	# the Brethren send one not yet beaten, and never one met this voyage
+	var ledger: Dictionary = B.fresh()
+	var t1: Array = B.CAPTAINS.filter(func(c: Dictionary) -> bool: return int(c.tier) == 1)
+	for c: Dictionary in t1.slice(1):
+		ledger.sunk[c.id] = 1
+	for i in 8:
+		var got: Dictionary = B.pick(ledger, 1, {}, func() -> float: return i / 8.0)
+		if got.id != t1[0].id:
+			_fail("bounty: picked a beaten captain %s" % got.id)
+			break
+	var met := {t1[0].id: true}
+	if B.pick(ledger, 1, met).id == t1[0].id:
+		_fail("bounty: picked a captain met this voyage")
+	# the board over a ledger with one of each kind of notice
+	var board: CanvasLayer = load("res://src/ui/bounty_board.gd").new()
+	root.add_child(board)
+	var prog: Node = root.get_node("Progress")
+	var keep: Dictionary = prog.bounty
+	prog.bounty = B.sanitize({"infamy": 130, "claimed": 4200, "best": 4, "sunk": {B.CAPTAINS[0].id: 2}, "first": {B.CAPTAINS[0].id: 1767225600}, "seen": [B.CAPTAINS[0].id, B.CAPTAINS[3].id]})
+	board.open()
+	var posters := 0
+	for n in board.find_children("*", "", true, false):
+		if n.get_script() != null and str(n.get_script().get_global_name()) == "" and n.has_method("set_height"):
+			posters += 1
+	if posters != B.CAPTAINS.size():
+		_fail("bounty: the board pinned up %d notices" % posters)
+	board.close()
+	board.queue_free()
+	prog.bounty = keep
+	print("bounty: %d captains (tiers %s), %d notices on the board" % [B.CAPTAINS.size(), tiers, posters])
+
+
 func _initialize() -> void:
 	_check_scripts("res://src")
 	for id: String in SHIPS:
@@ -91,6 +155,7 @@ func _initialize() -> void:
 	_check_floaters()
 	if _home_world != null:
 		_check_wildlife(_home_world.regions)
+	_check_bounty()
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:

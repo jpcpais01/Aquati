@@ -51,6 +51,10 @@ var ship_name := ""
 
 var hp := 0.0
 var max_hp := 0.0
+## A named captain's ship (Bounty, her id; "" for any other): tougher,
+## harder-hitting, quicker to load, faster and sharper-eyed by `boost`.
+var hunter := ""
+var boost := {"hp": 1.0, "guns": 1.0, "reload": 1.0, "speed": 1.0, "aim": 1.0}
 var alive := true
 ## Gone under (or sailed off the edge of the world): the game lets her go.
 var removed := false
@@ -191,6 +195,13 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 	return s
 
 
+## Makes her a named captain's ship: boosted, and her hull filled to the new strength.
+func set_boost(b: Dictionary) -> void:
+	boost.merge(b, true)
+	max_hp = cls.hp * float(boost.hp)
+	hp = max_hp
+
+
 ## A fresh hull of her class in place of the one she wears (her paintwork
 ## or her parts changed in the Shipwright): she rides on as she was, her crew
 ## aboard, with the figures of the refit it carries (as hale as she was).
@@ -198,7 +209,7 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 func refit(p_model: ShipModel) -> void:
 	var hale := hp / max_hp if max_hp > 0.0 else 1.0
 	cls = Parts.refit(cls, p_model.fit)
-	max_hp = cls.hp
+	max_hp = cls.hp * float(boost.hp)
 	hp = max_hp * hale
 	var old := model
 	var at := old.get_index()
@@ -304,7 +315,7 @@ func fire(side: int, target: Ship = null, point: Variant = null) -> bool:
 		for k in ms.size():
 			_pending.append([world.time + k * 0.085 + randf() * 0.05, ms[k], target, point, ammo])
 	var si := side_index(side)
-	reload[si] = cls.reload * float(Ammo.RELOAD[ammo])
+	reload[si] = cls.reload * float(Ammo.RELOAD[ammo]) * float(boost.reload)
 	reload_full[si] = reload[si]
 	_roll_kick += side * 0.05 * (cls.cannons_per_side / 5.0) / cls.mass * (0.2 if ammo == Ammo.FIREWORK else 1.0)
 	return true
@@ -362,11 +373,11 @@ func _shoot(p: Array) -> void:
 	else:
 		elev = clampf(0.5 * asin(clampf(GRAVITY * dist / (v * v), 0.0, 1.0)), 0.015, 0.47)
 	# pirate gun crews are a little less disciplined than yours
-	var sloppy := 1.0 if mine else 2.4
+	var sloppy := 1.0 if mine else 2.4 * float(boost.aim)
 	var yaw := atan2(dir.x, dir.z) + (randf() - 0.5) * 0.035 * sloppy
 	var pitch := elev + (randf() - 0.5) * 0.02 * sloppy
 	var spread: float = Ammo.SPREAD[kind]
-	var dealt := cls.damage * float(Ammo.DAMAGE[kind])
+	var dealt := cls.damage * float(Ammo.DAMAGE[kind]) * float(boost.guns)
 	for b in int(Ammo.BALLS[kind]):
 		# the first ball flies true, the rest of the bag scatters
 		var fy := yaw + ((randf() - 0.5) * 2.0 * spread if b > 0 else 0.0)
@@ -568,7 +579,7 @@ func step(dt: float) -> void:
 		# every mast shot away takes a share of her canvas with it, and shredded
 		# canvas (chain shot) draws far less wind until it's mended
 		var torn_k := 1.0 - Ammo.TORN_SLOW * minf(1.0, torn / 3.0)
-		var target := c.max_speed * sail_level * wf * hp_f * dmg.speed_factor() * torn_k
+		var target := c.max_speed * float(boost.speed) * sail_level * wf * hp_f * dmg.speed_factor() * torn_k
 		if phantom:
 			# a ghost runs before a wind of her own
 			target = maxf(target, c.max_speed * maxf(sail_level, 0.5)) * Haunt.SPEED

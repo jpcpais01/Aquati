@@ -15,6 +15,8 @@ signal sail
 signal shipwright
 ## The Treasure Vault's pill.
 signal vault
+## The Wanted Board, tapped.
+signal board
 ## The Update pill: a newer build of the game is out (UpdateCard).
 signal update
 signal settings
@@ -320,7 +322,7 @@ func _build_head() -> Control:
 	return head
 
 
-## The tools, top right: Settings and the sound (and on a computer, Exit game).
+## The tools, top right: the Wanted Board, Settings and the sound (and on a computer, Exit game).
 func _build_tools() -> Control:
 	var u := MenuKit.U
 	var box := Control.new()
@@ -334,7 +336,12 @@ func _build_tools() -> Control:
 	_sound_btn = MenuKit.round("sound", d, ip)
 	_sound_btn.pressed.connect(func() -> void: sound.emit())
 	set_sound(sound_on)
-	var tools: Array[UiButton] = [gear, _sound_btn]
+	var wanted := MenuKit.round("skull", d, ip)
+	wanted.tooltip_text = "Wanted Board"
+	wanted.pressed.connect(func() -> void:
+		clicked.emit()
+		board.emit())
+	var tools: Array[UiButton] = [wanted, gear, _sound_btn]
 	if Settings.desktop:
 		var off := MenuKit.round("power", d, ip)
 		off.tooltip_text = "Exit game"

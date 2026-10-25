@@ -1,6 +1,29 @@
-## Shores O' Fortune for Android and Windows: island wildlife
+## Shores O' Fortune for Android and Windows: bounties and infamy
 
-The thirty-eighth build brings the isles' wildlife from the web game.
+The thirty-ninth build brings the web game's bounties: a price on your head,
+the Brethren's named captains, and the Wanted Board.
+
+- **A price on your head.** Every pirate you sink or take, every fort gun
+  you silence and every fort you storm earns infamy, and a voyage's infamy
+  lights the wanted meter under your tally, one skull at a time. The hotter
+  the voyage, the more the Crown pays on every pirate bounty and prize.
+- **The Brethren send their best.** At each new skull a named captain sets
+  out after you, announced by a horn and a notice with the captain's face on
+  it: ten of them, from Calico Ned to the Storm King, each flying their own
+  colours, in a tougher, faster ship with sharper gunners and a favourite
+  shot, and the worst of them with escorts. A pulsing mark at the screen's
+  edge shows where the hunter is.
+- **Claim the bounty.** Sink a hunter yourself and the bounty is yours, the
+  wreck gives up a rich haul, and a gold notice says so. Board one and the
+  captain fights for the deck; when the colours come down, the bounty and a
+  fatter strongbox are yours.
+- **The Wanted Board.** A new skull button in the harbour (and a row in the
+  pause menu) shows your infamy among the Brethren, from Unknown to Legend
+  of the Black Water, each rank adding to the Crown's bounties, and a wall
+  of wanted posters: unknown till a captain has come for you, "At large"
+  once they have, and stamped SUNK once you've claimed them.
+
+### Also from the last build: island wildlife
 
 - **The isles come alive.** Fifteen kinds of beast live on the islands, each
   where it would: goats on the crags, deer and giant tortoises in the
@@ -22,22 +45,3 @@ The thirty-eighth build brings the isles' wildlife from the web game.
   or taking wing.
 - **Spot them all.** The first time you see each kind up close, a note says
   how many of the fifteen you've found.
-
-### Also from the last build: treasure maps
-
-- **A torn piece of somebody's map.** Sea chests now and then hold a scrap
-  of a treasure map (more often the finer the chest), cutthroats always
-  carry one, and a boarded ship sometimes gives one up. It tumbles into a
-  new map chip by your speed.
-- **Three pieces make a map.** Press T, or tap the chip, and the map unrolls:
-  an island inked and washed in watercolour on old parchment, with a compass
-  rose, palms and hills, and a serpent in the open water. The pieces you hold
-  lie together a little askew, and each one gives up a line of the riddle.
-- **X marks the spot.** Once the map is whole, the X goes on the minimap and
-  the sea chart, the chip turns into a compass that points the way, and the
-  helmsman will sail you there from the chart.
-- **Dig!** Go ashore and find the crossed sticks. The landing party digs
-  together, the sand piling up beside the hole, until a spade strikes wood
-  and they heave the chest out. Inside: hundreds of gold, fine goods and
-  fresh shot. Then the next map starts afresh.
-

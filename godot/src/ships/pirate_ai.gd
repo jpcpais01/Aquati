@@ -33,15 +33,22 @@ var _desired := 0.0
 var _side_bias := 1.0
 var _aim_delay := 0.0
 var _rng := RandomNumberGenerator.new()
+## A named captain sent after you (Bounty): hunts you from any distance,
+## never runs, reads the shallows true and loads her own favourite shot
+## (`ammo_mix`, [[Ammo, odds]]).
+var hunter := false
+var ammo_mix: Array = []
 ## A set piece's choice of shot for her every broadside (Ammo, -1 her own).
 var force_ammo := -1
 ## Something every captain runs from (the Kraken's body, x and z), or null.
 var fear: Variant = null
 
 
-func _init(p_ship: Ship, difficulty: float) -> void:
+func _init(p_ship: Ship, difficulty: float, hunt: Array = []) -> void:
 	ship = p_ship
-	aggression = clampf(0.55 + difficulty * 0.15, 0.4, 1.0)
+	hunter = not hunt.is_empty()
+	ammo_mix = hunt if hunter else Ammo.PIRATE.get(ship.cls.id, [])
+	aggression = 1.0 if hunter else clampf(0.55 + difficulty * 0.15, 0.4, 1.0)
 	_rng.randomize()
 	_side_bias = 1.0 if _rng.randf() < 0.5 else -1.0
 	_wp = Vector2(ship.pos.x, ship.pos.z)
@@ -70,7 +77,7 @@ func _pick_waypoint(world: World) -> void:
 func _avoid(world: World, heading: float, escaping := false) -> float:
 	var s := ship
 	var L := s.cls.length
-	var reckless := mode == Mode.ENGAGE
+	var reckless := mode == Mode.ENGAGE and not hunter
 	var hz := world.hazards
 	var look := [L * 0.8, L * 1.6, L * 2.6 + s.speed * 2.0]
 	var blocked := func(ang: float, d: float) -> bool:
@@ -139,7 +146,9 @@ func update(dt: float, world: World, player: Ship) -> void:
 		# the pack answers a sighting by any of its ships
 		if pk != null and target != null and world.time - pk.alert_t < 20.0 and dist < 560.0:
 			provoked = true
-		if target != null and hp_f < 0.22 and not s.ghost and mode != Mode.FLEE and _rng.randf() < 0.5:
+		if hunter:
+			mode = Mode.ENGAGE if target != null else Mode.PATROL
+		elif target != null and hp_f < 0.22 and not s.ghost and mode != Mode.FLEE and _rng.randf() < 0.5:
 			mode = Mode.FLEE
 		elif target != null and (dist < (300.0 if s.ghost else 230.0) or provoked) and mode != Mode.FLEE:
 			mode = Mode.ENGAGE
@@ -232,7 +241,7 @@ func _pick_ammo(dist: float, target: Ship) -> int:
 	if ship.ghost:
 		return Ammo.WRAITH
 	var r := _rng.randf()
-	for pick: Array in Ammo.PIRATE.get(ship.cls.id, []):
+	for pick: Array in ammo_mix:
 		var kind: int = pick[0]
 		if r < float(pick[1]):
 			if dist > ship.gun_range(kind) * 0.9:

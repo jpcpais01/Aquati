@@ -70,6 +70,8 @@ func start(p_look: Dictionary) -> void:
 	# (and the event ships', which always wear their own)
 	for id: String in ShipEvents.liveries():
 		list.append(Livery.named(id))
+	# (and the Brethren's named captains')
+	list.append_array(Bounty.liveries())
 	Livery.bake_start(list)
 
 
