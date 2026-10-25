@@ -365,6 +365,11 @@ shot('hull_boom', 1, 0.7, (a) => {
   a.hullsMeet(1, 0);
 });
 shot('yell', 3, 0.9, (a) => a.shout(1, 0, 0, true, 1));
+// buried treasure: a spade biting into the sand and the spadeful thrown,
+// the spade knocking on the chest's lid, and a map unrolled (or put away)
+shot('dig', 3, 0.7, (a) => a.dig(1, 0, 0));
+shot('spade_knock', 1, 0.6, (a) => a.spadeKnock(1, 0));
+shot('parchment', 3, 0.7, (a) => a.parchment(1));
 
 // ------------------------------------------------------------------ the sea's own sound: the noise its beds are cut from
 jobs.push({ name: 'noise_0', sr: SR, exact: true, render: () => [pink(7.3, SR)] });

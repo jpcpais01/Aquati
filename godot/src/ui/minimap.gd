@@ -231,6 +231,12 @@ class _Marks:
 			for i in sc.route.size():
 				course[i] = to_map.call(sc.route[i].x, sc.route[i].y)
 			MapMarks.route(self, course, Time.get_ticks_msec() / 1000.0, 1.5 * u, Rect2(Vector2.ZERO, size))
+		# the X: off the edge, pinned to the rim and pointing the way
+		if not sc.treasure.is_empty():
+			var at8: Vector2 = to_map.call(float(sc.treasure.x), float(sc.treasure.z))
+			var rx := h - 16.0 * u
+			var dx := at8.distance_to(c)
+			MapMarks.x_mark(self, c + (at8 - c) * (rx / dx if dx > rx else 1.0), (8.0 if dx > rx else 11.0) * u)
 		# the other ships: pirates in red, your escorts in the fleet's aqua
 		for s in sc.world.ships:
 			if s == sc.player or not s.alive:

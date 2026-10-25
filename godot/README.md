@@ -169,6 +169,10 @@ Boarding: `--board CLASS` lays a crippled pirate (`sloop`, `brig` or
 second in; `--brawl` fights her crew down, and `--prize scuttle` scuttles
 her once she strikes (else she's taken as a prize). `--trace` prints the
 set pieces' milestones as they happen.
+Treasure maps: `--map N` hands over N pieces of a map (3, the default: whole,
+its X on an isle of the waters she's in), `--map-open [N]` unrolls it N
+frames before the shot (30), and `--dig` with a whole map lands the party
+beside the X and sets them digging.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

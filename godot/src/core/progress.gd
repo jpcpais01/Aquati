@@ -65,6 +65,8 @@ var fireworks := {}
 ## The Brethren's forts you hold: fort id -> when taken, and when its tribute
 ## was last collected (unix seconds), and all the tribute gold ever paid.
 var forts := {"taken": {}, "paid": {}, "tribute": 0}
+## The treasure map in hand (TreasureMaps.state).
+var maps := TreasureMaps.fresh()
 ## The one-off tips already given on this device (the fireworks' night tip).
 var tips: Array[String] = []
 ## Her look (ShipLook), and the designs you've saved, newest first: [{id, name, look}].
@@ -519,6 +521,7 @@ func save() -> void:
 		"claimed": claimed,
 		"fireworks": fireworks,
 		"forts": forts,
+		"maps": maps,
 		"tips": tips,
 	}
 	_write(path, JSON.stringify(data, "\t"))
@@ -622,6 +625,7 @@ func _adopt(d: Dictionary) -> void:
 					if (m[id] is float or m[id] is int) and is_finite(float(m[id])):
 						forts[k][str(id)] = float(m[id])
 		forts.tribute = maxi(0, int(float((fo as Dictionary).get("tribute", 0))))
+	maps = TreasureMaps.sanitize(d.get("maps"))
 	var tp: Variant = d.get("tips")
 	if tp is Array:
 		for e: Variant in tp:

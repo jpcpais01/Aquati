@@ -1,6 +1,24 @@
-## Shores O' Fortune for Android and Windows: boarding
+## Shores O' Fortune for Android and Windows: treasure maps
 
-The thirty-sixth build brings boarding from the web game.
+The thirty-seventh build brings treasure maps and digging from the web game.
+
+- **A torn piece of somebody's map.** Sea chests now and then hold a scrap
+  of a treasure map (more often the finer the chest), cutthroats always
+  carry one, and a boarded ship sometimes gives one up. It tumbles into a
+  new map chip by your speed.
+- **Three pieces make a map.** Press T, or tap the chip, and the map unrolls:
+  an island inked and washed in watercolour on old parchment, with a compass
+  rose, palms and hills, and a serpent in the open water. The pieces you hold
+  lie together a little askew, and each one gives up a line of the riddle.
+- **X marks the spot.** Once the map is whole, the X goes on the minimap and
+  the sea chart, the chip turns into a compass that points the way, and the
+  helmsman will sail you there from the chart.
+- **Dig!** Go ashore and find the crossed sticks. The landing party digs
+  together, the sand piling up beside the hole, until a spade strikes wood
+  and they heave the chest out. Inside: hundreds of gold, fine goods and
+  fresh shot. Then the next map starts afresh.
+
+### Also from the last build: boarding
 
 - **Grapnels away!** Batter a pirate below two fifths of her hull and come
   close aboard, and a Board prompt comes up. The grapnels fly across, bite
@@ -19,20 +37,3 @@ The thirty-sixth build brings boarding from the web game.
 - **Fall back.** If the fight turns, back up to your own rail and cut the
   lines. If your captain falls, the hands haul you back aboard, a little
   lighter in the purse.
-
-### Also from the last build: ghost ships
-
-- **A sail out of the mist.** Now and then the next sail on the horizon is
-  a ghost ship: rare by day, far likelier at night, in sea mist and in foul
-  weather, and only ever one at a time. She takes shape out of the mist
-  from the trucks down, to a far-off choir.
-- **The dead don't sink like the living.** A ghost's hull is ashen green and
-  half see-through, with rot drifting across her planks and rags of canvas
-  burning at the edges. She sails on a wind of her own, floats over reefs,
-  slips half a maelstrom's grip and passes through other hulls. About one
-  ball in four goes clean through her, and fire and grape do nothing.
-- **Wraith-fire.** Her guns spit cold green ghost-fire that goes through
-  armour like mist and unmans your gun crews, so they load slowly.
-- **Lay her to rest.** She never runs. Beat her and she comes apart in a
-  column of green light instead of blowing up, for twice the bounty and a
-  hold full of cursed gold, with a fine chest always among it.

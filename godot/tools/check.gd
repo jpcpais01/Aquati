@@ -47,7 +47,7 @@ const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "am
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
 		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
-		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "wraith", "ghost_wail", "exorcise", "grapple", "hook_bite", "hull_boom", "yell", "horn", "wanted2", "wanted3", "bounty",
+		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "wraith", "ghost_wail", "exorcise", "grapple", "hook_bite", "hull_boom", "yell", "dig", "spade_knock", "parchment", "horn", "wanted2", "wanted3", "bounty",
 		"kr_boom", "kr_death", "kr_drone", "kr_drums0", "kr_drums1", "kr_drums2", "kr_flesh", "kr_moan", "kr_omen", "kr_roar0", "kr_roar1", "kr_roar2",
 		"kr_rush", "kr_shriek", "kr_strings",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
@@ -917,6 +917,7 @@ func _check_world() -> void:
 	_check_shore(w)
 	_check_camps(w)
 	_check_boarding(w)
+	_check_treasure_maps(w)
 	_check_forts(w)
 	_check_kraken(w)
 
@@ -1140,6 +1141,52 @@ func _check_camps(w: World) -> void:
 ## Boarding: the grapnels thrown and a crippled brig hauled in alongside, the
 ## hulls lashed rail to rail; the party swung across onto her deck and her
 ## crew fought down till she strikes; then the lines cut and she sails off a prize.
+## Treasure maps: three pieces make a whole map whose X falls on dry, open
+## ground of an isle in each archipelago, clear of the towns; the map keeps
+## through a save; its parchment and riddle draw; digging it up spends it.
+func _check_treasure_maps(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var g := ShoreGround.new(w, w.regions)
+	var whole := 0
+	for r in w.regions:
+		var tm := TreasureMaps.new()
+		var site := func(sd: int) -> Dictionary:
+			var t := g.dig_site(sd, r.islands, g.towns)
+			return {} if t.is_empty() else {"isle": str(t.island.name), "x": float(t.x), "z": float(t.z)}
+		var got := 0
+		for i in 3:
+			if tm.add_piece(site) >= 0:
+				got += 1
+		if tm.add_piece(site) != -1:
+			_fail("treasure maps: a fourth piece of a whole map was taken in %s" % r.id)
+		if got != 3 or not tm.complete():
+			_fail("treasure maps: no whole map in %s (%d pieces)" % [r.id, got])
+			continue
+		var x: Dictionary = tm.target()
+		var h := w.ground_height(float(x.x), float(x.z))
+		if h < 0.8 or h > 9.2:
+			_fail("treasure maps: the X in %s lies at %.1f m" % [r.id, h])
+		for c in g.towns:
+			if Vector2(c.x - float(x.x), c.y - float(x.z)).length() < c.z:
+				_fail("treasure maps: the X in %s is inside a town" % r.id)
+		var back := TreasureMaps.sanitize(JSON.parse_string(JSON.stringify(tm.state)))
+		if back.pieces != tm.state.pieces or str(back.isle) != str(x.isle) or absf(float(back.x) - float(x.x)) > 0.01:
+			_fail("treasure maps: the map didn't survive a save in %s" % r.id)
+		var isl := {}
+		for i: Dictionary in r.islands:
+			if str(i.name) == str(x.isle):
+				isl = i
+		var art := TreasureMapArt.new(tm.state, isl, w.ground_height)
+		if art.clues.size() != 3 or art.x_at.x < 0.0 or art.x_at.x > TreasureMapArt.S:
+			_fail("treasure maps: the parchment for %s has %d clues, its X at %s" % [x.isle, art.clues.size(), art.x_at])
+		art.free()
+		tm.consume()
+		if tm.count() != 0 or int(tm.state.dug) != 1:
+			_fail("treasure maps: digging it up didn't spend the map in %s" % r.id)
+		whole += 1
+	print("treasure maps: %d of %d archipelagos hide one, in %.0f ms" % [whole, w.regions.size(), (Time.get_ticks_usec() - t0) / 1000.0])
+
+
 func _check_boarding(w: World) -> void:
 	var t0 := Time.get_ticks_usec()
 	var sea := World.new()

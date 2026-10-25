@@ -45,6 +45,8 @@ signal fallen(w: ShoreWalker, boss: bool)
 signal prize_struck(prize: Ship)
 ## A boarder lands on her deck.
 signal landed(w: ShoreWalker, captain: bool)
+## The buried chest is out of the ground (`at`: its open lid).
+signal unearthed(at: Vector3)
 
 const FLOAT_HIT := 0
 const FLOAT_BAD := 1
@@ -63,6 +65,8 @@ const PISTOL_RELOAD := 7.0
 const PISTOL_RANGE := 18.0
 ## Camps nearer the camera than this (m) are simulated and drawn.
 const CAMP_LIVE := 270.0
+## Spade-seconds to dig a treasure up (three diggers share them).
+const DIG_WORK := 16.0
 ## Camps further than this (m) are lost in the haze: not drawn at all.
 const CAMP_SHOW := 1500.0
 ## A camp takes up arms when the landing party comes this close to its fire,
@@ -243,6 +247,23 @@ var _air := {}
 var _feet: Array[ShoreWalker] = []
 var _boat: MeshInstance3D
 var _boat_blocks: Array[Vector3] = []
+## Buried treasure: where a whole map's X lies (has_treasure), the X and
+## cairn with the hole, its heap and the chest beneath; how far down the
+## digging's gone (0..1); the chest heaving up (seconds, -1 before); who's on
+## a spade (ShoreWalker -> [x, z, stroke]) and the spadefuls so far.
+var has_treasure := false
+var treasure := Vector3.ZERO
+var strokes := 0
+var _site: Node3D
+var _hole: MeshInstance3D
+var _spoil: MeshInstance3D
+var _b_chest: Node3D
+var _b_lid: Node3D
+var _dig_p := 0.0
+var _digging := false
+var _reveal_t := -1.0
+var _unearthed_once := false
+var _diggers := {}
 var _crew: Crew
 var _world: World
 
@@ -273,6 +294,7 @@ func _init(p_ground: ShoreGround, crew: Crew, parts: Material, regions: Array[Re
 	for r in regions:
 		for s: Dictionary in r.camps:
 			_build_camp(s, r, parts)
+	_build_dig(parts)
 
 
 ## Where the boat lies on the beach.
@@ -388,6 +410,10 @@ func leave() -> void:
 	_boat.visible = false
 	landing = {}
 	_end_boarding()
+	_stop_dig()
+	# a chest dug up stays in its hole until the party rows off
+	if _unearthed_once:
+		set_treasure({})
 	# camps that gave chase settle back down round their fires
 	for c in camps:
 		if c.routed or not c.alert:
@@ -1040,6 +1066,7 @@ func update(dt: float, world: World, inp: Steer, focus: Vector3) -> void:
 		if not _air.has(cap):
 			_steer_captain(dt, inp, world)
 		_think_party(dt)
+		_update_dig(dt, world)
 	for c in camps:
 		if c.live:
 			_think_camp(c, dt, world)
@@ -1091,6 +1118,12 @@ func _steer_captain(dt: float, inp: Steer, world: World) -> void:
 	var len := minf(1.0, Vector2(inp.mx, inp.mz).length())
 	# a jump: not mid-cut, not with the pistol up, not from deep water
 	var hop := inp.jump and not cap.airborne() and cap.ready() and not cap.cutting() and cap.aim <= 0.0 and cap.wade < 0.5
+	# on the spade: walking off, jumping, or reaching for a weapon puts it down (the hole stays dug)
+	if _digging:
+		if len > 0.3 or inp.strike or inp.pistol or hop:
+			_stop_dig()
+		else:
+			return
 	if hop and cap.jump():
 		hopped.emit(true, 0.0, cap.wade > 0.08, deck != null)
 	var fight := fighting()
@@ -2035,6 +2068,14 @@ func prompt(ship_name: String) -> Dictionary:
 			if not f.is_down() and Vector2(f.x - cap.x, f.z - cap.z).length() < 12.0:
 				return {"key": "fight", "title": "Cutthroats on your heels", "sub": "Fight them off before you push off", "ok": false}
 		return {"key": "boat", "title": "Row back to the %s" % ship_name, "sub": "The hands climb in and pull for the ship", "ok": true}
+	if _dig_here(2.6):
+		if fighting():
+			return {"key": "dig", "title": "X marks the spot", "sub": "See off the cutthroats first", "ok": false}
+		if _digging:
+			return {}
+		if _dig_p > 0.0:
+			return {"key": "dig", "title": "Keep digging", "sub": "%d ft down, the chest lies at 6" % maxi(1, roundi(_dig_p * 6.0)), "ok": true}
+		return {"key": "dig", "title": "Dig here", "sub": "X marks the spot", "ok": true}
 	var c := _chest_near()
 	if c != null:
 		if not c.fort.is_empty():
@@ -2067,6 +2108,9 @@ func interact() -> String:
 		return ""
 	if p.key == "boat" or p.key == "retreat":
 		return "boat"
+	if p.key == "dig":
+		_start_dig()
+		return ""
 	var c := _chest_near()
 	if c != null and c.routed and not c.opened:
 		c.opened = true
@@ -2169,3 +2213,223 @@ static func _cuts(a: Vector2, b: Vector2, E: float) -> bool:
 				return false
 			t1 = minf(t1, r)
 	return t1 - t0 > 1e-4
+
+
+# ---------------------------------------------------------------- buried treasure
+
+func _build_dig(parts: Material) -> void:
+	_site = Node3D.new()
+	_site.name = "TreasureX"
+	var marks := MeshInstance3D.new()
+	marks.mesh = ShoreKit.dig_marks(77)
+	marks.material_override = parts
+	_site.add_child(marks)
+	_hole = MeshInstance3D.new()
+	_hole.mesh = ShoreKit.dig_hole()
+	_hole.material_override = parts
+	_site.add_child(_hole)
+	_spoil = MeshInstance3D.new()
+	_spoil.mesh = ShoreKit.dig_spoil()
+	_spoil.material_override = parts
+	_spoil.position = Vector3(-1.45, 0.0, -0.7)
+	_spoil.rotation.y = 0.5
+	_site.add_child(_spoil)
+	_b_chest = Node3D.new()
+	var body := MeshInstance3D.new()
+	body.mesh = _body_mesh
+	body.material_override = parts
+	_b_chest.add_child(body)
+	_b_lid = Node3D.new()
+	_b_lid.position = Vector3(0.0, ShoreKit.CHEST_H, -ShoreKit.CHEST_D * 0.5)
+	var lid := MeshInstance3D.new()
+	lid.mesh = _lid_mesh
+	lid.material_override = parts
+	_b_lid.add_child(lid)
+	_b_chest.add_child(_b_lid)
+	_b_chest.rotation = Vector3(0.12, 0.4, -0.08)
+	_site.add_child(_b_chest)
+	_site.visible = false
+	add_child(_site)
+
+
+## Puts the X on the sand where a whole map says ({x, z}; {} clears it).
+func set_treasure(at: Dictionary) -> void:
+	# a chest just dug up stays in its hole until the party rows off
+	if at.is_empty() and active and _unearthed_once:
+		return
+	if at.is_empty():
+		has_treasure = false
+		_site.visible = false
+		_stop_dig()
+		return
+	var x := float(at.x)
+	var z := float(at.z)
+	var same := has_treasure and Vector2(treasure.x - x, treasure.z - z).length() < 0.01
+	treasure = Vector3(x, ground.height(x, z), z)
+	has_treasure = true
+	if not same:
+		_dig_p = 0.0
+		_reveal_t = -1.0
+		_unearthed_once = false
+		_stop_dig()
+	_site.position = treasure
+	_site.rotation.y = fmod(x * 0.37 + z * 0.11, TAU)
+	_site.visible = true
+	_show_dig()
+
+
+## The hole and heap as deep as the digging's gone, the chest as high as it's come up.
+func _show_dig() -> void:
+	var k := _dig_p
+	var e := 1.0 - (1.0 - k) * (1.0 - k)
+	_hole.visible = k > 0.0
+	_spoil.visible = k > 0.0
+	_hole.scale = Vector3(0.35 + 0.65 * e, maxf(0.02, e), 0.35 + 0.65 * e)
+	_spoil.scale = Vector3(0.3 + 0.7 * e, maxf(0.02, e), 0.3 + 0.7 * e)
+	var r := _reveal_t
+	_b_chest.visible = r >= 0.0
+	if r < 0.0:
+		return
+	# up out of the sand, with a lurch as the hands heave it clear
+	var up := smoothstep(0.15, 1.5, r)
+	_b_chest.position = Vector3(0.05, -0.62 + up * 0.5 + sin(minf(1.0, r / 1.5) * PI) * 0.06, 0.0)
+	_b_chest.rotation.x = 0.12 * (1.0 - up) + 0.04
+	var o := smoothstep(1.7, 2.5, r)
+	_b_lid.rotation.x = -1.95 * o - sin(o * PI) * 0.12
+
+
+## Whether the captain stands within `r` of the X, and it's still buried.
+func _dig_here(r: float) -> bool:
+	var cap := captain
+	if not has_treasure or cap == null or deck != null or _unearthed_once or _reveal_t >= 0.0:
+		return false
+	return Vector2(cap.x - treasure.x, cap.z - treasure.z).length() < r
+
+
+## The captain takes up a spade, and the two nearest hands come to help.
+func _start_dig() -> void:
+	var T := treasure
+	var cap := captain
+	_digging = true
+	_diggers.clear()
+	var a := atan2(cap.x - T.x, cap.z - T.z)
+	var at := func(aa: float, r: float) -> Array:
+		return [T.x + sin(aa) * r, T.z + cos(aa) * r, -1]
+	_diggers[cap] = at.call(a, 0.95)
+	var hands: Array[ShoreWalker] = []
+	for i in range(1, party.size()):
+		if party[i].walker.ready():
+			hands.append(party[i].walker)
+	hands.sort_custom(func(p: ShoreWalker, q: ShoreWalker) -> bool: return Vector2(p.x - T.x, p.z - T.z).length() < Vector2(q.x - T.x, q.z - T.z).length())
+	for i in mini(2, hands.size()):
+		_diggers[hands[i]] = at.call(a + (-2.1 if i == 1 else 2.1), 1.0)
+	for w: ShoreWalker in _diggers:
+		w.armed = false
+		w.dig_phase = randf() * 0.3
+
+
+func _stop_dig() -> void:
+	_digging = false
+	for w: ShoreWalker in _diggers:
+		w.digging = false
+	_diggers.clear()
+
+
+func _update_dig(dt: float, world: World) -> void:
+	if not has_treasure:
+		return
+	var T := treasure
+	if _reveal_t >= 0.0:
+		var was := _reveal_t
+		_reveal_t += dt
+		if was < 1.75 and _reveal_t >= 1.75 and not _unearthed_once:
+			_unearthed_once = true
+			for m in party:
+				if not m.walker.is_down() and m.walker != captain:
+					m.walker.cheer = 2.4 + randf() * 0.5
+			var top := _site.global_transform * _b_chest.position
+			top.y = T.y + 0.5
+			world.fx.treasure(top, Color(1.5, 1.15, 0.45), 4)
+			unearthed.emit(top)
+		_show_dig()
+		return
+	if not _digging:
+		return
+	var cap := captain
+	if cap == null or cap.is_down() or fighting():
+		_stop_dig()
+		return
+	var n := 0
+	for w: ShoreWalker in _diggers:
+		if w.is_down():
+			continue
+		var s: Array = _diggers[w]
+		var dx := float(s[0]) - w.x
+		var dz := float(s[1]) - w.z
+		var d := Vector2(dx, dz).length()
+		if d > 0.3 and not w.digging:
+			var sp := minf(ShoreWalker.WALK, d * 3.0 + 0.6)
+			w.vx = dx / d * sp
+			w.vz = dz / d * sp
+			w.want_yaw = atan2(dx, dz)
+			w.idle = ShoreWalker.Idle.STAND
+		else:
+			w.vx = 0.0
+			w.vz = 0.0
+			w.digging = true
+			w.idle = ShoreWalker.Idle.STAND
+			w.want_yaw = atan2(T.x - w.x, T.z - w.z)
+			n += 1
+			# each stroke's spadeful flies off onto the heap
+			var k := floori(w.dig_phase - 0.8)
+			if k != int(s[2]):
+				s[2] = k
+				if k >= 0:
+					_toss(w, world)
+		w.turn(dt, 8.0)
+	_dig_p = minf(1.0, _dig_p + dt * n / DIG_WORK)
+	_show_dig()
+	if _dig_p < 1.0:
+		return
+	# the spade rings on wood: heave it up
+	_stop_dig()
+	_reveal_t = 0.0
+	if world.sound != null:
+		var h := world.heard(T)
+		world.sound.spade_knock(h.x, h.y)
+	shook.emit(0.1)
+	floated.emit("Something wooden…", T + Vector3(0.0, 1.8, 0.0), FLOAT_LOOT)
+
+
+## How the dig is going, for the HUD: {k: how deep 0..1, hands: spades
+## going, strokes: spadefuls so far, heave: the chest coming up}; {} when
+## nobody's digging.
+func dig_view() -> Dictionary:
+	if _reveal_t >= 0.0 and _reveal_t < 1.75:
+		return {"k": 1.0, "hands": 0, "strokes": strokes, "heave": true}
+	if not _digging:
+		return {}
+	var hands := 0
+	for w: ShoreWalker in _diggers:
+		if w.digging and not w.is_down():
+			hands += 1
+	return {"k": _dig_p, "hands": hands, "strokes": strokes, "heave": false}
+
+
+## A spadeful of sand thrown over the shoulder onto the heap.
+func _toss(w: ShoreWalker, world: World) -> void:
+	strokes += 1
+	var T := treasure
+	var heap := _site.global_transform * _spoil.position
+	var dx := heap.x - T.x
+	var dz := heap.z - T.z
+	var sand := Color(0.9, 0.78, 0.55, 0.95)
+	for i in 7:
+		world.fx.emit(Vector3(T.x + (randf() - 0.5) * 0.5, T.y + 0.15, T.z + (randf() - 0.5) * 0.5),
+				Vector3(dx * (1.1 + randf() * 0.5) + randf() - 0.5, 3.0 + randf() * 1.5, dz * (1.1 + randf() * 0.5) + randf() - 0.5),
+				0.7 + randf() * 0.3, 0.07 + randf() * 0.05, 0.05, sand, sand, 9.0, 0.4, Particles.SOFT, 0.01)
+	var puff := Color(0.96, 0.88, 0.7, 0.3)
+	world.fx.emit(Vector3(heap.x, T.y + 0.4, heap.z), Vector3(0.0, 0.3, 0.0), 1.0, 0.4, 1.4, puff, Color(puff, 0.0), 0.2, 1.6, Particles.SMOKE, 0.05)
+	if world.sound != null:
+		var h := world.heard(Vector3(w.x, w.y + 0.5, w.z))
+		world.sound.dig(h.x * (1.0 if w == captain else 0.6), h.y, h.z)

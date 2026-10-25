@@ -49,6 +49,8 @@ var skip := false
 var interact := false
 ## A pulse: the sea chart opened or closed (M).
 var chart := false
+## A pulse: the treasure map unrolled or put away (T).
+var treasure := false
 ## A pulse: her power called on (G: an event ship's, the Hollow Jack's Phantom Run).
 var ability := false
 ## The mouse over the sea (screen units), while there is one.
@@ -92,6 +94,7 @@ const _ACTIONS := {
 	"confirm": [KEY_ENTER, KEY_KP_ENTER],
 	"interact": [KEY_F],
 	"sea_chart": [KEY_M],
+	"treasure_map": [KEY_T],
 	"ability": [KEY_G],
 }
 
@@ -131,6 +134,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			interact = true
 		elif event.is_action("sea_chart"):
 			chart = true
+		elif event.is_action("treasure_map"):
+			treasure = true
 		elif event.is_action("ability"):
 			ability = true
 		else:
@@ -256,5 +261,6 @@ func consume() -> void:
 	skip = false
 	interact = false
 	chart = false
+	treasure = false
 	ability = false
 	jump = false
