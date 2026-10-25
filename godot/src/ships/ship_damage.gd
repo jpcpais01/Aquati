@@ -44,6 +44,16 @@ const DMG_SHADERS := {
 	"sail": preload("res://shaders/ship_sail_dmg.gdshader"),
 	"flag": preload("res://shaders/ship_flag_dmg.gdshader"),
 }
+## The same for a ghost ship (Livery.ghost), which wears them from the start.
+const GHOST_SHADERS := {
+	"hull": preload("res://shaders/ship_hull_ghost.gdshader"),
+	"stern": preload("res://shaders/ship_stern_ghost.gdshader"),
+	"deck": preload("res://shaders/ship_deck_ghost.gdshader"),
+	"parts": preload("res://shaders/ship_parts_ghost.gdshader"),
+	"rope": preload("res://shaders/ship_rope_ghost.gdshader"),
+	"sail": preload("res://shaders/ship_sail_ghost.gdshader"),
+	"flag": preload("res://shaders/ship_flag_ghost.gdshader"),
+}
 ## The same for your own ship, which can wear a vault skin (Livery.skinned).
 const DMG_SKIN_SHADERS := {
 	"hull": preload("res://shaders/ship_hull_skin_dmg.gdshader"),
@@ -92,6 +102,9 @@ var _canvas := 0.0
 ## Spars shot away (bit group - 1), as the shaders drop them.
 var _gone := 0
 var _sent_state := Vector4(-1.0, -1.0, -1.0, -1.0)
+## A ghost ship's presence (x, 0 mist .. 1 there), flare where she's struck
+## (y) and seed (z), as her materials have it (see ship_ghost.gdshaderinc).
+var ghost := Vector4(1.0, 0.0, randf() * 10.0, 0.0)
 ## Her own damage materials by kind, from her first wound; the bow half's once she breaks in two.
 var _wound_mats := {}
 var _bow_mats := {}
@@ -153,9 +166,12 @@ func _ensure_wound_mats() -> void:
 		_noise = load("res://art/noise.png")
 	for kind: String in DMG_SHADERS:
 		var m := ShaderMaterial.new()
-		m.shader = dmg_shader(kind, model.livery.skinned)
+		m.shader = GHOST_SHADERS[kind] if ship.ghost else dmg_shader(kind, model.livery.skinned)
 		_copy_paint(model.shared_material(kind), m)
 		m.set_shader_parameter("dmg_noise", _noise)
+		if ship.ghost:
+			m.set_shader_parameter("ghost_noise", _noise)
+			m.set_shader_parameter("ghost", ghost)
 		_wound_mats[kind] = m
 	for part: String in MESH_KINDS:
 		var mi := model.get_node_or_null(part) as MeshInstance3D
@@ -168,6 +184,36 @@ func _ensure_wound_mats() -> void:
 	_sync_holes()
 	_sync_state()
 	_sync_gone()
+
+
+## A ghost ship takes her own materials as she's launched, in the ghost's
+## look, and casts no shadow.
+func ghostly() -> void:
+	_ensure_wound_mats()
+	var model := ship.model
+	# her yards and their lines too, which a living ship's wounds leave be
+	var shared := {}
+	for kind: String in DMG_SHADERS:
+		shared[model.shared_material(kind)] = kind
+	for node in model.find_children("*", "GeometryInstance3D", true, false):
+		var gi := node as GeometryInstance3D
+		gi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if gi.material_override != null and shared.has(gi.material_override):
+			gi.material_override = _wound_mats[shared[gi.material_override]]
+	# her lanterns burn cold: no warm halos round them
+	var halos := model.get_node_or_null("Halos") as Node3D
+	if halos != null:
+		halos.visible = false
+
+
+## A ghost's presence and the flare where she was struck, to her materials.
+func set_ghost(presence: float, flare: float) -> void:
+	if ghost.x == presence and ghost.y == flare:
+		return
+	ghost.x = presence
+	ghost.y = flare
+	for m: ShaderMaterial in _wound_mats.values():
+		m.set_shader_parameter("ghost", ghost)
 
 
 ## The damage shader for a kind of material, a skinned livery's own (yours).
@@ -287,12 +333,13 @@ static func _shard() -> ArrayMesh:
 ## own meshes, the splinters at her breaches), for the game to draw once,
 ## too small to see, before the first shot: building those shaders in the
 ## middle of a fight would stutter it.
-static func warm_meshes(model: ShipModel) -> Array[Node3D]:
+## With `ghostly`, a ghost ship's instead (on any hull: the shaders are the thing).
+static func warm_meshes(model: ShipModel, ghostly := false) -> Array[Node3D]:
 	var out: Array[Node3D] = []
 	var mats := {}
 	for kind: String in DMG_SHADERS:
 		var m := ShaderMaterial.new()
-		m.shader = dmg_shader(kind, model.livery.skinned)
+		m.shader = GHOST_SHADERS[kind] if ghostly else dmg_shader(kind, model.livery.skinned)
 		mats[kind] = m
 	var meshes: Array = []
 	for part: String in MESH_KINDS:
@@ -864,6 +911,14 @@ func on_death() -> void:
 	# a spar still going up is whole enough to come down again with the rest
 	if not _raising.is_empty():
 		_finish_rig()
+	if s.ghost:
+		# a phantom doesn't break up or spill cargo: she settles a little, lists,
+		# and dissolves (Ship._haunt fades her presence), lanterns burning to the last
+		_mode = Mode.CAPSIZE
+		_depth = c.draft * 0.6
+		_roll = (1.0 if randf() < 0.5 else -1.0) * randf_range(0.12, 0.3)
+		_pitch = (1.0 if randf() < 0.5 else -1.0) * randf_range(0.03, 0.1)
+		return
 	# + rolls her port side up: she goes over toward her list
 	var over := signf(list) if absf(list) > 1e-4 else (1.0 if randf() < 0.5 else -1.0)
 	var fall_x := -over

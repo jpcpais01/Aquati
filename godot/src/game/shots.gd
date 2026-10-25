@@ -10,7 +10,8 @@ extends Node3D
 ## same arcs to find what each ball strikes and plays what happens: the
 ## splash or the splinters, a shell's burst that catches every ship close by,
 ## a hull set ablaze, canvas torn to ribbons, a deck swept by a hail of
-## musket balls. Three draws for every ball at sea.
+## musket balls, a ghost's wraith-fire unmanning a gun crew, or a ball passing
+## clean through a phantom. Three draws for every ball at sea.
 
 const GRAVITY := 14.0
 const CAPACITY := 256
@@ -28,11 +29,14 @@ const RAKE_GATHER := 0.22
 const SPARK_EVERY := 0.035
 ## The vault trails that shed motes behind round shot (Cosmetics.TRAIL_STYLES):
 ## powder and soot leave only their smoke.
+## Wraith-fire flies as round shot does on the GPU, with the wraith's trail
+## (a style only a phantom's guns wear), which the shader lights up.
+const WRAITH_STYLE := 9
 const MOTES: Array[bool] = [false, true, false, true, true, true, true, true, true, true, true]
 
 var world: World
 ## Balls fired this voyage, by kind (each of a bag of grape counts).
-var fired := PackedInt32Array([0, 0, 0, 0, 0])
+var fired := PackedInt32Array([0, 0, 0, 0, 0, 0, 0])
 
 var _buf := PackedFloat32Array()
 var _pbuf := PackedFloat32Array()
@@ -72,6 +76,11 @@ class _Ball:
 	var style := 0
 	## Heard tearing past the listener already.
 	var heard := false
+	## The ghost ship it last met, whether it passes through her (rolled once
+	## a ship), and whether it has shimmered through one yet.
+	var ghost: Ship
+	var ghost_pass := false
+	var shimmered := false
 
 
 func _ready() -> void:
@@ -178,7 +187,7 @@ func fire(pos: Vector3, vel: Vector3, owner: Ship, damage: float, kind: int = Am
 	b.owner = owner
 	b.damage = damage
 	b.spark = randf() * SPARK_EVERY
-	b.style = style if kind == Ammo.ROUND else 0
+	b.style = style if kind == Ammo.ROUND else (WRAITH_STYLE if kind == Ammo.WRAITH else 0)
 	_live.append(b)
 	var buf := _pbuf if pellet else _buf
 	var o := slot * STRIDE
@@ -199,7 +208,7 @@ func fire(pos: Vector3, vel: Vector3, owner: Ship, damage: float, kind: int = Am
 	buf[o + 16] = _now
 	buf[o + 17] = _now + MAX_AGE + 1.0
 	buf[o + 18] = randf()
-	buf[o + 19] = float(kind + 8 * b.style)
+	buf[o + 19] = float((Ammo.ROUND if kind == Ammo.WRAITH else kind) + 8 * b.style)
 	if pellet:
 		_pdirty = true
 	else:
@@ -235,7 +244,7 @@ func step(dt: float) -> void:
 		else:
 			if not b.heard:
 				_tear_past(b)
-			if b.kind == Ammo.SHELL or b.kind == Ammo.FIRE or (b.kind == Ammo.ROUND and MOTES[b.style]):
+			if b.kind == Ammo.SHELL or b.kind == Ammo.FIRE or ((b.kind == Ammo.ROUND or b.kind == Ammo.WRAITH) and MOTES[b.style]):
 				_spit(b, dt)
 	_flush_rakes(dt)
 	_shot_mat.set_shader_parameter("now", _now)
@@ -344,6 +353,8 @@ func _into_sea(b: _Ball, s: Vector3) -> void:
 		world.fx.steam(s)
 		if snd != null:
 			snd.sizzle(h.x, h.y, h.z)
+	elif b.kind == Ammo.WRAITH:
+		world.fx.wraith_splash(s)
 	else:
 		world.fx.splash(s, 1.0)
 	if snd != null:
@@ -389,6 +400,9 @@ func _strike_ship(b: _Ball, p: Vector3, t: float) -> bool:
 			continue
 		if absf(local.x) > shape.half_width_at_y(tc, maxf(local.y, 0.0)) + 0.15:
 			continue
+		if _phases(b, s):
+			_phase_through(b, s, p, t)
+			continue
 		if not s.alive:
 			if b.kind == Ammo.SHELL:
 				_detonate(b, p, false, null, 0.0)
@@ -401,12 +415,18 @@ func _strike_ship(b: _Ball, p: Vector3, t: float) -> bool:
 			Ammo.CHAIN:
 				_chain_hit(b, s, p, t, local, top)
 			_:
-				var side := 1.0 if local.x >= 0.0 else -1.0
-				world.fx.wood_hit(p, s.port_dir() * side)
+				var n := s.port_dir() * (1.0 if local.x >= 0.0 else -1.0)
+				# a phantom has no timber to splinter
+				if s.ghost:
+					world.fx.ecto_hit(p, n)
+				elif b.kind != Ammo.WRAITH:
+					world.fx.wood_hit(p, n)
 				if world.sound != null:
 					var h := world.heard(p)
 					world.sound.hit(h.x, h.y, h.z)
-				var dealt := s.damage(b.damage, b.owner, p)
+				var dealt := s.damage(b.damage, b.owner, p, true, "shot", b.kind == Ammo.WRAITH)
+				if b.kind == Ammo.WRAITH:
+					_haunt(b, s, p, n)
 				if b.kind == Ammo.SHELL:
 					_detonate(b, p, false, s, dealt)
 				else:
@@ -426,27 +446,38 @@ func _above_deck(b: _Ball, s: Ship, p: Vector3, t: float, local: Vector3, top: f
 		for m: Dictionary in s.cls.masts:
 			mast_h = maxf(mast_h, float(m.height))
 		if absf(local.x) < s.cls.beam * 0.75 and local.y < top + mast_h * 0.95:
+			if _phases(b, s):
+				_phase_through(b, s, p, t)
+				return false
 			_chain_hit(b, s, p, t, local, top)
 			return true
 		return false
 	if b.kind == Ammo.GRAPE:
 		if local.y < top + 2.2 and absf(local.x) < s.model.shape.half_width_at_y(tc, maxf(0.0, top - 0.6)):
+			if _phases(b, s):
+				_phase_through(b, s, p, t)
+				return false
 			_grape_hit(b, s, p)
 			return true
 		return false
 	var rig := s.dmg.rig_test(local)
 	var v := vel_at(b, t)
 	if rig.x == 2:
-		var dealt := s.damage(b.damage * 0.4, b.owner, p, false)
+		if _phases(b, s):
+			_phase_through(b, s, p, t)
+			return false
+		var dealt := s.damage(b.damage * 0.4, b.owner, p, false, "shot", b.kind == Ammo.WRAITH)
 		s.dmg.on_rig_hit(2, rig.y, p, v)
 		if b.kind == Ammo.SHELL:
 			_detonate(b, p, false, s, dealt)
 		else:
 			if b.kind == Ammo.FIRE:
 				_ignite(b, s, p)
+			if b.kind == Ammo.WRAITH:
+				_haunt(b, s, p, Vector3.ZERO)
 			world.hit.emit(s, b.owner, dealt, p)
 		return true
-	if rig.x == 1 and b.tore != s:
+	if rig.x == 1 and b.tore != s and not _phases(b, s):
 		b.tore = s
 		s.dmg.on_rig_hit(1, rig.y, p, v)
 		# red-hot shot through dry canvas: the sails catch
@@ -463,6 +494,8 @@ func _ignite(b: _Ball, s: Ship, p: Vector3) -> void:
 		world.sound.ignite(h.x, h.y, h.z)
 	if s.ignite(b.owner):
 		world.status.emit(s, "ablaze", b.owner)
+	elif s.ghost and _can_play(s, 6, 2.5):
+		world.status.emit(s, "unburnt", b.owner)
 
 
 ## Chain through her rig: the canvas on the nearest mast torn to ribbons, now
@@ -494,6 +527,8 @@ func _grape_hit(b: _Ball, s: Ship, p: Vector3) -> void:
 		world.sound.grape(h.x, h.y, h.z)
 	if s.rake(b.owner):
 		world.status.emit(s, "crew", b.owner)
+	elif s.ghost and _can_play(s, 6, 2.5):
+		world.status.emit(s, "fleshless", b.owner)
 	var r: Array = _rakes.get(s, [])
 	if r.is_empty():
 		_rakes[s] = [b.owner, dealt, p, 0.0]
@@ -503,6 +538,36 @@ func _grape_hit(b: _Ball, s: Ship, p: Vector3) -> void:
 	# a killing ball is told at once, so the sinking is credited
 	if not s.alive:
 		_flush_rake(s)
+
+
+# ------------------------------------------------------------------ ghosts
+
+## Whether the ball passes clean through `s`, a ghost ship: rolled once a
+## ball and ship.
+func _phases(b: _Ball, s: Ship) -> bool:
+	if not s.ghost or not s.alive:
+		return false
+	if b.ghost != s:
+		b.ghost = s
+		b.ghost_pass = randf() < Ammo.PHASE
+	return b.ghost_pass
+
+
+## The ball is inside a phantom's hull and carrying on: a shiver of light, once.
+func _phase_through(b: _Ball, s: Ship, p: Vector3, t: float) -> void:
+	if b.shimmered:
+		return
+	b.shimmered = true
+	world.fx.phase_shimmer(p, vel_at(b, t))
+	if _can_play(s, 5, 1.2):
+		world.status.emit(s, "phased", b.owner)
+
+
+## Wraith-fire struck home: green fire, and a crew that will not stand to its guns.
+func _haunt(b: _Ball, s: Ship, p: Vector3, n: Vector3) -> void:
+	world.fx.wraith_hit(p, n)
+	if s.terrify(b.owner):
+		world.status.emit(s, "dread", b.owner)
 
 
 func _flush_rake(s: Ship) -> void:
@@ -593,7 +658,7 @@ func _can_play(s: Ship, which: int, gap: float) -> bool:
 ## How many balls are in the air, by kind.
 func flying() -> PackedInt32Array:
 	var n := PackedInt32Array()
-	n.resize(Ammo.COUNT)
+	n.resize(Ammo.KINDS)
 	for b in _live:
 		n[b.kind] += 1
 	return n

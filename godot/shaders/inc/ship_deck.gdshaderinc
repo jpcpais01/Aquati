@@ -9,6 +9,9 @@
 #ifdef PHANTOM
 #include "res://shaders/inc/ship_phantom.gdshaderinc"
 #endif
+#ifdef GHOST
+#include "res://shaders/inc/ship_ghost.gdshaderinc"
+#endif
 
 uniform vec3 c_plank : source_color = vec3(0.79, 0.63, 0.42);
 uniform vec3 c_tar : source_color = vec3(0.16, 0.11, 0.07);
@@ -79,6 +82,9 @@ void fragment() {
 	NORMAL = bump(NORMAL, VERTEX, -(seam + butt * 0.6) * 0.006);
 #ifdef PHANTOM
 	phantom_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, ALBEDO, EMISSION);
+#endif
+#ifdef GHOST
+	ghost_apply(FRAGCOORD.xy, NORMAL, VIEW, (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz, MODEL_MATRIX, 0.235, 1.0, ALBEDO, EMISSION);
 #endif
 	FOG = air_fog(v_world, CAMERA_POSITION_WORLD);
 }

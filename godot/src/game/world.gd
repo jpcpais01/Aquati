@@ -35,6 +35,8 @@ var sound: Sound
 var ships: Array[Ship] = []
 ## Where the voyage is heard from (the camera's focus), and how far off it hangs.
 var listener := Vector3.ZERO
+## How dark it is (Atmosphere.night: 0 day .. 1 deep night), for what dims after dark.
+var night := 0.0
 var listener_zoom := 100.0
 ## The archipelago under the sea the camera is on (null out on the open ocean before any is loaded).
 var region: Region

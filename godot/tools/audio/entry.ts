@@ -278,6 +278,14 @@ shot('kr_boom', 1, 1.4, (a) => a.krakenSlam(1, 0, 0));
 shot('kr_flesh', 1, 0.25, (a) => a.krakenFlesh(1, 0, 0));
 shot('kr_moan', 1, 1.7, (a) => a.krakenHurt(1, 0, 0, false));
 shot('kr_shriek', 1, 1.2, (a) => a.krakenHurt(1, 0, 0, true));
+// ghost ships: wraith-fire leaving a phantom's gun, the far-off choir as one
+// is sighted, and the chord as one is laid to rest
+shot('wraith', 2, 1.1, (a) => {
+  a.wraithAt = -1;
+  a.wraith(1, 0, 0);
+});
+shot('ghost_wail', 1, 5.6, (a) => a.ghostWail(1, 0), { ogg: true });
+shot('exorcise', 1, 3.5, (a) => a.exorcise(1, 0, 0), { ogg: true });
 for (let t = 1; t <= 4; t++) shot(`treasure${t}`, 1, 3.0, (a) => a.treasure(t));
 shot('guns_ready', 1, 0.7, (a) => a.gunsReady(0));
 // the Treasure Vault: the chest's rumble as its light climbs each rarity, its

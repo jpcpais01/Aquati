@@ -7,7 +7,10 @@ extends Node3D
 ## and a wisp of galley smoke behind her. Her guns fire in a rippling
 ## broadside, laid on a ship (leading her) or a point on the sea; blows breach
 ## and flood her, set her burning when she is badly hurt, and the last one
-## blows her magazine and sends her down (see ShipDamage). The web game's Ship.
+## blows her magazine and sends her down (see ShipDamage). A ghost ship (a
+## Livery.ghost) sails on a wind of her own, slips half the sea's grip,
+## shrugs off fire and grape, lets some shot pass clean through and fades
+## away instead of foundering. The web game's Ship.
 
 ## Point of sail (degrees off dead downwind) to speed factor.
 const WIND_TABLE := [[0.0, 0.8], [40.0, 0.96], [90.0, 1.0], [120.0, 0.9], [145.0, 0.62], [165.0, 0.38], [180.0, 0.3]]
@@ -29,6 +32,8 @@ const WRECK_LIFE := 180.0
 enum Team { PLAYER, PIRATE }
 const SMOKE := Color(0.82, 0.8, 0.78, 0.32)
 const SMOKE_END := Color(1.05, 1.04, 1.02)
+## Seconds a laid ghost takes to dissolve.
+const GHOST_FADE := 4.5
 
 static var _count := 0
 
@@ -87,6 +92,12 @@ var crew_hit := 0.0
 var haunt: Haunt
 ## Crossed into the spirit world (Haunt): nothing can touch her.
 var phantom := false
+## A ghost ship (her livery's), and how far she has materialised (0 mist ..
+## 1 there): she fades in from wherever she rises.
+var ghost := false
+var presence := 1.0
+var _flare := 0.0
+var _mist_t := 0.0
 
 ## Where she floats (y unused) and how she moves over the ground.
 var pos := Vector3.ZERO
@@ -156,6 +167,7 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 	s.world = p_world
 	s.team = p_team
 	s.ship_name = c.title
+	s.ghost = p_livery.ghost
 	s.max_hp = c.hp
 	s.hp = c.hp
 	s.reload_full = PackedFloat32Array([c.reload, c.reload])
@@ -170,6 +182,8 @@ static func create(p_cls: ShipClass, p_livery: Livery, p_world: World, p_team: T
 	s.bow_wave = BowWave.new()
 	s.bow_wave.setup(s.model.shape, p_cls)
 	s.add_child(s.bow_wave)
+	if s.ghost:
+		s.dmg.ghostly()
 	return s
 
 
@@ -366,17 +380,23 @@ func _shoot(p: Array) -> void:
 		world.wake.push(w.x, w.z, 2.2, -0.25)
 	if world.sound != null:
 		var h := world.heard(at)
-		world.sound.cannon(h.x, h.y, h.z, clampf((cls.length - 15.0) / 14.0, 0.0, 1.0))
+		# a phantom's guns: a hollow, muffled boom under a rising spectral howl
+		world.sound.cannon(h.x * (0.55 if ghost else 1.0), h.y, h.z, clampf((cls.length - 15.0) / 14.0, 0.0, 1.0))
+		if kind == Ammo.WRAITH:
+			world.sound.wraith(h.x, h.y, h.z)
 	world.shook.emit(0.35 if mine else 0.12 * world.loudness(at))
 
 
 ## A blow to her (a ball, a ram, the ground), at a world point or anywhere
-## along her side; `hull` false for one that misses her timbers. Returns the
-## damage done, after her armour.
-func damage(amount: float, attacker: Ship, at: Variant = null, hull: bool = true, cause: String = "shot") -> float:
+## along her side; `hull` false for one that misses her timbers, `pierce`
+## for one no armour stops (wraith-fire). Returns the damage done, after her armour.
+func damage(amount: float, attacker: Ship, at: Variant = null, hull: bool = true, cause: String = "shot", pierce := false) -> float:
 	if not alive or phantom:
 		return 0.0
-	var d := amount * (1.0 - cls.armor) * randf_range(0.85, 1.15)
+	var d := amount * (1.0 if pierce else 1.0 - cls.armor) * randf_range(0.85, 1.15)
+	# a phantom flares green where she's struck
+	if ghost:
+		_flare = minf(1.0, _flare + 0.45)
 	hp -= d
 	if hull:
 		dmg.on_hit(at, d)
@@ -400,7 +420,13 @@ func die(attacker: Ship) -> void:
 	_pending.clear()
 	if attacker != null:
 		attacker.kills += 1
-	if swallowed:
+	if ghost:
+		# no blast: the curse breaks, and she comes apart into the mist she came from
+		world.fx.exorcism(Vector3(pos.x, model.shape.main_deck_y(0.5), pos.z), cls.length)
+		if world.sound != null:
+			var h := world.heard(pos)
+			world.sound.exorcise(h.x, h.y, h.z)
+	elif swallowed:
 		# no blast: the sea closes over her rail and she goes, in a burst of white water
 		for i in 3:
 			var a := (i / 3.0 - 0.33) * cls.length
@@ -421,7 +447,7 @@ func die(attacker: Ship) -> void:
 ## Fire shot struck home: she burns the longer for every ball. True if she
 ## has only just caught.
 func ignite(by: Ship) -> bool:
-	if not alive or phantom:
+	if not alive or phantom or ghost:
 		return false
 	var fresh := afire <= 0.0
 	afire = minf(Ammo.BURN_MAX, maxf(0.0, afire) + Ammo.BURN_PER_HIT)
@@ -446,10 +472,23 @@ func shred(by: Ship) -> bool:
 
 ## Grape shot swept her deck. True if her gun crews were at full strength.
 func rake(by: Ship) -> bool:
-	if not alive or phantom:
+	if not alive or phantom or ghost:
 		return false
 	var fresh := crew_hit <= 0.0
 	crew_hit = Ammo.CREW_TIME
+	if by != null:
+		last_attacker = by
+	last_hit = world.time
+	return fresh
+
+
+## Wraith-fire struck her: her gun crews shrink from their guns. True if
+## they were steady a moment ago.
+func terrify(by: Ship) -> bool:
+	if not alive or phantom or ghost:
+		return false
+	var fresh := crew_hit <= 0.0
+	crew_hit = maxf(crew_hit, Ammo.DREAD_TIME)
 	if by != null:
 		last_attacker = by
 	last_hit = world.time
@@ -520,7 +559,8 @@ func step(dt: float) -> void:
 		sail_level += clampf(sail_target - sail_level, -dt * 0.6, dt * 0.6)
 		# a battered hull drags: she loses way as she floods
 		var hp_f := 0.72 + 0.28 * (hp / max_hp)
-		var wf := wind_factor(rel_deg) * (0.75 + 0.25 * w.strength) * (1.0 + gust * 0.08)
+		# a ghost sails on a wind of her own, dead into the eye of the real one if she likes
+		var wf := 1.02 if ghost else wind_factor(rel_deg) * (0.75 + 0.25 * w.strength) * (1.0 + gust * 0.08)
 		# every mast shot away takes a share of her canvas with it, and shredded
 		# canvas (chain shot) draws far less wind until it's mended
 		var torn_k := 1.0 - Ammo.TORN_SLOW * minf(1.0, torn / 3.0)
@@ -592,6 +632,9 @@ func step(dt: float) -> void:
 		target_roll = target_roll * 0.3 * swell + dmg.pose_roll
 		if dmg.done:
 			removed = true
+		# a laid ghost is gone once the last of her has dissolved
+		if ghost and sink_t > GHOST_FADE + 1.0:
+			removed = true
 	elif dt > 0.0:
 		# flooding: she rides lower and lists toward her holes
 		dmg.update(dt)
@@ -640,13 +683,17 @@ func step(dt: float) -> void:
 	var flag_ang := atan2(-lz, lx)
 	# the canvas spills and luffs while it crosses over, then fills on the new side; gusts puff it out
 	var fill := clampf(wind_factor(rel_deg) * w.strength * (1.1 + gust * 0.45), 0.25, 1.25) * (0.3 + 0.7 * minf(1.0, absf(_rig_lee)))
+	if ghost:
+		fill = 0.95 + 0.25 * sin(world.time * 0.7 + _id)
 	model.update_rig(sail_level, -_rig_brace, _rig_lee, flag_ang, fill, clampf(w.strength * (1.0 + gust * 0.5), 0.2, 1.4))
 	model.tick(world.time)
 
 	if dt <= 0.0:
 		return
 	_wake(dt, fx, fz, port, L, B)
-	if alive:
+	if ghost:
+		_haunt(dt)
+	elif alive:
 		_galley(dt, w)
 	_flames(dt, swell)
 
@@ -687,7 +734,11 @@ func _flames(dt: float, swell: float) -> void:
 	while _fire_t > 1.0:
 		_fire_t -= 1.0
 		var p: Variant = dmg.fire_point()
-		if p != null:
+		if p == null:
+			continue
+		if ghost:
+			world.fx.spirit_flame(p, 0.7 + burning * 0.6)
+		else:
 			world.fx.flame(p, 0.7 + burning * 0.6)
 
 
@@ -705,6 +756,9 @@ func _land(dt: float, fx: float, fz: float, L: float) -> void:
 		var h := world.ground_height(px, pz)
 		var reef := world.reef_at(px, pz) if h < 0.0 else 0.0
 		if reef > 0.3:
+			# a phantom's hull floats over coral untouched
+			if ghost:
+				continue
 			var k := clampf((h + c.draft * 0.95) / 0.9, 0.0, 1.0) * smoothstep(0.3, 0.6, reef)
 			if k > grind:
 				grind = k
@@ -769,6 +823,9 @@ func _wake(dt: float, fx: float, fz: float, port: Vector3, L: float, B: float) -
 	var spd := absf(speed)
 	# a wreck's wake dies away as she settles
 	var wake_k := 1.0 if alive else maxf(0.0, 1.0 - sink_t / 3.0)
+	# a ghost barely troubles the water
+	if ghost:
+		wake_k *= 0.3 * presence
 	if spd > 0.3 and wake_k > 0.0:
 		# pressure every frame: the canvas grows the Kelvin arms and the transverse
 		# swell from it. The bow surges and eases as she pitches and the hull yaws a
@@ -813,11 +870,11 @@ func _wake(dt: float, fx: float, fz: float, port: Vector3, L: float, B: float) -
 			var out := -signf(ang_vel) * B * 0.55
 			wake.stamp(pos.x - fx * L * 0.38 + port.x * out, pos.z - fz * L * 0.38 + port.z * out, B * 0.36, 0.22 * skid * wake_k)
 	# the bow wave sheet rides the waterline, growing with speed
-	var bow_amp := minf(1.2, spd / 12.0) if alive else 0.0
+	var bow_amp := minf(1.2, spd / 12.0) * (0.3 * presence if ghost else 1.0) if alive else 0.0
 	bow_wave.follow(pos.x, _heave, pos.z, heading, _pitch * 0.8, bow_amp, spd, dt)
 	# bow spray: fine droplets thrown off the crest of the sheet at speed, in bursts
 	# when she buries her nose in a swell. Small, quick and falling: water, not smoke.
-	if alive and spd > cls.max_speed * 0.35:
+	if alive and not ghost and spd > cls.max_speed * 0.35:
 		var fast := (spd / cls.max_speed - 0.35) / 0.65
 		var slam := maxf(0.0, _pitch - 0.02) * 30.0
 		_spray_t += dt * (fast * fast * 40.0 + slam * 50.0)
@@ -851,6 +908,47 @@ func _galley(dt: float, w: Wind) -> void:
 		var p := model.global_transform * model.chimney
 		var v := Vector3(vel.x * 0.85 + w.dir_x * push + (_rng.randf() - 0.5) * 0.2, 0.7 + _rng.randf() * 0.3, vel.z * 0.85 + w.dir_z * push + (_rng.randf() - 0.5) * 0.2)
 		world.fx.emit(p + Vector3(0, 0.05, 0), v, 2.2 + _rng.randf() * 1.2, 0.32, 1.6 + _rng.randf() * 0.8, SMOKE, SMOKE_END, -0.15, 0.6, 1, 0.15, breeze)
+
+
+## A ghost's own weather: a cold mist pouring off her waterline and trailing
+## astern, green motes rising off her rails, and her presence and hit-flare
+## fed to her materials.
+func _haunt(dt: float) -> void:
+	if alive:
+		presence = minf(1.0, presence + dt / 3.2)
+	else:
+		presence = maxf(0.0, 1.0 - sink_t / GHOST_FADE)
+	_flare = maxf(0.0, _flare - dt * 2.2)
+	dmg.set_ghost(presence, _flare)
+	var pr := presence
+	if pr <= 0.02:
+		return
+	_mist_t += dt * (14.0 if alive else 30.0) * pr
+	var L := cls.length
+	var B := cls.beam
+	var f := forward()
+	var pd := Vector3(f.z, 0.0, -f.x)
+	# (thinner after dark, when the moon and the lanterns would make a bank of it)
+	var mist_a := 0.2 * pr * (1.0 - 0.75 * world.night)
+	while _mist_t > 1.0:
+		_mist_t -= 1.0
+		var u := (_rng.randf() - 0.55) * L
+		var side := 1.0 if _rng.randf() < 0.5 else -1.0
+		var x := pos.x + f.x * u + pd.x * side * B * 0.45
+		var z := pos.z + f.z * u + pd.z * side * B * 0.45
+		if _rng.randf() < 0.7:
+			var wy := world.water_height(x, z)
+			world.fx.emit(Vector3(x, wy + 0.3 + _rng.randf() * 0.6, z),
+					Vector3(vel.x * 0.25 + pd.x * side * 0.6, 0.15 + _rng.randf() * 0.25, vel.z * 0.25 + pd.z * side * 0.6),
+					3.0 + _rng.randf() * 2.0, 1.6 + _rng.randf(), 6.0 + _rng.randf() * 4.0, Color(0.62, 0.82, 0.74, mist_a), Color(0.78, 0.9, 0.86),
+					-0.04, 0.5, Particles.SMOKE, 0.35, Vector2.ZERO, (_rng.randf() - 0.5) * 0.3)
+		else:
+			# will-o'-wisps lifting off the rails
+			var deck := position.y + cls.freeboard + _rng.randf() * 2.0
+			world.fx.emit(Vector3(x - pd.x * side * B * 0.2, deck, z - pd.z * side * B * 0.2),
+					Vector3(vel.x * 0.6 + (_rng.randf() - 0.5) * 0.6, 0.6 + _rng.randf() * 1.2, vel.z * 0.6 + (_rng.randf() - 0.5) * 0.6),
+					1.2 + _rng.randf() * 1.4, 0.16 + _rng.randf() * 0.14, 0.03, Color(1.4 * pr, 5.0 * pr, 3.0 * pr), Color(0.12, 1.0, 0.55),
+					-0.3, 0.8, Particles.SPARK, 0.15, Vector2.ZERO, 0.0, true)
 
 
 ## A sudden lurch (a broadside's recoil, a sea slamming into her quarter).

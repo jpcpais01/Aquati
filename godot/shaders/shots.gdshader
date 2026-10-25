@@ -7,7 +7,9 @@
 // Instance packing (src/game/shots.gd):
 //   MODEL_MATRIX[3].xyz  muzzle position     MODEL_MATRIX[0].xyz  launch velocity
 //   INSTANCE_CUSTOM      launch time, time it stops, seed, kind (Ammo) + 8 x the
-//                        trail it flies with (Cosmetics.TRAIL_STYLES: round shot's)
+//                        trail it flies with (Cosmetics.TRAIL_STYLES: round shot's;
+//                        a ghost's wraith-fire flies as round shot in the
+//                        wraith's trail, and its ball is a glow of cold light)
 // The mesh is four quads: the streak (VERTEX.z 0: x along the flight, tail
 // to head, y across), the ball (z 1, a billboard drawn as a sphere), and for
 // chain shot only its second half-ball (z 2) and the chain slung between
@@ -151,6 +153,10 @@ void fragment() {
 			// red-hot iron: white-orange where it faces you, a dull crust at the rim
 			vec3 hot = mix(vec3(0.7, 0.07, 0.01), vec3(4.2, 1.5, 0.35), n.z * n.z) * v_flick;
 			ALBEDO = mix(hot, fog.rgb, f * 0.6) * a;
+		} else if (kind == 0 && style == 9) {
+			// wraith-fire: a ball of cold light, guttering
+			vec3 cold = mix(vec3(0.05, 0.5, 0.22), vec3(0.9, 3.4, 1.8), n.z * n.z) * (1.0 + 0.6 * (v_flick - 1.0));
+			ALBEDO = mix(cold, fog.rgb, f * 0.5) * a;
 		} else {
 			// dark iron with a hard little highlight off the sun
 			vec3 sun_v = normalize((VIEW_MATRIX * vec4(sun_dir, 0.0)).xyz);

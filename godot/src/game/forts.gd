@@ -529,7 +529,8 @@ func _pick(g: Gun, f: Fort, player: Ship) -> void:
 		if not s.alive or s.removed or s.phantom:
 			continue
 		if f.ours:
-			if s.team != Ship.Team.PIRATE:
+			# (the dead are no business of a garrison's)
+			if s.team != Ship.Team.PIRATE or s.ghost:
 				continue
 		elif s.team != Ship.Team.PLAYER:
 			continue
@@ -700,6 +701,8 @@ func _impact(f: Fort, at: Vector3, vel: Vector3, damage: float, owner: Ship, kin
 					0.8 + randf() * 0.5, s, 0.06, chip, chip, 12.0, 0.4, Particles.SOFT, 0.01)
 		if kind == Ammo.FIRE:
 			world.fx.fire_hit(at)
+		elif kind == Ammo.WRAITH:
+			world.fx.wraith_hit(at, Vector3.ZERO)
 		if snd != null and (kind != Ammo.GRAPE or randf() < 0.3):
 			snd.thud(h.x, h.y, h.z)
 	# the stone takes its scar, and a block or two comes away down the face
@@ -758,7 +761,7 @@ func _impact(f: Fort, at: Vector3, vel: Vector3, damage: float, owner: Ship, kin
 	var direct := nd < 3.4
 	# a ball on the masonry well away from a gun shakes her crew and cracks the stonework round her
 	var k := 1.0 if direct else (0.32 if nd < 12.0 else 0.16)
-	if kind == Ammo.GRAPE and nd < 6.0:
+	if (kind == Ammo.GRAPE or kind == Ammo.WRAITH) and nd < 6.0:
 		near.shaken = 10.0
 	_hurt(f, near, damage * mult * k, at, direct)
 

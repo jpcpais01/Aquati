@@ -5,13 +5,21 @@ extends Node
 ## her wingmen in a loose vee. They are sighted far off in open water, left
 ## behind for good once you've sailed far past them on patrol, and paid for
 ## in gold when you sink them. Wrecks linger only a few at a time. Hulls come
-## off the shipyard's slipway, so a new sail never stutters the frame.
+## off the shipyard's slipway, so a new sail never stutters the frame. Now
+## and then the next sail is a ghost ship, out of the hull the yard keeps in
+## its shadow: rare by day, far likelier in the dark, in mist and in foul
+## weather, and only ever one at a time.
 
 const NAMES := [
 	"Black Gull", "Salt Widow", "Crimson Tide", "Grim Mariner", "Sea Wraith", "Rusty Anchor", "Dread Marlin", "Bone Siren",
 	"Gilded Shark", "Howling Jenny", "Midnight Eel", "Scarlet Kraken",
 ]
-## The Crown's bounty on each class (gold).
+## Ships the sea gave back.
+const GHOST_NAMES := [
+	"Drowned Widow", "Hollow Crown", "Weeping Anne", "Pale Regret", "Grey Mourner", "Last Lament", "Sorrowtide",
+	"Unquiet Mary", "Lantern of the Lost", "Kraken's Bride", "Silent Bell", "Ashen Covenant",
+]
+## The Crown's bounty on each class (gold), twice over for a ghost laid to rest.
 const BOUNTY := {"sloop": 60, "brig": 110, "galleon": 220}
 ## Lasting wrecks kept afloat at once, and how far from you one may linger.
 const MAX_WRECKS := 3
@@ -21,6 +29,8 @@ const RECYCLE := 820.0
 
 ## A pirate went down to your guns: what she was worth.
 signal bounty(ship: Ship, gold: int)
+## A ghost ship takes shape out of the sea mist.
+signal risen(ship: Ship)
 
 var world: World
 var shipyard: Shipyard
@@ -31,8 +41,13 @@ var spawn_timer := 8.0
 var voyage_time := 0.0
 ## Off for set pieces (screenshots of a quiet sea).
 var enabled := true
+## The odds that the next sail is a ghost (the game sets it by the night,
+## the mist and the storm), and every one that can be (--ghosts).
+var ghost_odds := 0.05
+var all_ghosts := false
 
 var _name_idx := randi() % NAMES.size()
+var _ghost_idx := randi() % GHOST_NAMES.size()
 ## The harbour's sea still to dress (dress_harbour): a lone sail (1) and a
 ## pair in company (2); and seconds to the next look at the slipway.
 var _dress := 0
@@ -64,15 +79,25 @@ func step(dt: float, player: Ship) -> void:
 
 
 ## A pirate of the class, out of the yard's stock: null if none is ready yet
-## (or, with `now`, built on the spot).
-func launch(id: String, x: float, z: float, heading: float, kills: int = 0, now: bool = false) -> PirateAI:
-	var model := shipyard.take(id) if shipyard != null else null
+## (or, with `now`, built on the spot). A `ghost` rises out of the mist.
+func launch(id: String, x: float, z: float, heading: float, kills: int = 0, now: bool = false, ghost := false) -> PirateAI:
+	var model: ShipModel = null
+	if shipyard != null:
+		model = shipyard.take(id, Shipyard.GHOST if ghost else "")
 	if model == null and not now:
 		return null
-	var livery := model.livery if model != null else Livery.named(Shipyard.LIVERIES[randi() % Shipyard.LIVERIES.size()])
-	var s := Ship.create(ShipClass.named(id), livery, world, Ship.Team.PIRATE, model, Parts.pirate_fit(id) if model == null else {})
-	s.ship_name = NAMES[_name_idx % NAMES.size()]
-	_name_idx += 1
+	var livery := model.livery if model != null else Livery.named(Shipyard.GHOST if ghost else Shipyard.LIVERIES[randi() % Shipyard.LIVERIES.size()])
+	var s := Ship.create(ShipClass.named(id), livery, world, Ship.Team.PIRATE, model, Parts.pirate_fit(id) if model == null and not ghost else {})
+	if ghost:
+		s.ship_name = GHOST_NAMES[_ghost_idx % GHOST_NAMES.size()]
+		_ghost_idx += 1
+		# her guns spit wraith-fire
+		s.blast = Particles.WRAITH
+		s.trail = Shots.WRAITH_STYLE
+		s.ammo = Ammo.WRAITH
+	else:
+		s.ship_name = NAMES[_name_idx % NAMES.size()]
+		_name_idx += 1
 	stage.add_child(s)
 	s.place(x, z, heading)
 	s.sail_target = 0.5
@@ -81,7 +106,28 @@ func launch(id: String, x: float, z: float, heading: float, kills: int = 0, now:
 	world.ships.append(s)
 	var ai := PirateAI.new(s, kills / 4.0)
 	ais[s] = ai
+	if ghost:
+		_rise(s)
 	return ai
+
+
+## A ghost takes shape out of the sea mist where she will be.
+func _rise(s: Ship) -> void:
+	s.presence = 0.0
+	s.dmg.set_ghost(0.0, 0.0)
+	world.fx.ghost_rise(Vector3(s.pos.x, world.water_height(s.pos.x, s.pos.z), s.pos.z), s.cls.length)
+	risen.emit(s)
+
+
+## Whether the next sail on the horizon is a ghost: one is waiting in the
+## yard's shadow, none is abroad already, and the odds come up.
+func _ghost_omen() -> bool:
+	if shipyard == null or shipyard.ghost().is_empty() or _unseen != null:
+		return false
+	for s: Ship in world.ships:
+		if s.ghost and s.alive:
+			return false
+	return all_ghosts or randf() < ghost_odds
 
 
 ## Open water rMin..rMax from (cx, cz), in the same archipelago, clear of other ships.
@@ -155,6 +201,8 @@ func _single(near: Vector3, kills: int, r_min: float, r_max: float) -> bool:
 	if at == null:
 		return false
 	var p: Vector2 = at
+	if _ghost_omen():
+		return launch(shipyard.ghost(), p.x, p.y, randf() * TAU, kills, false, true) != null
 	return launch(_pick_class(kills), p.x, p.y, randf() * TAU, kills) != null
 
 
@@ -286,7 +334,7 @@ func _on_sunk(ship: Ship, attacker: Ship) -> void:
 	if shipyard != null:
 		shipyard.rest(3.0)
 	if attacker != null and attacker.team == Ship.Team.PLAYER:
-		var gold: int = BOUNTY.get(ship.cls.id, 60)
+		var gold: int = BOUNTY.get(ship.cls.id, 60) * (2 if ship.ghost else 1)
 		attacker.gold += gold
 		bounty.emit(ship, gold)
 

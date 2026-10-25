@@ -29,7 +29,7 @@ const RANKS := [
 	[4800, "Terror of the Isles", "Whole flotillas turn tail."],
 	[7000, "Legend of the Archipelago", "They will sing of this voyage."],
 ]
-const KIND_ICON := {"kill": "skull", "chest": "coin", "isle": "isle", "trade": "coin", "bounty": "skull"}
+const KIND_ICON := {"kill": "skull", "chest": "coin", "isle": "isle", "trade": "coin", "bounty": "skull", "ghost": "skull"}
 ## The card's columns in CSS pixels: renown, the least the tally needs, the log.
 const COL_A := 232.0
 const COL_B := 400.0

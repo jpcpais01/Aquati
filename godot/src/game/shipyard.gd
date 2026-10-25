@@ -7,7 +7,8 @@ extends Node
 ## so the harbour's picker swaps her for another at a tap (those come first
 ## while the harbour is up), with that class's refit bolted on (Progress), and
 ## now and then a pirate's comes off it with a prize fitting of her own
-## (Parts.pirate_fit). The rendering server queues what a worker asks
+## (Parts.pirate_fit). Once all that is stocked, one phantom waits in the
+## yard's shadow for the next ghost ship (GHOST). The rendering server queues what a worker asks
 ## of it, so a finished model's meshes and materials are ready for the main
 ## thread to sail.
 
@@ -15,6 +16,9 @@ extends Node
 const STOCK := {"sloop": 3, "brig": 3, "galleon": 1}
 const LIVERIES := ["pirate-crimson", "pirate-violet"]
 const MINE := "player"
+## The ghost ships' livery, and the odds of each class for the one kept ready.
+const GHOST := "ghost"
+const GHOST_ODDS := {"sloop": 0.4, "brig": 0.45, "galleon": 0.15}
 
 ## The harbour is up: your hulls are built before the pirates', the one
 ## just picked on its picker (`want`) first of all.
@@ -36,6 +40,7 @@ func _ready() -> void:
 	for id: String in LIVERIES:
 		Livery.named(id)
 	Livery.named(MINE)
+	Livery.named(GHOST)
 	for id: String in ShipEvents.all_ships():
 		ShipClass.named(id)
 	for id: String in ShipEvents.liveries():
@@ -66,7 +71,7 @@ func _process(delta: float) -> void:
 	if not next.is_empty():
 		var id: String = next[0]
 		# (the refit settled here: the worker reads nothing that can change under it)
-		var fit := Progress.loadout(id) if next[1] == MINE else Parts.pirate_fit(id)
+		var fit := Progress.loadout(id) if next[1] == MINE else ({} if next[1] == GHOST else Parts.pirate_fit(id))
 		_task = WorkerThreadPool.add_task(_build.bind(ShipClass.named(id), Livery.named(next[1]), fit), false, "Shipyard: %s" % id)
 
 
@@ -85,7 +90,22 @@ func _next() -> Array:
 	for id: String in STOCK:
 		if count(id) < int(STOCK[id]):
 			return [id, LIVERIES[randi() % LIVERIES.size()]]
-	return mine
+	if not mine.is_empty() or not ghost().is_empty():
+		return mine
+	var r := randf()
+	for id: String in GHOST_ODDS:
+		r -= float(GHOST_ODDS[id])
+		if r < 0.0:
+			return [id, GHOST]
+	return ["brig", GHOST]
+
+
+## The class of the ghost ship waiting in the yard's shadow ("" none yet).
+func ghost() -> String:
+	for m in _stock:
+		if m.asked == GHOST:
+			return m.cls.id
+	return ""
 
 
 ## The classes kept ready for you: the ships of the line, and the event
@@ -135,7 +155,7 @@ func take(id: String, livery := "") -> ShipModel:
 ## fits the livery she was built for as long as it lasts.
 func _fits(m: ShipModel, livery: String) -> bool:
 	if livery.is_empty():
-		return m.asked != MINE
+		return m.asked != MINE and m.asked != GHOST
 	if m.asked != livery or m.rev != m.livery.rev:
 		return false
 	return livery != MINE or m.cls.is_event() or m.fit_key == Parts.key(Progress.loadout(m.cls.id))

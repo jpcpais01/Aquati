@@ -216,10 +216,14 @@ func update(dt: float, view: Vector3, storm: float) -> void:
 	for s in world.ships:
 		if s.removed:
 			continue
-		var fl := flow_at(s.pos.x, s.pos.z)
+		# a ghost slips half the sea's grip, and no throat holds or wrings her
+		var grip := 0.5 if s.ghost else 1.0
+		var fl := flow_at(s.pos.x, s.pos.z) * grip
 		s.current = Vector2(fl.x, fl.y)
 		# dragged down, she whirls faster and faster with the water; a heavy hull answers slowly
 		s.spin = fl.z * 0.75 / sqrt(s.cls.mass) * (1.0 + s.drawn * 1.8)
+		if s.ghost:
+			continue
 		_drag(s, dt)
 		if s.alive:
 			_wring(s, dt)

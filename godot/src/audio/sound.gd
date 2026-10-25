@@ -648,6 +648,10 @@ func _step_under(dt: float) -> void:
 	_deep.volume_db = _db(0.5 / 0.8 * _deep_g * _noise_gain)
 
 
+## When the last wraith-fire howl was heard (a broadside is a chorus, not a swarm).
+var _wraith_at := -100.0
+
+
 # ---------------------------------------------------------------- playing
 
 ## A take of `key` played out in the world (the web's emit): late by the
@@ -1196,6 +1200,30 @@ func guns_ready(pan: float) -> void:
 ## from where she is: a breath drawn backwards and a sinking choir.
 func phantom(vol: float, pan: float, dist := 0.0) -> void:
 	_emit("phantom", vol, pan, dist, 0.97 + randf() * 0.06, 0.8)
+
+
+## Wraith-fire leaving a phantom's gun: a hollow, falling howl with a
+## shimmer on top. One per ripple of the broadside at most, so a volley is
+## a chorus, not a swarm.
+func wraith(vol: float, pan: float, dist := 0.0) -> void:
+	if vol < 0.03 or _now - _wraith_at < 0.12:
+		return
+	_wraith_at = _now
+	_emit("wraith", vol, pan, dist, 0.94 + randf() * 0.12, 0.7)
+
+
+## A ghost ship sighted: a far-off, wordless choir that swells out of the
+## sea and drifts down a semitone before it dies away.
+func ghost_wail(vol: float, pan: float) -> void:
+	if _voice(vol):
+		_one("ghost_wail", minf(1.0, vol), pan, 0.0, 1.0, 0.9)
+
+
+## A ghost ship laid to rest: a rising chord that opens out and fades like
+## breath on glass.
+func exorcise(vol: float, pan: float, dist := 0.0) -> void:
+	if _voice(vol):
+		_one("exorcise", minf(1.0, vol), pan, _heard_at(dist), 1.0, 0.8)
 
 
 ## Her Banshee's Wail as she comes back: a boom, then the keening.

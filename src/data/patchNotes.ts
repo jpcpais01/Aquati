@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T09:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: ghost ships',
+        notes: [
+          'Ghost ships come to the Android and Windows game. Now and then the next sail is a phantom: rare by day, far likelier at night, in mist and in storms, and only one at a time. She takes shape out of the mist to a far-off choir.',
+          'Her guns spit wraith-fire that goes through armour and terrifies your gun crews. About one ball in four passes clean through her, and fire and grape do nothing to the dead. She never runs.',
+          'Lay her to rest and she comes apart in a column of green light, for twice the bounty and a hold full of cursed gold.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T08:00Z',
     entries: [
       {
