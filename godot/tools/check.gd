@@ -1262,7 +1262,7 @@ func _check_boarding(w: World) -> void:
 	else:
 		_fail("boarding: after %.0f s struck %s, the captain fell %s, finite %s, %.2f m off her planks" % [t, flags.struck, flags.fell, finite, off_deck])
 	var fight_t := t
-	var boarders := shore.party.size()
+	var boarders: int = shore.party.size()
 	# her colours down, the boarders back aboard, the lines cut: off she goes a prize
 	b.strike(hers)
 	shore.leave_as_prize()
