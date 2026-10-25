@@ -115,13 +115,43 @@ func _avoid(world: World, heading: float, escaping := false) -> float:
 	return heading + PI * 0.6
 
 
-func update(dt: float, world: World, player: Ship) -> void:
+## Who she goes for: you, mostly, but an escort nearer to hand (or the one
+## that just fired on her) will do; she sticks with her choice a while. A
+## named captain was sent after you, and has eyes for no one else.
+func pick_target(world: World, player: Ship, escorts: Array[Ship]) -> Ship:
+	var flag := player if player != null and player.alive else null
+	if escorts.is_empty() or hunter:
+		return flag
+	var s := ship
+	var best: Ship = null
+	var bd := INF
+	var cands: Array[Ship] = escorts.duplicate()
+	if flag != null:
+		cands.append(flag)
+	for c in cands:
+		if not c.alive or c.removed or c.phantom:
+			continue
+		var d := Vector2(c.pos.x - s.pos.x, c.pos.z - s.pos.z).length()
+		if c == flag:
+			d *= 0.8
+		if s.last_attacker == c and world.time - s.last_hit < 20.0:
+			d *= 0.6
+		if c == target:
+			d /= 1.3
+		if d < bd:
+			bd = d
+			best = c
+	return best
+
+
+func update(dt: float, world: World, player: Ship, escorts: Array[Ship] = []) -> void:
 	var s := ship
 	if not s.alive:
 		s.rudder = 0.0
 		return
 	_think -= dt
-	target = player if player != null and player.alive else null
+	if _think <= 0.0 or target == null or not is_instance_valid(target) or not target.alive or target.removed:
+		target = pick_target(world, player, escorts)
 	var dx := target.pos.x - s.pos.x if target != null else 0.0
 	var dz := target.pos.z - s.pos.z if target != null else 0.0
 	var dist := Vector2(dx, dz).length()
@@ -139,7 +169,7 @@ func update(dt: float, world: World, player: Ship) -> void:
 
 	if _think <= 0.0:
 		_think = 0.4 + _rng.randf() * 0.3
-		var provoked := s.last_attacker != null and s.last_attacker == player and world.time - s.last_hit < 25.0
+		var provoked := s.last_attacker != null and (s.last_attacker == player or escorts.has(s.last_attacker)) and world.time - s.last_hit < 25.0
 		var pk := pack
 		if pk != null and pk.leader != null and (not is_instance_valid(pk.leader.ship) or not pk.leader.ship.alive):
 			pk.leader = null

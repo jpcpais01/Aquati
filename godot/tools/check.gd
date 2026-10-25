@@ -147,6 +147,127 @@ func _check_convoys(regions: Array[Region]) -> void:
 	yard.free()
 
 
+## Your fleet: a saved roster tidied (junk dropped, never more than two, a
+## prize's paint kept), the harbour masters' ships the same all day, the
+## stations on either quarter; then two escorts put to sea mid-lane round a
+## flagship, sailing on station, turning on a pirate that comes for her and
+## struck off when one goes down.
+func _check_fleet(regions: Array[Region]) -> void:
+	var F: GDScript = load("res://src/game/fleet.gd")
+	var junk := {"ships": [
+		{"id": "a", "cls": "brig", "name": "Valiant", "origin": "prize", "livery": "pirate-violet", "hp": 3.0, "joined": 2},
+		{"id": "b", "cls": "frigate", "name": "Nope"},
+		{"id": "c", "cls": "sloop", "name": "Tern", "origin": "hired", "livery": "ghost", "hp": "x", "joined": 1},
+		"junk",
+		{"id": "a", "cls": "sloop", "name": "Dup"},
+		{"id": "d", "cls": "galleon", "name": "Third", "joined": 3},
+	], "lost": -4, "order": "charge"}
+	var f: Dictionary = F.sanitize(junk)
+	var ok: bool = f.ships.size() == 2 and f.ships[0].id == "c" and f.ships[1].id == "a" and f.order == "follow" and int(f.lost) == 0
+	ok = ok and f.ships[1].livery == "pirate-violet" and float(f.ships[1].hp) == 1.0 and f.ships[0].livery == "player" and float(f.ships[0].hp) == 1.0
+	if not ok:
+		_fail("fleet: a saved roster tidied to %s" % f)
+	var o1: Array = F.hire_offers(3, 2000)
+	var o2: Array = F.hire_offers(3, 2000)
+	var o3: Array = F.hire_offers(4, 2000)
+	if o1.size() != 2 or str(o1) != str(o2) or str(o1) == str(o3) or o1[0].cls != "sloop" or o1[0].name == o1[1].name or o1[0].master == o1[1].master or int(o1[1].price) < 6000:
+		_fail("fleet: the harbour master's ships %s / %s" % [o1, o3])
+	var s0: Vector2 = F.station(0, 2, 30.0, 22.0)
+	var s1: Vector2 = F.station(1, 2, 30.0, 22.0)
+	if s0.x <= 20.0 or s1.x >= -20.0 or s0.y < 30.0 or s1.y != s0.y:
+		_fail("fleet: stations %s and %s" % [s0, s1])
+	var w := World.new()
+	w.waves = Waves.new(0.6)
+	w.wind = Wind.new(0.6)
+	w.regions = regions
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	w.fx = fx
+	var shots := Shots.new()
+	shots.world = w
+	root.add_child(shots)
+	if not shots.is_node_ready():
+		shots._ready()
+	w.shots = shots
+	w.wake = WakeField.new()
+	for arr: String in ["_sx", "_sz", "_sr", "_ss", "_sk"]:
+		var wa: Variant = w.wake.get(arr)
+		wa.resize(WakeField.MAX_STAMPS)
+		w.wake.set(arr, wa)
+	var stage := Node3D.new()
+	root.add_child(stage)
+	var p := Ship.create(ShipClass.named("brig"), Livery.named("player"), w)
+	stage.add_child(p)
+	w.ships.append(p)
+	var a := regions[0].centre
+	var b := regions[1].centre
+	var mid := (a + b) * 0.5
+	p.place(mid.x, mid.z, atan2(b.x - a.x, b.z - a.z))
+	p.sail_target = 2.0 / 3.0
+	p.sail_level = p.sail_target
+	p.speed = 5.0
+	var es: RefCounted = load("res://src/game/escorts.gd").new()
+	es.setup(w, stage)
+	es.form(p, [F.clean_rec({"id": "t1", "cls": "brig", "name": "Valiant", "origin": "hired"}), F.clean_rec({"id": "t2", "cls": "sloop", "name": "Tern", "origin": "prize", "livery": "pirate-crimson", "hp": 0.5})], "follow")
+	var ships: Array[Ship] = es.ships()
+	if ships.size() != 2 or w.ships.size() != 3 or not ships[0].escort or ships[0].team != Ship.Team.PLAYER or absf(ships[1].hp / ships[1].max_hp - 0.5) > 0.01:
+		_fail("fleet: formed %d escorts (%d ships afloat)" % [ships.size(), w.ships.size()])
+	else:
+		var none: Array[Ship] = []
+		var marks: Array[Vector3] = []
+		var p0 := p.pos
+		var dt := 1.0 / 30.0
+		for i in 900:
+			w.time += dt
+			es.update(dt, p, none, null, marks)
+			for s in w.ships:
+				s.step(dt)
+		var off := PackedStringArray()
+		var far := 0.0
+		for ai: EscortAI in es.ais:
+			var sh := sin(p.heading)
+			var ch := cos(p.heading)
+			var st := Vector2(p.pos.x + ch * ai.slot.x - sh * ai.slot.y, p.pos.z - sh * ai.slot.x - ch * ai.slot.y)
+			var d := st.distance_to(Vector2(ai.ship.pos.x, ai.ship.pos.z))
+			far = maxf(far, d)
+			off.append("%s %.0f m off station" % [ai.ship.ship_name, d])
+		var run := Vector2(p.pos.x - p0.x, p.pos.z - p0.z).length()
+		off.append("the flagship %.0f m on" % run)
+		if far > 40.0 or run < 60.0:
+			_fail("fleet: after 30 s under way, %s" % ", ".join(off))
+		# a pirate comes for the flagship: the nearer escort turns on her
+		var foe := Ship.create(ShipClass.named("sloop"), Livery.named("pirate-crimson"), w, Ship.Team.PIRATE)
+		stage.add_child(foe)
+		w.ships.append(foe)
+		foe.place(p.pos.x + p.port_dir().x * 120.0, p.pos.z + p.port_dir().z * 120.0, p.heading)
+		p.last_attacker = foe
+		p.last_hit = w.time
+		var foes: Array[Ship] = [foe]
+		es.update(0.5, p, foes, null, marks)
+		var fighting := 0
+		for ai: EscortAI in es.ais:
+			fighting += 1 if ai.mode == EscortAI.Mode.FIGHT and ai.target == foe else 0
+		if fighting == 0:
+			_fail("fleet: a pirate on the flagship's beam, and no escort engages (%s)" % ", ".join(PackedStringArray(es.ais.map(func(x: EscortAI) -> String: return x.status()))))
+		# and a pirate picks the nearer ship when an escort lies between
+		var pai := PirateAI.new(foe, 1.0)
+		var pick: Ship = pai.pick_target(w, p, es.ships())
+		var lost: Ship = ships[1]
+		lost.die(foe)
+		var rec: Dictionary = es.on_sunk(lost, p)
+		if rec.is_empty() or es.ais.size() != 1 or es.ships().size() != 1:
+			_fail("fleet: an escort went down and the fleet still holds %d" % es.ais.size())
+		print("fleet: roster tidied to %d, hire %s %s and %s %s; %s; %d engaged a pirate on the beam, who went for the %s; one lost, %d left" % [
+				f.ships.size(), o1[0].cls, o1[0].name, o1[1].cls, o1[1].name, ", ".join(off), fighting, pick.ship_name if pick != null else "none", es.ais.size()])
+	es.clear()
+	stage.free()
+	shots.free()
+	fx.free()
+	w.wake.free()
+
+
 ## Survivors: how many of a sunk ship's hands make it (and how they share
 ## out the wreckage), and the wreckage built; then a raft spawned, a line
 ## thrown to a ship alongside, and every hand swimming over and climbing aboard.
@@ -282,6 +403,7 @@ func _initialize() -> void:
 	_check_survivors()
 	if _home_world != null:
 		_check_convoys(_home_world.regions)
+		_check_fleet(_home_world.regions)
 	await _check_updates()
 	await _check_sound()
 	if _errors == 0:

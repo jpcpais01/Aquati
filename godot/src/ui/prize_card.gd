@@ -4,7 +4,8 @@ extends Control
 ## a glass card low in the middle of the screen with her colours bobbing
 ## over "She strikes her colours", her name, what her strongbox gave up, and
 ## the choice: take her as a prize (gold-edged, prize money) or scuttle her
-## (her bounty, salvage and infamy). Keys 1 and 2 pick them on a keyboard.
+## (her bounty, salvage and infamy), or, with room in your fleet, sign her
+## on as an escort. Keys 1, 2 and 3 pick them on a keyboard.
 
 signal picked(k: String)
 
@@ -32,7 +33,8 @@ func is_open() -> bool:
 	return visible
 
 
-## Up with her name, the haul and what each choice brings ({name, haul, prize, scuttle}).
+## Up with her name, the haul and what each choice brings ({name, haul,
+## prize, scuttle, and signon while she may join your fleet}).
 func open(v: Dictionary) -> void:
 	for c in get_children():
 		remove_child(c)
@@ -94,7 +96,16 @@ func open(v: Dictionary) -> void:
 		b.position = Vector2(pad + i * (bw + gap), y)
 		_card.add_child(b)
 		_buttons.append(b)
-	y += bh + 14.0 * K
+	y += bh
+	# and under them, the whole width: her crew turn their coats and sail with you
+	if v.has("signon"):
+		var b := _act(inner, "hull", "Sign her on", str(v.signon), "3", false)
+		b.pressed.connect(func() -> void: picked.emit("signon"))
+		b.position = Vector2(pad, y + gap)
+		_card.add_child(b)
+		_buttons.append(b)
+		y += gap + b.size.y
+	y += 14.0 * K
 	_card.resize(Vector2(w, y))
 	_card.pivot_offset = _card.size * 0.5
 	var bottom := (150.0 * HudStyle.KT if touch else 56.0 * K) + 24.0 * K

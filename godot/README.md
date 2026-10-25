@@ -189,6 +189,11 @@ Convoys: `--convoy` puts her mid-lane on the high seas and sends a merchant
 convoy right across her bows as soon as the yard has two hulls (a shot builds
 them on the spot), and `--trade` comes alongside its leader at once; the smoke
 test prints a SMOKE CONVOY line.
+Fleet: `--fleet N` sails her with N escorts (a hired brig, then a sloop taken
+as a prize; none kept on the roster) and `--order follow|attack|hold` sets
+their standing order (O cycles it in play), `--hands` scrolls a docked market
+to the harbour master's desk; the smoke test prints a SMOKE
+FLEET line.
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

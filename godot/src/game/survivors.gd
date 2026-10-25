@@ -419,4 +419,7 @@ func _draw(emit: Callable) -> void:
 static func of_class(cls: String) -> Array[int]:
 	var n := (1 if randf() < 0.5 else 2) if cls == "sloop" else (2 + (1 if randf() < 0.4 else 0) if cls == "brig" else 3 + (1 if randf() < 0.5 else 0))
 	# more than three take two pieces of wreckage
-	return [2, n - 2] if n > 3 else [n]
+	var out: Array[int] = [n]
+	if n > 3:
+		out = [2, n - 2]
+	return out

@@ -13,6 +13,19 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-25T15:00Z',
+    entries: [
+      {
+        title: 'Android and Windows: your own fleet',
+        notes: [
+          'Your own fleet comes to the Android and Windows game: up to two escorts sail on your quarters and fight whatever comes for you.',
+          'When a pirate strikes her colours, you can sign her on as an escort. Every trading port also has a harbour master with two ships for hire each day.',
+          'The fleet panel shows each escort\'s hull and orders: Follow, Attack your target, or Hold position (O on a keyboard). An escort that sinks is lost for good.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T14:00Z',
     entries: [
       {
