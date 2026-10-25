@@ -182,9 +182,6 @@ export class CameraRig {
     this.tiltOpen = false;
   }
 
-  /** The farthest zoom's share, by ship class: galleon 1, brig 0.9, sloop 0.8. */
-  farScale = 1;
-
   /** Back to the plain high view (new voyage, ashore). */
   resetTilt() {
     this.tilt = this.tiltSmooth = 0;
@@ -193,7 +190,7 @@ export class CameraRig {
 
   private get followDistance() {
     const z = this.zoomSmooth * this.zoomSmooth * 0.6 + this.zoomSmooth * 0.4;
-    const d = lerp(70, 300 * this.farScale, z);
+    const d = lerp(70, 270, z);
     // in battle, pull back just enough that both ships stay comfortably in frame
     const sea = Math.max(d, lerp(d, this.fitDist, this.battle));
     const foot = lerp(13, 46, z);

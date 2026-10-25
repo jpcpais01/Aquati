@@ -16,9 +16,9 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-25T04:00Z',
     entries: [
       {
-        title: 'A view to fit your ship',
+        title: 'A closer farthest zoom',
         notes: [
-          'The farthest zoom now depends on your ship, straight down or leaned over: a galleon sees as far as ever, a brigantine stops 10% nearer and a sloop 20% nearer, so a small ship never shrinks to a speck. On the web game and on Android and Windows.',
+          'The farthest zoom now sits 10% closer for every ship, straight down or leaned over, so your ship stays bigger on screen. (This replaces the short-lived per-ship limits.) On the web game and on Android and Windows.',
         ],
       },
       {

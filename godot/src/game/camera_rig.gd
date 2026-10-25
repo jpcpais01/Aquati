@@ -15,7 +15,7 @@ const CINE_PITCH_NEAR := 0.6
 ## How long a zoom must rest against its stop before a fresh push leans it over.
 const TILT_GATE := 0.2
 const NEAR_DIST := 70.0
-const FAR_DIST := 300.0
+const FAR_DIST := 270.0
 ## The lens (vertical degrees), the web's at sea, and circling the harbour.
 const FOV := 34.0
 const ORBIT_FOV := 30.0
@@ -28,9 +28,6 @@ var target := Vector3.ZERO
 var zoom := 0.45
 ## Past the farthest zoom: 0 the usual high view .. 1 leaned over.
 var tilt := 0.0
-## How far out the farthest zoom stands, for her class: a galleon the whole
-## way, a brigantine 10% nearer, a sloop 20% (see far_for).
-var far_scale := 1.0
 var shake_scale := 1.0
 ## The lens in use (vertical degrees): a set piece may narrow it for a close-up.
 var lens := FOV
@@ -134,11 +131,6 @@ func zoom_by(d: float, now: float) -> void:
 	tilt = minf(1.0, tilt + step * 1.6)
 
 
-## The farthest zoom's share for a ship class: smaller ships, a closer ceiling.
-static func far_for(id: String) -> float:
-	return 0.8 if id == "sloop" else 0.9 if id == "brig" else 1.0
-
-
 ## The zoom button's stops: close, mid, far, far leaned over.
 const VIEWS := [[0.12, 0.0], [0.48, 0.0], [1.0, 0.0], [1.0, 1.0]]
 
@@ -187,7 +179,7 @@ func distance() -> float:
 
 func _follow_distance() -> float:
 	var z := _zoom_smooth * _zoom_smooth * 0.6 + _zoom_smooth * 0.4
-	return lerpf(lerpf(NEAR_DIST, FAR_DIST * far_scale, z), lerpf(13.0, 46.0, z), foot_blend())
+	return lerpf(lerpf(NEAR_DIST, FAR_DIST, z), lerpf(13.0, 46.0, z), foot_blend())
 
 
 ## Visible half-extent of the sea round the focus.
