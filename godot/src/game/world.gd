@@ -45,6 +45,9 @@ var time := 0.0
 ## The maelstroms' water (Hazards keeps them turning), and the hazards themselves.
 var vortices: Array[Vortex] = []
 var hazards: Hazards
+## The Brethren's island forts (their walls stop shot; a Forts, untyped
+## here so the world's script doesn't reach the shore's).
+var forts: Node3D
 
 
 func water_height(x: float, z: float) -> float:

@@ -1154,6 +1154,30 @@ func chime() -> void:
 		_one("chime", 1.0)
 
 
+## A fort's last gun goes quiet: a war horn blown over the water, two long
+## wavering blasts over a slow pair of war drums.
+func horn() -> void:
+	if _voice(0.34):
+		_one("horn", 1.0, 0.0, 0.0, 1.0, 0.5)
+
+
+## Danger rising (a fort's guns open, 2; its garrison sallies, 3): one heavy
+## drum and a tolling bell, ominous and short.
+func wanted(level: int) -> void:
+	if _voice(0.3):
+		_one("wanted%d" % (3 if level >= 3 else 2), 1.0, 0.0, 0.0, 1.0, 0.4)
+
+
+## A fort taken, your colours at the truck: a herald's brassy fanfare, then the purse pours over.
+func bounty() -> void:
+	if _voice(0.3):
+		_one("bounty", 1.0, 0.0, 0.0, 1.0, 0.4)
+	_emit("purse", 0.62, -0.1, 0.0, 0.95 + randf() * 0.1, 0.2, 1.3)
+	_emit("pour1", 0.55, 0.05, 0.0, 0.96 + randf() * 0.08, 0.22, 1.46)
+	_emit("purse", 0.5, 0.15, 0.0, 0.88, 0.2, 1.85)
+	coin(2.9, 0.4)
+
+
 ## A chest hauled aboard: a clink and a rising run of notes that grows with its rarity (0 .. 4).
 func treasure(tier: int) -> void:
 	coin()

@@ -153,6 +153,12 @@ scrolls a docked market (`--dock K`) to the pyrotechnist's stall and
 Feast nights: `--feast K` holds the K-th market town (0 .. 5) at its feast
 whatever the night (lanterns lit, folk dancing, rockets going up; add
 `--hour 21` for the dark), and `--boats N` strews N lantern boats off it.
+Forts: `--fort N` puts her off the N-th fort's sea wall (0 .. 4: the
+castillo, the star fort and the tower fort at home, the two sea keeps of Las
+Brumas), broadside on, `--fort-dist M` out; `--fort-ours` gives it to you
+(`--owed H`: its tribute H hours unpaid), `--silence` silences its guns, and
+`--storm` lands the party by its gate (`--brawl` fights the garrison,
+`--plunder` then opens its strongbox).
 For the maps: `--pins DX,DZ;DX,DZ` drops waypoints that far east and south
 of her, `--chart` opens the sea chart on her (`--chart-at X,Z` and
 `--chart-zoom Z` look elsewhere) and `--chart-tap DX,DZ` taps it that far off

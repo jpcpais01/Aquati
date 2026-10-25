@@ -981,6 +981,18 @@ func _paint_live(ci: CanvasItem) -> void:
 				continue
 			MapMarks.reef(ci, at, 7.0 * PX)
 			MapMarks.words(ci, at - Vector2(0.0, 17.0 * PX), str(rf.name), serif, _px(12.0), Color("#ffc9a6"), 4.0 * PX, ink)
+	# the forts, named (every captain knows where the Brethren's guns are)
+	var detail := _farness() < 0.5
+	var cinzel := HudStyle.font("cinzel", 600)
+	for f: Dictionary in scene.forts:
+		if not shows(float(f.x), float(f.z)):
+			continue
+		var at := to_canvas(float(f.x), float(f.z))
+		if not view.grow(30.0 * PX).has_point(at):
+			continue
+		MapMarks.fort(ci, at, (9.0 if detail else 5.0) * PX, bool(f.ours), bool(f.quiet))
+		if detail:
+			MapMarks.words(ci, at - Vector2(0.0, 18.0 * PX), str(f.name), cinzel, _px(12.0), Color("#9ff3e8") if f.ours else Color("#ffb59a"), 4.0 * PX, Color(8.0 / 255.0, 30.0 / 255.0, 40.0 / 255.0, 0.8))
 	if scene.route.size() > 1:
 		var course := PackedVector2Array()
 		course.resize(scene.route.size())

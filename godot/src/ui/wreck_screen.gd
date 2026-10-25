@@ -1045,6 +1045,8 @@ func _cause_runs(r: Dictionary, base: Font, name_font: Font, sz: int, c_base: Co
 		parts = [["Swallowed by ", false], [str(r.maelstrom), true]]
 	elif cause == "aground":
 		parts = [["Holed on the reef", false]]
+	elif cause == "fort":
+		parts = [["Sunk by the guns of ", false], [killer, true]]
 	elif killer == "":
 		parts = [[lead + "pirates", false]]
 	else:

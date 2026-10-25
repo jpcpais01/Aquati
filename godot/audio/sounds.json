@@ -73,6 +73,12 @@
     0.08574
    ]
   },
+  "bounty": {
+   "ext": "wav",
+   "gain": [
+    0.32121
+   ]
+  },
   "bubbles": {
    "ext": "wav",
    "gain": [
@@ -313,6 +319,12 @@
    "ext": "wav",
    "gain": [
     0.34261
+   ]
+  },
+  "horn": {
+   "ext": "ogg",
+   "gain": [
+    0.44797
    ]
   },
   "ignite": {
@@ -637,6 +649,18 @@
    "ext": "wav",
    "gain": [
     0.6
+   ]
+  },
+  "wanted2": {
+   "ext": "wav",
+   "gain": [
+    0.46385
+   ]
+  },
+  "wanted3": {
+   "ext": "wav",
+   "gain": [
+    0.45352
    ]
   },
   "war_cry3": {

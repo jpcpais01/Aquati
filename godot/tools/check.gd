@@ -38,12 +38,14 @@ const TOWN_SHELL_TRIS := 3000
 const FEAST_TRIS := 10000
 ## Puerto Marézia's triangles (its quay, buildings, palms and what moves; its folk are the crews').
 const HOME_TRIS := 34000
+## Each fort's stonework, whole and wrecked (the web's fort is about as much).
+const FORT_TRIS := 26000
 ## Every sound the game plays, as tools/audio/bake_audio.mjs names them.
 const SOUNDS := ["air0", "air1", "air2", "ammo0", "ammo1", "ammo2", "ammo3", "ammo4", "ammo5", "bell", "blast", "bosun_pipe", "bubbles",
 		"cannon0", "cannon1", "cannon2", "card_flip", "chain", "cheer4", "cheer6", "chime", "clash", "click", "clunk", "coin", "creak0", "creak1", "creak2",
 		"crunch", "earth", "flames", "foot_step", "founder", "fw_big", "fw_boom", "fw_crackle", "fw_pop", "fw_sizzle", "grape", "groan", "gull1", "gull2", "gull3", "guns_ready", "hop_hard", "hop_sand", "hop_up", "hop_wet", "ignite", "lap",
 		"mallet", "murmur", "noise", "pistol", "pour0", "pour1", "purse", "recoil", "reel0", "reel1", "reel2", "reel3", "rocket", "sand_step", "scrape0", "scrape1", "shell",
-		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll",
+		"squeeze_arrival", "squeeze_flourish", "steam", "swish", "phantom", "wail", "toll", "horn", "wanted2", "wanted3", "bounty",
 		"thwack", "thwack_heavy", "tally0", "tally1", "tally2", "tally3", "tally4", "tally5",
 		"tally_best0", "tally_best1", "tally_best2", "tally_best3", "tally_best4", "tally_best5",
 		"thunder_far", "thunder_near", "treasure1", "treasure2", "treasure3", "treasure4",
@@ -909,6 +911,7 @@ func _check_world() -> void:
 	_check_haunt(w)
 	_check_shore(w)
 	_check_camps(w)
+	_check_forts(w)
 
 
 ## Ashore: the planting's trunks and boulders and the towns as walls, a
@@ -1125,6 +1128,125 @@ func _check_camps(w: World) -> void:
 	shore.free()
 	crew.free()
 	fx.free()
+
+
+## The forts: five of them (three at home, two in Las Brumas), each in
+## budget; its plaza floor to walk on; a ball on its sea wall struck and one
+## over it flown past; marks on the water for her gunnery to lay on; its guns
+## firing on a ship that closes and hitting her; battered silent by her shot
+## (each gun's parapet down, the towers after the last); then taken and
+## held, its gaps patched and its guns turned on pirates.
+func _check_forts(w: World) -> void:
+	var t0 := Time.get_ticks_usec()
+	var sea := World.new()
+	sea.regions = w.regions
+	sea.wind = Wind.new(0.6)
+	sea.waves = Waves.new(0.6)
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	sea.fx = fx
+	var shots := Shots.new()
+	shots.world = sea
+	root.add_child(shots)
+	if not shots.is_node_ready():
+		shots._ready()
+	sea.shots = shots
+	# (the misses' rings on the water, kept and never drawn)
+	sea.wake = WakeField.new()
+	sea.wake._sx.resize(WakeField.MAX_STAMPS)
+	sea.wake._sz.resize(WakeField.MAX_STAMPS)
+	sea.wake._sr.resize(WakeField.MAX_STAMPS)
+	sea.wake._ss.resize(WakeField.MAX_STAMPS)
+	sea.wake._sk.resize(WakeField.MAX_STAMPS)
+	var g := ShoreGround.new(sea, sea.regions)
+	# (loaded, not named: the forts' garrisons are the shore's, which reads Settings)
+	var forts: Node3D = load("res://src/game/forts.gd").new(sea, g, sea.regions, StandardMaterial3D.new())
+	root.add_child(forts)
+	sea.forts = forts
+	var steps := 0
+	var tris := PackedInt32Array()
+	var budget := true
+	var names := []
+	for f: Variant in forts.forts:
+		tris.append(f.tris)
+		names.append(f.name)
+		budget = budget and f.tris > 2000 and f.tris <= FORT_TRIS and f.guns.size() >= 3
+	steps += 1 if forts.forts.size() == 5 and budget and names.has("Fortaleza da Bruma") else 0
+	var f0: Variant = forts.forts[0]
+	var site: Dictionary = f0.site
+	var S: Dictionary = f0.style
+	var H := float(S.H)
+	var yaw := float(site.yaw)
+	var sea_dir := Vector2(sin(yaw), cos(yaw))
+	# the plaza is floor (its own height, level), the ramp climbs to the gate
+	var mid := FortKit.to_world(site, 2.0, 1.0)
+	var foot := FortKit.to_world(site, 0.0, -H - float(f0.layout.ramp_len) + 0.5)
+	var floor_ok := absf(g.height(mid.x, mid.z) - float(site.y)) < 1e-3 and g.slope(mid.x, mid.z) == 0.0 and g.height(foot.x, foot.z) < float(site.y) - 0.3
+	steps += 1 if floor_ok else 0
+	# a ball on the sea wall's face is stopped; one high over the plaza flies on
+	var face := FortKit.to_world(site, 0.0, H - 0.2)
+	var hit_wall: bool = forts.strike(Vector3(face.x, float(site.y) + float(S.WH) * 0.5, face.z), Vector3(-sea_dir.x, 0.0, -sea_dir.y) * 60.0, 10.0, null, Ammo.ROUND)
+	var over: bool = forts.strike(Vector3(float(site.x), float(site.y) + 30.0, float(site.z)), Vector3(0.0, -5.0, 60.0), 10.0, null, Ammo.ROUND)
+	steps += 1 if hit_wall and not over else 0
+	# her gunnery has a mark on the water for each live gun in reach
+	var ship := Ship.create(ShipClass.named("sloop"), Livery.named("player"), sea)
+	ship.pos = Vector3(float(site.x) + sea_dir.x * 150.0, 0.0, float(site.z) + sea_dir.y * 150.0)
+	ship.heading = yaw + PI * 0.5
+	ship.transform = Transform3D(Basis(Vector3.UP, ship.heading), ship.pos)
+	sea.ships.append(ship)
+	var marks: Array[Vector3] = forts.marks(ship, ship.gun_range())
+	steps += 1 if not marks.is_empty() and marks.size() <= f0.guns.size() else 0
+	# the guns lay on her, fire, and hit her
+	var opened := [false]
+	var hits := [0]
+	forts.open_fire.connect(func(_f: Variant) -> void: opened[0] = true)
+	sea.hit.connect(func(s: Ship, by: Ship, _d: float, _at: Vector3) -> void:
+		if s == ship and by == f0.gunner:
+			hits[0] += 1)
+	var dt := 1.0 / 30.0
+	var t := 0.0
+	var fired_before := shots.fired[Ammo.ROUND]
+	while t < 40.0 and hits[0] < 2:
+		forts.update(dt, ship, ship.pos)
+		shots.step(dt)
+		sea.time += dt
+		t += dt
+	var fired := shots.fired[Ammo.ROUND] - fired_before
+	steps += 1 if opened[0] and fired >= 2 and hits[0] >= 1 else 0
+	# battered silent: every gun's parapet down, the towers and the roof after the last
+	var silent := [0, false]
+	forts.silenced.connect(func(_f: Variant, _g: Variant, last: bool) -> void:
+		silent[0] += 1
+		silent[1] = silent[1] or last)
+	var shells := 0
+	for k in 60:
+		for gn: Variant in f0.guns:
+			if gn.dead:
+				continue
+			var at: Vector3 = gn.base + Vector3(0.0, 0.75, 0.0)
+			if forts.strike(at, Vector3(-sea_dir.x, -0.1, -sea_dir.y) * 60.0, 60.0, ship, Ammo.SHELL):
+				shells += 1
+	for k in 300:
+		forts.update(dt, ship, ship.pos)
+	var wrecked: bool = silent[1] and silent[0] == f0.guns.size() and f0.down.has("gun0") and f0.down.has("tower0") and f0.down.has("roof") and f0.pocks.visible_instance_count > 0
+	steps += 1 if wrecked else 0
+	# taken: her colours flying, patched, its guns hers
+	forts.conquer(f0)
+	forts.apply({f0.id: 1.0})
+	var held: bool = f0.ours and f0.gunner.team == Ship.Team.PLAYER and f0.patched.has("gun0") and f0.down.has("tower0") and forts.live_count(f0) == f0.guns.size() and forts.covering(ship.pos.x, ship.pos.z) == null
+	steps += 1 if held else 0
+	if steps != 7:
+		_fail("forts: %d of 7 steps (%d forts %s, triangles %s; plaza floor %s; wall struck %s, over it %s; %d marks; opened fire %s, %d balls, %d hits on her in %.0f s; %d silenced, last %s, down %s, %d scars from %d shells; held %s)" % [
+				steps, forts.forts.size(), names, tris, floor_ok, hit_wall, over, marks.size(), opened[0], fired, hits[0], t, silent[0], silent[1], f0.down.keys(), f0.pocks.visible_instance_count, shells, held])
+	print("forts: %d of 7 steps as expected; %s, %s triangles; the first fired %d balls, %d hits in %.0f s, silenced by %d shells; %.0f ms" % [
+			steps, names, tris, fired, hits[0], t, shells, (Time.get_ticks_usec() - t0) / 1000.0])
+	forts.free()
+	shots.free()
+	fx.free()
+	ship.free()
+	sea.wake.free()
 
 
 ## The sea's dangers: every maelstrom turning (three at home, one in Las
