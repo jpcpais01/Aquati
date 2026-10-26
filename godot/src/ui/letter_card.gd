@@ -385,7 +385,7 @@ class _Clasp:
 			_bits.append([randf_range(-1.0, 1.0), randf_range(-1.6, -0.4), randf_range(0.6, 1.2)])
 
 	func _draw() -> void:
-		var r := 8.5 * K
+		var r := 10.0 * K
 		var c := crack
 		if c <= 0.0:
 			# the twine round the roll, and the dab of wax over it

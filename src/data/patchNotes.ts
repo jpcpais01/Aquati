@@ -16,6 +16,14 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-26T03:00Z',
     entries: [
       {
+        title: 'Android and Windows: letters unroll and ink themselves in',
+        notes: [
+          'Messages in bottles and letters from the carrier gull now arrive rolled up and sealed with wax. The wax cracks, the paper unrolls down the side of the screen and the words ink themselves in line by line, as if the pen were still moving.',
+          'Once it is written the seal presses onto the corner, the reward springs in with a gold glint, and a fine line along the foot shows how long the letter stays.',
+          'Tap once to finish the writing at once, tap again to roll it back up and put it away.',
+        ],
+      },
+      {
         title: 'Android and Windows: peaceful seas',
         notes: [
           'Peaceful seas come to the Android and Windows game. Pick Adventure or Peaceful in the harbour, just over Set Sail, or flip the switch in Settings.',

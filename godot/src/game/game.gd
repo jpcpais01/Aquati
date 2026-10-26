@@ -551,6 +551,9 @@ func _load() -> void:
 	hud.treasure_pressed.connect(func() -> void: _map_view(not hud.tmap.is_open))
 	hud.treasure_closed.connect(func() -> void: _map_view(false))
 	add_child(hud)
+	# the wax giving as a letter opens, the paper rustling as it is put away
+	hud.letter.opened.connect(func() -> void: sound.knock())
+	hud.letter.put_away.connect(func() -> void: sound.parchment(0.45))
 	await _loaded_to(0.72)
 	maps.world = world
 	maps.player = player
@@ -1260,9 +1263,6 @@ func _build_fleet() -> void:
 	# a crate caught up in the flotsam: a barrel, or in the weed now and then something finer
 	drift.crate.connect(func(x: float, z: float, kelp: bool) -> void: world.loot.place(x, z, 1 if kelp and randf() < 0.4 else 0))
 	add_child(drift)
-	# the wax giving as a letter opens, the paper rustling as it is put away
-	hud.letter.opened.connect(func() -> void: sound.knock())
-	hud.letter.put_away.connect(func() -> void: sound.parchment(0.45))
 	birds = Birds.new()
 	birds.name = "Birds"
 	birds.sound = sound
