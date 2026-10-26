@@ -23,6 +23,8 @@ class Broadside:
 	var target: Ship
 	## Or a mark that isn't a ship (a fort's gun), laid on at `impact`.
 	var mark := false
+	## Peaceful seas: what it's laid on holds its fire (a broadside asks first).
+	var calm := false
 	## Where the balls will fall (led), while aim_dist >= 0.
 	var impact := Vector3.ZERO
 	var aim_dist := -1.0
@@ -47,6 +49,8 @@ var pointer: Variant = null
 ## Marks on the sea that aren't ships (Forts.marks: where a ball fired flat
 ## for that range arcs through a fort's gun), set each frame by the game.
 var marks: Array[Vector3] = []
+## Each of those marks holds its fire (peaceful seas; parallel to marks, may be short).
+var marks_calm: Array[bool] = []
 ## The nearest thing to fight is one of those marks.
 var focus_mark := false
 
@@ -125,7 +129,7 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 			_pointer_side = int(_bearing_u(p, pt.x, pt.z).x)
 
 	# lay each side on the best foe inside its fan
-	var best := {1: [null, INF], -1: [null, INF]}
+	var best := {1: [null, INF, false], -1: [null, INF, false]}
 	focus = null
 	var focus_d := R * 1.3
 	for s: Ship in world.ships:
@@ -134,7 +138,9 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 		var raw := Vector2(s.pos.x - p.pos.x, s.pos.z - p.pos.z).length()
 		if raw > R * 1.4:
 			continue
-		if raw < focus_d:
+		# peaceful seas: a ship holding her fire is no fight yet (the guns
+		# still lay on her if she's all there is)
+		if raw < focus_d and not s.calm:
 			focus_d = raw
 			focus = s
 		_predict(p, s)
@@ -147,15 +153,19 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 		if _pointer_side == sd and pointer != null:
 			var pt: Vector3 = pointer
 			score = Vector2(pt.x - s.pos.x, pt.z - s.pos.z).length()
+		if s.calm:
+			score += 1e4
 		if score < float(best[sd][1]):
-			best[sd] = [s, score]
+			best[sd] = [s, score, s.calm]
 	# and the marks that aren't ships: they stand still, so no leading
 	focus_mark = false
-	for m in marks:
+	for mi in marks.size():
+		var m := marks[mi]
+		var calm := mi < marks_calm.size() and marks_calm[mi]
 		var raw := Vector2(m.x - p.pos.x, m.z - p.pos.z).length()
 		if raw > R * 1.4:
 			continue
-		if raw < focus_d:
+		if raw < focus_d and not calm:
 			focus_d = raw
 			focus = null
 			focus_mark = true
@@ -167,8 +177,10 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 		if _pointer_side == sd and pointer != null:
 			var pt: Vector3 = pointer
 			score = Vector2(pt.x - m.x, pt.z - m.z).length()
+		if calm:
+			score += 1e4
 		if score < float(best[sd][1]):
-			best[sd] = [m, score]
+			best[sd] = [m, score, calm]
 	combat = focus != null or focus_mark
 
 	for st: Broadside in [port, starboard]:
@@ -179,6 +191,7 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 		var pick: Variant = best[st.side][0]
 		st.mark = pick is Vector3
 		st.target = null if st.mark else pick
+		st.calm = bool(best[st.side][2])
 		st.hover = _pointer_side == st.side
 		st.aim_dist = -1.0
 		if st.mark:
@@ -199,7 +212,7 @@ func update(dt: float, p: Ship, world: World, playing: bool, now: float) -> void
 	var lock: Ship = null
 	if auto != 0:
 		var st := side_of(auto)
-		if st.ready:
+		if st.ready and not st.calm:
 			lock = st.target
 	_set_glow(lock, dt, world, now)
 

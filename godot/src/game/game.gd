@@ -87,6 +87,7 @@ extends Node3D
 ## The Kraken: --kraken brews a storm and sends it a few seconds into the
 ## voyage (and again a minute after it's gone); --kraken-at T sends it T s
 ## in, --kraken-omen S shortens its omen to S s.
+## Peaceful seas: --peaceful holds them on for the run (--peaceful off: Adventure).
 ## Ghost ships: --ghosts makes every pirate that can be a ghost one (once the
 ## yard has her hull), and --foe-ghost the set piece's foe (--battle) a ghost.
 ## Crews: --eye X,Y,Z puts the lens at that point in the followed ship's own
@@ -406,6 +407,15 @@ var _sel := {}
 var _dock_t := 0.0
 ## The pirate she was fighting last frame (it holds on a little further).
 var _last_foe: Ship
+## Peaceful seas: the guns laid on someone holding their fire asked first
+## (when, and on whom: a ship's instance id, 0 a fort or the Kraken); when
+## each ship last called out that you'd provoked her, and the last such toast;
+## how many had taken up arms against you last frame.
+var _hold_t := -100.0
+var _hold_on := 0
+var _provoked_at := {}
+var _provoke_toast_t := -100.0
+var _war_n := 0
 
 
 ## A voyage's log: how long, what the guns did, how far she sailed, and the
@@ -594,6 +604,8 @@ func _load() -> void:
 	await _loaded_to(0.78)
 	_build_menus()
 	await _loaded_to(0.84)
+	# peaceful seas: a blow from your side is how every quarrel starts
+	Ship.on_struck = _quarrel
 	Settings.changed.connect(_on_settings)
 	_on_settings()
 	world.hit.connect(_on_hit)
@@ -1324,6 +1336,13 @@ func _build_ports(p0: float, p1: float) -> void:
 		hud.floater(text, at, camera, k, 6.0 if kind == Shore.FLOAT_LOOT else 0.0))
 	shore.shook.connect(func(a: float) -> void: camera.shake(a))
 	shore.alarmed.connect(_on_camp_alarm)
+	# peaceful seas: a camp keeps its blades sheathed unless you strike first
+	# (a garrison, unless its fort is at war with you)
+	shore.calm = func(c: Shore.Camp) -> bool:
+		if not world.peaceful:
+			return false
+		var f := _fort_of(c)
+		return f == null or not forts.at_war(f)
 	shore.camp_routed.connect(_on_camp_routed)
 	shore.plundered.connect(_on_camp_plundered)
 	shore.captain_fell.connect(_on_captain_fell)
@@ -1361,6 +1380,7 @@ func _build_ports(p0: float, p1: float) -> void:
 	forts.open_fire.connect(_on_fort_fire)
 	forts.struck.connect(_on_fort_struck)
 	forts.silenced.connect(_on_gun_silenced)
+	forts.riled.connect(_on_fort_riled)
 	forts.apply(Progress.forts.taken)
 	# the Kraken lies built and hidden from the start, so the warm-up compiles it
 	kraken = Kraken.new(world)
@@ -1763,6 +1783,7 @@ func _tick(real_dt: float) -> void:
 	pirates.escorts = escorts.ships()
 	pirates.flagship = player
 	pirates.step(dt, player if sailing else null)
+	_peace_step(sailing)
 	_sail_convoys(dt, sailing)
 	_update_fleet(dt, sailing)
 	if sailing:
@@ -1832,9 +1853,13 @@ func _tick(real_dt: float) -> void:
 	gunnery.pointer = _pointer_on_sea() if sailing else null
 	# the hostile forts' guns in reach, as marks for hers to lay on
 	gunnery.marks = forts.marks(player, player.gun_range()) if sailing and not ashore and player.alive else ([] as Array[Vector3])
-	# and the Kraken's arms and eye, like any ship
+	gunnery.marks_calm.assign(forts.marks_calm if not gunnery.marks.is_empty() else [])
+	# and the Kraken's arms and eye, like any ship (holding back while it only watches)
 	if sailing and not ashore and player.alive and kraken.fighting():
-		gunnery.marks.append_array(kraken.marks())
+		var km := kraken.marks()
+		gunnery.marks.append_array(km)
+		for i in km.size():
+			gunnery.marks_calm.append(kraken.docile())
 	gunnery.update(dt, player, world, sailing and player.alive and _farewell == null and not ashore and not held, world.time)
 	if sailing and not ashore and not held:
 		_guns()
@@ -2264,6 +2289,10 @@ func _fire(side: int) -> void:
 		_pick_ammo(Ammo.ROUND, true)
 	if player.ammo == Ammo.FIREWORK:
 		_fire_rockets(side)
+		return
+	# peaceful seas: the guns laid on someone holding their fire wait for a second word
+	var st := gunnery.side_of(side)
+	if world.peaceful and st.calm and (st.target != null or st.mark) and player.can_fire(side) and not _fire_first(st.target):
 		return
 	var shot := player.ammo
 	if not gunnery.fire(player, side):
@@ -3212,10 +3241,23 @@ func _heat(dt: float) -> void:
 			var gold := roundi(int(c.bounty) * Progress.bounty_bonus())
 			hud.hunt_banner(c, gold)
 			sound.horn()
+			# peaceful seas: she won't fire first, but she won't let you out of her sight
+			if world.peaceful:
+				get_tree().create_timer(4.6).timeout.connect(func() -> void:
+					if state == State.VOYAGE and world.peaceful and _hunter_calm(str(c.id)):
+						hud.toast("She shadows you", "%s won't fire first, but she's waiting for an excuse" % c.epithet, 4.2))
 			voyage.note("bounty", "%s came hunting" % c.epithet, "The %s · %d gold on her" % [c.ship, gold])
 			_note_tour("hunter sent: %s in the %s" % [c.epithet, c.ship])
 	var c2: Dictionary = hunters.ships.get(hunters.near, {})
 	hud.heat(hunters.pts, hunters.level(), str(c2.get("epithet", "")), hunters.near_d)
+
+
+## A named captain afloat and still holding her fire.
+func _hunter_calm(id: String) -> bool:
+	for s in world.ships:
+		if s.hunter == id and s.alive and not s.removed:
+			return s.calm
+	return false
 
 
 ## The nearest hunter's mark at the screen's edge while she's out of view.
@@ -3589,6 +3631,10 @@ func _build_menus() -> void:
 	harbour.board.connect(_open_board)
 	harbour.sound.connect(_toggle_sound)
 	harbour.quit.connect(_quit_game)
+	harbour.sea_rule.connect(func(on: bool) -> void:
+		Settings.peaceful = on
+		Settings.save()
+		Settings.changed.emit())
 	harbour.clicked.connect(sound.click)
 	add_child(harbour)
 	shipwright = Shipwright.new()
@@ -3705,6 +3751,7 @@ func _build_menus() -> void:
 func _on_settings() -> void:
 	camera.shake_scale = Settings.shake
 	harbour.set_sound(Settings.sound)
+	_apply_peace()
 
 
 ## The harbour's sound button: every sound on or off, kept.
@@ -4436,6 +4483,12 @@ func _start_voyage(sea: String) -> void:
 	# and the Brethren man every fort you haven't taken
 	forts.apply(Progress.forts.taken)
 	hud.fort_clear()
+	# and nobody holds a grudge from the last one
+	for f in forts.forts:
+		f.wrath_t = -1e9
+	_provoked_at.clear()
+	_hold_t = -100.0
+	_war_n = 0
 	_kraken_off()
 	_kr_from = p.pos
 	stock = Ammo.fresh_stock()
@@ -4636,6 +4689,8 @@ func _land_prompt(dt: float) -> void:
 		sub = "The guns of %s cover this shore: silence them first" % guns.name
 	elif fort != null and not fort.ours:
 		sub = "%s holds this isle: storm its gate" % fort.name
+	elif world.peaceful and shore.camps.any(func(c: Shore.Camp) -> bool: return c.fort.is_empty() and not c.routed and str(c.island.get("name", "")) == isle):
+		sub = "Cutthroats are camped on this isle: they won't draw first"
 	var ok := not chased and not pulled and guns == null and not beast
 	market.set_dock({"name": isle, "title": "Go ashore on %s" % isle, "ok": ok, "why": sub})
 	_prompt_kind = "land"
@@ -4805,14 +4860,19 @@ func _control_shore() -> void:
 
 ## A camp roused: its cutthroats come running.
 func _on_camp_alarm(c: Shore.Camp) -> void:
+	var calm := world.peaceful
+	# a garrison at arms is its fort at war with you (on peaceful seas, this is the quarrel)
+	var f := _fort_of(c)
+	if f != null and calm:
+		forts.rile(f)
 	if not shore.active:
 		return
 	if not c.fort.is_empty():
-		var f := _fort_of(c)
-		hud.toast("The garrison sallies!", "Soldiers pour out of the gate of %s" % (f.name if f != null else "the fort"), 3.2)
+		var at := f.name if f != null else "the fort"
+		hud.toast("The garrison sallies!", ("You drew first: soldiers pour out of the gate of %s" if calm else "Soldiers pour out of the gate of %s") % at, 3.2)
 		sound.wanted(3)
 		return
-	hud.toast("To arms!", "Cutthroats come running from their camp", 2.6)
+	hud.toast("To arms!", "You drew first: the whole camp comes for you" if calm else "Cutthroats come running from their camp", 2.6)
 
 
 ## The last of a camp's gang down: the chest is theirs to open.
@@ -5008,6 +5068,9 @@ func _update_forts(dt: float) -> void:
 			var near := Vector2(float(f.site.x) - p.pos.x, float(f.site.z) - p.pos.z).length() < Forts.RANGE + 30.0
 			hint = "Silence its guns" if not near or gunnery.combat else "Close in: its walls stand high"
 			hot = near and f.alert
+			if not forts.at_war(f):
+				hint = "Holding its fire · fire first and it answers"
+				hot = false
 		elif ashore:
 			hint = "Beat the garrison" if f.garrison != null and f.garrison.alert else "Storm the gate"
 			hot = true
@@ -5790,6 +5853,164 @@ func _fighting() -> Ship:
 	return best
 
 
+# ------------------------------------------------------------------ peaceful seas
+
+## Peaceful seas as Settings has them (see Peace), put to everything that
+## might fire first; said aloud when it changes on a voyage.
+func _apply_peace() -> void:
+	var on := Settings.peaceful
+	# (a set piece's seas: --peaceful, or --peaceful off)
+	if _args.has("peaceful"):
+		on = str(_args.peaceful) != "off"
+	harbour.set_peaceful(on)
+	if world.peaceful == on:
+		return
+	world.peaceful = on
+	kraken.calm = on
+	if state == State.VOYAGE or state == State.DOCKED:
+		hud.toast("Peaceful seas" if on else "Adventure", "Nobody fires on you unless you fire first" if on else "The Brethren hunt on sight again", 3.4)
+
+
+## Someone of another side laid a blow on `s` (Ship.on_struck). Your side
+## striking a pirate is a quarrel: with her, her flotilla and the company she keeps.
+func _quarrel(s: Ship, by: Ship) -> void:
+	if by.team != Ship.Team.PLAYER or s.team != Ship.Team.PIRATE or s.prize:
+		return
+	var now := world.time
+	var fresh := not s.at_war(now)
+	s.wrath_t = now
+	if not fresh or not world.peaceful:
+		return
+	# her flotilla, the Brethren in hail (a hunter from further off); the dead keep to their own
+	var ai: PirateAI = pirates.ais.get(s)
+	var n := 0
+	for oa: PirateAI in pirates.ais.values():
+		var o := oa.ship
+		if oa == ai or not o.alive or o.removed or o.prize or o.ghost != s.ghost or o.at_war(now):
+			continue
+		var d := Vector2(o.pos.x - s.pos.x, o.pos.z - s.pos.z).length()
+		var pack := ai != null and ai.pack != null and oa.pack == ai.pack
+		if not (pack or d < Peace.RALLY or (oa.hunter and d < Peace.HUNTER_RALLY)):
+			continue
+		o.wrath_t = now
+		n += 1
+	# and any fort covering her runs out its guns
+	var fort: Forts.Fort = null
+	if not s.ghost:
+		for f in forts.forts:
+			if f.ours or forts.at_war(f) or f.live_guns() == 0:
+				continue
+			if Vector2(float(f.site.x) - s.pos.x, float(f.site.z) - s.pos.z).length() > Peace.FORT_RALLY:
+				continue
+			forts.rile(f)
+			fort = f
+	_provoked(s, n, fort)
+
+
+## A fort has cause to fight you: the Brethren lying under its guns come
+## about with it, and a ball of yours on its walls (`by`) is said aloud.
+func _on_fort_riled(f: Forts.Fort, by: Ship) -> void:
+	var now := world.time
+	var n := 0
+	for oa: PirateAI in pirates.ais.values():
+		var o := oa.ship
+		if not o.alive or o.removed or o.prize or o.ghost or o.at_war(now):
+			continue
+		if Vector2(o.pos.x - float(f.site.x), o.pos.z - float(f.site.z)).length() > Peace.FORT_RALLY:
+			continue
+		o.wrath_t = now
+		n += 1
+	if by == null or state != State.VOYAGE:
+		return
+	var more := (", and %d %s under them come about" % [n, "ship" if n == 1 else "ships"]) if n > 0 else ""
+	hud.toast("You fired first", "%s runs out its guns%s" % [f.name, more], 3.4)
+	sound.wanted(2)
+	voyage.note("fort", "Fired first on %s" % f.name, str(f.site.island))
+
+
+## Peaceful seas: you fired first. Said over her, with who comes with her.
+func _provoked(s: Ship, n: int, fort: Forts.Fort) -> void:
+	if state != State.VOYAGE:
+		return
+	var t := world.time
+	var id := s.get_instance_id()
+	if t - float(_provoked_at.get(id, -100.0)) < 10.0:
+		return
+	_provoked_at[id] = t
+	hud.floater("Provoked!", Vector3(s.pos.x, s.position.y + s.cls.freeboard + 6.0, s.pos.z), camera, Floaters.Kind.BAD, 10.0)
+	# one call for a broadside that rouses a whole flotilla
+	if t - _provoke_toast_t < 5.0:
+		return
+	_provoke_toast_t = t
+	var named := Bounty.captain(s.hunter) if s.hunter != "" else {}
+	var more := (" and %d %s in hail" % [n, "ship" if n == 1 else "ships"]) if n > 0 else ""
+	var guns := ("%s with the guns of %s" % ["," if n > 0 else "", fort.name]) if fort != null else ""
+	var line := ""
+	if not named.is_empty():
+		line = "%s has the excuse she was waiting for%s" % [named.epithet, guns]
+	elif s.ghost:
+		line = "The %s turns her dead eyes on you%s" % [s.ship_name, (", and %d more of the dead with her" % n) if n > 0 else ""]
+	elif n > 0 or fort != null:
+		line = "The %s%s come about to fight%s" % [s.ship_name, more, guns]
+	else:
+		line = "The %s runs out her guns" % s.ship_name
+	hud.toast("You fired first", line, 3.6)
+	if named.is_empty():
+		sound.wanted(1)
+	else:
+		sound.horn()
+
+
+## Each frame: who holds her fire against you, the minimap's halo (calm, or
+## how many have taken up arms and how fresh the quarrel is), and word when
+## the last quarrel is forgotten.
+func _peace_step(sailing: bool) -> void:
+	var on := world.peaceful
+	var now := world.time
+	var war := 0
+	var left := 0.0
+	for s in world.ships:
+		if s.team != Ship.Team.PIRATE:
+			continue
+		s.calm = on and not s.prize and not s.at_war(now)
+		if on and s.alive and not s.removed and not s.prize and not s.calm:
+			war += 1
+			left = maxf(left, Peace.FORGET - (now - s.wrath_t))
+	if on:
+		for f in forts.forts:
+			if f.ours or f.live_guns() == 0 or not forts.at_war(f):
+				continue
+			war += 1
+			left = maxf(left, Peace.FORGET - (now - f.wrath_t))
+		if kraken.fighting() and kraken.provoked:
+			war += 1
+			left = Peace.FORGET
+	kraken.calm = on
+	hud.show_peace(on and sailing, war, left / Peace.FORGET)
+	if on and sailing and _war_n > 0 and war == 0 and player.alive and not shore.active and _farewell == null:
+		hud.toast("Tempers cool", "The sea is at peace with you again", 3.0)
+		sound.chime()
+	_war_n = war if on and sailing else 0
+
+
+## Peaceful seas: the first press with the guns laid on a ship (or a fort,
+## or the Kraken) that holds its fire only asks; a second within a few
+## seconds fires first and starts the fight. No quarrels from a stray tap.
+func _fire_first(target: Ship) -> bool:
+	var t := world.time
+	var on := target.get_instance_id() if target != null else 0
+	if t - _hold_t < Peace.HOLD_FIRE and _hold_on == on:
+		_hold_t = -100.0
+		return true
+	_hold_t = t
+	_hold_on = on
+	var who := ("The %s holds hers" % target.ship_name) if target != null else "They hold theirs"
+	var again := "tap Fire again" if hud.touch_ui() else "fire again"
+	hud.toast("Hold your fire?", "%s: %s to fire first and start a fight" % [who, again], Peace.HOLD_FIRE)
+	sound.click()
+	return false
+
+
 ## Comes alongside: she ties up, the porters wake and the market opens (the
 ## web's dock), under the veil (`now`: at once, for a set piece).
 func _dock(port: TradePort, now := false) -> void:
@@ -6164,10 +6385,17 @@ func _update_fleet(dt: float, sailing: bool) -> void:
 	var foes: Array[Ship] = []
 	if sailing:
 		for s in world.ships:
-			if s.team == Ship.Team.PIRATE and s.alive and not s.removed and not s.prize and not s.lashed and not s.phantom and s.presence > 0.5:
+			# (your escorts never fire first either)
+			if s.team == Ship.Team.PIRATE and s.alive and not s.removed and not s.prize and not s.lashed and not s.phantom and s.presence > 0.5 and not s.calm:
 				foes.append(s)
 	var mark := gunnery.focus if gunnery.focus != null and foes.has(gunnery.focus) else null
-	escorts.update(dt, flag, foes, mark, gunnery.marks if sailing else ([] as Array[Vector3]))
+	var marks: Array[Vector3] = []
+	if sailing:
+		# peaceful seas: only forts at war with you, and a Kraken that's been woken
+		for i in gunnery.marks.size():
+			if not world.peaceful or i >= gunnery.marks_calm.size() or not gunnery.marks_calm[i]:
+				marks.append(gunnery.marks[i])
+	escorts.update(dt, flag, foes, mark, marks)
 
 
 ## The fleet panel's rows: each escort's name, hull and what she's about.
@@ -6575,14 +6803,24 @@ func _wire_kraken() -> void:
 		# the moment it breaks the surface plays out slowly
 		_kr_slow = 1.8
 		camera.shake(0.5)
+		# peaceful seas: it only looks
+		if k.docile():
+			get_tree().create_timer(2.6).timeout.connect(func() -> void:
+				if k.docile() and k.fighting() and state == State.VOYAGE:
+					hud.toast("It watches you, and waits", "Leave it be and it sinks away. Fire, and it fights", 4.4))
 		_note_tour("the Kraken rose"))
 	k.staged.connect(func(n: int) -> void:
 		sound.kraken_music(true, n)
 		hud.toast("The Kraken", "It thrashes in fury" if n == 1 else "The sea begins to turn", 3.4)
 		camera.shake(0.5))
+	k.provoked_now.connect(func() -> void:
+		if state != State.VOYAGE:
+			return
+		hud.toast("You woke the Kraken", "Now it fights", 3.0)
+		camera.shake(0.5))
 	k.head_moved.connect(func(up: bool) -> void:
 		if up:
-			hud.toast("Its head breaks the surface", "Strike the eye!", 2.6))
+			hud.toast("Its head breaks the surface", "It looks you over, unblinking" if k.docile() else "Strike the eye!", 2.6))
 	k.gripped.connect(func(on: bool, freed: bool) -> void:
 		if on:
 			camera.shake(0.6)
@@ -6665,13 +6903,15 @@ func _update_kraken(dt: float, real_dt: float, sailing: bool) -> void:
 	var grip := k.grip()
 	kh.set_grab(grip)
 	var hint := "Sever its arms"
-	if grip >= 0.0:
+	if k.docile():
+		hint = "It watches you · fire, and it fights"
+	elif grip >= 0.0:
 		hint = "Break its grip"
 	elif k.head_up():
 		hint = "Strike the eye!"
 	elif k.stage == 2:
 		hint = "Fight the maelstrom · sever its arms"
-	kh.set_hint(hint, grip >= 0.0 or k.head_up())
+	kh.set_hint(hint, not k.docile() and (grip >= 0.0 or k.head_up()))
 	var pts := PackedVector2Array()
 	var vp := get_viewport().get_visible_rect().size
 	for w in k.warnings():
@@ -6890,7 +7130,7 @@ func _card_sub(t: Helmsman.Target) -> String:
 func _card_warn(t: Helmsman.Target) -> String:
 	if t.kind == &"fort":
 		for f in forts.forts:
-			if f.name == t.name and not f.ours and f.live_guns() > 0:
+			if f.name == t.name and not f.ours and f.live_guns() > 0 and forts.at_war(f):
 				return "Her guns will open on you as you close"
 	return "Charting it pays a bounty" if t.kind == &"isle" and t.name == "Uncharted isle" else ""
 

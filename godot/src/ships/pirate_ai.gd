@@ -42,6 +42,9 @@ var ammo_mix: Array = []
 var force_ammo := -1
 ## Something every captain runs from (the Kraken's body, x and z), or null.
 var fear: Variant = null
+## Peaceful seas: a named captain with no excuse yet keeps you in sight from
+## off your quarter, just out of her guns' reach, waiting for one.
+var shadow: Ship
 
 
 func _init(p_ship: Ship, difficulty: float, hunt: Array = []) -> void:
@@ -118,8 +121,13 @@ func _avoid(world: World, heading: float, escaping := false) -> float:
 ## Who she goes for: you, mostly, but an escort nearer to hand (or the one
 ## that just fired on her) will do; she sticks with her choice a while. A
 ## named captain was sent after you, and has eyes for no one else.
+##
+## On peaceful seas, nobody she hasn't been given cause to fight.
 func pick_target(world: World, player: Ship, escorts: Array[Ship]) -> Ship:
 	var flag := player if player != null and player.alive else null
+	var calm := world.peaceful and not ship.at_war(world.time)
+	if calm:
+		return null
 	if escorts.is_empty() or hunter:
 		return flag
 	var s := ship
@@ -169,6 +177,10 @@ func update(dt: float, world: World, player: Ship, escorts: Array[Ship] = []) ->
 
 	if _think <= 0.0:
 		_think = 0.4 + _rng.randf() * 0.3
+		# still under her guns: the quarrel doesn't cool
+		if target != null and dist < reach * 1.1 and s.at_war(world.time):
+			s.wrath_t = world.time
+		shadow = player if world.peaceful and hunter and target == null and player != null and player.alive else null
 		var provoked := s.last_attacker != null and (s.last_attacker == player or escorts.has(s.last_attacker)) and world.time - s.last_hit < 25.0
 		var pk := pack
 		if pk != null and pk.leader != null and (not is_instance_valid(pk.leader.ship) or not pk.leader.ship.alive):
@@ -190,7 +202,25 @@ func update(dt: float, world: World, player: Ship, escorts: Array[Ship] = []) ->
 			pk.alert_t = world.time
 
 		var lead: Ship = pk.leader.ship if pk != null and pk.leader != null and pk.leader != self else null
-		if mode == Mode.PATROL and lead != null:
+		if mode == Mode.PATROL and shadow != null and lead == null:
+			# off your quarter, a little beyond her guns' reach, matching your
+			# pace: waiting for her excuse
+			var q := shadow
+			var sh := sin(q.heading)
+			var ch := cos(q.heading)
+			var far := reach * 1.35
+			var sx := _side_bias * far * 0.62
+			var sz := far * 0.78
+			var tx := q.pos.x + ch * sx - sh * sz
+			var tz := q.pos.z - sh * sx - ch * sz
+			var gap := Vector2(tx - s.pos.x, tz - s.pos.z).length()
+			var close := Vector2(q.pos.x - s.pos.x, q.pos.z - s.pos.z).length() < far * 0.8
+			_desired = q.heading if gap < 18.0 else atan2(tx + sh * 24.0 - s.pos.x, tz + ch * 24.0 - s.pos.z)
+			# never closer than that: she bears away if you sail at her
+			if close:
+				_desired = atan2(s.pos.x - q.pos.x, s.pos.z - q.pos.z)
+			s.sail_target = 1.0 if close or gap > 70.0 else (0.75 if gap > 30.0 else clampf(q.sail_target + 0.1, 0.3, 1.0))
+		elif mode == Mode.PATROL and lead != null:
 			# keep station on the flagship's quarter, aiming a little ahead of
 			# the station to fall in alongside rather than chase her stern
 			var sh := sin(lead.heading)
@@ -226,13 +256,20 @@ func update(dt: float, world: World, player: Ship, escorts: Array[Ship] = []) ->
 			_desired = atan2(-dx, -dz) + sin(world.time * 0.3) * 0.3
 			s.sail_target = 1.0
 		# keep clear of other ships
+		var calm := world.peaceful and not s.at_war(world.time)
 		for o: Ship in world.ships:
 			if o == s or not o.alive:
 				continue
 			var ox := o.pos.x - s.pos.x
 			var oz := o.pos.z - s.pos.z
-			if Vector2(ox, oz).length() < (o.cls.length + s.cls.length) * 0.75:
+			var od := Vector2(ox, oz).length()
+			if od < (o.cls.length + s.cls.length) * 0.75:
 				_desired += MathX.angle_delta(_desired, atan2(-ox, -oz)) * 0.5
+			# peaceful seas: a captain with no quarrel gives your ships a wide
+			# berth, reading where your course and hers meet, rather than
+			# bumping you into a fight
+			if calm and o.team == Ship.Team.PLAYER:
+				_give_way(o, od, ox, oz)
 
 	# the sea has her: in a maelstrom's grip every hand goes to the braces to
 	# spiral out with the flow, and hard on the coral she claws off for deep water
@@ -260,6 +297,37 @@ func update(dt: float, world: World, player: Ship, escorts: Array[Ship] = []) ->
 					s.fire(side, target)
 					_aim_delay = 0.6 + _rng.randf() * 1.2 / aggression
 					break
+
+
+## Keeps clear of one of your ships she has no quarrel with: if their
+## courses bring them within a hull's length or so in the next few seconds
+## she bears away from the meeting point, and shortens sail if you're the one
+## coming up on her, so you can sail past.
+func _give_way(o: Ship, od: float, ox: float, oz: float) -> void:
+	var s := ship
+	var clear := (o.cls.length + s.cls.length) * 0.85 + 6.0
+	if od > clear * 3.5:
+		return
+	var rvx := o.vel.x - s.vel.x
+	var rvz := o.vel.z - s.vel.z
+	var rv2 := rvx * rvx + rvz * rvz
+	# when (within the next 9 s) the two pass closest, and how close
+	var t := clampf(-(ox * rvx + oz * rvz) / rv2, 0.0, 9.0) if rv2 > 1e-4 else 0.0
+	var mx := ox + rvx * t
+	var mz := oz + rvz * t
+	var miss := Vector2(mx, mz).length()
+	if miss > clear and od > clear * 1.3:
+		return
+	# bear away from where she'd meet you (straight off you when already close)
+	var near := od < clear * 1.3
+	var away := atan2(-ox, -oz) if near or miss < 1.0 else atan2(-mx, -mz)
+	var k := 0.85 if near else 0.65 * (1.0 - t / 12.0)
+	_desired += MathX.angle_delta(_desired, away) * k
+	if not near:
+		return
+	# across her bow she spills her wind and lets you by; coming up on her quarter, she makes way
+	var ahead := sin(s.heading) * ox + cos(s.heading) * oz > 0.0
+	s.sail_target = minf(s.sail_target, 0.35) if ahead else maxf(s.sail_target, 0.75)
 
 
 ## Now and then a pirate crew rams home something nastier: if it will reach,

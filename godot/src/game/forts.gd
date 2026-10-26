@@ -26,6 +26,9 @@ signal open_fire(f: Fort)
 signal struck(f: Fort, g: Gun, dmg: float, at: Vector3, direct: bool)
 ## A gun is silenced; `last` when it was the last of them.
 signal silenced(f: Fort, g: Gun, last: bool)
+## Peaceful seas: a fort holding its fire has been given cause to fight you
+## (`by` the ship whose ball struck its walls, or null: it took up a quarrel).
+signal riled(f: Fort, by: Ship)
 
 ## How far the guns reach, and how far a fort's bar shows.
 const RANGE := 205.0
@@ -181,6 +184,8 @@ class Fort:
 	var corners: Array[Dictionary] = []
 	var guns: Array[Gun] = []
 	var ours := false
+	## Peaceful seas: when you last gave it cause to fight (Peace.FORGET).
+	var wrath_t := -1e9
 	## What its shot is fired by, as far as the cannonballs know (never in the ships list).
 	var gunner: Ship
 	## Its garrison, a camp ashore (set once the shore has it).
@@ -226,6 +231,8 @@ class Fort:
 
 var forts: Array[Fort] = []
 var world: World
+## Each of the last marks() is on a fort that holds its fire (peaceful seas).
+var marks_calm: Array[bool] = []
 var _ground: ShoreGround
 var _flag_mesh: Mesh
 var _flag_mat: Material
@@ -479,6 +486,7 @@ func update(dt: float, player: Ship, focus: Vector3) -> void:
 			_burn(f, dt, near)
 		var dirty := false
 		var any := false
+		var hostile := at_war(f)
 		for g in f.guns:
 			if g.dead:
 				# knocked off her trunnions: she goes over in a moment
@@ -496,7 +504,7 @@ func update(dt: float, player: Ship, focus: Vector3) -> void:
 			if near > 900.0:
 				g.target = null
 				continue
-			_pick(g, f, player)
+			_pick(g, f, player, hostile)
 			if g.target != null:
 				any = true
 			dirty = _lay(g, dt) or dirty
@@ -511,6 +519,9 @@ func update(dt: float, player: Ship, focus: Vector3) -> void:
 				(f.shards[k] as Shards).flush()
 		if any:
 			f.quiet = 0.0
+			# still under its guns: the quarrel doesn't cool
+			if world.peaceful and not f.ours:
+				f.wrath_t = world.time
 			if not f.alert:
 				f.alert = true
 				if not f.ours:
@@ -521,10 +532,14 @@ func update(dt: float, player: Ship, focus: Vector3) -> void:
 				f.alert = false
 
 
-## The nearest mark within the gun's arc and reach: you or your escorts for theirs, pirates for yours.
-func _pick(g: Gun, f: Fort, player: Ship) -> void:
+## The nearest mark within the gun's arc and reach: you or your escorts for
+## theirs (on peaceful seas, only once it's at war with you), pirates for yours.
+func _pick(g: Gun, f: Fort, player: Ship, hostile: bool) -> void:
 	var best: Ship = null
 	var bd := RANGE
+	if not f.ours and not hostile:
+		g.target = null
+		return
 	for s: Ship in world.ships:
 		if not s.alive or s.removed or s.phantom:
 			continue
@@ -627,13 +642,20 @@ func _smoke(g: Gun, dt: float) -> void:
 ## The guns of hostile forts within reach of `p`, as points for her gunnery
 ## to lay on. A gun stands up on its wall, so each mark is set out past it on
 ## the water, where a ball fired flat for that range would arc through it.
-func marks(p: Ship, reach: float) -> Array[Vector3]:
+##
+## On peaceful seas a fort holding its fire is marked so (marks_calm), or
+## left out with `riled_only` (an escort's guns leave it be).
+func marks(p: Ship, reach: float, riled_only := false) -> Array[Vector3]:
 	var out: Array[Vector3] = []
+	marks_calm.clear()
 	if p == null or not p.alive:
 		return out
 	var v := p.muzzle_speed()
 	for f in forts:
 		if f.ours or Vector2(float(f.site.x) - p.pos.x, float(f.site.z) - p.pos.z).length() > RANGE + 60.0:
+			continue
+		var calm := not at_war(f)
+		if calm and riled_only:
 			continue
 		for g in f.guns:
 			if g.dead:
@@ -652,7 +674,25 @@ func marks(p: Ship, reach: float) -> Array[Vector3]:
 			if flat > reach * MARK_REACH or e > 0.46:
 				continue
 			out.append(Vector3(p.pos.x + dx / D * flat, 0.0, p.pos.z + dz / D * flat))
+			marks_calm.append(calm)
 	return out
+
+
+## A Brethren fort that will fire on you: always, but on peaceful seas only
+## once you've given it cause (and not yet long enough ago to forget).
+func at_war(f: Fort) -> bool:
+	return not f.ours and (not world.peaceful or world.time - f.wrath_t < Peace.FORGET)
+
+
+## Peaceful seas: the fort has cause to fight you (`by`: whose ball, or null
+## when it takes up a ship's quarrel). Says so (riled) when it's a fresh one.
+func rile(f: Fort, by: Ship = null) -> void:
+	if f.ours:
+		return
+	var fresh := not at_war(f)
+	f.wrath_t = world.time
+	if fresh:
+		riled.emit(f, by)
 
 
 # ------------------------------------------------------------------ shot striking the walls
@@ -722,6 +762,9 @@ func _impact(f: Fort, at: Vector3, vel: Vector3, damage: float, owner: Ship, kin
 	# only your guns (and your escorts') can hurt the Brethren's walls
 	if f.ours or owner == null or owner.team != Ship.Team.PLAYER:
 		return
+	# (and on peaceful seas, a ball on its walls is a quarrel)
+	if world.peaceful:
+		rile(f, owner)
 	# a corner's top brought down by steady fire; the barracks fired by a shell or a hot shot in the plaza
 	var tj := j if j >= 0 else FortKit.corner_at(f.corners, lx, lz, 1.5)
 	if tj >= 0 and ly > float(f.corners[tj].top) - 3.0 and kind != Ammo.GRAPE and kind != Ammo.CHAIN:
@@ -1086,10 +1129,11 @@ func by_gunner(s: Ship) -> Fort:
 	return null
 
 
-## The hostile fort whose live guns reach (x, z), if any.
+## The hostile fort whose live guns reach (x, z), if any (on peaceful seas,
+## a fort holding its fire covers nothing).
 func covering(x: float, z: float) -> Fort:
 	for f in forts:
-		if f.ours:
+		if not at_war(f):
 			continue
 		for g in f.guns:
 			if not g.dead and Vector2(g.base.x - x, g.base.z - z).length() < RANGE - 20.0:
@@ -1124,7 +1168,7 @@ func collect_range(f: Fort, x: float, z: float) -> bool:
 ## A hostile fort that's firing on you right now, for the camera to keep in frame.
 func engaging(x: float, z: float) -> Fort:
 	for f in forts:
-		if f.ours or not f.alert or Vector2(float(f.site.x) - x, float(f.site.z) - z).length() >= RANGE + 40.0:
+		if not at_war(f) or not f.alert or Vector2(float(f.site.x) - x, float(f.site.z) - z).length() >= RANGE + 40.0:
 			continue
 		for g in f.guns:
 			if g.target != null:

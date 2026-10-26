@@ -45,8 +45,10 @@ func show_ships(ships: Array[Ship], player: Ship, cam: Camera3D) -> void:
 				add_child(bar)
 			bar.visible = true
 			bar.set_frac(s.hp / s.max_hp, true)
+			bar.set_calm(s.calm, s.ghost, true)
 			_bars[s] = bar
 		bar.set_frac(s.hp / s.max_hp)
+		bar.set_calm(s.calm, s.ghost)
 		bar.show_marks(s.afire > 0.0, s.torn > 0.0, s.crew_hit > 0.0)
 		bar.position = Vector2(at.x - W * 0.5, at.y - LIFT)
 	# (untyped: a ship that has just left the sea may already be freed)

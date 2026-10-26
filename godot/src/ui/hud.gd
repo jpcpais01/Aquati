@@ -1295,6 +1295,11 @@ func open_pie(held := -1) -> void:
 
 
 ## The bars over the enemy ships in view.
+## Peaceful seas on the minimap: its halo, and who has taken up arms (Minimap.set_peace).
+func show_peace(on: bool, war: int, cool: float) -> void:
+	minimap.set_peace(on, war, cool)
+
+
 func show_bars(ships: Array[Ship], player: Ship, cam: Camera3D) -> void:
 	_bars.show_ships(ships, player, cam)
 

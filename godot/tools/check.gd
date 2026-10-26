@@ -268,6 +268,97 @@ func _check_fleet(regions: Array[Region]) -> void:
 	w.wake.free()
 
 
+## Peaceful seas: a pirate within easy reach holds her fire and gives you a
+## wide berth; a blow from you is a quarrel (Ship.on_struck) and she comes
+## about to fight; the grudge holds while you lie under her guns, and is
+## forgotten once you've sailed clear; a named hunter with no excuse shadows
+## you; and on Adventure seas the same captain hunts on sight.
+func _check_peace(regions: Array[Region]) -> void:
+	var t0 := Time.get_ticks_usec()
+	var w := World.new()
+	w.waves = Waves.new(0.6)
+	w.wind = Wind.new(0.6)
+	w.regions = regions
+	var fx := Particles.new()
+	root.add_child(fx)
+	if not fx.is_node_ready():
+		fx._ready()
+	w.fx = fx
+	var shots := Shots.new()
+	shots.world = w
+	root.add_child(shots)
+	if not shots.is_node_ready():
+		shots._ready()
+	w.shots = shots
+	w.wake = WakeField.new()
+	for arr: String in ["_sx", "_sz", "_sr", "_ss", "_sk"]:
+		var wa: Variant = w.wake.get(arr)
+		wa.resize(WakeField.MAX_STAMPS)
+		w.wake.set(arr, wa)
+	var stage := Node3D.new()
+	root.add_child(stage)
+	var a := regions[0].centre
+	var b := regions[1].centre
+	var mid := (a + b) * 0.5
+	var p := Ship.create(ShipClass.named("brig"), Livery.named("player"), w)
+	var foe := Ship.create(ShipClass.named("brig"), Livery.named("pirate-crimson"), w, Ship.Team.PIRATE)
+	var hunt := Ship.create(ShipClass.named("sloop"), Livery.named("pirate-crimson"), w, Ship.Team.PIRATE)
+	for s: Ship in [p, foe, hunt]:
+		stage.add_child(s)
+		w.ships.append(s)
+	p.place(mid.x, mid.z, 0.0)
+	foe.place(mid.x + 120.0, mid.z, 0.0)
+	hunt.place(mid.x - 300.0, mid.z - 200.0, 0.0)
+	var ai := PirateAI.new(foe, 1.0)
+	var hai := PirateAI.new(hunt, 1.0, [[Ammo.ROUND, 1.0]])
+	var dt := 1.0 / 30.0
+	var run := func(sec: float) -> void:
+		for i in int(sec / dt):
+			w.time += dt
+			ai.update(dt, w, p)
+			hai.update(dt, w, p)
+	var steps := 0
+	# peaceful: 120 m off her beam, she neither hunts nor fires
+	w.peaceful = true
+	run.call(4.0)
+	var held := ai.target == null and ai.mode == PirateAI.Mode.PATROL and foe.reload[0] <= 0.0 and foe.reload[1] <= 0.0
+	steps += 1 if held else 0
+	# the hunter with no excuse keeps you in sight from off your quarter
+	steps += 1 if hai.shadow == p and hai.target == null and hai.mode == PirateAI.Mode.PATROL else 0
+	# a ball of yours: the quarrel (the game's own hook, as it marks her)
+	var heard := []
+	var was: Callable = Ship.on_struck
+	Ship.on_struck = func(s: Ship, by: Ship) -> void:
+		heard.append(by)
+		s.wrath_t = w.time
+	foe.damage(5.0, p)
+	run.call(1.0)
+	var roused := heard.size() == 1 and foe.at_war(w.time) and ai.target == p and ai.mode == PirateAI.Mode.ENGAGE
+	steps += 1 if roused else 0
+	# still under her guns, the quarrel holds; far off and long after, it's forgotten
+	run.call(Peace.FORGET + 2.0)
+	var holds := foe.at_war(w.time)
+	foe.place(mid.x + 2400.0, mid.z + 2400.0, 0.0)
+	ai.target = null
+	foe.wrath_t = w.time - Peace.FORGET - 1.0
+	run.call(1.0)
+	steps += 1 if holds and not foe.at_war(w.time) and ai.target == null else 0
+	# adventure: the same captain hunts on sight
+	w.peaceful = false
+	foe.place(mid.x + 120.0, mid.z, 0.0)
+	run.call(1.0)
+	steps += 1 if ai.target == p and ai.mode == PirateAI.Mode.ENGAGE else 0
+	Ship.on_struck = was
+	stage.free()
+	shots.free()
+	fx.free()
+	w.wake.free()
+	if steps != 5:
+		_fail("peace: only %d of 5 steps as expected (held %s, roused %s, holds %s)" % [steps, held, roused, holds])
+		return
+	print("peace: 5 of 5 steps as expected; a calm brig 120 m off held her fire, a hunter shadowed, one blow roused her, the grudge held under her guns and was forgotten, checked in %.0f ms" % ((Time.get_ticks_usec() - t0) / 1000.0))
+
+
 ## Survivors: how many of a sunk ship's hands make it (and how they share
 ## out the wreckage), and the wreckage built; then a raft spawned, a line
 ## thrown to a ship alongside, and every hand swimming over and climbing aboard.
@@ -771,6 +862,8 @@ func _initialize() -> void:
 		_check_birds(_home_world.regions)
 	_check_photo()
 	_check_spirits()
+	if _home_world != null:
+		_check_peace(_home_world.regions)
 	if _home_world != null:
 		_check_rare(_home_world)
 	await _check_updates()

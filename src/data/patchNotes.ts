@@ -16,6 +16,15 @@ export const PATCH_NOTES: PatchGroup[] = [
     hour: '2026-10-26T03:00Z',
     entries: [
       {
+        title: 'Android and Windows: peaceful seas',
+        notes: [
+          'Peaceful seas come to the Android and Windows game. Pick Adventure or Peaceful in the harbour, just over Set Sail, or flip the switch in Settings.',
+          'On peaceful seas every pirate, hunter, ghost ship, fort, camp and the Kraken still sails, but none of them fires until you do. Calm pirates steer clear of your ships.',
+          'With your guns laid on someone holding their fire, the first press asks "Hold your fire?". Press again to fire first. Fire on one and her flotilla, the pirates nearby and any fort covering her join in.',
+          'The minimap glows soft blue while all is calm and ember red once you\'ve started a fight, with a count of who is after you. Calm ships get a pale bar with a little dove, and pale marks on the maps.',
+        ],
+      },
+      {
         title: 'Android: the helm stays clear of the treasure map',
         notes: [
           'The touch helm under your left thumb now starts just below the treasure map chip, so tapping the map opens it instead of grabbing the wheel.',

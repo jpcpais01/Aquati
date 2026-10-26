@@ -31,6 +31,9 @@ const GROUPS := [
 	["INTERFACE", [
 		["seg", "shake", "Camera shake", "From cannon fire, rams and treasure", [[1.0, "Full"], [0.4, "Gentle"], [0.0, "Off"]]],
 	]],
+	["WORLD", [
+		["switch", "peaceful", "Peaceful seas", "Pirates, hunters, ghosts, forts and the Kraken all still sail, but none of them fires until you do"],
+	]],
 ]
 
 ## On a computer: the window's switch, the keys, and the way out.

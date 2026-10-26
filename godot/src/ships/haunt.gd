@@ -304,7 +304,8 @@ func _wail_step(dt: float) -> void:
 	for s in w.ships:
 		if s == ship or not s.alive or s.removed or _wailed.has(s):
 			continue
-		if s.team == ship.team or s.prize:
+		# (peaceful seas: nor one holding her fire)
+		if s.team == ship.team or s.prize or s.calm:
 			continue
 		var d := Vector2(s.pos.x - ship.pos.x, s.pos.z - ship.pos.z).length() - s.cls.length * 0.35
 		if d > r:
