@@ -22,6 +22,12 @@ export const PATCH_NOTES: PatchGroup[] = [
           'Updating from inside the game still works: tap Update in the harbour and it downloads the new zip, unpacks it into your Downloads folder (Downloads\\Shores_O_Fortune) and reopens on the new build. Your saves carry on as before.',
         ],
       },
+      {
+        title: 'Windows: a cleaner banner',
+        notes: [
+          'The banner art in the Windows zip is now just the view: the galleon under full sail off the volcano isle, with no title over it.',
+        ],
+      },
     ],
   },
   {
