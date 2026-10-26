@@ -1,5 +1,5 @@
 # Builds the native game (godot/) into a signed Android APK and a Windows
-# .exe (one file, the game packed inside it).
+# .exe (one file, the game packed inside it), zipped with the game's art.
 #
 # Every push to main that touches the Godot project publishes both as one
 # GitHub release. Pull requests and other pushes build and smoke-test them the
@@ -230,15 +230,22 @@ jobs:
         working-directory: godot
         run: |
           set -uo pipefail
-          godot --headless --export-release "Windows" ../build/shores-o-fortune.exe 2>&1 | tee "$RUNNER_TEMP/export-windows.log"
-          test -s ../build/shores-o-fortune.exe || { echo "::error::No .exe came out of the Windows export"; exit 1; }
+          godot --headless --export-release "Windows" ../build/Shores_O_Fortune.exe 2>&1 | tee "$RUNNER_TEMP/export-windows.log"
+          test -s ../build/Shores_O_Fortune.exe || { echo "::error::No .exe came out of the Windows export"; exit 1; }
           # one file: the game is packed inside the .exe, no .pck beside it
-          if [ -e ../build/shores-o-fortune.pck ]; then echo "::error::The Windows game left its .pck outside the .exe"; exit 1; fi
-          file ../build/shores-o-fortune.exe | tee "$RUNNER_TEMP/exe.txt"
+          if [ -e ../build/Shores_O_Fortune.pck ]; then echo "::error::The Windows game left its .pck outside the .exe"; exit 1; fi
+          file ../build/Shores_O_Fortune.exe | tee "$RUNNER_TEMP/exe.txt"
           grep -q "PE32+ executable" "$RUNNER_TEMP/exe.txt" || { echo "::error::The Windows game isn't a 64-bit Windows program"; exit 1; }
-          SIZE=$(stat -c %s ../build/shores-o-fortune.exe)
+          SIZE=$(stat -c %s ../build/Shores_O_Fortune.exe)
           BARE=$(stat -c %s "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_RELEASE}/windows_release_x86_64.exe")
           [ "$SIZE" -gt $((BARE + 10000000)) ] || { echo "::error::The .exe is ${SIZE} bytes, hardly more than the bare engine's ${BARE}: the game didn't get packed into it"; exit 1; }
+          # the zip players get: the game and its art side by side, flat, so
+          # Extract All (and the in-game updater) put them in one folder
+          rm -f ../build/Shores_O_Fortune_Windows.zip
+          cp ../.github/windows/Shores_O_Fortune_*.png ../build/
+          (cd ../build && zip -9 -q Shores_O_Fortune_Windows.zip Shores_O_Fortune.exe Shores_O_Fortune_banner.png Shores_O_Fortune_cover.png Shores_O_Fortune_logo.png)
+          unzip -l ../build/Shores_O_Fortune_Windows.zip | tee "$RUNNER_TEMP/zip.txt"
+          [ "$(grep -c 'Shores_O_Fortune' "$RUNNER_TEMP/zip.txt")" -ge 4 ] || { echo "::error::The Windows zip is missing the game or its art"; exit 1; }
           ls -la ../build
 
       - name: Keep the APK
@@ -252,7 +259,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: shores-o-fortune-${{ steps.ver.outputs.name }}-windows
-          path: build/shores-o-fortune.exe
+          path: build/Shores_O_Fortune_Windows.zip
           retention-days: 14
 
       - name: Publish the release
@@ -264,9 +271,12 @@ jobs:
           NAME="${{ steps.ver.outputs.name }}"
           TAG="android-v${NAME}"
           APK="build/shores-o-fortune-${NAME}.apk"
-          EXE="build/shores-o-fortune-${NAME}-windows.exe"
+          # the zip is what players and the in-game updater (0.48 on) take;
+          # the bare .exe stays beside it so builds before 0.48 can still
+          # update themselves (they look for an .exe)
+          ZIP="build/Shores_O_Fortune_Windows.zip"
+          EXE="build/Shores_O_Fortune.exe"
           cp build/shores-o-fortune.apk "$APK"
-          cp build/shores-o-fortune.exe "$EXE"
           {
             cat godot/RELEASE_NOTES.md
             echo
@@ -274,7 +284,7 @@ jobs:
             echo
             echo "Install: download \`shores-o-fortune-${NAME}.apk\` on your phone and open it (allow installs from your browser if Android asks). Needs Android 7 or newer, 64-bit. From 0.21 on, the game offers each new build itself: tap Update in the harbour."
             echo
-            echo "On Windows: download \`shores-o-fortune-${NAME}-windows.exe\` and run it, nothing to install (Windows 10 or 11, 64-bit). Windows may say it protected your PC from an unrecognised app: choose More info, then Run anyway. Your saves stay in your user folder, so each new build carries on where the last left off, and the game tells you in the harbour when there's a newer one."
+            echo "On Windows: download \`Shores_O_Fortune_Windows.zip\`, unzip it and run \`Shores_O_Fortune.exe\`, nothing to install (Windows 10 or 11, 64-bit). The banner, cover and logo art come with it. Windows may say it protected your PC from an unrecognised app: choose More info, then Run anyway. Your saves stay in your user folder, so each new build carries on where the last left off, and the game tells you in the harbour when there's a newer one: it downloads the zip and unpacks it into your Downloads folder (Downloads\\Shores_O_Fortune) for you."
             echo
             echo "<!-- signed: ${SIGNED_WITH} -->"
             if [ "${SIGNED_WITH}" = "fallback" ]; then
@@ -284,7 +294,7 @@ jobs:
             echo
             echo "Built from ${GITHUB_SHA::7}."
           } > "$RUNNER_TEMP/notes.md"
-          gh release create "$TAG" "$APK" "$EXE" \
+          gh release create "$TAG" "$APK" "$ZIP" "$EXE" \
             --title "Shores O' Fortune ${NAME} for Android and Windows" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --target "$GITHUB_SHA" \

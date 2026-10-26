@@ -24,7 +24,7 @@
   for (const a of $$('.cta-row .js-exe')) a.hidden = !isWindows;
   if (isWindows) for (const a of $$('.cta-row .js-apk')) a.hidden = true;
 
-  // ---------- downloads: link straight to the newest release's .apk and .exe ----------
+  // ---------- downloads: link straight to the newest release's .apk and Windows zip ----------
   const RELEASES = `https://github.com/${REPO}/releases`;
   const setApk = (info) => {
     for (const a of $$('.js-apk')) {
@@ -49,7 +49,7 @@
   // the newest release that carries each kind of file (a release may have one and not yet the other)
   const findBuilds = async () => {
     try {
-      const cached = sessionStorage.getItem('sof-builds');
+      const cached = sessionStorage.getItem('sof-builds-2');
       if (cached) return JSON.parse(cached);
     } catch {}
     const r = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=12`, { headers: { Accept: 'application/vnd.github+json' } });
@@ -58,13 +58,14 @@
     const found = { apk: null, exe: null };
     for (const rel of list) {
       if (rel.draft || rel.prerelease) continue;
-      for (const [kind, re] of [['apk', /\.apk$/i], ['exe', /\.exe$/i]]) {
+      for (const [kind, re] of [['apk', /\.apk$/i], ['exe', /\.zip$/i], ['exe', /\.exe$/i]]) {
+        // Windows: the zip (the game and its art) where a release has one, else the bare .exe
         const f = found[kind] ? null : (rel.assets || []).find((x) => re.test(x.name));
         if (f) found[kind] = { url: f.browser_download_url, tag: rel.tag_name || rel.name || 'Latest', mb: (f.size / 1048576).toFixed(f.size > 1e8 ? 0 : 1) };
       }
       if (found.apk && found.exe) break;
     }
-    try { sessionStorage.setItem('sof-builds', JSON.stringify(found)); } catch {}
+    try { sessionStorage.setItem('sof-builds-2', JSON.stringify(found)); } catch {}
     return found;
   };
   findBuilds().then((b) => { setApk(b.apk); setExe(b.exe); }, () => { /* offline or rate limited: keep the releases links */ });
