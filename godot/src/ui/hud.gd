@@ -463,6 +463,11 @@ func _ready() -> void:
 	_pad = FirePad.new()
 	_pad.fire.connect(func(side: int) -> void: fire_pressed.emit(side))
 	root.add_child(_pad)
+	_ability = AbilityButton.new()
+	_ability.pressed.connect(func() -> void: ability_pressed.emit())
+	_ability.visible = false
+	root.add_child(_ability)
+	# the shot pie after her power, so its fan opens over the button (and takes the taps)
 	_pie = ShotPie.new()
 	_pie.picked.connect(func(kind: int) -> void:
 		if kind == Ammo.FIREWORK:
@@ -473,10 +478,6 @@ func _ready() -> void:
 		else:
 			ammo_picked.emit(kind))
 	root.add_child(_pie)
-	_ability = AbilityButton.new()
-	_ability.pressed.connect(func() -> void: ability_pressed.emit())
-	_ability.visible = false
-	root.add_child(_ability)
 	_fw_pick = FireworkPicker.new()
 	_fw_pick.picked.connect(func(id: String) -> void: firework_picked.emit(id))
 	root.add_child(_fw_pick)
@@ -632,9 +633,13 @@ func _place_map() -> void:
 	if _touch_ui:
 		var top := _pill.position.y if not _ashore else vp.y - my - SailLever.TH
 		map_chip.position = Vector2(mx, top - 8.0 * k - cs.y)
+		# the helm's corner starts under the chip's place, so a tap on the map never takes the helm
+		_helm_top(top - 4.0 * k)
 	elif _ashore:
+		_helm_top(-1.0)
 		map_chip.position = Vector2((vp.x - cs.x) * 0.5, vp.y - my - cs.y)
 	else:
+		_helm_top(-1.0)
 		var ps := _pill.size * hk
 		map_chip.position = Vector2(_pill.position.x - 10.0 * k - cs.x, _pill.position.y + (ps.y - cs.y) * 0.5)
 	map_chip.pivot_offset = Vector2.ZERO
@@ -644,6 +649,11 @@ func _place_map() -> void:
 	# ashore on a computer the keys' hint stands over the chip
 	if _ashore and not _touch_ui and map_chip.visible:
 		_hint.position.y = map_chip.position.y - 8.0 * k - _hint.size.y
+
+
+func _helm_top(y: float) -> void:
+	if controls:
+		controls.helm_top = y
 
 
 ## The buried chest's haul, under the toasts: a little open chest, the isle,

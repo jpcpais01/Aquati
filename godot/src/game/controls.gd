@@ -19,6 +19,9 @@ signal touch_seen
 ## screen's width and below this share of its height: the corner the left
 ## thumb rests in. Anywhere else a finger is free to pinch.
 const HELM_ZONE := Vector2(0.36, 0.38)
+## Where the helm's corner starts at the least (y, HUD px; the HUD sets it
+## under the treasure map chip's place on touch, -1 for none).
+var helm_top := -1.0
 ## A second finger this soon after the helm's (s) turns the pair into a
 ## pinch: two fingers never land at quite the same instant.
 const PINCH_GRACE := 0.3
@@ -188,7 +191,7 @@ func _on_touch(e: InputEventScreenTouch) -> void:
 	if e.pressed:
 		skip = true
 		_touches[e.index] = e.position
-		if _touches.size() == 1 and _helm_id < 0 and e.position.x < vp.x * HELM_ZONE.x and e.position.y > vp.y * HELM_ZONE.y:
+		if _touches.size() == 1 and _helm_id < 0 and e.position.x < vp.x * HELM_ZONE.x and e.position.y > maxf(vp.y * HELM_ZONE.y, helm_top):
 			_helm_id = e.index
 			_helm_ms = Time.get_ticks_msec()
 			helm_origin = e.position
