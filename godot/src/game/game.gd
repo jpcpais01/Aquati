@@ -1260,6 +1260,9 @@ func _build_fleet() -> void:
 	# a crate caught up in the flotsam: a barrel, or in the weed now and then something finer
 	drift.crate.connect(func(x: float, z: float, kelp: bool) -> void: world.loot.place(x, z, 1 if kelp and randf() < 0.4 else 0))
 	add_child(drift)
+	# the wax giving as a letter opens, the paper rustling as it is put away
+	hud.letter.opened.connect(func() -> void: sound.knock())
+	hud.letter.put_away.connect(func() -> void: sound.parchment(0.45))
 	birds = Birds.new()
 	birds.name = "Birds"
 	birds.sound = sound
@@ -2827,7 +2830,8 @@ var _letters := 0
 
 ## A bottle swept up: a scrap of treasure map, a named captain's taunt, or
 ## somebody's lost letter with something of worth rolled up in it.
-func _open_bottle(b: Drift.Bottle) -> void:
+## `r` picks which (below 0.5 a map piece, below 0.78 a taunt, else a lost letter).
+func _open_bottle(b: Drift.Bottle, r := randf(), forced := false) -> void:
 	if state != State.VOYAGE:
 		return
 	var p := player
@@ -2838,8 +2842,7 @@ func _open_bottle(b: Drift.Bottle) -> void:
 	sound.parchment()
 	world.fx.splash(Vector3(b.x, world.water_height(b.x, b.z), b.z), 0.3)
 	var kicker := "Message in a bottle"
-	var r := randf()
-	if not tmaps.complete() and (r < 0.5 or tmaps.count() == 0):
+	if not tmaps.complete() and (r < 0.5 or (tmaps.count() == 0 and not forced)):
 		var n := tmaps.count() + 1
 		var l := Tidings.map_letter(n)
 		l.merge({"kicker": kicker, "reward": "Treasure map piece · %d of 3" % n})
@@ -2905,6 +2908,20 @@ func _stage_drift() -> void:
 			k = 1 if str(_args["flotsam"]) == "kelp" else 0
 		var at := p.pos + p.forward() * (p.cls.length * 0.5 + 16.0) + p.port_dir() * 9.0
 		drift.drop_mat(at.x, at.z, k, 2 if _args.has("riders") else -1)
+	# --letter map|rival|lost|gull: a letter opened at once; --letter-t T holds it T s in
+	if _args.has("letter"):
+		if _args.has("letter-t"):
+			hud.letter.hold = float(_args["letter-t"])
+		var kind := str(_args.letter)
+		if kind == "gull":
+			var l := Tidings.prize_news(3, 420, ports.ports[0].title)
+			l.merge({"seal": "gold", "reward": "+420 gold"})
+			_gull_letter(l)
+		else:
+			var bt := Drift.Bottle.new()
+			bt.x = p.pos.x
+			bt.z = p.pos.z
+			_open_bottle(bt, {"map": 0.1, "rival": 0.6}.get(kind, 0.9), true)
 
 
 # ------------------------------------------------------------------ spirits

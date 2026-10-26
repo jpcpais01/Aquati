@@ -758,6 +758,21 @@ func _check_drift(regions: Array[Region]) -> void:
 	card.show_letter(ll)
 	if not card.is_open() or card.size.x < 200.0 or card.size.y < 200.0 or card._queue.size() != 1:
 		_fail("drift: the letter card %s, %d waiting" % [card.size, card._queue.size()])
+	# it opens and is written within a few seconds; a tap mid-pen finishes the
+	# writing, the next puts it away and the one waiting unrolls after it
+	for i in 16:
+		card._process(0.05)
+	if card._sheet.reveal <= 0.0 or card._sheet.reveal >= 1.0 or card._sheet.pen > 0.0:
+		_fail("drift: letter %.2f open, %.2f written at 0.8 s" % [card._sheet.reveal, card._sheet.pen])
+	card.tap()
+	card._process(0.05)
+	if not card.is_open() or card._sheet.pen < 0.999 or absf(card._sheet.reveal - 1.0) > 0.001:
+		_fail("drift: a tap left the letter %.2f open, %.2f written" % [card._sheet.reveal, card._sheet.pen])
+	card.tap()
+	for i in 20:
+		card._process(0.05)
+	if card.visible or card._queue.size() != 0:
+		_fail("drift: the letter put away is %s, %d still waiting" % ["showing" if card.visible else "gone", card._queue.size()])
 	print("drift: shapes of %s triangles; 1 bottle swept up; %d crabs over the side, the mat shoved %.1f -> %.1f m; %d crates in 41 mats; letter card %dx%d" % [tris, crabs, d0, d1, crates[0], card.size.x, card.size.y])
 	card.queue_free()
 	dr.queue_free()
