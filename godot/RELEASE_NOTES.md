@@ -1,15 +1,19 @@
-## Shores O' Fortune for Android and Windows: the Windows zip
+## Shores O' Fortune for Android and Windows: touch fixes
 
-The forty-eighth build packs the Windows game properly.
+The forty-ninth build tidies two touch controls.
 
-- **One zip.** On Windows the game now comes as `Shores_O_Fortune_Windows.zip`:
-  `Shores_O_Fortune.exe` (no version in its name any more) with the game's
-  banner, cover and logo art beside it. Unzip it anywhere and run the .exe.
-- **Updates still come to you.** Tap Update in the harbour: the game
-  downloads the new zip, checks it, unpacks it into your Downloads folder
-  (Downloads\Shores_O_Fortune) and reopens on the new build. Your saves stay
-  in your user folder, so you carry on where you left off.
-- Android is unchanged.
+- **The map is yours to tap.** The helm's corner under your left thumb is
+  shorter now: it starts just below the treasure map chip, so a tap on the
+  map always opens it and never takes the wheel.
+- **The shot pie on top.** Sailing the Hollow Jack, the shot selector used to
+  open behind her Phantom Run button. It now opens over it, and its slices
+  take the tap first.
+
+### Also from the last build: the Windows zip
+
+- On Windows the game comes as `Shores_O_Fortune_Windows.zip` with the
+  versionless `Shores_O_Fortune.exe` and the game's art; the in-game updater
+  downloads and unpacks it into Downloads\Shores_O_Fortune.
 
 ### Also from the last build: spirits
 

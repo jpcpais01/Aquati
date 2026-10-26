@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-26T03:00Z',
+    entries: [
+      {
+        title: 'Android: the helm stays clear of the treasure map',
+        notes: [
+          'The touch helm under your left thumb now starts just below the treasure map chip, so tapping the map opens it instead of grabbing the wheel.',
+          'The shot selector now opens on top of the Hollow Jack\'s Phantom Run button, and its slices take your taps first.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-26T02:00Z',
     entries: [
       {
