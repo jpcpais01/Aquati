@@ -22,14 +22,16 @@ extends Node
 ## next launch offers it ready to install), and once a build is installed its
 ## APK is deleted.
 ##
-## The Windows game (`desktop`) looks for the same releases' .exe instead,
-## downloads and checks it the same way, and installs it itself: the running
-## .exe is renamed aside (Windows lets a running program be renamed, not
-## overwritten), the new one is copied into its place, so shortcuts keep
-## working, and started, and this one quits. The renamed old one is deleted
-## on the next launch. If the game's folder can't be written to, the new
-## build runs from where it was downloaded instead. The saves live in the
-## user's own folder, so the new build picks up where this one left off.
+## The Windows game (`desktop`) looks for the same releases' zip instead (the
+## game's .exe with its banner, cover and logo beside it), downloads and
+## checks it the same way, and installs it itself: the zip is unpacked into
+## the user's Downloads folder (Downloads\\Shores_O_Fortune), the new .exe there
+## is started, and this one quits. If that folder is where this build runs
+## from, the running .exe is renamed aside first (Windows lets a running
+## program be renamed, not overwritten) and the renamed one is deleted on the
+## next launch. If Downloads can't be written to, it unpacks into the game's
+## own user folder instead. The saves live in the user's own folder, so the
+## new build picks up where this one left off.
 
 ## The state changed, or a download moved on.
 signal changed
@@ -45,11 +47,13 @@ const DIR := "user://updates"
 const RECHECK := 3600.0
 ## Bytes hashed a frame while checking the download's seal.
 const HASH_STEP := 4 << 20
+## Where the Windows game unpacks a new build: this folder in Downloads.
+const WIN_DIR := "Shores_O_Fortune"
 
 var state := IDLE
 ## Off unless this is the Android or Windows game (or a run told to pretend).
 var enabled := false
-## The Windows game: updates its own .exe.
+## The Windows game: updates itself from the release's zip.
 var desktop := false
 ## This build: its version ("0.19.65") and the run it was made by (65; 0 for
 ## a build made outside CI).
@@ -184,9 +188,10 @@ func _on_list(result: int, code: int, _h: PackedStringArray, body: PackedByteArr
 	_checked(true)
 
 
-## The file a build ships as here: the APK, or on Windows the game's .exe.
+## The file a build ships as here: the APK, or on Windows the zip with the
+## game's .exe and art.
 func asset_ext() -> String:
-	return ".exe" if desktop else ".apk"
+	return ".zip" if desktop else ".apk"
 
 
 ## Reads GitHub's list of releases: the newest build with this platform's
@@ -205,7 +210,7 @@ func take(releases: Array) -> void:
 
 
 ## The builds in a list of releases that carry a file ending in `ext` (the
-## APK, or the Windows .exe), newest first.
+## APK, or the Windows zip), newest first.
 static func pick(releases: Array, ext := ".apk") -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	for r: Variant in releases:
@@ -351,7 +356,7 @@ func _checked(ok: bool) -> void:
 		found.emit()
 
 
-## Downloads the newest build's APK (on Windows its .exe).
+## Downloads the newest build's APK (on Windows its zip).
 func download() -> void:
 	if latest.is_empty() or state in [CHECKING, DOWNLOADING, VERIFYING]:
 		return
@@ -496,36 +501,86 @@ func install() -> void:
 	changed.emit()
 
 
-## Windows: the new .exe into the running one's place (renamed aside first),
-## then started, and this one closes. A frame or two first, so the card can
-## say it's restarting before the copy holds the game up for a moment.
+## Windows: the zip unpacked into Downloads\\Shores_O_Fortune (or, if that
+## can't be written, the game's user folder), its .exe started, and this one
+## closes. A frame or two first, so the card can say it's restarting before
+## the unpacking holds the game up for a moment.
 func _swap_in(file: String) -> void:
 	state = INSTALLING
 	error = ""
 	changed.emit()
 	await get_tree().process_frame
 	await get_tree().process_frame
-	var src := ProjectSettings.globalize_path(file)
-	var exe := OS.get_executable_path()
-	var old := exe + ".old"
-	if FileAccess.file_exists(old):
-		DirAccess.remove_absolute(old)
-	var swapped := DirAccess.rename_absolute(exe, old) == OK
-	if swapped and DirAccess.copy_absolute(src, exe) != OK:
-		# couldn't write the new one: the old one goes back where it was
-		DirAccess.remove_absolute(exe)
-		DirAccess.rename_absolute(old, exe)
-		swapped = false
-	var run := exe if swapped else src
+	var zip := ProjectSettings.globalize_path(file)
+	var exe := ""
+	var downloads := OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS)
+	if downloads != "":
+		exe = unpack(zip, downloads.path_join(WIN_DIR))
+	if exe == "":
+		exe = unpack(zip, ProjectSettings.globalize_path(DIR.path_join("game")))
+	if exe == "":
+		error = "The new build couldn't be unpacked. Try again, or get it from the release page."
+		state = READY if _ready_file() != "" else OFFER
+		changed.emit()
+		return
 	Progress.save()
-	if OS.create_process(run, []) < 0:
+	if OS.create_process(exe, []) < 0:
 		error = "The new build wouldn't start. Try again, or get it from the release page."
 		state = READY if _ready_file() != "" else OFFER
 		changed.emit()
 		return
-	if swapped:
-		DirAccess.remove_absolute(src)
+	DirAccess.remove_absolute(zip)
 	get_tree().quit()
+
+
+## Unpacks a build's zip into `dest` (made if missing) and gives the .exe
+## that came out of it, or "" if anything couldn't be written. Each file is
+## written beside its place first and then moved in, so a half-written one
+## never takes the place of a whole one; a file in the way that can't be
+## replaced (the running .exe) is renamed aside to .old first.
+static func unpack(zip: String, dest: String) -> String:
+	var r := ZIPReader.new()
+	if r.open(zip) != OK:
+		return ""
+	if DirAccess.make_dir_recursive_absolute(dest) != OK and not DirAccess.dir_exists_absolute(dest):
+		r.close()
+		return ""
+	var exe := ""
+	var ok := true
+	for entry in r.get_files():
+		if entry.ends_with("/"):
+			continue
+		var rel := entry.simplify_path()
+		if rel == "" or rel.begins_with("..") or rel.is_absolute_path() or rel.contains(":"):
+			continue
+		var to := dest.path_join(rel)
+		DirAccess.make_dir_recursive_absolute(to.get_base_dir())
+		var part := to + ".part"
+		var f := FileAccess.open(part, FileAccess.WRITE)
+		if f == null:
+			ok = false
+			break
+		f.store_buffer(r.read_file(entry))
+		var wrote := f.get_error() == OK
+		f.close()
+		if not wrote:
+			DirAccess.remove_absolute(part)
+			ok = false
+			break
+		if FileAccess.file_exists(to) and DirAccess.remove_absolute(to) != OK:
+			# in use (this build's own .exe): aside, deleted on the next launch
+			DirAccess.remove_absolute(to + ".old")
+			if DirAccess.rename_absolute(to, to + ".old") != OK:
+				DirAccess.remove_absolute(part)
+				ok = false
+				break
+		if DirAccess.rename_absolute(part, to) != OK:
+			ok = false
+			break
+		if rel.to_lower().ends_with(".exe"):
+			exe = to
+	r.close()
+	return exe if ok else ""
 
 
 ## Back from Android's installer without being replaced: it was turned down,

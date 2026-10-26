@@ -840,6 +840,32 @@ func _check_updates() -> void:
 		_fail("updates: the Windows build read wrong: %s" % [wins])
 	elif int(up.pick(win_rel)[0].code) != 80 or not str(up.pick(win_rel)[0].url).ends_with("w.apk"):
 		_fail("updates: the APK of a release with both read wrong")
+	# from 0.48 the Windows game takes the release's zip (the .exe stays for older builds)
+	win_rel.append(rel.call("android-v0.48.140", "zipped", [apk.call("w.apk"), apk.call("Shores_O_Fortune_Windows.zip"), apk.call("Shores_O_Fortune.exe")]))
+	var zips: Array = up.pick(win_rel, ".zip")
+	if zips.size() != 1 or int(zips[0].code) != 140 or not str(zips[0].url).ends_with(".zip"):
+		_fail("updates: the Windows zip read wrong: %s" % [zips])
+	# and unpacks it beside a running .exe it can't overwrite
+	var zdir := ProjectSettings.globalize_path("user://check_unpack")
+	var zfile := zdir.path_join("in.zip")
+	DirAccess.make_dir_recursive_absolute(zdir.path_join("out"))
+	var zp := ZIPPacker.new()
+	zp.open(zfile)
+	for e: Array in [["Shores_O_Fortune.exe", "new game"], ["Shores_O_Fortune_logo.png", "logo"], ["../escape.txt", "no"]]:
+		zp.start_file(e[0])
+		zp.write_file(str(e[1]).to_utf8_buffer())
+		zp.close_file()
+	zp.close()
+	FileAccess.open(zdir.path_join("out/Shores_O_Fortune.exe"), FileAccess.WRITE).store_string("old game")
+	var got_exe: String = up.unpack(zfile, zdir.path_join("out"))
+	if got_exe != zdir.path_join("out/Shores_O_Fortune.exe") or FileAccess.get_file_as_string(got_exe) != "new game" \
+			or FileAccess.get_file_as_string(zdir.path_join("out/Shores_O_Fortune_logo.png")) != "logo" \
+			or FileAccess.file_exists(zdir.path_join("escape.txt")) or FileAccess.file_exists(got_exe + ".part"):
+		_fail("updates: the Windows zip unpacked wrong: %s" % got_exe)
+	for f: String in ["out/Shores_O_Fortune.exe", "out/Shores_O_Fortune.exe.old", "out/Shores_O_Fortune_logo.png", "in.zip"]:
+		DirAccess.remove_absolute(zdir.path_join(f))
+	DirAccess.remove_absolute(zdir.path_join("out"))
+	DirAccess.remove_absolute(zdir)
 	var u: Node = up.new()
 	root.add_child(u)
 	u.desktop = false

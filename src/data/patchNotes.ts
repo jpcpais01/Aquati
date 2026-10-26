@@ -13,6 +13,18 @@ export interface PatchGroup {
 
 export const PATCH_NOTES: PatchGroup[] = [
   {
+    hour: '2026-10-26T02:00Z',
+    entries: [
+      {
+        title: 'Windows: the game comes in a zip',
+        notes: [
+          'The Windows game now downloads as a zip with Shores_O_Fortune.exe inside (no version number in the name any more), plus the new banner, cover and logo art.',
+          'Updating from inside the game still works: tap Update in the harbour and it downloads the new zip, unpacks it into your Downloads folder (Downloads\\Shores_O_Fortune) and reopens on the new build. Your saves carry on as before.',
+        ],
+      },
+    ],
+  },
+  {
     hour: '2026-10-25T19:00Z',
     entries: [
       {

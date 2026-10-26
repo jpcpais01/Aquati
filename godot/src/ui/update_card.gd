@@ -452,14 +452,14 @@ func _build_foot(w: float) -> Control:
 					clicked.emit()
 					updater.install())
 				if updater.desktop:
-					# Windows: the game swaps its own .exe and comes back on the new build
+					# Windows: the game unpacks the zip into Downloads and comes back on the new build
 					if updater.error != "":
 						line = updater.error
 						line_c = HudStyle.GOLD_HI
 					elif st == Updater.READY:
-						line = "Downloaded and checked. The game reopens on the new build."
+						line = "Downloaded and checked. It unpacks into Downloads\\Shores_O_Fortune and the game reopens from there."
 					else:
-						line = "Swapping in the new build and setting sail again…"
+						line = "Unpacking the new build into Downloads and setting sail again…"
 						line_c = HudStyle.INK_2
 				elif st == Updater.READY:
 					line = "Downloaded and checked. Android asks you to confirm the install."

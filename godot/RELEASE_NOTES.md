@@ -1,6 +1,17 @@
-## Shores O' Fortune for Android and Windows: spirits
+## Shores O' Fortune for Android and Windows: the Windows zip
 
-The forty-seventh build lets the fallen pirates take their leave.
+The forty-eighth build packs the Windows game properly.
+
+- **One zip.** On Windows the game now comes as `Shores_O_Fortune_Windows.zip`:
+  `Shores_O_Fortune.exe` (no version in its name any more) with the game's
+  banner, cover and logo art beside it. Unzip it anywhere and run the .exe.
+- **Updates still come to you.** Tap Update in the harbour: the game
+  downloads the new zip, checks it, unpacks it into your Downloads folder
+  (Downloads\Shores_O_Fortune) and reopens on the new build. Your saves stay
+  in your user folder, so you carry on where you left off.
+- Android is unchanged.
+
+### Also from the last build: spirits
 
 - **Little ghosts.** When a pirate goes down with his ship, or falls on the
   sand, a fort's parade or a boarded deck, a small green spirit slips out of
@@ -12,22 +23,3 @@ The forty-seventh build lets the fallen pirates take their leave.
 - **Captains too.** A pirate captain's ghost is a little bigger, and a ghost
   ship's whole crew gives up its spirits when the ship sinks.
 - They glow faintly by night and fade into fog and rain like everything else.
-
-### Also from the last build: seagulls
-
-- **The flock.** Gulls wheel over every isle, ride the gusts and flap in
-  short bursts. They stand on the shore rocks, bob on the swell, and trail
-  passing ships to circle the masts and land on the mast caps, the fighting
-  tops and the jib-boom. When the guns go off they scatter in a screaming
-  cloud. They roost at night and keep out of a gale.
-- **Riders.** A gull or two often loafs on drifting kelp and driftwood out at
-  sea. It wheels off as your hull comes by and settles back once you've
-  passed.
-- **The carrier gull.** Now and then a gull flies in with a scroll on its
-  back, lands on your rail with a long call and drops off its news:
-  - prize money from the merchants for every third pirate you sink;
-  - a warning from the Governor's office when the Brethren send a named
-    captain after you;
-  - a fisherwoman's rumour of a chest washed up in the shallows, pinned on
-    your chart;
-  - an invitation to a feast in port tonight.
