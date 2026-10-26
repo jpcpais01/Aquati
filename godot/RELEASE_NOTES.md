@@ -1,31 +1,27 @@
-## Shores O' Fortune for Android and Windows: peaceful seas
+## Shores O' Fortune for Android and Windows: letters
 
-The fiftieth build brings the web game's peaceful seas.
+The fifty-first build gives every message that comes aboard a proper reveal.
 
-- **Choose your seas.** In the harbour, just over Set Sail: **Adventure**,
-  where the Brethren hunt you on sight, or **Peaceful**, where nobody fires
-  first. It's also a switch in Settings (World), and it holds voyage to voyage.
-- **Everyone still sails.** Pirates, flotillas, ghost ships, named hunters,
-  the forts, the cutthroat camps and even the Kraken are all still out there.
-  They just hold their fire until you start it. Calm pirates give your ships
-  a wide berth instead of bumping into a fight.
-- **Hold your fire?** With the guns laid on a ship (or a fort, or the Kraken)
-  that holds its fire, the first press only asks. Press again within a few
-  seconds to fire first.
-- **A quarrel spreads.** Fire on one and her flotilla comes about with her,
-  the Brethren within hail take her side, a fort covering her runs out its
-  guns, and a hunter who was only shadowing you has her excuse. The dead keep
-  to their own. Sail clear and, after a while, tempers cool.
-- **The sea tells you.** A soft blue-white light glows round the minimap
-  while all is calm; once you've started a fight it burns ember red, a
-  crossed-blades tag counts who's after you, and the glow fades as the
-  quarrel cools. A calm ship's bar is pale with a little dove beside it, and
-  flashes red with crossed blades the moment she's provoked. Calm ships are
-  pale on the minimap and the sea chart.
-- **Forts, camps and the Kraken.** A fort holding its fire lets you land
-  under its walls; a camp's cutthroats only watch you pass, unless you draw
-  first. A Kraken left in peace looks you over, then sinks back into the
-  deep.
+- **Rolled and sealed.** A message in a bottle bobs up into view rolled tight
+  and held with a dab of wax round a turn of twine; a letter off the carrier
+  gull's back drops in from above.
+- **Crack, unroll, ink.** The wax cracks in two and crumbles away, the twine
+  springs off, and the paper unrolls down the side of the screen, torn at
+  its sides and still curled at its foot. Then the words ink themselves in,
+  line by line, the newest strokes still wet and dark, as if the pen were
+  still moving. A captain's portrait inks in beside the first lines.
+- **Sealed off.** When the writing is done its wax seal presses onto the
+  corner, what it brings you springs in under it with a gold glint, and a
+  fine inked line along its foot runs down for as long as it stays.
+- **Your pace.** Tap while it is still being written to finish the writing
+  at once; tap again and it rolls itself back up and slips away. A letter
+  waiting its turn unrolls after.
+
+### Also from the last build: peaceful seas
+
+- Pick **Adventure** or **Peaceful** in the harbour, just over Set Sail (or in
+  Settings). On peaceful seas everyone still sails, but nobody fires until
+  you do.
 
 ### Also from the last build: touch fixes
 
