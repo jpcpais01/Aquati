@@ -191,6 +191,9 @@ class Camp:
 	var fort := {}
 	## Nobody home: a fort of yours, its old garrison long gone.
 	var empty := false
+	## Peaceful seas: the landing party is among them and they hold their
+	## blades, so those on their feet keep an eye on the captain.
+	var wary := false
 
 	func fire() -> Vector3:
 		return layout.fire
@@ -206,6 +209,9 @@ var party: Array[Member] = []
 var camps: Array[Camp] = []
 ## Foes the party is fighting right now (alert and near), for the HUD's bars.
 var foes: Array[ShoreWalker] = []
+## Peaceful seas: a camp (Camp) keeps its blades sheathed unless you strike
+## first (set by the game; a garrison's, unless its fort is at war with you).
+var calm := Callable()
 var time := 0.0
 var defeated := false
 ## Seconds left on the pistol's reload.
@@ -1568,8 +1574,11 @@ func _think_camp(c: Camp, dt: float, world: World) -> void:
 	var f := c.fire()
 	var alarm := FORT_ALARM if not c.fort.is_empty() else CAMP_ALARM
 	var leash := FORT_LEASH if not c.fort.is_empty() else LEASH
-	# the party comes too close: up and at them
-	if not c.alert and not c.routed and cap != null and not defeated:
+	# the party comes too close: up and at them (on peaceful seas they only
+	# look you over, unless you draw first)
+	var held := not c.alert and calm.is_valid() and bool(calm.call(c))
+	c.wary = held and cap != null and Vector2(cap.x - f.x, cap.z - f.z).length() < alarm + 14.0
+	if not c.alert and not c.routed and cap != null and not defeated and not held:
 		var near := INF
 		for m in party:
 			var w := m.walker
@@ -1663,6 +1672,9 @@ func _go_home(w: ShoreWalker, c: Camp, k: int, dt: float) -> void:
 		w.idle = s.idle
 		w.seat_h = float(s.seat_h)
 		w.want_yaw = float(s.yaw)
+		# wary: those on their feet watch the captain
+		if c.wary and captain != null and w.idle != ShoreWalker.Idle.SIT and w.idle != ShoreWalker.Idle.GROUND:
+			w.want_yaw = atan2(captain.x - w.x, captain.z - w.z)
 		if not c.alert:
 			w.armed = false
 	w.turn(dt, 6.0)

@@ -10,6 +10,13 @@ extends Control
 
 const TEAL := [Color("#22b8ad"), Color("#8ff2d7")]
 const RED := [Color("#d8402f"), Color("#ff9d6a")]
+## Peaceful seas: a ship holding her fire (a ghost's paler green).
+const CALM := [Color("#a9d8cf"), Color("#eefcf6")]
+const CALM_GHOST := [Color("#6fc9a4"), Color("#d8fff0")]
+## The dove beside a calm bar, the blades flashed over one just roused (units), and how long they flash (s).
+const DOVE := 14.0 * HudStyle.PX
+const BLADES := 22.0 * HudStyle.PX
+const ROUSE := 1.1
 ## Below this share of her hull she is in danger.
 const LOW := 0.35
 ## An enemy bar's marks: their size, and the room before and between them (units).
@@ -30,6 +37,11 @@ var _mat: ShaderMaterial
 ## Flame, torn canvas, thinned crews (enemy bars only), and which show.
 var _marks: Array[TextureRect] = []
 var _shown_marks := -1
+## Peaceful seas (enemy bars): she holds her fire; and the moment she was roused (s left).
+var _calm := false
+var _dove: TextureRect
+var _blades: TextureRect
+var _roused := 0.0
 
 
 func _init(enemy: bool = false) -> void:
@@ -106,8 +118,38 @@ func show_marks(afire: bool, torn: bool, crew: bool) -> void:
 	_mat.set_shader_parameter("smoulder", 1.0 if afire else 0.0)
 
 
+## Peaceful seas: a pale, quiet bar with a little dove beside it while she
+## holds her fire; the moment she's provoked the bar flares red and a pair
+## of blades flashes over it (`snap`: a bar just handed to her, no flash).
+func set_calm(on: bool, ghost: bool, snap := false) -> void:
+	if on == _calm:
+		return
+	var was := _calm
+	_calm = on
+	if on and _dove == null:
+		_dove = Icons.rect("dove", DOVE, Color("#e6fff8"))
+		_dove.position = Vector2(-5.0 * HudStyle.PX - DOVE, (size.y - DOVE) * 0.5)
+		_dove.modulate.a = 0.9
+		add_child(_dove)
+	if _dove != null:
+		_dove.visible = on
+	_paint((CALM_GHOST if ghost else CALM) if on else RED)
+	_mat.set_shader_parameter("c_rim", Color(0.78, 1.0, 0.94, 0.28) if on else Color(1, 1, 1, 0.2))
+	if was and not on and not snap:
+		if _blades == null:
+			_blades = Icons.rect("swords", BLADES, Color("#ff8a66"))
+			_blades.pivot_offset = _blades.size * 0.5
+			add_child(_blades)
+		_roused = ROUSE
+	elif _blades != null:
+		_roused = 0.0
+		_blades.visible = false
+
+
 func _process(dt: float) -> void:
 	_t += dt
+	if _roused > 0.0:
+		_rouse(dt)
 	if _shown_marks > 0 and _shown_marks & 1 != 0:
 		# the flame flickers: up a hair, a size larger and brighter, and back, every second
 		var f := 0.5 - 0.5 * cos(_t * TAU)
@@ -136,8 +178,40 @@ func _process(dt: float) -> void:
 func _push() -> void:
 	_mat.set_shader_parameter("fill", _shown)
 	_mat.set_shader_parameter("ghost", _ghost)
-	# low: the whole bar breathes brighter once a second
-	_mat.set_shader_parameter("flare", (0.5 - 0.5 * cos(_t * TAU)) if _low else 0.0)
+	# low: the whole bar breathes brighter once a second (and flares as she's roused)
+	var flare := (0.5 - 0.5 * cos(_t * TAU)) if _low else 0.0
+	if _roused > 0.0:
+		flare = maxf(flare, sin(clampf((ROUSE - _roused) / (ROUSE * 0.5), 0.0, 1.0) * PI))
+	_mat.set_shader_parameter("flare", flare)
+
+
+## The blades over a bar just roused: up out of nothing, a beat, and away.
+func _rouse(dt: float) -> void:
+	_roused = maxf(0.0, _roused - dt)
+	var k := 1.0 - _roused / ROUSE
+	var a := 0.0
+	var sc := 1.0
+	var y := 0.0
+	if k < 0.25:
+		var e := k / 0.25
+		a = e
+		sc = lerpf(0.4, 1.15, e)
+		y = lerpf(6.0, -2.0, e)
+	elif k < 0.75:
+		var e := (k - 0.25) / 0.5
+		a = 1.0
+		sc = lerpf(1.15, 1.0, e)
+		y = lerpf(-2.0, -6.0, e)
+	else:
+		var e := (k - 0.75) / 0.25
+		a = 1.0 - e
+		sc = lerpf(1.0, 0.9, e)
+		y = lerpf(-6.0, -12.0, e)
+	_blades.visible = _roused > 0.0
+	_blades.modulate.a = a
+	_blades.scale = Vector2.ONE * sc
+	_blades.position = Vector2((size.x - BLADES) * 0.5, -9.0 * HudStyle.PX - BLADES + y * HudStyle.PX)
+	_push()
 
 
 func _draw() -> void:

@@ -23,6 +23,8 @@ signal settings
 signal sound
 ## Exit game (the desktop game's round button, by Settings and the sound).
 signal quit
+## Adventure or Peaceful seas, picked over Set Sail.
+signal sea_rule(peaceful: bool)
 signal clicked
 
 const SHIPS: Array[String] = ["sloop", "brig", "galleon"]
@@ -38,6 +40,9 @@ var roster := Callable()
 ## Whether an event ship is already yours to keep (Progress.claimed).
 var kept := Callable()
 var sound_on := true
+## Peaceful seas picked (the game's Settings.peaceful).
+var peaceful := false
+var _sea: SeaMode
 ## Each class's refit ((id) -> its loadout, see Parts): her card shows her
 ## figures with it, the pips it adds in gold.
 var loadout := Callable()
@@ -129,6 +134,13 @@ func set_ship(id: String) -> void:
 		tab.want = 1.0 if tab.id == ship else 0.0
 
 
+## Peaceful seas as they stand (changed in Settings, say): the chooser follows.
+func set_peaceful(on: bool) -> void:
+	peaceful = on
+	if _sea != null and _sea.peaceful != on:
+		_sea.set_peaceful(on)
+
+
 func set_sound(on: bool) -> void:
 	sound_on = on
 	if _sound_btn != null:
@@ -155,6 +167,8 @@ func _all_buttons() -> Array[UiButton]:
 		out.append(_vault)
 	if _update_btn != null:
 		out.append(_update_btn)
+	if _sea != null:
+		out.append_array(_sea.buttons())
 	return out
 
 
@@ -232,6 +246,15 @@ func _build() -> void:
 	_vault_dot.position = Vector2(_vault.size.x - 8.0 * MenuKit.PX - _vault_dot.size.x, 6.0 * MenuKit.PX)
 	_vault.add_child(_vault_dot)
 	_place_dock()
+	# which seas: over Set Sail, at the foot of the stage
+	_sea = SeaMode.new(250.0 * u)
+	_sea.position = Vector2(_vp.x - mx - _sea.size.x, _sail.position.y - 10.0 * u - _sea.size.y)
+	_sea.set_peaceful(peaceful, true)
+	_sea.clicked.connect(func() -> void: clicked.emit())
+	_sea.picked.connect(func(on: bool) -> void:
+		peaceful = on
+		sea_rule.emit(on))
+	_root.add_child(_sea)
 	_vault.pressed.connect(func() -> void:
 		clicked.emit()
 		vault.emit())
@@ -248,6 +271,7 @@ func _build() -> void:
 	_reveal.add(_sail, MenuKit.RISE, 0.2, 0.9, rise)
 	_reveal.add(_wright, MenuKit.RISE, 0.2, 0.9, rise)
 	_reveal.add(_vault, MenuKit.RISE, 0.2, 0.9, rise)
+	_reveal.add(_sea, MenuKit.RISE, 0.25, 0.9, rise)
 	_step(0.0)
 
 

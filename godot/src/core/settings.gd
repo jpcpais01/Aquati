@@ -22,6 +22,9 @@ var music := 0.8
 var sfx := 1.0
 var ambience := 1.0
 var shake := 1.0
+## Peaceful seas (Peace): every pirate, fort, camp and the Kraken still sail,
+## but none of them fires until you do. Picked in the harbour or Settings.
+var peaceful := false
 ## The frame counter at the top of the screen (the web's default: on).
 var fps := true
 ## Phones and tablets: touch controls, a 60 fps cap, the lean graphics path.
@@ -59,6 +62,7 @@ func _ready() -> void:
 		sfx = _cfg.get_value("audio", "sfx", sfx)
 		ambience = _cfg.get_value("audio", "ambience", ambience)
 		shake = _cfg.get_value("game", "shake", shake)
+		peaceful = bool(_cfg.get_value("game", "peaceful", peaceful))
 		fps = _cfg.get_value("interface", "fps", fps)
 		weather = _cfg.get_value("sky", "weather", weather)
 		time = _cfg.get_value("sky", "time", time)
@@ -191,6 +195,7 @@ func save() -> void:
 	_cfg.set_value("audio", "sfx", sfx)
 	_cfg.set_value("audio", "ambience", ambience)
 	_cfg.set_value("game", "shake", shake)
+	_cfg.set_value("game", "peaceful", peaceful)
 	_cfg.set_value("interface", "fps", fps)
 	_cfg.set_value("sky", "weather", weather)
 	_cfg.set_value("sky", "time", time)

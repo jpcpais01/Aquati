@@ -162,6 +162,8 @@ Brumas), broadside on, `--fort-dist M` out; `--fort-ours` gives it to you
 The Kraken: `--kraken` brews a storm and sends it a few seconds into the
 voyage (`--kraken-at T` T seconds in, `--kraken-omen S` with an omen S
 seconds long), and again a minute after it has gone.
+Peaceful seas: `--peaceful` holds them on for the run (`--peaceful off`:
+Adventure), whatever Settings says.
 Ghost ships: `--ghosts` makes every pirate that can be a ghost one (once the
 yard has her hull), and `--foe-ghost` makes the `--battle` foe a ghost.
 Boarding: `--board CLASS` lays a crippled pirate (`sloop`, `brig` or

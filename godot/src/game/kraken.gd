@@ -37,6 +37,8 @@ signal arm_beaten(at: Vector3)
 signal defeated(at: Vector3)
 ## Gone back down (`slain`, or it gave up the chase).
 signal gone(slain: bool)
+## Peaceful seas: the first blow on it wakes its fury.
+signal provoked_now
 
 const SPINE := KrakenView.SPINE
 ## Each arm's length and girth at the root: six that fight, two short ones about the head.
@@ -56,6 +58,8 @@ const ARM_HP := 165.0
 ## Ammo (Ammo.ROUND ..) against arm / head. Chain cleaves flesh, shells blast the head.
 const VS := [Vector2(1.0, 1.0), Vector2(0.95, 1.6), Vector2(0.8, 0.8), Vector2(1.9, 0.6), Vector2(1.25, 0.65), Vector2(0.0, 0.0)]
 ## How far the head lurks from its prey while submerged.
+## Peaceful seas: left in peace this long, it loses interest and slips back down (s).
+const LINGER := 48.0
 const LURK := 48.0
 const DEEP := -17.0
 const SURFACED := 2.4
@@ -163,6 +167,10 @@ var _lost_t := 0.0
 var _omen_len := 9.0
 ## How hard it is raining (0..1, set by the game): rain douses an arm afire.
 var rain := 0.0
+## Peaceful seas (set by the game each frame): it rises, and looks, and only
+## fights if it's struck; and whether something of yours has struck it this time up.
+var calm := false
+var provoked := false
 
 
 func _init(p_world: World) -> void:
@@ -257,6 +265,7 @@ func reset() -> void:
 	_grab_cool = 12.0
 	_dropped = false
 	_lost_t = 0.0
+	provoked = false
 	_tallies.clear()
 	if _prey != null:
 		_prey.held = 0.0
@@ -420,6 +429,10 @@ func _update_fight(dt: float, p: Ship) -> void:
 	if _lost_t > 12.0:
 		leave()
 		return
+	# left in peace, it loses interest and slips back down
+	if docile() and t > LINGER:
+		leave()
+		return
 	# keep enough arms in the fight
 	var want: int = ACTIVE[stage]
 	var up := 0
@@ -442,7 +455,7 @@ func _update_fight(dt: float, p: Ship) -> void:
 	# attacks
 	_grab_cool -= dt
 	_attack_t -= dt
-	if _attack_t <= 0.0:
+	if _attack_t <= 0.0 and not docile():
 		var gap: float = ATTACK_GAP[stage] * (1.45 if _head == 1 else 1.0)
 		_attack_t = gap * randf_range(0.75, 1.25)
 		_attack(p)
@@ -1180,9 +1193,33 @@ func _draw_marks(p: Ship) -> void:
 
 # ---------------------------------------------------------------- being hit
 
+## Peaceful seas, and nobody has struck it: its arms sway and watch, and
+## nothing comes down on her.
+func docile() -> bool:
+	return calm and not provoked
+
+
 ## A ball in flight between `prev` and `pos` this step: true if it struck an
-## arm or the head (which takes the blow).
+## arm or the head (which takes the blow); on peaceful seas, that's a quarrel.
 func strike(prev: Vector3, pos: Vector3, damage: float, owner: Ship, kind: int) -> bool:
+	if not _strike_at(prev, pos, damage, owner, kind):
+		return false
+	_provoke()
+	return true
+
+
+## It was only looking: now it fights.
+func _provoke() -> void:
+	if provoked:
+		return
+	provoked = true
+	if calm and phase == Phase.FIGHT:
+		_attack_t = minf(_attack_t, 1.1)
+		_roar(1.0)
+		provoked_now.emit()
+
+
+func _strike_at(prev: Vector3, pos: Vector3, damage: float, owner: Ship, kind: int) -> bool:
 	if phase != Phase.FIGHT and phase != Phase.DYING:
 		return false
 	if owner.team != Ship.Team.PLAYER and owner != _prey:
@@ -1233,10 +1270,12 @@ func blast(at: Vector3, radius: float, damage: float, owner: Ship) -> void:
 				continue
 			best = minf(best, Vector3(a.pts[i * 3] - at.x, a.pts[i * 3 + 1] - at.y, a.pts[i * 3 + 2] - at.z).length() - a.R0)
 		if best < radius:
+			_provoke()
 			_hurt_arm(a, damage * (0.35 + 0.65 * (1.0 - maxf(0.0, best) / radius)), owner, true)
 	if _head_y > -6.0:
 		var d := Vector2(at.x - body.x, at.z - body.z).length() - 6.5
 		if d < radius:
+			_provoke()
 			_hurt_head(damage * VS[Ammo.SHELL].y * (0.35 + 0.65 * (1.0 - maxf(0.0, d) / radius)), at, false, true)
 
 

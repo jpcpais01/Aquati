@@ -37,6 +37,9 @@ const SMOKE_END := Color(1.05, 1.04, 1.02)
 const GHOST_FADE := 4.5
 
 static var _count := 0
+## Peaceful seas: someone of another side laid a blow on her (her, by), the
+## start of a quarrel (Peace); set by the game.
+static var on_struck := Callable()
 
 ## A blow the helm feels (0..1): running aground, the first bite of a reef.
 signal struck(amount: float)
@@ -112,6 +115,10 @@ var dormant := false
 ## One of your escorts (Fleet): on your side, but her guns and her end don't
 ## shake your view as your own do, and her crews lay a touch less true.
 var escort := false
+## Peaceful seas (Peace): she holds her fire against you (set each frame by
+## the game), and when you (or one of yours) last gave her cause to fight.
+var calm := false
+var wrath_t := -1e9
 var _flare := 0.0
 var _mist_t := 0.0
 
@@ -427,6 +434,7 @@ func damage(amount: float, attacker: Ship, at: Variant = null, hull: bool = true
 	last_cause = cause
 	if attacker != null:
 		last_attacker = attacker
+		_struck(attacker)
 	_roll_kick += (randf() - 0.5) * 0.04
 	if hardy:
 		hp = maxf(hp, max_hp * 0.6)
@@ -479,6 +487,7 @@ func ignite(by: Ship) -> bool:
 	if by != null:
 		afire_by = by
 		last_attacker = by
+		_struck(by)
 	last_hit = world.time
 	return fresh
 
@@ -491,6 +500,7 @@ func shred(by: Ship) -> bool:
 	torn = Ammo.TORN_TIME
 	if by != null:
 		last_attacker = by
+		_struck(by)
 	last_hit = world.time
 	return fresh
 
@@ -503,6 +513,7 @@ func rake(by: Ship) -> bool:
 	crew_hit = Ammo.CREW_TIME
 	if by != null:
 		last_attacker = by
+		_struck(by)
 	last_hit = world.time
 	return fresh
 
@@ -516,8 +527,20 @@ func terrify(by: Ship) -> bool:
 	crew_hit = maxf(crew_hit, Ammo.DREAD_TIME)
 	if by != null:
 		last_attacker = by
+		_struck(by)
 	last_hit = world.time
 	return fresh
+
+
+## Peaceful seas: a blow from another side is a quarrel (the game hears it).
+func _struck(by: Ship) -> void:
+	if by.team != team and on_struck.is_valid():
+		on_struck.call(self, by)
+
+
+## Peaceful seas: still at war with you (you gave her cause within Peace.FORGET s).
+func at_war(now: float) -> bool:
+	return now - wrath_t < Peace.FORGET
 
 
 func place(x: float, z: float, h: float) -> void:

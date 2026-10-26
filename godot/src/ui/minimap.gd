@@ -40,6 +40,7 @@ var _marks: _Marks
 var _face: ColorRect
 var _face_mat: ShaderMaterial
 var _bezel: _Bezel
+var _peace: _Peace
 var _wait := 0.0
 var _down := 0.0
 
@@ -73,6 +74,9 @@ func _ready() -> void:
 	_marks.map = self
 	_vp.add_child(_marks)
 
+	# peaceful seas: a light behind the disc (and a tag on its rim)
+	_peace = _Peace.new()
+	add_child(_peace)
 	_face = ColorRect.new()
 	_face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_face.position = Vector2(-SPILL.x, -SPILL.y)
@@ -91,7 +95,18 @@ func _ready() -> void:
 	_bezel.position = Vector2(-BEZEL, -BEZEL)
 	_bezel.size = Vector2(SIZE, SIZE) + Vector2(BEZEL, BEZEL) * 2.0
 	add_child(_bezel)
+	_peace.tag.position = Vector2(-2.0 * HudStyle.K, SIZE - 4.0 * HudStyle.K - _peace.tag.size.y)
+	add_child(_peace.tag)
 	set_process(false)
+
+
+## Peaceful seas (Peace) on the minimap: no badge over the sea, just a light.
+## A soft blue-white halo breathes behind the disc while nobody in these
+## waters has cause to fight you; once you've given them one it turns ember
+## red, a crossed-blades tag on the rim counts who has taken up arms (`war`),
+## and the glow burns down as tempers cool (`cool` 1..0).
+func set_peace(on: bool, war: int, cool: float) -> void:
+	_peace.set_peace(on, war, cool)
 
 
 ## The archipelagos' seabeds to paint the sea from (the first two).
@@ -242,7 +257,8 @@ class _Marks:
 			if s == sc.player or not s.alive:
 				continue
 			# (a merchantman willing to trade in gold)
-			var col := Color("#5ee3d4") if s.team == Ship.Team.PLAYER else (Color("#f2c45a") if s.team == Ship.Team.MERCHANT else Color("#ff6a55"))
+			# (a pirate holding her fire on peaceful seas, pale)
+			var col := Color("#5ee3d4") if s.team == Ship.Team.PLAYER else (Color("#f2c45a") if s.team == Ship.Team.MERCHANT else Peace.mark(s))
 			var at4: Vector2 = to_map.call(s.pos.x, s.pos.z)
 			if at4.distance_to(c) < h + 14.0 * u:
 				MapMarks.ship(self, at4, s.heading, col, 11.0 * u, 2.0 * u)
@@ -321,3 +337,92 @@ class _Bezel:
 		else:
 			doc = '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff4cc"/><stop offset="1" stop-color="#e9b24a"/></linearGradient></defs><circle cx="100" cy="100" r="98.5" fill="none" stroke="#fff" stroke-opacity="0.85" stroke-width="2.4"/><circle cx="100" cy="100" r="88" fill="none" stroke="#fff" stroke-opacity="0.22" stroke-width="1"/><g stroke="#fff" stroke-opacity="0.75" stroke-width="1.5" stroke-linecap="round">%s</g><path d="M100 3 L108.5 17 L100 13.5 L91.5 17 Z" fill="none" stroke="#04121a" stroke-opacity="0.8" stroke-width="1.5" stroke-linejoin="round"/><path d="M100 3 L108.5 17 L100 13.5 L91.5 17 Z" fill="url(#g)"/>' % ticks
 		return Icons.svg("bezel:%s" % shadow, doc, size, Rect2(0.0, 0.0, 200.0, 200.0))
+
+
+## The halo behind the disc and the tag on its rim (set_peace).
+class _Peace:
+	extends Control
+	var tag: UiBox
+	var _mat: ShaderMaterial
+	var _ico: TextureRect
+	var _n: Label
+	var _on := false
+	var _war := 0
+	var _cool := 1.0
+	## Fading in (0..1), the flip on a change of mood (1 .. 0), and the clock.
+	var _in := 0.0
+	var _flip := 0.0
+	var _t := 0.0
+
+	func _init() -> void:
+		var k := HudStyle.K
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var rh := SIZE * 0.5 + 9.0 * k
+		var pad := 34.0 * k
+		position = Vector2(SIZE * 0.5 - rh - pad, SIZE * 0.5 - rh - pad)
+		size = Vector2(rh + pad, rh + pad) * 2.0
+		pivot_offset = size * 0.5
+		_mat = ShaderMaterial.new()
+		_mat.shader = preload("res://shaders/peace_halo.gdshader")
+		_mat.set_shader_parameter("quad", size)
+		_mat.set_shader_parameter("centre", size * 0.5)
+		_mat.set_shader_parameter("radius", rh)
+		_mat.set_shader_parameter("reach", 22.0 * k)
+		material = _mat
+		visible = false
+		# the tag: crossed blades and how many have taken up arms
+		var h := 18.0 * k
+		tag = UiBox.new(Vector2(h, h), h * 0.5, 6.0)
+		MenuKit.flat(tag)
+		tag.p("c_top", Color(0.275, 0.063, 0.039, 0.9)).p("c_foot", Color(0.275, 0.063, 0.039, 0.9)).p("c_border", Color(1.0, 0.51, 0.392, 0.45)).p("hi", 0.0)
+		tag.pivot_offset = Vector2(0.0, h * 0.5)
+		_ico = Icons.rect("swords", 11.0 * k, Color("#ff9a7a"))
+		_ico.position = Vector2(4.0 * k, (h - _ico.size.y) * 0.5)
+		tag.add_child(_ico)
+		_n = HudStyle.label("", "inter", 800, roundi(10.0 * k), Color("#ffe0d6"))
+		tag.add_child(_n)
+		tag.visible = false
+		set_process(false)
+
+	func set_peace(on: bool, war: int, cool: float) -> void:
+		var fight := on and war > 0
+		if on != _on or fight != (_war > 0 and _on):
+			# the change of mood itself catches the eye
+			if on and _on:
+				_flip = 1.0
+			if on and not _on:
+				_in = 0.0
+			var c := Peace.WAR_GLOW if fight else Peace.CALM_GLOW
+			_mat.set_shader_parameter("col", c)
+			_mat.set_shader_parameter("band", 0.4 if fight else 0.46)
+			_mat.set_shader_parameter("glow", 0.45 if fight else 0.55)
+		_on = on
+		_cool = clampf(cool, 0.0, 1.0)
+		visible = on
+		tag.visible = fight
+		if fight and war != _war:
+			var k := HudStyle.K
+			_n.text = str(war)
+			var tw := _n.get_minimum_size().x
+			_n.position = Vector2(_ico.position.x + _ico.size.x + 3.0 * k, (tag.size.y - _n.get_minimum_size().y) * 0.5)
+			tag.resize(Vector2(_n.position.x + tw + 6.0 * k, tag.size.y))
+		_war = war if on else 0
+		set_process(on)
+
+	func _process(dt: float) -> void:
+		_t += dt
+		_in = minf(1.0, _in + dt / 0.8)
+		_flip = maxf(0.0, _flip - dt / 0.9)
+		var a := 1.0 - (1.0 - _in) * (1.0 - _in)
+		if _war > 0:
+			a *= 0.35 + 0.65 * _cool
+		elif _in >= 1.0:
+			# breathing while all is calm
+			a *= 0.86 + 0.14 * cos(_t * TAU / 5.0)
+		var f := sin(_flip * PI) * (1.0 if _flip > 0.0 else 0.0)
+		_mat.set_shader_parameter("strength", minf(1.0, a + f * 0.4))
+		scale = Vector2.ONE * (0.9 + 0.1 * a + 0.12 * f)
+		tag.scale = Vector2.ONE * (1.0 + 0.25 * f)
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color.WHITE)

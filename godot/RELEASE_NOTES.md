@@ -1,6 +1,33 @@
-## Shores O' Fortune for Android and Windows: touch fixes
+## Shores O' Fortune for Android and Windows: peaceful seas
 
-The forty-ninth build tidies two touch controls.
+The fiftieth build brings the web game's peaceful seas.
+
+- **Choose your seas.** In the harbour, just over Set Sail: **Adventure**,
+  where the Brethren hunt you on sight, or **Peaceful**, where nobody fires
+  first. It's also a switch in Settings (World), and it holds voyage to voyage.
+- **Everyone still sails.** Pirates, flotillas, ghost ships, named hunters,
+  the forts, the cutthroat camps and even the Kraken are all still out there.
+  They just hold their fire until you start it. Calm pirates give your ships
+  a wide berth instead of bumping into a fight.
+- **Hold your fire?** With the guns laid on a ship (or a fort, or the Kraken)
+  that holds its fire, the first press only asks. Press again within a few
+  seconds to fire first.
+- **A quarrel spreads.** Fire on one and her flotilla comes about with her,
+  the Brethren within hail take her side, a fort covering her runs out its
+  guns, and a hunter who was only shadowing you has her excuse. The dead keep
+  to their own. Sail clear and, after a while, tempers cool.
+- **The sea tells you.** A soft blue-white light glows round the minimap
+  while all is calm; once you've started a fight it burns ember red, a
+  crossed-blades tag counts who's after you, and the glow fades as the
+  quarrel cools. A calm ship's bar is pale with a little dove beside it, and
+  flashes red with crossed blades the moment she's provoked. Calm ships are
+  pale on the minimap and the sea chart.
+- **Forts, camps and the Kraken.** A fort holding its fire lets you land
+  under its walls; a camp's cutthroats only watch you pass, unless you draw
+  first. A Kraken left in peace looks you over, then sinks back into the
+  deep.
+
+### Also from the last build: touch fixes
 
 - **The map is yours to tap.** The helm's corner under your left thumb is
   shorter now: it starts just below the treasure map chip, so a tap on the
@@ -14,16 +41,3 @@ The forty-ninth build tidies two touch controls.
 - On Windows the game comes as `Shores_O_Fortune_Windows.zip` with the
   versionless `Shores_O_Fortune.exe` and the game's art; the in-game updater
   downloads and unpacks it into Downloads\Shores_O_Fortune.
-
-### Also from the last build: spirits
-
-- **Little ghosts.** When a pirate goes down with his ship, or falls on the
-  sand, a fort's parade or a boarded deck, a small green spirit slips out of
-  him. He keeps his own hat and his build, pops up with two hollow eyes and a
-  curling tail, bobs a moment and looks your way.
-- **One last act.** Each ghost does one thing before he goes: waves, tips his
-  hat, twirls, or leans in with a "boo!". Then he floats up into the sky and
-  is gone in a puff of glowing motes, with a soft, ghostly voice as he rises.
-- **Captains too.** A pirate captain's ghost is a little bigger, and a ghost
-  ship's whole crew gives up its spirits when the ship sinks.
-- They glow faintly by night and fade into fog and rain like everything else.

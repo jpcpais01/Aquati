@@ -55,6 +55,8 @@ var hazards: Hazards
 var forts: Node3D
 ## The Kraken (a Kraken, untyped for the same reason; null until the game makes it).
 var kraken: Variant = null
+## Peaceful seas (Peace): nobody fires first.
+var peaceful := false
 
 
 func water_height(x: float, z: float) -> float:
